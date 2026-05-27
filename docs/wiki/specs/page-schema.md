@@ -104,7 +104,9 @@ Raw files are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]] 
 
 ### Extension types
 
-A vault's `.dome/page-types.yaml` may declare additional types. Each extension type may optionally declare its own frontmatter schema in the same YAML:
+A vault's `.dome/page-types.yaml` may declare additional types directly (vault-local), AND extension bundles under `<vault>/.dome/extensions/<bundle>/page-types.yaml` may declare additional types whose entries the bundle loader merges into the vault's `PageTypesConfig.extensions` at `openVault` time. The merge is keyed by `name:`; a collision between a vault-local declaration and a bundle's declaration (or between two bundles) is a `bundle-load-failure` per [[wiki/gotchas/extension-bundle-load-order]]. The two declaration paths produce equivalent runtime entries — the only difference is provenance (`source: "vault"` vs `source: "extension:<bundle>"` is tracked internally for diagnostic surfacing but does not change frontmatter validation behavior).
+
+Each extension type may optionally declare its own frontmatter schema in the same YAML:
 
 ```yaml
 extensions:
@@ -139,6 +141,26 @@ The `coverage:` field on gotcha pages drives the `tests/integration/gotcha-cover
 **`enforced_at_status:` field** *(optional, off-matrix gotchas only)*. When a gotcha's structural mitigation is planned but not yet shipped — e.g., a v0.5.1 lockstep test that the gotcha's mitigation depends on — the gotcha may carry `enforced_at:` pointing at the *future* path of the mitigation alongside `enforced_at_status: deferred`. The lockstep test treats `enforced_at_status: deferred` gotchas as warnings (not failures) until the named path exists; once the path lands, `dome doctor` either silently promotes the status or surfaces a one-line "deferred mitigation now exists; remove `enforced_at_status: deferred`" pointer. This semantic mirrors `coverage: deferred` for the gotcha's own test file, applied to the enforcement-anchor path. Omitting `enforced_at_status` (the modal case) means the named path must exist at lockstep-test time.
 
 **`linter` extension type** *(docs/wiki/linters/<slug>.md)*. Linter specs declare convention-with-grep rules that may or may not have shipped lockstep tests. The `tier:` field declares the active-enablement intent (matching the invariant tier vocabulary); `target_version:` names when the lockstep ships if not yet (e.g., `v0.5.1`); `status:` is one of `shipped` (lockstep is live), `planned` (lockstep is named but not yet shipped — the doc is convention-with-grep until then), or `deferred` (no lockstep planned; the doc is documentation-only). A linter doc declaring `status: shipped` without a corresponding test file is a substrate violation; a future `dome doctor` check or `tests/integration/linter-coverage.test.ts` would catch this.
+
+**`daily` and `weekly` extension types** *(Phase 1 dailies bundle)*. The first-party `dailies` extension bundle (per [[wiki/specs/sdk-surface]] §"Extension bundles" and [[wiki/matrices/extension-bundle-shape]]) contributes two page types when loaded into a vault:
+
+```yaml
+# Contributed by .dome/extensions/dailies/page-types.yaml
+extensions:
+  - name: daily
+    frontmatter_extras:
+      date: <YYYY-MM-DD>             # required; the calendar date of the daily
+      prev: <wikilink-or-null>        # required; previous daily for navigation
+      next: <wikilink-or-null>        # required; next daily for navigation
+      tags: <string-array>            # optional; freeform
+  - name: weekly
+    frontmatter_extras:
+      week: <YYYY-W##>                # required; ISO week identifier
+      dailies: <wikilink-array>       # required; the seven (or fewer) daily pages this week aggregates
+      tags: <string-array>            # optional
+```
+
+Daily and weekly pages land in `wiki/dailies/<YYYY-MM-DD>.md` and `wiki/weeklies/<YYYY-W##>.md` respectively. The `date:` / `week:` frontmatter is the canonical truth (re-derivable from the filename, but explicit for grep + Obsidian-Templater compatibility). Open `- [ ]` task lines in dailies follow Obsidian Tasks plugin syntax (`- [ ] #task ... ⏫ ✅ YYYY-MM-DD`), respected unchanged by Dome's tools — see [[wiki/matrices/extension-bundle-shape]] §"`dailies`" for the bundle's full contribution catalog.
 
 A gotcha doc without a `coverage:` field is a frontmatter-validation soft warning (per the rule below); the lockstep test treats it as missing data and the gotcha's lockstep status is undefined until the field lands. An `off-matrix` gotcha doc without an `enforced_at:` field is a frontmatter-validation hard warning — the lockstep test cannot verify the "mitigation exercised elsewhere" claim without the path pin, and an unverifiable claim is reviewer-memory rather than structure.
 

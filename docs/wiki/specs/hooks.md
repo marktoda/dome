@@ -66,13 +66,25 @@ The programmatic form supports arbitrary logic. The handler receives the event p
 ### Declarative — `.dome/hooks/*.yaml`
 
 ```yaml
-event: document.written
+event: document.written          # optional when schedule: is present; required otherwise
 path_pattern: "inbox/raw/*"     # optional filter on the path field
+schedule: "0 6 * * *"            # optional cron expression; mutually exclusive with event in spirit, both allowed
 workflow: ingest                 # name of a prompt-with-workflow-frontmatter
 async: true                      # optional; defaults to true
+idempotent: true                 # optional; defaults to true. See §"The idempotency contract".
 ```
 
 The declarative form is sugar for the common case: "when X happens, run workflow Y." The dispatcher reads the YAML, builds a handler that loads the named workflow's prompt + tool subset (see [[wiki/specs/prompts-and-workflows]]) and runs it against the harness-bound LLM.
+
+The YAML schema is validated by `DeclarativeHookSchema` in `src/hooks/yaml-loader.ts`. Invalid YAML — missing required fields, unknown workflow name, malformed cron expression, mutually-incompatible field combinations — is rejected at load time with a `validation` error logged to `log.md`; the hook is not registered.
+
+#### Schedule field — cron-driven hooks
+
+A `schedule:` field carries a 5-field cron expression (`<minute> <hour> <dom> <month> <dow>`) validated at load time. When present, the hook fires on the cron schedule *in addition to* whatever `event:` it declares; an event-only hook fires only on event matches, a schedule-only hook fires only on the cron schedule, and a hook with both fires on either trigger. The per-vault scheduler in `wireDispatcher` consults `.dome/state/scheduled.json` (extended to also track schedule-driven hook last-fire times alongside the existing scheduled-event mechanism) and synthesizes `clock.tick.<hook-id>` events when intervals elapse.
+
+The catch-up semantic is **at most one fire per `dome reconcile` run, regardless of how many intervals elapsed.** A hook with `schedule: "0 6 * * *"` that missed three days fires exactly once on the next reconcile — not three times. See [[wiki/gotchas/scheduled-hook-idempotency]] for the full contract and the rationale for the at-most-once clamp.
+
+Schedule-only hooks default `event:` omission. The YAML loader accepts a YAML without an `event:` field only when `schedule:` is present; otherwise `event:` is required.
 
 #### Bare events expand to suffix wildcards
 
@@ -95,16 +107,24 @@ The **drop-zone intake pattern** uses the declarative form exclusively. The prin
 
 ## Adding a new hook
 
-Three forms by mechanism; one rule by shape. The "bare-event expansion" rule from §"Bare events expand to suffix wildcards" above is **load-bearing** — read it first, because it's the trap every hook author hits.
+Four forms by mechanism; one rule by shape. The "bare-event expansion" rule from §"Bare events expand to suffix wildcards" above is **load-bearing** — read it first, because it's the trap every hook author hits.
 
-**Declarative form (the default).** New YAML at `<vault>/.dome/hooks/<name>.yaml`. Two file edits if the hook listens on a new bucket:
+**Declarative event-reactive form (the default).** New YAML at `<vault>/.dome/hooks/<name>.yaml`. Two file edits if the hook listens on a new bucket:
 
-1. The YAML file itself (`event:`, optional `path_pattern:`, `workflow:`, optional `async:`).
+1. The YAML file itself (`event:`, optional `path_pattern:`, `workflow:`, optional `async:`, optional `idempotent:`).
 2. If the hook listens on a fresh intake bucket (e.g., `inbox/voice/*`), create the directory in the vault scaffold (or document the manual `mkdir` in the hook header). Hooks watching `inbox/raw/*` need no scaffold edit — that bucket ships by default.
 
 The dispatcher reads the YAML on `openVault`; the `wrote-document` effect's projection (`document.written.<category>.<type>`) hits the registry pattern `<event>.*` (per §"Bare events expand to suffix wildcards"). Authors of the YAML form do nothing about the wildcard expansion — it is invisible at the YAML layer.
 
+**Declarative schedule-driven form.** New YAML at `<vault>/.dome/hooks/<name>.yaml` with a `schedule:` field carrying a cron expression. One file edit:
+
+1. The YAML file itself (`schedule:` is required; `event:` is optional — omit it for a schedule-only hook, include it for a hook that fires on both triggers; `workflow:` and optional `async:` / `idempotent:`).
+
+The per-vault scheduler reads the schedule on `openVault`, persists last-fire times in `.dome/state/scheduled.json`, and synthesizes `clock.tick.<hook-id>` events when intervals elapse — both at live `dome serve` runtime and during `dome reconcile` Phase 3 (clamped to at most one fire per reconcile run; see [[wiki/gotchas/scheduled-hook-idempotency]]). The Phase 1 `dailies` bundle's `create-daily.yaml` is the canonical example (`schedule: "0 6 * * *"`).
+
 **Programmatic form (v0.5.1+).** New TS at `<vault>/.dome/hooks/<name>.ts` exporting a `RegisteredHook`. v0.5 ships the source partition in code (`HookSource = "sdk" | "plugin" | "vault-local"`) and the dispatcher partitions `HookContext.privilegedWriter` accordingly; the loader path that picks up vault-local `.ts` hooks ships in v0.5.1. Until then, programmatic hooks ship only as shipped-default SDK hooks under `src/hooks/<name>.ts` exported from `@dome/sdk` core.
+
+**Bundle-contributed form.** A hook contributed by an extension bundle at `<vault>/.dome/extensions/<bundle>/hooks/<name>.yaml` (or `.ts` in v0.5.1+). The bundle loader registers the hook with ID `<bundle>:<name>`, namespacing it against cross-bundle collision per [[wiki/gotchas/extension-bundle-load-order]]. The hook YAML itself is the same shape as the vault-local declarative form; the bundle provides packaging + namespacing. See [[wiki/specs/sdk-surface]] §"Extension bundles" and [[wiki/matrices/extension-bundle-shape]] for the full bundle mechanism.
 
 **Shipped-default form.** A hook the SDK enables in every vault unless explicitly disabled. Five file edits:
 
@@ -184,6 +204,8 @@ See [[wiki/specs/cli]] §"`dome lint`" for the full propose/apply contract.
 ## Execution model
 
 - **Async by default.** When a Tool returns its Effects, the Hook dispatcher enqueues matching events to a background queue and the Tool returns to its caller immediately.
+- **Manual invocation.** The `dome run-hook <id>` CLI command synthesizes a `hook.manual.invoked` event with the named hook's ID in the payload, dispatched as if it had fired naturally. The dispatcher matches the event against the hook by ID and runs the handler. Useful for backfill, dogfood, and integration testing — see [[wiki/specs/cli]] §"`dome run-hook`".
+- **Schedule-driven invocation.** Hooks with a `schedule:` field fire on cron intervals via a per-vault scheduler in `wireDispatcher`. The scheduler reads `.dome/state/scheduled.json` for each schedule-driven hook's last-fire time, fires when the next interval is due (at live `dome serve` runtime) or on the next `dome reconcile` Phase 3 (catch-up, clamped to at most one fire per reconcile per hook). The scheduler synthesizes `clock.tick.<hook-id>` events; the hook's handler matches by ID. See [[wiki/gotchas/scheduled-hook-idempotency]] for the catch-up contract.
 - **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a frontmatter-shape validator that gates whether the write proceeds, or any future hook with a hard pre-write contract.
 - **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap for long-running shells that survive process death.
 - **Queue concurrency.** v0.5 ships with `asyncConcurrency: 1` (serialized hook execution per Vault). The setting is plumbed as a `HookDispatcherOpts.asyncConcurrency` field with default `1`. Serialization is the v0.5 default because per-vault hook handlers may share state through `.dome/state/`, write through the privileged-writer in append-only patterns, and read-after-write ordering of `auto-update-index` matters for `dome doctor` checks. v1 mobile/desktop shells with many concurrent inbox events may bump the knob; the default stays serialized because the in-process queue is intentionally low-concurrency and the per-(handler, target) repetition check is per-job, not per-queue.
@@ -351,10 +373,12 @@ Tools are the only mutation surface. Hooks are the only reaction surface. Every 
 - "Run X workflow on Y kind of input" → declarative hook on `document.written` with a path filter and a workflow name.
 - "Notify me when Z happens" → programmatic hook on event Z calling an external notification.
 - "Maintain a derived view of pages" → programmatic hook on `document.written.*` that updates an index page via `writeDocument`.
-- "Schedule daily lint" → declarative hook on `clock.tick.daily` invoking the `lint` workflow.
+- "Create a daily note every morning at 6am" → declarative hook with `schedule: "0 6 * * *"` invoking a `create-daily` workflow.
+- "Roll up the week's dailies on Sunday evening" → declarative hook with `schedule: "0 18 * * 0"` invoking a `weekly-rollup` workflow.
 - "Auto-cross-reference new entities" → the shipped `auto-cross-reference` hook (or your own variant).
+- "Bundle a page type + preamble + workflows + hooks as one coherent feature" → an extension bundle per [[wiki/specs/sdk-surface]] §"Extension bundles".
 
-If a feature can't be expressed as Tool registration + Hook registration, the four-concept core is missing something. The four-concept core is sealed; new behavior surfaces do not appear in v0.5. Future extension lands via Tool registration + Hook registration, never as new core primitives.
+If a feature can't be expressed as Tool registration + Hook registration (with optional bundling), the four-concept core is missing something. The four-concept core is sealed; new behavior surfaces do not appear in v0.5. Future extension lands via Tool registration + Hook registration (in bundles or vault-local), never as new core primitives.
 
 ## Why this design
 
@@ -368,3 +392,5 @@ The hook system is what makes Dome stable as a substrate while flexible as a pro
 - [[wiki/matrices/event-types-and-payloads]] — canonical event taxonomy.
 - [[wiki/gotchas/async-read-after-write-staleness]] — reads after writes may not see hook follow-on.
 - [[wiki/gotchas/hook-cycle]] — per-(handler, target) repetition check + depth safety net.
+- [[wiki/gotchas/scheduled-hook-idempotency]] — schedule-driven hook catch-up semantics on reconcile.
+- [[wiki/gotchas/extension-bundle-load-order]] — bundle-contributed hook namespacing and collision.

@@ -32,13 +32,15 @@ A Dome vault is a directory containing:
     <intake-buckets>/   # opt-in intake buckets — voice/, research/, clip/ — activated via hook template + directory create
     review/             # shipped-default destination (NOT an intake) — created by `dome init`; holds `dome lint` reports awaiting user review; see wiki/specs/cli §"dome lint"
   .dome/                # vault-internal configuration and extensions
-    page-types.yaml     # allowed page types: defaults + extensions
+    page-types.yaml     # allowed page types: defaults + extensions (vault-local + bundle-contributed)
     config.yaml         # vault configuration (invariant overrides, hook settings, etc.)
     prompts/            # vault-local prompt overrides
     hooks/              # vault-local hooks: *.ts (programmatic) and *.yaml (declarative)
     tools/              # vault-local tool additions (rarely used)
     cli/                # vault-local CLI command additions (rarely used)
-    state/              # derived: scheduled.json, last-reconciled-sha.txt (gitignored)
+    extensions/         # extension bundles (per wiki/specs/sdk-surface §"Extension bundles")
+      <bundle-name>/    # each bundle: manifest.yaml + any of page-types.yaml, preamble.md, workflows/, hooks/, cli/, tools/
+    state/              # derived: scheduled.json, last-reconciled-sha.txt, quarantined.json (gitignored)
   .git/                 # git repository (axiom: every Dome vault is a git repo)
   .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
@@ -53,8 +55,8 @@ What gets committed to git:
 
 - `VISION.md`, `README.md`, `index.md`, `log.md` — committed.
 - `raw/`, `notes/`, `wiki/`, `inbox/` — all committed. Reconciliation works against committed AND uncommitted state.
-- `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/` — committed (these are the vault's identity).
-- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconciled-sha.txt` + `scheduled.json`).
+- `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/extensions/` — committed (these are the vault's identity, including which extension bundles the vault has installed).
+- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconciled-sha.txt`, `scheduled.json`, `quarantined.json`).
 
 ### Derived operational state under `.dome/`
 
@@ -116,6 +118,7 @@ extensions:
 | `index.md` | Dome dispatcher | Mutated only by `dispatcher.writeIndex`, invoked by the `auto-update-index` shipped-default hook. `writeDocument('index.md', ...)` rejects unconditionally per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. |
 | `log.md` | Dome dispatcher | Mutated only by `dispatcher.appendLogEntry`, called internally by the `appendLog` Tool. Append-only per [[wiki/invariants/LOG_IS_APPEND_ONLY]]; dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. `writeDocument('log.md', ...)` rejects unconditionally. |
 | `.dome/` | User (mostly) and shipped configs | User-authored; tools never mutate. |
+| `.dome/extensions/<bundle>/` | Bundle author (SDK for first-party; user/community for vault-local installs) | Files in a loaded bundle are read at `openVault` and re-read on `dome doctor --repair`. Editing a bundle's `preamble.md` requires `--repair` to refresh AGENTS.md; editing a bundle's `hooks/*.yaml` takes effect on next `openVault`. The bundle directory is committed to git as part of the vault's identity. |
 | `VISION.md`, `README.md` | User | Dome reads, never writes. |
 
 ## Vault discovery

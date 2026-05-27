@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[cohesive/brainst
 
 This spec is normative for the `dome` command-line interface in v0.5. The CLI is **the primary explicit-operation surface across every consumer shell** — the way both the user (from any terminal) and an agentic harness (via shell-execution: Claude Code's `Bash`, Cursor's equivalent, etc.) invoke named structured operations against a vault. It is also the home for the things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
 
-The CLI is intentionally small. **Eight commands**. Each maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
+The CLI is intentionally small. **Nine commands** in the shipped SDK; extension bundles can contribute additional bundle-conditional commands per [[wiki/specs/sdk-surface]] §"Extension bundles" (e.g., the first-party `dailies` bundle contributes `dome migrate-dailies` when installed). Each shipped command maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
 
 ## `dome init <path>`
 
@@ -198,6 +198,34 @@ When the vault sits inside a larger git repo (the dogfood case), git stats refle
 
 Exit code is 0 on success, 1 if vault open fails, 2 on usage error. A future `dome stats graph` subcommand will add a knowledge-graph visualization; v1 ships only the dashboard.
 
+## `dome run-hook <id>`
+
+Manually invoke a registered hook by ID. Synthesizes a `hook.manual.invoked` event with the hook's ID + caller-supplied payload in the event body; the dispatcher matches the event against the named hook and runs its handler.
+
+```bash
+dome run-hook compile-daily --event.path=wiki/dailies/2026-05-26.md
+dome run-hook dailies:create-daily       # force-fire the dailies bundle's scheduled creator now
+dome run-hook auto-update-index --event.path=wiki/entities/danny.md
+```
+
+Useful for:
+
+- **Backfill** — fire a schedule-driven hook outside its cron interval (e.g., create a daily for a missed past date by passing the date in the event payload).
+- **Dogfood** — exercise a newly-installed hook without waiting for its natural trigger.
+- **Integration testing** — synthesize known-input events against the dispatcher to verify hook behavior.
+
+**Flags:**
+
+- `--event.path=<path>` — set the event's `path` payload field. Required for hooks that filter on `path_pattern`.
+- `--event.payload-json=<json>` — set the event's full payload as a JSON object (merged with `--event.path` if both are passed; `--event.path` takes precedence on key collision).
+- `--vault <path>` — override CWD vault detection.
+
+Refuses if the named hook is not registered (lists available hook IDs in the error). Refuses if the hook is quarantined per [[wiki/specs/hooks]] §"Execution model" (suggests `dome doctor --reset-quarantined-hooks`). Refuses if the vault is mid-merge / mid-rebase per [[wiki/gotchas/dirty-git-state-at-reconcile]].
+
+Exit codes: 0 if the hook fires and its handler completes successfully; 2 on usage error (unknown hook, quarantined hook, malformed payload JSON); nonzero on handler failure (the failure is also logged to `log.md` per the standard hook-failure path).
+
+Manually-invoked hooks are NOT subject to the idempotency contract's reconcile-skip semantic — they fire regardless of the hook's `idempotent:` declaration. The user invoking `dome run-hook` is asserting "I want this to run now"; suppressing the fire because the hook is non-idempotent would defeat the command's purpose. Use with care on hooks with external side effects.
+
 ## `dome export-context <topic>`
 
 Produce a markdown context-packet for cross-AI handoff.
@@ -228,23 +256,31 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 
 ## Adding a new command
 
-Adding a ninth `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
+Adding a tenth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
 
-1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing seven `domeX` exports.
+1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing nine `domeX` exports.
 
 2. **Wire the Commander arm** in `src/cli/cli.ts` `buildProgram` — `program.command("foo").description(...).option(...).action(async (...) => { ... domeFoo(path, opts) ... })`. If the command is workflow-driven, gate it with `requireApiKey()` before the action body runs (the `@dome/sdk/cli` pre-flight pattern at `src/cli/api-key-guard.ts`).
 
 3. **Re-export `domeFoo`** from `src/cli/index.ts`. The `cli-shell-shape` lockstep test (`tests/integration/cli-shell-shape.test.ts`) enumerates implementations in `src/cli/commands/` and asserts each is re-exported from `src/cli/index.ts` — a missed export fails the test.
 
-4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary above ("eight commands today") and the §"Implementation note" command-mapping table.
+4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary above ("nine commands today") and the §"Implementation note" command-mapping table.
 
 5. **Add an end-to-end test** at `tests/integration/end-to-end.test.ts` covering one happy path.
 
 `CliError = ToolError | MissingApiKeyError` is the typed error surface — extend it (not `ToolError`) when a new command introduces a consumer-shell-specific error kind. Pre-flight failures belong on `CliError`; Tool failures belong on `ToolError`. The pass-3 architecture review's §"Adding a CLI command" recipe is the canonical source for this surface; if a future command needs a sixth file edit, this section grows to enumerate it explicitly.
 
+### Bundle-contributed commands
+
+Extension bundles contribute CLI commands via `<vault>/.dome/extensions/<bundle>/cli/<command>.ts` per [[wiki/specs/sdk-surface]] §"Extension bundles". Bundle-contributed commands are **bundle-conditional** — they exist only when the bundle is loaded. The shipped SDK CLI surface stays stable at nine commands; bundles grow the runtime surface independently.
+
+A bundle-contributed command follows the same `domeFoo(path, opts) → Result<FooReturn, CliError>` signature as shipped commands. The bundle loader registers each `<bundle>/cli/*.ts` into the `runCli` command set after vault-local `.dome/cli/*.ts` files; collisions across bundles or with shipped commands abort the load with a `bundle-load-failure` per [[wiki/gotchas/extension-bundle-load-order]]. The first-party `dailies` bundle's `migrate-dailies` command is the canonical example.
+
+Bundle commands appear in `dome --help` output after the SDK's shipped commands; the help text reads from each bundle's CLI file's `description` export. The lockstep test at `tests/integration/extension-bundles-load.test.ts` includes a CLI-command-registration assertion against the test fixture's bundle.
+
 ## Implementation note
 
-CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`, `stats`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
+CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`, `stats`, `run-hook`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 700 LOC; most of the work lives in the workflows and Tools.
 
 ### The shared `--apply` idiom
 
@@ -259,7 +295,7 @@ The shared flag name signals shared semantics (propose-then-apply); the divergen
 
 Core `ToolError` (in `src/types.ts`) enumerates failures the seven Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
 
-The 8 commands map cleanly to user actions:
+The 9 shipped commands map cleanly to user actions:
 
 | Command | Kind | When the user reaches for it |
 |---|---|---|
@@ -270,7 +306,10 @@ The 8 commands map cleanly to user actions:
 | `dome lint` | workflow | Periodic vault hygiene (weekly cron or manual); apply via `dome lint --apply <id>` |
 | `dome stats` | deterministic | Glanceable snapshot of structural state (page count, hubs, log activity, contributors) |
 | `dome doctor` | deterministic | Diagnostic structural check (no LLM) |
+| `dome run-hook` | deterministic | Manually fire a registered hook (backfill, dogfood, integration test) |
 | `dome export-context` | workflow | Cross-AI handoff (paste context into ChatGPT / Cursor / etc.) |
+
+Bundle-conditional commands (present when the named bundle is loaded) include `dome migrate-dailies` (from the `dailies` bundle); see [[wiki/matrices/extension-bundle-shape]] for the full catalog.
 
 ## Related
 

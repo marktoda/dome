@@ -6,13 +6,13 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Specs
 
-- [[wiki/specs/cli]] — The 8-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, export-context.
+- [[wiki/specs/cli]] — The 9-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, run-hook, export-context. Bundle-contributed commands (e.g., `dome migrate-dailies` from the dailies bundle) appear when their bundles are loaded.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile); MCP available as a non-primary fifth surface.
 - [[wiki/specs/hooks]] — Hook registration, shipped defaults, opt-in intakes, durability and reconciliation.
 - [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/prompts-and-workflows]] — Prompt library; workflows as prompts with frontmatter; tier-classified workflows.
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), Tool catalog, tiered feature model, why-this-design principles, dependency list.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), the 8-Tool catalog (now including `upsertSection`), extension bundles as a packaging convention, tiered feature model, why-this-design principles, dependency list.
 - [[wiki/specs/vault-layout]] — Directory structure, category from path, ownership rules, git repository structure, derived operational state.
 
 ## Invariants
@@ -40,6 +40,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 - [[wiki/matrices/consumer-surface]] — Consumer shell × exported symbol family × entrypoint (`core` / `workflows` / `mcp` / `cli`).
 - [[wiki/matrices/event-types-and-payloads]] — Event name × emitting tool × payload × example hooks.
+- [[wiki/matrices/extension-bundle-shape]] — Extension bundle × five contribution kinds (page-type, preamble, workflows, hooks, CLI commands).
 - [[wiki/matrices/intent-prompt-tools]] — User intent × workflow prompt × bound tools × effects.
 - [[wiki/matrices/tool-invariant-enforcement]] — Tool × invariant enforcement matrix.
 
@@ -53,10 +54,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
 - [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-reconcile.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome reconcile` refuses to run during mid-merge / mid-rebase.
+- [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declaring the same page type collide at load time; `openVault` rejects with `bundle-load-failure`.
 - [[wiki/gotchas/hook-cycle]] — Hook A triggers Tool that fires event that triggers hook A.
 - [[wiki/gotchas/hook-non-idempotent]] — Non-idempotent hooks double-fire effects during reconciliation.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the watcher catches them.
+- [[wiki/gotchas/scheduled-hook-idempotency]] — Schedule-driven hooks fire at-most-once per `dome reconcile` regardless of intervals missed; `idempotent:` declaration has narrower semantics than for event-reactive hooks.
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 

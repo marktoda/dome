@@ -156,11 +156,11 @@ type Effect =
 
 Tools never throw on invariant violations. They return `Result.err({ kind: 'invariant-violated', invariant: 'RAW_IS_IMMUTABLE', detail: ... })`. Throwing is reserved for SDK bugs.
 
-#### Tool catalog (the seven)
+#### Tool catalog (the eight)
 
-The SDK ships exactly **seven Tools**. Anything beyond mutation primitives is a workflow (a prompt the agent loads) or a hook (a handler against events) — see the anti-concept list below.
+The SDK ships exactly **eight Tools**. Anything beyond mutation primitives is a workflow (a prompt the agent loads) or a hook (a handler against events) — see the anti-concept list below.
 
-Naming convention: Tools that operate on any Document use `<verb>Document`; Tools that operate on a specific Dome surface (`log.md`, the index, wikilinks) use their surface-specific name.
+Naming convention: Tools that operate on any Document use `<verb>Document`; Tools that operate on a specific Dome surface (`log.md`, the index, wikilinks, marker-delimited page sections) use their surface-specific name.
 
 `(auto)` in the Invariants column means the Tool's effect array always includes the corresponding Effect — the caller does not separately invoke that Effect's producer Tool. For `EVERY_WRITE_IS_LOGGED (auto)`, the Tool emits its `appendLog` Effect alongside the primary mutation Effect; the caller does not call `appendLog` explicitly. The matrix at [[wiki/matrices/tool-invariant-enforcement]] spells the same semantic per-cell ("emits appendLog effect when default enabled").
 
@@ -168,21 +168,22 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 |---|---|---|
 | `readDocument` | Read a Document by path. | — |
 | `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `PAGE_CREATION_REQUIRES_RECURRENCE` |
+| `upsertSection` | Idempotently insert or update a marker-delimited section of an existing Document. Find-or-create by `<!-- section:<key> -->` markers; replace section body in place if the markers exist, append the section with markers if they don't. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto) |
 | `appendLog` | Append an entry to `log.md`. The only mutation primitive for `log.md`. | **`LOG_IS_APPEND_ONLY`** |
 | `searchIndex` | Search the index + page bodies for matches. | — |
 | `wikilinkResolve` | Resolve a wikilink to a Document or `null`. | `WIKILINKS_ARE_FULLPATH` |
 | `moveDocument` | Move a Document; rewrites incoming wikilinks atomically. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
 | `deleteDocument` | Delete a Document. Refuses under `raw/`. Fires `document.deleted.<category>.<type>` so cleanup hooks can react. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto) |
 
-`writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`; lint reports write to `inbox/review/lint-report-YYYY-MM-DD.md`. The path determines the category and the invariant-enforcement profile.
+`writeDocument` is the universal mutation entrypoint for creates and updates. `upsertSection` is the idempotent-by-construction mutation for marker-delimited subsections — used by extension-bundle workflows that append-or-update narrative sections on existing pages (entity "Recent context", concept "Recent positions", weekly-rollup sections) without duplicating on re-fire. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`; lint reports write to `inbox/review/lint-report-YYYY-MM-DD.md`. The path determines the category and the invariant-enforcement profile.
 
-The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
+The catalog is open: plugins register additional Tools through the registration mechanism. The eight above are the entirety of what the SDK ships.
 
 #### Tool catalog is one declarative array
 
-The seven Tools above are declared once, in `src/tools/registry.ts`, as the canonical `TOOL_REGISTRY`. Every downstream catalog — the `BoundToolSurface` exposed on `Vault.tools`, the AI SDK `ToolSet` produced by `projectAiSdk(vault)`, the MCP `ToolAdapter[]` produced by `renderMcp(surface)`, the snake_case names in `MCP_TOOL_NAMES`, the Zod enum that validates workflow-prompt frontmatter `tools:` lists — derives from this one array. Adding an 8th Tool in v0.5.1 / v1+ is two file edits: a new `src/tools/<name>.ts` implementation, and one new entry in the registry. `renderMcp`, the AI SDK exposure, the frontmatter validator, and the bound surface all pick it up automatically.
+The eight Tools above are declared once, in `src/tools/registry.ts`, as the canonical `TOOL_REGISTRY`. Every downstream catalog — the `BoundToolSurface` exposed on `Vault.tools`, the AI SDK `ToolSet` produced by `projectAiSdk(vault)`, the MCP `ToolAdapter[]` produced by `renderMcp(surface)`, the snake_case names in `MCP_TOOL_NAMES`, the Zod enum that validates workflow-prompt frontmatter `tools:` lists — derives from this one array. Adding a 9th Tool in v0.5.1 / v1+ is two file edits: a new `src/tools/<name>.ts` implementation, and one new entry in the registry. `renderMcp`, the AI SDK exposure, the frontmatter validator, and the bound surface all pick it up automatically.
 
-This is the structural enforcement of "seven Tools, sealed." Prior to the registry, the seven names lived in five+ parallel catalogs and the seal depended on reviewer attention.
+This is the structural enforcement of "the canonical Tool set, sealed." Prior to the registry, the canonical names lived in five+ parallel catalogs and the seal depended on reviewer attention.
 
 #### Tool signatures
 
@@ -210,6 +211,19 @@ writeDocument(input: {
     // ↑ required when create=true AND PAGE_CREATION_REQUIRES_RECURRENCE enabled;
     //   otherwise optional. Logged with the page-creation log entry.
   }
+}): ToolReturn<Document>
+
+// Idempotent marker-delimited section update.
+// Finds <!-- section:<sectionKey> --> ... <!-- /section:<sectionKey> --> markers
+// in the document body; replaces the content between them with `content`.
+// If markers are absent, appends the markers + content to the end of the body.
+// Re-running with the same `(path, sectionKey, content)` produces no diff
+// (the read-write cycle short-circuits when content matches).
+upsertSection(input: {
+  path: string;
+  sectionKey: string;          // identifier embedded in the marker; e.g., "recent-context-2026-05-26"
+  content: string;             // section body; markdown
+  expected_mtime?: string;     // optimistic locking on the underlying document
 }): ToolReturn<Document>
 
 // Append-only log mutation
@@ -303,7 +317,71 @@ Five kinds of registration:
 | Page type | String label + optional schema | `.dome/page-types.yaml` defaults block | `.dome/page-types.yaml` extensions block |
 | CLI command | (name, handler) | SDK package `cli/` | `<vault>/.dome/cli/*.ts` |
 
-The 5×3 registration matrix is exhaustive. "Plugins" is a packaging convention — an npm package that registers any combination of the five kinds — not a primitive.
+The 5×3 registration matrix is exhaustive. "Plugins" is a packaging convention — an npm package that registers any combination of the five kinds — not a primitive. **Extension bundles** are the second packaging convention — a vault-local directory under `<vault>/.dome/extensions/<name>/` that registers any combination of the five kinds; see §"Extension bundles" below.
+
+## Extension bundles
+
+An **extension bundle** is a packaging convention: a directory under `<vault>/.dome/extensions/<bundle-name>/` containing a `manifest.yaml` plus any combination of the five registration kinds. Bundles are *not* a new primitive — they are a coherent unit of vault-local additions over the existing 5-kind registration surface. The bundle mechanism makes "ship one feature as a coherent unit" possible without each feature having to hand-thread its page-type registration, AGENTS.md teaching, workflows, hooks, and CLI commands into the vault separately.
+
+### Bundle directory shape
+
+```
+<vault>/.dome/extensions/<bundle-name>/
+  manifest.yaml          # bundle identity: name, version, optional deps
+  page-types.yaml        # optional — extension types this bundle contributes
+  preamble.md            # optional — fragment threaded into AGENTS.md templated section
+  workflows/             # optional — prompt files with workflow frontmatter
+    *.md
+  hooks/                 # optional — declarative YAML (v0.5) or programmatic TS (v0.5.1+)
+    *.yaml
+  cli/                   # optional — bundle-contributed CLI commands
+    *.ts
+  tools/                 # optional — bundle-contributed Tools (v0.5.1+)
+    *.ts
+```
+
+The five contribution kinds map one-to-one onto the registration kinds in the §"Registration" table above. A bundle that contributes only a page type and a hook is a valid bundle; a bundle that contributes nothing (empty directory besides `manifest.yaml`) loads as a no-op. See [[wiki/matrices/extension-bundle-shape]] for the canonical map of which bundle contributes which kinds.
+
+### `manifest.yaml` schema
+
+```yaml
+name: dailies              # required; matches directory name
+version: 1.0.0             # required; semver
+description: "..."         # optional
+deps: []                   # optional; future v0.5.1+ for cross-bundle dependencies
+```
+
+`name` MUST equal the bundle's directory name; the loader rejects mismatches with a `bundle-name-mismatch` validation error. `version` is informational in v0.5; v0.5.1+ may layer dependency resolution.
+
+### Bundle load lifecycle
+
+`openVault` loads bundles after vault-local files in the existing load order (SDK defaults → plugins → vault-local → **extension bundles**). Bundles within `.dome/extensions/` load alphabetically by directory name. Each loaded bundle:
+
+1. **Page-types merge.** Entries in `<bundle>/page-types.yaml extensions:` are appended to the vault's `PageTypesConfig.extensions` list. Cross-bundle name collisions reject the load per [[wiki/gotchas/extension-bundle-load-order]].
+2. **Preamble fragment.** `<bundle>/preamble.md` content is captured for inclusion in AGENTS.md's templated `## Extension conventions` section on the next `dome doctor --repair` (and on `dome init` for fresh vaults). Per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] §"Extension-bundle preamble fragments", fragments render in load order as subsections.
+3. **Workflows merge.** `<bundle>/workflows/*.md` are added to the vault's `PromptLoader` per [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle". The loader scans extension directories alongside `<vault>/.dome/prompts/`.
+4. **Hooks register.** `<bundle>/hooks/*.yaml` (and `*.ts` in v0.5.1+) are registered against the vault's `HookRegistry` with ID `<bundle>:<filename>`. The bundle-name prefix prevents cross-bundle hook-ID collision.
+5. **CLI commands register.** `<bundle>/cli/*.ts` are added to the `runCli` command set, appearing in `dome --help` after the SDK's shipped commands.
+6. **Tools register** (v0.5.1+). `<bundle>/tools/*.ts` are added to the vault's tool registry, projected into `BoundToolSurface`, `projectAiSdk`, and `renderMcp` automatically via the registry-derives-from-one-array pattern.
+
+The bundle loader is **fail-loud**: a malformed `manifest.yaml`, a missing referenced workflow, an invalid hook YAML, or a cross-bundle collision aborts `openVault` with a `bundle-load-failure` `ToolError`. The hand-installed v0.5 use case benefits from immediate feedback over silent skip-and-continue.
+
+### How bundles ship
+
+First-party bundles ship from the SDK at `assets/extensions/<bundle-name>/`. The Phase 1 `dailies` bundle (page type + preamble + creator workflows + scheduled hooks + the bundle-contributed `migrate-dailies` CLI command) is the first such ship; subsequent first-party bundles (`aggregation` for weekly/monthly rollups, `recall` for query workflows) ship the same way.
+
+Users install a first-party bundle by copying its directory into `<vault>/.dome/extensions/`:
+
+```bash
+cp -r $(bun pm root)/@dome/sdk/assets/extensions/dailies ~/vaults/work/.dome/extensions/
+dome doctor --repair    # regenerates AGENTS.md with the dailies preamble fragment
+```
+
+A `dome install-extension <name>` CLI helper is deferred to v0.5.1+; v0.5 ships the copy-by-hand pattern documented above. Third-party bundles follow the same copy-into-`.dome/extensions/` path; npm-distributable bundles are a v1+ concern out of scope for v0.5.
+
+### Why bundles aren't a new primitive
+
+A bundle is fundamentally just a directory of registration entries that happen to be packaged together. The substrate concept is still the 5-kind registration surface; "bundle" is a load-grouping convention that makes ergonomic features (page-type + preamble + workflows + hooks shipped as one unit) practical. Adding a bundle does not extend the four-concept core (Vault, Document, Tool, Hook); it composes registrations.
 
 ## Tiered feature model
 
@@ -354,6 +432,32 @@ describe("HOOK_DISPATCH_IS_VAULT_BOUND (off-matrix)", () => {
 The dynamic `import("...")` runs the linked test file's `describe`/`test` blocks; a regression in either projection fails the lockstep stub's test for the off-matrix invariant. The `expect(true).toBe(true)` shape is **not** the convention — it produces a stub that AC3 accepts but that enforces nothing.
 
 The AC3 meta-check at `tests/integration/invariant-coverage.test.ts` requires the lockstep file to either run a `describe()` block referencing the enforcement test (for off-matrix invariants) or contain at least one `expect()` call against vault state (for on-matrix invariants). The check is a structural fence against the no-op stub shape the pass-3 architecture review surfaced.
+
+### Adding a new extension bundle
+
+Three file edits at minimum, plus optional contributions across the five registration kinds. Paralleling the "Adding an 8th Tool" and "Adding a new invariant" recipes:
+
+1. **Create the bundle directory** at `assets/extensions/<name>/` (for SDK-shipped first-party bundles) or document the vault-local copy path. The directory name IS the bundle name.
+
+2. **Write `manifest.yaml`** declaring `name: <name>` (must match directory) and `version: <semver>`. Optional `description:` and `deps:` (deps are informational in v0.5).
+
+3. **Write `preamble.md`** explaining the bundle's conventions in agent-readable prose. This is the single most-important contribution — it's what teaches the agent how to write into the bundle's domain correctly. The fragment renders as a subsection of AGENTS.md's templated `## Extension conventions` section per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] §"Extension-bundle preamble fragments".
+
+The bundle then optionally contributes to any of the five registration kinds:
+
+4. **Page types** — declare in `<bundle>/page-types.yaml extensions:` block per [[wiki/specs/page-schema]] §"Extension types". Each contributed type creates a `wiki/<plural>/` recognized directory and (optionally) a frontmatter schema.
+
+5. **Workflows** — markdown prompts in `<bundle>/workflows/<name>.md` with workflow frontmatter per [[wiki/specs/prompts-and-workflows]]. The bundle's workflows are loaded by the per-Vault `PromptLoader` alongside vault-local prompts.
+
+6. **Hooks** — declarative YAML in `<bundle>/hooks/<name>.yaml` (event-reactive or schedule-driven per [[wiki/specs/hooks]] §"Adding a new hook"). Hook IDs are bundle-namespaced as `<bundle>:<filename>` to prevent cross-bundle collision.
+
+7. **CLI commands** — TypeScript in `<bundle>/cli/<command>.ts`, mirroring vault-local `<vault>/.dome/cli/*.ts` shape. Appear in `dome --help` when the bundle is loaded.
+
+8. **Tools** (v0.5.1+) — TypeScript in `<bundle>/tools/<name>.ts`, registered into `TOOL_REGISTRY` at bundle load.
+
+For each contributed kind, add a row (or update the existing row) to [[wiki/matrices/extension-bundle-shape]] naming which filename in the bundle provides the contribution. The matrix is the structural pin: a first-party bundle the SDK ships without a row in the matrix is a substrate violation (v0.5.1 lockstep test catches this).
+
+The Phase 1 `dailies` bundle is the canonical example: contributes `daily` and `weekly` page types, a preamble explaining Obsidian-Tasks-plugin-syntax conventions and the carry-forward semantic, two creator workflows + their schedule-driven hooks, and the `migrate-dailies` CLI command.
 
 ## Consumer surfaces
 
