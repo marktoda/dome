@@ -1,22 +1,15 @@
-// HOOK_DISPATCH_IS_VAULT_BOUND is off-matrix (projection-construction enforced).
-// The AC3 lockstep slot points at the two integration tests that pin the
-// behavior across the two v0.5-shipped projections (MCP path + AI-SDK path).
-// See docs/wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND.md §"Structural enforcement"
-// and docs/wiki/matrices/tool-invariant-enforcement.md §"HOOK_DISPATCH_IS_VAULT_BOUND
-// — projection-enforced (off-matrix)".
+// AC3 lockstep counterpart for HOOK_DISPATCH_IS_VAULT_BOUND.
+// Delegates to the two canonical enforcement tests via dynamic import —
+// one for the MCP projection path, one for the AI-SDK projection path.
+// See docs/wiki/specs/sdk-surface.md §"Off-matrix lockstep convention".
 
-import { describe, test, expect } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { describe, test } from "bun:test";
 
-describe("HOOK_DISPATCH_IS_VAULT_BOUND (off-matrix lockstep)", () => {
-  test("MCP path integration test exists at tests/integration/mcp-hook-dispatch.test.ts", () => {
-    const path = join(import.meta.dir, "..", "integration", "mcp-hook-dispatch.test.ts");
-    expect(existsSync(path)).toBe(true);
+describe("HOOK_DISPATCH_IS_VAULT_BOUND (off-matrix lockstep — delegates to projection tests)", () => {
+  test("MCP projection enforcement lives in tests/integration/mcp-hook-dispatch.test.ts", async () => {
+    await import("../integration/mcp-hook-dispatch.test");
   });
-
-  test("AI-SDK path integration test exists at tests/integration/ai-sdk-hook-dispatch.test.ts", () => {
-    const path = join(import.meta.dir, "..", "integration", "ai-sdk-hook-dispatch.test.ts");
-    expect(existsSync(path)).toBe(true);
+  test("AI-SDK projection enforcement lives in tests/integration/ai-sdk-hook-dispatch.test.ts", async () => {
+    await import("../integration/ai-sdk-hook-dispatch.test");
   });
 });

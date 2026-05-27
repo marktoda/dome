@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
 import { reconcile } from "../../src/reconcile";
-import type { HookEvent } from "../../src/hook-context";
+import type { HookEvent } from "../../src/hooks/hook-context";
 
 describe("reconcile end-to-end: drop -> reconcile detects -> event fires", () => {
   test("reconcile emits document.written.inbox.raw for a file dropped into inbox/raw/", async () => {

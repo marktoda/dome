@@ -14,7 +14,6 @@ import { MockLanguageModelV3 } from "ai/test";
 import { runWorkflow } from "../../src/workflows/agent-loop";
 import { openVault } from "../../src/vault";
 import { makeFixtureVault } from "../../src/eval/fixture-vault";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 import { resolveRef, log as gitLog } from "../../src/git";
 
 // A two-step mock: step 1 issues a writeDocument tool call; step 2 responds
@@ -79,7 +78,7 @@ describe("per-workflow atomic commit", () => {
 
       const result = await runWorkflow(
         openRes.value,
-        WorkflowName.Ingest,
+        "ingest",
         "Capture an Atlas entity page",
         { model: makeWriteDocumentMockModel("wiki/entities/atlas.md") },
       );
@@ -116,7 +115,7 @@ describe("per-workflow atomic commit", () => {
       if (!openRes.ok) return;
       const result = await runWorkflow(
         openRes.value,
-        WorkflowName.Ingest,
+        "ingest",
         "Capture an Atlas entity page",
         {
           model: makeWriteDocumentMockModel("wiki/entities/atlas.md"),
@@ -150,7 +149,7 @@ describe("per-workflow atomic commit", () => {
       });
       const result = await runWorkflow(
         openRes.value,
-        WorkflowName.Query,
+        "query",
         "What do I know?",
         { model: noopModel },
       );

@@ -93,6 +93,31 @@ The rewrite is invisible to users of the declarative form (the YAML reads natura
 
 The **drop-zone intake pattern** uses the declarative form exclusively. The principle: a user (or another process) writes a file to a known directory, the hook fires, the workflow processes the file. This generalizes "quick capture" without any dedicated CLI machinery — `dome capture` becomes a shell idiom (`echo "$THOUGHT" > $VAULT/inbox/raw/$(date -u +%Y%m%d-%H%M%S).md`) and the hook does the rest. New capture kinds = new buckets + new hook YAMLs.
 
+## Adding a new hook
+
+Three forms by mechanism; one rule by shape. The "bare-event expansion" rule from §"Bare events expand to suffix wildcards" above is **load-bearing** — read it first, because it's the trap every hook author hits.
+
+**Declarative form (the default).** New YAML at `<vault>/.dome/hooks/<name>.yaml`. Two file edits if the hook listens on a new bucket:
+
+1. The YAML file itself (`event:`, optional `path_pattern:`, `workflow:`, optional `async:`).
+2. If the hook listens on a fresh intake bucket (e.g., `inbox/voice/*`), create the directory in the vault scaffold (or document the manual `mkdir` in the hook header). Hooks watching `inbox/raw/*` need no scaffold edit — that bucket ships by default.
+
+The dispatcher reads the YAML on `openVault`; the `wrote-document` effect's projection (`document.written.<category>.<type>`) hits the registry pattern `<event>.*` (per §"Bare events expand to suffix wildcards"). Authors of the YAML form do nothing about the wildcard expansion — it is invisible at the YAML layer.
+
+**Programmatic form (v0.5.1+).** New TS at `<vault>/.dome/hooks/<name>.ts` exporting a `RegisteredHook`. v0.5 ships the source partition in code (`HookSource = "sdk" | "plugin" | "vault-local"`) and the dispatcher partitions `HookContext.privilegedWriter` accordingly; the loader path that picks up vault-local `.ts` hooks ships in v0.5.1. Until then, programmatic hooks ship only as shipped-default SDK hooks under `src/hooks/<name>.ts` exported from `@dome/sdk` core.
+
+**Shipped-default form.** A hook the SDK enables in every vault unless explicitly disabled. Five file edits:
+
+1. The handler at `src/hooks/<name>.ts` exporting a `RegisteredHook` whose `handler` consumes `HookContext.privilegedWriter` only if it needs index/log writes.
+2. The registration in `openVault`'s `buildBuiltinHookRegistry` so every Vault wires it.
+3. The shipped-default flag in `src/shipped-defaults.ts` `SHIPPED_VAULT_CONFIG.hooks` so the runtime fallback in `openVault`, the `dome init` / `dome migrate` scaffolder, and the eval / test vault factories all agree.
+4. The on-disk YAML template at `assets/dome-init/.dome/hooks/<name>.yaml` if the hook is declarative-form-equivalent (i.e., when a user opts in via vault-local YAML, the hook fires).
+5. The shipped-default test at `tests/integration/shipped-default-<name>.test.ts` asserting the hook runs against a representative event.
+
+Cycle prevention is automatic. The dispatcher's per-(handler, target-path) repetition check (`hook-dispatcher.ts`) plus the depth safety net (`max_cycles_depth: 50` default) catch any hook that synchronously triggers its own re-fire via `vault.tools.*`. See [[wiki/gotchas/hook-cycle]] for the canonical-path framing.
+
+Idempotency is required. Hooks may re-fire on the same `(handler, target-path)` pair during recovery (see §"The idempotency contract" below). Don't append the same paragraph twice; consult target file state before mutating.
+
 ## Shipped default hooks (shipped default — enabled by default)
 
 The SDK ships three hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`: `auto-update-index` and `auto-cross-reference` (both event-reactive, described in full below); plus `intake-raw`, the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow (described as part of the intake patterns in §"Intake patterns — shipped-default and opt-in" below — it's listed there rather than here because its shape is the canonical example of the drop-zone intake pattern, even though its enablement status is shipped-default).
@@ -160,7 +185,10 @@ See [[wiki/specs/cli]] §"`dome lint`" for the full propose/apply contract.
 
 - **Async by default.** When a Tool returns its Effects, the Hook dispatcher enqueues matching events to a background queue and the Tool returns to its caller immediately.
 - **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a frontmatter-shape validator that gates whether the write proceeds, or any future hook with a hard pre-write contract.
-- **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap.
+- **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap for long-running shells that survive process death.
+- **Queue concurrency.** v0.5 ships with `asyncConcurrency: 1` (serialized hook execution per Vault). The setting is plumbed as a `HookDispatcherOpts.asyncConcurrency` field with default `1`. Serialization is the v0.5 default because per-vault hook handlers may share state through `.dome/state/`, write through the privileged-writer in append-only patterns, and read-after-write ordering of `auto-update-index` matters for `dome doctor` checks. v1 mobile/desktop shells with many concurrent inbox events may bump the knob; the default stays serialized because the in-process queue is intentionally low-concurrency and the per-(handler, target) repetition check is per-job, not per-queue.
+
+  `inbox/review/` is excluded from the intake-discovery scan (it is a destination for `dome lint` reports, not a bucket the dispatcher watches). The exclusion is shipped from `src/shipped-defaults.ts` as `INTAKE_EXCLUDED_BUCKETS: ReadonlySet<string>` so the same set is consulted by `openVault`'s intake setup, `dome doctor`'s `INBOX_IS_EPHEMERAL` stale-age check, and the `inbox-stale` doctor section — a single rename of the destination (`inbox/review/` → `inbox/reports/`, say) edits the const, not eight string-literal sites.
 - **Failure model.** A hook handler that throws is logged as a `hook-failure` entry in `log.md`. The originating Tool call is not affected. Three consecutive failures of the same handler trigger `hook-disabled`; the handler is added to `.dome/state/quarantined.json` (the persistent quarantine record — see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") and is skipped on every subsequent event match across processes until `dome doctor --reset-quarantined-hooks` removes it. The persistence is necessary because `dome doctor` and `dome serve` don't share a process; an in-memory quarantine would not survive the CLI handoff.
 - **Cycle prevention.** Two-layer mechanism: (1) **per-(handler, target-path) repetition check** — the primary mechanism. The dispatcher tracks a causation chain per event; when a handler would fire against an event whose `(handler_id, primary_target_path)` pair already appears earlier in the chain, the dispatcher refuses the fire and emits `hook.cycle-detected`. Legitimate fan-out (e.g., `auto-cross-reference` writing backlinks across N pages) is allowed because each target path is distinct. (2) **Depth safety net** — `hooks.max_causation_depth` in `.dome/config.yaml` (default 50) catches runaway chains that don't repeat (handler, target) but grow unboundedly. Either trigger emits `hook.cycle-detected` and refuses the fire. See [[wiki/gotchas/hook-cycle]].
 

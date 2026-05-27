@@ -158,6 +158,22 @@ Override is the escape hatch for deep changes that don't fit the augmentation-sl
 
 For most additive customization (vault-wide vocabulary, workflow-specific extensions), prefer §"Vault augmentation slots" above — slots compose with the SDK defaults rather than replacing them.
 
+## Prompt loading lifecycle
+
+The prompt-and-workflow surface is read at three points: when `buildAbstractSurface(vault)` produces `PromptDescriptor`s; when `WorkflowRegistry` resolves a workflow's body before invocation; when `buildInstructions(vault)` composes the `instructions` payload. All three depend on the same on-disk source-priority resolution (SDK → plugin → vault-local) and the same template-variable substitution.
+
+**One `PromptLoader` per Vault is the canonical shape.** A `PromptLoader` instance walks `<vault>/.dome/prompts/` and the SDK's `BUILTIN_DIR` once at construction time, then serves resolved prompts from an in-memory cache for the Vault's lifetime. Re-instantiating the loader per workflow invocation or per surface build re-walks the filesystem and discards the cache — measurable cost in a v1 long-running shell with frequent workflow invocations.
+
+The structural shape that produces "one walk per Vault":
+
+- **`buildAbstractSurface(vault)` constructs the canonical `PromptLoader`** and threads it through `PromptDescriptor` production AND `buildInstructions` (the latter resolves `system-base.md` + slot partials).
+- **`WorkflowRegistry` accepts an optional `PromptLoader` constructor parameter**: `new WorkflowRegistry(vault, loader?)`. When `loader` is omitted, the registry constructs its own (the v0.5 compatibility shape). When passed, the registry reuses the caller's loader — `buildAbstractSurface` passes the loader it just built; long-running surfaces (`dome serve`'s MCP server, future HTTP shells) build the loader once and reuse across both `buildAbstractSurface` and `WorkflowRegistry`.
+- **`runWorkflow(vault, request, opts?)` accepts an optional `registry?: WorkflowRegistry`** in `opts`. Long-running surfaces build one registry per Vault and pass it on every invocation; short-lived surfaces (the CLI's one-shot `dome lint` invocation) let `runWorkflow` build its own.
+
+A future `Vault.prompts` projection — `vault.prompts: PromptCatalog` exposing the canonical loader directly off the Vault — is the v1+ shape this lifecycle anticipates. The v0.5 contract is "build the loader once via `buildAbstractSurface`; thread it through registry + runWorkflow"; the v1 contract collapses the threading into a Vault field.
+
+The bundling-axiom split is preserved: `PromptLoader` itself lives in `@dome/sdk` core (no LLM dependency); `WorkflowRegistry` and `runWorkflow` live in `@dome/sdk/workflows` (where the LLM dependency lands). A v1 surface that wants `PromptDescriptor`s and `instructions` without running workflows imports only `buildAbstractSurface` from core; a surface that also runs workflows imports `WorkflowRegistry` from workflows and threads in the loader the core call already built.
+
 ## Workflow invocation
 
 A workflow is invoked in three contexts. **The CLI is the primary invocation surface in v0.5** — workflows are explicit operations the user (or an agent acting on the user's behalf) runs when wanted, not background concerns the agent must route through:

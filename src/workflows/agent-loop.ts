@@ -5,7 +5,7 @@
 // declared tool subset to the model, and surface the final result back to
 // callers. See docs/wiki/specs/prompts-and-workflows.md §"Runner".
 
-import { generateText, stepCountIs, type LanguageModel, type ToolSet } from "ai";
+import { generateText, stepCountIs, type LanguageModel } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
 import type { Vault } from "../vault";
@@ -31,6 +31,15 @@ export interface RunWorkflowOpts {
    * load-bearing per-workflow-atomic-commit policy assumes commits happen.
    */
   skipCommit?: boolean;
+  /**
+   * Reuse a caller-supplied WorkflowRegistry instead of constructing a
+   * fresh one per invocation. Long-running surfaces (dome serve, future
+   * HTTP / voice shells) build ONE registry per Vault and thread it
+   * through every runWorkflow call — which collapses the F4 prompt-walk
+   * cascade. Short-lived surfaces (the CLI's one-shot `dome lint`) leave
+   * this unset and pay the one-time walk.
+   */
+  registry?: WorkflowRegistry;
 }
 
 export interface RunWorkflowResult {
@@ -66,7 +75,7 @@ export async function runWorkflow(
   userMessage: string,
   opts: RunWorkflowOpts = {},
 ): Promise<RunWorkflowResult> {
-  const registry = new WorkflowRegistry(vault);
+  const registry = opts.registry ?? new WorkflowRegistry(vault);
   const def = await registry.get(workflowName);
   if (!def) throw new Error(`workflow not found: ${workflowName}`);
 
@@ -167,18 +176,5 @@ function subjectFromUserMessage(userMessage: string): string {
   const firstLine = userMessage.split("\n").find(line => line.trim().length > 0) ?? "(no subject)";
   const trimmed = firstLine.trim();
   return trimmed.length > 60 ? trimmed.slice(0, 57) + "..." : trimmed;
-}
-
-/**
- * Build the AI SDK tool set for a workflow, filtered to the tools the
- * workflow declares in its frontmatter `tools:` list. Exposed for tests.
- *
- * Calls projectAiSdk(vault) per invocation rather than reading
- * vault.aiTools (which was removed in Phase B to make
- * CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY structurally true). Adding an 8th
- * Tool to src/tools/registry.ts makes it available here for free.
- */
-export function buildAiSdkTools(vault: Vault, allowedToolNames: ReadonlyArray<string>): ToolSet {
-  return filterAiTools(projectAiSdk(vault), allowedToolNames);
 }
 

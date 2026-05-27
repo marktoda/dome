@@ -1,4 +1,3 @@
-import { WorkflowName } from "../../workflows/workflow-name";
 import type { RunWorkflowOpts } from "../../workflows/agent-loop";
 import { runWorkflowAtPath } from "../run-workflow-at-path";
 import { isDirtyGitState } from "../../reconcile";
@@ -50,5 +49,5 @@ export async function domeLint(
   }
 
   const userMessage = isApplyMode ? `apply ${applyIds!.join(" ")}` : "";
-  return runWorkflowAtPath(vaultPath, WorkflowName.Lint, userMessage, opts);
+  return runWorkflowAtPath(vaultPath, "lint", userMessage, opts);
 }

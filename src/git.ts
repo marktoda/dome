@@ -7,8 +7,9 @@
 
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { dirname, join, posix, relative, resolve } from "node:path";
+import { join, posix, relative, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
+import { walkUpForAncestor } from "./path-walk";
 
 /**
  * True iff `path` sits inside a git working tree. Walks up from `path` looking
@@ -28,13 +29,7 @@ import { existsSync, statSync } from "node:fs";
  * follows the gitlink content to resolve the actual gitdir.
  */
 export async function findGitRoot(path: string): Promise<string | null> {
-  let current = resolve(path);
-  for (;;) {
-    if (isValidGitEntry(join(current, ".git"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
+  return walkUpForAncestor(path, (dir) => isValidGitEntry(join(dir, ".git")));
 }
 
 function isValidGitEntry(gitPath: string): boolean {

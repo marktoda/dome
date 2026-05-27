@@ -3,7 +3,6 @@ import { MockLanguageModelV3 } from "ai/test";
 import { makeFixtureVault } from "../../src/eval/fixture-vault";
 import { openVault } from "../../src/vault";
 import { runWorkflow } from "../../src/workflows/agent-loop";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 
 // A no-op mock model: drives the AI SDK loop end-to-end without contacting
 // a real provider. Mirrors the pattern in tests/workflows/agent-loop.test.ts.
@@ -51,7 +50,7 @@ describe("eval fixture vault", () => {
       const mock = makeNoopMockModel();
       const result = await runWorkflow(
         res.value,
-        WorkflowName.Query,
+        "query",
         "What do I know about Atlas?",
         { model: mock },
       );

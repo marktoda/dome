@@ -1,13 +1,42 @@
+// `dome doctor` — structural integrity audit + read-only projections +
+// targeted mutators. See docs/wiki/specs/cli.md §"dome doctor".
+//
+// Composition shape:
+//   1. Open the vault.
+//   2. Run every structural CHECK (read-only; accumulates violations + info).
+//   3. Run any opted-in SHOW projection (read-only; appends to info).
+//   4. Run any opted-in mutating action (--rebuild-index, --repair,
+//      --drain-hooks, --reset-quarantined-hooks, --time-since-reconcile).
+//   5. Return {exitCode, violations, info}.
+//
+// Each check lives in `src/cli/doctor/checks/<name>.ts` and exports a
+// single `(vault) => Promise<CheckResult>`. Each --show projection lives
+// in `src/cli/doctor/show/<name>.ts` and exports `(vault, …) =>
+// Promise<{info}>`. Adding a new check is one new file + one entry in
+// the CHECKS array below. Adding a new --show is one new file + one
+// opt + one wiring.
+
 import { openVault, type Vault } from "../../vault";
-import { WorkflowRegistry } from "../../prompts/registry";
 import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
-import { parseWikilinks } from "../../wikilinks";
-import { pluralOf, singularOf } from "../../page-type";
-import { walkMd } from "../../vault-fs";
 import { ok, type Result, type ToolError } from "../../types";
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+
+import { checkFrontmatterType } from "../doctor/checks/frontmatter-type";
+import { checkWikilinks } from "../doctor/checks/wikilinks";
+import { checkRawImmutable } from "../doctor/checks/raw-immutable";
+import { checkLogMonotonic } from "../doctor/checks/log-monotonic";
+import { checkInboxStale } from "../doctor/checks/inbox-stale";
+import { checkAgentsMdDrift } from "../doctor/checks/agents-md-drift";
+import type { DoctorCheck } from "../doctor/checks/types";
+
+import { showReviewQueue } from "../doctor/show/review-queue";
+import { showRawCitations } from "../doctor/show/raw-citations";
+import { showWorkflows } from "../doctor/show/workflows";
+import { showEvents } from "../doctor/show/events";
+import { showRecentHookCycles } from "../doctor/show/recent-hook-cycles";
+import { showRecentActivity } from "../doctor/show/recent-activity";
 
 export interface DoctorReport {
   exitCode: 0 | 1;
@@ -45,61 +74,17 @@ export interface DoctorOpts {
   repair?: boolean;
 }
 
-// Known event-kind prefixes per docs/wiki/specs/hooks.md §"Event grammar".
-// Used by --show events. Centralized here to avoid divergence.
-const KNOWN_EVENT_KIND_PREFIXES: ReadonlyArray<string> = [
-  "document.written.wiki.*",
-  "document.written.inbox.*",
-  "document.written.raw",
-  "document.written.index",
-  "document.written.log",
-  "document.deleted.wiki.*",
-  "document.deleted.inbox.*",
-  "document.deleted.raw",
-  "document.deleted.index",
-  "document.deleted.log",
-  "document.moved",
-  "log.appended",
-  "vault.out-of-band-edit",
+// Structural checks, run in declaration order on every `dome doctor` invocation.
+// Adding a new check: one new file under `src/cli/doctor/checks/`, one import
+// above, and one entry here. Order is preserved for stable output.
+const CHECKS: ReadonlyArray<DoctorCheck> = [
+  checkFrontmatterType,
+  checkWikilinks,
+  checkRawImmutable,
+  checkLogMonotonic,
+  checkInboxStale,
+  checkAgentsMdDrift,
 ];
-
-// Universal frontmatter keys allowed on EVERY wiki page (per page-schema.md
-// §"Universal frontmatter"). Per-type extensions are layered on top via
-// PER_TYPE_FRONTMATTER_FIELDS (defaults) + the vault's page-types.yaml
-// extensions[].frontmatter_extras (consumed in domeDoctor).
-const UNIVERSAL_FRONTMATTER_FIELDS: ReadonlyArray<string> = ["type", "created", "updated", "sources"];
-
-// Per-type optional frontmatter fields for the four DEFAULT page types per
-// page-schema.md §"Page-type-specific extensions". Vault-declared extension
-// types (`spec`, `invariant`, `matrix`, `gotcha`, …) bring their own fields
-// via .dome/page-types.yaml `extensions[].frontmatter_extras`; doctor reads
-// those at runtime.
-const PER_TYPE_FRONTMATTER_FIELDS: Readonly<Record<string, ReadonlyArray<string>>> = {
-  entity: ["aliases", "tags"],
-  concept: ["aliases", "tags", "status"],
-  source: ["url", "author", "external"],
-  synthesis: ["status", "supersedes"],
-};
-
-// Pluralized wiki subdirectory -> singular page type (per PAGE_TYPE_BY_DIRECTORY).
-// Delegated to the canonical page-type module so doctor and writeDocument stay
-// in lockstep on plural/singular derivation.
-const expectedPageTypeForDir = (dirName: string): string => singularOf(dirName);
-
-// Iterates every .md file in wiki/, yielding (subdir, filename, relPath).
-async function* walkWikiPages(vault: Vault): AsyncGenerator<{ subdir: string; filename: string; rel: string }> {
-  const wikiRoot = join(vault.path, "wiki");
-  if (!existsSync(wikiRoot)) return;
-  const subdirs = await readdir(wikiRoot, { withFileTypes: true });
-  for (const subdir of subdirs) {
-    if (!subdir.isDirectory()) continue;
-    const files = await readdir(join(wikiRoot, subdir.name), { withFileTypes: true });
-    for (const f of files) {
-      if (!f.isFile() || !f.name.endsWith(".md")) continue;
-      yield { subdir: subdir.name, filename: f.name, rel: `wiki/${subdir.name}/${f.name}` };
-    }
-  }
-}
 
 export async function domeDoctor(
   vaultPath: string,
@@ -112,214 +97,10 @@ export async function domeDoctor(
   const violations: string[] = [];
   const info: string[] = [];
 
-  const wikiRoot = join(vault.path, "wiki");
-
-  // Page-type catalogue: dirs that are legitimate per the vault's page-type
-  // config. Used for short-form wikilink resolution and unknown-dir checks.
-  const knownPluralDirs = new Set<string>([
-    ...vault.pageTypes.defaults.map(t => pluralOf(t)),
-    ...vault.pageTypes.extensions.map(e => pluralOf(typeof e === "string" ? e : e.name)),
-  ]);
-  // Always-allowed structural directories under wiki/ even if no pages of that
-  // type exist yet. invariants/, specs/, gotchas/ ship as documentation
-  // surfaces in the dogfooded Dome vault itself.
-  for (const d of ["invariants", "specs", "gotchas"]) knownPluralDirs.add(d);
-
-  // Track which extension page-types are actually used (for the "unused
-  // extensions" check).
-  const usedExtensionTypes = new Set<string>();
-  const declaredExtensionTypes = new Set<string>(
-    vault.pageTypes.extensions.map(e => typeof e === "string" ? e : e.name)
-  );
-  // Build the per-type frontmatter field catalogue from defaults + vault's
-  // extensions[].frontmatter_extras. Extensions in short-form (just a name)
-  // contribute no extras — doctor flags only fields outside the union.
-  const perTypeFields: Record<string, ReadonlyArray<string>> = { ...PER_TYPE_FRONTMATTER_FIELDS };
-  for (const ext of vault.pageTypes.extensions) {
-    if (typeof ext === "string") {
-      perTypeFields[ext] = perTypeFields[ext] ?? [];
-      continue;
-    }
-    const extras = ext.frontmatter_extras;
-    perTypeFields[ext.name] = extras !== undefined ? Object.keys(extras) : [];
-  }
-
-  // Walk every wiki page once and run all per-page checks together.
-  for await (const { subdir, rel } of walkWikiPages(vault)) {
-    // Track which extension types are used.
-    if (declaredExtensionTypes.has(expectedPageTypeForDir(subdir))) {
-      usedExtensionTypes.add(expectedPageTypeForDir(subdir));
-    }
-
-    const out = await vault.tools.readDocument({ path: rel });
-    if (!out.result.ok) continue;
-    const doc = out.result.value;
-
-    // CHECK 1 (existing): frontmatter type matches directory.
-    const expectedType = expectedPageTypeForDir(subdir);
-    if (doc.frontmatter.type && doc.frontmatter.type !== expectedType) {
-      violations.push(`${rel}: frontmatter type=${doc.frontmatter.type} does not match directory ${subdir}`);
-    }
-
-    // CHECK 2 (new): short-form wikilinks (violates WIKILINKS_ARE_FULLPATH).
-    // CHECK 3 (new): full-path wikilinks pointing to missing files.
-    const links = parseWikilinks(doc.body);
-    for (const link of links) {
-      if (!link.isFullPath) {
-        violations.push(`${rel}: short-form wikilink "${link.target}" (WIKILINKS_ARE_FULLPATH)`);
-      } else {
-        // Treat the target as a path relative to vault root; add .md if missing.
-        const targetPath = link.target.endsWith(".md") ? link.target : `${link.target}.md`;
-        const absTarget = join(vault.path, targetPath);
-        if (!existsSync(absTarget)) {
-          violations.push(`${rel}: unresolved wikilink "${link.target}"`);
-        }
-      }
-    }
-
-    // CHECK 4 (new): frontmatter fields outside the known per-type schema.
-    // Per page-schema.md §"Extension types" line 125: "Unknown fields trigger
-    // a soft warning (logged to log.md) but not a rejection". Doctor surfaces
-    // them as info, not as exit-code-affecting violations.
-    const docType = doc.frontmatter.type;
-    if (typeof docType === "string") {
-      const allowed = new Set<string>([
-        ...UNIVERSAL_FRONTMATTER_FIELDS,
-        ...(perTypeFields[docType] ?? []),
-      ]);
-      for (const key of Object.keys(doc.frontmatter)) {
-        if (!allowed.has(key)) {
-          info.push(`${rel}: unknown frontmatter field "${key}" for type=${docType} (soft warning per page-schema.md)`);
-        }
-      }
-    }
-  }
-
-  // CHECK 5 (new): unknown wiki subdirectories (not in page-types config).
-  if (existsSync(wikiRoot)) {
-    const subdirs = await readdir(wikiRoot, { withFileTypes: true });
-    for (const subdir of subdirs) {
-      if (!subdir.isDirectory()) continue;
-      if (!knownPluralDirs.has(subdir.name)) {
-        violations.push(`wiki/${subdir.name}/: unknown wiki subdirectory (not in page-types config)`);
-      }
-    }
-  }
-
-  // CHECK 6 (new): raw files modified after creation (heuristic for
-  // RAW_IS_IMMUTABLE violations that bypassed the Tool boundary).
-  const rawRoot = join(vault.path, "raw");
-  if (existsSync(rawRoot)) {
-    for await (const filePath of walkMd(rawRoot)) {
-      const st = await stat(filePath);
-      // birthtime is unreliable on Linux ext4 (returns 0); guard with > 0.
-      if (st.birthtimeMs > 0 && st.mtimeMs > st.birthtimeMs + 1000) {
-        const rel = filePath.slice(vault.path.length + 1);
-        violations.push(`${rel}: raw file modified after creation (RAW_IS_IMMUTABLE; mtime>${(st.mtimeMs - st.birthtimeMs).toFixed(0)}ms past ctime)`);
-      }
-    }
-  }
-
-  // CHECK 7 (new): log.md timestamps must be monotonically non-decreasing.
-  const logPath = join(vault.path, "log.md");
-  if (existsSync(logPath)) {
-    const logText = await Bun.file(logPath).text();
-    const tsRe = /^## \[([^\]]+)\]/gm;
-    let prev: string | null = null;
-    let lineNo = 0;
-    for (const match of logText.matchAll(tsRe)) {
-      lineNo++;
-      const ts = match[1]!;
-      if (prev !== null && ts < prev) {
-        violations.push(`log.md: non-monotonic timestamp at entry #${lineNo}: ${ts} < ${prev}`);
-      }
-      prev = ts;
-    }
-  }
-
-  // CHECK 8 (new): unused page-type extensions (declared in page-types.yaml
-  // but no page actually uses them — best-effort hint, info-only).
-  for (const ext of declaredExtensionTypes) {
-    if (!usedExtensionTypes.has(ext)) {
-      info.push(`page-type extension "${ext}" declared but no page uses it`);
-    }
-  }
-
-  // CHECK 9 (new): INBOX_IS_EPHEMERAL fallback — files in inbox/<bucket>/
-  // (excluding inbox/review/, which is a destination not an intake) that
-  // have aged past hooks.inbox_stale_age_hours emit a violation. Per
-  // docs/wiki/invariants/INBOX_IS_EPHEMERAL.md §"Structural enforcement".
-  const inboxRoot = join(vault.path, "inbox");
-  if (existsSync(inboxRoot)) {
-    const thresholdMs = vault.config.hooks.inbox_stale_age_hours * 60 * 60 * 1000;
-    const cutoff = Date.now() - thresholdMs;
-    const buckets = await readdir(inboxRoot, { withFileTypes: true });
-    for (const bucket of buckets) {
-      if (!bucket.isDirectory()) continue;
-      // inbox/review/ is a lint-report destination, not an intake — exclude
-      // unconditionally per INBOX_IS_EPHEMERAL.md.
-      if (bucket.name === "review") continue;
-      const bucketDir = join(inboxRoot, bucket.name);
-      const files = await readdir(bucketDir, { withFileTypes: true });
-      for (const f of files) {
-        if (!f.isFile()) continue;
-        const filePath = join(bucketDir, f.name);
-        const st = await stat(filePath);
-        if (st.mtimeMs < cutoff) {
-          const ageHours = ((Date.now() - st.mtimeMs) / (60 * 60 * 1000)).toFixed(1);
-          violations.push(
-            `inbox/${bucket.name}/${f.name}: stale (${ageHours}h old, threshold ${vault.config.hooks.inbox_stale_age_hours}h) — INBOX_IS_EPHEMERAL`,
-          );
-        }
-      }
-    }
-  }
-
-  // CHECK 10 (new): AGENTS.md + CLAUDE.md shim per AGENTS_MD_IS_ORIENTATION_SURFACE.
-  //   - AGENTS.md must exist, carry user-prose delimiters, AND its templated
-  //     section must match what we'd generate from the current config.
-  //   - CLAUDE.md must exist AND its content must be "See AGENTS.md." (trimmed).
-  // The drift checks close the "templated sections out of sync with current
-  // config → violation" claim in the invariant doc.
-  const agentsAbs = join(vault.path, "AGENTS.md");
-  const claudeAbs = join(vault.path, "CLAUDE.md");
-  if (!existsSync(agentsAbs)) {
-    violations.push(
-      "AGENTS.md: missing at vault root (AGENTS_MD_IS_ORIENTATION_SURFACE — run `dome doctor --repair`)",
-    );
-  } else {
-    const agentsBody = await Bun.file(agentsAbs).text();
-    const { buildAgentsMdTemplated, USER_PROSE_BEGIN, USER_PROSE_END } = await import("../../agents-md");
-    if (!agentsBody.includes(USER_PROSE_BEGIN) || !agentsBody.includes(USER_PROSE_END)) {
-      violations.push(
-        "AGENTS.md: user-prose delimiters missing (`dome doctor --repair` regenerates them)",
-      );
-    } else {
-      const beginIdx = agentsBody.indexOf(USER_PROSE_BEGIN);
-      const existingTemplated = agentsBody.slice(0, beginIdx).replace(/\n+$/, "");
-      const expectedTemplated = buildAgentsMdTemplated(
-        vault.config,
-        vault.pageTypes,
-        [...WORKFLOW_NAMES],
-      ).replace(/\n+$/, "");
-      if (existingTemplated !== expectedTemplated) {
-        violations.push(
-          "AGENTS.md: templated section out of sync with current config (`dome doctor --repair` regenerates it)",
-        );
-      }
-    }
-  }
-  if (!existsSync(claudeAbs)) {
-    violations.push(
-      `CLAUDE.md: shim missing at vault root (Claude Code auto-loads this; should contain "See AGENTS.md.")`,
-    );
-  } else {
-    const claudeBody = await Bun.file(claudeAbs).text();
-    if (claudeBody.trim() !== "See AGENTS.md.") {
-      violations.push(
-        `CLAUDE.md: content drift (expected "See AGENTS.md.", found different content; \`dome doctor --repair\` restores the canonical shim)`,
-      );
-    }
+  for (const check of CHECKS) {
+    const r = await check(vault);
+    violations.push(...r.violations);
+    info.push(...r.info);
   }
 
   // --rebuild-index: delegate to the SDK primitive. Privileged-writer is
@@ -328,23 +109,17 @@ export async function domeDoctor(
     await vault.rebuildIndex();
   }
 
-  // --show workflows: list known workflow names with whether each is present.
+  // Read-only --show projections. Each projection appends to `info`; none
+  // change `violations`.
   if (opts.showWorkflows) {
-    const reg = new WorkflowRegistry(vault);
-    const defs = await reg.list();
-    const present = new Set(defs.map(d => d.name));
-    for (const name of WORKFLOW_NAMES) {
-      info.push(`workflow: ${name}${present.has(name) ? "" : " (missing)"}`);
-    }
+    const r = await showWorkflows(vault);
+    info.push(...r.info);
   }
-
-  // --show events: list known event-kind prefixes (read-only catalogue).
   if (opts.showEvents) {
-    for (const kind of KNOWN_EVENT_KIND_PREFIXES) info.push(`event: ${kind}`);
+    const r = await showEvents(vault);
+    info.push(...r.info);
   }
 
-  // The remaining flags require runtime state we don't carry across CLI runs in
-  // v0.5 (no persistent daemon). Log a no-op note and exit clean.
   if (opts.drainHooks) {
     await vault.drainHooks();
     info.push(`--drain-hooks: drained (async hook queue is now idle)`);
@@ -357,84 +132,21 @@ export async function domeDoctor(
     info.push(`--reset-quarantined-hooks: cleared (${before.length} handler(s) were quarantined)`);
   }
   if (opts.showRecentHookCycles) {
-    const logPath3 = join(vault.path, "log.md");
-    if (existsSync(logPath3)) {
-      const logText = await Bun.file(logPath3).text();
-      const cycleRe = /^## \[([^\]]+)\] hook\.cycle-detected \| (.+)$/gm;
-      const cycles: { ts: string; detail: string }[] = [];
-      for (const m of logText.matchAll(cycleRe)) {
-        cycles.push({ ts: m[1]!, detail: m[2]! });
-      }
-      if (cycles.length === 0) {
-        info.push("hook-cycle: (none)");
-      } else {
-        for (const c of cycles) {
-          info.push(`hook-cycle: [${c.ts}] ${c.detail}`);
-        }
-      }
-    } else {
-      info.push("hook-cycle: (log.md not present)");
-    }
+    const r = await showRecentHookCycles(vault);
+    info.push(...r.info);
   }
   if (opts.showReviewQueue) {
-    const reviewDir = join(vault.path, "inbox", "review");
-    if (existsSync(reviewDir)) {
-      const items = await readdir(reviewDir, { withFileTypes: true });
-      const files = items.filter(e => e.isFile()).map(e => e.name).sort();
-      if (files.length === 0) {
-        info.push("review-queue: (empty)");
-      } else {
-        for (const name of files) {
-          const st = await stat(join(reviewDir, name));
-          info.push(`review-queue: inbox/review/${name} (mtime ${new Date(st.mtimeMs).toISOString()})`);
-        }
-      }
-    } else {
-      info.push("review-queue: (inbox/review/ not present — run `dome init` or `dome doctor --repair`)");
-    }
+    const r = await showReviewQueue(vault);
+    info.push(...r.info);
   }
   if (opts.showRawCitations) {
-    // Walk wiki pages; for each `sources:` frontmatter entry whose link points
-    // under raw/, accumulate (raw target -> [wiki page paths]).
-    const citations: Map<string, string[]> = new Map();
-    for await (const { rel } of walkWikiPages(vault)) {
-      const out = await vault.tools.readDocument({ path: rel });
-      if (!out.result.ok) continue;
-      const sources = out.result.value.frontmatter.sources;
-      if (!Array.isArray(sources)) continue;
-      for (const s of sources) {
-        if (typeof s !== "string") continue;
-        const m = s.match(/^\[\[(raw\/[^\]]+)\]\]$/);
-        if (!m) continue;
-        const target = m[1]!;
-        const list = citations.get(target) ?? [];
-        list.push(rel);
-        citations.set(target, list);
-      }
-    }
-    if (citations.size === 0) {
-      info.push("raw-citation: (no wiki pages cite any raw/ source)");
-    } else {
-      for (const [target, citers] of [...citations.entries()].sort()) {
-        info.push(`raw-citation: ${target} <- [${citers.sort().join(", ")}]`);
-      }
-    }
+    const r = await showRawCitations(vault);
+    info.push(...r.info);
   }
   if (opts.recentActivityN !== undefined) {
     const limit = opts.recentActivityN ?? 50;
-    const logPath2 = join(vault.path, "log.md");
-    if (existsSync(logPath2)) {
-      const logText = await Bun.file(logPath2).text();
-      const re = /^## \[([^\]]+)\] (\S+) \| (.+)$/gm;
-      const entries: { ts: string; verb: string; subject: string }[] = [];
-      for (const m of logText.matchAll(re)) {
-        entries.push({ ts: m[1]!, verb: m[2]!, subject: m[3]! });
-      }
-      const tail = entries.slice(-limit);
-      for (const e of tail) {
-        info.push(`recent: [${e.ts}] ${e.verb} | ${e.subject}`);
-      }
-    }
+    const r = await showRecentActivity(vault, limit);
+    info.push(...r.info);
   }
 
   if (opts.repair) {
@@ -480,3 +192,7 @@ function formatAge(ms: number): string {
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hours`;
   return `${Math.floor(ms / 86_400_000)} days`;
 }
+
+// Re-export Vault for callers that may want a typed reference (used in some
+// downstream consumers of `dome doctor` infrastructure).
+export type { Vault };

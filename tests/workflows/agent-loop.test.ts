@@ -1,10 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runWorkflow, buildAiSdkTools } from "../../src/workflows/agent-loop";
+import { runWorkflow } from "../../src/workflows/agent-loop";
+import { projectAiSdk } from "../../src/workflows/project-ai-sdk";
+import { filterAiTools } from "../../src/tools/ai-sdk-binding";
 import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 
 // Minimal "no-op" mock model: returns a single text-only step with finishReason
 // "stop". The SDK still drives the generation pipeline (system prompt
@@ -49,7 +50,7 @@ describe("runWorkflow", () => {
       const mock = makeNoopMockModel();
       const result = await runWorkflow(
         res.value,
-        WorkflowName.Query,
+        "query",
         "What do I know about Atlas?",
         { model: mock },
       );
@@ -82,12 +83,12 @@ describe("runWorkflow", () => {
     }
   });
 
-  test("buildAiSdkTools includes only the workflow's declared tool subset", async () => {
+  test("filterAiTools includes only the workflow's declared tool subset", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const tools = buildAiSdkTools(res.value, [
+      const tools = filterAiTools(projectAiSdk(res.value), [
         "readDocument",
         "writeDocument",
         "appendLog",
@@ -113,7 +114,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const systemMsg = call.prompt.find((m) => m.role === "system");
@@ -134,7 +135,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const systemMsg = call.prompt.find((m) => m.role === "system");
@@ -156,7 +157,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const userMsg = call.prompt.find((m) => m.role === "user");
@@ -221,12 +222,12 @@ describe("runWorkflow", () => {
     }
   });
 
-  test("buildAiSdkTools silently drops unknown tool names", async () => {
+  test("filterAiTools silently drops unknown tool names", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const tools = buildAiSdkTools(res.value, ["readDocument", "doesNotExist"]);
+      const tools = filterAiTools(projectAiSdk(res.value), ["readDocument", "doesNotExist"]);
       expect(Object.keys(tools)).toEqual(["readDocument"]);
     } finally {
       await v.cleanup();

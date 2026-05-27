@@ -1,20 +1,16 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join, dirname, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { join } from "node:path";
 import { ok, err, type Result, type ToolError } from "./types";
 import { isGitRepo } from "./git";
+import { walkUpForAncestor } from "./path-walk";
 import { makePrivilegedWriter, type PrivilegedWriter } from "./privileged-writer";
 import { bindTools } from "./tools/registry";
-import { HookRegistry } from "./hook-registry";
-import { HookDispatcher, type CycleInfo } from "./hook-dispatcher";
-import { autoUpdateIndex } from "./hooks/auto-update-index";
-import { autoCrossReference } from "./hooks/auto-cross-reference";
-import { logOutOfBandWrite } from "./hooks/log-out-of-band-write";
+import { type CycleInfo } from "./hooks/hook-dispatcher";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
-import type { BoundToolSurface, HookEvent } from "./hook-context";
-import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
-import { makeQuarantineStore } from "./quarantine-store";
+import type { BoundToolSurface, HookEvent } from "./hooks/hook-context";
+import { loadVaultConfig } from "./vault-config";
+import { buildBuiltinHookRegistry } from "./vault-hooks";
+import { wireDispatcher, type VaultRef } from "./vault-dispatcher";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -43,7 +39,7 @@ export interface PageTypesConfig {
 // BoundToolSurface is the single canonical shape of "the seven Tools curried
 // with their Vault" and lives in hook-context.ts. Re-exported here so existing
 // `import { BoundToolSurface } from "./vault"` callers continue to work.
-export type { BoundToolSurface } from "./hook-context";
+export type { BoundToolSurface } from "./hooks/hook-context";
 
 export interface Vault {
   readonly path: string;
@@ -90,6 +86,18 @@ export interface Vault {
    * §"Vault lifecycle".
    */
   close: () => Promise<void>;
+  /**
+   * @internal — consumed by `projectAiSdk` to bind AI-SDK Tool execute
+   * handlers to the same PrivilegedWriter `openVault` already constructed.
+   * Do NOT consume from plugin code. The INDEX_AND_LOG_ARE_DISPATCHER_OWNED
+   * axiom is preserved: plugin code reaches the privileged writer ONLY via
+   * `HookContext.privilegedWriter`, which the dispatcher partitions to
+   * sdk-source hooks. This field is module-private optimization for the
+   * in-SDK `projectAiSdk(vault)` caller; it is NOT re-exported from
+   * `src/index.ts` (no `PrivilegedWriter` type export), so plugin authors
+   * cannot reach it through the public surface.
+   */
+  readonly _writer: PrivilegedWriter;
 }
 
 /**
@@ -115,17 +123,23 @@ export async function appendCycleLogEntry(
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
-  let current = resolve(start);
-  for (;;) {
-    if (existsSync(join(current, ".dome", "config.yaml"))) {
-      return current;
-    }
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
+  return walkUpForAncestor(start, (dir) => existsSync(join(dir, ".dome", "config.yaml")));
 }
 
+/**
+ * Open a vault rooted at (or above) `path`. The body composes three helpers
+ * — `loadVaultConfig`, `buildBuiltinHookRegistry`, `wireDispatcher` — and
+ * publishes the assembled Vault into a `VaultRef` so dispatcher closures
+ * read it lazily. The three positional-ordering rules earlier carried as
+ * inline comments (TDZ closure on `tools`, "loadDeclarativeHooks LAST",
+ * cycle-listener wiring window) collapse into one explicit step:
+ * `vaultRef.current = vault` after closures are constructed.
+ *
+ * A future v1+ consumer surface (desktop/voice/HTTP) that wants a custom
+ * subset of the built-in Vault behavior assembles from the three helpers
+ * independently rather than forking openVault. See
+ * docs/wiki/specs/sdk-surface.md §"Composable construction".
+ */
 export async function openVault(path: string): Promise<Result<Vault, ToolError>> {
   const root = await findVaultRoot(path);
   if (root === null) {
@@ -134,136 +148,34 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   if (!(await isGitRepo(root))) {
     return err({ kind: "vault-not-git-repo", path: root });
   }
-  let config: VaultConfig = SHIPPED_VAULT_CONFIG;
-  let pageTypes: PageTypesConfig = SHIPPED_PAGE_TYPES;
-  try {
-    const cfgText = await readFile(join(root, ".dome", "config.yaml"), "utf8");
-    const parsed = parseYaml(cfgText) as Partial<VaultConfig>;
-    config = { ...SHIPPED_VAULT_CONFIG, ...parsed,
-      invariants: { ...SHIPPED_VAULT_CONFIG.invariants, ...(parsed.invariants ?? {}) },
-      hooks: { ...SHIPPED_VAULT_CONFIG.hooks, ...(parsed.hooks ?? {}),
-        builtin: { ...SHIPPED_VAULT_CONFIG.hooks.builtin, ...((parsed.hooks?.builtin) ?? {}) } },
-      git: { ...SHIPPED_VAULT_CONFIG.git, ...(parsed.git ?? {}) },
-    };
-  } catch (e: unknown) {
-    return err({ kind: "config-invalid", message: `Failed to parse .dome/config.yaml: ${(e as Error).message}` });
-  }
-  try {
-    const ptText = await readFile(join(root, ".dome", "page-types.yaml"), "utf8");
-    const parsed = parseYaml(ptText) as Partial<PageTypesConfig>;
-    pageTypes = { ...SHIPPED_PAGE_TYPES, ...parsed };
-  } catch {
-    // page-types is optional
-  }
+
+  const configResult = await loadVaultConfig(root);
+  if (!configResult.ok) return configResult;
+  const { config, pageTypes } = configResult.value;
+
   // PrivilegedWriter is INTERNAL — not exposed on Vault and not exported
   // from src/index.ts (the structural enforcement layer for
   // INDEX_AND_LOG_ARE_DISPATCHER_OWNED). It reaches built-in hooks via
   // HookContext.privilegedWriter; plugins never see it.
   const privilegedWriter = makePrivilegedWriter(root);
 
-  // Hook wiring — shipped-default registrations gated by config. The registry
-  // gets a persistent quarantine record at .dome/state/quarantined.json so
-  // handlers quarantined during one CLI invocation are still skipped on the
-  // next (dome doctor and dome serve don't share a process).
-  const quarantinePath = join(root, ".dome", "state", "quarantined.json");
-  const initialQuarantined = await makeQuarantineStore(quarantinePath).load();
-  const registry = new HookRegistry({ persistPath: quarantinePath, initialQuarantined });
-  if (config.hooks.builtin["auto-update-index"] === "enabled") {
-    registry.register({
-      id: "auto-update-index-write",
-      pattern: "document.written.wiki.*",
-      handler: autoUpdateIndex,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-    registry.register({
-      id: "auto-update-index-delete",
-      pattern: "document.deleted.wiki.*",
-      handler: autoUpdateIndex,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-    // Watcher path: native wiki edits caught by chokidar must also update
-    // index.md per VAULT_RECONCILES_AFTER_NATIVE_WRITE.md §"Structural
-    // enforcement" path 1. The handler filters to wiki/ paths and
-    // discriminates fsKind ("deleted" → removeIndexEntry; else writeIndex).
-    registry.register({
-      id: "auto-update-index-oob",
-      pattern: "vault.out-of-band-edit",
-      handler: autoUpdateIndex,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-  }
-  if (config.hooks.builtin["auto-cross-reference"] === "enabled") {
-    registry.register({
-      id: "auto-cross-reference",
-      pattern: "document.written.wiki.entity",
-      handler: autoCrossReference,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-  }
-  if (config.hooks.builtin["log-out-of-band-write"] === "enabled") {
-    // Watcher path only: live OOB edits caught by chokidar fire
-    // vault.out-of-band-edit (a unique kind no other code path emits).
-    // The reconcile path enforces EVERY_WRITE_IS_LOGGED separately — see
-    // src/reconcile.ts phase-2, which calls vault.tools.appendLog directly
-    // per replayed file. Subscribing this hook to document.written.wiki.*
-    // would also catch Tool-mediated writes (they project to the same
-    // event kind), producing duplicate spurious "out-of-band" log entries.
-    // See docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
-    registry.register({
-      id: "log-out-of-band-write",
-      pattern: "vault.out-of-band-edit",
-      handler: logOutOfBandWrite,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-  }
-  const hookDispatcher = new HookDispatcher(registry, {
+  // Shipped-default hook registry — pre-loads the persisted quarantine
+  // record at .dome/state/quarantined.json so handlers quarantined during
+  // one CLI invocation are still skipped on the next (dome doctor and
+  // dome serve don't share a process).
+  const registry = await buildBuiltinHookRegistry(root, config);
+
+  // Wire dispatcher closures via the vaultRef setter pattern. Closures hold
+  // a reference to `vaultRef` rather than the Vault itself; they read
+  // `vaultRef.current` at call-time, so they can be constructed before the
+  // Vault object exists. dispatchEvents defensively no-ops if invoked
+  // before `vaultRef.current` is populated (in practice openVault publishes
+  // the Vault before any production caller can reach the closure).
+  const vaultRef: VaultRef = { current: null };
+  const { dispatchEvents, drainHooks, close } = wireDispatcher(registry, privilegedWriter, {
+    vaultRef,
     maxCausationDepth: config.hooks.max_causation_depth,
   });
-  // Wire cycle detection to log.md so `dome doctor --show recent-hook-cycles`
-  // (which parses log.md for `hook.cycle-detected` entries) has a real producer.
-  // Without this, the dispatcher detects cycles in-process but the persistent
-  // record needed by a separate `dome doctor` process never lands. The
-  // `appendLogEntry` privileged-writer surface is the right seam because cycle
-  // events are dispatcher-owned per INDEX_AND_LOG_ARE_DISPATCHER_OWNED.
-  hookDispatcher.onCycleDetected((info) => {
-    void appendCycleLogEntry(privilegedWriter, info);
-  });
-
-  // dispatchEvents is the single entry point any subsystem (Tool wrap,
-  // reconcile, watcher, declarative-hook handler) uses to push events
-  // through the dispatcher. It assembles the ctxFactory once with the bound
-  // tools surface; callers don't construct it. `tools` is `const`-declared
-  // below; the closure reads it lazily at dispatch time, by which point
-  // bindTools has assigned it.
-  //
-  // After vault.close() flips `closed`, dispatchEvents becomes a no-op:
-  // it accepts no new work. drainHooks remains callable (idempotent), and
-  // existing in-flight events still complete (drain awaits them before
-  // close returns). The flag is the load-bearing v1+ seam for long-running
-  // mobile/desktop shells that open and re-open Vaults — calls that
-  // accidentally outlive the Vault's intended lifetime fail silently here
-  // rather than queueing events into a dispatcher whose handlers may have
-  // since been freed.
-  let closed = false;
-  const dispatchEvents = async (events: ReadonlyArray<HookEvent>): Promise<void> => {
-    if (closed) return;
-    if (events.length === 0) return;
-    const ctxFactory = {
-      baseCtx: { tools, vault: { path: root } },
-      privilegedWriter,
-    };
-    await hookDispatcher.dispatchEvents(events, ctxFactory);
-  };
 
   // The hook-dispatch wrap is intrinsic to bindTools via wrapMutatingInvoke:
   // it reads `vault.dispatchEvents` from the partial we hand in, and every
@@ -295,29 +207,6 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     }
   };
 
-  // drainHooks waits for both the dispatcher's async queue AND any
-  // in-flight quarantine-persistence writes. The latter is load-bearing
-  // because dome serve quarantining a handler on its final event needs
-  // the .dome/state/quarantined.json write to land before the process
-  // exits — otherwise dome doctor on the next CLI invocation sees an
-  // empty quarantine and the failing handler re-fires. The contract
-  // ("quarantine survives across processes") in hooks.md §"Execution
-  // model" Failure model depends on both drains completing.
-  const drainHooks = async (): Promise<void> => {
-    await hookDispatcher.drain();
-    await registry.flushPersist();
-  };
-
-  // close() is one-shot per docs/wiki/specs/sdk-surface.md §"Vault lifecycle".
-  // Drains hooks (settles the p-queue + flushPersist), then flips the
-  // `closed` flag so dispatchEvents stops accepting new work. Watchers are
-  // caller-owned and not stopped here — even ones that were dispatching
-  // into vault.dispatchEvents(...) — but their dispatches now no-op.
-  const close = async (): Promise<void> => {
-    await drainHooks();
-    closed = true;
-  };
-
   const vault: Vault = {
     path: root,
     config,
@@ -327,12 +216,19 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     dispatchEvents,
     rebuildIndex,
     close,
+    _writer: privilegedWriter,
   };
 
-  // Load declarative hook YAMLs LAST — after the vault is fully constructed —
-  // so the handlers can close over the live `vault` reference for runWorkflow.
-  // Errors are surfaced as appendLog entries; one bad YAML doesn't kill the
-  // rest of the load.
+  // Publish the assembled Vault into vaultRef BEFORE loadDeclarativeHooks so
+  // any handler that fires through dispatchEvents during the load sees a
+  // real Vault. This single step replaces three earlier positional-ordering
+  // rules (TDZ closure on `tools`, "loadDeclarativeHooks LAST", cycle-
+  // listener wiring window) — see the function docstring.
+  vaultRef.current = vault;
+
+  // Declarative hook YAMLs — order within this step is free now that the
+  // Vault is published. Errors are surfaced as appendLog entries; one bad
+  // YAML doesn't kill the rest of the load.
   await loadDeclarativeHooks(vault, registry, {
     onLoadError: (file, message) => {
       void privilegedWriter.appendLogEntry({

@@ -12,7 +12,7 @@ import * as core from "../../src/index";
 
 const PRUNED_SYMBOLS: ReadonlyArray<string> = [
   // workflows entrypoint
-  "runWorkflow", "buildAiSdkTools", "DEFAULT_MODEL", "DEFAULT_MAX_STEPS",
+  "runWorkflow", "DEFAULT_MODEL", "DEFAULT_MAX_STEPS",
   "WorkflowRegistry", "PromptLoader", "PromptSource",
   "parseWorkflowFrontmatter", "isWorkflowPrompt", "WorkflowFrontmatterSchema",
   "makeFixtureVault",

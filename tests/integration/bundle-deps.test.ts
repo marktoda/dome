@@ -31,6 +31,8 @@ const FORBIDDEN = new Set([
   "@ai-sdk/anthropic",
   "@anthropic-ai/sdk",
   "@modelcontextprotocol/sdk",
+  "remark",
+  "unified",
 ]);
 
 const FORBIDDEN_PREFIX = [
@@ -120,5 +122,12 @@ describe("CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY (bundle-enforced)", () => {
     expect(forbiddenHits).toEqual([]);
     // Sanity check — we actually walked into the codebase.
     expect(visited.length).toBeGreaterThan(10);
+  });
+
+  test("package.json does not list remark or unified as dependencies", async () => {
+    const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8"));
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    expect(Object.keys(deps)).not.toContain("remark");
+    expect(Object.keys(deps)).not.toContain("unified");
   });
 });

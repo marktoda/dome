@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { loadDeclarativeHooks } from "../../src/hooks/yaml-loader";
-import { HookRegistry } from "../../src/hook-registry";
+import { HookRegistry } from "../../src/hooks/hook-registry";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 

@@ -29,7 +29,7 @@ describe("gotcha-coverage (AC3-lockstep)", async () => {
     const slug = file.replace(/\.md$/, "");
     test(`${slug} declares coverage and (if matrix) has tests/gotchas/${slug}.test.ts`, async () => {
       const text = await readFile(join(GOTCHA_DIR, file), "utf8");
-      const fm = matter(text).data as { coverage?: string };
+      const fm = matter(text).data as { coverage?: string; enforced_at?: string; enforced_at_status?: string };
       const coverage = fm.coverage;
 
       expect(coverage,
@@ -41,6 +41,31 @@ describe("gotcha-coverage (AC3-lockstep)", async () => {
         const testPath = join(TESTS_GOTCHA_DIR, `${slug}.test.ts`);
         expect(existsSync(testPath),
           `gotcha ${slug} declares coverage: matrix but tests/gotchas/${slug}.test.ts does not exist`).toBe(true);
+      }
+      if (coverage === "off-matrix") {
+        const enforcedAt = fm.enforced_at;
+        const enforcedAtStatus = fm.enforced_at_status;
+        expect(enforcedAt,
+          `gotcha ${file} declares coverage: off-matrix but is missing enforced_at: frontmatter. ` +
+          `See docs/wiki/specs/page-schema.md §"Extension types".`,
+        ).toBeDefined();
+
+        const enforcedAtPath = join(REPO_ROOT, enforcedAt!);
+        const exists = existsSync(enforcedAtPath);
+
+        if (enforcedAtStatus === "deferred") {
+          if (!exists) {
+            console.warn(
+              `gotcha-coverage: ${slug} declares enforced_at: ${enforcedAt} with enforced_at_status: deferred — ` +
+              `path does not yet exist. Promote to non-deferred (remove enforced_at_status) when the path lands.`,
+            );
+          }
+        } else {
+          expect(exists,
+            `gotcha ${slug} declares enforced_at: ${enforcedAt} but path does not exist. ` +
+            `Either point at a real test/source file, or add enforced_at_status: deferred to signal planned-not-shipped.`,
+          ).toBe(true);
+        }
       }
       if (coverage === "deferred") {
         console.warn(`gotcha-coverage: ${slug} has coverage: deferred — promote to matrix when the test ships`);

@@ -9,6 +9,8 @@ sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review-
 
 The canonical map of "what each consumer shell imports from the `@dome/sdk` package family." Rows are consumer shells (v0.5-shipped and v1+ anticipated); columns are exported symbol families. Each cell names the entrypoint the consumer reaches the symbol through, or marks the symbol unused for that shell.
 
+**Lockstep status:** documentary in v0.5; lockstep-checked in v0.5.1. The v0.5.1 extension to `tests/integration/matrix-coverage.test.ts` parses this matrix and asserts each cell that names a specific entrypoint (`core`, `workflows`, `mcp`, `cli`) corresponds to an actual exported symbol from that entrypoint's `index.ts`. Future-prefixed entrypoints (`future-http`, `future-voice`) are non-normative cell annotations and are skipped by the lockstep parser. The v0.5 matrix is the design pin; the v0.5.1 lockstep is the structural fence.
+
 **Note on the MCP server row.** Per the compiler reframe ([[VISION]] §"Two surface patterns" and [[wiki/specs/mcp-surface]] §"Status in v0.5"), the MCP server is preserved in the codebase as a non-primary surface in v0.5 — agentic harnesses interact with Dome primarily through the compiler boundary (`AGENTS.md` + CLI + daemon + reconcile) rather than through MCP-routed tool calls. The MCP row remains in the matrix because the code still exists and its import topology is still accurate; the row's *non-primary status* lives in the prose specs, not in the cell labels.
 
 The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: every cell that reads `core` carries no transitive Anthropic/MCP dependency; every cell that reads `workflows` or `mcp` opts into that dep explicitly.
@@ -17,7 +19,7 @@ The matrix also realizes the two-layer aggregation introduced in [[wiki/specs/sd
 
 ## Entrypoint legend
 
-- `core` — `@dome/sdk` (the package root: `src/index.ts`). No LLM, no MCP. Carries `AbstractSurface`, `buildAbstractSurface(vault)`, `PromptDescriptor`, `ResourceDescriptor`.
+- `core` — `@dome/sdk` (the package root: `src/index.ts`). No LLM, no MCP. Carries `AbstractSurface`, `buildAbstractSurface(vault)`, `buildInstructions(vault)`, `PromptDescriptor`, `ResourceDescriptor`.
 - `workflows` — `@dome/sdk/workflows`. Carries `@ai-sdk/anthropic` + `ai`.
 - `mcp` — `@dome/sdk/mcp`. Carries `@modelcontextprotocol/sdk`. Carries `renderMcp(surface)`, `McpSurface`, `ToolAdapter`, `McpPromptAdapter`, `ResourceAdapter`, `DomeMcpServer`.
 - `cli` — `@dome/sdk/cli`. Carries `commander`.

@@ -12,23 +12,59 @@
 // This is what makes the shipped-default `intake-raw.yaml` actually fire when
 // a file lands in `inbox/raw/`. Without this loader, intake YAMLs are inert
 // files on disk.
+//
+// Validation: the YAML shape is parsed by `DeclarativeHookSchema` (Zod)
+// rather than hand-rolled typeof chains. `parseDeclarativeHook` returns a
+// `Result<DeclarativeHook, ValidationError>` matching the Tool-surface
+// Result<T, E> discipline. See docs/wiki/gotchas/boundary-validation-via-zod.md.
 
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { HookHandler, HookEvent, HookContext } from "../hook-context";
-import type { HookRegistry } from "../hook-registry";
+import { z } from "zod";
+import type { HookHandler, HookEvent, HookContext } from "./hook-context";
+import type { HookRegistry } from "./hook-registry";
 import type { Vault } from "../vault";
-import { isWorkflowName, type WorkflowName } from "../workflows/workflow-name";
+import { WORKFLOW_NAMES, type WorkflowName } from "../workflows/workflow-name";
+import { ok, err, type Result } from "../types";
 
-/** Declarative-hook YAML shape, validated by `parseDeclarativeHook`. */
-export interface DeclarativeHookYaml {
-  event: string;
-  path_pattern?: string;
-  workflow: WorkflowName;
-  async?: boolean;
-  idempotent?: boolean;
+/**
+ * Zod schema for the declarative-hook YAML shape. Lives next to the parser
+ * because this loader is the only consumer — colocation makes the contract
+ * obvious to the next reader. The workflow field is validated against the
+ * canonical WORKFLOW_NAMES tuple so a typo in a YAML file fails fast with a
+ * clear message rather than registering an inert handler.
+ */
+export const DeclarativeHookSchema = z.object({
+  event: z.string(),
+  path_pattern: z.string().optional(),
+  workflow: z.enum(WORKFLOW_NAMES as readonly [WorkflowName, ...WorkflowName[]], {
+    errorMap: (issue, ctx) => {
+      if (issue.code === z.ZodIssueCode.invalid_enum_value) {
+        return {
+          message: `workflow '${String(issue.received)}' is not a known workflow name (one of: ${WORKFLOW_NAMES.join(", ")})`,
+        };
+      }
+      return { message: ctx.defaultError };
+    },
+  }),
+  async: z.boolean().optional(),
+  idempotent: z.boolean().optional(),
+});
+
+/** Validated declarative-hook YAML shape (inferred from `DeclarativeHookSchema`). */
+export type DeclarativeHook = z.infer<typeof DeclarativeHookSchema>;
+
+/**
+ * Persistence-boundary validation error. Shape mirrors `ToolError` from
+ * `types.ts` (kind: "validation") so callers that compose Tool and loader
+ * errors don't need a translation layer.
+ */
+export interface ValidationError {
+  kind: "validation";
+  path: string;
+  message: string;
 }
 
 interface ParsedDeclarativeHook {
@@ -84,14 +120,19 @@ export async function loadDeclarativeHooks(
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith(".yaml") && !entry.name.endsWith(".yml")) continue;
     const filePath = join(hooksDir, entry.name);
-    let parsed: ParsedDeclarativeHook;
+    let text: string;
     try {
-      const text = await readFile(filePath, "utf8");
-      parsed = parseDeclarativeHook(entry.name, text);
+      text = await readFile(filePath, "utf8");
     } catch (e: unknown) {
       opts.onLoadError?.(entry.name, (e as Error).message);
       continue;
     }
+    const result = parseDeclarativeHook(text, entry.name);
+    if (!result.ok) {
+      opts.onLoadError?.(entry.name, result.error.message);
+      continue;
+    }
+    const parsed = toRegistryEntry(result.value, entry.name);
     registry.register({
       id: `declarative:${parsed.id}`,
       pattern: parsed.pattern,
@@ -103,17 +144,51 @@ export async function loadDeclarativeHooks(
   }
 }
 
-function parseDeclarativeHook(filename: string, text: string): ParsedDeclarativeHook {
-  const raw = parseYaml(text) as Partial<DeclarativeHookYaml> | null;
-  if (!raw || typeof raw !== "object") throw new Error(`${filename}: empty or non-object YAML`);
-  if (typeof raw.event !== "string") throw new Error(`${filename}: missing or non-string 'event'`);
-  if (typeof raw.workflow !== "string") throw new Error(`${filename}: missing or non-string 'workflow'`);
-  if (!isWorkflowName(raw.workflow)) {
-    throw new Error(`${filename}: workflow '${raw.workflow}' is not a known workflow name`);
+/**
+ * Parse and validate a declarative-hook YAML text. Returns a
+ * `Result<DeclarativeHook, ValidationError>` rather than throwing — callers
+ * (currently `loadDeclarativeHooks`) inspect the `ok` discriminant and
+ * propagate the error.
+ *
+ * `sourcePath` is purely informational (filename appears in the error path);
+ * the parser does no filesystem I/O. Tests instantiate raw YAML strings and
+ * leave `sourcePath` defaulted.
+ */
+export function parseDeclarativeHook(
+  yamlText: string,
+  sourcePath = "",
+): Result<DeclarativeHook, ValidationError> {
+  let raw: unknown;
+  try {
+    raw = parseYaml(yamlText);
+  } catch (e) {
+    return err({
+      kind: "validation",
+      path: sourcePath,
+      message: `${sourcePath ? `${sourcePath}: ` : ""}YAML parse error: ${String(e)}`,
+    });
   }
-  if (raw.path_pattern !== undefined && typeof raw.path_pattern !== "string") {
-    throw new Error(`${filename}: path_pattern must be a string if present`);
+  const r = DeclarativeHookSchema.safeParse(raw);
+  if (!r.success) {
+    // Use the first issue's message for the human-readable form — Zod's
+    // default `error.message` JSON-stringifies all issues which is too noisy
+    // for the on-disk log entries and existing test assertions.
+    const first = r.error.issues[0];
+    const message = first
+      ? `${sourcePath ? `${sourcePath}: ` : ""}${first.message}${first.path.length > 0 ? ` (at ${first.path.join(".")})` : ""}`
+      : `${sourcePath ? `${sourcePath}: ` : ""}${r.error.message}`;
+    return err({ kind: "validation", path: sourcePath, message });
   }
+  return ok(r.data);
+}
+
+/**
+ * Project a validated `DeclarativeHook` plus its source filename into the
+ * shape `HookRegistry.register` consumes. Encapsulates the bare-event-to-
+ * wildcard expansion and the .ya?ml-to-id stripping so `loadDeclarativeHooks`
+ * stays a thin orchestration loop.
+ */
+function toRegistryEntry(hook: DeclarativeHook, filename: string): ParsedDeclarativeHook {
   const id = filename.replace(/\.ya?ml$/, "");
   // The substrate's example (hooks.md §"Declarative") uses `event:
   // document.written` as a coarse selector with `path_pattern: "inbox/raw/*"`
@@ -123,15 +198,15 @@ function parseDeclarativeHook(filename: string, text: string): ParsedDeclarative
   // inbox.raw`. Expand bare event strings to `<event>.*` for the registry
   // pattern; the path_pattern (matched in the handler) does the precise
   // narrowing. Events already containing `*` are honored verbatim.
-  const registryPattern = raw.event.includes("*") ? raw.event : `${raw.event}.*`;
+  const registryPattern = hook.event.includes("*") ? hook.event : `${hook.event}.*`;
   const parsed: ParsedDeclarativeHook = {
     id,
     pattern: registryPattern,
-    workflow: raw.workflow,
-    async: raw.async ?? true,
-    idempotent: raw.idempotent ?? true,
+    workflow: hook.workflow,
+    async: hook.async ?? true,
+    idempotent: hook.idempotent ?? true,
   };
-  if (raw.path_pattern !== undefined) parsed.pathPattern = raw.path_pattern;
+  if (hook.path_pattern !== undefined) parsed.pathPattern = hook.path_pattern;
   return parsed;
 }
 

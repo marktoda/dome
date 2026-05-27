@@ -1,4 +1,4 @@
-import type { HookHandler } from "../hook-context";
+import type { HookHandler } from "./hook-context";
 
 /**
  * Shipped-default hook. Subscribes to `vault.out-of-band-edit` events fired by

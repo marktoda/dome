@@ -41,6 +41,19 @@ export const SHIPPED_PAGE_TYPES: PageTypesConfig = {
   extensions: [],
 };
 
+/**
+ * Buckets under inbox/ that are not intakes (no workflow runs on writes).
+ * Currently: review/ is the destination for `dome lint` reports.
+ *
+ * Consumed by dome doctor's INBOX_IS_EPHEMERAL stale-age check
+ * (src/cli/doctor/checks/inbox-stale.ts) and any other site that walks
+ * inbox/ for intake processing. Renaming the lint-report destination is
+ * now a one-line const edit, not a scattered string-literal replacement.
+ *
+ * See docs/wiki/invariants/INBOX_IS_EPHEMERAL.md.
+ */
+export const INTAKE_EXCLUDED_BUCKETS: ReadonlySet<string> = new Set(["review"]);
+
 /** YAML body for `.dome/config.yaml` — derived from {@link SHIPPED_VAULT_CONFIG}. */
 export function shippedConfigYaml(): string {
   return `# Dome vault config\n${yamlStringify(SHIPPED_VAULT_CONFIG)}`;

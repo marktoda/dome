@@ -4,10 +4,10 @@ import { writeDocument } from "../../src/tools/write-document";
 import { moveDocument } from "../../src/tools/move-document";
 import { deleteDocument } from "../../src/tools/delete-document";
 import { makePrivilegedWriter } from "../../src/privileged-writer";
-import { HookRegistry } from "../../src/hook-registry";
-import { HookDispatcher } from "../../src/hook-dispatcher";
+import { HookRegistry } from "../../src/hooks/hook-registry";
+import { HookDispatcher } from "../../src/hooks/hook-dispatcher";
 import { makeTestVault } from "../helpers/make-test-vault";
-import type { HookContext } from "../../src/hook-context";
+import type { HookContext } from "../../src/hooks/hook-context";
 
 describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
   test("writeDocument rejects index.md with dispatcher-owned-path", async () => {

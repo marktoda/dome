@@ -30,7 +30,7 @@ The invariant is off-matrix for the Tool × invariant matrix (no Tool refuses an
 
 **Related:**
 - [[wiki/specs/sdk-surface]] §"Distribution" (the four entrypoints)
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" (the ConsumerSurface concept)
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces" (the `AbstractSurface` + per-protocol renderer split)
 - [[wiki/gotchas/transitive-llm-dependency]] (the scar this invariant guards against)
 - [[wiki/matrices/consumer-surface]] (which entrypoint each shell uses)
 - [[wiki/specs/harnesses]] §"Future-harness pressure" (the v1+ consumers the invariant exists for)

@@ -41,7 +41,7 @@ export class DomeMcpServer {
       { name: "@dome/sdk", version: "0.0.1" },
       { capabilities: { tools: {}, prompts: {}, resources: {} }, instructions: this.opts.surface.instructions }
     );
-    this.registerOn(server as unknown as ServerLike);
+    this.registerOn(server);
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }

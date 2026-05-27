@@ -11,13 +11,14 @@
 import type { ToolSet } from "ai";
 import type { Vault } from "../vault";
 import { bindAiSdkTools } from "../tools/ai-sdk-binding";
-import { makePrivilegedWriter } from "../privileged-writer";
 
 export function projectAiSdk(vault: Vault): ToolSet {
-  // bindAiSdkTools needs a PrivilegedWriter; reconstruct one (cheap factory)
-  // to avoid leaking the privileged writer through the public Vault
-  // surface. The Tools returned are AI SDK Tool<> shapes whose execute()
-  // handlers close over the writer.
-  const writer = makePrivilegedWriter(vault.path);
+  // bindAiSdkTools needs a PrivilegedWriter. Reach the one `openVault`
+  // already constructed via the @internal `vault._writer` field — the
+  // previous reconstruction via `makePrivilegedWriter(vault.path)` was
+  // dead allocation. The Vault's `_writer` is module-private optimization
+  // for in-SDK callers; plugin code still reaches the writer only via
+  // `HookContext.privilegedWriter` (INDEX_AND_LOG_ARE_DISPATCHER_OWNED).
+  const writer = vault._writer;
   return bindAiSdkTools(vault, writer);
 }

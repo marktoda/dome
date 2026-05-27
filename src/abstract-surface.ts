@@ -12,7 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Vault } from "./vault";
-import type { BoundToolSurface } from "./hook-context";
+import type { BoundToolSurface } from "./hooks/hook-context";
 import { PromptLoader } from "./prompts/prompt-loader";
 import { WorkflowRegistry } from "./prompts/registry";
 import { WorkflowTier, WORKFLOW_TIERS } from "./workflows/workflow-tier";
@@ -93,7 +93,11 @@ export interface AbstractSurface {
  */
 export async function buildAbstractSurface(vault: Vault): Promise<AbstractSurface> {
   const loader = new PromptLoader(vault);
-  const registry = new WorkflowRegistry(vault);
+  // Thread the already-built loader through to the registry so the
+  // `.dome/prompts/` filesystem scan happens once per surface build, not
+  // twice. Closes the F4 prompt-walk cascade — see
+  // docs/cohesive/plans/2026-05-26-dome-v0.5-to-v1-tightening.md.
+  const registry = new WorkflowRegistry(vault, loader);
 
   const [prompts, instructions] = await Promise.all([
     buildPromptDescriptors(loader, registry),

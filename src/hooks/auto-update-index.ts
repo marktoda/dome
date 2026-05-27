@@ -1,4 +1,4 @@
-import type { HookHandler } from "../hook-context";
+import type { HookHandler } from "./hook-context";
 import { basename } from "node:path";
 
 /**

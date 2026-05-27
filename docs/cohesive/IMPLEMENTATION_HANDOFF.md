@@ -1,4 +1,16 @@
-# Implementation handoff — Dome v0.5
+# Implementation handoff — Dome v0.5 (ARCHIVAL)
+
+> **Archival as of 2026-05-26.** v0.5 implementation is complete and in daily use. This doc was the post-design / pre-implementation handoff snapshot; its inline counts and surface listings are frozen at that moment and **do not reflect current state**. The canonical entry points for current substrate are:
+>
+> - `docs/VISION.md` — north star
+> - `docs/index.md` — substrate catalog (specs, invariants, matrices, gotchas — kept current)
+> - `docs/wiki/specs/sdk-surface.md` — the four-concept core + Tool catalog + Tiered feature model + Consumer surfaces
+> - `docs/wiki/specs/cli.md` — current CLI command set
+> - `src/types.ts` `INVARIANTS` — the typed const of named invariants
+>
+> The body below is preserved for historical reference. **Do not edit it to "keep it current"** — count drift in handoff docs is what `docs/wiki/gotchas/substrate-count-drift.md` exists to prevent. If you need an implementation entry point, read the substrate catalog instead.
+
+---
 
 You are picking up where the design conversation left off. The design substrate is complete, validated through five repair passes, and is now the canonical source. **Don't try to re-derive the design from this handoff** — the substrate docs are authoritative. This handoff names what to read, in what order, and the few load-bearing decisions you should not silently revisit.
 

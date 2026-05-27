@@ -4,6 +4,7 @@ created: 2026-05-25
 updated: 2026-05-25
 severity: high
 coverage: off-matrix
+enforced_at: src/hooks/hook-dispatcher.ts
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 ---

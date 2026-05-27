@@ -5,6 +5,8 @@ updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]
 severity: medium
 coverage: off-matrix
+enforced_at: tests/integration/no-retired-symbol-names-in-specs.test.ts
+enforced_at_status: deferred
 first_observed: 2026-05-26
 ---
 

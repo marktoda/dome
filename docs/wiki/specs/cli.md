@@ -226,9 +226,25 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 | `dome import-obsidian` | Subsumed by `dome migrate` (auto-detects Obsidian structure) | `dome migrate` |
 | `dome backup` | Vault is git-backed; backup is `git push`. | `cd $VAULT && git push` |
 
+## Adding a new command
+
+Adding a ninth `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
+
+1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing seven `domeX` exports.
+
+2. **Wire the Commander arm** in `src/cli/cli.ts` `buildProgram` — `program.command("foo").description(...).option(...).action(async (...) => { ... domeFoo(path, opts) ... })`. If the command is workflow-driven, gate it with `requireApiKey()` before the action body runs (the `@dome/sdk/cli` pre-flight pattern at `src/cli/api-key-guard.ts`).
+
+3. **Re-export `domeFoo`** from `src/cli/index.ts`. The `cli-shell-shape` lockstep test (`tests/integration/cli-shell-shape.test.ts`) enumerates implementations in `src/cli/commands/` and asserts each is re-exported from `src/cli/index.ts` — a missed export fails the test.
+
+4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary above ("eight commands today") and the §"Implementation note" command-mapping table.
+
+5. **Add an end-to-end test** at `tests/integration/end-to-end.test.ts` covering one happy path.
+
+`CliError = ToolError | MissingApiKeyError` is the typed error surface — extend it (not `ToolError`) when a new command introduces a consumer-shell-specific error kind. Pre-flight failures belong on `CliError`; Tool failures belong on `ToolError`. The pass-3 architecture review's §"Adding a CLI command" recipe is the canonical source for this surface; if a future command needs a sixth file edit, this section grows to enumerate it explicitly.
+
 ## Implementation note
 
-CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
+CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`, `stats`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
 
 ### The shared `--apply` idiom
 

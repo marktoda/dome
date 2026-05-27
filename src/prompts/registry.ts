@@ -13,8 +13,17 @@ export interface WorkflowDefinition {
 export class WorkflowRegistry {
   private loader: PromptLoader;
 
-  constructor(vault: Vault) {
-    this.loader = new PromptLoader(vault);
+  /**
+   * Construct a WorkflowRegistry. When `loader` is omitted, the registry
+   * builds its own PromptLoader (backward-compatible). When passed, the
+   * registry reuses the caller's loader — `buildAbstractSurface` threads
+   * its already-constructed loader through here so the `.dome/prompts/`
+   * filesystem scan happens once per surface build, not twice. See the
+   * F4 prompt-walk cascade in
+   * docs/cohesive/plans/2026-05-26-dome-v0.5-to-v1-tightening.md.
+   */
+  constructor(vault: Vault, loader?: PromptLoader) {
+    this.loader = loader ?? new PromptLoader(vault);
   }
 
   async list(): Promise<ReadonlyArray<WorkflowDefinition>> {

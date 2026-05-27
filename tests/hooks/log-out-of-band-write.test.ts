@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { logOutOfBandWrite } from "../../src/hooks/log-out-of-band-write";
-import type { HookContext } from "../../src/hook-context";
+import type { HookContext } from "../../src/hooks/hook-context";
 
 describe("logOutOfBandWrite", () => {
   test("calls appendLog with out-of-band-tagged subject for vault.out-of-band-edit events", async () => {

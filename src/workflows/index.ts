@@ -4,14 +4,15 @@
 // Consumers that don't drive LLM-based workflows import from @dome/sdk
 // (core) instead — see docs/wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY.md.
 
-export { runWorkflow, buildAiSdkTools, DEFAULT_MODEL, DEFAULT_MAX_STEPS } from "./agent-loop";
+export { runWorkflow, DEFAULT_MODEL, DEFAULT_MAX_STEPS } from "./agent-loop";
 export type { RunWorkflowOpts, RunWorkflowResult } from "./agent-loop";
 
-export { WorkflowName, WORKFLOW_NAMES, isWorkflowName } from "./workflow-name";
+export { WORKFLOW_NAMES, isWorkflowName } from "./workflow-name";
+export type { WorkflowName } from "./workflow-name";
 export { WorkflowTier, WORKFLOW_TIERS } from "./workflow-tier";
 
 export { projectAiSdk } from "./project-ai-sdk";
-export { bindAiSdkTools, filterAiTools } from "../tools/ai-sdk-binding";
+export { filterAiTools } from "../tools/ai-sdk-binding";
 
 // Re-exported from src/prompts/ — workflows entrypoint hosts the prompt
 // registry + loader because both are workflow-runner inputs.

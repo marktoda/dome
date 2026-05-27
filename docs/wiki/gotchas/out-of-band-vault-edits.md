@@ -4,6 +4,7 @@ created: 2026-05-25
 updated: 2026-05-26
 severity: low
 coverage: off-matrix
+enforced_at: src/watcher.ts
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[cohesive/brainstorms/2026-05-26-dome-compiler-reframe]]"]
 ---

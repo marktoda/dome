@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Vault } from "./vault";
-import type { HookEvent } from "./hook-context";
+import type { HookEvent } from "./hooks/hook-context";
 import { projectEffectToEvents } from "./event-projection";
 import { currentSha, statusMatrix, readTree } from "./git";
 import { ok, err, type Result, type ToolError } from "./types";
+import { ScheduledStateSchema, type ScheduledEntry } from "./state-schemas";
+import { INTAKE_EXCLUDED_BUCKETS } from "./shipped-defaults";
 
 export interface ReconcileOpts {
   onEvent: (event: HookEvent) => void | Promise<void>;
@@ -28,11 +30,6 @@ const SCHEDULED_INTERVAL_MS = {
   weekly: 604_800_000,
 } as const;
 
-interface ScheduledEntry {
-  interval: string;
-  last_fire?: string;
-}
-
 /**
  * Three-phase reconciliation: inbox files -> committed/working-tree diff ->
  * scheduled catchup. Refuses to run when the underlying git repo is in a
@@ -50,23 +47,24 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   let changedFiles = 0;
   let scheduledFired = 0;
 
-  // Phase 1: inbox processing.
+  // Phase 1: inbox processing. Walks `inbox/<bucket>/<file>` directly via
+  // Bun.Glob — non-recursive (intakes are flat by convention). Skips buckets
+  // in INTAKE_EXCLUDED_BUCKETS (e.g. `inbox/review/`, the destination for
+  // `dome lint` reports, which is not an intake surface).
   const inboxRoot = join(vault.path, "inbox");
   if (existsSync(inboxRoot)) {
-    const buckets = await readdir(inboxRoot, { withFileTypes: true });
-    for (const b of buckets) {
-      if (!b.isDirectory()) continue;
-      const bucketDir = join(inboxRoot, b.name);
-      const files = await readdir(bucketDir, { withFileTypes: true });
-      for (const f of files) {
-        if (!f.isFile()) continue;
-        const rel = relative(vault.path, join(bucketDir, f.name));
-        const events = projectEffectToEvents({ kind: "wrote-document", path: rel, diff: "[inbox]" });
-        for (const e of events) {
-          await opts.onEvent(e);
-        }
-        inboxProcessed++;
+    const glob = new Bun.Glob("*/*");
+    for await (const rel of glob.scan({ cwd: inboxRoot, dot: true, onlyFiles: true })) {
+      const slash = rel.indexOf("/");
+      if (slash === -1) continue;
+      const bucket = rel.slice(0, slash);
+      if (INTAKE_EXCLUDED_BUCKETS.has(bucket)) continue;
+      const fileRel = relative(vault.path, join(inboxRoot, rel));
+      const events = projectEffectToEvents({ kind: "wrote-document", path: fileRel, diff: "[inbox]" });
+      for (const e of events) {
+        await opts.onEvent(e);
       }
+      inboxProcessed++;
     }
   }
 
@@ -115,12 +113,41 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   if (sha) await writeFile(lastShaPath, sha);
 
   // Phase 3: scheduled catchup.
+  // The scheduled-state JSON is validated by `ScheduledStateSchema` rather
+  // than cast — a corrupted file emits a `state-corruption-detected` log
+  // entry (observable per gotchas/boundary-validation-via-zod.md) AND falls
+  // back to `{}`. Empty-state fallback is safe because the file is derived
+  // and rebuildable (MARKDOWN_IS_SOURCE_OF_TRUTH).
   const scheduledPath = join(stateDir, "scheduled.json");
   let scheduled: Record<string, ScheduledEntry> = {};
-  try {
-    scheduled = JSON.parse(await readFile(scheduledPath, "utf8")) as Record<string, ScheduledEntry>;
-  } catch {
-    // none yet
+  if (existsSync(scheduledPath)) {
+    let text: string;
+    try {
+      text = await readFile(scheduledPath, "utf8");
+    } catch {
+      text = "";
+    }
+    if (text !== "") {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text);
+      } catch (e) {
+        await logStateCorruption(vault, "scheduled.json", `invalid JSON: ${(e as Error).message}`);
+        raw = undefined;
+      }
+      if (raw !== undefined) {
+        const parseResult = ScheduledStateSchema.safeParse(raw);
+        if (!parseResult.success) {
+          await logStateCorruption(
+            vault,
+            "scheduled.json",
+            parseResult.error.issues[0]?.message ?? parseResult.error.message,
+          );
+        } else {
+          scheduled = parseResult.data;
+        }
+      }
+    }
   }
   const now = new Date();
   for (const handler of Object.keys(scheduled)) {
@@ -137,6 +164,33 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   await writeFile(scheduledPath, JSON.stringify(scheduled, null, 2));
 
   return ok({ inboxProcessed, changedFiles, scheduledFired });
+}
+
+/**
+ * Append a `state-corruption-detected` log entry for a malformed state file
+ * under `.dome/state/`. Observable rather than silent: the user (and the
+ * next `dome doctor --recent-activity`) sees the corruption while reconcile
+ * continues with the empty-state fallback. See
+ * docs/wiki/gotchas/boundary-validation-via-zod.md.
+ *
+ * Routed through `vault.tools.appendLog` (same path as `logReconciled`)
+ * rather than reaching into the privileged-writer directly — keeping
+ * reconcile inside the Tool surface preserves the EVERY_WRITE_IS_LOGGED
+ * accounting.
+ */
+async function logStateCorruption(vault: Vault, fileName: string, detail: string): Promise<void> {
+  try {
+    await vault.tools.appendLog({
+      verb: "state-corruption-detected",
+      subject: `.dome/state/${fileName}`,
+      body: detail,
+    });
+  } catch {
+    // Best-effort — if the log append fails we still continue the reconcile
+    // with the empty-state fallback. Fall back to console.warn so the
+    // operator at least sees the corruption locally.
+    console.warn(`state corruption in .dome/state/${fileName}: ${detail}`);
+  }
 }
 
 /**

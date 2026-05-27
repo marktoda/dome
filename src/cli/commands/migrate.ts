@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { initRepo } from "../../git";
 import { scaffoldVaultLayout } from "../../vault-scaffold";
-import { WorkflowName } from "../../workflows/workflow-name";
 import type { RunWorkflowOpts } from "../../workflows/agent-loop";
 import { runWorkflowAtPath } from "../run-workflow-at-path";
 import { checkAnthropicApiKey } from "../api-key-guard";
@@ -68,5 +67,5 @@ export async function domeMigrate(
   const userMessage = apply
     ? "Migrate the vault to Dome shape. Execute the migration plan."
     : "Migrate the vault to Dome shape. Write the migration plan; do not execute.";
-  return runWorkflowAtPath(vaultPath, WorkflowName.Migrate, userMessage, opts);
+  return runWorkflowAtPath(vaultPath, "migrate", userMessage, opts);
 }

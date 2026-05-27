@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
 import { domeDoctor } from "../../src/cli/commands/doctor";
+import { USER_PROSE_BEGIN, USER_PROSE_END } from "../../src/agents-md";
 
 describe("AGENTS_MD_IS_ORIENTATION_SURFACE", () => {
   test("dome init writes AGENTS.md with templated sections + user-prose delimiters", async () => {
@@ -73,5 +74,35 @@ describe("AGENTS_MD_IS_ORIENTATION_SURFACE", () => {
     } finally {
       await rm(base, { recursive: true, force: true });
     }
+  });
+
+  test("invariant doc names the same user-prose delimiters as the agents-md.ts runtime constants", async () => {
+    const invariantDocPath = join(
+      import.meta.dir,
+      "..",
+      "..",
+      "docs",
+      "wiki",
+      "invariants",
+      "AGENTS_MD_IS_ORIENTATION_SURFACE.md",
+    );
+    const docText = await readFile(invariantDocPath, "utf8");
+    expect(docText).toContain(USER_PROSE_BEGIN);
+    expect(docText).toContain(USER_PROSE_END);
+  });
+
+  test("delimiter gotcha doc names the same literals (canonical scar doc)", async () => {
+    const gotchaPath = join(
+      import.meta.dir,
+      "..",
+      "..",
+      "docs",
+      "wiki",
+      "gotchas",
+      "agents-md-delimiter-shape.md",
+    );
+    const gotchaText = await readFile(gotchaPath, "utf8");
+    expect(gotchaText).toContain(USER_PROSE_BEGIN);
+    expect(gotchaText).toContain(USER_PROSE_END);
   });
 });

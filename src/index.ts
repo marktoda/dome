@@ -22,7 +22,7 @@ export {
   type BoundToolSurface,
 } from "./vault";
 export { makeDocument, type Document, type DocumentCategory, type DocumentInput } from "./document";
-export type { HookContext, HookHandler, HookEvent } from "./hook-context";
+export type { HookContext, HookHandler, HookEvent } from "./hooks/hook-context";
 export type {
   Result,
   Effect,
@@ -62,8 +62,8 @@ export type { IndexEntry } from "./privileged-writer";
 export { parseFrontmatter, stringifyFrontmatter } from "./frontmatter";
 export { parseWikilinks, isFullPathLink, suggestFullPath } from "./wikilinks";
 
-export { HookRegistry, type RegisteredHook, type HookSource } from "./hook-registry";
-export { HookDispatcher, type CausationLink, type CycleInfo, type HookDispatcherOpts } from "./hook-dispatcher";
+export { HookRegistry, type RegisteredHook, type HookSource } from "./hooks/hook-registry";
+export { HookDispatcher, type CausationLink, type CycleInfo, type HookDispatcherOpts } from "./hooks/hook-dispatcher";
 export { autoUpdateIndex } from "./hooks/auto-update-index";
 export { autoCrossReference } from "./hooks/auto-cross-reference";
 export { VaultWatcher, type OOBEvent } from "./watcher";
