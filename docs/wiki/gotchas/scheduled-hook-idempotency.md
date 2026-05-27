@@ -33,7 +33,7 @@ The default for new scheduled hooks declared without an explicit `idempotent:` f
 
 **Specific scenarios:**
 
-- The Phase 1 dailies bundle declares `create-daily.yaml` with `schedule: "0 6 * * *"` and `idempotent: true`. The workflow internally checks `if (wiki/dailies/<today>.md exists) return no-op`. A user off for three days reconciles, the hook fires once (per clamp), the workflow creates today's daily (the other two days stay un-created — a separate `dome backfill-daily <range>` command exists for the explicit backfill case).
+- The Phase 1 dailies bundle declares `create-daily.yaml` with `schedule: "0 6 * * *"` and `idempotent: true`. The workflow internally checks `if (wiki/dailies/<today>.md exists) return no-op`. A user off for three days reconciles, the hook fires once (per clamp), the workflow creates today's daily (the other two days stay un-created — the v0.5 backfill path is to invoke the creator hook manually for each missed date via `dome run-hook dailies:create-daily --event.payload-json='{"date":"<YYYY-MM-DD>"}'`).
 
 - A `nightly-export` hook with `schedule: "0 2 * * *"` and `idempotent: false`. A user off for a week reconciles, the hook skips all seven nights (per `idempotent: false` semantic for scheduled hooks). The exports for those nights are lost — which is fine because exports are non-idempotent side effects that shouldn't be silently re-fired.
 

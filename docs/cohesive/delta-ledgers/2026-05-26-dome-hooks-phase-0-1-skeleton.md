@@ -64,7 +64,7 @@ Stable ID: `matrix-extension-bundle-shape`.
 - Lockstep status: documentary in v0.5; v0.5.1 extension to `tests/integration/matrix-coverage.test.ts` asserts each first-party-bundle row's filenames correspond to real files in the shipped `assets/extensions/<bundle>/`.
 - Implementation work this implies: the matrix row for `dailies` corresponds 1:1 with files in `assets/extensions/dailies/`.
 
-### Substrate rewritten (9 files)
+### Substrate rewritten (7 files)
 
 #### `docs/wiki/specs/sdk-surface.md` — rewrite (5 sections changed)
 

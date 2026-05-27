@@ -28,7 +28,7 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 `openVault` returns a `Vault` with this surface (the canonical names other parts of this spec and consumers depend on):
 
 - `path: string`, `config: VaultConfig`, `pageTypes: PageTypesConfig` — readonly resolved-from-disk values.
-- `tools: BoundToolSurface` — the seven Tools curried with this Vault and the privileged writer. The canonical Tool entry point for in-process consumers; see §"Tool catalog" below.
+- `tools: BoundToolSurface` — the eight Tools curried with this Vault and the privileged writer. The canonical Tool entry point for in-process consumers; see §"Tool catalog" below.
 - `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far AND any in-flight quarantine persistence writes to settle. Tests, `dome reconcile`, and `vault.close()` call this to reach a deterministic state. Idempotent — re-callable without side effects.
 - `dispatchEvents(events: ReadonlyArray<HookEvent>): Promise<void>` — push the given events through the Vault's hook dispatcher. Used by `dome reconcile` (inbox scan, git-diff replay, scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive hook handlers without each subsystem having to assemble its own `ctxFactory`.
 - `rebuildIndex(): Promise<void>` — regenerate `index.md` from scratch by walking every wiki page. Public SDK seam consulted by `dome doctor --rebuild-index` and any consumer that needs a from-scratch rebuild; consults the privileged writer internally rather than exposing it.
@@ -187,7 +187,7 @@ This is the structural enforcement of "the canonical Tool set, sealed." Prior to
 
 #### Tool signatures
 
-Canonical input/output shapes for the seven Tools. Other specs and invariant docs cite these shapes rather than restate them inline.
+Canonical input/output shapes for the eight Tools. Other specs and invariant docs cite these shapes rather than restate them inline.
 
 ```ts
 // Read
@@ -351,7 +351,23 @@ description: "..."         # optional
 deps: []                   # optional; future v0.5.1+ for cross-bundle dependencies
 ```
 
-`name` MUST equal the bundle's directory name; the loader rejects mismatches with a `bundle-name-mismatch` validation error. `version` is informational in v0.5; v0.5.1+ may layer dependency resolution.
+`name` MUST equal the bundle's directory name; the loader rejects mismatches per the `bundle-load-failure` error taxonomy below. `version` is informational in v0.5; v0.5.1+ may layer dependency resolution.
+
+#### Bundle-loader error taxonomy
+
+The bundle loader returns a single `ToolError` kind on all bundle-load failures: `kind: 'bundle-load-failure'`, with a `detail:` discriminator naming the specific failure. The canonical detail values are:
+
+| `detail:` discriminator | When it fires |
+|---|---|
+| `manifest-missing` | `<bundle>/manifest.yaml` does not exist; the directory is rejected as a bundle. |
+| `manifest-invalid` | `<bundle>/manifest.yaml` fails Zod validation (missing `name:`, malformed `version:`, etc.). |
+| `name-mismatch` | `<bundle>/manifest.yaml`'s `name:` field does not equal the directory name. |
+| `page-type-collision` | Two bundles declare the same page-type `name:` in their `page-types.yaml extensions:` blocks; OR a bundle's page-type collides with a vault-local declaration in `<vault>/.dome/page-types.yaml`. The detail message names both sources and the colliding key. |
+| `workflow-invalid` | A `<bundle>/workflows/<name>.md` fails workflow-frontmatter validation (missing `tools:`, unknown tool name, etc.). |
+| `hook-invalid` | A `<bundle>/hooks/<name>.yaml` fails `DeclarativeHookSchema` validation (per [[wiki/specs/hooks]] §"Declarative — `.dome/hooks/*.yaml`"). |
+| `cli-collision` | A `<bundle>/cli/<name>.ts` exports a command name that collides with a shipped CLI command or another bundle's CLI command. |
+
+Adding a new failure mode is one `detail:` value addition; the `kind:` stays `bundle-load-failure` so callers that handle the kind once continue to work. See [[wiki/gotchas/extension-bundle-load-order]] for the `page-type-collision` and `cli-collision` scenarios in particular.
 
 ### Bundle load lifecycle
 
@@ -389,7 +405,7 @@ The SDK ships features across three tiers. The tier determines whether a feature
 
 | Tier | Description | Examples |
 |---|---|---|
-| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants (canonical list: [[wiki/invariants/]] filtered by `tier: axiom`; `src/types.ts` `INVARIANTS` for the typed const). The 7 Tools. `index.md` + `log.md`. CLI commands. |
+| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants (canonical list: [[wiki/invariants/]] filtered by `tier: axiom`; `src/types.ts` `INVARIANTS` for the typed const). The 8 Tools. `index.md` + `log.md`. CLI commands. |
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`, `AGENTS_MD_IS_ORIENTATION_SURFACE`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. `inbox/raw/` + `inbox/review/` directories. |
 | **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `PAGE_CREATION_REQUIRES_RECURRENCE`. `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` intake directories beyond `inbox/raw/`. |
 
@@ -401,7 +417,7 @@ The shipped-defaults catalog has a single source of truth in the SDK: `src/shipp
 
 ### Adding a new invariant
 
-Three file edits, paralleling the "Adding an 8th Tool" recipe in §"Tool catalog is one declarative array":
+Three file edits, paralleling the "Adding a 9th Tool" recipe in §"Tool catalog is one declarative array":
 
 1. **Add a `NAME: "NAME"` entry** to `src/types.ts` `INVARIANTS`. The const is `as const` and produces `InvariantName = typeof INVARIANTS[keyof typeof INVARIANTS]` — adding the entry extends the union type everywhere `InvariantName` is referenced (the `ToolError` `invariant-violated` kind; the cohesion-scorecard surface; the `dome doctor` invariant-coverage check).
 2. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template (statement, tier, why, structural enforcement, counter-example, test guarantee, related). Tier is one of axiom / shipped-default / opt-in; the tier choice has structural consequences (axioms cannot be disabled in `.dome/config.yaml`; shipped-defaults can; opt-ins ship inactive).
@@ -435,7 +451,7 @@ The AC3 meta-check at `tests/integration/invariant-coverage.test.ts` requires th
 
 ### Adding a new extension bundle
 
-Three file edits at minimum, plus optional contributions across the five registration kinds. Paralleling the "Adding an 8th Tool" and "Adding a new invariant" recipes:
+Three file edits at minimum, plus optional contributions across the five registration kinds. Paralleling the "Adding a 9th Tool" and "Adding a new invariant" recipes:
 
 1. **Create the bundle directory** at `assets/extensions/<name>/` (for SDK-shipped first-party bundles) or document the vault-local copy path. The directory name IS the bundle name.
 
@@ -463,7 +479,7 @@ The Phase 1 `dailies` bundle is the canonical example: contributes `daily` and `
 
 Every consumer shell that builds against Dome (the v0.5-shipped CLI and MCP server today; v1+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
 
-- **Tools** — the seven mutation primitives via the `BoundToolSurface` exposed at `vault.tools` (protocol-agnostic; one set per Vault).
+- **Tools** — the eight mutation primitives via the `BoundToolSurface` exposed at `vault.tools` (protocol-agnostic; one set per Vault).
 - **Prompts** — Dome's shipped workflow prompts (and any plugin/vault-local additions), described as protocol-agnostic descriptors.
 - **Resources** — read-only views of vault content (index, log, individual pages, vault info), described as protocol-agnostic descriptors.
 - **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
@@ -554,7 +570,7 @@ This is the **anti-concept list**: things future contributors might be tempted t
 - **Language**: TypeScript 5.x
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
 - **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with **four entrypoints**:
-  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `buildInstructions(vault)` + `PromptDescriptor` + `ResourceDescriptor`. (`buildInstructions(vault): Promise<string>` is the cold-start instructions composer the AbstractSurface threads through to its `instructions` field; it is also exported directly for consumers that need the composed string without the full surface — see [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle" and [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]].) No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
+  - `@dome/sdk` — **core**. Vault, Document, the eight Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `buildInstructions(vault)` + `PromptDescriptor` + `ResourceDescriptor`. (`buildInstructions(vault): Promise<string>` is the cold-start instructions composer the AbstractSurface threads through to its `instructions` field; it is also exported directly for consumers that need the composed string without the full surface — see [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle" and [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]].) No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
   - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@ai-sdk/anthropic`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
   - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `renderMcp(surface)`, `McpSurface` type, `ToolAdapter` / `McpPromptAdapter` / `ResourceAdapter` types, and the MCP-shaped request handlers. Bundled deps: `@modelcontextprotocol/sdk`. Consumes `AbstractSurface` from core.
   - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`) and from `@dome/sdk/mcp` for `dome serve`.

@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-26-dome-hooks-v1-roadmap]]"]
 
 The canonical map of "what an extension bundle contributes to a vault." Rows are bundles (first-party shipped + community-authored shapes anticipated); columns are the five registration kinds bundles can contribute. Each cell names which file inside the bundle directory provides the contribution, or marks the kind unused by this bundle.
 
-**Lockstep status:** documentary in v0.5; lockstep-checked in v0.5.1. The v0.5.1 extension to `tests/integration/matrix-coverage.test.ts` parses this matrix and asserts each cell that names a specific filename corresponds to an actual file in the bundle's `assets/extensions/<bundle>/` shipped layout (for first-party bundles) or in the loader's fixture (for hello-world). The v0.5 matrix is the contract pin; the v0.5.1 lockstep is the structural fence.
+**Lockstep status:** documentary in v0.5; lockstep-checked in v0.5.1. The v0.5.1 extension to `tests/integration/matrix-coverage.test.ts` parses this matrix and asserts each cell that names a specific filename corresponds to an actual file in the bundle's `assets/extensions/<bundle>/` shipped layout (for first-party bundles) or in the loader's fixture (for hello-world). The lockstep iterates **only** rows whose `Status` column reads `shipped`; rows with `Status: anticipated` are documentation-of-intent (future-pressure) and the lockstep skips them. The v0.5 matrix is the contract pin; the v0.5.1 lockstep is the structural fence.
 
 An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or shipped from the SDK at `assets/extensions/<bundle-name>/`, copied into the vault during install) containing a `manifest.yaml` plus any combination of the five registration kinds. The bundle mechanism is a packaging convention over the existing 5-kind registration surface documented in [[wiki/specs/sdk-surface]] §"Registration"; bundles do not introduce a new primitive.
 
@@ -23,18 +23,18 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 
 - **Hook** — `<bundle>/hooks/<name>.yaml` (declarative form) or `<bundle>/hooks/<name>.ts` (programmatic form, v0.5.1+) registers a hook against an event pattern. The bundle's name namespaces the hook ID — `<bundle>:<filename>` — preventing cross-bundle hook-ID collision per [[wiki/gotchas/extension-bundle-load-order]].
 
-- **CLI command** — `<bundle>/cli/<command>.ts` adds a `dome <command>` invocation, mirroring the vault-local `<vault>/.dome/cli/*.ts` registration kind in [[wiki/specs/sdk-surface]] §"Registration". Bundle-contributed CLI commands appear in `dome --help` after the SDK's shipped 9 commands; the `dome install-extension` workflow (v0.5.1+) re-runs the bundle loader on `--help` invocation.
+- **CLI command** — `<bundle>/cli/<command>.ts` adds a `dome <command>` invocation, mirroring the vault-local `<vault>/.dome/cli/*.ts` registration kind in [[wiki/specs/sdk-surface]] §"Registration". Bundle-contributed CLI commands appear in `dome --help` after the SDK's shipped 9 commands; the loader scans `<vault>/.dome/extensions/<bundle>/cli/` on each `runCli` invocation so newly-installed bundles surface immediately without restarting the shell.
 
 - **Tool** — `<bundle>/tools/<name>.ts` adds a Tool to the registry (v0.5.1+). v0.5 bundles do not contribute Tools because the programmatic-load surface for Tools ships in v0.5.1; first-party bundles in v0.5 use only the four kinds above.
 
 ## Matrix
 
-| Bundle ↓ \ Contribution kind → | Page type (`page-types.yaml`) | Preamble fragment (`preamble.md`) | Workflows (`workflows/*.md`) | Hooks (`hooks/*.yaml`) | CLI commands (`cli/*.ts`) |
-|---|---|---|---|---|---|
-| **`dailies`** *(first-party, Phase 1 shipped)* | `daily` (and `weekly`) | `preamble.md` | `create-daily.md`, `create-weekly.md` | `create-daily.yaml` (`schedule: "0 6 * * *"`), `create-weekly.yaml` (`schedule: "0 6 * * 1"`) | `migrate-dailies.ts` |
-| **`aggregation`** *(first-party, Phase 3 anticipated)* | — *(reads dailies/weeklies; produces `wiki/syntheses/`)* | `preamble.md` | `weekly-rollup.md`, `monthly-retro.md`, `surface-stale-threads.md` | `weekly-rollup.yaml` (`schedule: "0 18 * * 0"`), `monthly-retro.yaml` (`schedule: "0 18 1 * *"`), `stale-threads.yaml` (`schedule: "0 18 * * 0"`) | — |
-| **`recall`** *(first-party, Phase 4 anticipated)* | — *(reads everything; produces stdout)* | `preamble.md` | `plan-today.md`, `follow-up-with.md`, `retro-recall.md` | — *(workflow-only; no hook scheduling)* | `plan-today.ts`, `follow-up-with.ts`, `retro-recall.ts` |
-| **`hello-world`** *(test fixture)* | `hello` | `preamble.md` | `say-hello.md` | `say-hello.yaml` (`schedule: "* * * * *"`) | — |
+| Bundle ↓ \ Contribution kind → | Status | Page type (`page-types.yaml`) | Preamble fragment (`preamble.md`) | Workflows (`workflows/*.md`) | Hooks (`hooks/*.yaml`) | CLI commands (`cli/*.ts`) |
+|---|---|---|---|---|---|---|
+| **`dailies`** *(first-party, Phase 1)* | `shipped` | `daily` (and `weekly`) | `preamble.md` | `create-daily.md`, `create-weekly.md` | `create-daily.yaml` (`schedule: "0 6 * * *"`), `create-weekly.yaml` (`schedule: "0 6 * * 1"`) | `migrate-dailies.ts` |
+| **`hello-world`** *(test fixture)* | `shipped` | `hello` | `preamble.md` | `say-hello.md` | `say-hello.yaml` (`schedule: "* * * * *"`) | — |
+| **`aggregation`** *(first-party, Phase 3)* | `anticipated` | — *(reads dailies/weeklies; produces `wiki/syntheses/`)* | `preamble.md` | `weekly-rollup.md`, `monthly-retro.md`, `surface-stale-threads.md` | `weekly-rollup.yaml` (`schedule: "0 18 * * 0"`), `monthly-retro.yaml` (`schedule: "0 18 1 * *"`), `stale-threads.yaml` (`schedule: "0 18 * * 0"`) | — |
+| **`recall`** *(first-party, Phase 4)* | `anticipated` | — *(reads everything; produces stdout)* | `preamble.md` | `plan-today.md`, `follow-up-with.md`, `retro-recall.md` | — *(workflow-only; no hook scheduling)* | `plan-today.ts`, `follow-up-with.ts`, `retro-recall.ts` |
 
 ## Reading the matrix
 

@@ -35,6 +35,7 @@ Why this is shipped-default rather than opt-in: the cost of an absent `AGENTS.md
 - `AGENTS.md` is per-vault, not per-codebase. Two vaults on the same machine have independent `AGENTS.md` files reflecting their independent configurations.
 - The file is vault-owned (committed to git, edited by the user); the SDK never clobbers the user-prose section. The templated sections are explicitly fenced off via the delimiter comments so the user knows what is and isn't safe to edit by hand.
 - Extension-bundle preamble fragments are templated content, not user prose — editing them in AGENTS.md directly is a soft anti-pattern (the next `--repair` regenerates them from the bundle's `preamble.md`). Bundle authors edit the fragment at its source; users who want to override a bundle's preamble fork the bundle.
+- The MCP server's `instructions` payload (per [[wiki/specs/cli]] §"`dome init`" and [[wiki/specs/mcp-surface]] §"Session model") mirrors AGENTS.md as the secondary delivery channel and is regenerated alongside it — extension-bundle preamble fragments propagate into `instructions` automatically, so a harness mounting MCP sees the same `## Extension conventions` content a harness reading AGENTS.md sees. The mirror is structural (both surfaces consume the same loaded-bundle list from `loadExtensionBundles(root)`), not best-effort.
 - The `CLAUDE.md` shim exists because Claude Code's auto-load convention currently prefers `CLAUDE.md`; removable once `AGENTS.md` auto-load is universal across harnesses (see [[wiki/specs/cli]] §"`dome init`").
 
 **Related:**

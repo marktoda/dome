@@ -256,7 +256,7 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 
 ## Adding a new command
 
-Adding a tenth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
+Adding a tenth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding a 9th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
 
 1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing nine `domeX` exports.
 
@@ -293,7 +293,7 @@ The shared flag name signals shared semantics (propose-then-apply); the divergen
 
 ### Errors at the consumer-shell boundary
 
-Core `ToolError` (in `src/types.ts`) enumerates failures the seven Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
+Core `ToolError` (in `src/types.ts`) enumerates failures the eight Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
 
 The 9 shipped commands map cleanly to user actions:
 

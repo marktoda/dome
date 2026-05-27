@@ -80,7 +80,7 @@ The YAML schema is validated by `DeclarativeHookSchema` in `src/hooks/yaml-loade
 
 #### Schedule field — cron-driven hooks
 
-A `schedule:` field carries a 5-field cron expression (`<minute> <hour> <dom> <month> <dow>`) validated at load time. When present, the hook fires on the cron schedule *in addition to* whatever `event:` it declares; an event-only hook fires only on event matches, a schedule-only hook fires only on the cron schedule, and a hook with both fires on either trigger. The per-vault scheduler in `wireDispatcher` consults `.dome/state/scheduled.json` (extended to also track schedule-driven hook last-fire times alongside the existing scheduled-event mechanism) and synthesizes `clock.tick.<hook-id>` events when intervals elapse.
+A `schedule:` field carries a 5-field cron expression (`<minute> <hour> <dom> <month> <dow>`) validated at load time. When present, the hook fires on the cron schedule *in addition to* whatever `event:` it declares; an event-only hook fires only on event matches, a schedule-only hook fires only on the cron schedule, and a hook with both fires on either trigger. The per-vault scheduler in `wireDispatcher` consults `.dome/state/scheduled.json` (extended to track per-hook last-fire times under `scheduled.json.hooks[<hook-id>]` alongside the pre-existing fixed-cadence tick times under `scheduled.json.ticks[<interval>]`) and synthesizes `clock.tick.<hook-id>` events when each schedule-driven hook's interval elapses. This is distinct from the pre-existing fixed-cadence taxonomy where `clock.tick.<minutely|hourly|daily|weekly>` fires at the named cadence and any number of hooks may subscribe via `event: clock.tick.<interval>`; schedule-driven `clock.tick.<hook-id>` events name the specific hook by ID and fire only its handler.
 
 The catch-up semantic is **at most one fire per `dome reconcile` run, regardless of how many intervals elapsed.** A hook with `schedule: "0 6 * * *"` that missed three days fires exactly once on the next reconcile — not three times. See [[wiki/gotchas/scheduled-hook-idempotency]] for the full contract and the rationale for the at-most-once clamp.
 
@@ -107,7 +107,7 @@ The **drop-zone intake pattern** uses the declarative form exclusively. The prin
 
 ## Adding a new hook
 
-Four forms by mechanism; one rule by shape. The "bare-event expansion" rule from §"Bare events expand to suffix wildcards" above is **load-bearing** — read it first, because it's the trap every hook author hits.
+Five forms by mechanism; one rule by shape. The "bare-event expansion" rule from §"Bare events expand to suffix wildcards" above is **load-bearing** — read it first, because it's the trap every hook author hits.
 
 **Declarative event-reactive form (the default).** New YAML at `<vault>/.dome/hooks/<name>.yaml`. Two file edits if the hook listens on a new bucket:
 
@@ -273,10 +273,17 @@ Phase 2 — Git diff:
 
 Phase 3 — Scheduled catch-up:
   read .dome/state/scheduled.json
-  for each scheduled hook whose (now - last_fire) > interval:
-    fire clock.tick.<interval>
-    update scheduled.json[handler].last_fire = now
-  (catch-up fires at most once per scheduled hook regardless of intervals missed)
+  # Two patterns coexist:
+  # (a) Fixed-cadence ticks (event-only hooks subscribed to clock.tick.<interval>).
+  for each interval in {minutely, hourly, daily, weekly}:
+    if (now - scheduled.json.ticks[<interval>].last_fire) > <interval>:
+      fire clock.tick.<interval>
+      update scheduled.json.ticks[<interval>].last_fire = now
+  # (b) Per-hook schedule fires (hooks with a schedule: field; one event per hook ID).
+  for each schedule-driven hook whose (now - last_fire) > parseCron(hook.schedule).next-interval:
+    fire clock.tick.<hook-id>
+    update scheduled.json.hooks[<hook-id>].last_fire = now
+  (both patterns clamp at most one fire per hook (or per fixed-interval tick) regardless of intervals missed)
 ```
 
 ### Dirty git state refusal
