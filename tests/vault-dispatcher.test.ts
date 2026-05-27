@@ -55,7 +55,7 @@ describe("wireDispatcher (vaultRef setter pattern)", () => {
 
       // Publish a Vault stand-in into the ref AFTER wireDispatcher returned.
       // The closure must pick this up at the next dispatchEvents call.
-      const stub = {
+      const stub: Vault = {
         path: root,
         config: SHIPPED_VAULT_CONFIG,
         pageTypes: SHIPPED_PAGE_TYPES,
@@ -64,6 +64,7 @@ describe("wireDispatcher (vaultRef setter pattern)", () => {
         dispatchEvents: wired.dispatchEvents,
         rebuildIndex: async () => {},
         close: wired.close,
+        _writer: writer,
       };
       vaultRef.current = stub;
 
@@ -93,7 +94,7 @@ describe("wireDispatcher (vaultRef setter pattern)", () => {
         handler: async () => { invocations++; },
       });
 
-      const stub = {
+      const stub: Vault = {
         path: root,
         config: SHIPPED_VAULT_CONFIG,
         pageTypes: SHIPPED_PAGE_TYPES,
@@ -102,6 +103,7 @@ describe("wireDispatcher (vaultRef setter pattern)", () => {
         dispatchEvents: wired.dispatchEvents,
         rebuildIndex: async () => {},
         close: wired.close,
+        _writer: writer,
       };
       vaultRef.current = stub;
 

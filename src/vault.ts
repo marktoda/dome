@@ -85,6 +85,18 @@ export interface Vault {
    * §"Vault lifecycle".
    */
   close: () => Promise<void>;
+  /**
+   * @internal — consumed by `projectAiSdk` to bind AI-SDK Tool execute
+   * handlers to the same PrivilegedWriter `openVault` already constructed.
+   * Do NOT consume from plugin code. The INDEX_AND_LOG_ARE_DISPATCHER_OWNED
+   * axiom is preserved: plugin code reaches the privileged writer ONLY via
+   * `HookContext.privilegedWriter`, which the dispatcher partitions to
+   * sdk-source hooks. This field is module-private optimization for the
+   * in-SDK `projectAiSdk(vault)` caller; it is NOT re-exported from
+   * `src/index.ts` (no `PrivilegedWriter` type export), so plugin authors
+   * cannot reach it through the public surface.
+   */
+  readonly _writer: PrivilegedWriter;
 }
 
 /**
@@ -211,6 +223,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     dispatchEvents,
     rebuildIndex,
     close,
+    _writer: privilegedWriter,
   };
 
   // Publish the assembled Vault into vaultRef BEFORE loadDeclarativeHooks so
