@@ -68,8 +68,23 @@ export { autoUpdateIndex } from "./hooks/auto-update-index";
 export { autoCrossReference } from "./hooks/auto-cross-reference";
 export { VaultWatcher, type OOBEvent } from "./watcher";
 export { reconcile, type ReconcileOpts, type ReconcileResult } from "./reconcile";
-export { commitWorkflow, type WorkflowCommitInput } from "./workflow-commit";
+export { commitWorkflow, composeCommitMessage, type WorkflowCommitInput } from "./workflow-commit";
 export { projectEffectToEvents, projectEffectsToEvents } from "./event-projection";
+
+// The adoption substrate per docs/wiki/specs/adoption.md. Public re-exports:
+// `sync` + `getAdoptionStatus` + `makeRunContext` + types. The write side
+// (`setAdoptedRef`) is intentionally NOT re-exported; consumers reach the
+// adopted ref via `getAdoptedRef` (read) and `sync` (advance as part of the
+// loop), so there is no public path to producing an unsequenced ref advance.
+export {
+  sync,
+  getAdoptionStatus,
+  makeRunContext,
+  type RunContext,
+  type SyncResult,
+  type AdoptionStatus,
+} from "./adoption";
+export { getAdoptedRef, getCurrentBranch, adoptedRefName, ZERO_SHA } from "./adopted-ref";
 
 // Canonical Tool registry — single source of truth for the seven Tools.
 // Plugin and harness authors that want to enumerate or extend the Tool

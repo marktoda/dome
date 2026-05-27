@@ -3,6 +3,7 @@ import { commitWorkflow } from "../src/workflow-commit";
 import { openVault } from "../src/vault";
 import { makeTestVault } from "./helpers/make-test-vault";
 import { log as gitLog } from "../src/git";
+import { makeRunContext, ZERO_SHA } from "../src/adoption";
 
 describe("commitWorkflow", () => {
   test("creates a single commit with all paths touched + log entry subject", async () => {
@@ -22,6 +23,7 @@ describe("commitWorkflow", () => {
         subject: "create Danny entity page",
         body: "Initial ingest from voice note",
         touchedPaths: ["wiki/entities/danny.md", "log.md", "index.md"],
+        runContext: makeRunContext({ extensionId: "ingest", base: ZERO_SHA, sourceHead: ZERO_SHA }),
       });
       expect(sha).toMatch(/^[0-9a-f]{40}$/);
       // Verify subject in git log
@@ -50,6 +52,7 @@ git:
         verb: "ingest",
         subject: "no-op",
         touchedPaths: ["log.md"],
+        runContext: makeRunContext({ extensionId: "ingest", base: ZERO_SHA, sourceHead: ZERO_SHA }),
       });
       expect(sha).toBe("");
     } finally {

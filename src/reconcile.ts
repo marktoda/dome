@@ -5,6 +5,7 @@ import type { Vault } from "./vault";
 import type { HookEvent } from "./hooks/hook-context";
 import { projectEffectToEvents } from "./event-projection";
 import { currentSha, statusMatrix, readTree } from "./git";
+import { getAdoptedRef, getCurrentBranch } from "./adopted-ref";
 import { ok, err, type Result, type ToolError } from "./types";
 import { ScheduledStateSchema, type ScheduledEntry } from "./state-schemas";
 import { INTAKE_EXCLUDED_BUCKETS } from "./shipped-defaults";
@@ -68,16 +69,15 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
     }
   }
 
-  // Phase 2: git-diff replay since last-reconciled-sha.
+  // Phase 2: git-diff replay since the adopted ref (per
+  // ADOPTED_REF_IS_SEMANTIC_CURSOR; the v0.5 cursor file
+  // `last-reconciled-sha.txt` has been retired in favor of the ref). The
+  // cursor read tolerates absence — fresh vaults sync without a prior ref
+  // and proceed without a committed-diff phase.
   const stateDir = join(vault.path, ".dome", "state");
   await mkdir(stateDir, { recursive: true });
-  const lastShaPath = join(stateDir, "last-reconciled-sha.txt");
-  let lastSha: string | null = null;
-  try {
-    lastSha = (await readFile(lastShaPath, "utf8")).trim() || null;
-  } catch {
-    // first run — no prior reconciliation
-  }
+  const branch = await getCurrentBranch(vault.path);
+  const lastSha = branch !== null ? await getAdoptedRef(vault.path, branch) : null;
 
   const sha: string | null = await currentSha(vault.path);
 
@@ -110,7 +110,10 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
       // If diffing fails (e.g., shallow clone), skip committed-diff phase.
     }
   }
-  if (sha) await writeFile(lastShaPath, sha);
+  // The canonical cursor (`refs/dome/adopted/<branch>`) is advanced by the
+  // adoption loop in src/adoption.ts after reconcile completes successfully;
+  // reconcile itself no longer writes a cursor file. The `last-reconcile-mtime.txt`
+  // mtime marker is touched by `sync` after this function returns.
 
   // Phase 3: scheduled catchup.
   // The scheduled-state JSON is validated by `ScheduledStateSchema` rather

@@ -156,3 +156,66 @@ export async function log(opts: {
     ...(opts.ref !== undefined ? { ref: opts.ref } : {}),
   });
 }
+
+/**
+ * Resolve a ref name to its current commit OID. Returns null when the ref
+ * doesn't exist (the canonical "uninitialized" signal for the adopted ref).
+ * isomorphic-git throws on unknown refs; this wrapper turns the throw into a
+ * null so callers don't need a try/catch at every read site.
+ */
+export async function readRef(opts: { path: string; ref: string }): Promise<string | null> {
+  try {
+    const { root } = await resolveGitContext(opts.path);
+    return await git.resolveRef({ fs, dir: root, ref: opts.ref });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write `ref` to point at `value` (a commit OID). Used to advance
+ * `refs/dome/adopted/<branch>` per ADOPTED_REF_IS_SEMANTIC_CURSOR. The caller
+ * is responsible for any fast-forward / divergence semantics; this is a
+ * mechanical writer.
+ */
+export async function writeRef(opts: { path: string; ref: string; value: string }): Promise<void> {
+  const { root } = await resolveGitContext(opts.path);
+  await git.writeRef({ fs, dir: root, ref: opts.ref, value: opts.value, force: true });
+}
+
+/**
+ * True when `ancestor` is in `descendant`'s ancestry — i.e., advancing
+ * `ancestor → descendant` is a fast-forward. Used by `setAdoptedRef` to
+ * decide whether the new HEAD descends from the current adopted commit
+ * before advancing. Returns false on any error (treat unknown-ref or
+ * detached-commit cases as "not an ancestor" — refuse to advance).
+ */
+export async function isAncestor(opts: {
+  path: string;
+  ancestor: string;
+  descendant: string;
+}): Promise<boolean> {
+  try {
+    const { root } = await resolveGitContext(opts.path);
+    return await git.isDescendent({ fs, dir: root, oid: opts.descendant, ancestor: opts.ancestor });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the current branch name (the symbolic ref `HEAD` points to).
+ * Returns null when HEAD is detached (commit-OID-only HEAD; no branch
+ * association). Vaults with detached HEAD cannot use the adopted-ref
+ * substrate because there's no `<branch>` to namespace under; callers
+ * surface this as "uninitialized" or a validation error.
+ */
+export async function currentBranch(path: string): Promise<string | null> {
+  try {
+    const { root } = await resolveGitContext(path);
+    const name = await git.currentBranch({ fs, dir: root, fullname: false });
+    return name ?? null;
+  } catch {
+    return null;
+  }
+}

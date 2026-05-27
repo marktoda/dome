@@ -4,7 +4,7 @@ Orientation for agents and human contributors landing on `dome/`. This is the **
 
 ## What this repo is
 
-A TypeScript SDK on Bun — the four-concept Dome core (Vault, Document, Tool, Hook), seven Tools, the eight `dome` CLI commands, an MCP server, and a workflow runner. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate.
+A TypeScript SDK on Bun — the four-concept Dome core (Vault, Document, Tool, Hook), the canonical Tool catalog ([[docs/wiki/specs/sdk-surface]] §"Tool catalog"), the canonical CLI command set ([[docs/wiki/specs/cli]] §"CLI"), an MCP server, and a workflow runner. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate.
 
 The canonical substrate map is `docs/index.md`. Every spec, invariant, matrix, and gotcha is linked from there. **Read the substrate before changing code.**
 
@@ -30,7 +30,7 @@ By substrate type:
 
 ## Load-bearing rules
 
-- **The 16 named invariants are pinned by AC3 lockstep.** `tests/integration/invariant-coverage.test.ts` iterates `INVARIANTS` and requires `tests/invariants/<slug>.test.ts` per name. Off-matrix invariants delegate via `import(...)` to the canonical enforcement test — never via `expect(true).toBe(true)` (the no-op shape is rejected by the meta-check).
+- **The named invariants are pinned by AC3 lockstep.** `tests/integration/invariant-coverage.test.ts` iterates `INVARIANTS` (the typed const in `src/types.ts` — see [[docs/wiki/gotchas/substrate-count-drift]] for why the count is not inlined here) and requires `tests/invariants/<slug>.test.ts` per name. Off-matrix invariants delegate via `import(...)` to the canonical enforcement test — never via `expect(true).toBe(true)` (the no-op shape is rejected by the meta-check).
 - **The four-concept core is sealed.** Vault, Document, Tool, Hook. Workflows, Agents, Events, Plugins, Intakes are patterns on these four, not separate primitives. See `docs/wiki/specs/sdk-surface.md` §"Outputs the SDK does not have."
 - **`@dome/sdk` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `runWorkflow` from `src/index.ts` fails CI.
 - **Markdown is the source of truth.** Anything Dome derives can be rebuilt from markdown alone. `.dome/state/` is gitignored and rebuildable.

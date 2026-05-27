@@ -173,11 +173,16 @@ export async function domeDoctor(
   }
 
   if (opts.timeSinceReconcile) {
-    const reconcilePath = join(vault.path, ".dome", "state", "last-reconciled-sha.txt");
-    if (!existsSync(reconcilePath)) {
-      info.push("time-since-reconcile: never (dome reconcile has never run)");
+    // Prefer the renamed marker; fall back to the legacy SHA file for vaults
+    // migrating from v0.5 pre-phase1+phase3 per docs/wiki/specs/adoption.md
+    // §"Migration from v0.5". Mtime is the load-bearing signal in both files.
+    const mtimePath = join(vault.path, ".dome", "state", "last-reconcile-mtime.txt");
+    const legacyPath = join(vault.path, ".dome", "state", "last-reconciled-sha.txt");
+    const readPath = existsSync(mtimePath) ? mtimePath : existsSync(legacyPath) ? legacyPath : null;
+    if (readPath === null) {
+      info.push("time-since-reconcile: never (dome sync has never run)");
     } else {
-      const st = await stat(reconcilePath);
+      const st = await stat(readPath);
       const ageMs = Date.now() - st.mtimeMs;
       info.push(`time-since-reconcile: ${formatAge(ageMs)} (since ${new Date(st.mtimeMs).toISOString()})`);
     }

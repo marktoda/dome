@@ -1,23 +1,35 @@
-import { openVault } from "../../vault";
-import { reconcile } from "../../reconcile";
+import { domeSync } from "./sync";
 import type { Result, ToolError } from "../../types";
 
+export interface ReconcileResult {
+  inboxProcessed: number;
+  changedFiles: number;
+  scheduledFired: number;
+}
+
+/**
+ * `dome reconcile` — deprecated alias for `dome sync`. Preserved for
+ * back-compat with v0.5 cron entries, test fixtures, and harness
+ * invocations. Delegates to `domeSync` and projects the result onto the
+ * pre-rewrite shape (the three counters callers expect).
+ *
+ * The deprecation notice is printed at the CLI wiring layer in `cli.ts`
+ * rather than here so programmatic consumers (tests calling `domeReconcile`
+ * directly) don't get stderr noise.
+ *
+ * See docs/wiki/specs/adoption.md §"Relationship to `dome reconcile`".
+ */
 export async function domeReconcile(
   vaultPath: string,
-): Promise<Result<{ inboxProcessed: number; changedFiles: number; scheduledFired: number }, ToolError>> {
-  const res = await openVault(vaultPath);
-  if (!res.ok) return res;
-  const vault = res.value;
-  // Route every event reconcile fires through the vault's dispatcher so the
-  // shipped-default hooks (auto-update-index) and YAML-declared intake hooks
-  // (intake-raw.yaml → ingest workflow) actually run. Without this routing,
-  // reconcile would fire events into the void.
-  const result = await reconcile(vault, {
-    onEvent: (event) => vault.dispatchEvents([event]),
-  });
-  // Wait for async hooks to settle so the CLI exits with a deterministic
-  // state. Without drainHooks the process can exit while p-queue still has
-  // work scheduled, losing the tail of any inbox processing.
-  await vault.drainHooks();
-  return result;
+): Promise<Result<ReconcileResult, ToolError>> {
+  const r = await domeSync(vaultPath);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    value: {
+      inboxProcessed: r.value.inboxProcessed,
+      changedFiles: r.value.changedFiles,
+      scheduledFired: r.value.scheduledFired,
+    },
+  };
 }

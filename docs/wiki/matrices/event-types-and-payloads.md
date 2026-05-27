@@ -39,6 +39,8 @@ Out-of-band edits to `notes/` (user-authored content; Dome reads only) and `exte
 | `hook.failed` | dispatcher | `{ handler_id: string, event: string, error: Error }` | Quarantine logic, alerting |
 | `hook.cycle-detected` | dispatcher | `{ chain: HookCausationChain, depth: number }` | See [[wiki/gotchas/hook-cycle]] |
 | `hook.disabled` | dispatcher | `{ handler_id: string, reason: string }` | User notification |
+| `engine.adoption.advanced` | `src/adoption.ts` (after `setAdoptedRef` succeeds) | `{ branch: string, from: CommitOid \| null, to: CommitOid, runId: string }` | Query-cache refresh; future Dome-aware shells; v0.5 ships unhandled |
+| `engine.adoption.blocked` | `src/adoption.ts` (when `sync` cannot advance: dirty git state, divergence, blocking diagnostic) | `{ branch: string, adopted: CommitOid \| null, head: CommitOid, reason: string }` | Surface to the user; future agentic-harness "your sync blocked" notifier; v0.5 ships unhandled |
 
 ## Pattern-matching rules
 

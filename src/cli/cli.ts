@@ -7,6 +7,8 @@ import { domeLint } from "./commands/lint";
 import { domeExportContext } from "./commands/export-context";
 import { domeServe } from "./commands/serve";
 import { domeStats } from "./commands/stats";
+import { domeSync } from "./commands/sync";
+import { domeStatus, statusToJson } from "./commands/status";
 import { renderCliError } from "./render-error";
 import { openVault } from "../vault";
 
@@ -110,8 +112,9 @@ function buildProgram(outcome: RunOutcome): Command {
         "",
         "Examples:",
         "  dome init ~/vaults/work             # bootstrap a new vault",
+        "  cd ~/vaults/work && dome status     # adoption snapshot",
+        "  cd ~/vaults/work && dome sync       # adoption loop (advance adopted ref)",
         "  cd ~/vaults/work && dome doctor     # structural diagnostic",
-        "  cd ~/vaults/work && dome reconcile  # catch up hook state",
         "  dome serve --vault ~/vaults/work    # start compiler daemon (watcher + optional MCP)",
         "  cd ~/vaults/work && dome stats      # visual dashboard",
         "",
@@ -212,27 +215,79 @@ function buildProgram(outcome: RunOutcome): Command {
       await new Promise<void>(() => {});
     });
 
-  // ------ reconcile ------
+  // ------ status ------
   program
-    .command("reconcile")
-    .description("Catch up the vault's hook execution state.")
+    .command("status")
+    .description("Show the vault's adoption snapshot (branch / HEAD / adopted / pending / dirty).")
+    .option("--json", "Emit JSON to stdout (machine-readable)")
     .addHelpText(
       "after",
       [
         "",
-        "Runs three phases:",
-        "  1. Inbox processing  — fires document.written.inbox.<bucket> for",
-        "                         each file in inbox/<bucket>/",
-        "  2. Git-diff replay   — fires document.written.<category>.<type>",
-        "                         for files changed since the last reconcile",
-        "  3. Scheduled catchup — fires clock.tick.<interval> for elapsed",
-        "                         schedules",
+        "Read-only snapshot. Surfaces `refs/dome/adopted/<branch>` per",
+        "docs/wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR.md. Never mutates.",
         "",
-        "Run from inside a vault directory. Refuses to run during a mid-merge,",
-        "mid-rebase, or mid-cherry-pick.",
+        "When adopted is uninitialized (a freshly-init'd vault), --json emits",
+        "null for both `adopted` and `pendingCommits`.",
+      ].join("\n"),
+    )
+    .action(async (opts: { json?: boolean }) => {
+      const r = await domeStatus(process.cwd());
+      if (!r.ok) { console.error(renderCliError(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (opts.json === true) {
+        console.log(statusToJson(r.value.status));
+      } else {
+        for (const line of r.value.lines) console.log(line);
+      }
+    });
+
+  // ------ sync ------
+  program
+    .command("sync")
+    .description("Run the adoption loop: reconcile, then advance refs/dome/adopted/<branch> atomically.")
+    .option("--force-advance", "Accept a non-fast-forward HEAD (divergence-recovery path)")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Five-step composition:",
+        "  1. Identify source range (`adopted..HEAD`).",
+        "  2. Diagnose preconditions (dirty git state; divergence).",
+        "  3. Reconcile — three phases (inbox / git-diff / scheduled).",
+        "  4. Drain hooks — settle the async queue.",
+        "  5. Adopt — atomically advance refs/dome/adopted/<branch>.",
+        "",
+        "Refuses (exit 1) on blocking diagnostic; --force-advance accepts",
+        "divergence per docs/wiki/gotchas/adopted-ref-divergence.md.",
+      ].join("\n"),
+    )
+    .action(async (opts: { forceAdvance?: boolean }) => {
+      const r = await domeSync(process.cwd(), { forceAdvance: opts.forceAdvance === true });
+      if (!r.ok) { console.error(renderCliError(r.error)); outcome.code = ExitCode.Failure; return; }
+      const v = r.value;
+      const beforeTxt = v.adoptedBefore === null ? "(init)" : v.adoptedBefore.slice(0, 7);
+      console.log(
+        `dome sync: adopted ${v.branch}: ${beforeTxt}..${v.adoptedAfter.slice(0, 7)} ` +
+        `(${v.inboxProcessed} inbox, ${v.changedFiles} changed, ${v.scheduledFired} scheduled)`,
+      );
+    });
+
+  // ------ reconcile (deprecated alias for sync) ------
+  program
+    .command("reconcile")
+    .description("(deprecated alias for `dome sync`) Catch up hook state; prints a deprecation notice.")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Preserved for back-compat with v0.5 cron entries, test fixtures,",
+        "and harness invocations. Prints a deprecation notice on stderr",
+        "and delegates to `dome sync`. See docs/wiki/specs/adoption.md",
+        "§\"Relationship to `dome reconcile`\".",
       ].join("\n"),
     )
     .action(async () => {
+      console.error("[dome] `dome reconcile` is deprecated; use `dome sync`");
       const r = await domeReconcile(process.cwd());
       if (!r.ok) { console.error(renderCliError(r.error)); outcome.code = ExitCode.Failure; return; }
       const v = r.value;
