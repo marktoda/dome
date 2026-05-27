@@ -166,7 +166,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     if (row === undefined) throw new Error("expected row");
 
     expect(row.status).toBe("succeeded");
-    expect(row.id as string).toBe(runnerResult.runId);
+    expect(row.id).toBe(runnerResult.runId);
     expect(row.processorId).toBe("test.ledger.success");
     expect(row.processorVersion).toBe("0.0.1");
     expect(row.phase).toBe("adoption");

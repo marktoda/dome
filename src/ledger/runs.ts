@@ -72,17 +72,17 @@ import { randomBytes } from "node:crypto";
 
 import type { ProcessorPhase } from "../core/processor";
 import { commitOid, type CommitOid } from "../core/source-ref";
+import { type RunId } from "../engine/runner-contract";
 import type { LedgerDb } from "./db";
 
 // ----- Branded RunId --------------------------------------------------------
 //
-// Structurally branded so a raw `string` cannot accidentally flow into a slot
-// expecting a RunId. The format is normative (per spec §"Tables — runs":
-// `run_<unix-ms>_<6-char-rand>`); the brand makes the lifecycle accessors
-// refuse arbitrary strings.
+// The `RunId` brand is owned by `../engine/runner-contract` (the engine ↔
+// runtime contract that the ledger consumes). Re-exported here so existing
+// callers — `src/processors/runtime.ts`, the ledger accessors below — can
+// keep importing it from the ledger surface unchanged.
 
-/** A ledger run id, formatted `run_<unix-ms>_<6-char-rand>` per spec. */
-export type RunId = string & { readonly __brand: "RunId" };
+export type { RunId };
 
 // ----- Run lifecycle status -------------------------------------------------
 
@@ -173,6 +173,24 @@ export type MarkSkippedOpts = {
 };
 
 /**
+ * Bulk-update `output_commit` for the named successful runs. Called by the
+ * engine's adoption loop (`src/engine/adopt.ts`) once `makeClosureCommit`
+ * returns a non-null OID — `markSucceeded` writes NULL into the column at
+ * processor-run-terminal time (because the closure commit doesn't exist
+ * yet), and this accessor lands the OID after the fact.
+ *
+ * The two-write pattern is intentional, NOT a layering bug — see
+ * docs/wiki/gotchas/run-succeeded-before-closure.md. The run lifecycle is
+ * bounded by `processor.run()`, not by the engine's adoption cycle; a run
+ * whose effects were all rejected by the broker contributed nothing to the
+ * closure commit and must still reach `succeeded`.
+ */
+export type UpdateOutputCommitOpts = {
+  readonly runIds: ReadonlyArray<RunId>;
+  readonly outputCommit: CommitOid;
+};
+
+/**
  * Row shape returned by `queryRuns` / `getRun` / `orphanRuns`. JSON columns
  * are deserialized. Nullable columns are typed `T | null` (not `T | undefined`)
  * so SQL NULL maps cleanly under `exactOptionalPropertyTypes`.
@@ -246,6 +264,17 @@ UPDATE runs
 SET status = 'skipped',
     finished_at = ?
 WHERE id = ? AND status = 'queued'
+`.trim();
+
+// `updateOutputCommit` is parameterized per-call because the `IN (...)` set
+// is variable-length; the SQL template is composed inline. Filters by
+// `status = 'succeeded' AND output_commit IS NULL` so the OID lands at most
+// once per run (defense against a re-driven adoption loop replaying the
+// same runIds against a different closure commit).
+const UPDATE_OUTPUT_COMMIT_SQL_PREFIX = `
+UPDATE runs
+SET output_commit = ?
+WHERE status = 'succeeded' AND output_commit IS NULL AND id IN (
 `.trim();
 
 const SELECT_BASE_SQL = `
@@ -386,6 +415,40 @@ export function markFailed(db: LedgerDb, opts: MarkFailedOpts): void {
  */
 export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
   db.raw.query(MARK_SKIPPED_SQL).run(opts.finishedAt.toISOString(), opts.id);
+}
+
+/**
+ * Land the closure-commit OID on the `output_commit` column of every named
+ * successful run. Called by `src/engine/adopt.ts` after `makeClosureCommit`
+ * returns a non-null OID for the iteration.
+ *
+ * The UPDATE filters by `status = 'succeeded' AND output_commit IS NULL`:
+ * the run lifecycle is owned by `processor.run()` (per
+ * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]); this accessor only
+ * lands the trailer-join key after the fact. The IS-NULL guard means
+ * calling twice is a no-op (second call updates zero rows) — useful if the
+ * engine's adoption cycle were ever re-driven against the same runIds.
+ *
+ * Returns the number of rows updated. An empty `runIds` array short-
+ * circuits to zero (no SQL is issued).
+ *
+ * See docs/wiki/gotchas/run-succeeded-before-closure.md for why this is a
+ * separate write, not part of `markSucceeded`.
+ */
+export function updateOutputCommit(
+  db: LedgerDb,
+  opts: UpdateOutputCommitOpts,
+): number {
+  if (opts.runIds.length === 0) return 0;
+  // SQLite has no array-binding for IN(); compose `?, ?, ...` placeholders
+  // for the variable-length runIds set. The placeholders are followed by the
+  // closing `)`; the leading `?` (the outputCommit value) is the first arg.
+  const placeholders = opts.runIds.map(() => "?").join(", ");
+  const sql = `${UPDATE_OUTPUT_COMMIT_SQL_PREFIX}${placeholders})`;
+  const result = db.raw
+    .query(sql)
+    .run(opts.outputCommit, ...opts.runIds);
+  return result.changes;
 }
 
 /**

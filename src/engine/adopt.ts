@@ -74,7 +74,8 @@ import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import { currentBranch, currentSha } from "../git";
 import type { LedgerDb } from "../ledger/db";
 import { recordCapabilityUse } from "../ledger/capability-uses";
-import type { RunId } from "../ledger/runs";
+import { updateOutputCommit } from "../ledger/runs";
+import type { RunId } from "./runner-contract";
 import type { Vault } from "../vault";
 import { compileRange } from "./compile-range";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
@@ -204,6 +205,11 @@ export async function adopt(opts: {
 
   const allDiagnostics: DiagnosticEffect[] = [];
   const touchedPaths = new Set<string>();
+  // Every run id surfaced by the runner across all iterations. The closure
+  // commit's OID lands on each of these via `updateOutputCommit` after
+  // `makeClosureCommit` returns — completing the dual-surface join from
+  // `runs.output_commit` to the `Dome-Run` trailer.
+  const contributingRunIds = new Set<RunId>();
 
   // The loop body — bounded by maxIterations. Convergence is detected by
   // an iteration that produces no auto-mode PatchEffect; divergence is
@@ -232,6 +238,7 @@ export async function adopt(opts: {
     const effectsThisIteration: Effect[] = [];
 
     for (const { runId, processorId, declared, granted, effects } of runnerResults) {
+      contributingRunIds.add(runId);
       for (const effect of effects) {
         const applied = await applyEffect({
           effect,
@@ -254,7 +261,7 @@ export async function adopt(opts: {
         // `runs.id`.
         if (ledger !== undefined && applied.capabilityUse !== undefined) {
           recordCapabilityUse(ledger, {
-            runId: runId as RunId,
+            runId,
             capability: applied.capabilityUse.capability,
             resource: applied.capabilityUse.resource,
             outcome: applied.capabilityUse.outcome,
@@ -362,6 +369,19 @@ export async function adopt(opts: {
     touchedPaths: [...touchedPaths],
     proposalId: proposal.id,
   });
+
+  // Dual-surface join: when a closure commit landed AND a ledger is wired,
+  // back-fill `runs.output_commit` on every contributing run. `markSucceeded`
+  // wrote NULL there at processor-run-terminal time (the closure commit
+  // didn't exist yet); this UPDATE lands the OID now that it does. The
+  // two-write pattern is intentional — see
+  // docs/wiki/gotchas/run-succeeded-before-closure.md.
+  if (closureCommitOid !== null && ledger !== undefined) {
+    updateOutputCommit(ledger, {
+      runIds: [...contributingRunIds],
+      outputCommit: closureCommitOid,
+    });
+  }
 
   // Adopt: advance the adopted ref atomically. The new adopted commit is
   // the closure commit when one was made (the engine's accumulated patches

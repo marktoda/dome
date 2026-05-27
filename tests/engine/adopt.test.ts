@@ -10,7 +10,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { adopt } from "../../src/engine/adopt";
-import type { AdoptionPhaseRunner } from "../../src/engine/runner-contract";
+import type {
+  AdoptionPhaseRunner,
+  RunId,
+} from "../../src/engine/runner-contract";
 import { noopSinks } from "../../src/engine/apply-effect";
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
@@ -97,7 +100,7 @@ describe("adopt fixed-point loop", () => {
     });
     const runner: AdoptionPhaseRunner = async () => [
       {
-        runId: "run_test_blocker",
+        runId: "run_test_blocker" as RunId,
         processorId: "test.blocker",
         declared: [],
         granted: [],
@@ -141,7 +144,7 @@ describe("adopt fixed-point loop", () => {
     const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
     const runner: AdoptionPhaseRunner = async () => [
       {
-        runId: "run_test_diverger",
+        runId: "run_test_diverger" as RunId,
         processorId: "test.diverger",
         declared: [auto],
         granted: [auto],

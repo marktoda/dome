@@ -30,6 +30,7 @@ import {
   newRunId,
   orphanRuns,
   queryRuns,
+  updateOutputCommit,
   type RunId,
 } from "../../src/ledger/runs";
 
@@ -338,6 +339,156 @@ describe("runs lifecycle", () => {
     // Now that the row is transitioned, a second sweep finds nothing.
     expect(orphanRuns(db, 60_000, now).length).toBe(0);
     expect(failOrphanedRuns(db, 60_000, now)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateOutputCommit — the post-closure-commit back-fill
+// ---------------------------------------------------------------------------
+
+describe("updateOutputCommit", () => {
+  let root: string;
+  let db: LedgerDb;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "dome-ledger-output-"));
+    const path = join(root, ".dome", "state", "runs.db");
+    const r = await openLedgerDb({ path });
+    if (!r.ok) throw new Error(`openLedgerDb failed: ${JSON.stringify(r.error)}`);
+    db = r.value.db;
+  });
+
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function makeSucceededRun(id: RunId, suffix: string): void {
+    insertQueued(db, {
+      id,
+      proposalId: null,
+      processorId: `dome.proc.${suffix}`,
+      processorVersion: "1.0.0",
+      phase: "adoption",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "signal",
+      triggerPayload: null,
+      startedAt: new Date(),
+    });
+    markRunning(db, id, new Date());
+    markSucceeded(db, {
+      id,
+      effectHashes: [],
+      costUsd: null,
+      durationMs: 10,
+      outputCommit: null,
+      finishedAt: new Date(),
+    });
+  }
+
+  it("lands the closure-commit OID on each named succeeded run", () => {
+    const a = newRunId(new Date(), () => "a11111");
+    const b = newRunId(new Date(Date.now() + 1), () => "b22222");
+    makeSucceededRun(a, "a");
+    makeSucceededRun(b, "b");
+
+    // Pre-condition: both rows have null output_commit.
+    expect(getRun(db, a)?.outputCommit).toBeNull();
+    expect(getRun(db, b)?.outputCommit).toBeNull();
+
+    const updated = updateOutputCommit(db, {
+      runIds: [a, b],
+      outputCommit: OUTPUT_COMMIT,
+    });
+    expect(updated).toBe(2);
+
+    expect(getRun(db, a)?.outputCommit).toBe(OUTPUT_COMMIT);
+    expect(getRun(db, b)?.outputCommit).toBe(OUTPUT_COMMIT);
+  });
+
+  it("skips rows whose output_commit is already set (defense against re-drive)", () => {
+    const a = newRunId(new Date(), () => "c33333");
+    makeSucceededRun(a, "c");
+
+    const first = updateOutputCommit(db, {
+      runIds: [a],
+      outputCommit: OUTPUT_COMMIT,
+    });
+    expect(first).toBe(1);
+
+    // Second call against a different OID is a no-op (the row is already
+    // set, so the IS-NULL filter excludes it).
+    const otherOid = commitOid("9999999999999999999999999999999999999999");
+    const second = updateOutputCommit(db, {
+      runIds: [a],
+      outputCommit: otherOid,
+    });
+    expect(second).toBe(0);
+
+    // The first-write OID survives.
+    expect(getRun(db, a)?.outputCommit).toBe(OUTPUT_COMMIT);
+  });
+
+  it("skips rows that aren't yet succeeded (running / failed runs untouched)", () => {
+    const succeeded = newRunId(new Date(), () => "d44444");
+    const failed = newRunId(new Date(Date.now() + 1), () => "e55555");
+    const running = newRunId(new Date(Date.now() + 2), () => "f66666");
+
+    makeSucceededRun(succeeded, "ok");
+
+    insertQueued(db, {
+      id: failed,
+      proposalId: null,
+      processorId: "dome.proc.failed",
+      processorVersion: "1.0.0",
+      phase: "adoption",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "signal",
+      triggerPayload: null,
+      startedAt: new Date(),
+    });
+    markRunning(db, failed, new Date());
+    markFailed(db, {
+      id: failed,
+      error: "boom",
+      durationMs: 5,
+      finishedAt: new Date(),
+    });
+
+    insertQueued(db, {
+      id: running,
+      proposalId: null,
+      processorId: "dome.proc.running",
+      processorVersion: "1.0.0",
+      phase: "adoption",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "signal",
+      triggerPayload: null,
+      startedAt: new Date(),
+    });
+    markRunning(db, running, new Date());
+
+    const updated = updateOutputCommit(db, {
+      runIds: [succeeded, failed, running],
+      outputCommit: OUTPUT_COMMIT,
+    });
+    // Only the succeeded row updates.
+    expect(updated).toBe(1);
+    expect(getRun(db, succeeded)?.outputCommit).toBe(OUTPUT_COMMIT);
+    expect(getRun(db, failed)?.outputCommit).toBeNull();
+    expect(getRun(db, running)?.outputCommit).toBeNull();
+  });
+
+  it("empty runIds is a no-op (returns 0 without issuing SQL)", () => {
+    const updated = updateOutputCommit(db, {
+      runIds: [],
+      outputCommit: OUTPUT_COMMIT,
+    });
+    expect(updated).toBe(0);
   });
 });
 

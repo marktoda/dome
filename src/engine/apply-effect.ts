@@ -61,6 +61,7 @@ import { diagnosticEffect } from "../core/effect";
 import type { Capability, ProcessorPhase } from "../core/processor";
 import { enforceCapability } from "./capability-broker";
 import { firstPatchPath } from "./patch-parse";
+import type { RunId } from "./runner-contract";
 
 // ----- ApplyEffectSinks -----------------------------------------------------
 
@@ -84,14 +85,14 @@ export type ApplyEffectSinks = {
   readonly applyPatch: (input: {
     readonly effect: PatchEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 
   /** DiagnosticEffect — written to `projection_store.diagnostics`. */
   readonly recordDiagnostic: (input: {
     readonly effect: DiagnosticEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
     readonly proposalId: string | null;
   }) => Promise<void>;
 
@@ -99,21 +100,21 @@ export type ApplyEffectSinks = {
   readonly recordFact: (input: {
     readonly effect: FactEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 
   /** QuestionEffect — written to `projection_store.questions`. */
   readonly recordQuestion: (input: {
     readonly effect: QuestionEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 
   /** JobEffect — enqueued in the runtime job queue. */
   readonly enqueueJob: (input: {
     readonly effect: JobEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 
   /**
@@ -123,14 +124,14 @@ export type ApplyEffectSinks = {
   readonly dispatchExternal: (input: {
     readonly effect: ExternalActionEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 
   /** ViewEffect — captured for return to the view-phase caller. */
   readonly captureView: (input: {
     readonly effect: ViewEffect;
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
   }) => Promise<void>;
 };
 
@@ -229,7 +230,7 @@ export function noopSinks(): ApplyEffectSinks {
 export async function applyEffect(opts: {
   readonly effect: Effect;
   readonly processorId: string;
-  readonly runId: string;
+  readonly runId: RunId;
   readonly proposalId: string | null;
   readonly phase: ProcessorPhase;
   readonly declared: ReadonlyArray<Capability>;
@@ -418,7 +419,7 @@ async function routeToSink(
   effect: Effect,
   opts: {
     readonly processorId: string;
-    readonly runId: string;
+    readonly runId: RunId;
     readonly proposalId: string | null;
     readonly sinks: ApplyEffectSinks;
   },

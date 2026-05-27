@@ -30,6 +30,24 @@ import type { CommitOid } from "../core/source-ref";
 import type { Vault } from "../vault";
 import type { SignalEvent } from "./compile-range";
 
+// ----- Branded RunId --------------------------------------------------------
+//
+// The engine ↔ runtime contract owns the run id brand. The processors runtime
+// allocates ids (via `ledger/runs.newRunId`) and surfaces them on
+// `RunnerResult.runId`; the engine threads them through `applyEffect` /
+// `recordCapabilityUse` / `updateOutputCommit`; the ledger persists them.
+// Living here (not in `../ledger/runs`) keeps the import arrow pointing from
+// the ledger consumer toward the engine contract, not the other way around.
+//
+// Structurally branded so a raw `string` cannot accidentally flow into a slot
+// expecting a RunId. The format is normative (per
+// docs/wiki/specs/run-ledger.md §"Tables — runs":
+// `run_<unix-ms>_<6-char-rand>`); the brand makes the lifecycle accessors
+// refuse arbitrary strings.
+
+/** A ledger run id, formatted `run_<unix-ms>_<6-char-rand>` per spec. */
+export type RunId = string & { readonly __brand: "RunId" };
+
 // ----- AdoptionPhaseRunner --------------------------------------------------
 
 /**
@@ -75,7 +93,7 @@ export type AdoptionPhaseRunner = (input: {
  * case, but the type slot stays populated.
  */
 export type RunnerResult = {
-  readonly runId: string;
+  readonly runId: RunId;
   readonly processorId: string;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;

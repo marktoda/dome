@@ -223,15 +223,20 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       // ledger is wired we fall back to the `makeRunContext`-synthesized
       // form (identical shape — both produce `run_<unix-ms>_<6-char-rand>`).
       // Either way, downstream `applyEffect` calls see a populated runId.
+      //
+      // The fallback path's `makeRunContext().runId` is a plain `string`
+      // (the engine-trailer primitive predates the ledger brand). Branding
+      // it via `as RunId` at this single seam keeps every downstream slot —
+      // RunnerResult, ApplyEffectSinks, recordCapabilityUse — strongly typed.
       const startedAt = new Date();
-      const runId: string =
+      const runId: RunId =
         ledger !== undefined
           ? newRunId(startedAt)
-          : makeRunContext({
+          : (makeRunContext({
               extensionId,
               base: input.proposal.base,
               sourceHead: input.proposal.head,
-            }).runId;
+            }).runId as RunId);
 
       // Ledger lifecycle: queued + running, both synchronously before the
       // processor runs. Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
@@ -241,7 +246,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       // schema can promote multiple triggers to a structured column).
       if (ledger !== undefined) {
         insertQueued(ledger, {
-          id: runId as RunId,
+          id: runId,
           proposalId: input.proposal.id,
           processorId: processor.id,
           processorVersion: processor.version,
@@ -251,7 +256,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           triggerPayload: triggerPayloadOf(matches),
           startedAt,
         });
-        markRunning(ledger, runId as RunId, startedAt);
+        markRunning(ledger, runId, startedAt);
       }
 
       const ctxInput: ProcessorContextInput<AdoptionRunInput> = {
@@ -285,7 +290,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         const durationMs = finishedAt.getTime() - startedAt.getTime();
         if (runOutcome.error === null) {
           markSucceeded(ledger, {
-            id: runId as RunId,
+            id: runId,
             effectHashes: runOutcome.effects.map(hashEffect),
             // Phase 6 does not wire `modelInvoke` cost tracking; the
             // `cost_usd` column stays null until a future phase plumbs the
@@ -294,15 +299,18 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
             durationMs,
             // `output_commit` is the closure-commit OID, computed *after*
             // every adoption-iteration's effects have been routed (see
-            // `src/engine/adopt.ts`'s `makeClosureCommit` call). A
-            // per-run update from the engine's adoption loop is deferred —
-            // for Phase 6 the column stays null on the success path.
+            // `src/engine/adopt.ts`'s `makeClosureCommit` + the
+            // `updateOutputCommit` call). `markSucceeded` writes NULL here;
+            // the engine later UPDATEs the column once the closure commit
+            // OID is known. See
+            // [[wiki/gotchas/run-succeeded-before-closure]] for why these
+            // are two separate writes.
             outputCommit: null,
             finishedAt,
           });
         } else {
           markFailed(ledger, {
-            id: runId as RunId,
+            id: runId,
             error: runOutcome.error,
             durationMs,
             finishedAt,

@@ -13,12 +13,13 @@ import {
 } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
+import type { RunId } from "../../src/engine/runner-contract";
 
 const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
 
 const baseOpts = {
   processorId: "test.proc",
-  runId: "run-1",
+  runId: "run-1" as RunId,
   proposalId: "prop_1_aaaaaa",
   declared: [] as ReadonlyArray<Capability>,
   granted: [] as ReadonlyArray<Capability>,

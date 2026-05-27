@@ -30,12 +30,13 @@ import { queryQuestions } from "../../src/projections/questions";
 import { nextEligibleJob } from "../../src/projections/jobs";
 import { queryOutbox } from "../../src/outbox/dispatch";
 import type { ApplyEffectSinks } from "../../src/engine/apply-effect";
+import type { RunId } from "../../src/engine/runner-contract";
 
 const ADOPTED = commitOid("abcdef0000000000000000000000000000000000");
 const REF = sourceRef({ commit: ADOPTED, path: "wiki/x.md" });
 
 const PROCESSOR_ID = "test.proc";
-const RUN_ID = "run-1";
+const RUN_ID = "run-1" as RunId;
 
 // Default no-op injections for the two engine-layer sinks. Individual tests
 // override these to verify the pass-through invocation.
