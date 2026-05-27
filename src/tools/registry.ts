@@ -185,6 +185,29 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<ToolName> = new Set(
   TOOL_NAMES.filter(name => TOOL_REGISTRY[name].mutating),
 );
 
+// Mapped types over TOOL_REGISTRY: each tool name maps to its specific
+// input/output signature. Replaces the `as unknown as BoundToolSurface` cast
+// at the bindTools return site — TypeScript now verifies the per-tool shapes
+// structurally instead of trusting a double-cast through `unknown`.
+type ToolInputFor<K extends ToolName> =
+  typeof TOOL_REGISTRY[K] extends ToolRegistryEntry<infer _P, infer TIn, infer _O> ? TIn : never;
+type ToolOutputFor<K extends ToolName> =
+  typeof TOOL_REGISTRY[K] extends ToolRegistryEntry<infer _P, infer _I, infer TOut> ? TOut : never;
+
+/**
+ * The strict-input surface derived from TOOL_REGISTRY. Each tool name maps
+ * to its specific `(input) => Promise<ToolReturn<output>>` signature.
+ *
+ * Structurally equivalent to BoundToolSurface (which is the hand-written
+ * version in src/hook-context.ts). BoundToolSurface is preserved as the
+ * canonical name for the Vault.tools / HookContext.tools shape; BindResult
+ * is the per-key derivation used at the bindTools boundary so the return
+ * type is verified by the compiler rather than asserted.
+ */
+export type BindResult = {
+  [K in ToolName]: (input: ToolInputFor<K>) => Promise<ToolReturn<ToolOutputFor<K>>>;
+};
+
 /**
  * Per-Tool parse-and-invoke function (transport-facing). Parses raw input
  * through the entry's Zod schema, compacts via the entry's compact(), and
@@ -288,8 +311,14 @@ export function bindTools(vault: Vault, writer: PrivilegedWriter): BoundTools {
     tools[name] = tool as (input: unknown) => Promise<ToolReturn<unknown>>;
     parsers[name] = parser;
   }
+  // BindResult is the mapped-type derivation from TOOL_REGISTRY; structurally
+  // equivalent to BoundToolSurface. Single assertion (not `as unknown as`)
+  // because TypeScript can't follow the per-key narrowing inside the loop
+  // above, but the type relationship is now expressed in BindResult itself
+  // rather than papered over at the boundary.
+  const bound: BindResult = tools as BindResult;
   return {
-    tools: tools as unknown as BoundToolSurface,
+    tools: bound,
     parsers: parsers as Record<ToolName, Parser>,
   };
 }
