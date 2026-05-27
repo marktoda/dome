@@ -14,11 +14,23 @@ import { join } from "node:path";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const MATRIX_PATH = join(REPO_ROOT, "docs", "wiki", "matrices", "tool-invariant-enforcement.md");
+const CONSUMER_SURFACE_PATH = join(REPO_ROOT, "docs", "wiki", "matrices", "consumer-surface.md");
 const TESTS_INVARIANTS_DIR = join(REPO_ROOT, "tests", "invariants");
 
 function invariantSlug(name: string): string {
   // RAW_IS_IMMUTABLE → raw-is-immutable
   return name.toLowerCase().replace(/_/g, "-");
+}
+
+// Parse a markdown table row. Splitting by `|` produces a leading empty
+// element from the line's leading `|` and a trailing empty element from
+// the trailing `|`; drop both but KEEP internal empty cells (the column
+// index depends on them).
+function splitRow(line: string): string[] {
+  const parts = line.split("|").map(c => c.trim());
+  if (parts.length > 0 && parts[0] === "") parts.shift();
+  if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+  return parts;
 }
 
 describe("matrix-coverage (AC3-lockstep)", async () => {
@@ -28,18 +40,6 @@ describe("matrix-coverage (AC3-lockstep)", async () => {
   const tableMatch = matrixText.match(/## Matrix\n\n(\|[\s\S]+?)(?=\n##|\n$)/);
   expect(tableMatch, "Matrix file does not contain a ## Matrix section with a table").toBeDefined();
   const tableText = tableMatch![1]!;
-
-  // Parse rows. Splitting by `|` produces a leading empty element from the
-  // line's leading `|` and a trailing empty element from the trailing `|`;
-  // drop both but KEEP internal empty cells (they map to "no enforcement"
-  // for that Tool×Invariant pair and the column index depends on them).
-  function splitRow(line: string): string[] {
-    const parts = line.split("|").map(c => c.trim());
-    // Drop the leading and trailing empties produced by `|` at row boundaries.
-    if (parts.length > 0 && parts[0] === "") parts.shift();
-    if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
-    return parts;
-  }
 
   const lines = tableText.trim().split("\n").filter(l => l.startsWith("|"));
   expect(lines.length).toBeGreaterThan(2);
@@ -75,6 +75,55 @@ describe("matrix-coverage (AC3-lockstep)", async () => {
         const testText = await readFile(testPath, "utf8");
         expect(testText.includes(tool),
           `${invariantSlug(invariant)}.test.ts must reference Tool "${tool}" (matrix cell is bolded)`).toBe(true);
+      });
+    }
+  }
+});
+
+describe("matrix-coverage — consumer-surface.md (AC3-lockstep)", async () => {
+  const text = await readFile(CONSUMER_SURFACE_PATH, "utf8");
+
+  // Parse the matrix table the same way.
+  const tableMatch = text.match(/## Matrix\n\n(\|[\s\S]+?)(?=\n##|\n$)/);
+  expect(tableMatch, "consumer-surface.md missing ## Matrix").toBeDefined();
+  const tableText = tableMatch![1]!;
+
+  const lines = tableText.trim().split("\n").filter(l => l.startsWith("|"));
+  expect(lines.length).toBeGreaterThan(2);
+  const headerCells = splitRow(lines[0]!);
+  const symbolFamilies = headerCells.slice(1);
+
+  const ENTRYPOINT_INDEX: Record<string, string> = {
+    core: join(REPO_ROOT, "src", "index.ts"),
+    workflows: join(REPO_ROOT, "src", "workflows", "index.ts"),
+    mcp: join(REPO_ROOT, "src", "mcp", "index.ts"),
+    cli: join(REPO_ROOT, "src", "cli", "index.ts"),
+  };
+
+  for (const line of lines.slice(2)) {
+    const cells = splitRow(line);
+    if (cells.length === 0) continue;
+    const shellNameMatch = cells[0]!.match(/\*\*([^*]+)\*\*/);
+    if (!shellNameMatch) continue;
+    const shell = shellNameMatch[1]!.trim();
+
+    for (let i = 1; i < cells.length && i - 1 < symbolFamilies.length; i++) {
+      const cell = cells[i]!;
+      const family = symbolFamilies[i - 1]!;
+      if (cell === "—" || cell === "") continue;
+      if (cell.includes("future-")) continue;
+      const eps: string[] = [];
+      for (const ep of Object.keys(ENTRYPOINT_INDEX)) {
+        if (new RegExp(`\\b${ep}\\b`).test(cell)) eps.push(ep);
+      }
+      if (eps.length === 0) continue;
+      test(`${shell} × ${family}: entrypoints ${eps.join(", ")} have an index.ts`, () => {
+        for (const ep of eps) {
+          const path = ENTRYPOINT_INDEX[ep]!;
+          expect(existsSync(path),
+            `consumer-surface.md row "${shell}" cites entrypoint "${ep}" but ${path} does not exist`,
+          ).toBe(true);
+        }
       });
     }
   }
