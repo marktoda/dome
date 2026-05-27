@@ -6,7 +6,6 @@ import { filterAiTools } from "../../src/tools/ai-sdk-binding";
 import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 
 // Minimal "no-op" mock model: returns a single text-only step with finishReason
 // "stop". The SDK still drives the generation pipeline (system prompt
@@ -51,7 +50,7 @@ describe("runWorkflow", () => {
       const mock = makeNoopMockModel();
       const result = await runWorkflow(
         res.value,
-        WorkflowName.Query,
+        "query",
         "What do I know about Atlas?",
         { model: mock },
       );
@@ -115,7 +114,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const systemMsg = call.prompt.find((m) => m.role === "system");
@@ -136,7 +135,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const systemMsg = call.prompt.find((m) => m.role === "system");
@@ -158,7 +157,7 @@ describe("runWorkflow", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
       const mock = makeNoopMockModel();
-      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+      await runWorkflow(res.value, "lint", "", { model: mock });
 
       const call = mock.doGenerateCalls[0]!;
       const userMsg = call.prompt.find((m) => m.role === "user");

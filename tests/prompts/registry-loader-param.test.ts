@@ -8,7 +8,6 @@ import { WorkflowRegistry } from "../../src/prompts/registry";
 import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 
 describe("WorkflowRegistry constructor loader param", () => {
   test("builds its own PromptLoader when none is passed (backward-compatible)", async () => {
@@ -44,10 +43,10 @@ describe("WorkflowRegistry constructor loader param", () => {
       const spy = new SpyLoader(res.value);
 
       const reg = new WorkflowRegistry(res.value, spy);
-      const def = await reg.get(WorkflowName.Query);
+      const def = await reg.get("query");
       expect(def).not.toBeNull();
       // The registry MUST have routed `get(query)` through our spy.
-      expect(spy.loadCalls).toContain(WorkflowName.Query);
+      expect(spy.loadCalls).toContain("query");
     } finally {
       await v.cleanup();
     }

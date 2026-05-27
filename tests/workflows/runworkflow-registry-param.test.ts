@@ -12,7 +12,7 @@ import { runWorkflow } from "../../src/workflows/agent-loop";
 import { WorkflowRegistry } from "../../src/prompts/registry";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
-import { WorkflowName } from "../../src/workflows/workflow-name";
+import type { WorkflowName } from "../../src/workflows/workflow-name";
 
 function makeNoopMockModel() {
   return new MockLanguageModelV3({
@@ -34,7 +34,7 @@ describe("runWorkflow registry param", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const result = await runWorkflow(res.value, WorkflowName.Query, "ping", {
+      const result = await runWorkflow(res.value, "query", "ping", {
         model: makeNoopMockModel(),
       });
       expect(result.finishReason).toBe("stop");
@@ -60,12 +60,12 @@ describe("runWorkflow registry param", () => {
       }
       const registry = new SpyRegistry(res.value);
 
-      const result = await runWorkflow(res.value, WorkflowName.Query, "ping", {
+      const result = await runWorkflow(res.value, "query", "ping", {
         model: makeNoopMockModel(),
         registry,
       });
       expect(result.finishReason).toBe("stop");
-      expect(registry.getCalls).toContain(WorkflowName.Query);
+      expect(registry.getCalls).toContain("query");
     } finally {
       await v.cleanup();
     }

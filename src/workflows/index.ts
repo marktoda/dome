@@ -7,7 +7,8 @@
 export { runWorkflow, DEFAULT_MODEL, DEFAULT_MAX_STEPS } from "./agent-loop";
 export type { RunWorkflowOpts, RunWorkflowResult } from "./agent-loop";
 
-export { WorkflowName, WORKFLOW_NAMES, isWorkflowName } from "./workflow-name";
+export { WORKFLOW_NAMES, isWorkflowName } from "./workflow-name";
+export type { WorkflowName } from "./workflow-name";
 export { WorkflowTier, WORKFLOW_TIERS } from "./workflow-tier";
 
 export { projectAiSdk } from "./project-ai-sdk";

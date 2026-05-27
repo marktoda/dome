@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { MockLanguageModelV3 } from "ai/test";
 import { openVault } from "../../src/vault";
 import { runWorkflow } from "../../src/workflows/agent-loop";
-import { WorkflowName } from "../../src/workflows/workflow-name";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("AI-SDK route fires shipped-default hooks", () => {
@@ -71,7 +70,7 @@ describe("AI-SDK route fires shipped-default hooks", () => {
       // bound tools list — driving it via runWorkflow exercises the
       // projectAiSdk(vault) path end-to-end. skipCommit: true so we
       // don't need git to be set up beyond what makeTestVault provides.
-      await runWorkflow(vault, WorkflowName.Migrate, "Write a test entity page.", {
+      await runWorkflow(vault, "migrate", "Write a test entity page.", {
         model: mock,
         skipCommit: true,
       });
