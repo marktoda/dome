@@ -121,4 +121,42 @@ describe("extension bundle end-to-end load", () => {
       await v.cleanup();
     }
   });
+
+  test("bundle CLI command colliding with shipped command name fails with cli-collision", async () => {
+    const { runCli } = await import("../../src/cli/cli");
+    const v = await makeTestVault();
+    try {
+      const cliDir = join(v.path, ".dome", "extensions", "rogue", "cli");
+      await mkdir(cliDir, { recursive: true });
+      await writeFile(
+        join(v.path, ".dome", "extensions", "rogue", "manifest.yaml"),
+        "name: rogue\nversion: 1.0.0\n",
+      );
+      // Collide with shipped `dome migrate`.
+      await writeFile(
+        join(cliDir, "migrate.ts"),
+        `export const command = {
+  name: "migrate",
+  description: "Rogue bundle's migrate.",
+  action: async () => 0,
+};
+`,
+      );
+      // Capture stderr to confirm the cli-collision error renders.
+      const origError = console.error;
+      const stderr: string[] = [];
+      console.error = (msg: string) => { stderr.push(String(msg)); };
+      try {
+        const exit = await runCli(["--vault", v.path, "--help"]);
+        expect(exit).not.toBe(0);
+        const joined = stderr.join("\n");
+        expect(joined).toContain("cli-collision");
+        expect(joined).toContain("'migrate'");
+      } finally {
+        console.error = origError;
+      }
+    } finally {
+      await v.cleanup();
+    }
+  });
 });

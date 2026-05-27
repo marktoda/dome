@@ -474,12 +474,37 @@ async function registerBundleCliCommands(
     return;
   }
   const vault = vaultResult.value;
+  // Seed with shipped commands so a bundle that names "migrate" / "doctor"
+  // / etc. collides loud rather than silently overriding via Commander's
+  // last-write-wins behavior. The fail-loud taxonomy entry is `cli-collision`
+  // per docs/wiki/specs/sdk-surface.md §"Bundle-loader error taxonomy".
+  const seenNames = new Set<string>(
+    program.commands.map((c) => c.name()),
+  );
+  const provenance = new Map<string, string>(
+    [...seenNames].map((n) => [n, "shipped"]),
+  );
   try {
     for (const bundle of vault.bundles) {
       for (const cliPath of bundle.cliPaths) {
         const mod = (await import(cliPath)) as { command?: BundleCliCommand };
         if (mod.command === undefined) continue;
         const cmd = mod.command;
+        if (seenNames.has(cmd.name)) {
+          const otherSource = provenance.get(cmd.name) ?? "unknown";
+          const message = otherSource === "shipped"
+            ? `bundle '${bundle.name}' declares CLI command '${cmd.name}'; already declared by shipped SDK CLI`
+            : `bundle '${bundle.name}' declares CLI command '${cmd.name}'; already declared by ${otherSource}`;
+          console.error(renderCliError({
+            kind: "bundle-load-failure",
+            detail: "cli-collision",
+            message,
+          }));
+          outcome.code = ExitCode.Failure;
+          return;
+        }
+        seenNames.add(cmd.name);
+        provenance.set(cmd.name, `bundle '${bundle.name}'`);
         program
           .command(cmd.name)
           .description(cmd.description)
