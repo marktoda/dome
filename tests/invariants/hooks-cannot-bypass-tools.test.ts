@@ -23,12 +23,11 @@ type AssertHasVault = HasField<HookContext, "vault">;
 const _checks: [AssertNoFs, AssertNoWrite, AssertHasTools, AssertHasVault] = [true, true, true, true];
 
 describe("HOOKS_CANNOT_BYPASS_TOOLS (type-level)", () => {
-  test("HookContext has no filesystem access", () => {
+  test("HookContext has no fs / writeFile and exposes tools + vault (compile-time asserted via _checks)", () => {
+    // The AssertNoFs/AssertNoWrite/AssertHasTools/AssertHasVault conditional
+    // types above fail to compile if HookContext gains `fs`/`writeFile` or
+    // loses `tools`/`vault`. The runtime assertion is the audit trail.
     expect(_checks).toEqual([true, true, true, true]);
-  });
-
-  test("HookContext exposes a `tools` field of the Tool surface", () => {
-    expect(true).toBe(true);
   });
 });
 
