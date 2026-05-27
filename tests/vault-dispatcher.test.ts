@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { HookRegistry } from "../src/hook-registry";
+import { HookRegistry } from "../src/hooks/hook-registry";
 import { makePrivilegedWriter } from "../src/privileged-writer";
 import { wireDispatcher, type VaultRef } from "../src/vault-dispatcher";
 import type { Vault } from "../src/vault";
-import type { HookEvent, HookContext } from "../src/hook-context";
+import type { HookEvent, HookContext } from "../src/hooks/hook-context";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "../src/shipped-defaults";
 import { makeTempDir, removeTempDir } from "./helpers/temp-dir";
 

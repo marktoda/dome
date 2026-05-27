@@ -13,8 +13,8 @@
 // AsyncLocalStorage now threads the chain across re-entries.
 
 import { describe, test, expect } from "bun:test";
-import { HookDispatcher, type CycleInfo, type DispatcherCtxFactory } from "../../src/hook-dispatcher";
-import { HookRegistry } from "../../src/hook-registry";
+import { HookDispatcher, type CycleInfo, type DispatcherCtxFactory } from "../../src/hooks/hook-dispatcher";
+import { HookRegistry } from "../../src/hooks/hook-registry";
 import { openVault } from "../../src/vault";
 import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";

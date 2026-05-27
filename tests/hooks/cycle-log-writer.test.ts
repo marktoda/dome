@@ -7,8 +7,8 @@
 
 import { describe, test, expect } from "bun:test";
 import { appendCycleLogEntry, openVault } from "../../src/vault";
-import { HookDispatcher, type CycleInfo } from "../../src/hook-dispatcher";
-import { HookRegistry } from "../../src/hook-registry";
+import { HookDispatcher, type CycleInfo } from "../../src/hooks/hook-dispatcher";
+import { HookRegistry } from "../../src/hooks/hook-registry";
 import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { domeDoctor } from "../../src/cli/commands/doctor";
 import { makeTestVault } from "../helpers/make-test-vault";

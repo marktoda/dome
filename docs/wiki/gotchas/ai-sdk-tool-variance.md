@@ -19,7 +19,7 @@ first_observed: 2026-05-26
 
 **Structural mitigation (deferred to the next AI SDK major bump):** Either:
 
-- **Drop the explicit generic.** Let `tool({inputSchema, execute})` infer; return `ReturnType<typeof tool>` from the registry entries. The downstream consumers (MCP adapter, AI-SDK consumer) adapt to whatever shape AI SDK currently exposes. The cost: the `BoundToolSurface` interface at `src/hook-context.ts:21` may need a parallel rewrite to match inferred shapes, and the explicit `TInput`/`TOutput` per Tool is lost. Acceptable when the AI SDK bump is the trigger.
+- **Drop the explicit generic.** Let `tool({inputSchema, execute})` infer; return `ReturnType<typeof tool>` from the registry entries. The downstream consumers (MCP adapter, AI-SDK consumer) adapt to whatever shape AI SDK currently exposes. The cost: the `BoundToolSurface` interface at `src/hooks/hook-context.ts:21` may need a parallel rewrite to match inferred shapes, and the explicit `TInput`/`TOutput` per Tool is lost. Acceptable when the AI SDK bump is the trigger.
 
 - **Migrate to Zod v4.** AI SDK v6 actively prefers Zod v4's `infer` semantics (which makes optional-vs-undefined first-class). The `compactX` helpers at `src/tools/schemas.ts:68-121` exist *because* of Zod v3's optional-handling mismatch with `exactOptionalPropertyTypes`; Zod v4 collapses those six helpers into one (or zero). The migration is a multi-day effort and pairs naturally with the AI SDK bump.
 

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
-import type { HookHandler } from "../hook-context";
+import type { HookHandler } from "./hook-context";
 import { walkMd } from "../vault-fs";
 
 export const autoCrossReference: HookHandler = async (event, ctx) => {

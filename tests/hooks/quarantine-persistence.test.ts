@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { HookRegistry } from "../../src/hook-registry";
+import { HookRegistry } from "../../src/hooks/hook-registry";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("quarantine persistence", () => {
@@ -51,7 +51,7 @@ describe("quarantine persistence", () => {
       await mkdir(stateDir, { recursive: true });
       const quarantinePath = join(stateDir, "quarantined.json");
 
-      const { HookDispatcher } = await import("../../src/hook-dispatcher");
+      const { HookDispatcher } = await import("../../src/hooks/hook-dispatcher");
       const { makePrivilegedWriter } = await import("../../src/privileged-writer");
 
       const reg = new HookRegistry({ persistPath: quarantinePath });

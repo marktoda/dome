@@ -1,11 +1,11 @@
-import type { PrivilegedWriter } from "./privileged-writer";
-import { type readDocument, type ReadDocumentInput } from "./tools/read-document";
-import { type writeDocument, type WriteDocumentInput } from "./tools/write-document";
-import { type appendLog, type AppendLogInput } from "./tools/append-log";
-import { type searchIndex, type SearchIndexInput } from "./tools/search-index";
-import { type wikilinkResolve, type WikilinkResolveInput } from "./tools/wikilink-resolve";
-import { type moveDocument, type MoveDocumentInput } from "./tools/move-document";
-import { type deleteDocument, type DeleteDocumentInput } from "./tools/delete-document";
+import type { PrivilegedWriter } from "../privileged-writer";
+import { type readDocument, type ReadDocumentInput } from "../tools/read-document";
+import { type writeDocument, type WriteDocumentInput } from "../tools/write-document";
+import { type appendLog, type AppendLogInput } from "../tools/append-log";
+import { type searchIndex, type SearchIndexInput } from "../tools/search-index";
+import { type wikilinkResolve, type WikilinkResolveInput } from "../tools/wikilink-resolve";
+import { type moveDocument, type MoveDocumentInput } from "../tools/move-document";
+import { type deleteDocument, type DeleteDocumentInput } from "../tools/delete-document";
 
 /**
  * The Vault-bound Tool surface. The single canonical type for "the seven Tools

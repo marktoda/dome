@@ -26,10 +26,10 @@
 // so the pre-publish branch is reachable only through tests that exercise
 // the vaultRef setter pattern directly.
 
-import { HookDispatcher } from "./hook-dispatcher";
-import type { HookRegistry } from "./hook-registry";
+import { HookDispatcher } from "./hooks/hook-dispatcher";
+import type { HookRegistry } from "./hooks/hook-registry";
 import type { PrivilegedWriter } from "./privileged-writer";
-import type { HookEvent } from "./hook-context";
+import type { HookEvent } from "./hooks/hook-context";
 import type { Vault, VaultConfig } from "./vault";
 import { appendCycleLogEntry } from "./vault";
 

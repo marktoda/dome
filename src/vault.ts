@@ -5,9 +5,9 @@ import { isGitRepo } from "./git";
 import { walkUpForAncestor } from "./path-walk";
 import { makePrivilegedWriter, type PrivilegedWriter } from "./privileged-writer";
 import { bindTools } from "./tools/registry";
-import { type CycleInfo } from "./hook-dispatcher";
+import { type CycleInfo } from "./hooks/hook-dispatcher";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
-import type { BoundToolSurface, HookEvent } from "./hook-context";
+import type { BoundToolSurface, HookEvent } from "./hooks/hook-context";
 import { loadVaultConfig } from "./vault-config";
 import { buildBuiltinHookRegistry } from "./vault-hooks";
 import { wireDispatcher, type VaultRef } from "./vault-dispatcher";
@@ -39,7 +39,7 @@ export interface PageTypesConfig {
 // BoundToolSurface is the single canonical shape of "the seven Tools curried
 // with their Vault" and lives in hook-context.ts. Re-exported here so existing
 // `import { BoundToolSurface } from "./vault"` callers continue to work.
-export type { BoundToolSurface } from "./hook-context";
+export type { BoundToolSurface } from "./hooks/hook-context";
 
 export interface Vault {
   readonly path: string;

@@ -12,7 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Vault } from "./vault";
-import type { BoundToolSurface } from "./hook-context";
+import type { BoundToolSurface } from "./hooks/hook-context";
 import { PromptLoader } from "./prompts/prompt-loader";
 import { WorkflowRegistry } from "./prompts/registry";
 import { WorkflowTier, WORKFLOW_TIERS } from "./workflows/workflow-tier";

@@ -19,7 +19,7 @@
 //     the actual implementation must be async to surface the disk read.
 
 import { join } from "node:path";
-import { HookRegistry } from "./hook-registry";
+import { HookRegistry } from "./hooks/hook-registry";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
 import { logOutOfBandWrite } from "./hooks/log-out-of-band-write";

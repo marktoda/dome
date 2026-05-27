@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { openVault } from "../../src/vault";
 import { VaultWatcher } from "../../src/watcher";
 import { logOutOfBandWrite } from "../../src/hooks/log-out-of-band-write";
-import type { HookContext } from "../../src/hook-context";
+import type { HookContext } from "../../src/hooks/hook-context";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("VAULT_RECONCILES_AFTER_NATIVE_WRITE", () => {

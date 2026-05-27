@@ -1,5 +1,5 @@
 import type { HookHandler } from "./hook-context";
-import { makeQuarantineStore, type QuarantineStore } from "./quarantine-store";
+import { makeQuarantineStore, type QuarantineStore } from "../quarantine-store";
 
 export type HookSource = "sdk" | "plugin" | "vault-local";
 

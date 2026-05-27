@@ -15,8 +15,8 @@ import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
 import { loadDeclarativeHooks, type RunWorkflowFn } from "../../src/hooks/yaml-loader";
-import { HookRegistry } from "../../src/hook-registry";
-import { HookDispatcher } from "../../src/hook-dispatcher";
+import { HookRegistry } from "../../src/hooks/hook-registry";
+import { HookDispatcher } from "../../src/hooks/hook-dispatcher";
 import { makePrivilegedWriter } from "../../src/privileged-writer";
 
 const runCalls: { workflowName: string; userMessage: string }[] = [];

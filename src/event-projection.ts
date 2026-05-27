@@ -7,7 +7,7 @@
 // dimension).
 
 import type { Effect } from "./types";
-import type { HookEvent } from "./hook-context";
+import type { HookEvent } from "./hooks/hook-context";
 import { makeDocument, type Document } from "./document";
 import { singularOf } from "./page-type";
 

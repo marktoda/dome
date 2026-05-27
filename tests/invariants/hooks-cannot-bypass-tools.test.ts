@@ -8,7 +8,7 @@
 import { describe, test, expect } from "bun:test";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { HookContext } from "../../src/hook-context";
+import type { HookContext } from "../../src/hooks/hook-context";
 import { VaultWatcher, type OOBEvent } from "../../src/watcher";
 import { makeTestVault } from "../helpers/make-test-vault";
 

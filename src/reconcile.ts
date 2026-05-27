@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Vault } from "./vault";
-import type { HookEvent } from "./hook-context";
+import type { HookEvent } from "./hooks/hook-context";
 import { projectEffectToEvents } from "./event-projection";
 import { currentSha, statusMatrix, readTree } from "./git";
 import { ok, err, type Result, type ToolError } from "./types";

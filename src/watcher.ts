@@ -1,6 +1,6 @@
 import chokidar, { type FSWatcher } from "chokidar";
 import { join, relative } from "node:path";
-import type { HookEvent } from "./hook-context";
+import type { HookEvent } from "./hooks/hook-context";
 
 export interface OOBEvent extends HookEvent {
   kind: "vault.out-of-band-edit";

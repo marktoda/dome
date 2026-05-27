@@ -14,7 +14,7 @@
 
 import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
-import type { BoundToolSurface } from "../hook-context";
+import type { BoundToolSurface } from "../hooks/hook-context";
 import type { ToolReturn } from "../types";
 import { projectEffectsToEvents } from "../event-projection";
 

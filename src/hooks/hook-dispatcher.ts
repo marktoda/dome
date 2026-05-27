@@ -2,7 +2,7 @@ import PQueue from "p-queue";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { HookContext, HookEvent } from "./hook-context";
 import type { HookRegistry, RegisteredHook } from "./hook-registry";
-import type { PrivilegedWriter } from "./privileged-writer";
+import type { PrivilegedWriter } from "../privileged-writer";
 
 export interface CausationLink {
   handlerId: string;

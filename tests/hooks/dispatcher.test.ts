@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { HookDispatcher, type DispatcherCtxFactory } from "../../src/hook-dispatcher";
-import { HookRegistry } from "../../src/hook-registry";
-import type { HookContext, HookEvent } from "../../src/hook-context";
+import { HookDispatcher, type DispatcherCtxFactory } from "../../src/hooks/hook-dispatcher";
+import { HookRegistry } from "../../src/hooks/hook-registry";
+import type { HookContext, HookEvent } from "../../src/hooks/hook-context";
 import type { PrivilegedWriter } from "../../src/privileged-writer";
 
 const fakeWriter: PrivilegedWriter = {
