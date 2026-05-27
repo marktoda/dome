@@ -68,7 +68,7 @@ The programmatic form supports arbitrary logic. The handler receives the event p
 ```yaml
 event: document.written          # optional when schedule: is present; required otherwise
 path_pattern: "inbox/raw/*"     # optional filter on the path field
-schedule: "0 6 * * *"            # optional cron expression; mutually exclusive with event in spirit, both allowed
+schedule: "0 6 * * *"            # optional cron expression; can coexist with event: — hook fires on either trigger
 workflow: ingest                 # name of a prompt-with-workflow-frontmatter
 async: true                      # optional; defaults to true
 idempotent: true                 # optional; defaults to true. See §"The idempotency contract".
