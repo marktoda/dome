@@ -486,7 +486,7 @@ export function getAdoptionStatus(vault: Vault): Promise<AdoptionStatus>;
 export function makeRunContext(opts: { extensionId: string; base: string; sourceHead: string }): RunContext;
 
 export function getAdoptedRef(vaultPath: string, branch?: string): Promise<string | null>;
-export function getCurrentBranch(vaultPath: string): Promise<string>;
+export function getCurrentBranch(vaultPath: string): Promise<string | null>; // null when HEAD is detached
 
 export type RunContext = { runId: string; extensionId: string; base: string; sourceHead: string };
 

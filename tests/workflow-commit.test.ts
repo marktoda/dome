@@ -34,6 +34,28 @@ describe("commitWorkflow", () => {
     }
   });
 
+  test("refuses (throws) when runContext is absent — structural fence for ENGINE_COMMITS_CARRY_DOME_TRAILERS", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) return;
+      const vault = res.value;
+      // Casting to bypass TypeScript's required-property check; the runtime
+      // throw is the structural fence a JavaScript caller (or a future
+      // refactor that drops the type-system guarantee) would hit. Per
+      // docs/wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS.md
+      // §"Structural enforcement".
+      const promise = commitWorkflow(vault, {
+        verb: "ingest",
+        subject: "should refuse",
+        touchedPaths: ["log.md"],
+      } as unknown as Parameters<typeof commitWorkflow>[1]);
+      await expect(promise).rejects.toThrow(/runContext/);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("returns empty string when auto_commit_workflows is disabled", async () => {
     const v = await makeTestVault({
       config: `invariants: {}

@@ -242,7 +242,7 @@ export async function sync(
     const setResult = await setAdoptedRef(vault.path, branch, head);
     if (!setResult.ok) return setResult;
     await touchReconcileMtime(vault.path);
-    await emitAdvanced(vault, branch, null, head, "init");
+    await emitAdvanced(vault, branch, null, head);
     return ok({
       branch,
       adoptedBefore: null,
@@ -277,7 +277,7 @@ export async function sync(
   if (!setResult.ok) return setResult;
 
   await touchReconcileMtime(vault.path);
-  await emitAdvanced(vault, branch, adoptedBefore, finalHead, "sync");
+  await emitAdvanced(vault, branch, adoptedBefore, finalHead);
 
   return ok({
     branch,
@@ -312,13 +312,15 @@ async function emitAdvanced(
   branch: string,
   from: string | null,
   to: string,
-  source: "init" | "sync",
 ): Promise<void> {
   try {
     await vault.dispatchEvents([
       {
         kind: "engine.adoption.advanced",
         branch,
+        // `from === null` is the canonical "this was an init" signal — derivable
+        // without a separate `source` field, which keeps the payload aligned with
+        // docs/wiki/matrices/event-types-and-payloads.md.
         from,
         to,
         // Synthesize a one-off run id for the advance itself; per-workflow
@@ -328,7 +330,6 @@ async function emitAdvanced(
           base: from ?? ZERO_SHA,
           sourceHead: to,
         }).runId,
-        source,
       },
     ]);
   } catch {
