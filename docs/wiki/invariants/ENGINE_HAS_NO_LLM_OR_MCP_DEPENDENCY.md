@@ -23,7 +23,7 @@ The same property protects test isolation: integration tests for the engine run 
 1. **`@dome/sdk` core's `package.json` `dependencies` list excludes `ai`, `@ai-sdk/anthropic`, and `@modelcontextprotocol/sdk`.** They live in `@dome/sdk/workflows` and `@dome/sdk/mcp` respectively.
 2. **`tests/integration/bundle-deps.test.ts` walks the transitive import graph of `src/index.ts` and asserts no `node_modules` path under those package names.** A re-export from `src/index.ts` that pulls in `ai` (e.g., re-exporting `projectAiSdk` from workflows) fails the test.
 3. **`tests/integration/public-surface-shape.test.ts` asserts the symbols exported from `src/index.ts` match an allowlist** that excludes any LLM/MCP-flavored types. Adding an `@ai-sdk` symbol to the public surface fails the test.
-4. **The semantic linter `no-engine-internal-llm-import`** (v1.1+ candidate per [[wiki/linters/no-engine-internal-llm-import]]) greps `src/engine/`, `src/processors/`, `src/projections/`, `src/ledger/`, `src/outbox/`, `src/capabilities/` for any import from the LLM/MCP package names; until the linter ships, the bundle-deps test is the enforcement.
+4. **A future v1.x semantic linter `no-engine-internal-llm-import`** (proposed; not yet authored as a spec file) would grep `src/engine/`, `src/processors/`, `src/projections/`, `src/ledger/`, `src/outbox/`, `src/capabilities/` for any import from the LLM/MCP package names; until that linter ships, the bundle-deps test is the enforcement.
 
 **Off-matrix lockstep convention:** The lockstep test at `tests/invariants/engine-has-no-llm-or-mcp-dependency.test.ts` uses the delegating-stub shape:
 
