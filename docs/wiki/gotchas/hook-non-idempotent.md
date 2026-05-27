@@ -11,12 +11,12 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # Hook non-idempotent
 
-**Symptom:** A user-registered hook handler runs twice (or N times) for the same event during reconciliation. Side effects accumulate: duplicate cross-references appear on pages, the same Slack notification fires repeatedly, an external webhook gets called twice, a counter increments by 2 instead of 1.
+**Symptom:** A user-registered hook handler runs twice (or N times) for the same event during sync. Side effects accumulate: duplicate cross-references appear on pages, the same Slack notification fires repeatedly, an external webhook gets called twice, a counter increments by 2 instead of 1.
 
-**Root cause:** Dome's hook system provides **at-least-once delivery**. During reconciliation (`dome reconcile`, or automatic startup-reconcile in `dome serve`), events may be re-fired in two places:
+**Root cause:** Dome's hook system provides **at-least-once delivery**. During the sync loop (`dome sync` — or its deprecated alias `dome reconcile`; or automatic startup-sync in `dome serve`), events may be re-fired in two places:
 
-- **State diff** — `git status --porcelain` + `git diff <last-sha> HEAD` shows a file changed; reconcile fires the matching event regardless of whether a previous hook run completed.
-- **Scheduled catch-up** — a scheduled hook whose interval has elapsed fires once on reconcile.
+- **State diff** — `git status --porcelain` + `git diff refs/dome/adopted/<branch>..HEAD` shows a file changed; sync fires the matching event regardless of whether a previous hook run completed.
+- **Scheduled catch-up** — a scheduled hook whose interval has elapsed fires once on sync.
 
 Reconciliation does not track per-event completion (no lockfile mechanism). It re-derives "what should fire" from filesystem + git + `scheduled.json`. The safe assumption is "re-fire" — combined with per-workflow atomic commits, this means hooks may legitimately fire twice for the same logical change if a previous run committed partial state and crashed before completing.
 
@@ -36,10 +36,10 @@ User and plugin hooks declare idempotency explicitly:
 # .dome/hooks/notify-on-new-entity.yaml
 event: document.written.wiki.entity
 workflow: notify
-idempotent: false        # this hook is not idempotent; reconciliation will skip it
+idempotent: false        # this hook is not idempotent; sync will skip it
 ```
 
-When `idempotent: false`, reconciliation does NOT re-fire the hook automatically. The user is responsible for tracking what's been processed (typically by checking the page's `updated:` timestamp against an external store).
+When `idempotent: false`, sync does NOT re-fire the hook automatically. The user is responsible for tracking what's been processed (typically by checking the page's `updated:` timestamp against an external store).
 
 For programmatic hooks:
 

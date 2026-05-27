@@ -3,7 +3,7 @@ import { commitWorkflow } from "../src/workflow-commit";
 import { openVault } from "../src/vault";
 import { makeTestVault } from "./helpers/make-test-vault";
 import { log as gitLog } from "../src/git";
-import { makeRunContext, ZERO_SHA } from "../src/adoption";
+import { makeRunContext, ZERO_SHA } from "../src/run-context";
 
 describe("commitWorkflow", () => {
   test("creates a single commit with all paths touched + log entry subject", async () => {

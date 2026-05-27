@@ -14,26 +14,11 @@ import { openVault } from "../../src/vault";
 import { sync } from "../../src/adoption";
 import { getAdoptedRef, adoptedRefName } from "../../src/adopted-ref";
 import { commit, currentSha, readRef, writeRef } from "../../src/git";
-import { makeTestVault, type TestVault } from "../helpers/make-test-vault";
-
-/**
- * `makeTestVault` initializes git but does NOT make an initial commit; real
- * `dome init` does. Tests that exercise the adoption substrate need a HEAD,
- * so we run the init-shaped initial commit inline.
- */
-async function makeVaultWithInitialCommit(): Promise<TestVault> {
-  const v = await makeTestVault();
-  await commit({
-    path: v.path,
-    message: "chore: initialize Dome vault for test\n",
-    files: [".dome/config.yaml", ".dome/page-types.yaml", "AGENTS.md", "CLAUDE.md", "index.md", "log.md"],
-  });
-  return v;
-}
+import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("sync advances refs/dome/adopted/<branch>", () => {
   test("case 1 — fresh vault: sync initializes the ref at HEAD", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       const openRes = await openVault(v.path);
       if (!openRes.ok) throw new Error(`openVault failed: ${openRes.error.kind}`);
@@ -63,7 +48,7 @@ describe("sync advances refs/dome/adopted/<branch>", () => {
   });
 
   test("case 2 — source-ahead: sync fast-forwards the ref", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       // First sync: initializes adopted at the init commit.
       let openRes = await openVault(v.path);
@@ -106,7 +91,7 @@ describe("sync advances refs/dome/adopted/<branch>", () => {
   });
 
   test("case 3 — divergent: sync refuses; sync --force-advance accepts", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       // First sync: initializes adopted at the init commit.
       let openRes = await openVault(v.path);

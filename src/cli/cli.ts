@@ -321,7 +321,7 @@ function buildProgram(outcome: RunOutcome): Command {
         "                        the most recent report. Repeatable for multi-id.",
         "",
         "Apply mode refuses to run during a mid-merge / mid-rebase /",
-        "mid-cherry-pick (same guard as `dome reconcile`).",
+        "mid-cherry-pick (same guard as `dome sync`).",
         "",
         "For deterministic structural checks (no LLM), use `dome doctor`.",
         "",
@@ -400,7 +400,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .option("--drain-hooks", "Wait for async hook queue to drain (v0.5 no-op)")
     .option("--reset-quarantined-hooks", "Clear hook quarantine list (v0.5 no-op)")
-    .option("--time-since-reconcile", "Report drift age since `dome reconcile` last ran")
+    .option("--time-since-reconcile", "Report drift age since `dome sync` (formerly `dome reconcile`) last ran")
     .option("--repair", "Regenerate AGENTS.md templated sections (preserves user-prose)")
     .addOption(
       new Option("--show <subject>", "Show a specific diagnostic surface").choices([...DOCTOR_SHOW_SUBJECTS]),

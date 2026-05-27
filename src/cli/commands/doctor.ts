@@ -61,9 +61,11 @@ export interface DoctorOpts {
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
   /**
-   * Report how long it's been since the daemon last reconciled (read from
-   * .dome/state/last-reconciled-sha.txt mtime). See
-   * docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
+   * Report how long it's been since the daemon last synced (read from
+   * .dome/state/last-reconcile-mtime.txt mtime; falls back to the legacy
+   * .dome/state/last-reconciled-sha.txt for vaults migrating from v0.5
+   * pre-phase1+phase3 per docs/wiki/specs/adoption.md §"Migration from v0.5").
+   * See docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
    */
   timeSinceReconcile?: boolean;
   /**

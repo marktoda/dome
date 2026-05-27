@@ -67,7 +67,14 @@ export { HookDispatcher, type CausationLink, type CycleInfo, type HookDispatcher
 export { autoUpdateIndex } from "./hooks/auto-update-index";
 export { autoCrossReference } from "./hooks/auto-cross-reference";
 export { VaultWatcher, type OOBEvent } from "./watcher";
-export { reconcile, type ReconcileOpts, type ReconcileResult } from "./reconcile";
+// `reconcile` is INTERNAL to the adoption chokepoint — consumers drive
+// compilation through `sync` (which advances the adopted ref atomically)
+// rather than running raw reconcile phases that would leave the ref stale
+// per ADOPTED_REF_IS_SEMANTIC_CURSOR. The shared precondition check
+// `isDirtyGitState` remains exported because consumers (e.g., `dome lint`'s
+// pre-flight) legitimately need to check the same git-state guard `sync`
+// applies before starting their own work.
+export { isDirtyGitState } from "./reconcile";
 export { commitWorkflow, composeCommitMessage, type WorkflowCommitInput } from "./workflow-commit";
 export { projectEffectToEvents, projectEffectsToEvents } from "./event-projection";
 
@@ -79,12 +86,16 @@ export { projectEffectToEvents, projectEffectsToEvents } from "./event-projectio
 export {
   sync,
   getAdoptionStatus,
-  makeRunContext,
-  type RunContext,
   type SyncResult,
   type AdoptionStatus,
 } from "./adoption";
-export { getAdoptedRef, getCurrentBranch, adoptedRefName, ZERO_SHA } from "./adopted-ref";
+export {
+  makeRunContext,
+  ENGINE_EXTENSION_ID,
+  ZERO_SHA,
+  type RunContext,
+} from "./run-context";
+export { getAdoptedRef, getCurrentBranch, adoptedRefName } from "./adopted-ref";
 
 // Canonical Tool registry — single source of truth for the seven Tools.
 // Plugin and harness authors that want to enumerate or extend the Tool

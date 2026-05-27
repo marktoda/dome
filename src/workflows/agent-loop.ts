@@ -15,7 +15,8 @@ import { commitWorkflow } from "../workflow-commit";
 import { MUTATING_TOOL_NAMES } from "../tools/registry";
 import { filterAiTools } from "../tools/ai-sdk-binding";
 import { projectAiSdk } from "./project-ai-sdk";
-import { getAdoptedRef, getCurrentBranch, makeRunContext, ZERO_SHA } from "../adoption";
+import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
+import { makeRunContext, ZERO_SHA } from "../run-context";
 import { currentSha } from "../git";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";

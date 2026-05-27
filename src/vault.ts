@@ -58,8 +58,8 @@ export interface Vault {
   /**
    * Wait for all async hooks dispatched so far AND any in-flight quarantine
    * persistence writes to settle. Idempotent — re-callable any number of times.
-   * Tests, `dome reconcile`, and `vault.close()` call this to reach a
-   * deterministic state.
+   * Tests, `dome sync` (and its deprecated alias `dome reconcile`), and
+   * `vault.close()` call this to reach a deterministic state.
    */
   drainHooks: () => Promise<void>;
   /**

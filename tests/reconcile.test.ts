@@ -49,7 +49,7 @@ describe("dome reconcile", () => {
     }
   });
 
-  test("phase 2: fires document.written.<category>.<type> for changes since last-reconciled-sha", async () => {
+  test("phase 2: fires document.written.<category>.<type> for changes since the adopted ref", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);

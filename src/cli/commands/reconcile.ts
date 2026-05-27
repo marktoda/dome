@@ -1,11 +1,11 @@
 import { domeSync } from "./sync";
+import type { ReconcileResult } from "../../reconcile";
 import type { Result, ToolError } from "../../types";
 
-export interface ReconcileResult {
-  inboxProcessed: number;
-  changedFiles: number;
-  scheduledFired: number;
-}
+// Re-export the canonical shape from `src/reconcile.ts` so consumers
+// of the deprecated `domeReconcile` wrapper continue to import the
+// same type whether they reach for the SDK core or the CLI shell.
+export type { ReconcileResult };
 
 /**
  * `dome reconcile` — deprecated alias for `dome sync`. Preserved for

@@ -12,7 +12,7 @@ tier: shipped-default
 
 **Statement:** Files under `inbox/<bucket>/` are *pending* by virtue of their presence. When an intake hook completes processing a file, the hook MUST move or delete the file so it no longer appears under `inbox/<bucket>/`. The default behavior for shipped intakes is to **move** the file to `raw/<source-type>/<filename>` (preserving the captured content as an immutable raw source per [[wiki/invariants/RAW_IS_IMMUTABLE]]).
 
-**Why:** This is what makes the reconciliation model trivial. The presence of a file in `inbox/<bucket>/` IS the durability signal — "this file has not been processed." After processing, the file leaves the inbox. `dome reconcile` walks inbox/ on startup and fires `document.written.inbox.<bucket>` events for every file still there, knowing they're either freshly captured or stranded from a previous crash. Either way, processing them is correct.
+**Why:** This is what makes the reconciliation model trivial. The presence of a file in `inbox/<bucket>/` IS the durability signal — "this file has not been processed." After processing, the file leaves the inbox. `dome sync` walks inbox/ on startup and fires `document.written.inbox.<bucket>` events for every file still there, knowing they're either freshly captured or stranded from a previous crash. Either way, processing them is correct.
 
 Without this contract, reconciliation would need a separate "processed marker" mechanism (a `.processed` file alongside, a frontmatter flag, an external database, parsing `log.md`). All of those introduce extra state. With this contract, the filesystem IS the state.
 
@@ -28,7 +28,7 @@ The `INTAKE_EXCLUDED_BUCKETS` const is the single source of truth for "which buc
 
 The doctor check above is what catches a stranded inbox file — typically a sign that an intake hook failed to complete or was never registered.
 
-**Counter-example:** A user writes a plugin that processes `inbox/clip/` files but doesn't move them out. After processing, the files remain in `inbox/clip/`. On the next `dome reconcile` run, the system fires the intake events again, the plugin re-processes — and depending on its idempotency story, may produce duplicate wiki updates. The fix: the plugin must move or delete the inbox file as part of its workflow contract.
+**Counter-example:** A user writes a plugin that processes `inbox/clip/` files but doesn't move them out. After processing, the files remain in `inbox/clip/`. On the next `dome sync` run, the system fires the intake events again, the plugin re-processes — and depending on its idempotency story, may produce duplicate wiki updates. The fix: the plugin must move or delete the inbox file as part of its workflow contract.
 
 **Per-bucket disable (deferred to v0.5.1+):** A future v0.5.1+ mechanism may let a vault disable the doctor check for a specific bucket — useful for an "always-on review queue" UX where capture files stay visible in `inbox/<bucket>/` until explicitly resolved. The intended config shape is:
 
@@ -49,6 +49,6 @@ The v0.5 mechanism for the same use case is to raise `hooks.inbox_stale_age_hour
 
 **Related:**
 - [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in" and §"Durability and reconciliation"
-- [[wiki/specs/cli]] §"dome reconcile"
+- [[wiki/specs/cli]] §"dome sync"
 - [[wiki/invariants/RAW_IS_IMMUTABLE]]
 - [[wiki/gotchas/hook-non-idempotent]]

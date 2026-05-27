@@ -12,21 +12,11 @@ import { domeStatus, statusToJson } from "../../src/cli/commands/status";
 import { sync } from "../../src/adoption";
 import { openVault } from "../../src/vault";
 import { commit } from "../../src/git";
-import { makeTestVault, type TestVault } from "../helpers/make-test-vault";
-
-async function makeVaultWithInitialCommit(): Promise<TestVault> {
-  const v = await makeTestVault();
-  await commit({
-    path: v.path,
-    message: "chore: initialize Dome vault for test\n",
-    files: [".dome/config.yaml", ".dome/page-types.yaml", "AGENTS.md", "CLAUDE.md", "index.md", "log.md"],
-  });
-  return v;
-}
+import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("dome status output", () => {
   test("uninitialized vault: adopted null, pending null", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       const r = await domeStatus(v.path);
       expect(r.ok).toBe(true);
@@ -47,7 +37,7 @@ describe("dome status output", () => {
   });
 
   test("clean vault (adopted == HEAD): no pending, no dirty", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       // Initialize adopted via sync first.
       const openRes = await openVault(v.path);
@@ -69,7 +59,7 @@ describe("dome status output", () => {
   });
 
   test("source-ahead vault: pending > 0, diverged false", async () => {
-    const v = await makeVaultWithInitialCommit();
+    const v = await makeTestVault();
     try {
       // Initialize.
       let openRes = await openVault(v.path);

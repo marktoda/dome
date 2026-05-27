@@ -12,11 +12,11 @@ The version control system that powers Dome's durability, reconciliation, undo, 
 
 ## What Dome uses git for
 
-- **Change detection.** `dome reconcile` uses `git diff --name-only <last-reconciled-sha> HEAD` + `git status --porcelain` to determine what's changed since the last reconciliation pass. This replaces a custom hash-cache mechanism — git is already a battle-tested content-hash differ.
+- **Change detection.** `dome sync` uses `git diff --name-only refs/dome/adopted/<branch> HEAD` + `git status --porcelain` to determine what's changed since the last successful adoption. The adopted ref (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]) is itself a first-class git artifact — git is doing all of the cursor bookkeeping, not a side-channel `.dome/state/` file.
 - **Undo.** Every vault operation that mutates content is recoverable via `git revert <commit>` or `git reset --hard <sha>`. The "multi-page partial write" gotcha collapses to a `git reset` recovery.
 - **Audit trail.** `git log` provides a content-history view that complements `log.md`'s operation-history view. The two together: git tracks what content changed and when; log.md tracks what Dome operations happened and what they meant.
 - **Temporal queries.** "What did this page look like 6 weeks ago?" is `git show HEAD~50:wiki/entities/danny.md`. The substrate for "what was I thinking 6 weeks ago" queries comes from git history directly.
-- **Multi-device sync (v1+).** `git push` / `git pull` against a remote (GitHub, a private gitea instance, Syncthing-synced bare repo, etc.) becomes Dome's sync mechanism. After pull, run `dome reconcile` to fire hooks against the synced changes.
+- **Multi-device sync (v1+).** `git push` / `git pull` against a remote (GitHub, a private gitea instance, Syncthing-synced bare repo, etc.) becomes Dome's sync mechanism. After pull, run `dome sync` to fire hooks against the synced changes and advance the adopted ref.
 
 ## Why this works structurally
 

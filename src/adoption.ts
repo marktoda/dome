@@ -1,68 +1,29 @@
-// The adoption substrate per docs/wiki/specs/adoption.md.
+// The adoption state machine per docs/wiki/specs/adoption.md §"The adoption
+// state machine". `sync` runs reconcile against `adopted..HEAD`, advances
+// the adopted ref atomically on clean completion, and emits the
+// `engine.adoption.*` events. `getAdoptionStatus` is the read-only snapshot
+// `dome status` consumes.
 //
-// Two layers:
-//   1. RunContext + makeRunContext — the structural fence backing
-//      ENGINE_COMMITS_CARRY_DOME_TRAILERS. Every per-workflow atomic commit
-//      threads one of these into `commitWorkflow`.
-//   2. sync + getAdoptionStatus — the adoption state machine surface backing
-//      ADOPTED_REF_IS_SEMANTIC_CURSOR. `sync` runs reconcile, advances the
-//      adopted ref atomically on clean completion, emits engine.adoption.*
-//      events. `getAdoptionStatus` is the read-only snapshot `dome status`
-//      consumes.
+// The per-commit RunContext primitive that the same substrate's other
+// invariant (ENGINE_COMMITS_CARRY_DOME_TRAILERS) pins lives in
+// `src/run-context.ts` — a different change surface (per-commit, called from
+// every engine-commit producer) than the state machine here (once-per-sync).
 
 import { existsSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
 
 import type { Vault } from "./vault";
 import {
   getAdoptedRef,
   getCurrentBranch,
   setAdoptedRef,
-  ZERO_SHA,
 } from "./adopted-ref";
-import { currentSha, statusMatrix, readTree } from "./git";
+import { currentSha, statusMatrix, isAncestor, log as gitLog } from "./git";
 import { reconcile } from "./reconcile";
 import { isDirtyGitState } from "./reconcile";
+import { ENGINE_EXTENSION_ID, ZERO_SHA, makeRunContext } from "./run-context";
 import { err, ok, type Result, type ToolError } from "./types";
-
-// ----- RunContext -----------------------------------------------------------
-
-/**
- * The four trailers every engine commit carries (per
- * ENGINE_COMMITS_CARRY_DOME_TRAILERS). Constructed via `makeRunContext`,
- * consumed by `commitWorkflow`. See docs/wiki/specs/adoption.md
- * §"Engine commit trailers".
- */
-export interface RunContext {
-  /** `run_<unix-ms>_<6-char-random>` — sortable, debuggable, unique. */
-  readonly runId: string;
-  /** Workflow name for per-workflow commits; `"engine"` for closure commits. */
-  readonly extensionId: string;
-  /** Adopted ref SHA at run start, or `ZERO_SHA` when uninitialized. */
-  readonly base: string;
-  /** HEAD SHA at run start (before this commit was made). */
-  readonly sourceHead: string;
-}
-
-/**
- * Build a RunContext. The `runId` is generated as `run_<unix-ms>_<6-rand>`;
- * the random component is six lowercase alphanumerics from a 4-byte source
- * (enough entropy for per-process uniqueness even under rapid bursts).
- */
-export function makeRunContext(opts: {
-  extensionId: string;
-  base: string;
-  sourceHead: string;
-}): RunContext {
-  return {
-    runId: `run_${Date.now()}_${randomBytes(4).toString("hex").slice(0, 6)}`,
-    extensionId: opts.extensionId,
-    base: opts.base,
-    sourceHead: opts.sourceHead,
-  };
-}
 
 // ----- AdoptionStatus -------------------------------------------------------
 
@@ -104,9 +65,7 @@ export async function getAdoptionStatus(vault: Vault): Promise<AdoptionStatus> {
     if (adopted === head) {
       pendingCommits = 0;
     } else {
-      const ff = await import("./git").then((g) =>
-        g.isAncestor({ path: vault.path, ancestor: adopted, descendant: head }),
-      );
+      const ff = await isAncestor({ path: vault.path, ancestor: adopted, descendant: head });
       if (!ff) {
         diverged = true;
         pendingCommits = null;
@@ -135,15 +94,14 @@ async function readDirtyCounts(vaultPath: string): Promise<{ modified: number; u
 }
 
 /**
- * Count commits in `from..to` via tree walk. Lazily imports isomorphic-git's
- * log primitive to stay off the per-call hot path. The `from`/`to` strings
- * are both commit OIDs and must be valid before calling — `getAdoptionStatus`
- * gates this with `isAncestor`.
+ * Count commits in `from..to` by walking `git log` from `to` until we hit
+ * `from`. Callers gate this with `isAncestor`; if the walk never hits `from`
+ * (corrupt history, unreachable ancestor) the function returns whatever it
+ * counted before exhausting the log — non-blocking by design.
  */
 async function countCommits(vaultPath: string, from: string, to: string): Promise<number> {
-  const { log } = await import("./git");
   try {
-    const entries = await log({ path: vaultPath, ref: to });
+    const entries = await gitLog({ path: vaultPath, ref: to });
     let count = 0;
     for (const entry of entries) {
       if (entry.oid === from) break;
@@ -217,7 +175,6 @@ export async function sync(
   // Divergence check up front so we surface the diagnostic before running
   // reconcile work that would be wasted if the advance is going to refuse.
   if (adoptedBefore !== null && adoptedBefore !== head && opts?.forceAdvance !== true) {
-    const { isAncestor } = await import("./git");
     const ff = await isAncestor({ path: vault.path, ancestor: adoptedBefore, descendant: head });
     if (!ff) {
       await emitBlocked(
@@ -326,7 +283,7 @@ async function emitAdvanced(
         // Synthesize a one-off run id for the advance itself; per-workflow
         // commits inside the sync each carry their own runId.
         runId: makeRunContext({
-          extensionId: "engine",
+          extensionId: ENGINE_EXTENSION_ID,
           base: from ?? ZERO_SHA,
           sourceHead: to,
         }).runId,
@@ -356,11 +313,16 @@ async function emitBlocked(vault: Vault, reason: string): Promise<void> {
   }
 }
 
-// readTree is re-imported here purely to keep the module's import surface
-// stable against future reconcile factoring; the lint passes ignore this.
-void readTree;
-
-// Re-export the ref-name + zero-sha primitives so consumers don't need to
-// know about `adopted-ref.ts` as a separate module surface for the trailer
-// values they thread through commitWorkflow.
-export { adoptedRefName, ZERO_SHA, getAdoptedRef, getCurrentBranch } from "./adopted-ref";
+// Re-export the ref-read + ref-name primitives so consumers don't need to
+// know about `adopted-ref.ts` as a separate module surface. The write side
+// (`setAdoptedRef`) is intentionally not re-exported — only the engine's
+// own sync loop advances the ref.
+export { adoptedRefName, getAdoptedRef, getCurrentBranch } from "./adopted-ref";
+// Re-export the RunContext primitive layer so the four-trailer story lands
+// at one import site (`from "./adoption"` or `from "@dome/sdk"`).
+export {
+  ENGINE_EXTENSION_ID,
+  ZERO_SHA,
+  makeRunContext,
+  type RunContext,
+} from "./run-context";

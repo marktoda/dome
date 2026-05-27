@@ -1,5 +1,5 @@
 import { commit } from "./git";
-import type { RunContext } from "./adoption";
+import type { RunContext } from "./run-context";
 import type { Vault } from "./vault";
 
 export interface WorkflowCommitInput {
