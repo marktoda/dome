@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runWorkflow, buildAiSdkTools } from "../../src/workflows/agent-loop";
+import { runWorkflow } from "../../src/workflows/agent-loop";
+import { projectAiSdk } from "../../src/workflows/project-ai-sdk";
+import { filterAiTools } from "../../src/tools/ai-sdk-binding";
 import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
@@ -82,12 +84,12 @@ describe("runWorkflow", () => {
     }
   });
 
-  test("buildAiSdkTools includes only the workflow's declared tool subset", async () => {
+  test("filterAiTools includes only the workflow's declared tool subset", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const tools = buildAiSdkTools(res.value, [
+      const tools = filterAiTools(projectAiSdk(res.value), [
         "readDocument",
         "writeDocument",
         "appendLog",
@@ -221,12 +223,12 @@ describe("runWorkflow", () => {
     }
   });
 
-  test("buildAiSdkTools silently drops unknown tool names", async () => {
+  test("filterAiTools silently drops unknown tool names", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const tools = buildAiSdkTools(res.value, ["readDocument", "doesNotExist"]);
+      const tools = filterAiTools(projectAiSdk(res.value), ["readDocument", "doesNotExist"]);
       expect(Object.keys(tools)).toEqual(["readDocument"]);
     } finally {
       await v.cleanup();
