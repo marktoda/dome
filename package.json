@@ -1,7 +1,7 @@
 {
   "name": "@dome/sdk",
-  "version": "0.0.1",
-  "description": "Dome — the brain-companion substrate. SDK for the four-concept core (Vault, Document, Tool, Hook).",
+  "version": "0.1.0",
+  "description": "Dome — markdown-vault SDK with a four-concept engine model (Vault, Proposal, Processor, Effect).",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -9,14 +9,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./workflows": {
-      "types": "./src/workflows/index.ts",
-      "default": "./src/workflows/index.ts"
-    },
-    "./mcp": {
-      "types": "./src/mcp/index.ts",
-      "default": "./src/mcp/index.ts"
     },
     "./cli": {
       "types": "./src/cli/index.ts",
@@ -31,18 +23,10 @@
     "test:invariants": "bun test tests/invariants"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.79",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "ai": "^6.0.191",
-    "chokidar": "^4.0.0",
-    "commander": "^14.0.3",
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",
-    "p-queue": "^8.0.0",
-    "picocolors": "^1.1.1",
     "yaml": "^2.9.0",
-    "zod": "^3.23.0",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

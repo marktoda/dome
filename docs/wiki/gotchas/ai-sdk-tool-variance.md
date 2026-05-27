@@ -6,6 +6,7 @@ sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]
 severity: low
 coverage: off-matrix
 enforced_at: src/tools/registry.ts
+enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
 first_observed: 2026-05-26
 ---
 

@@ -1,6 +1,6 @@
 // The adopted-ref substrate per ADOPTED_REF_IS_SEMANTIC_CURSOR. Three
 // exported functions and one constant; the write side (`setAdoptedRef`) is
-// internal to the `src/adoption.ts` chokepoint and intentionally not
+// internal to the `src/engine/adopt.ts` chokepoint and intentionally not
 // re-exported from `src/index.ts`.
 //
 // See docs/wiki/specs/adoption.md §"The adopted ref" for the normative shape.
@@ -50,7 +50,7 @@ export async function getAdoptedRef(vaultPath: string, branch?: string): Promise
  * commit — surfaced through `dome sync --force-advance`.
  *
  * INTERNAL — not re-exported from `src/index.ts`. The only legitimate
- * callers are `src/adoption.ts`'s sync loop (which runs the full adoption
+ * callers are `src/engine/adopt.ts`'s adoption loop (which runs the full adoption
  * state machine before advancing) and tests. Plugin and consumer-shell code
  * reaches the adopted ref via `getAdoptedRef` (read) and `sync` (advance as
  * part of the loop); there is no public write path.

@@ -1,88 +1,101 @@
 # Dome design substrate — Index
 
-The catalog of all wiki pages in this vault. Maintained by Dome's tools; entries added when pages are created, sorted alphabetically within each section.
+The catalog of all wiki pages in this vault. Maintained by Dome's `dome.index` adoption-phase processor; entries added when pages are created, sorted alphabetically within each section.
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
 ## Specs
 
-- [[wiki/specs/adoption]] — The adoption state machine, the `refs/dome/adopted/<branch>` semantics, and the Dome-* trailer convention on engine commits.
-- [[wiki/specs/cli]] — The 11-command Dome CLI: init, migrate, serve, status, sync, reconcile (*deprecated alias for `sync`*), lint, stats, doctor, run-hook, export-context. Bundle-contributed commands (e.g., `dome migrate-dailies` from the dailies bundle) appear when their bundles are loaded.
-- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile); MCP available as a non-primary fifth surface.
-- [[wiki/specs/hooks]] — Hook registration, shipped defaults, opt-in intakes, durability and reconciliation.
-- [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); the Submit + Recall API; extension bundles; tiered feature model; consumer surfaces via `AbstractSurface`; dependency list.
+- [[wiki/specs/proposals]] — The Proposal type; the only write path; local-eventual and hosted-protected construction.
+- [[wiki/specs/processors]] — The Processor type; three phases (adoption / garden / view); triggers; capabilities; first-party `dome.*` processors; idempotency.
+- [[wiki/specs/effects]] — The seven-kind Effect taxonomy (Patch / Diagnostic / Fact / Question / Job / ExternalAction / View); SourceRef shape; exhaustive routing.
+- [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome submit` / `dome sync` / `dome status`.
+- [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); outbox; rebuild path.
+- [[wiki/specs/capabilities]] — Eight capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
+- [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
+- [[wiki/specs/cli]] — The Dome CLI: submit / sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
+- [[wiki/specs/mcp-surface]] — MCP server: one Recall/Submit protocol adapter over `AbstractSurface`; non-primary in v1.
+- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + Submit).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
-- [[wiki/specs/prompts-and-workflows]] — Prompt library; workflows as prompts with frontmatter; tier-classified workflows.
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), the 8-Tool catalog (now including `upsertSection`), extension bundles as a packaging convention, tiered feature model, why-this-design principles, dependency list.
-- [[wiki/specs/vault-layout]] — Directory structure, category from path, ownership rules, git repository structure, derived operational state.
+- [[wiki/specs/vault-layout]] — Directory structure; category from path; ownership rules; git repository structure; derived operational state under `.dome/state/`.
 
 ## Invariants
 
 Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
 
-- [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest commit Dome has fully compiled; advanced only after a clean `dome sync`. Fast-forward-only.
+- [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest fully-adopted commit; advanced only after a clean fixed-point sync. Fast-forward-only.
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; templated sections refreshed by `dome doctor --repair`.
-- [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
+- [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — *(axiom)* Every vault state change — agent native write, vim save, garden-emitted patch, scheduled job — eventually flows through the engine's adoption loop.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
-- [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces a log.md entry (Tool-mediated synchronously; native writes via the watcher).
-- [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] — *(axiom)* Every projection of `vault.tools` (`projectAiSdk`, `renderMcp`, future renderers) routes mutating-Tool invocations through the single-source `wrapMutatingInvoke` helper.
-- [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Internal scope: hooks observe events and call Tools; never mutate directly.
-- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
-- [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]] — *(axiom)* index.md and log.md mutated only by dispatcher.writeIndex / dispatcher.appendLogEntry; public Tools reject these paths.
-- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by appendLog.
+- [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
+- [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] — *(axiom)* Mutation happens in exactly one module: `src/engine/apply-effect.ts`. Every Effect routes through this chokepoint.
+- [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] — *(axiom)* Every Effect passes through the broker before application; capability intersection determines allow / downgrade / deny.
+- [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]] — *(shipped default)* Every Effect produces an audit record (run ledger row, projection table row, outbox row, or git trailer).
+- [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — *(shipped default)* Every processor invocation writes one RunRecord row, regardless of phase or outcome.
+- [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — *(axiom)* `Processor.run(ctx)` returns `Promise<Effect[]>`; no direct mutation surface.
+- [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
+- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files must move/delete on processing; lingering files surface as diagnostics.
+- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by `dome.log`'s append-only adoption processor.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Derived state rebuildable from markdown; `.dome/state/` is explicitly derived.
-- [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — *(opt-in)* New pages require an explicit creation reason.
-- [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — *(shipped default)* Page type from immediate wiki/ subdirectory.
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* writeDocument refuses raw/.
+- [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
+- [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every mutation routes through `submitProposal` and the adoption loop; no direct-write SDK API.
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* PatchEffect refuses raw/.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
-- [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] — *(axiom)* External scope: native writes are caught by the watcher and/or `dome sync`; the vault converges on consistency.
-- [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — *(shipped default)* [[wiki/entities/x]] not [[x]].
-- [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]] — *(axiom)* Every workflow's system prompt is prepended with a vault prologue naming vault.path.
 
 ## Matrices
 
-- [[wiki/matrices/consumer-surface]] — Consumer shell × exported symbol family × entrypoint (`core` / `workflows` / `mcp` / `cli`).
-- [[wiki/matrices/event-types-and-payloads]] — Event name × emitting tool × payload × example hooks.
-- [[wiki/matrices/extension-bundle-shape]] — Extension bundle × five contribution kinds (page-type, preamble, workflows, hooks, CLI commands).
-- [[wiki/matrices/intent-prompt-tools]] — User intent × workflow prompt × bound tools × effects.
-- [[wiki/matrices/tool-invariant-enforcement]] — Tool × invariant enforcement matrix.
+- [[wiki/matrices/built-in-extensions-x-phase]] — First-party `dome.*` bundles × adoption/garden/view × shipped processors.
+- [[wiki/matrices/effect-router-targets]] — Effect kind × processor phase → engine routing destination.
+- [[wiki/matrices/effect-x-capability]] — Per-Effect-kind capability requirements at the broker.
+- [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; five contribution kinds (page-types, preamble, processors, external-handlers, capability-grants).
+- [[wiki/matrices/intent-prompt-processors]] — User intent × prompt source × processor that handles them × effects emitted.
+- [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
+- [[wiki/matrices/projection-table-x-owner]] — Per-projection-table writer authority; namespace scoping.
+- [[wiki/matrices/protocol-adapter]] — CLI / MCP / future HTTP / Voice mapped to AbstractSurface operations.
 
 ## Gotchas
 
-- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; `dome sync` refuses; recovery via `--force-advance` or `git reflog`.
+- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; sync refuses; recovery via `--force-advance` or `git reflog`.
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
 - [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
-- [[wiki/gotchas/ai-sdk-tool-variance]] — Registry's `Tool<>` cast bridges AI SDK v6 inference mismatch; revisit on next AI SDK major bump.
-- [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after writes may not see hook follow-on.
-- [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries hand-validate where Zod is the SDK's pattern; corruption is silent.
-- [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
-- [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-reconcile.
-- [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` (and its deprecated alias `dome reconcile`) refuses to run during mid-merge / mid-rebase.
-- [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declaring the same page type collide at load time; `openVault` rejects with `bundle-load-failure`.
-- [[wiki/gotchas/hook-cycle]] — Hook A triggers Tool that fires event that triggers hook A.
-- [[wiki/gotchas/hook-non-idempotent]] — Non-idempotent hooks double-fire effects during reconciliation.
-- [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
-- [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the watcher catches them.
-- [[wiki/gotchas/scheduled-hook-idempotency]] — Schedule-driven hooks fire at-most-once per `dome sync` (and its deprecated alias `dome reconcile`) regardless of intervals missed; `idempotent:` declaration has narrower semantics than for event-reactive hooks.
+- [[wiki/gotchas/ai-sdk-tool-variance]] — Garden-LLM processors handle AI SDK v6 inference; revisit on next AI SDK major bump.
+- [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after a `submitProposal` may not see garden-phase follow-on; queries default to adopted, not HEAD.
+- [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries Zod-validate; corruption surfaces as state-corruption diagnostics.
+- [[wiki/gotchas/capability-downgrade-surprise]] — `patch.auto` exceeding grant downgrades to `patch.propose` with a diagnostic.
+- [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes; both produce Proposals; adoption loop sequences them.
+- [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-last-sync.
+- [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` refuses to run during mid-merge / mid-rebase.
+- [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declare the same page-type / processor / capability handler; `openVault` rejects with `bundle-load-failure`.
+- [[wiki/gotchas/multi-page-partial-write]] — Multi-page Proposals that adopt only some pages on block — atomic adoption mitigates.
+- [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); watcher catches them and constructs Proposals.
+- [[wiki/gotchas/outbox-stuck]] — External-action retries exhausted; manual replay / abandon via `dome doctor`.
+- [[wiki/gotchas/processor-fixed-point-divergence]] — Adoption loop hits MAX_ITER cap; processors named in the diagnostic.
+- [[wiki/gotchas/processor-idempotency]] — Non-deterministic processors break the fixed-point loop and `dome rebuild`.
+- [[wiki/gotchas/processor-version-drift]] — Processor version bump invalidates the affected projection rows; auto-re-run on `openVault`.
+- [[wiki/gotchas/projection-schema-skew]] — SDK upgrade changes the projection schema; auto-rebuild on `openVault`.
+- [[wiki/gotchas/scheduled-hook-idempotency]] — Schedule-driven processors fire at-most-once per sync regardless of intervals missed.
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 
 ## Linters
 
-Named-but-deferred semantic linter specs. Each names the rule, what it checks, and the target version. v0.5 ships none of these structurally — they are the v0.5.1+ candidates the substrate carries against.
+Named semantic linter specs. Each names the rule, what it checks, and the target version.
 
-- [[wiki/linters/no-retired-symbol-names]] — *(v0.5.1)* Every normative doc names no symbol in the retired-names allow-list (`ConsumerSurface`, `buildConsumerSurface`, `projectMcp`, `McpToolName`, `SENSITIVE_GOES_TO_INBOX`, …); the lockstep complements `tests/invariants/no-retired-invariant-names-in-prompts.test.ts` (which checks shipped prompts) on the doc surface.
-- [[wiki/linters/wrap-mutating-invoke-consumption]] — *(v0.5.1+)* Every projection of `TOOL_REGISTRY` consumes `wrapMutatingInvoke` rather than inlining the post-invoke dispatch loop; enforces [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] against hand-inlined byte-equivalent duplicates the integration tests cannot catch.
+- [[wiki/linters/engine-is-sole-applier]] — *(v1)* `src/` outside `src/engine/`, `src/projections/`, `src/ledger/`, `src/outbox/` must not import mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git` write functions).
+- [[wiki/linters/no-direct-mutation-outside-engine]] — *(v1)* Greps `src/` for mutation calls outside the engine boundary; complement to `engine-is-sole-applier`.
+- [[wiki/linters/no-retired-symbol-names]] — *(v1)* Every normative doc names no symbol in the retired-names allow-list (`Tool`, `Hook`, `Workflow`, `BoundToolSurface`, `runWorkflow`, `reconcile`, `wrapMutatingInvoke`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`, `HOOKS_CANNOT_BYPASS_TOOLS`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `PAGE_CREATION_REQUIRES_RECURRENCE`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, …).
+- [[wiki/linters/processor-purity]] — *(v1)* Files under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` must not import mutation modules.
 
 ## Entities
 
 - [[wiki/entities/andrej-karpathy]] — Source of the LLM-wiki pattern.
 - [[wiki/entities/anthropic]] — Vendor of the model + SDK Dome's harnesses depend on.
 - [[wiki/entities/bun]] — JavaScript runtime + toolkit; the Dome SDK runtime.
-- [[wiki/entities/claude-code]] — Anthropic's CLI; Dome v0.5's first official harness.
-- [[wiki/entities/git]] — The version control system underpinning Dome's reconciliation, undo, and sync.
+- [[wiki/entities/claude-code]] — Anthropic's CLI; Dome v1's first official harness.
+- [[wiki/entities/git]] — The version control system underpinning Dome's adoption, undo, and sync.
 - [[wiki/entities/isomorphic-git]] — Pure-JS git implementation; the Dome SDK's git engine.
-- [[wiki/entities/mcp-protocol]] — Model Context Protocol; how Dome exposes tools to harnesses.
+- [[wiki/entities/mcp-protocol]] — Model Context Protocol; how Dome exposes Submit / Recall to harnesses that mount the MCP server.
 - [[wiki/entities/obsidian]] — Markdown editor; Dome's recommended browse surface.
 - [[wiki/entities/typescript]] — Dome SDK's implementation language.
 
@@ -98,5 +111,5 @@ Named-but-deferred semantic linter specs. Each names the rule, what it checks, a
 
 ## Syntheses
 
-- [[wiki/syntheses/v0.5-build-plan]] — The v0.5 → v1+ → long-term sequencing.
+- [[wiki/syntheses/v0.5-build-plan]] — The v0.5 → v1 sequencing (historical).
 - [[wiki/syntheses/why-dome-vs-mem-tana-granola]] — Positioning against the existing PKM landscape.

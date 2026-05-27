@@ -1,5 +1,18 @@
-// Canonical types for the Dome SDK Tool surface.
+// Canonical types for the Dome v1 SDK surface.
 // See docs/wiki/specs/sdk-surface.md §"Tool".
+//
+// Phase 7b: trimmed to the surfaces v1 actually consumes.
+//   - `Result<T, E>` + `ok` / `err`: the never-throws sum type the engine,
+//     processors, projection, outbox, and ledger layers thread through their
+//     I/O boundaries (the same shape `bun:sqlite` callers normalize into).
+//   - `ToolError`: the open-ended error taxonomy the `Result`-returning
+//     entry points surface. The v0.5 kinds that referenced retired surfaces
+//     (`dispatcher-owned-path`, `wikilink-not-fullpath`, `frontmatter-mismatch`,
+//     `page-creation-requires-reason`, `concurrent-write-conflict`,
+//     `not-found`, `already-exists`, `vault-not-git-repo`, `config-invalid`,
+//     `bundle-load-failure`, `invariant-violated`) are removed. The remaining
+//     `validation` kind is emitted by `src/adopted-ref.ts` and is the only
+//     `ToolError` discriminator any current v1 caller produces.
 
 // ----- Result<T, E> ---------------------------------------------------------
 
@@ -10,106 +23,6 @@ export type Result<T, E> =
 export const ok = <T>(value: T): Result<T, never> => ({ ok: true, value });
 export const err = <E>(error: E): Result<never, E> => ({ ok: false, error });
 
-// ----- Effects --------------------------------------------------------------
-
-export type UnifiedDiff = string; // patch text; v0.5 keeps it as a string
-
-export type Effect =
-  | { kind: "wrote-document"; path: string; diff: UnifiedDiff }
-  | { kind: "appended-log"; entry: LogEntry }
-  | { kind: "moved-document"; from: string; to: string }
-  | { kind: "deleted-document"; path: string };
-
-// ----- Log entries ----------------------------------------------------------
-
-export type LogVerb = "ingest" | "query" | "lint" | "update" | "bootstrap" | string;
-
-export type LogEntry = {
-  ts: string; // ISO 8601
-  verb: LogVerb;
-  subject: string;
-  body?: string;
-  refs?: ReadonlyArray<string>;
-};
-
-// ----- ToolReturn -----------------------------------------------------------
-
-export type ToolReturn<TOutput> = {
-  result: Result<TOutput, ToolError>;
-  effects: Effect[];
-};
-
 // ----- ToolError vocabulary -------------------------------------------------
-// Canonical error kinds; each maps to a structural failure described in
-// docs/wiki/invariants/<NAME>.md or a Tool-specific failure mode.
 
-export type ToolError =
-  | { kind: "invariant-violated"; invariant: InvariantName; detail: string }
-  | { kind: "dispatcher-owned-path"; path: string; requested_tool: string }
-  | { kind: "wikilink-not-fullpath"; link: string; suggestion?: string }
-  | { kind: "frontmatter-mismatch"; field: string; expected: string; actual: string }
-  | { kind: "page-creation-requires-reason"; path: string }
-  | { kind: "concurrent-write-conflict"; path: string; expected_mtime: string; actual_mtime: string }
-  | { kind: "not-found"; path: string }
-  | { kind: "already-exists"; path: string }
-  | { kind: "validation"; message: string }
-  | { kind: "vault-not-git-repo"; path: string }
-  | { kind: "config-invalid"; message: string }
-  | {
-      readonly kind: "bundle-load-failure";
-      readonly detail:
-        | "manifest-missing"
-        | "manifest-invalid"
-        | "name-mismatch"
-        | "page-type-collision"
-        | "workflow-invalid"
-        | "hook-invalid"
-        | "cli-collision";
-      readonly message: string;
-    };
-
-// ----- Creation reason ----------------------------------------------------
-
-export type CreationReason = "recurring" | "named_explicitly" | "structural";
-
-// ----- Invariant names ------------------------------------------------------
-// Canonical list (axiom + shipped-default + opt-in). See docs/wiki/invariants/.
-
-export const INVARIANTS = {
-  RAW_IS_IMMUTABLE: "RAW_IS_IMMUTABLE",
-  MARKDOWN_IS_SOURCE_OF_TRUTH: "MARKDOWN_IS_SOURCE_OF_TRUTH",
-  LOG_IS_APPEND_ONLY: "LOG_IS_APPEND_ONLY",
-  HOOKS_CANNOT_BYPASS_TOOLS: "HOOKS_CANNOT_BYPASS_TOOLS",
-  VAULT_IS_GIT_REPO: "VAULT_IS_GIT_REPO",
-  INDEX_AND_LOG_ARE_DISPATCHER_OWNED: "INDEX_AND_LOG_ARE_DISPATCHER_OWNED",
-  EVERY_WRITE_IS_LOGGED: "EVERY_WRITE_IS_LOGGED",
-  PAGE_TYPE_BY_DIRECTORY: "PAGE_TYPE_BY_DIRECTORY",
-  WIKILINKS_ARE_FULLPATH: "WIKILINKS_ARE_FULLPATH",
-  INBOX_IS_EPHEMERAL: "INBOX_IS_EPHEMERAL",
-  PAGE_CREATION_REQUIRES_RECURRENCE: "PAGE_CREATION_REQUIRES_RECURRENCE",
-  CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY: "CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY",
-  WORKFLOWS_KNOW_VAULT_CONTEXT: "WORKFLOWS_KNOW_VAULT_CONTEXT",
-  HOOK_DISPATCH_IS_VAULT_BOUND: "HOOK_DISPATCH_IS_VAULT_BOUND",
-  AGENTS_MD_IS_ORIENTATION_SURFACE: "AGENTS_MD_IS_ORIENTATION_SURFACE",
-  VAULT_RECONCILES_AFTER_NATIVE_WRITE: "VAULT_RECONCILES_AFTER_NATIVE_WRITE",
-  ADOPTED_REF_IS_SEMANTIC_CURSOR: "ADOPTED_REF_IS_SEMANTIC_CURSOR",
-  ENGINE_COMMITS_CARRY_DOME_TRAILERS: "ENGINE_COMMITS_CARRY_DOME_TRAILERS",
-} as const;
-
-export type InvariantName = typeof INVARIANTS[keyof typeof INVARIANTS];
-
-// ----- WikiLink -------------------------------------------------------------
-
-export type WikiLink = {
-  raw: string;     // "[[wiki/entities/danny]]" or "[[Danny]]"
-  target: string;  // "wiki/entities/danny" or "Danny"
-  isFullPath: boolean;
-};
-
-// ----- SearchMatch ----------------------------------------------------------
-
-export type SearchMatch = {
-  path: string;
-  excerpt: string;
-  score: number;
-};
+export type ToolError = { kind: "validation"; message: string };

@@ -1,205 +1,182 @@
-// `dome doctor` — structural integrity audit + read-only projections +
-// targeted mutators. See docs/wiki/specs/cli.md §"dome doctor".
+// cli/commands/doctor: the `dome doctor --show <subject>` command.
 //
-// Composition shape:
-//   1. Open the vault.
-//   2. Run every structural CHECK (read-only; accumulates violations + info).
-//   3. Run any opted-in SHOW projection (read-only; appends to info).
-//   4. Run any opted-in mutating action (--rebuild-index, --repair,
-//      --drain-hooks, --reset-quarantined-hooks, --time-since-reconcile).
-//   5. Return {exitCode, violations, info}.
+// Per [[wiki/specs/cli]] §"dome doctor", the full surface has many
+// subjects (`runs`, `cost`, `outbox`, `diagnostics`, `questions`,
+// `orphan-runs`, `recent-activity`, `recent-processor-divergence`) plus
+// repair flags. Phase 9 ships the four read-only subjects backed by
+// existing v1 query surfaces:
 //
-// Each check lives in `src/cli/doctor/checks/<name>.ts` and exports a
-// single `(vault) => Promise<CheckResult>`. Each --show projection lives
-// in `src/cli/doctor/show/<name>.ts` and exports `(vault, …) =>
-// Promise<{info}>`. Adding a new check is one new file + one entry in
-// the CHECKS array below. Adding a new --show is one new file + one
-// opt + one wiring.
+//   - `--show runs`        → `queryRuns(ledger, { limit })`
+//   - `--show diagnostics` → `queryDiagnostics(projection)`
+//   - `--show questions`   → `queryQuestions(projection)`
+//   - `--show outbox`      → `queryOutbox(outbox)`
+//
+// Read-only: this command opens the runtime (so the three DBs are
+// initialized) but does not submit a Proposal. Exit codes:
+//   - 0 always on a clean read — including empty result sets.
+//   - 1 on runtime-open failure.
+//   - 64 on usage error (unknown subject, missing --show).
+//
+// House-style notes:
+//   - `--limit N` caps the row count. Default 20. Applied at the SQL
+//     layer for `runs`; for the projection / outbox surfaces (which
+//     don't take a `limit` arg in the current query API) the cap is
+//     applied post-fetch via array slicing.
+//   - `--json` emits structured rows.
 
-import { openVault, type Vault } from "../../vault";
-import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
-import { ok, type Result, type ToolError } from "../../types";
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { checkFrontmatterType } from "../doctor/checks/frontmatter-type";
-import { checkWikilinks } from "../doctor/checks/wikilinks";
-import { checkRawImmutable } from "../doctor/checks/raw-immutable";
-import { checkLogMonotonic } from "../doctor/checks/log-monotonic";
-import { checkInboxStale } from "../doctor/checks/inbox-stale";
-import { checkAgentsMdDrift } from "../doctor/checks/agents-md-drift";
-import type { DoctorCheck } from "../doctor/checks/types";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import { queryRuns } from "../../ledger/runs";
+import { queryDiagnostics } from "../../projections/diagnostics";
+import { queryQuestions } from "../../projections/questions";
+import { queryOutbox } from "../../outbox/dispatch";
 
-import { showReviewQueue } from "../doctor/show/review-queue";
-import { showRawCitations } from "../doctor/show/raw-citations";
-import { showWorkflows } from "../doctor/show/workflows";
-import { showEvents } from "../doctor/show/events";
-import { showRecentHookCycles } from "../doctor/show/recent-hook-cycles";
-import { showRecentActivity } from "../doctor/show/recent-activity";
+import type { ParsedArgs } from "../args";
+import { formatJson, formatTable } from "../format";
 
-export interface DoctorReport {
-  exitCode: 0 | 1;
-  violations: string[];
-  info: string[];
-}
+// ----- Constants ------------------------------------------------------------
 
-// Optional flags for `dome doctor`. See docs/wiki/specs/cli.md §"dome doctor".
-export interface DoctorOpts {
-  rebuildIndex?: boolean;
-  showReviewQueue?: boolean;
-  showRawCitations?: boolean;
-  showWorkflows?: boolean;
-  showEvents?: boolean;
-  showRecentHookCycles?: boolean;
-  /**
-   * When set, print the last N entries from `log.md` as info lines prefixed
-   * with `recent:`. `null` means use the default (50). `undefined` means
-   * the flag wasn't passed and no walk runs.
-   */
-  recentActivityN?: number | null;
-  drainHooks?: boolean;
-  resetQuarantinedHooks?: boolean;
-  /**
-   * Report how long it's been since the daemon last synced (read from
-   * .dome/state/last-reconcile-mtime.txt mtime; falls back to the legacy
-   * .dome/state/last-reconciled-sha.txt for vaults migrating from v0.5
-   * pre-phase1+phase3 per docs/wiki/specs/adoption.md §"Migration from v0.5").
-   * See docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
-   */
-  timeSinceReconcile?: boolean;
-  /**
-   * When set, regenerate AGENTS.md templated sections from current config
-   * while preserving the user-prose section. Per
-   * docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md.
-   */
-  repair?: boolean;
-}
+const DEFAULT_LIMIT = 20;
+const VALID_SUBJECTS = new Set<string>([
+  "runs",
+  "diagnostics",
+  "questions",
+  "outbox",
+]);
 
-// Structural checks, run in declaration order on every `dome doctor` invocation.
-// Adding a new check: one new file under `src/cli/doctor/checks/`, one import
-// above, and one entry here. Order is preserved for stable output.
-const CHECKS: ReadonlyArray<DoctorCheck> = [
-  checkFrontmatterType,
-  checkWikilinks,
-  checkRawImmutable,
-  checkLogMonotonic,
-  checkInboxStale,
-  checkAgentsMdDrift,
-];
+// ----- runDoctor ------------------------------------------------------------
 
-export async function domeDoctor(
-  vaultPath: string,
-  opts: DoctorOpts = {},
-): Promise<Result<DoctorReport, ToolError>> {
-  const res = await openVault(vaultPath);
-  if (!res.ok) return res;
-  const vault = res.value;
-
-  const violations: string[] = [];
-  const info: string[] = [];
-
-  for (const check of CHECKS) {
-    const r = await check(vault);
-    violations.push(...r.violations);
-    info.push(...r.info);
+/**
+ * Execute `dome doctor --show <subject>`. Returns the exit code.
+ */
+export async function runDoctor(args: ParsedArgs): Promise<number> {
+  const showFlag = args.flags["show"];
+  if (typeof showFlag !== "string") {
+    console.error(
+      "dome doctor: --show <subject> is required. Subjects: runs, diagnostics, questions, outbox.",
+    );
+    return 64;
+  }
+  if (!VALID_SUBJECTS.has(showFlag)) {
+    console.error(
+      `dome doctor: unknown subject '${showFlag}'. Available: runs, diagnostics, questions, outbox.`,
+    );
+    return 64;
   }
 
-  // --rebuild-index: delegate to the SDK primitive. Privileged-writer is
-  // internal; the CLI consumes the public `vault.rebuildIndex` seam.
-  if (opts.rebuildIndex) {
-    await vault.rebuildIndex();
+  const vaultFlag = args.flags["vault"];
+  const vaultPath = resolve(
+    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
+  );
+
+  const limit = parseLimit(args.flags["limit"]);
+  if (limit === null) {
+    console.error(
+      "dome doctor: --limit must be a positive integer.",
+    );
+    return 64;
   }
 
-  // Read-only --show projections. Each projection appends to `info`; none
-  // change `violations`.
-  if (opts.showWorkflows) {
-    const r = await showWorkflows(vault);
-    info.push(...r.info);
+  const bundlesRootFlag = args.flags["bundles-root"];
+  const bundlesRoot =
+    typeof bundlesRootFlag === "string"
+      ? bundlesRootFlag
+      : `${vaultPath}/.dome/extensions`;
+  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  if (!runtimeResult.ok) {
+    console.error(
+      `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Make sure ${vaultPath}/.dome/extensions/ exists (run \`dome init\` first).`,
+    );
+    return 1;
   }
-  if (opts.showEvents) {
-    const r = await showEvents(vault);
-    info.push(...r.info);
-  }
+  const runtime = runtimeResult.value;
 
-  if (opts.drainHooks) {
-    await vault.drainHooks();
-    info.push(`--drain-hooks: drained (async hook queue is now idle)`);
-  }
-  if (opts.resetQuarantinedHooks) {
-    const { makeQuarantineStore } = await import("../../quarantine-store");
-    const store = makeQuarantineStore(join(vault.path, ".dome", "state", "quarantined.json"));
-    const before = await store.load();
-    await store.clear();
-    info.push(`--reset-quarantined-hooks: cleared (${before.length} handler(s) were quarantined)`);
-  }
-  if (opts.showRecentHookCycles) {
-    const r = await showRecentHookCycles(vault);
-    info.push(...r.info);
-  }
-  if (opts.showReviewQueue) {
-    const r = await showReviewQueue(vault);
-    info.push(...r.info);
-  }
-  if (opts.showRawCitations) {
-    const r = await showRawCitations(vault);
-    info.push(...r.info);
-  }
-  if (opts.recentActivityN !== undefined) {
-    const limit = opts.recentActivityN ?? 50;
-    const r = await showRecentActivity(vault, limit);
-    info.push(...r.info);
-  }
-
-  if (opts.repair) {
-    const { buildAgentsMdTemplated, mergeAgentsMd, buildInitialAgentsMd } = await import("../../agents-md");
-    const agentsPath = join(vault.path, "AGENTS.md");
-    const newTemplated = buildAgentsMdTemplated(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
-    if (existsSync(agentsPath)) {
-      const existing = await Bun.file(agentsPath).text();
-      const merged = mergeAgentsMd(existing, newTemplated);
-      await Bun.write(agentsPath, merged);
-      info.push("--repair: AGENTS.md templated sections regenerated (user-prose preserved)");
+  try {
+    const rows = collectRows(showFlag, runtime, limit);
+    if (args.flags["json"] === true) {
+      console.log(formatJson(rows));
     } else {
-      const fresh = buildInitialAgentsMd(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
-      await Bun.write(agentsPath, fresh);
-      info.push("--repair: AGENTS.md created (was missing)");
+      console.log(`dome doctor --show ${showFlag}:`);
+      console.log(formatTable(rows));
     }
-    // Also restore CLAUDE.md to the canonical shim if it's drifted or absent.
-    const claudeAbsRepair = join(vault.path, "CLAUDE.md");
-    const claudeCanonical = "See AGENTS.md.\n";
-    if (!existsSync(claudeAbsRepair) || (await Bun.file(claudeAbsRepair).text()) !== claudeCanonical) {
-      await Bun.write(claudeAbsRepair, claudeCanonical);
-      info.push("--repair: CLAUDE.md shim restored to canonical content");
-    }
+    return 0;
+  } finally {
+    await runtime.close();
   }
-
-  if (opts.timeSinceReconcile) {
-    // Prefer the renamed marker; fall back to the legacy SHA file for vaults
-    // migrating from v0.5 pre-phase1+phase3 per docs/wiki/specs/adoption.md
-    // §"Migration from v0.5". Mtime is the load-bearing signal in both files.
-    const mtimePath = join(vault.path, ".dome", "state", "last-reconcile-mtime.txt");
-    const legacyPath = join(vault.path, ".dome", "state", "last-reconciled-sha.txt");
-    const readPath = existsSync(mtimePath) ? mtimePath : existsSync(legacyPath) ? legacyPath : null;
-    if (readPath === null) {
-      info.push("time-since-reconcile: never (dome sync has never run)");
-    } else {
-      const st = await stat(readPath);
-      const ageMs = Date.now() - st.mtimeMs;
-      info.push(`time-since-reconcile: ${formatAge(ageMs)} (since ${new Date(st.mtimeMs).toISOString()})`);
-    }
-  }
-
-  return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
 }
 
-function formatAge(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)} seconds`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} minutes`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hours`;
-  return `${Math.floor(ms / 86_400_000)} days`;
+// ----- internals ------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+
+/**
+ * Dispatch on the subject. Each branch queries the relevant surface and
+ * projects to a flat `Record<string, unknown>` shape suitable for table
+ * rendering (no nested objects in the displayed columns).
+ *
+ * The subject is already narrowed to one of the four valid strings.
+ */
+function collectRows(
+  subject: string,
+  runtime: VaultRuntime,
+  limit: number,
+): ReadonlyArray<Row> {
+  switch (subject) {
+    case "runs": {
+      const runs = queryRuns(runtime.ledgerDb, { limit });
+      return runs.map((r) => ({
+        id: r.id,
+        processor: r.processorId,
+        phase: r.phase,
+        status: r.status,
+        started_at: r.startedAt,
+        duration_ms: r.durationMs,
+        proposal: r.proposalId,
+      }));
+    }
+    case "diagnostics": {
+      const all = queryDiagnostics(runtime.projectionDb);
+      return all.slice(0, limit).map((d) => ({
+        severity: d.severity,
+        code: d.code,
+        message: d.message,
+      }));
+    }
+    case "questions": {
+      const all = queryQuestions(runtime.projectionDb);
+      return all.slice(0, limit).map((q) => ({
+        idempotency_key: q.idempotencyKey,
+        question: q.question,
+        options: q.options ?? "-",
+      }));
+    }
+    case "outbox": {
+      const all = queryOutbox(runtime.outboxDb);
+      return all.slice(0, limit).map((o) => ({
+        id: o.id,
+        capability: o.capability,
+        status: o.status,
+        attempts: o.attempts,
+        enqueued_at: o.enqueuedAt,
+        last_error: o.lastError,
+      }));
+    }
+    default:
+      // Unreachable — VALID_SUBJECTS guard above enforces this.
+      return [];
+  }
 }
 
-// Re-export Vault for callers that may want a typed reference (used in some
-// downstream consumers of `dome doctor` infrastructure).
-export type { Vault };
+/**
+ * Parse the `--limit` flag. Returns the default when absent, the parsed
+ * integer when valid, or `null` on a malformed value (caller treats as
+ * usage error).
+ */
+function parseLimit(raw: string | boolean | undefined): number | null {
+  if (raw === undefined || raw === true) return DEFAULT_LIMIT;
+  if (raw === false) return null;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n) || n <= 0) return null;
+  return n;
+}

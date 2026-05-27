@@ -1,0 +1,199 @@
+// projection-facts: per-table accessor for FactEffect rows. Owns the
+// FactEffect → `facts` row serialization and the row → FactEffect
+// deserialization used by the Query API's `factsBySubject` and
+// `factsByPredicate` surfaces.
+//
+// Normative references:
+//   - docs/wiki/specs/projection-store.md §"Tables — facts" (column shape)
+//   - docs/wiki/specs/projection-store.md §"Query API" (read surface)
+//   - docs/wiki/specs/effects.md §"FactEffect" (namespace = predicate prefix
+//     before the last dot — the spec's worked example `dome.tasks.dueDate`
+//     → namespace `dome.tasks` resolves the ambiguity in the wording)
+//
+// House-style notes (matches src/projections/db.ts, src/engine/closure-commit.ts):
+//   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
+//   - JSON columns (`object_json`, `source_refs`) serialized via
+//     `JSON.stringify`; symmetric `JSON.parse` on read.
+//   - Row → FactEffect deserialization goes through `factEffect(...)` so the
+//     same Zod-refinement guarantees hold for reads as for writes.
+//   - Returned arrays are `Object.freeze`'d.
+//   - `noUncheckedIndexedAccess` discipline: SQLite `.all()` returns arrays
+//     of typed row shapes; mapping is functional (no index access).
+
+import type { FactEffect, NodeRef, Literal } from "../core/effect";
+import { factEffect } from "../core/effect";
+import type { CommitOid, SourceRef } from "../core/source-ref";
+import type { ProjectionDb } from "./db";
+
+// ----- Public types ---------------------------------------------------------
+
+export type FactInsertOpts = {
+  readonly effect: FactEffect;
+  readonly processorId: string;
+  readonly adoptedCommit: CommitOid;
+};
+
+// ----- SQL ------------------------------------------------------------------
+
+const INSERT_FACT_SQL = `
+INSERT INTO facts (
+  namespace, subject_kind, subject_id, predicate, object_json,
+  assertion, confidence, source_refs, processor_id, adopted_commit, written_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`.trim();
+
+const FACTS_BY_SUBJECT_SQL = `
+SELECT namespace, subject_kind, subject_id, predicate, object_json,
+       assertion, confidence, source_refs
+FROM facts
+WHERE subject_kind = ? AND subject_id = ?
+ORDER BY id
+`.trim();
+
+const FACTS_BY_PREDICATE_SQL = `
+SELECT namespace, subject_kind, subject_id, predicate, object_json,
+       assertion, confidence, source_refs
+FROM facts
+WHERE namespace = ? AND predicate = ?
+ORDER BY id
+`.trim();
+
+// ----- Row shape ------------------------------------------------------------
+
+type FactRow = {
+  readonly namespace: string;
+  readonly subject_kind: string;
+  readonly subject_id: string;
+  readonly predicate: string;
+  readonly object_json: string;
+  readonly assertion: string;
+  readonly confidence: number | null;
+  readonly source_refs: string;
+};
+
+// ----- Public functions -----------------------------------------------------
+
+/**
+ * Insert a FactEffect row. Throws on SQLite-level failure (disk full,
+ * constraint violation). Programmer errors at the type boundary (e.g., a
+ * FactEffect missing `sourceRefs`) are caught at construction time by the
+ * `factEffect()` Zod refinement; this function trusts the typed input.
+ */
+export function insertFact(db: ProjectionDb, opts: FactInsertOpts): void {
+  const { effect, processorId, adoptedCommit } = opts;
+  const namespace = predicateNamespace(effect.predicate);
+  db.raw.query(INSERT_FACT_SQL).run(
+    namespace,
+    effect.subject.kind,
+    subjectId(effect.subject),
+    effect.predicate,
+    JSON.stringify(effect.object),
+    effect.assertion,
+    effect.confidence ?? null,
+    JSON.stringify(effect.sourceRefs),
+    processorId,
+    adoptedCommit,
+    new Date().toISOString(),
+  );
+}
+
+/**
+ * Read every fact about a subject (page / task / entity). Returns a frozen
+ * array; ordering is insertion order (`ORDER BY id`).
+ */
+export function factsBySubject(
+  db: ProjectionDb,
+  subject: NodeRef,
+): ReadonlyArray<FactEffect> {
+  const rows = db.raw
+    .query<FactRow, [string, string]>(FACTS_BY_SUBJECT_SQL)
+    .all(subject.kind, subjectId(subject));
+  return Object.freeze(rows.map(rowToFact));
+}
+
+/**
+ * Read every fact with a given (namespace, predicate). Returns a frozen
+ * array; ordering is insertion order (`ORDER BY id`).
+ */
+export function factsByPredicate(
+  db: ProjectionDb,
+  namespace: string,
+  predicate: string,
+): ReadonlyArray<FactEffect> {
+  const rows = db.raw
+    .query<FactRow, [string, string]>(FACTS_BY_PREDICATE_SQL)
+    .all(namespace, predicate);
+  return Object.freeze(rows.map(rowToFact));
+}
+
+// ----- internals ------------------------------------------------------------
+
+/**
+ * Project the NodeRef discriminator to the `subject_id` column value. The
+ * three NodeRef kinds carry different id-bearing fields; this function
+ * normalizes to the single TEXT column.
+ */
+function subjectId(s: NodeRef): string {
+  switch (s.kind) {
+    case "page":
+      return s.path;
+    case "task":
+      return s.stableId;
+    case "entity":
+      return s.name;
+  }
+}
+
+/**
+ * Compute the `namespace` column value from a `FactEffect.predicate`. Per
+ * spec the namespace is the dotted prefix before the predicate's terminal
+ * segment (e.g., `dome.tasks.dueDate` → `dome.tasks`). A predicate with no
+ * dot is its own namespace.
+ */
+function predicateNamespace(predicate: string): string {
+  const idx = predicate.lastIndexOf(".");
+  return idx === -1 ? predicate : predicate.slice(0, idx);
+}
+
+/**
+ * Rebuild a NodeRef from `(subject_kind, subject_id)`. Throws on unknown
+ * kind (a row corrupted at the SQL boundary — programmer error or external
+ * tampering with the db file).
+ */
+function rebuildSubject(kind: string, id: string): NodeRef {
+  switch (kind) {
+    case "page":
+      return { kind: "page", path: id };
+    case "task":
+      return { kind: "task", stableId: id };
+    case "entity":
+      return { kind: "entity", name: id };
+    default:
+      throw new Error(`projection.facts: unknown subject_kind '${kind}'`);
+  }
+}
+
+/**
+ * Row → FactEffect. Goes through `factEffect()` so the same Zod-refinement
+ * guarantees (non-empty sourceRefs; confidence required for inferred /
+ * generated) that protect writes also protect reads — a malformed row
+ * throws via the constructor's downstream callers.
+ */
+function rowToFact(row: FactRow): FactEffect {
+  const subject = rebuildSubject(row.subject_kind, row.subject_id);
+  const object = JSON.parse(row.object_json) as NodeRef | Literal;
+  const sourceRefs = JSON.parse(row.source_refs) as ReadonlyArray<SourceRef>;
+  const assertion = row.assertion as FactEffect["assertion"];
+  const input: Omit<FactEffect, "kind"> =
+    row.confidence === null
+      ? { subject, predicate: row.predicate, object, assertion, sourceRefs }
+      : {
+          subject,
+          predicate: row.predicate,
+          object,
+          assertion,
+          sourceRefs,
+          confidence: row.confidence,
+        };
+  return factEffect(input);
+}

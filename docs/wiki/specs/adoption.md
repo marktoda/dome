@@ -2,163 +2,201 @@
 type: spec
 created: 2026-05-27
 updated: 2026-05-27
-sources: ["[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"]
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # Adoption
 
-This spec is normative for Dome's adoption substrate — the `refs/dome/adopted/<branch>` ref, the adoption state machine, the Dome-* trailer convention on engine commits, and the two new CLI commands (`dome sync` + `dome status`) that surface the substrate to consumers.
+This spec is normative for Dome's adoption substrate — the `refs/dome/adopted/<branch>` ref, the **fixed-point adoption loop**, the Dome-* trailer convention on engine commits, and the CLI commands (`dome submit`, `dome sync`, `dome status`) that surface adoption to consumers.
 
-The adoption substrate is the v1 spec's [Phase 1 + Phase 3] move (`docs/v1.md` §23) landed proportionately on top of the v0.5 four-concept core. It does NOT introduce staging worktrees, a clean `compileRange` extraction, a run ledger, a capability broker, or the Core/Engine/Shell layering refactor — those are v1.5+ destinations. What it does land is a first-class git artifact for "the latest fully compiled revision" and a structural fence (the four trailers) that distinguishes engine-produced commits from user-produced commits in `git log`.
+Adoption is the heart of the engine model. Every write — human, agent, garden, scheduled — flows through it. The loop is what makes the vault self-coherent.
 
 ## The adopted ref
 
-`refs/dome/adopted/<branch>` is the canonical "trusted semantic state" cursor for the named source branch. It points to the latest commit Dome has fully compiled and considers safe for trusted semantic queries. The engine advances it only after `dome sync` completes without blocking diagnostics.
+`refs/dome/adopted/<branch>` is the canonical "trusted semantic state" cursor for the named source branch. It points to the latest commit Dome has fully adopted. The engine advances it only after a Proposal's adoption loop reaches a clean fixed point.
 
 ```text
-refs/heads/main                  user/client source branch (humans, agents, editors write here)
+refs/heads/main                  user/client/agent source branch
 refs/dome/adopted/main           latest fully adopted semantic state for `main`
 ```
 
-One ref per source branch. A vault that uses `main` as its only branch carries `refs/dome/adopted/main`; future multi-branch vaults get `refs/dome/adopted/feature-x` per branch automatically.
+One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses and the user resolves via `dome sync --force-advance` after confirming. See [[wiki/gotchas/adopted-ref-divergence]].
 
-Until the ref exists for a branch (a freshly-init'd vault, or a vault upgrading from v0.5), `dome status` reports adoption as "uninitialized" and the next `dome sync` initializes the ref at HEAD without running the reconcile phases (initialization treats HEAD as already-compiled — explicitly NOT a backlog of unseen work).
+Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
 
-After initialization, the source branch may run ahead of the adopted ref:
-
-```text
-main:                  A --- B --- C
-refs/dome/adopted/main A
-```
-
-After `dome sync` succeeds:
+## The fixed-point adoption loop
 
 ```text
-main:                  A --- B --- C
-refs/dome/adopted/main             C
+proposal P arrives with base = adopted, head = candidate
+
+candidate := merge(adopted, P.head)
+
+for iteration in 1..MAX_ITER:
+  snapshot      := read(candidate)
+  changedPaths  := compileRange(base = P.base, head = candidate)
+  signals       := signalsFor(changedPaths, snapshot)
+
+  effects := []
+  for each processor P in adoption-phase processors whose triggers match signals:
+    runRecord := ledger.beginRun(P, snapshot, signals)
+    procEffects := P.run({ snapshot, changedPaths, proposal: P, ... })
+    ledger.completeRun(runRecord, procEffects)
+    effects.push(...procEffects)
+
+  diagnostics := effects.filter(isBlockingDiagnostic)
+  if diagnostics.length > 0:
+    emit engine.adoption.blocked { proposal, diagnostics }
+    return { adopted: false, diagnostics, iterations: iteration }
+
+  patches := effects.filter(isAutoPatchAfterCapabilityEnforcement)
+  if patches.length == 0:
+    break  # fixed point reached
+
+  candidate := applyPatches(candidate, patches)
+
+if iteration == MAX_ITER:
+  emit engine.adoption.blocked { proposal, diagnostics: [{ severity: "block", code: "fixed-point.divergence", ... }] }
+  return { adopted: false, ... }
+
+# Close: if the loop produced engine-driven changes, commit them as the closure commit
+if candidate != P.head:
+  closureCommit := commitWorkflow({ ..., candidate, runContext })
+else:
+  closureCommit := null
+
+# Adopt: atomically advance the adopted ref
+setAdoptedRef(branch, candidate)
+emit engine.adoption.advanced { proposal, closureCommit, iterations }
+return { adopted: true, adoptedRef: candidate, closureCommit, iterations }
 ```
 
-Or, when sync produces an engine-closure commit `D` (e.g., an auto-update-index write that needed to commit) on top of `C`:
+The loop has six properties that make it well-behaved:
 
-```text
-main:                  A --- B --- C --- D
-refs/dome/adopted/main                 D
+1. **Bounded.** `MAX_ITER` (default 100, configurable as `engine.max_iterations` in `.dome/config.yaml`) caps wall-clock cost. Hitting the cap is a blocking diagnostic, not an infinite loop.
+2. **Deterministic.** Adoption-phase processors are pure (snapshot in, effects out) and idempotent. The same Proposal against the same processor set converges to the same fixed point.
+3. **Atomic.** The adopted ref advances exactly once per Proposal, at the end. Mid-loop crashes leave the ref unchanged.
+4. **Capability-checked.** Every effect passes through `enforceCapability` before being applied. PatchEffects exceeding `patch.auto` grants are downgraded to `propose` and emit a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic.
+5. **Ledgered.** Every processor invocation writes a `RunRecord` row, regardless of outcome. Failed adoptions are debuggable.
+6. **Closure-explicit.** Engine-driven changes (the cumulative patches applied during the loop) land as one closure commit per Proposal, carrying the four Dome-* trailers. The trailers are the durable provenance surface in `git log`.
+
+Pinned by [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]], [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]], [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]].
+
+### MAX_ITER and divergence
+
+The cap exists for catastrophic runaway, not as the primary mechanism. A well-formed adoption phase converges in 1–3 iterations:
+
+- Iteration 1: processors emit patches (e.g., wikilink-resolver inserts missing path prefixes; index-updater adds the new entry).
+- Iteration 2: processors run against the patched tree; emit no new patches; fixed point reached.
+
+A divergent adoption (rare) means a processor's emitted patch invalidates a property a *different* processor reacts to, which patches it back, etc. The cap catches this; the diagnostic names both processors involved. See [[wiki/gotchas/processor-fixed-point-divergence]].
+
+The default cap of 100 is generous — legitimate fan-out across an entity-rich vault may reach depths of 10–20. Values below 30 risk false positives on shipped-default processor sets.
+
+## Compile range
+
+`compileRange(base, head)` is the engine's primitive for "what changed in this Proposal." It produces:
+
+```ts
+interface CompileRangeResult {
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly addedPaths: ReadonlyArray<string>;
+  readonly modifiedPaths: ReadonlyArray<string>;
+  readonly deletedPaths: ReadonlyArray<string>;
+  readonly signals: ReadonlyArray<Signal>;
+}
 ```
 
-The ref always points to a commit reachable from `HEAD`. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (a force-push, hard-reset, or rebase rewrote history), `dome sync` refuses and the user resolves the divergence via `dome sync --force-advance` after confirming the new HEAD is the intended trunk. See [[wiki/gotchas/adopted-ref-divergence]].
+Signals are synthesized from the diff: `file.created` for added paths, `file.modified` for modified, `file.deleted` for deleted; `document.changed` for any markdown file change; `frontmatter.changed` when frontmatter delta is non-empty; `region.changed` when a marker-delimited region's content changed; `link.added` / `link.removed` when wikilinks in the body change.
 
-## The adoption state machine
-
-```text
-source range
-  → reconcile
-  → diagnose
-  → close
-  → adopt
-```
-
-### Source range
-
-Dome identifies the range as `adopted..HEAD` for the current branch. The range may be empty (`adopted == HEAD`; no work to do) or contain user commits, engine-closure commits, or both.
-
-### Reconcile
-
-Dome runs the existing three-phase `reconcile()` machinery (per [[wiki/specs/hooks]] §"Durability and reconciliation"):
-
-1. Inbox processing — fires `document.written.inbox.<bucket>` for each file in `inbox/<bucket>/`.
-2. Git-diff replay — fires `document.written.<category>.<type>` for each file changed in `adopted..HEAD` plus the working-tree diff.
-3. Scheduled catch-up — fires `clock.tick.<interval>` for each scheduled hook whose interval has elapsed.
-
-The reconcile machinery is the v0.5+phase1+phase3 stand-in for the v1.md §5 deterministic `compileRange`. A future Phase 2 rewrite extracts it cleanly; the substrate ships against the existing machinery because that's what's there.
-
-### Diagnose
-
-Blocking diagnostics stop adoption. The v0.5+phase1+phase3 set of blocking conditions:
-
-- Dirty git state (mid-merge, mid-rebase, mid-cherry-pick) — per [[wiki/gotchas/dirty-git-state-at-reconcile]].
-- Adopted ref divergence (HEAD's ancestry does not contain the current adopted commit) — per [[wiki/gotchas/adopted-ref-divergence]].
-- Reconcile-phase error that aborts the sync (corrupt `.dome/state/scheduled.json`, unreadable inbox, etc.).
-
-If adoption blocks, the source branch remains ahead; the adopted ref remains unchanged; the engine emits an `engine.adoption.blocked` event with the reason. The user resolves the diagnostic and re-runs `dome sync`.
-
-### Close
-
-If the reconcile phases produced uncommitted engine-driven changes (today: never, because per-workflow atomic commits land each workflow's work as a commit; future: a closure pass that batches multiple hook-driven writes into a single closure commit), the engine creates a closure commit at this step. Closure commits carry the four Dome-* trailers (§"Engine commit trailers" below) with `Dome-Extension: engine`.
-
-In v0.5+phase1+phase3, the close step is a no-op for most syncs — the work that *would* be a closure commit has already happened inside the per-workflow atomic commits that produced HEAD. The step is named explicitly because Phase 4+'s closure-pass machinery slots in here without reshape.
-
-### Adopt
-
-The engine atomically updates `refs/dome/adopted/<branch>` to the current HEAD. If the process crashes before this step, the previous adopted state remains trusted. If it crashes after, adoption succeeded.
-
-On success the engine emits `engine.adoption.advanced` with `{ branch, from, to, runId }` payload.
+The result is computed once per loop iteration and passed to every processor whose triggers match. Processors don't re-walk the diff; the engine does it once.
 
 ## Engine commit trailers
 
-Every commit Dome's engine produces carries four trailers in the commit message body:
+Every engine-produced commit (closure commits, garden-emitted Proposals after their adoption, init scaffolding commits) carries four trailers in the message body:
 
 ```text
-ingest: capture an Atlas entity page
+adopt: <Proposal source kind> proposal <Proposal id-prefix>
 
 Dome-Run: run_1748313600000_a3f9b2
-Dome-Extension: ingest
+Dome-Extension: <originating bundle id or "engine">
 Dome-Base: 9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b
 Dome-Source-Head: 41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
 ```
 
-The trailers sit after a blank line per `git interpret-trailers` convention. They are structurally parseable: `git interpret-trailers --parse <commit-message>` yields the four key/value pairs.
+Trailers sit after a blank line per `git interpret-trailers` convention. They are structurally parseable.
 
-Trailer roles:
+| Trailer | Value |
+|---|---|
+| `Dome-Run` | Run id of the form `run_<unix-ms>_<6-char-rand>`. Matches the RunRecord's `id`. |
+| `Dome-Extension` | The bundle id that originated the work (`dome.intake`, `dome.daily`, etc.). For pure engine closure (capability downgrade, schema autoformat), the value is `engine`. |
+| `Dome-Base` | SHA of `refs/dome/adopted/<branch>` at the moment the loop started. All-zeros (`0000000000000000000000000000000000000000`) when adopted was uninitialized. |
+| `Dome-Source-Head` | SHA of HEAD at the moment the loop started. |
 
-- **`Dome-Run`** — a run id of the form `run_<unix-ms>_<6-char-random>`, generated per workflow invocation (or per closure-pass batch). Sortable by timestamp; debuggable in logs; the anchor that ties a commit to its run-time context.
-- **`Dome-Extension`** — the source of the commit. For per-workflow atomic commits, this is the workflow name (`ingest`, `lint`, `migrate`, etc.). For closure-pass commits made directly by the engine (future Phase 4+), this is `engine`. Plugin/bundle-driven workflows in a future Phase 4+ carry the bundle's extension id.
-- **`Dome-Base`** — the SHA of `refs/dome/adopted/<branch>` at the moment the run started. If adopted was uninitialized, the value is the all-zeros SHA `0000000000000000000000000000000000000000`. Used by future idempotency-key registries to determine "I did this work against this base before."
-- **`Dome-Source-Head`** — the SHA of HEAD at the moment the run started (before this commit was made). Distinct from `Dome-Base` whenever the user has commits on top of adopted that the run is reacting to.
+User out-of-band commits (vim, Obsidian, agent's `Write`) do **not** carry these trailers. The structural difference makes `git log --grep="^Dome-Run:"` the canonical engine-history query and `git log --invert-grep --grep="^Dome-Run:"` the user-history query.
 
-User out-of-band edits (the consumer-shell native-write path: vim, Obsidian, Claude Code's native `Write`, etc.) commit through normal `git commit` and do **not** carry these trailers. The structural difference is what makes `git log --grep="^Dome-Run:"` the canonical "engine history" query and `git log --invert-grep --grep="^Dome-Run:"` the user-history query.
+Pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. The trailers and the run ledger are dual surfaces for the same provenance — see [[wiki/specs/run-ledger]] §"Why a separate ledger".
 
-The convention is pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]: `commitWorkflow` is the single chokepoint for engine commits and requires a `runContext` parameter; the function refuses (throws) if the parameter is absent. There is no path to producing a trailer-less engine commit.
+## `dome submit`
+
+The user-facing entrypoint for writing into the vault.
+
+```bash
+cd ~/vaults/work && dome submit                       # submit current working-tree state
+cd ~/vaults/work && dome submit --source-kind agent   # override source inference
+cd ~/vaults/work && dome submit --patch ./change.patch  # submit a patch without touching the working tree
+```
+
+Composition:
+
+1. If `--patch` is supplied, apply the patch to a fresh branch `refs/heads/dome/proposal/<rand>`; use that branch tip as the Proposal head.
+2. Otherwise, use the working tree's HEAD as the Proposal head (the user's commits or working-tree changes since last sync).
+3. Construct a `Proposal` with `base = refs/dome/adopted/<branch>`, `head = <Proposal head>`, `source = <inferred or overridden>`.
+4. Hand the Proposal to the engine's adoption loop.
+5. Print the `AdoptionResult` to stdout.
+
+Output on success:
+
+```text
+dome submit: adopted main: 9c1e002..41a98c2 (proposal prop_1748..., 2 iterations, 5 effects, 1 closure commit)
+```
+
+Output on block:
+
+```text
+dome submit: blocked main: proposal prop_1748... (3 diagnostics)
+  - [block] dome.markdown.wikilink-unresolved: [[wiki/entities/danny-tan]] not found (notes/2026-05-27.md:14)
+  - [block] dome.markdown.frontmatter-invalid: missing required field `type:` (wiki/concepts/cohesion.md:3)
+  - [block] dome.lint.duplicate-stable-id: task #task-1748 appears in two pages
+```
+
+Exit codes: 0 on adopted; 1 on blocked; 2 on engine error or vault open failure.
 
 ## `dome sync`
 
-The new CLI command. Runs the adoption state machine against the current branch.
+`dome sync` is the explicit catch-up command. It constructs a Proposal from `adopted..HEAD` and runs it through the adoption loop. Use it when:
+- The user accumulated working-tree commits manually and wants the engine to catch up.
+- The daemon (`dome serve`) was off and missed events; `dome sync` reconciles.
+- A scheduled processor's cron interval elapsed and the engine wasn't running.
 
 ```bash
 cd ~/vaults/work && dome sync
 cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD after manual confirmation
 ```
 
-Composition (in order):
-
-1. **Identify source range** — read `refs/dome/adopted/<branch>` (initialize at HEAD if absent); range = `adopted..HEAD`.
-2. **Diagnose preconditions** — refuse on dirty git state (mid-merge, mid-rebase, mid-cherry-pick); refuse on divergence unless `--force-advance` is set.
-3. **Reconcile** — run the existing `reconcile()` machinery (inbox → git-diff → scheduled). Hooks fire, engine writes commit via `commitWorkflow` with Dome-* trailers.
-4. **Drain hooks** — wait for the async hook queue to settle (matches `dome reconcile`'s current behavior).
-5. **Adopt** — atomically advance `refs/dome/adopted/<branch>` to current HEAD. Emit `engine.adoption.advanced`.
+`dome sync` is semantically `dome submit` with the working-tree HEAD as the head and source kind `"manual"`. It additionally triggers garden-phase processors whose schedule cursors are due (per [[wiki/specs/projection-store]] §"schedule_cursors").
 
 Output:
-
 ```text
-dome sync: adopted main: 9c1e002..41a98c2 (3 user commits, 2 engine commits, 0 inbox processed, 1 scheduled fired)
+dome sync: adopted main: 9c1e002..41a98c2 (proposal prop_1748..., 3 user commits, 2 engine commits, 1 scheduled processor fired)
 ```
 
-When the sync blocks, the output names the blocking diagnostic:
+When blocked, the output names the blocking diagnostics in the same shape as `dome submit`.
 
-```text
-dome sync: blocked — vault is in a dirty git state (mid-merge); resolve before syncing
-```
-
-Exit codes: 0 on success (including no-op success: adopted already at HEAD); 1 on blocking diagnostic or sync-time error; 2 on usage error (unknown flag, vault open failure).
-
-### Relationship to `dome reconcile`
-
-`dome reconcile` is preserved as a deprecated alias for `dome sync` to keep existing test fixtures, scheduled-cron entries, and harness invocations working. Invoking `dome reconcile` prints a one-line deprecation notice on stderr (`dome reconcile is deprecated; use dome sync`) and then runs `domeSync(vaultPath)`. The two commands share the underlying machinery in `src/adoption.ts`; only the user-facing name differs.
-
-A future v1.x rewrite may retire `dome reconcile` entirely; the deprecation alias is the v0.5+phase1+phase3 migration cushion.
+The CLI `dome reconcile` shipped in v0.5+phase1+phase3 as a deprecated alias for `dome sync`. **The alias is retired in v1.** Callers that still invoke `dome reconcile` see "unknown command" and a one-line pointer to `dome sync`.
 
 ## `dome status`
 
-The new CLI command. Read-only; no mutation.
+Read-only adoption snapshot. No mutation.
 
 ```bash
 cd ~/vaults/work && dome status
@@ -168,80 +206,88 @@ cd ~/vaults/work && dome status --json
 Output (text mode):
 
 ```text
-branch:   main
-HEAD:     41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
-adopted:  9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b (3 commits behind HEAD)
-pending:  3 commits to adopt
-dirty:    2 modified, 1 untracked
+branch:    main
+HEAD:      41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
+adopted:   9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b (3 commits behind HEAD)
+pending:   3 commits to adopt
+dirty:     2 modified, 1 untracked
+last sync: 4 hours ago
+processors: 47 loaded across 9 bundles
+ledger:    13,847 runs (last 30d: 412)
+outbox:    2 pending, 0 failed
 ```
 
 When adoption is uninitialized:
 
 ```text
-branch:   main
-HEAD:     41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
-adopted:  (uninitialized — first `dome sync` will initialize at HEAD)
-pending:  n/a
-dirty:    0 modified, 0 untracked
+branch:    main
+HEAD:      41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
+adopted:   (uninitialized — first `dome sync` will initialize at HEAD)
+pending:   n/a
+...
 ```
 
-When adopted has diverged:
+`--json` emits a structured object suitable for cross-tool consumption.
+
+Exit code: 0 on success; 1 if vault open fails; 2 on usage error.
+
+## Hosted-protected mode (v1.5 — designed-for, not shipped in v1)
+
+The adopted-ref shape accommodates a hosted-multi-client mode without further design work:
 
 ```text
-branch:   main
-HEAD:     41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
-adopted:  fa12cd9 (DIVERGED — not an ancestor of HEAD; run `dome sync --force-advance` after confirming)
-pending:  n/a
-dirty:    0 modified, 0 untracked
+# Local-eventual (v1 default):
+refs/heads/main                       # user/client/agent source
+refs/dome/adopted/main                # adopted cursor
+
+# Hosted-protected (v1.5):
+refs/heads/main                       # adopted trunk (the "PR target")
+refs/heads/proposals/<PR-number>      # PR head; the engine runs adoption against this
 ```
 
-`--json` emits a structured object suitable for cross-tool consumption:
+In hosted mode, a `PR opened` webhook constructs a Proposal with `id = <PR number>`, `base = refs/heads/main`, `head = <PR head>`. The adoption loop runs in CI; engine closure commits land on the PR branch via push; the PR auto-merges into `main` on a clean fixed point or routes to review based on capability policy.
 
-```json
-{
-  "branch": "main",
-  "head": "41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8",
-  "adopted": "9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b",
-  "pendingCommits": 3,
-  "dirty": { "modified": 2, "untracked": 1 },
-  "diverged": false
-}
-```
+The local-eventual and hosted-protected modes are conceptually the same loop:
 
-When adopted is uninitialized, the `"adopted"` field is `null` and `"pendingCommits"` is `null`. When diverged, `"diverged"` is `true`.
+| Aspect | Local-eventual | Hosted-protected |
+|---|---|---|
+| Adopted cursor | `refs/dome/adopted/<branch>` | `refs/heads/main` |
+| Proposal head | working-tree HEAD | PR head commit |
+| Loop runs | locally in `dome submit` / `dome sync` | in CI on PR events |
+| Closure commits | land on user branch | land on PR branch |
+| Adoption | local ref advance | PR auto-merge |
 
-Exit code: 0 on success; 1 if the vault open fails; 2 on usage error. Status alone never mutates; it does not advance the adopted ref or write anything to `.dome/state/`.
+The local-eventual flow is what v1 ships. The hosted-protected flow ships in v1.5 — at which point a vault can run either mode (controlled by `vault.mode: "local" | "hosted"` in `.dome/config.yaml`).
 
-## Migration from v0.5
+## Migration from v0.5+phase1+phase3
 
-The substrate move is small and reversible.
+The adopted-ref + Dome-* trailer machinery landed in v0.5 (per the prior `2026-05-27-phase-1-3-adopted-ref-and-patch-trailers` ledger). The v1 engine model preserves both — the ref shape, the trailer shape, the fast-forward-only advance rule, the divergence-recovery flow.
 
-**On first `dome sync` against an existing v0.5 vault:**
+What changes in v1:
+- The reconcile machinery (three-phase inbox/diff/scheduled) dissolves into adoption-phase + scheduled-trigger processors. The same work happens; it happens through the processor runtime instead of a separate function.
+- The closure step is no longer a no-op (in v0.5 it was a no-op because per-workflow atomic commits made closure unnecessary). In v1, the fixed-point loop's accumulated patches land as one closure commit per Proposal.
+- Garden-emitted Proposals (a new concept in v1) re-enter the adoption loop instead of writing directly via the workflow-commit chokepoint.
 
-1. The engine looks for `refs/dome/adopted/<branch>`.
-2. If absent, it initializes the ref at HEAD and skips the reconcile phases (treating HEAD as already-compiled rather than as a backlog of unseen work — the v0.5 vault had `.dome/state/last-reconciled-sha.txt` carrying that role; the migration treats the v0.5 cursor as definitionally caught-up).
-3. If present (the vault has already been touched by phase1+phase3 sync), normal sync proceeds.
+The migration is non-invasive:
+- Existing `refs/dome/adopted/<branch>` values are preserved.
+- Existing engine commits already carry the four trailers; v1 reads them.
+- The `dome serve --hosted` flag is the v1.5 entry; v1 ships only `dome serve` (local mode).
 
-**Existing `.dome/state/last-reconciled-sha.txt` files are tolerated:**
-
-- The new doctor flag `--time-since-reconcile` reads the mtime of `.dome/state/last-reconcile-mtime.txt` (the renamed marker — content-irrelevant, presence + mtime are the signal) when present; falls back to `.dome/state/last-reconciled-sha.txt`'s mtime when only the legacy file exists. The migration is zero-effort: the user runs `dome sync`, the new marker is created, the old file is left in place and ignored.
-- A future `dome migrate` invocation can clean up the legacy file; v0.5+phase1+phase3 does not retire it.
-
-**Existing test fixtures continue to work:**
-
-- The eval / test vault factories that initialize a vault and run `reconcile` produce identical results — `reconcile` is still callable through the alias, and the underlying flow is unchanged through it.
-- The `tests/integration/reconcile-end-to-end.test.ts` test continues to pass; its assertions are about the reconcile phases, not the cursor-file shape.
-
-**The .gitignore is unchanged.** `.dome/state/` is gitignored (per [[wiki/specs/vault-layout]] §"Derived operational state"); the renamed `last-reconcile-mtime.txt` lives in the same gitignored tree.
-
-**Reverting to v0.5 is git-reset:** the adopted ref is a `refs/dome/adopted/<branch>` entry under `.git/refs/`; `git update-ref -d refs/dome/adopted/main` removes it, and the substrate falls back to the v0.5 cursor file behavior automatically. The substrate move is not invasive in either direction.
+`dome reconcile`'s deprecation alias is retired in v1 — callers must update to `dome sync`. The alias was a v0.5+phase1+phase3 migration cushion; one minor release of cushion is enough.
 
 ## Related
 
-- [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — pins the ref's existence and meaning.
-- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — pins the four-trailer convention.
-- [[wiki/specs/cli]] — `dome sync` + `dome status` shipped command surface.
-- [[wiki/specs/hooks]] — commit policy (now carrying trailers) and durability story (now cursor-by-ref).
-- [[wiki/specs/sdk-surface]] — the `sync` / `getAdoptionStatus` re-exports from `@dome/sdk` core.
-- [[wiki/gotchas/adopted-ref-divergence]] — the divergence-and-recovery flow.
-- [[wiki/matrices/event-types-and-payloads]] — `engine.adoption.advanced` + `engine.adoption.blocked`.
+- [[wiki/specs/proposals]] — the loop's input
+- [[wiki/specs/processors]] — what runs inside the loop
+- [[wiki/specs/effects]] — what processors emit
+- [[wiki/specs/capabilities]] — how effects are gated
+- [[wiki/specs/projection-store]] — where non-patch effects land
+- [[wiki/specs/run-ledger]] — RunRecord per processor invocation
+- [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — ref existence + meaning
+- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — provenance trailers
+- [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] — applier chokepoint
+- [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — write-path chokepoint
+- [[wiki/gotchas/adopted-ref-divergence]] — divergence-and-recovery flow
+- [[wiki/gotchas/processor-fixed-point-divergence]] — MAX_ITER cap-hit recovery
+- [[wiki/gotchas/dirty-git-state-at-reconcile]] — adoption refuses on dirty state
+- [[wiki/matrices/effect-router-targets]] — per-effect-kind routing

@@ -1,127 +1,175 @@
 ---
 type: spec
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # MCP surface
 
-**Status in v0.5: non-primary surface.** The MCP server is preserved in the codebase as a future-investment surface but is not load-bearing for v0.5 value delivery. Dome's canonical interaction model on the Claude Code harness is: per-vault `AGENTS.md` for orientation, the CLI (`dome lint`, `dome lint --apply <id>`, `dome stats`, `dome doctor`, etc.) for explicit operations, and `dome serve` running as a background compiler daemon for passive reconciliation. Claude Code uses its native `Read` / `Grep` / `Write` / `Edit` for filesystem operations; the watcher catches those writes and the compiler reconciles. The MCP tools and prompts described below are functional and tested, but the agent is not expected to reach for them when native tools suffice. See [[VISION]] §"Two surface patterns" and [[wiki/specs/harnesses]] §"The compiler-boundary contract" for the architectural framing.
+This spec is normative for Dome's MCP (Model Context Protocol) adapter. The MCP server is **one protocol adapter** over [[wiki/specs/sdk-surface]] §"AbstractSurface" — the same surface the CLI consumes, expressed in MCP wire format.
 
-**When MCP re-earns its keep:** future agent harnesses without shell access (so they can't invoke `dome` CLI commands directly) or harnesses that benefit from explicitly-typed structured operations would reach for these tools. Mobile (which imports the SDK core directly per [[wiki/specs/sdk-surface]] §"Consumer surfaces") and Web (which would speak HTTP via a future `@dome/sdk/http` companion) do not need the MCP surface — they use the protocol most natural to their shell. The MCP exists for the harness class that lives between "embedded SDK consumer" and "shell-capable harness."
+## Status in v1
 
-This spec is normative for the MCP server's *implementation* — when a consumer does mount it, the contract below holds. The MCP server is a **thin protocol adapter over [[wiki/specs/sdk-surface]] §"Consumer surfaces" `McpSurface`**: it consumes the four-kind MCP-rendered shape `renderMcp` produces from the protocol-agnostic `AbstractSurface`.
+The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (AGENTS.md + CLI + daemon + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP surface ships in the codebase and works correctly when mounted, but the SDK does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively.
 
-The MCP server lives in `@dome/sdk/mcp` (not `@dome/sdk` core). A consumer that wants only Vault + Tools without speaking MCP imports from `@dome/sdk` and pays no MCP dependency cost — see [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
+The MCP surface earns its keep in two scenarios:
 
-## Construction
+1. **Harnesses without robust shell-execution.** A sandboxed agent that cannot invoke `Bash` reaches Dome via typed MCP tools instead. MCP becomes the only path.
+2. **Workflows that benefit from typed argument validation.** Some agent interactions prefer Zod-typed structured inputs over CLI argument strings. MCP routes the same operations with stronger schema enforcement.
 
-`DomeMcpServer` consumes an `McpSurface` produced by rendering an `AbstractSurface`:
+For v1's primary path (Claude Code with full shell access), MCP is additive — available, not required.
 
-```ts
-import { openVault, buildAbstractSurface } from "@dome/sdk";
-import { renderMcp, DomeMcpServer } from "@dome/sdk/mcp";
+## Architecture
 
-const vaultR = await openVault(path);
-if (!vaultR.ok) throw vaultR.error;
-const surface = await buildAbstractSurface(vaultR.value);
-const mcp = renderMcp(surface);
-const server = new DomeMcpServer({ surface: mcp });
-await server.serveStdio();
+```text
+@dome/sdk core
+  ↓
+buildAbstractSurface(vault) → AbstractSurface
+  ↓
+@dome/sdk/mcp
+  ↓
+renderMcp(surface) → McpSurface  ──── DomeMcpServer (MCP protocol)
 ```
 
-The chain has three steps. `buildAbstractSurface(vault)` (in `@dome/sdk` core; async because it scans `<vault>/.dome/prompts/` and reads `AGENTS.md`) produces the protocol-agnostic four-kind aggregation per [[wiki/specs/sdk-surface]] §"Consumer surfaces". `renderMcp(surface)` (synchronous; in `@dome/sdk/mcp`) projects each kind to MCP shape: `surface.tools` (a `BoundToolSurface`) becomes `ReadonlyArray<ToolAdapter>` with `dome.*` snake_case names and the MCP handler signature; `surface.prompts` (a list of `PromptDescriptor`) becomes `ReadonlyArray<McpPromptAdapter>` with the `dome.workflow.<name>` / `dome.system_prompt` naming convention; `surface.resources` (a list of `ResourceDescriptor`) becomes a `ResourceAdapter` registering `dome://` URIs against the MCP request layer; `surface.instructions` passes through unchanged. `DomeMcpServer({ surface: McpSurface })` adapts the rendered surface to the MCP wire protocol.
+The MCP server is a thin protocol adapter. It does not embed Dome's Submit, Recall, or processor execution; it forwards to the AbstractSurface's `submit`, `query`, `read`, and `commands` callbacks.
 
-A future `@dome/sdk/http` companion entrypoint ships `renderHttp(surface): HttpSurface` parallel to `renderMcp` — same `surface` input, different wire format. The aggregation logic in `buildAbstractSurface` is reused; only the renderer changes.
+Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the `@dome/sdk` core has no MCP dependency; `@dome/sdk/mcp` lives in a separate entrypoint) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
 
-## Invocation
+## MCP tools
 
-```bash
-bun x @dome/sdk serve --vault <path> [--port <n>] [--stdio]
-```
+The MCP server exposes Dome's Submit and Recall surfaces as MCP tools under the `dome.*` prefix:
 
-Two transports:
-
-- **stdio** (default for Claude Code and Cursor): the MCP server speaks JSON-RPC over stdin/stdout. The harness spawns it as a child process.
-- **HTTP / SSE** (for harnesses that need network access — future): bind a port and serve MCP over HTTP. v0.5 ships stdio; HTTP/SSE is deferred — see §"Why MCP is the only protocol-server surface in v0.5" for the future-pressure framing.
-
-The server holds exactly one Vault open per invocation. To serve multiple vaults, run multiple MCP server instances (one per vault).
-
-## Tool catalog (mirrors SDK)
-
-The MCP server exposes one MCP tool per SDK Tool, name-preserving (snake_case in MCP, camelCase in the SDK). The SDK has seven Tools; the MCP surface has seven matching MCP tools.
-
-| MCP tool name | SDK Tool | Input schema | Output (the inner `Result<T,E>`) |
-|---|---|---|---|
-| `dome.read_document` | `readDocument` | `{ path: string }` | Document (frontmatter, body, links_out) |
-| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, expected_mtime?, opts?: { create?, reason? } }` — `expected_mtime?` threads the optimistic-locking snapshot from a prior `dome.read_document`; see [[wiki/specs/sdk-surface]] §"Tool signatures" and §"Concurrency" for the canonical shape | created/updated Document, or `ToolError` |
-| `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | appended `LogEntry`, or `ToolError` |
-| `dome.search_index` | `searchIndex` | `{ query, filters? }` | array of matches with paths and excerpts |
-| `dome.wikilink_resolve` | `wikilinkResolve` | `{ link: string }` | Document or null |
-| `dome.move_document` | `moveDocument` | `{ from, to, reason, expected_mtime? }` — `expected_mtime?` per [[wiki/specs/sdk-surface]] §"Concurrency" | moved Document, or `ToolError` |
-| `dome.delete_document` | `deleteDocument` | `{ path, reason, expected_mtime? }` — `expected_mtime?` per [[wiki/specs/sdk-surface]] §"Concurrency" | void, or `ToolError` |
-
-Input schemas are Zod-derived JSON Schema; MCP clients (Claude Code, etc.) consume these to render the tool to the LLM. Output shapes preserve the SDK's `Result<T, E>` discrimination: success is JSON-encoded into MCP's `content` array; errors set MCP's `isError: true` with the structured `ToolError` JSON in `content[0].text` so the harness can present them. The Tool's `effects` from `ToolReturn<T>` are *not* serialized over the wire — the Tool already applied them side-effectfully (writes, hook dispatch) before the adapter returns.
-
-## Prompts exposed
-
-The MCP server also exposes Dome's prompts as MCP *prompts* (a separate MCP concept from tools — MCP prompts are reusable templates a harness can offer to its user). Shipped-default workflows always appear; opt-in workflows appear only when the vault activates them.
-
-| MCP prompt name | Underlying workflow prompt | Tier |
+| MCP tool | Maps to | Purpose |
 |---|---|---|
-| `dome.system_prompt` | `system-base.md` (the wiki-maintainer system prompt; harness loads at session start) | shipped default |
-| `dome.workflow.ingest` | `ingest` workflow | shipped default |
-| `dome.workflow.query` | `query` workflow | shipped default |
-| `dome.workflow.lint` | `lint` workflow | shipped default |
-| `dome.workflow.migrate` | `migrate` workflow | shipped default |
-| `dome.workflow.export_context` | `export-context` workflow | shipped default |
-| `dome.workflow.research` | `research` workflow | opt-in (visible only when activated) |
-| `dome.workflow.voice_ingest` | `voice-ingest` workflow | opt-in |
-| `dome.workflow.clip_integrate` | `clip-integrate` workflow | opt-in |
+| `dome.submit` | `AbstractSurface.submit` | Construct and submit a Proposal. |
+| `dome.query` | `AbstractSurface.query` | Full-text + structured query against adopted state. |
+| `dome.read_document` | `AbstractSurface.read` | Read a single document at the adopted commit. |
+| `dome.resolve_wikilink` | `AbstractSurface.resolveWikilink` (via vault) | Resolve a `[[wikilink]]` to a document. |
+| `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`lint`, `stats`, `query`, etc.). |
 
-Plugin- and vault-local workflows automatically appear as MCP prompts following the `dome.workflow.<name>` convention.
+Tool names are derived from a single source (the canonical processor + Submit/Recall surface) — no parallel naming catalog. Adding a new view-phase command processor extends `dome.run_command`'s command list automatically.
 
-## Resources exposed
+### `dome.submit`
 
-The MCP server exposes vault content as MCP *resources*:
+```yaml
+description: Submit a proposal to the engine. Returns AdoptionResult.
+inputSchema:
+  type: object
+  properties:
+    patch:        { type: string, description: "UnifiedDiff patch; if absent, working-tree HEAD is used" }
+    sourceKind:   { type: string, enum: ["client", "agent", "garden", "manual", "import"] }
+    metadata:
+      type: object
+      properties:
+        title:      { type: string }
+        authoredAt: { type: string, format: date-time }
+        reason:     { type: string }
+```
 
-| Resource URI | Content |
-|---|---|
-| `dome://index` | `index.md` |
-| `dome://log` | `log.md` (latest N entries; configurable) |
-| `dome://page/<path>` | A specific page's content |
-| `dome://vault/info` | Vault config + page-type-allowed list + invariants enabled |
+Returns:
 
-Resources are read-only via MCP; mutation always flows through the `dome.write_*` tools when a consumer is interacting via the MCP surface. (Consumer shells with native filesystem access — Claude Code, vim, Obsidian — write directly to the vault and the watcher catches those writes per the compiler-boundary contract in [[VISION]] §"Two surface patterns". [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] governs Dome's *internal* dispatcher / hook / tool chain, not consumer-shell behavior.)
+```yaml
+{
+  proposalId: string,
+  adopted: boolean,
+  adoptedRef: string,
+  diagnostics: [{ severity, code, message, sourceRefs }, ...],
+  closureCommitOid: string | null,
+  iterations: number,
+}
+```
 
-## Session model
+### `dome.query`
 
-Each harness session connects fresh: opens the Vault (if not already open), reads the registry, exposes Tools + Prompts + Resources. The MCP server is *not* per-session; one server serves many concurrent harness sessions against the same vault. (For multi-harness concurrency see [[wiki/gotchas/concurrent-harness-write]].)
+```yaml
+description: Query adopted state. Returns matches with SourceRefs.
+inputSchema:
+  type: object
+  properties:
+    text:                  { type: string, description: "FTS query" }
+    filters:               { type: object, properties: { category, type, tags } }
+    revision:              { type: string, description: "default: adopted ref" }
+    includeFacts:          { type: boolean, default: true }
+    includeDiagnostics:    { type: boolean, default: false }
+    includeQuestions:      { type: boolean, default: false }
+    includeSourceSnippets: { type: boolean, default: true }
+    requireEvidence:       { type: boolean, default: false }
+```
 
-## Authentication
+### `dome.run_command`
 
-v0.5: none. The MCP server runs as a child process of the user's harness or on the user's loopback — there is no cross-machine access surface. Authentication enters when the SDK grows an HTTP transport (v0.5.1+) or a sync layer (v1+).
+```yaml
+description: Invoke a view-phase command processor by name.
+inputSchema:
+  type: object
+  required: [name]
+  properties:
+    name:  { type: string, description: "Command processor name (lint, stats, query, export-context, etc.)" }
+    args:  { type: object, description: "Command-specific arguments" }
+```
 
-## Versioning
+The available command names are enumerated by `AbstractSurface.commands` at server startup; the MCP server registers the full list. Adding a command-triggered processor in any bundle extends the surface automatically.
 
-The MCP server reports its version via the standard MCP `serverInfo` field. Tool names are versioned via the `dome.` prefix; breaking changes (a Tool's input shape changes incompatibly) bump the package major version and rename the affected MCP tool (`dome.v2.write_document`) for the transition window. Plugin and vault-local Tools are not version-managed by Dome — plugin authors own their compatibility.
+## MCP resources
 
-## Why MCP is the only protocol-server surface in v0.5
+The MCP server exposes vault contents under URI schemes:
 
-MCP is the only *protocol-server* surface implemented in v0.5 — alongside it, the canonical consumer-shell paths are: direct SDK import (used by `dome serve` itself, by future native mobile/desktop, by any embedded consumer) and the CLI (any shell, including Claude Code's `Bash`).
+| URI scheme | Maps to | Returns |
+|---|---|---|
+| `dome://page/<path>` | `AbstractSurface.readResource` | Markdown body of `<path>` at adopted commit |
+| `dome://log` | `AbstractSurface.readResource` | `log.md` at adopted commit |
+| `dome://index` | `AbstractSurface.readResource` | `index.md` at adopted commit |
+| `dome://search?q=<query>` | `AbstractSurface.readResource` | Top-N FTS matches for `<query>` |
+| `dome://status` | (engine call) | `AdoptionStatus` JSON |
 
-Other protocol-server surfaces considered and deferred:
+The resource URI map is the read-side counterpart to the tool map.
 
-- **HTTP REST / SSE** — useful for web clients and remote-vault mobile shells. Deferred until either lands; an `@dome/sdk/http` companion entrypoint with `renderHttp(surface)` parallel to `renderMcp` is the planned home.
-- **GraphQL** — same.
-- **gRPC / Protobuf** — multi-language; Dome's first-class non-TS consumer is future native mobile, which currently consumes the SDK directly.
+## MCP prompts
 
-MCP is preserved as the protocol-server surface for the harness class between "embedded SDK consumer" (mobile, desktop) and "shell-capable harness" (Claude Code via Bash). Currently that class is empty in real-world use; the surface is preserved against future-pressure rather than for current value delivery.
+The MCP server exposes the view-phase processor names as MCP prompts under `dome.workflow.<processor-id>`. The MCP prompt's `getMessages(args)` callback constructs the prompt by invoking the processor with the supplied args and returning the rendered prompt text.
+
+```yaml
+# Example: dome.workflow.dome.intake.extract-capture
+name: dome.workflow.dome.intake.extract-capture
+description: Compile a raw capture into wiki updates.
+arguments:
+  - name: capture_path
+    description: "Path to the raw capture file"
+    required: true
+```
+
+Note: MCP prompts here are *prompts about processors*, not the workflows-as-prompts pattern v0.5 had. The garden-LLM processors define their own prompts internally; the MCP prompt surface exposes them as MCP-protocol prompts for harnesses that want to invoke a processor's prompt without running the processor itself.
+
+## Mount lifecycle
+
+The MCP server boots when the harness mounts it (typically via the harness's MCP config). On boot:
+
+1. `openVault(path)` constructs the Vault and the engine.
+2. `buildAbstractSurface(vault)` constructs the surface.
+3. `renderMcp(surface)` constructs the McpSurface.
+4. `DomeMcpServer(McpSurface)` starts the MCP server, registering tools, resources, prompts.
+5. On shutdown (harness disconnect, vault close): `vault.close()` drains processors and releases SQLite handles.
+
+The MCP server is **single-vault per process**. Multi-vault MCP setups run multiple MCP server processes, one per vault.
+
+## What the MCP server does not have
+
+To keep the surface minimal:
+
+- **No write tools beyond `dome.submit`.** No `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. All writes go through Proposals.
+- **No privileged operations.** No way to advance the adopted ref directly, no way to bypass capability checks, no way to write the projection store.
+- **No multi-vault routing.** One vault per server process.
+- **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome doctor --show runs` via CLI when needed).
+
+These are intentional. The MCP server is a Recall + Submit adapter, not a privileged escape hatch.
 
 ## Related
 
-- [[wiki/specs/sdk-surface]] — the Tool catalog this surface mirrors.
-- [[wiki/specs/harnesses]] — which harnesses speak MCP and how they're configured.
-- [[wiki/entities/mcp-protocol]] — what MCP is.
-- [[wiki/specs/cli]] — the `dome serve` command starts this server.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
+- [[wiki/specs/harnesses]] — when MCP earns its keep vs the CLI path.
+- [[wiki/specs/proposals]] — what `dome.submit` constructs.
+- [[wiki/specs/processors]] §"Phase × trigger matrix" — `dome.run_command` invokes command-triggered view-phase processors.
+- [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — core/MCP separation.
+- [[wiki/gotchas/transitive-llm-dependency]] — the dep-fence that catches MCP leak into core.
+- [[wiki/matrices/protocol-adapter]] — MCP as one row in the protocol-adapter map.

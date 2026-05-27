@@ -1,60 +1,136 @@
 ---
 type: linter
-created: 2026-05-26
-updated: 2026-05-26
-sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]"]
-tier: shipped-default
-target_version: v0.5.1
+created: 2026-05-27
+updated: 2026-05-27
+status: v1 (proposed; lockstep-check landing in Phase 1 of implementation)
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
 # no-retired-symbol-names
 
-**Status:** Lockstep test ships in v0.5.1 as `tests/integration/no-retired-symbol-names-in-specs.test.ts`, parallel to `tests/invariants/no-retired-invariant-names-in-prompts.test.ts` (the existing precedent for retired-name lockstep on shipped prompts). The convention until that lockstep ships is reviewer attention.
+**Status:** v1 substrate; the proposed structural fence against retired-vocabulary drift in normative docs. The lockstep check ships as part of Phase 1 of v1 implementation per the brainstorm's "Phasing the cut" section.
 
-**Severity:** High — a normative doc naming a symbol that the code no longer exports sends future contributors and agents to design against a contract that does not exist. This is the failure mode the pass-3 architecture review surfaced across seven docs after the `ConsumerSurface` → `AbstractSurface` rename.
+**Statement:** Normative documentation under `docs/wiki/**/*.md` (specs, invariants, matrices, gotchas, concepts, entities, sources, syntheses, linters) does not reference symbols, concepts, or filenames from the retired v0.5 substrate. The check greps for a closed allowlist of retired names; any hit fails CI.
 
-**What it checks:** Every normative doc under `docs/wiki/` and every cohesive-substrate doc under `docs/cohesive/` (excluding `docs/cohesive/reviews/`, `docs/cohesive/brainstorms/`, `docs/cohesive/delta-ledgers/`, and `docs/cohesive/substrate-discovery/` — historical persisted-file content that documents the rename trajectory itself) names no symbol in the retired-names allow-list.
+## What it checks
 
-**The retired-names allow-list** ships as a typed const at `src/retired-symbols.ts` exporting `RETIRED_SYMBOLS` (alongside `INVARIANTS` in `src/types.ts` as the sibling typed-const pattern). The lockstep test (`tests/integration/no-retired-symbol-names-in-specs.test.ts`) imports the const and walks the docs surface; this doc is excluded from the scan per the exclusion set below. The current entries:
+The check is a regex sweep over `docs/wiki/**/*.md` for the retired-name allowlist below. Hits in *normative context* (claims about how Dome works) fail. Hits inside `## History`, `## Migration from <version>`, or explicit `> Pre-v1:` quote prefaces are allowed — they document what the system used to do.
 
-| Retired symbol | Replaced by | Retired at |
-|---|---|---|
-| `ConsumerSurface` (type) | `AbstractSurface` | Pass 2 → Pass 3 transition |
-| `buildConsumerSurface(vault)` (function) | `buildAbstractSurface(vault)` + `renderMcp(surface)` | Pass 2 → Pass 3 transition |
-| `projectMcp(vault)` (function) | `renderMcp(buildAbstractSurface(vault))` | Pass 2 |
-| `McpProjection` (type) | `McpSurface` (returned by `renderMcp`) | Pass 2 |
-| `McpToolName` (type) | `MCP_TOOL_NAMES` (re-export from core) | Pass 2 |
-| `SENSITIVE_GOES_TO_INBOX` (invariant name) | (retired wholesale; sensitivity classification removed) | Compiler-reframe merge |
-| `sensitivity_classified` (frontmatter / Tool opt) | (no replacement; concept retired) | Compiler-reframe merge |
+**Retired primitive concepts** (when used as canonical-mechanism names; historical narration ok):
+- `Tool` (in code-symbol or normative-concept context — e.g., "the Tool catalog", "Tool returns", "Tool error").
+- `Hook` (when narrating the v0.5 → v1 transition is ok; not ok as a present-tense concept).
+- `Workflow` (v1 has garden-LLM processors, not workflows).
+- `BoundToolSurface`, `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk`, `projectMcp`, `McpToolName`, `ConsumerSurface`, `buildConsumerSurface`.
+- `wrapMutatingInvoke`, `TOOL_REGISTRY`, `MUTATING_TOOL_NAMES`, `TOOL_NAMES`.
+- `registerHook`, `HookDispatcher`, `HookRegistry`, `HookContext` (as user-facing types).
+- `reconcile` as a present-tense exported function name (v1 has `dome sync` user-side; `src/engine/adopt.ts` implementation-side). Historical references in `## Migration` sections are allowed.
+- `vault.tools`, `vault.dispatchEvents` (from external/plugin code; engine-internal uses are invisible to docs).
+- `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/prompts/` (as committed-vault directories — replaced by `.dome/extensions/<bundle>/`).
+- `.dome/state/scheduled.json` (replaced by `projection.db.schedule_cursors`).
+- `.dome/state/last-reconciled-sha.txt` (replaced by `refs/dome/adopted/<branch>`; the `.dome/state/last-reconcile-mtime.txt` marker is preserved as the `dome doctor --time-since-reconcile` source).
+- `SENSITIVE_GOES_TO_INBOX` (retired in the compiler-reframe pre-v1; carried forward to v1).
 
-The allow-list grows when future renames or retirements land; each entry carries its replacement and the retirement event for the audit trail.
+**Retired invariant names** (these `.md` files no longer exist; `[[wiki/invariants/<name>]]` links to them are dead):
+- `HOOKS_CANNOT_BYPASS_TOOLS`
+- `HOOK_DISPATCH_IS_VAULT_BOUND`
+- `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`
+- `PAGE_TYPE_BY_DIRECTORY`
+- `WIKILINKS_ARE_FULLPATH`
+- `PAGE_CREATION_REQUIRES_RECURRENCE`
+- `WORKFLOWS_KNOW_VAULT_CONTEXT`
 
-**Programmatic detection:** A test that walks `docs/wiki/**/*.md` and selected `docs/cohesive/*.md` (handoff docs; not reviews/brainstorms/ledgers), greps each file for any literal in the retired-names allow-list, and reports the file + line for every match.
+**Retired+renamed invariants** (the old names; new names are in the current substrate):
+- `EVERY_WRITE_IS_LOGGED` → `EVERY_EFFECT_IS_LEDGERED`
+- `VAULT_RECONCILES_AFTER_NATIVE_WRITE` → `ALL_MUTATION_GOES_THROUGH_ADOPTION`
+- `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY` → `ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY`
 
-The exclusion set:
+**Retired matrices** (the `.md` files no longer exist):
+- `tool-invariant-enforcement`
 
-- `docs/cohesive/reviews/**` — append-only review history that documents the rename's trajectory.
-- `docs/cohesive/brainstorms/**` — append-only design history that may carry pre-rename terminology.
-- `docs/cohesive/delta-ledgers/**` — append-only audit trail; ledger preambles legitimately cite both the retired and replacement names when describing a rename.
-- `docs/cohesive/substrate-discovery/**` — discovery snapshots from before a rename land here.
-- **`docs/wiki/linters/no-retired-symbol-names.md`** itself — this doc is the canonical home of the allow-list and necessarily names every retired symbol; the lockstep skips the linter spec rather than maintaining a parallel const elsewhere.
-- **`docs/index.md` §"Linters"** — the substrate catalog's one-line summary of this linter cites the allow-list members categorically; the scanner skips the §"Linters" subsection of `docs/index.md` while still scanning the other sections.
-- Archival-marked handoffs (e.g., `docs/cohesive/IMPLEMENTATION_HANDOFF.md`'s archival-banner section) — the banner text is asserted present so the exclusion is structurally justified.
+**Retired+renamed matrices**:
+- `event-types-and-payloads` → `effect-router-targets`
+- `consumer-surface` → `protocol-adapter`
+- `intent-prompt-tools` → `intent-prompt-processors`
 
-The exclusion set is itself substrate. Adding a new excluded path requires updating this list, the test's exclusion list, and an entry in the test's frontmatter-cross-reference comment so a future contributor reading either surface sees both.
+**Retired+renamed gotchas**:
+- `hook-cycle` → `processor-fixed-point-divergence`
+- `hook-non-idempotent` → `processor-idempotency`
 
-A second arm of the same test asserts that none of the retired-names appears as a public export from any `@dome/sdk` entrypoint — `grep "export.*ConsumerSurface" src/**/index.ts` returns zero matches.
+**Retired specs** (the `.md` files no longer exist):
+- `wiki/specs/hooks`
+- `wiki/specs/prompts-and-workflows`
 
-**What closes a violation:**
+**Retired linter spec** (no longer in v1):
+- `wrap-mutating-invoke-consumption`
 
-- For a normative-doc match: rewrite the line to use the replacement symbol; if the historical name is load-bearing for the section (e.g., a "Renamed from X" callout), move the text to a clearly-marked `## History` or `## Migration` subsection so the lockstep-test's normative scope excludes it.
-- For a code match: the public-surface-shape lockstep test already catches this class; the no-retired-symbol-names lockstep is the docs-side complement.
+## Exempt contexts
 
-**Convention until the lockstep ships:** Whenever a symbol retires, the same PR that ships the code rename also rewrites every normative-doc reference. The pass-3 architecture review surfaced seven normative-doc lag instances post-`ConsumerSurface` retirement; this linter spec is the structural lift that prevents recurrence at the next rename.
+Hits are tolerated when:
 
-**Related:**
+1. **The doc is dated history.** Sections under `## History`, `## Migration from <version>`, or `## Pre-v1 notes` may name retired vocabulary as historical reference.
+2. **The reference is in the linter spec itself.** The check excludes `docs/wiki/linters/no-retired-symbol-names.md` from its own sweep — this file is the canonical home of the allowlist and necessarily names every retired symbol.
+3. **The reference is in archival cohesive substrate** under `docs/cohesive/reviews/`, `docs/cohesive/brainstorms/`, `docs/cohesive/delta-ledgers/`, or `docs/cohesive/substrate-discovery/`. These are append-only design history that may carry pre-rename terminology; the scanner skips them.
+4. **The retired name is part of a longer current-vocabulary token.** E.g., `effect-router-targets` is not a hit for `tool-invariant-enforcement`.
 
-- [[wiki/gotchas/substrate-count-drift]] — caught counts, but not symbol-name renames; this linter is the symbol-name complement
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the rename that motivated this linter
-- `tests/invariants/no-retired-invariant-names-in-prompts.test.ts` — the precedent for retired-name lockstep on a different surface (shipped prompts)
-- `tests/integration/public-surface-shape.test.ts` — the code-side complement (catches retired exports from public entrypoints)
+## Why this exists
+
+The v0.5 → v1 substrate rewrite retires significant vocabulary. The rewrite catches what its author thought to touch; cross-references from "untouched" docs to retired files survive silently. Without a structural fence, the substrate's link graph fails its self-teaching property at the first dead click — a contributor following `[[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]]` learns the link is broken and either guesses or asks; either outcome is worse than CI catching the regression at PR time.
+
+This linter is the structural fence that the pass-1 validate-rewrite review (`docs/cohesive/reviews/2026-05-27-dome-v1-engine-model-rewrite-validation.md`) explicitly named as the substrate gap behind findings B1, B2, B3, and B5.
+
+## Implementation sketch (v1 Phase 1)
+
+```bash
+# scripts/check-retired-symbols.sh
+set -euo pipefail
+RETIRED_NAMES=(
+  # primitives
+  "BoundToolSurface" "runWorkflow" "WorkflowRegistry" "wrapMutatingInvoke"
+  "TOOL_REGISTRY" "MUTATING_TOOL_NAMES" "registerHook" "HookDispatcher"
+  "ConsumerSurface" "buildConsumerSurface" "projectMcp" "McpToolName"
+  # retired invariants
+  "HOOKS_CANNOT_BYPASS_TOOLS" "HOOK_DISPATCH_IS_VAULT_BOUND"
+  "INDEX_AND_LOG_ARE_DISPATCHER_OWNED" "PAGE_TYPE_BY_DIRECTORY"
+  "WIKILINKS_ARE_FULLPATH" "PAGE_CREATION_REQUIRES_RECURRENCE"
+  "WORKFLOWS_KNOW_VAULT_CONTEXT" "SENSITIVE_GOES_TO_INBOX"
+  # retired+renamed invariants
+  "EVERY_WRITE_IS_LOGGED" "VAULT_RECONCILES_AFTER_NATIVE_WRITE"
+  "CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY"
+  # retired matrices/specs/gotchas/linter
+  "tool-invariant-enforcement" "event-types-and-payloads" "consumer-surface"
+  "intent-prompt-tools" "hook-cycle" "hook-non-idempotent"
+  "wiki/specs/hooks" "wiki/specs/prompts-and-workflows"
+  "wrap-mutating-invoke-consumption"
+  # retired filesystem paths
+  ".dome/hooks/" ".dome/tools/" ".dome/cli/" ".dome/prompts/"
+  ".dome/state/scheduled.json" ".dome/state/last-reconciled-sha.txt"
+)
+
+failures=()
+for name in "${RETIRED_NAMES[@]}"; do
+  hits=$(grep -r -l -F --include="*.md" "$name" docs/wiki \
+    --exclude="*no-retired-symbol-names*" || true)
+  if [ -n "$hits" ]; then
+    failures+=("$name: $hits")
+  fi
+done
+
+if [ ${#failures[@]} -gt 0 ]; then
+  printf '%s\n' "${failures[@]}"
+  exit 1
+fi
+```
+
+Run via `bun test tests/integration/no-retired-symbol-names.test.ts` (calls the shell script and asserts exit 0) or directly via `scripts/check-retired-symbols.sh`. Integrated into CI per `package.json`'s test target.
+
+## Future expansion
+
+When v1.x retires additional names, authors extend the `RETIRED_NAMES` array. The lockstep test enforces the check; the array is a substrate constant under reviewer control.
+
+## Related
+
+- [[wiki/specs/sdk-surface]] §"Outputs the SDK does not have"
+- [[wiki/gotchas/transitive-llm-dependency]] (sister structural fence; bundle-deps catches package-level drift; no-retired-symbol-names catches doc-level drift)
+- [[wiki/linters/engine-is-sole-applier]] (sister linter; catches engine-boundary drift)
+- [[wiki/linters/processor-purity]] (sister linter; catches processor-boundary drift)
+- [[wiki/gotchas/substrate-count-drift]] (related: count-drift uses a similar count-cite-canonical pattern)

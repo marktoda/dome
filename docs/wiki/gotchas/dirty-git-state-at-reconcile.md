@@ -5,6 +5,7 @@ updated: 2026-05-25
 severity: medium
 coverage: off-matrix
 enforced_at: src/reconcile.ts
+enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 ---
@@ -68,16 +69,15 @@ With the mitigation: sync refuses. User resolves conflict, commits, runs sync ag
 
 **Enforcement points** (where `isDirtyGitState` is consulted):
 
-- `src/adoption.ts` — `sync()` calls `isDirtyGitState` at its precondition-diagnose step and refuses on any positive (mid-merge / mid-rebase / mid-cherry-pick).
-- `src/reconcile.ts` — the underlying reconcile machinery `sync` composes also refuses on the same predicate (belt-and-suspenders against a future caller that runs reconcile directly).
-- `src/cli/commands/lint.ts` — `domeLint`'s apply-mode branch reuses the same predicate before dispatching any mutating workflow, mirroring sync's refusal. The predicate is exported from `reconcile.ts` rather than duplicated, so all three surfaces agree on what "dirty" means.
+- `src/engine/adopt.ts` — the engine's adoption loop calls `isDirtyGitState` at its precondition-diagnose step and refuses on any positive (mid-merge / mid-rebase / mid-cherry-pick).
+- `src/engine/submit.ts` (or wherever `submitProposal` lives) — the entry point reuses the same predicate before constructing a Proposal, so the refusal surfaces at submit time rather than mid-adoption.
+- `src/cli/commands/lint.ts` (or the `dome.lint.apply-finding` view-phase processor) — apply-mode reuses the same predicate before submitting the finding's PatchEffect-derived Proposal, mirroring submit's refusal. The predicate lives in `src/git/dirty-state.ts` and is imported everywhere; all consumers agree on what "dirty" means.
 
-If a fourth consumer adopts this guard (e.g., a future `dome migrate --apply` that's been long-running), promote `isDirtyGitState` to its own module (`src/git-state.ts`) and update this enforcement list.
+If a fourth consumer adopts this guard (e.g., a future `dome migrate --apply` that's been long-running), update this enforcement list to name the new caller; the predicate stays the same.
 
 **Related:**
 - [[wiki/invariants/VAULT_IS_GIT_REPO]]
-- [[wiki/specs/adoption]] — the sync state machine this gotcha is the diagnose-step refusal of
-- [[wiki/specs/cli]] §"dome sync" and §"dome lint" (apply mode)
-- [[wiki/specs/hooks]] §"Durability and reconciliation"
+- [[wiki/specs/adoption]] — the fixed-point adoption loop this gotcha is the diagnose-step refusal of
+- [[wiki/specs/cli]] §"dome sync" and §"dome lint"
 - [[wiki/entities/git]]
 - [[wiki/gotchas/adopted-ref-divergence]] — sibling diagnose-step refusal at the same boundary

@@ -35,8 +35,7 @@ The deferred `dome doctor --check-substrate-counts` mode parses spec prose for i
 - **Foreshadows itself.** The Phase A rewrite's foundation-ledger update added a canonical-inventories footer naming `INVARIANTS`, `TOOL_NAMES`, `WORKFLOW_NAMES` as ground truth. Phase B's gotcha doc is the substrate-shape pin for the convention that footer practiced.
 
 **Related:**
-- [[wiki/specs/cli]] §"Implementation note" (canonical CLI commands)
-- [[wiki/specs/prompts-and-workflows]] §"Shipped workflows by tier" (canonical workflows)
-- [[wiki/invariants/]] (canonical invariants)
-- [[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]] §F4 (the architecture-review finding)
-- [[cohesive/delta-ledgers/2026-05-26-dome-v0.5-spec-drift-repair]] §"Per-file changes" `v0.5-build-plan.md` and the prior delta ledger (the live repairs)
+- [[wiki/specs/cli]] §"The CLI surface" (canonical CLI commands)
+- [[wiki/matrices/built-in-extensions-x-phase]] (canonical first-party bundle catalogue, including processors and command-triggered view processors)
+- [[wiki/invariants/]] (canonical invariants — `src/types.ts` `INVARIANTS` is the typed const)
+- [[wiki/linters/no-retired-symbol-names]] — sister structural fence catching the related drift pattern (retired symbol names rather than count drift)

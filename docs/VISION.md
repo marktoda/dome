@@ -14,13 +14,45 @@ Andrej Karpathy named the pattern: an LLM Wiki — raw sources stay immutable; a
 
 The result is what we mean by a *brain companion*: ambient, always accessible, streamlined to talk to, allergic to ungrounded confidence, and patient enough to be useful in six months, in four years, in twenty.
 
+## The four operators
+
+The whole system can be expressed with four operators. Every interaction with Dome — capture, edit, query, automated maintenance — composes from these.
+
+```text
+Submit    Clients propose changes by writing into the vault.
+Adopt     The engine adopts proposals into trusted semantic state.
+Tend      Garden processors refine adopted state asynchronously.
+Recall    Queries read adopted state and return evidence.
+```
+
+**Submit.** Anything that writes into the vault — your voice capture, your agent's edit, your phone's quick-note, a scheduled maintenance job — produces a Proposal. The Proposal is a commit range with a source identity. There is no special path for "trusted" writes; everything submits.
+
+**Adopt.** The engine receives the Proposal and runs a fixed-point loop: compile the candidate tree, run adoption-phase processors, apply auto-patches, repeat until stable. On a clean fixed point, the adopted ref advances and the change becomes trusted state. On a blocking diagnostic, the user resolves and re-submits.
+
+**Tend.** After adoption, garden-phase processors run async against the new trusted state — extract tasks, cross-reference entities, generate the daily brief, refresh embeddings. They emit effects: Patches (which re-enter as new Proposals), Facts (which land in the projection store), Questions (which surface in the inbox), External actions (which go through the outbox).
+
+**Recall.** Queries read the latest adopted snapshot and the projection store, return evidence-backed answers. No claim without a SourceRef pointing into an adopted commit.
+
+## The four core types
+
+Every API surface, every spec, every test reduces to four types.
+
+```text
+Vault         A markdown directory plus the engine that maintains it.
+Proposal      A commit range proposed for adoption. The only write path.
+Processor     Code that reads a snapshot and returns effects. The only behavior unit.
+Effect        What a processor returns. Seven kinds; closed taxonomy.
+```
+
+Everything else — first-party features, third-party plugins, integrations — composes from these. There is no separate "Hook," "Tool," or "Workflow" concept. Auto-cross-reference, intake compilation, daily-note generation, lint, search-indexing — every one of them is a processor that emits effects.
+
 ## What Dome is
 
-- **A compiler over a markdown vault.** A background daemon (`dome serve`) watches for changes, fires hooks, runs scheduled maintenance, and reconciles missed events when it restarts (`dome reconcile`). The compiler is what makes the vault self-maintaining.
-- **A typed markdown vault.** Raw notes, sources, and clips on one side; a compiled wiki of entities, concepts, sources, and syntheses on the other. Bidirectional wikilinks. Index and log files. Standard Obsidian-compatible markdown — open it in any editor and everything works.
-- **A small, portable SDK.** Four concepts in the core — **Vault, Document, Tool, Hook** — and nothing else. The same SDK powers the desktop CLI, embeds in a native mobile or web app, and drives headless workflows. The compiler runs anywhere the SDK runs.
-- **A CLI for explicit operations.** `dome lint` proposes hygiene fixes; `dome lint --apply <id>` executes them. `dome query` answers from the vault. `dome export-context` produces a context packet for cross-AI handoff. `dome stats`, `dome doctor`, `dome init`, `dome migrate`. Invokable from any shell, including Claude Code's `Bash`.
-- **A prompt library.** Workflows (ingest, query, lint, research, export-context) are markdown prompts loaded by whichever surface needs them. Behavior lives in prose, not code, so it evolves with the user and the model — not with a release cycle.
+- **A compiler over a markdown vault.** A background daemon (`dome serve`) watches for changes, runs the adoption loop on each Proposal, fires garden processors after, surfaces diagnostics. The compiler is what makes the vault self-maintaining.
+- **A typed markdown vault.** Raw notes, sources, and clips on one side; a compiled wiki of entities, concepts, sources, and syntheses on the other. Bidirectional wikilinks. Index and log files as committed projections. Standard Obsidian-compatible markdown — open it in any editor and everything works.
+- **A small, portable SDK.** Four concepts in the core — **Vault, Proposal, Processor, Effect** — and nothing else. The same SDK powers the desktop CLI, embeds in a native mobile or web app, and drives headless processor runs. The compiler runs anywhere the SDK runs.
+- **A CLI for explicit operations.** `dome submit` proposes a change; `dome sync` runs the adoption loop; `dome query` reads from adopted state; `dome lint` walks the wiki and writes a report of findings; `dome rebuild` rebuilds the projection store from markdown. `dome stats`, `dome doctor`, `dome init`. Invokable from any shell.
+- **A first-party extension catalog.** Every Dome behavior — markdown parsing, indexing, cross-referencing, intake compilation, daily notes, search — ships as a `dome.*` extension bundle. The same registration path third-party extensions use. There is no "core feature" / "plugin feature" asymmetry.
 
 ## Two surface patterns
 
@@ -28,9 +60,9 @@ Dome interacts with the world through two distinct kinds of surfaces, and the de
 
 **Native Dome surfaces** — the iPhone app, desktop app, web app, voice client. Dome ships these. The intake and recall flows are opinionated: deliberate UX for voice capture into `inbox/voice/`, share-sheets into `inbox/clip/`, hotkey quick-capture into `inbox/raw/`, guided recall and prep-mode briefings, structured review of pending wiki proposals. The compiler runs behind them; the surface controls the flow.
 
-**Agentic harnesses** — Claude Code today; Cursor, OpenCode, Codex, future agent harnesses. Dome doesn't ship these; you bring your own. They're general-purpose; they read and write your vault using whatever tools they have natively. **Dome's contract with these harnesses is the compiler boundary**: per-vault `AGENTS.md` teaches the agent your vault's conventions at session start; the watcher catches every native write; hooks fire on each event; `dome reconcile` catches up on whatever the daemon missed; the CLI exposes named structured operations the agent invokes when it wants them. The agent writes whatever, however; Dome keeps the vault coherent on the other side of the write.
+**Agentic harnesses** — Claude Code today; Cursor, OpenCode, Codex, future agent harnesses. Dome doesn't ship these; you bring your own. They're general-purpose; they read and write your vault using whatever tools they have natively. **Dome's contract with these harnesses is the compiler boundary**: per-vault `AGENTS.md` teaches the agent your vault's conventions at session start; the watcher catches every native write and turns it into a Proposal; the engine adopts; the CLI exposes named structured operations the agent invokes when it wants them.
 
-Native surfaces optimize for friction (designed flows). Agentic harnesses optimize for openness (any tool, any conversation, any model). Both write the same vault; the compiler delivers consistency over both.
+Native surfaces optimize for friction (designed flows). Agentic harnesses optimize for openness (any tool, any conversation, any model). Both produce Proposals; the engine adopts every Proposal through the same loop, regardless of origin.
 
 ## What Dome is not
 
@@ -38,33 +70,35 @@ Native surfaces optimize for friction (designed flows). Agentic harnesses optimi
 - Not a replacement for Obsidian, Notion, or Claude Code — it augments them.
 - Not always-on. Capture is intentional and visible.
 - Not opinionated about ontology. The wiki's structure emerges from what you actually talk about.
-- Not a SaaS your memory is trapped inside. Dome's database is a folder of markdown on your disk.
+- Not a SaaS your memory is trapped inside. Dome's source of truth is a folder of markdown on your disk.
 
 ## Principles
 
-**1. Markdown is the source of truth.** Anything Dome derives can be rebuilt from the markdown alone. No proprietary database, no vendor lock-in. If Dome disappears tomorrow, your vault is fully usable in any markdown editor — and your AI tools can read it directly. By refusing to own the data, Dome earns the right to be the layer that touches it.
+**1. Markdown is the source of truth.** Anything Dome derives — the projection store, the run ledger, the outbox, the index, the log — can be rebuilt from markdown alone. No proprietary database, no vendor lock-in. If Dome disappears tomorrow, your vault is fully usable in any markdown editor.
 
-**2. The compiler is universal; surface opinion is per-surface.** The same compiler runs over your vault regardless of which surface wrote into it. Native Dome surfaces (mobile, desktop, web, voice) layer opinionated UX on top of the compiler — designed capture flows, designed recall flows, designed review surfaces. Agentic harnesses (Claude Code etc.) bring their own UX; Dome reconciles whatever writes they produce. The compiler boundary — watcher + hooks + reconcile + CLI + `AGENTS.md` — is the explicit contract that lets every surface coexist.
+**2. Every write is a Proposal; every Proposal goes through the engine.** There is no "trusted internal write" path. The same adoption loop runs against a human edit, an agent's write, a garden processor's auto-patch, an intake hook's compilation. One write contract; one adoption transaction; one set of diagnostics.
 
-**3. Invariants are enforced two ways, by scope.** *Internally* — within Dome's own dispatcher / hook / tool chain — every write goes through a typed Tool that enforces structural rules: raw is immutable; pages are typed by directory; wikilinks use full paths; index and log are dispatcher-owned. Hooks observe events and call Tools; they never write directly. *Externally* — across the consumer-shell boundary — invariants are reconciled rather than gated. Native writes from any consumer surface get caught by the watcher, replayed by `dome reconcile`, corrected by hooks. The hard guarantee is *eventual consistency by design*, not enforce-at-every-write-call.
+**3. Processors are pure: snapshot in, effects out.** A processor reads an immutable git snapshot and returns a list of effects. It never touches the filesystem, git, or SQLite directly. The engine is the only applier — that's what makes the contract reviewable and the runtime substitutable.
 
-**4. Interfaces are interchangeable; the vault is forever.** The agentic harness can be Claude Code today, a Dome-native mobile app in eighteen months, a voice client wired into AirPods, an unknown agent harness in 2030. The vault and the SDK are durable; the UI is not.
+**4. Capabilities scope effects.** Each processor declares what it needs to do (patch which paths, write which graph namespace, call LLMs at what budget); the vault grants what it gets; the broker enforces the intersection at effect emission. Trust is per-capability, not per-source.
 
-**5. The user always wins.** Provenance is mandatory: every claim cites its source. Contradictions are surfaced, never silently overwritten. The wiki records the user's claims, not the AI's interpretation of them. When the AI is uncertain, it says so and asks.
+**5. Provenance is mandatory.** Every Fact carries a SourceRef pointing into an adopted commit. Every external side effect goes through the outbox with an idempotency key. Every processor run lands in the ledger. There is no claim without evidence, no external action without an audit row, no run without provenance.
 
-**6. Extensibility lives at the hook boundary.** New behavior — auto-cross-reference, sync to a remote, drop-zone intakes, scheduled lint, plugin integrations — registers as a Hook against an event pattern. The four-concept core never changes. Years of features can land without touching the primitives. This is what keeps Dome stable enough to be a long-term substrate.
+**6. The compiler is universal; surface opinion is per-surface.** The same compiler runs over your vault regardless of which surface wrote into it. Native Dome surfaces layer opinionated UX on top; agentic harnesses bring their own UX. The compiler boundary — watcher + engine + adopted ref + CLI + `AGENTS.md` — is the explicit contract that lets every surface coexist.
+
+**7. Extensibility is uniform.** First-party features and third-party plugins ship as extension bundles registering processors via the same path. Adding a new behavior — for the SDK or for a single user's vault — is "write a processor; declare capabilities; ship a bundle." The four-concept core never changes. Years of features can land without touching the primitives.
 
 ## How it works
 
-**Quick-capture from anywhere.** A phone widget, a voice memo, a share-sheet, a terminal hotkey, a file drop into `inbox/`. The capture writes raw markdown; the daemon's watcher fires; the ingest hook compiles raw → wiki updates while you walk.
+**Quick-capture from anywhere.** A phone widget, a voice memo, a share-sheet, a terminal hotkey, a file drop into `inbox/`. The capture writes raw markdown; the watcher turns it into a Proposal; the engine adopts; garden processors compile raw → wiki updates while you walk.
 
-**Talk to your agent.** Today that's Claude Code, with `AGENTS.md` auto-loaded so the agent arrives oriented to your vault — knowing its conventions, page types, named workflows, and invariants. The agent reads pages, writes updates, proposes cross-references, asks for confirmation. Whichever tools it uses — native filesystem operations or Dome's CLI commands invoked via `Bash` — the compiler catches up: hooks fire on each write; the index updates; the log grows; the vault stays coherent.
+**Talk to your agent.** Today that's Claude Code, with `AGENTS.md` auto-loaded so the agent arrives oriented to your vault. The agent reads pages, writes updates, proposes cross-references, asks for confirmation. Whichever tools it uses — native filesystem operations or Dome's CLI commands invoked via `Bash` — the watcher catches the writes, the engine adopts them, the projection store updates, the vault stays coherent.
 
 **Browse in Obsidian** — or any markdown editor, or the Dome mobile app once it ships. Nothing about the vault is proprietary.
 
-**Tend the garden periodically.** Weekly or monthly, `dome lint` walks the wiki and flags stale claims, orphan pages, missing cross-references, contradictions, schema violations — writing a structured report with stable finding ids. You review and apply via `dome lint --apply <id>`. The garden stays well-shaped.
+**Tend the garden periodically.** Weekly or monthly, `dome lint` walks the wiki and flags stale claims, orphan pages, missing cross-references, contradictions, schema violations — writing a structured report with stable finding ids. You review and apply via `dome lint --apply <id>`.
 
-**Ask, prep, brief, and hand off.** *"What did I decide about hiring last quarter?"* *"What should I bring up with Maya tomorrow?"* *"Produce a context packet for ChatGPT on the platform-ownership question."* The wiki is the durable thing across every AI tool you use; Dome makes them all coherent.
+**Ask, prep, brief, and hand off.** *"What did I decide about hiring last quarter?"* *"What should I bring up with Maya tomorrow?"* *"Produce a context packet for ChatGPT on the platform-ownership question."* The wiki is the durable thing across every AI tool you use; Dome's adoption-loop + projection store keep the answers grounded in adopted state.
 
 ## Audience
 
@@ -74,11 +108,13 @@ But the constraint that makes Dome work for them — *the compiler does the stru
 
 ## Shape over time
 
-**v0.5 — Demo.** A TypeScript SDK on Bun, a small CLI (`dome init`, `dome serve`, `dome reconcile`, `dome lint`, `dome stats`, `dome doctor`, `dome export-context`, `dome migrate`), a prompt library, an MCP server preserved in the codebase as a non-primary surface (future-investment for non-CLI-capable harnesses). Claude Code is the first agentic harness; `AGENTS.md` is the orientation surface; Obsidian browses the vault; git is the history. This phase exists to prove the compiler runs in real use, in real vaults, against real workflows. The author of Dome is its first user.
+**v1 — The engine model.** A TypeScript SDK on Bun, a CLI (`dome submit`, `dome sync`, `dome query`, `dome lint`, `dome rebuild`, `dome stats`, `dome doctor`, `dome init`, `dome migrate`), a first-party extension catalog (`dome.*` bundles for markdown, index, log, links, intake, daily, lint, search), an MCP server preserved as one Recall-protocol adapter, a Bun.sqlite projection store + run ledger + outbox. Claude Code is the first agentic harness; `AGENTS.md` is the orientation surface; Obsidian browses the vault; git is the history. The author of Dome is its first user.
 
 Notably, this repo's own `docs/` directory is itself a Dome vault — proof that the pattern generalizes beyond personal notes to systems-thinking substrate. Specs, invariants, behavior matrices, gotchas, syntheses about the project all live as Dome pages, maintained the same way a personal vault is.
 
-**v1+ — Product.** Native mobile app: voice-first capture, structured browse, prep mode, inbox review. Native desktop. Voice client. Web app. Optional cloud sync over the markdown vault. Onboarding that meets each user where they are — a new vault, an existing Obsidian vault, a pile of Apple Notes, a stack of Google Docs. Same SDK underneath. Different surfaces above. The opinionated-flow patterns for native surfaces solidify here; the compiler boundary for agentic harnesses remains the contract.
+**v1.5 — Hosted multi-client.** The adoption-loop design accommodates a hosted-protected mode: PRs against `main` become Proposals, the engine runs adoption in CI, engine commits land on the PR, the PR auto-merges or routes to review based on capability policy. The local-eventual and hosted-protected modes are conceptually the same loop with different cursors.
+
+**v2 — Product.** Native mobile app: voice-first capture, structured browse, prep mode, inbox review. Native desktop. Voice client. Web app. Onboarding that meets each user where they are — a new vault, an existing Obsidian vault, a pile of Apple Notes, a stack of Google Docs. Same SDK underneath. Different surfaces above. The opinionated-flow patterns for native surfaces solidify here; the compiler boundary for agentic harnesses remains the contract.
 
 **Long term.** Dome is what people use the way they use their phones: ambient, always there, low-friction. You think out loud; Dome remembers. You ask; Dome answers from your own thinking. The garden grows over years, and grows beautifully, because the gardening is automatic. The cognitive surface of an individual — what they pay attention to, what they decide, what they change their mind about — becomes a durable, exportable, queryable asset that compounds for a lifetime.
 

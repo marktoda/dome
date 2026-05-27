@@ -5,7 +5,7 @@ updated: 2026-05-27
 sources: ["[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"]
 severity: medium
 coverage: off-matrix
-enforced_at: src/adoption.ts
+enforced_at: src/adopted-ref.ts
 ---
 
 # adopted-ref-divergence

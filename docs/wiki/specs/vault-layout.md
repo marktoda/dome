@@ -1,101 +1,179 @@
 ---
 type: spec
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[raw/original-architecture]]", "[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # Vault layout
 
-This spec is normative for the on-disk shape of a Dome vault. The Vault layout is the user-visible contract: any markdown editor can open a Dome vault and see well-organized files in well-named directories.
+This spec is normative for the directory structure of a Dome vault.
 
-## Vault root
+## The vault root
 
-A Dome vault is a directory containing:
+A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) containing:
 
 ```
 <vault>/
-  VISION.md             # (optional) user-authored north-star or charter
-  README.md             # (optional) orientation file for new readers
-  index.md              # catalog of all wiki pages (Dome-maintained, axiom)
-  log.md                # append-only operations record (Dome-maintained, axiom)
-  raw/                  # immutable user-provided sources
-  notes/                # user-authored hand-written notes
-  wiki/                 # Dome-synthesized pages, typed by subdirectory
-    entities/
-    concepts/
-    sources/
-    syntheses/
-    <extension-types>/  # per-vault extension types declared in .dome/page-types.yaml
-  inbox/                # drop-zone directories whose writes trigger hooks
-    raw/                # shipped-default capture bucket (created by dome init)
-    <intake-buckets>/   # opt-in intake buckets — voice/, research/, clip/ — activated via hook template + directory create
-    review/             # shipped-default destination (NOT an intake) — created by `dome init`; holds `dome lint` reports awaiting user review; see wiki/specs/cli §"dome lint"
-  .dome/                # vault-internal configuration and extensions
-    page-types.yaml     # allowed page types: defaults + extensions (vault-local + bundle-contributed)
-    config.yaml         # vault configuration (invariant overrides, hook settings, etc.)
-    prompts/            # vault-local prompt overrides
-    hooks/              # vault-local hooks: *.ts (programmatic) and *.yaml (declarative)
-    tools/              # vault-local tool additions (rarely used)
-    cli/                # vault-local CLI command additions (rarely used)
-    extensions/         # extension bundles (per wiki/specs/sdk-surface §"Extension bundles")
-      <bundle-name>/    # each bundle: manifest.yaml + any of page-types.yaml, preamble.md, workflows/, hooks/, cli/, tools/
-    state/              # derived: scheduled.json, last-reconcile-mtime.txt, quarantined.json (gitignored)
-  .git/                 # git repository (axiom: every Dome vault is a git repo)
-  .gitignore            # excludes .dome/state/ (per-machine operational state)
+  AGENTS.md           # canonical agent-orientation surface (per AGENTS_MD_IS_ORIENTATION_SURFACE)
+  CLAUDE.md           # Claude Code shim pointing at AGENTS.md
+  .dome/              # Dome configuration + derived state
+  wiki/               # the compiled wiki (entities, concepts, dailies, syntheses, etc.)
+  raw/                # immutable raw captures (per RAW_IS_IMMUTABLE)
+  notes/              # user-authored content Dome reads but does not write
+  inbox/              # ephemeral drop-zones for intake (per INBOX_IS_EPHEMERAL)
+  log.md              # append-only projection of the run ledger (per LOG_IS_APPEND_ONLY)
+  index.md            # projection of wiki/ catalogue
 ```
 
-`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `inbox/review/` (the shipped-default lint-report destination) AND `.git/` via `git init`. Additional opt-in intake buckets (`inbox/voice/`, `inbox/research/`, `inbox/clip/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in."
-
-### Git repository structure
-
-Every Dome vault is a git repository per [[wiki/invariants/VAULT_IS_GIT_REPO]]. The `.git/` directory at vault root is treated as `category: external` by Dome's tools (Dome never touches it; it's not enumerated; it's not part of any wiki).
-
-What gets committed to git:
-
-- `VISION.md`, `README.md`, `index.md`, `log.md` — committed.
-- `raw/`, `notes/`, `wiki/`, `inbox/` — all committed. Reconciliation works against committed AND uncommitted state.
-- `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/extensions/` — committed (these are the vault's identity, including which extension bundles the vault has installed).
-- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconcile-mtime.txt`, `scheduled.json`, `quarantined.json`).
-
-### Derived operational state under `.dome/`
-
-| Path | Role | If deleted |
-|---|---|---|
-| `.dome/state/last-reconcile-mtime.txt` | Mtime marker for `dome doctor --time-since-reconcile`; touched on every `dome sync` regardless of whether anything changed | Next `dome doctor --time-since-reconcile` reports "never" |
-| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next sync fires every scheduled hook once |
-| `.dome/state/quarantined.json` | Hook handler quarantine list (handler IDs with three consecutive failures, per [[wiki/specs/hooks]] §"Execution model") | Quarantined handlers re-enter rotation at next process start; idempotent so safe |
-
-All three files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next sync or hook-dispatch cycle to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
-
-The canonical "have I compiled this revision" cursor is `refs/dome/adopted/<branch>` (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]) — a first-class git artifact living under `.git/refs/dome/adopted/`, not under `.dome/state/`. The pre-phase1+phase3 substrate carried `.dome/state/last-reconciled-sha.txt` in this role; it has been retired in favor of the ref. Existing v0.5 vaults' `last-reconciled-sha.txt` files are tolerated (read for the `dome doctor --time-since-reconcile` fallback when `last-reconcile-mtime.txt` is absent) but no longer carry the cursor role — see [[wiki/specs/adoption]] §"Migration from v0.5".
-
-(Plugins that need their own caches create their own subdirectories under `.dome/<plugin-name>/cache/` and gitignore them in the vault's `.gitignore`. The SDK base ships no `.dome/cache/` directory.)
+`wiki/`, `raw/`, `notes/`, and `inbox/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine.
 
 ## Category derivation
 
-A Document's category is derived from the top-level directory in its `path`:
+A document's category is derived from its path:
 
-| Path prefix | Category | Notes |
-|---|---|---|
-| `raw/...` | `raw` | Immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
-| `wiki/...` | `wiki` | Typed pages (entity / concept / source / synthesis / extension types) |
-| `notes/...` | `notes` | User-authored; Dome reads, never writes |
-| `inbox/...` | `inbox` | Ephemeral; intake hooks move/delete per [[wiki/invariants/INBOX_IS_EPHEMERAL]] |
-| `log.md` | `log` | Append-only |
-| `index.md` | `index` | Maintained by `auto-update-index` hook |
-| `.dome/...` | `config` | Vault configuration + derived state |
-| `.git/...` | `external` | Tolerated, never modified, never enumerated |
-| (other top-level subdirs) | `external` | Unknown directories are tolerated as `external`; Dome ignores them. Use this for arbitrary user-organized content alongside Dome (e.g., this vault's `cohesive/` Cohesive session residue). |
-| (other vault-root files) | `notes` (default) | |
+| Path prefix | Category |
+|---|---|
+| `raw/*` | `raw` |
+| `wiki/*` | `wiki` |
+| `notes/*` | `notes` |
+| `inbox/*` | `inbox` |
+| `log.md` | `log` |
+| `index.md` | `index` |
+| `.dome/*` | `config` |
+| anything else | `external` |
 
-The category determines mutability and which Tool may write to it. See [[wiki/matrices/tool-invariant-enforcement]] and [[wiki/invariants/RAW_IS_IMMUTABLE]].
+The category is computed on demand from `document.path`; it is not stored. See [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] §"Derived state".
 
-External categories are tolerated by design — Dome plays well with vaults that have non-Dome content. `dome doctor` does not flag unknown subdirectories; they're invisible to Dome's tools.
+## `wiki/` — the compiled wiki
 
-## Type derivation (wiki/ only)
+The wiki is partitioned by type. Each direct child of `wiki/` corresponds to a page type:
 
-For paths under `wiki/<subdir>/<filename>.md`, the `<subdir>` is the page type. The allowed types are declared in `.dome/page-types.yaml`:
+```
+wiki/
+  entities/        # people, products, teams, projects, organizations
+  concepts/        # ideas, threads, themes
+  sources/         # external citations Dome considers durable
+  syntheses/       # higher-order claims built from other pages
+  dailies/         # daily notes (from the dome.daily bundle)
+  weeklies/        # weekly notes (from the dome.daily bundle)
+  decisions/       # explicit decision artifacts
+  ... (extension-contributed types)
+```
+
+The four default types — entities, concepts, sources, syntheses — are SDK-shipped. Additional types come from extension bundles (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A vault declares which extension types it uses in `<vault>/.dome/page-types.yaml`'s `extensions:` block.
+
+A page's *type* (singular) is the directory name in `wiki/` mapped through the `singularOf`/`pluralOf` helpers in `src/page-type.ts` (e.g., `wiki/entities/danny.md` → type `entity`). The frontmatter `type:` field carries the singular form.
+
+## `raw/` — immutable raw captures
+
+`raw/` contains source materials Dome treats as **definitive** for citation. Voice transcripts, meeting notes, research clippings, source-of-truth artifacts. Files in `raw/` are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]]:
+
+- `PatchEffect` targeting any `raw/<path>` is rejected by the broker.
+- The `dome.markdown` adoption-phase processor emits a blocking diagnostic if any Proposal mutates a `raw/` file.
+- `dome.intake`'s capture compilation writes *new* `wiki/` pages citing the raw; it never modifies the raw.
+
+Raw files carry a `type:` frontmatter naming the capture source (e.g., `type: voice-capture`, `type: research-clip`). Subdirectory structure is convention, not contract — `raw/voice/`, `raw/meetings/`, `raw/clips/` are common but not required.
+
+## `notes/` — user-authored content
+
+`notes/` is user-owned. Dome **reads** notes; Dome does **not write** to notes. The asymmetry is by design — `notes/` is where the user keeps personal markdown that doesn't fit the wiki ontology. Lab books, personal journals, project memos.
+
+`notes/` files do NOT emit `document.changed.notes.*` signals (the engine doesn't react to them). They emit only `vault.out-of-band-edit` for the watcher's drift-detection. The asymmetric ownership keeps the wiki / notes boundary clean.
+
+## `inbox/` — ephemeral drop-zones
+
+`inbox/` is where intake captures land before they're compiled into the wiki. Each subdirectory is an *intake bucket*:
+
+```
+inbox/
+  raw/         # quick-capture target (shipped-default)
+  voice/       # voice capture target (opt-in via voice-ingest activation)
+  research/    # research-clip target (opt-in)
+  clip/        # share-sheet target (opt-in)
+  review/      # dome.lint report destination (NOT an intake)
+  processed/   # where dome.intake archives successfully-processed captures
+```
+
+Files in `inbox/<bucket>/` (except `inbox/review/`) trigger the bucket's intake processor via `signal:file.created` + `pathPattern:"inbox/<bucket>/**"`. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — files are expected to move out (archived to `inbox/processed/` or compiled into `wiki/`) within minutes; lingering files are surfaced as diagnostics by `dome.lint`.
+
+`inbox/review/` is the destination for `dome lint` reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report.
+
+## `log.md` — append-only run-projection
+
+`log.md` is a markdown projection of the run ledger ([[wiki/specs/run-ledger]]) — the human-readable view of "what did Dome do." Maintained by the `dome.log` adoption-phase processor with `owns.path: ["log.md"]` capability ([[wiki/specs/capabilities]] §"owns.path").
+
+Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is supported via `dome doctor --repair`.
+
+## `index.md` — wiki catalogue
+
+`index.md` is a markdown catalogue of every wiki page, partitioned by section. Maintained by the `dome.index` adoption-phase processor with `owns.path: ["index.md"]` capability.
+
+Rebuilt by `dome rebuild` or `dome doctor --rebuild-index` when stale.
+
+## `.dome/` — configuration + derived state
+
+```
+<vault>/.dome/
+  config.yaml             # vault config — invariant enable/disable, bundle grants, engine knobs
+  page-types.yaml         # default + extension page types declared for this vault
+  extensions/
+    dome.markdown/        # first-party bundle (copied from SDK by dome init)
+    dome.index/
+    dome.log/
+    dome.links/
+    dome.intake/
+    dome.daily/
+    dome.lint/
+    dome.search/
+    dome.migrate/
+    <user-installed>/     # user-installed bundles (third-party)
+  state/                  # derived operational state (gitignored)
+    projection.db         # Bun.sqlite — facts, fts5, diagnostics, questions, schedule_cursors
+    runs.db               # Bun.sqlite — run ledger
+    outbox.db             # Bun.sqlite — external-action outbox
+    quarantined.json      # processor quarantine state
+    last-reconcile-mtime.txt   # marker file; mtime is the signal
+```
+
+### `config.yaml`
+
+The single config file:
+
+```yaml
+vault:
+  mode: local              # v1; "hosted" reserved for v1.5
+  branch: main             # active source branch
+
+invariants:
+  RAW_IS_IMMUTABLE: enabled         # axioms always enabled; declaration is informational
+  ALL_MUTATION_GOES_THROUGH_ADOPTION: enabled
+  INBOX_IS_EPHEMERAL: enabled
+  # ... full list per src/types.ts INVARIANTS
+
+extensions:
+  dome.markdown: { enabled: true,  grants: { patch.auto: ["**"] } }
+  dome.index:    { enabled: true,  grants: { owns.path: ["index.md"], patch.auto: ["index.md"] } }
+  dome.log:      { enabled: true,  grants: { owns.path: ["log.md"], patch.auto: ["log.md"] } }
+  dome.links:    { enabled: true,  grants: { patch.propose: ["wiki/**"] } }
+  dome.intake:   { enabled: true,  grants: { model.invoke: true, patch.auto: ["wiki/generated/**", "inbox/processed/**"] } }
+  dome.daily:    { enabled: true,  grants: { patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"] } }
+  dome.lint:     { enabled: true,  grants: { patch.propose: ["**"] } }
+  dome.search:   { enabled: true,  grants: { graph.write: ["dome.search"] } }
+  dome.migrate:  { enabled: true,  grants: { patch.auto: ["**"] } }
+
+engine:
+  max_iterations: 100             # MAX_ITER for the fixed-point loop
+  inbox_stale_age_hours: 168      # diagnostic threshold for INBOX_IS_EPHEMERAL
+  git:
+    auto_commit_closures: true    # whether closure commits land automatically
+
+ledger:
+  retention_days: null            # null = forever; set a number to enable pruning
+  retention_failed_runs_days: null
+```
+
+### `page-types.yaml`
 
 ```yaml
 defaults:
@@ -103,41 +181,81 @@ defaults:
   - concept
   - source
   - synthesis
+
 extensions:
-  - <vault-defined>
+  - name: daily
+    frontmatter_extras: { recurrence: required }
+  - name: weekly
+    frontmatter_extras: { recurrence: required }
 ```
 
-`writeDocument` rejects writes whose path implies an unknown type. See [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]].
+### `extensions/`
+
+Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs/sdk-surface]] §"Bundle directory shape". The SDK-shipped `dome.*` bundles land here via `dome init` and are refreshed by `dome doctor --repair`. Third-party bundles install by directory copy.
+
+### Derived operational state under `.dome/state/`
+
+Gitignored. Rebuildable. Three SQLite files plus markers:
+
+- `projection.db` — see [[wiki/specs/projection-store]].
+- `runs.db` — see [[wiki/specs/run-ledger]].
+- `outbox.db` — see [[wiki/specs/projection-store]] §"Outbox".
+- `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
+- `last-reconcile-mtime.txt` — mtime-only marker for `dome doctor --time-since-reconcile`.
+
+Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting any of `.dome/state/` files and running `dome rebuild` (for projection.db) or restarting the daemon (for runs.db and outbox.db) reconverges. The outbox is the exception — wiping `outbox.db` loses pending external actions; users should not delete it, only the projection.
+
+## Git repository structure
+
+The vault IS the git repository. There is no separate `.dome.git` directory or alternate VCS:
+
+- `<vault>/.git/` — git's internal storage.
+- `<vault>/.gitignore` — engine-managed; ignores `.dome/state/` and OS metadata.
+- `<vault>/refs/dome/adopted/<branch>` (git ref) — the adopted cursor per [[wiki/specs/adoption]].
+
+Commits in the vault fall into two classes:
+
+| Class | Identification | Examples |
+|---|---|---|
+| **User commits** | No `Dome-Run:` trailer | `git commit -m "..."` from any harness or shell |
+| **Engine commits** | Carry the four Dome-* trailers | Closure commits; init scaffold commits |
+
+`git log --grep="^Dome-Run:"` returns engine history; `git log --invert-grep --grep="^Dome-Run:"` returns user history.
 
 ## Ownership rules
 
-| Directory | Owner | Mutability |
-|---|---|---|
-| `raw/` | User (or `dome capture`) | Immutable after creation. `RAW_IS_IMMUTABLE`. |
-| `wiki/` | Dome (via Tools) | Mutable through `writeDocument`, `moveDocument`. |
-| `notes/` | User | Dome reads, never writes. |
-| `inbox/` | User writes; Dome's intake hooks consume | Writes by user are normal; Dome consumes (moves or deletes) during processing. |
-| `index.md` | Dome dispatcher | Mutated only by `dispatcher.writeIndex`, invoked by the `auto-update-index` shipped-default hook. `writeDocument('index.md', ...)` rejects unconditionally per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. |
-| `log.md` | Dome dispatcher | Mutated only by `dispatcher.appendLogEntry`, called internally by the `appendLog` Tool. Append-only per [[wiki/invariants/LOG_IS_APPEND_ONLY]]; dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. `writeDocument('log.md', ...)` rejects unconditionally. |
-| `.dome/` | User (mostly) and shipped configs | User-authored; tools never mutate. |
-| `.dome/extensions/<bundle>/` | Bundle author (SDK for first-party; user/community for vault-local installs) | Files in a loaded bundle are read at `openVault` and re-read on `dome doctor --repair`. Editing a bundle's `preamble.md` requires `--repair` to refresh AGENTS.md; editing a bundle's `hooks/*.yaml` takes effect on next `openVault`. The bundle directory is committed to git as part of the vault's identity. |
-| `VISION.md`, `README.md` | User | Dome reads, never writes. |
+The capability broker enforces ownership. Default rules:
 
-## Vault discovery
+| Path | Owner |
+|---|---|
+| `index.md` | `dome.index` (via `owns.path`) |
+| `log.md` | `dome.log` (via `owns.path`) |
+| `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
+| `wiki/dailies/**`, `wiki/weeklies/**` | `dome.daily` (via `patch.auto`) |
+| `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
+| `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
+| `wiki/<type>/**` (general) | open — any processor with `patch.auto: ["wiki/**"]` |
+| `notes/**` | user only — engine never writes here |
 
-A Vault is identified by the presence of `.dome/config.yaml`. `openVault(path)` walks up from `path` looking for the marker; CLI commands can be invoked from any subdirectory of a vault.
+Plugin / third-party bundles cannot grant themselves `owns.path` on shipped-default paths (`index.md`, `log.md`). The broker rejects such grants at config-load time.
 
-## Multi-vault
+## Why this layout
 
-Dome is vault-agnostic: each process invocation targets exactly one vault root. Multi-vault is achieved by invoking the SDK / CLI / MCP server with different `--vault` arguments. There is no SDK-level "vault group" or cross-vault tool.
+Four properties make the layout self-defending:
 
-The user's working pattern of separate `~/vaults/work` and `~/vaults/personal` is honored structurally: two separate Vault instances, two separate MCP servers, two separate Claude Code configurations if desired.
+1. **Category by path.** Adding a new page type doesn't require schema work — create `wiki/<plural>/`, declare in `page-types.yaml extensions:`, write a processor that handles the type's signals.
+2. **`raw/` immutability is structural.** Pinned by RAW_IS_IMMUTABLE; broker refuses; dome.markdown emits blocking diagnostic.
+3. **`.dome/state/` is wipeable.** Anything Dome derives can be rebuilt from markdown + git. The user can `rm -rf .dome/state/` and the vault recovers.
+4. **`notes/` asymmetry keeps the wiki clean.** User-authored prose stays in notes; the wiki ontology stays curated by processors.
 
 ## Related
 
-- [[wiki/specs/sdk-surface]] — Vault and Document types.
-- [[wiki/specs/page-schema]] — frontmatter contract per page type.
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw/ files cannot be modified.
-- [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — wiki page type from subdirectory.
-- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — log.md append-only.
-- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — markdown is canonical; nothing under `.dome/` is canonical knowledge.
+- [[wiki/specs/adoption]] — adopted ref under `refs/dome/`
+- [[wiki/specs/projection-store]] — SQLite files under `.dome/state/`
+- [[wiki/specs/run-ledger]] — `runs.db` under `.dome/state/`
+- [[wiki/specs/page-schema]] — frontmatter contract per page type
+- [[wiki/specs/sdk-surface]] §"Extension bundles" — `.dome/extensions/<bundle>/` shape
+- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — derived state is rebuildable
+- [[wiki/invariants/VAULT_IS_GIT_REPO]] — the vault root is a git repo
+- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox bucket files are expected to move
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw files cannot be patched

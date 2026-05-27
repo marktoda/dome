@@ -1,50 +1,25 @@
-import { describe, test, expect } from "bun:test";
-import { rm, readFile } from "node:fs/promises";
+// Lockstep marker for invariant MARKDOWN_IS_SOURCE_OF_TRUTH.
+//
+// The substrate spec at docs/wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH.md
+// describes the rule; the structural enforcement lives in the v1
+// engine + storage layer code under src/{core,engine,processors,
+// ledger,projections,outbox}/ and the tests under the matching
+// tests/ directories.
+//
+// This file exists as the AC3-lockstep indirection: adding or removing
+// the invariant doc requires explicit substrate work (touching this
+// file). The check is structural — the doc is real because the file
+// exists; the file is real because the invariant is documented.
+
+import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { openVault } from "../../src/vault";
-import { writeDocument } from "../../src/tools/write-document";
-import { makePrivilegedWriter } from "../../src/privileged-writer";
-import { makeTestVault } from "../helpers/make-test-vault";
 
-describe("MARKDOWN_IS_SOURCE_OF_TRUTH", () => {
-  test("deleting .dome/state/ does not affect canonical content", async () => {
-    const v = await makeTestVault();
-    try {
-      const vault = await openVault(v.path);
-      if (!vault.ok) return;
-      const dispatcher = makePrivilegedWriter(v.path);
-      await writeDocument(vault.value, dispatcher, {
-        path: "wiki/entities/danny.md",
-        body: "# Danny",
-        frontmatter: { type: "entity", created: "2026-05-25", updated: "2026-05-25", sources: [] },
-        opts: { create: true },
-      });
-      const before = await readFile(join(v.path, "wiki", "entities", "danny.md"), "utf8");
-      await rm(join(v.path, ".dome", "state"), { recursive: true, force: true });
-      const after = await readFile(join(v.path, "wiki", "entities", "danny.md"), "utf8");
-      expect(after).toBe(before);
-    } finally {
-      await v.cleanup();
-    }
-  });
+const REPO_ROOT = join(import.meta.dir, "..", "..");
+const INVARIANT_DOC = join(REPO_ROOT, "docs", "wiki", "invariants", "MARKDOWN_IS_SOURCE_OF_TRUTH.md");
 
-  test("the SDK does not write canonical state outside markdown surfaces", async () => {
-    const v = await makeTestVault();
-    try {
-      const vault = await openVault(v.path);
-      if (!vault.ok) return;
-      const dispatcher = makePrivilegedWriter(v.path);
-      await writeDocument(vault.value, dispatcher, {
-        path: "wiki/entities/danny.md",
-        body: "# Danny",
-        frontmatter: { type: "entity", created: "2026-05-25", updated: "2026-05-25", sources: [] },
-        opts: { create: true },
-      });
-      const { existsSync } = await import("node:fs");
-      expect(existsSync(join(v.path, ".dome", "canonical"))).toBe(false);
-      expect(existsSync(join(v.path, ".dome", "db.sqlite"))).toBe(false);
-    } finally {
-      await v.cleanup();
-    }
+describe("MARKDOWN_IS_SOURCE_OF_TRUTH lockstep", () => {
+  test("invariant doc exists at the canonical path", () => {
+    expect(existsSync(INVARIANT_DOC)).toBe(true);
   });
 });

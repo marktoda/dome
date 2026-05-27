@@ -1,4 +1,4 @@
-// Pins CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY (axiom, bundle-enforced).
+// Pins ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY (axiom, bundle-enforced).
 //
 // The @dome/sdk core entrypoint (src/index.ts) must not statically pull
 // @anthropic-ai/sdk, ai (Vercel AI SDK), or @modelcontextprotocol/sdk
@@ -109,7 +109,7 @@ async function walkImports(entrypoint: string): Promise<WalkResult> {
   return { visited: [...visited], forbiddenHits };
 }
 
-describe("CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY (bundle-enforced)", () => {
+describe("ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY (bundle-enforced)", () => {
   test("src/index.ts transitive imports exclude @anthropic-ai/sdk, ai, @modelcontextprotocol/sdk", async () => {
     const entrypoint = join(import.meta.dir, "..", "..", "src", "index.ts");
     const { visited, forbiddenHits } = await walkImports(entrypoint);
