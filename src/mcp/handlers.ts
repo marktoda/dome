@@ -11,18 +11,17 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ToolAdapter, McpPromptAdapter } from "./render-mcp";
 import type { ResourceAdapter } from "./resource-adapters";
 
-// Server-like surface: a tiny strict subset of @modelcontextprotocol/sdk's
-// Server that the handler wiring depends on. Strict-typed so tests can pass a
-// stub without `as any`. The schema parameter is treated opaquely (it's
-// passed straight through to the SDK Server); we identify it only by object
-// identity, never by structure.
-export interface ServerLike {
-  setRequestHandler(schema: unknown, handler: (request: unknown) => Promise<unknown>): void;
-}
+// Server-like surface: the exact subset of @modelcontextprotocol/sdk's Server
+// that the handler wiring depends on, sliced out via Pick so any future SDK
+// change to the setRequestHandler signature surfaces here at compile time.
+// Tests can pass a stub satisfying this Pick without `as any`; production
+// code passes a real Server directly (no `as unknown as ServerLike` cast).
+export type ServerLike = Pick<Server, "setRequestHandler">;
 
 export interface HandlerSurface {
   tools: ReadonlyArray<ToolAdapter>;
