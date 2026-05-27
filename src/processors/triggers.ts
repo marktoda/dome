@@ -35,16 +35,14 @@
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating matcher outputs.
-//   - Imports limited to pure types from `../core/processor` plus the
-//     `SignalEvent` type from `../engine/compile-range`. No runtime
-//     dependency on filesystem, git, sqlite, or network.
-//   - `globMatch` mirrors the helper in `src/engine/capability-broker.ts`
-//     with a module-private compiled-Glob cache. A future polish pass could
-//     lift this into a shared module; for Phase 3 the duplication is small
-//     and the cache is independent per usage site.
+//   - Imports limited to pure types from `../core/processor`, the
+//     `SignalEvent` type from `../engine/compile-range`, and the shared
+//     `globMatch` helper from `../engine/glob-cache`. No runtime dependency
+//     on filesystem, git, sqlite, or network.
 
 import type { Trigger } from "../core/processor";
 import type { SignalEvent } from "../engine/compile-range";
+import { globMatch } from "../engine/glob-cache";
 
 // ----- TriggerMatch ---------------------------------------------------------
 
@@ -154,26 +152,7 @@ function collectPathMatches(
   return out;
 }
 
-/**
- * Path-glob match using Bun's built-in glob matcher. Mirrors the helper in
- * `src/engine/capability-broker.ts`: compiled `Bun.Glob` instances are
- * memoized in `globCache` below (no eviction — the pattern set is bounded by
- * the loaded bundle set, ~tens to low hundreds in practice).
- *
- * Tolerant of empty patterns / paths (returns false). Path strings are
- * POSIX-style vault-relative (matching `SignalEvent.path`).
- */
-const globCache = new Map<string, Bun.Glob>();
-
-function globMatch(pattern: string, path: string): boolean {
-  if (pattern.length === 0 || path.length === 0) return false;
-  // Exact-string fast path — avoids constructing a Glob for the common case
-  // of a literal path in a trigger pattern.
-  if (pattern === path) return true;
-  let glob = globCache.get(pattern);
-  if (glob === undefined) {
-    glob = new Bun.Glob(pattern);
-    globCache.set(pattern, glob);
-  }
-  return glob.match(path);
-}
+// Path-glob matching uses the shared `globMatch` helper imported from
+// `../engine/glob-cache` — see that file for the cache and the
+// empty-pattern / exact-string fast-path semantics. Path strings are
+// POSIX-style vault-relative (matching `SignalEvent.path`).

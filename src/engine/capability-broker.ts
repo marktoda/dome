@@ -56,6 +56,7 @@ import type {
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
+import { globMatch } from "./glob-cache";
 import { firstPatchPath } from "./patch-parse";
 
 // ----- EnforcementResult ----------------------------------------------------
@@ -401,33 +402,13 @@ function pathIsOwnedByThirdParty(
   return !declaredOwn;
 }
 
-/**
- * Path-glob match using Bun's built-in glob matcher. Per
- * docs/wiki/matrices/effect-x-capability.md §"Capability lookup
- * performance" the SDK uses `new Bun.Glob(pattern).match(path)`; compiled
- * Glob instances are memoized in `globCache` below (no eviction — the
- * pattern set is bounded by the loaded bundle set, ~tens to low hundreds
- * in practice).
- *
- * The matcher is tolerant of empty patterns (returns false) and empty
- * paths (returns false). Path strings are POSIX-style vault-relative.
- */
-// Module-private compiled-Glob cache. No eviction — pattern set is bounded
-// by the loaded bundle set; ~tens to low hundreds in practice.
-const globCache = new Map<string, Bun.Glob>();
-
-function globMatch(pattern: string, path: string): boolean {
-  if (pattern.length === 0 || path.length === 0) return false;
-  // Exact-string fast path — avoids constructing a Glob for the common
-  // case of a literal path in an `owns.path` grant.
-  if (pattern === path) return true;
-  let glob = globCache.get(pattern);
-  if (glob === undefined) {
-    glob = new Bun.Glob(pattern);
-    globCache.set(pattern, glob);
-  }
-  return glob.match(path);
-}
+// Path-glob matching uses the shared `globMatch` helper imported from
+// `./glob-cache` — see that file for the cache and the empty-pattern /
+// exact-string fast-path semantics. Per
+// docs/wiki/matrices/effect-x-capability.md §"Capability lookup
+// performance" the SDK uses `new Bun.Glob(pattern).match(path)`; the cache
+// is bounded by the loaded bundle set (~tens to low hundreds of patterns
+// in practice).
 
 // ----- Namespace helpers ----------------------------------------------------
 

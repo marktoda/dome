@@ -50,7 +50,8 @@
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - Imports limited to sibling engine files (`./compile-range`,
 //     `./capability-broker` indirectly via `./apply-effect`,
-//     `./apply-effect`, `./closure-commit`), pure types from `../core/`,
+//     `./apply-effect`, `./closure-commit`, `./runner-contract` for the
+//     outbound `AdoptionPhaseRunner` type), pure types from `../core/`,
 //     the run-id primitive from `../run-context`, the adopted-ref
 //     read/write chokepoint from `../adopted-ref`, the git boundary from
 //     `../git`, and the `Vault` type from `../vault`.
@@ -60,7 +61,6 @@
 
 import type { Effect, DiagnosticEffect, PatchEffect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
-import type { Capability } from "../core/processor";
 import type {
   AdoptionResult,
   Proposal,
@@ -70,10 +70,11 @@ import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import { currentBranch, currentSha } from "../git";
 import { makeRunContext } from "../run-context";
 import type { Vault } from "../vault";
-import { compileRange, type SignalEvent } from "./compile-range";
+import { compileRange } from "./compile-range";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
 import { parsePatchPaths } from "./patch-parse";
+import type { AdoptionPhaseRunner } from "./runner-contract";
 
 // ----- DEFAULT_MAX_ITERATIONS -----------------------------------------------
 
@@ -89,46 +90,6 @@ import { parsePatchPaths } from "./patch-parse";
  * below 30 risks false positives on shipped-default processor sets.
  */
 export const DEFAULT_MAX_ITERATIONS = 100;
-
-// ----- AdoptionPhaseRunner --------------------------------------------------
-
-/**
- * The injected processor-runtime callback. The loop calls the runner once
- * per iteration with the candidate snapshot, the per-iteration changed-paths
- * delta, and the synthesized signals; the runner returns one record per
- * processor that fired, carrying the processor's id, its declared
- * capabilities, its effective granted capabilities, and the effects it
- * emitted.
- *
- * Phase 3 wires the actual processor-registry runner; Phase 2 accepts the
- * injection point so the loop is testable in isolation (a test passes a
- * stub callback returning predetermined records).
- *
- * Returning an empty array is the runner's signal that no processor fired
- * this iteration — the loop interprets it as "no effects produced" and
- * may reach a fixed point on the next no-patch check.
- */
-export type AdoptionPhaseRunner = (input: {
-  readonly vault: Vault;
-  readonly candidate: CommitOid;
-  readonly changedPaths: ReadonlyArray<string>;
-  readonly signals: ReadonlyArray<SignalEvent>;
-  readonly iteration: number;
-  readonly proposal: Proposal;
-}) => Promise<ReadonlyArray<RunnerResult>>;
-
-/**
- * One per-processor record returned by the `AdoptionPhaseRunner` for an
- * iteration. The loop iterates `effects` and routes each through
- * `applyEffect` with the per-processor `(declared, granted)` so the broker
- * decision is correctly scoped.
- */
-export type RunnerResult = {
-  readonly processorId: string;
-  readonly declared: ReadonlyArray<Capability>;
-  readonly granted: ReadonlyArray<Capability>;
-  readonly effects: ReadonlyArray<Effect>;
-};
 
 // ----- adopt ----------------------------------------------------------------
 

@@ -1,0 +1,71 @@
+// Neutral home for the engine's outbound runner contracts. The engine layer
+// owns these types (the engine consumes them as injection points); the
+// processors layer implements them. This file exists to break the backward
+// import that would otherwise force a processors → engine/adopt cycle when
+// garden + view runners ship in Phase 4+.
+//
+// Living inside `src/engine/` (not `src/processors/`) reflects ownership: the
+// engine's adoption / garden / view entry points consume these callbacks as
+// injection points; the processors layer is the *implementer* of the
+// contract, not its owner. Co-locating the contract with the consumers keeps
+// the dependency arrow processors → engine and avoids the inverted import
+// that lifted these types from `./adopt` in Phase 3.
+//
+// House-style notes (matches src/engine/compile-range.ts,
+// src/engine/closure-commit.ts, src/engine/capability-broker.ts):
+//   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
+//   - Optional fields use `field?: T` (not `T | undefined`) for
+//     `exactOptionalPropertyTypes` cleanliness.
+//   - Pure type module: zero value exports, zero runtime imports. The
+//     `Object.freeze`-over-`as const` convention that sibling engine files
+//     follow does not apply here — no runtime values are produced.
+//   - Imports limited to pure types from `../core/` (Effect, Capability,
+//     Proposal, CommitOid) and the `SignalEvent` type from
+//     `./compile-range`, plus the `Vault` type from `../vault`.
+
+import type { Effect } from "../core/effect";
+import type { Capability } from "../core/processor";
+import type { Proposal } from "../core/proposal";
+import type { CommitOid } from "../core/source-ref";
+import type { Vault } from "../vault";
+import type { SignalEvent } from "./compile-range";
+
+// ----- AdoptionPhaseRunner --------------------------------------------------
+
+/**
+ * The injected processor-runtime callback. The loop calls the runner once
+ * per iteration with the candidate snapshot, the per-iteration changed-paths
+ * delta, and the synthesized signals; the runner returns one record per
+ * processor that fired, carrying the processor's id, its declared
+ * capabilities, its effective granted capabilities, and the effects it
+ * emitted.
+ *
+ * Phase 3 wires the actual processor-registry runner; Phase 2 accepts the
+ * injection point so the loop is testable in isolation (a test passes a
+ * stub callback returning predetermined records).
+ *
+ * Returning an empty array is the runner's signal that no processor fired
+ * this iteration — the loop interprets it as "no effects produced" and
+ * may reach a fixed point on the next no-patch check.
+ */
+export type AdoptionPhaseRunner = (input: {
+  readonly vault: Vault;
+  readonly candidate: CommitOid;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly signals: ReadonlyArray<SignalEvent>;
+  readonly iteration: number;
+  readonly proposal: Proposal;
+}) => Promise<ReadonlyArray<RunnerResult>>;
+
+/**
+ * One per-processor record returned by the `AdoptionPhaseRunner` for an
+ * iteration. The loop iterates `effects` and routes each through
+ * `applyEffect` with the per-processor `(declared, granted)` so the broker
+ * decision is correctly scoped.
+ */
+export type RunnerResult = {
+  readonly processorId: string;
+  readonly declared: ReadonlyArray<Capability>;
+  readonly granted: ReadonlyArray<Capability>;
+  readonly effects: ReadonlyArray<Effect>;
+};

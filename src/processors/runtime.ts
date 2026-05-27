@@ -47,12 +47,13 @@
 //   - Imports limited to: `../core/effect` (Effect + DiagnosticEffect +
 //     `diagnosticEffect` helper), `../core/processor` (Processor +
 //     Capability + Snapshot + TreeOid types), `../core/source-ref`
-//     (CommitOid), `../engine/adopt` (AdoptionPhaseRunner + RunnerResult),
-//     `./registry` (ProcessorRegistry), `./triggers` (matchTriggers +
-//     TriggerMatch), `./context` (makeProcessorContext +
-//     ProcessorContextInput), `../run-context` (makeRunContext). No
-//     filesystem, git, or sqlite imports — the `resolveTree` injection
-//     point is what bridges to git.
+//     (CommitOid), `../engine/runner-contract` (AdoptionPhaseRunner +
+//     RunnerResult — the neutral home for the engine's outbound runner
+//     contract that this runtime implements), `./registry`
+//     (ProcessorRegistry), `./triggers` (matchTriggers + TriggerMatch),
+//     `./context` (makeProcessorContext + ProcessorContextInput),
+//     `../run-context` (makeRunContext). No filesystem, git, or sqlite
+//     imports — the `resolveTree` injection point is what bridges to git.
 
 import type { DiagnosticEffect, Effect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
@@ -66,7 +67,7 @@ import type { CommitOid } from "../core/source-ref";
 import type {
   AdoptionPhaseRunner,
   RunnerResult,
-} from "../engine/adopt";
+} from "../engine/runner-contract";
 import type { ProcessorRegistry } from "./registry";
 import { matchTriggers, type TriggerMatch } from "./triggers";
 import {

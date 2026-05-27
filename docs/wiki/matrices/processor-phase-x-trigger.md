@@ -53,6 +53,21 @@ function validateProcessorDeclaration(decl: ProcessorDeclaration): Result<void, 
 
 The `ALLOWED` constant is derived from this matrix at module-load time (or from a hardcoded mirror that's lockstep-checked against this doc in `tests/integration/processor-phase-x-trigger-coverage.test.ts`).
 
+## Implementation status
+
+**As of Phase 3 (processor runtime landed; per-processor manifest validator forward-looking):**
+
+The phase × trigger matrix is **the canonical contract** that the manifest validator will enforce. The type-system fences at the `Trigger` and `ProcessorPhase` level are real today; the per-processor declaration check at bundle load ships with Phase 6.
+
+- Structurally true now:
+  - The closed `Trigger` discriminated union in `src/core/processor.ts:123-127` (with per-variant types at 105-121) enforces the four trigger kinds at the type system level.
+  - The closed `ProcessorPhase` literal-union at `src/core/processor.ts:75` enforces the three phases.
+  - `src/processors/triggers.ts:matchTriggers` (line 83) consumes only `signal` and `path` triggers (returning no match for `schedule`/`command`) — the adoption-phase runner thus naturally honors the adoption × {signal, path} subset of the matrix.
+
+- Forward-looking (Phase 6+):
+  - The `validateProcessorDeclaration` function shown above does not exist yet. `src/extensions/manifest-schema.ts` today validates only bundle-level fields (`name`, `version`, `deps`) for the Phase 0a bundle loader; the per-processor (phase, trigger) cross-field check that rejects incompatible declarations at registration time ships with the first-party `dome.*` bundle migrations (Phase 6).
+  - `tests/integration/processor-phase-x-trigger-coverage.test.ts` is the lockstep that ships with the validator.
+
 ## Edge: command-triggered view processors that schedule
 
 Some view processors are *both* user-invokable AND cron-driven — `dome.lint`'s `lint-report` is a canonical example (run via `dome lint` AND via `cron '0 7 * * MON'`). The processor declares two triggers:
