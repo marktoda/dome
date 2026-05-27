@@ -19,15 +19,17 @@
 **Implementation changes** (deferred to Phase 1+ of the v1 cut, not in this rewrite):
 - The substrate describes the v1 end state; code rewrite happens in implement-cohesively phases per the brainstorm's "Phasing the cut" section.
 
-**Specs:** 6 rewritten (VISION, sdk-surface, adoption, harnesses, mcp-surface, cli, vault-layout, page-schema — VISION + 7); 2 retired (hooks, prompts-and-workflows); 6 new (proposals, processors, effects, projection-store, capabilities, run-ledger).
+**Specs:** 8 rewritten (VISION, sdk-surface, adoption, harnesses, mcp-surface, cli, vault-layout, page-schema); 2 retired (hooks, prompts-and-workflows); 6 new (proposals, processors, effects, projection-store, capabilities, run-ledger). **Net: 9 → 13.**
 
-**Invariants:** 6 unchanged (axioms preserved as cross-references); 5 reshaped + renamed (EVERY_WRITE_IS_LOGGED → EVERY_EFFECT_IS_LEDGERED; VAULT_RECONCILES_AFTER_NATIVE_WRITE → ALL_MUTATION_GOES_THROUGH_ADOPTION; CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY → ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY; ENGINE_COMMITS_CARRY_DOME_TRAILERS extends to dual surface with ledger; INBOX_IS_EPHEMERAL enforcement moves to a processor); 7 retired (HOOKS_CANNOT_BYPASS_TOOLS, HOOK_DISPATCH_IS_VAULT_BOUND, INDEX_AND_LOG_ARE_DISPATCHER_OWNED, PAGE_TYPE_BY_DIRECTORY, WIKILINKS_ARE_FULLPATH, PAGE_CREATION_REQUIRES_RECURRENCE, WORKFLOWS_KNOW_VAULT_CONTEXT); 7 new (PROPOSALS_ARE_THE_ONLY_WRITE_PATH, EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT, ENGINE_IS_THE_ONLY_APPLIER, EVERY_EFFECT_IS_CAPABILITY_CHECKED, EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX, EVERY_PROCESSOR_RUN_IS_LEDGERED, PROJECTIONS_ARE_REBUILDABLE). **Net: 18 → 18.**
+**Invariants:** 1 unchanged (VAULT_IS_GIT_REPO content-clean; cross-references updated for v1); 5 reshaped (MARKDOWN_IS_SOURCE_OF_TRUTH, RAW_IS_IMMUTABLE, LOG_IS_APPEND_ONLY, AGENTS_MD_IS_ORIENTATION_SURFACE, ADOPTED_REF_IS_SEMANTIC_CURSOR — bodies rewritten against v1 mechanisms; cross-references repointed); 5 reshaped + renamed (EVERY_WRITE_IS_LOGGED → EVERY_EFFECT_IS_LEDGERED; VAULT_RECONCILES_AFTER_NATIVE_WRITE → ALL_MUTATION_GOES_THROUGH_ADOPTION; CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY → ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY; ENGINE_COMMITS_CARRY_DOME_TRAILERS extends to dual surface with ledger; INBOX_IS_EPHEMERAL enforcement moves to a processor); 7 retired (HOOKS_CANNOT_BYPASS_TOOLS, HOOK_DISPATCH_IS_VAULT_BOUND, INDEX_AND_LOG_ARE_DISPATCHER_OWNED, PAGE_TYPE_BY_DIRECTORY, WIKILINKS_ARE_FULLPATH, PAGE_CREATION_REQUIRES_RECURRENCE, WORKFLOWS_KNOW_VAULT_CONTEXT); 7 new (PROPOSALS_ARE_THE_ONLY_WRITE_PATH, EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT, ENGINE_IS_THE_ONLY_APPLIER, EVERY_EFFECT_IS_CAPABILITY_CHECKED, EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX, EVERY_PROCESSOR_RUN_IS_LEDGERED, PROJECTIONS_ARE_REBUILDABLE). **Net: 18 → 18.**
 
 **Matrices:** 1 retired (tool-invariant-enforcement); 4 reshaped + renamed (event-types-and-payloads → effect-router-targets; consumer-surface → protocol-adapter; intent-prompt-tools → intent-prompt-processors; extension-bundle-shape extended with capabilities); 4 new (processor-phase-x-trigger, effect-x-capability, built-in-extensions-x-phase, projection-table-x-owner). **Net: 5 → 8.**
 
-**Gotchas:** Most carry forward unchanged. 2 reshaped + renamed (hook-cycle → processor-fixed-point-divergence; hook-non-idempotent → processor-idempotency); extension-bundle-load-order updated for new collision dimensions; 4 new (outbox-stuck, projection-schema-skew, capability-downgrade-surprise, processor-version-drift). **Net: 17 → 21.**
+**Gotchas:** 6 rewritten (async-read-after-write-staleness, out-of-band-vault-edits, multi-page-partial-write, agent-prompt-regression, transitive-llm-dependency, daemon-off-while-vault-mutating — bodies rewritten against v1 vocabulary; failure modes preserved); 5 reshaped (extension-bundle-load-order rewritten, scheduled-hook-idempotency rewritten retaining filename, dirty-git-state-at-reconcile + boundary-validation-via-zod cross-references repointed, substrate-count-drift cross-references repointed); 2 reshaped + renamed (hook-cycle → processor-fixed-point-divergence; hook-non-idempotent → processor-idempotency); 4 new (outbox-stuck, projection-schema-skew, capability-downgrade-surprise, processor-version-drift). **Net: 17 → 21.**
 
-**Orientation surfaces:** docs/index.md fully rewritten for new vocabulary; AGENTS.md fully rewritten with v1 task-shape guidance.
+**Linters:** 1 retired (wrap-mutating-invoke-consumption — v0.5-only enforcement for retired HOOK_DISPATCH_IS_VAULT_BOUND); 4 new (no-retired-symbol-names — rewritten as v1 structural fence; engine-is-sole-applier; no-direct-mutation-outside-engine; processor-purity). **Net: 1 → 4.**
+
+**Orientation surfaces:** docs/index.md fully rewritten for new vocabulary; AGENTS.md fully rewritten with v1 task-shape guidance. Concepts + entities + sources + syntheses rewritten to drop retired-name citations (llm-wiki-pattern, brain-companion, obsidian, karpathy-llm-wiki-gist, v0.5-build-plan).
 
 ## Per-file changes
 
@@ -181,6 +183,51 @@ After `validate-rewrite` Approved:
 **Phase 10 — Cleanup.** Delete retired invariant tests, gotcha docs that no longer apply, package.json deps no longer transitively reached.
 
 The substrate-as-tests scaffold (AC3 lockstep + bundle-deps + no-retired-symbol-names + new linters) catches drift through each phase.
+
+## Linters (NEW SECTION — added in repair pass 2)
+
+| File | Disposition | Notes |
+|---|---|---|
+| `docs/wiki/linters/wrap-mutating-invoke-consumption.md` | **Retired** | Enforced the v0.5-era HOOK_DISPATCH_IS_VAULT_BOUND invariant over TOOL_REGISTRY / wrapMutatingInvoke / MUTATING_TOOL_NAMES symbols — none of which exist in v1. The no-retired-symbol-names linter subsumes the spirit (catching retired-symbol citations). |
+| `docs/wiki/linters/no-retired-symbol-names.md` | Rewritten | Was the v0.5 version focused on the ConsumerSurface → AbstractSurface rename. v1 version expands the allowlist to cover Tool/Hook/Workflow/BoundToolSurface/runWorkflow/wrapMutatingInvoke + the seven retired-invariant names + the three retired+renamed invariants + the retired matrix + retired specs + retired gotchas + retired filesystem paths. Sweeps `docs/wiki/**/*.md`. |
+| `docs/wiki/linters/engine-is-sole-applier.md` | **New** | Statement: `src/` outside `src/engine/`, `src/projections/`, `src/ledger/`, `src/outbox/` doesn't import mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git` write-side functions). The structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]. |
+| `docs/wiki/linters/no-direct-mutation-outside-engine.md` | **New** | Statement: source files outside the engine directories don't make direct mutation calls (`Bun.write`, `fs.writeFile`, `db.execute("INSERT ...")`, `git.commit(...)`). Companion to engine-is-sole-applier — catches the calls; engine-is-sole-applier catches the imports. |
+| `docs/wiki/linters/processor-purity.md` | **New** | Statement: extension-bundle processor files don't import mutation modules. The structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]]. |
+
+All four new linter specs are `status: v1 (proposed; lockstep check ships in Phase 1 of implementation)`. They are reviewable substrate now; the runtime checks ship as part of v1 implementation Phase 1 per the brainstorm's "Phasing the cut" section. The `no-retired-symbol-names` linter is the structural fence the pass-1 validate-rewrite review (`docs/cohesive/reviews/2026-05-27-dome-v1-engine-model-rewrite-validation.md`) named as the substrate gap behind findings B1, B2, B3, and B5.
+
+## Concepts / Entities / Sources / Syntheses (NEW SECTION — added in repair pass 2)
+
+The pass-1 review surfaced (finding B5) that the orientation docs under `docs/wiki/concepts/`, `docs/wiki/entities/`, `docs/wiki/sources/`, and `docs/wiki/syntheses/` carried retired-name citations. The rewriter's scope at pass 1 was `wiki/specs/` and `wiki/invariants/` only. Pass 2 widens the audit:
+
+| File | Disposition | Notes |
+|---|---|---|
+| `docs/wiki/concepts/llm-wiki-pattern.md` | Rewritten | Replaced citations of retired `PAGE_TYPE_BY_DIRECTORY` with the v1 substrate path (page-type as FactEffect from dome.markdown; wikilink-fullpath as DiagnosticEffect from dome.markdown.validate-wikilinks). Replaced "four concepts" reference to point at v1's four (Vault/Proposal/Processor/Effect). |
+| `docs/wiki/concepts/brain-companion.md` | Rewritten | Replaced citations of retired `wiki/specs/hooks` and `intake-raw` hook with v1 substrate (the `dome.intake` bundle's garden-phase processor; the `intent-prompt-processors` matrix). |
+| `docs/wiki/entities/obsidian.md` | Rewritten | Replaced citations of retired `WIKILINKS_ARE_FULLPATH` with the v1 substrate (`dome.markdown.validate-wikilinks` adoption-phase processor emits the blocking diagnostic). |
+| `docs/wiki/sources/karpathy-llm-wiki-gist.md` | Rewritten | Replaced citations of retired `PAGE_TYPE_BY_DIRECTORY` with v1's page-type-as-FactEffect framing. Updated "Operations: ingest, query, lint" to name the v1 first-party bundles (`dome.intake`, `dome.search`, `dome.lint`). Retired the "sensitivity-classify" reference from earlier substrate. |
+| `docs/wiki/syntheses/v0.5-build-plan.md` | Rewritten | Was v0.5/v1+/long-term phasing. v1 version explicitly names v0.5 as archival, makes v1 the "engine model" header, adds v1.5 hosted-multi-client phasing, renames v2 from "v1+ Product." References the canonical v1 substrate throughout. |
+
+## Repair pass 2
+
+**Trigger:** pass-1 validate-rewrite review at `docs/cohesive/reviews/2026-05-27-dome-v1-engine-model-rewrite-validation.md` returned Issues Found with 5 Blocker + 3 Medium findings.
+
+**Closes:** B1, B2, B3, B4, B5, I1, I2, I3 per the pass-1 review's "Recommended repairs (ranked)" section.
+
+**Summary of repairs:**
+
+- **B1 (5 carried-forward axiom invariants):** MARKDOWN_IS_SOURCE_OF_TRUTH, RAW_IS_IMMUTABLE, LOG_IS_APPEND_ONLY, AGENTS_MD_IS_ORIENTATION_SURFACE, ADOPTED_REF_IS_SEMANTIC_CURSOR — bodies rewritten against v1 mechanisms; retired-symbol citations removed; Related sections re-pointed.
+- **B2 (broken cross-references):** Closed via (a) the linter spec rewrite of `no-retired-symbol-names.md` with the full v1 allowlist, (b) per-file fixes across the orientation docs, (c) cross-reference repointing in the six rewritten gotchas.
+- **B3 (6 carried-forward gotchas):** async-read-after-write-staleness, out-of-band-vault-edits, multi-page-partial-write, agent-prompt-regression, transitive-llm-dependency, daemon-off-while-vault-mutating — bodies rewritten with v1 vocabulary while preserving the failure modes they document.
+- **B4 (v0.5 linter spec on disk):** Deleted `docs/wiki/linters/wrap-mutating-invoke-consumption.md`. The substrate's new structural enforcement story is the four v1 linters above.
+- **B5 (orientation docs):** Audited and rewrote `docs/wiki/concepts/`, `docs/wiki/entities/`, `docs/wiki/sources/`, `docs/wiki/syntheses/` per the new §"Concepts / Entities / Sources / Syntheses" section.
+- **I1 (preamble arithmetic):** Updated the Delta at a glance preamble — "Specs: 8 rewritten ..." (was "6 rewritten ... VISION + 7").
+- **I2 (linter spec stubs):** Authored the four named linter spec files at `docs/wiki/linters/`.
+- **I3 (page-schema forward pointer):** Added an explicit "extension-contributed type ... not one of the four defaults" annotation at the daily-type early example.
+
+**Files reshuffled in the ledger:** the five axiom-invariant rows and the six gotcha rows that were previously in "Carried forward" disposition were moved to "Rewritten." The new §"Linters" section enumerates the linter set. The new §"Concepts / Entities / Sources / Syntheses" section names the audit scope the pass-1 reviewer flagged.
+
+**The substrate is now internally consistent across the rewritten surfaces.** A subsequent pass-2 validate-rewrite reviewer reading any rewritten doc reaches v1 vocabulary and v1 cross-references; broken `[[wiki/...]]` links to retired files no longer appear in the live substrate (excluding history-narration framing in renamed-invariant docs, which is exempted per the no-retired-symbol-names linter's "historical narration" rule).
 
 ## Source brainstorm
 

@@ -1,8 +1,8 @@
 ---
 type: concept
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 status: stable
 tags: ["product-framing"]
 ---
@@ -22,10 +22,10 @@ A companion is none of these — it's a long-running relationship with your own 
 
 ## What this implies for Dome's design
 
-- **Ambient.** Accessible wherever the user is. On the desktop, an agentic harness (Claude Code today) arrives oriented to the vault via auto-loaded `AGENTS.md`, and any structured operation runs through the CLI (`dome lint`, `dome stats`, `dome lint --apply <id>`, `dome export-context`) — no new app to open. On the phone (v1+), a native Dome surface provides voice capture and recall flows. The compiler daemon (`dome serve`) runs continuously in the background; the vault stays coherent regardless of which surface is being used. See [[VISION]] §"Two surface patterns" and [[wiki/specs/harnesses]].
+- **Ambient.** Accessible wherever the user is. On the desktop, an agentic harness (Claude Code today) arrives oriented to the vault via auto-loaded `AGENTS.md`, and any named operation runs as a command-triggered view processor invoked through the CLI (`dome lint`, `dome stats`, `dome query`, `dome export-context`) — no new app to open. On the phone (v2+), a native Dome surface provides voice capture and recall flows. The compiler daemon (`dome serve`) runs continuously in the background; the vault stays coherent regardless of which surface is being used. See [[VISION]] §"Two surface patterns" and [[wiki/specs/harnesses]].
 - **Always accessible.** The vault is local-first markdown; no cloud lock-in; no auth wall on day-to-day use. See [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
-- **Streamlined to talk to.** Quick-capture is a file write to `inbox/raw/`. No app to launch; no form to fill. The shipped-default `intake-raw` hook compiles the captured content on arrival. See [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in."
-- **Allergic to ungrounded confidence.** Every claim cites its source; contradictions are flagged; the user always wins (see [[VISION]] §"Principles" #5).
+- **Streamlined to talk to.** Quick-capture is a file write to `inbox/raw/`. No app to launch; no form to fill. The shipped-default `dome.intake` bundle's garden-phase processor compiles the captured content on adoption. See [[wiki/specs/processors]] §"First-party processors" and [[wiki/matrices/intent-prompt-processors]].
+- **Allergic to ungrounded confidence.** Every FactEffect carries a SourceRef pointing into an adopted commit (per [[wiki/specs/effects]] §"The SourceRef type"); contradictions surface as DiagnosticEffects; the user always wins (see [[VISION]] §"Principles" #5).
 - **Patient enough to be useful over years.** The vault is portable markdown that outlives any individual tool. See [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
 
 ## See also

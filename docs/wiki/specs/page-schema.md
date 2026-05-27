@@ -30,7 +30,7 @@ The four universal fields are required by `dome.markdown.frontmatter-required` �
 
 For pages outside `wiki/` (raw captures, daily notes that live in `wiki/dailies/`, etc.):
 - `raw/voice/<id>.md` → `type: voice-capture` (the raw bucket convention).
-- `wiki/dailies/2026-05-27.md` → `type: daily` (the dome.daily bundle's type).
+- `wiki/dailies/2026-05-27.md` → `type: daily` (an **extension-contributed type** from the `dome.daily` bundle, not one of the four defaults — see §"Extension types (from bundles)" below).
 
 Type validation against the declared page types is the `dome.markdown.type-known` diagnostic — adoption blocks on an unknown type.
 

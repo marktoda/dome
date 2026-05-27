@@ -1,8 +1,8 @@
 ---
 type: source
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[raw/original-architecture]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 url: "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
 author: "Andrej Karpathy"
 external: true
@@ -10,7 +10,7 @@ external: true
 
 # Karpathy LLM Wiki gist
 
-The gist that named and described the LLM Wiki pattern Dome productizes. Authored by [[wiki/entities/andrej-karpathy]] and referenced in `raw/original-architecture.md`.
+The gist that named and described the LLM Wiki pattern Dome productizes. Authored by [[wiki/entities/andrej-karpathy]].
 
 ## Key claims
 
@@ -26,16 +26,16 @@ The gist that named and described the LLM Wiki pattern Dome productizes. Authore
 Most claims survive directly:
 
 - ✓ Raw sources immutable ([[wiki/invariants/RAW_IS_IMMUTABLE]]).
-- ✓ LLM-maintained wiki layer.
-- ✓ Prompt as contract (see [[wiki/specs/sdk-surface]] §"Why this design").
-- ✓ Index + log as canonical files.
-- ✓ Operations: ingest, query, lint (+ research, capture, export-context, sensitivity-classify in Dome).
+- ✓ LLM-maintained wiki layer (garden-LLM processors per [[wiki/specs/processors]] §"Garden phase").
+- ✓ Prompt as contract — garden-LLM processors carry their prompts alongside the processor source at `assets/extensions/<bundle>/processors/<name>.prompt.md`.
+- ✓ Index + log as canonical files — both are committed projections maintained by the `dome.index` and `dome.log` adoption-phase processors (per [[wiki/matrices/built-in-extensions-x-phase]]).
+- ✓ Operations: ingest, query, lint — shipped as command-triggered view-phase processors in `dome.intake`, `dome.search`, and `dome.lint` bundles.
 
 Some are revised:
 
-- ✗ Karpathy's pattern uses one generic page schema; Dome lives with [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] (four typed pages by directory).
-- △ Karpathy proposes atomic ideas as intermediate representation; Dome v0.5 doesn't materialize atoms on disk (deferred to v1+ if "what have I changed my mind about" queries become important).
-- ✓ Structural enforcement of invariants (a Dome addition; Karpathy's pattern relies on prompt discipline).
+- ✗ Karpathy's pattern uses one generic page schema; Dome lives with multiple page types per [[wiki/specs/page-schema]] (four defaults — entity / concept / source / synthesis — plus extension-contributed types). The type is derived from the `wiki/<plural>/` directory; the `dome.markdown` adoption-phase processor emits FactEffects naming the type and DiagnosticEffects on schema violations.
+- △ Karpathy proposes atomic ideas as intermediate representation; Dome v1 doesn't materialize atoms on disk (deferred to v1.x+ if "what have I changed my mind about" queries become important).
+- ✓ Structural enforcement of invariants (a Dome addition; Karpathy's pattern relies on prompt discipline). The engine's capability broker, fixed-point adoption loop, and AC3 lockstep convention together enforce what Karpathy's pattern relied on prompts to maintain.
 
 ## Why this source matters
 
@@ -45,4 +45,4 @@ It's the closest pre-existing description of Dome's compilation pattern. Citing 
 
 - [[wiki/entities/andrej-karpathy]]
 - [[wiki/concepts/llm-wiki-pattern]]
-- [[raw/original-architecture]]
+- [[wiki/specs/sdk-surface]] §"The four concepts"

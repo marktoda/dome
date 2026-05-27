@@ -1,8 +1,8 @@
 ---
 type: invariant
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[raw/original-architecture]]", "[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: axiom
 ---
 
@@ -10,31 +10,40 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** `<vault>/log.md` is mutated only by the `appendLog` Tool, which appends a new entry to the end of the file. No other Tool writes to `log.md`. Entries are never modified or deleted in place.
+**Statement:** `<vault>/log.md` is a projection of the run ledger. The only processor authorized to write to it is `dome.log.append-log` (the adoption-phase processor in the `dome.log` first-party bundle, granted `owns.path: ["log.md"]` in shipped-default vault config). It only appends new entries to the end of the file; entries are never modified or deleted in place.
 
-**Why:** The log is the audit trail. Operations on the vault are reconstructable from the log alone. If entries could be rewritten, agent behavior would lose its history-of-record property and trust falls.
+**Why:** The log is the audit trail's human-readable surface. Operations on the vault are reconstructable from the log alone, without the run ledger SQLite file. If entries could be rewritten, the history-of-record property dissolves and trust falls.
 
-**Structural enforcement:** `appendLog(entry)` is the only public Tool whose `effects` array contains `{ kind: 'appended-log' }`. Internally, `appendLog` calls `dispatcher.appendLogEntry` (the privileged dispatcher API for log mutations, also covered by [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]); the dispatcher opens `log.md`, seeks to the end, writes the formatted entry, and closes. `writeDocument`, `moveDocument`, and `deleteDocument` explicitly reject `log.md` as a target. The combination — append-only semantic + single privileged write path — structurally protects the audit trail from any caller, including plugins and vault-local hooks.
+**Structural enforcement:** Two layers:
 
-**Counter-example:** A "log compaction" plugin decides log.md is too large and rewrites it with summarized entries. Violation. The right design: a separate archival tool that writes a frozen copy to `log-archive/YYYY-MM.md` and starts a fresh log.md — the original is never mutated in place.
+1. **`owns.path` capability for `dome.log`.** The shipped-default `.dome/config.yaml` grants `dome.log` an `owns.path: ["log.md"]` capability (per [[wiki/specs/capabilities]] §"owns.path"). Any other processor's PatchEffect touching `log.md` is rejected by the broker with `code: "capability-deny-owns-path"`.
+2. **The `dome.log.append-log` processor's `run()` body only emits append-shaped patches.** The patch's unified-diff payload always shows additions at end-of-file; the processor's idempotency contract (per [[wiki/specs/processors]] §"Idempotency") means re-running it against the same RunRecord input produces no patch (the row is already appended).
 
-**Test guarantee:** `tests/invariants/log-is-append-only.test.ts` — runs a representative ingest workflow, captures post-op log.md byte length, runs more operations, asserts post-op-N log.md starts with pre-op-N content unchanged. Asserts no Tool other than `appendLog` produces an `appended-log` effect.
+Together: no other processor can write `log.md` (capability fence); the authorized processor cannot rewrite existing content (append-only patch shape, enforced by the processor's structure and exercised by its test).
+
+**Counter-example:** A "log compaction" extension decides `log.md` is too large and wants to rewrite it with summarized entries. The extension's bundle manifest requests `owns.path: ["log.md"]`. The bundle loader rejects this grant at startup with `bundle-load-failure: capability-handler-collision` (`log.md` already owned by `dome.log`). The right design: a separate adoption-phase processor with `patch.auto: ["log-archive/**"]` capability that writes frozen rollups to `log-archive/YYYY-MM.md`; the original `log.md` is never mutated in place.
+
+**Test guarantee:** `tests/invariants/log-is-append-only.test.ts` — runs a representative ingest sequence through the engine, captures the post-run `log.md` byte length, runs more operations, asserts the post-op-N `log.md` byte-prefix matches the pre-op-N content unchanged. Also asserts that no Effect outside the `dome.log` bundle results in a `log.md` mutation (verified by enumerating `runs.db` rows with `output_commit` touching `log.md` and asserting `processor_id` starts with `dome.log:`).
 
 ## Why not just `git log`?
 
-A fair question: per-workflow auto-commit (see [[wiki/specs/hooks]] §"Commit policy") makes each Dome workflow produce one git commit, whose subject equals the corresponding `log.md` entry's `## [date] verb | subject` header. `git log` and `log.md` overlap substantially. Why keep both?
+A fair question: every engine commit carries the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]; `git log --grep="^Dome-Run:"` returns the engine history; the run ledger SQLite carries the enriched per-run data (cost, capability uses, error). Why also maintain `log.md`?
 
-Three jobs `log.md` does that `git log` cannot:
+Three jobs `log.md` does that `git log` (alone) cannot:
 
-- **Self-describing markdown.** The vault must be usable from the markdown alone. A user reading the vault in Obsidian, grepping with `rg`, browsing on GitHub's web UI, or unpacking a `tar` archive that excluded `.git/` still sees the operation history via `log.md`. `git log` requires the git tooling chain and a `.git/` directory; outside that environment it doesn't exist. This honors [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — the vault is canonical without auxiliary indexes.
+- **Self-describing markdown.** The vault must be usable from the markdown alone. A user reading the vault in Obsidian, grepping with `rg`, browsing on GitHub's web UI, or unpacking a `tar` archive that excluded `.git/` still sees the operation history via `log.md`. `git log` requires the git tooling chain and a `.git/` directory; outside that environment it doesn't exist. The `log.md` projection honors [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — the vault is canonical without auxiliary indexes or auxiliary tooling.
 
-- **Catches events that don't produce commits.** Hook failures (`hook-failed`), hook quarantine (`hook-disabled`), and any operation the user disabled `git.auto_commit_workflows: false` for, all flow to `log.md` via `appendLog`. They do not appear in `git log` (no commit fired). Without `log.md`, those events would have nowhere to land that survives the session.
+- **Catches events that don't produce git commits.** Failed processor runs, denied capability uses, quarantined processors, blocked proposals — all land as RunRecord rows in `runs.db`, and `dome.log.append-log` projects them into `log.md`. They do not appear in `git log` (no commit fired). Without `log.md`, those events would have nowhere to land that survives `runs.db` deletion.
 
-- **Catastrophic recovery surface.** If `.git/` corrupts, becomes stale relative to remotes, or the user accidentally `rm -rf .git/`, the operation history survives in `log.md`. The user can replay or audit Dome's recent activity from the markdown alone, then `git init` fresh against the vault content.
+- **Catastrophic recovery surface.** If `.git/` corrupts or the user accidentally `rm -rf .git/`, the operation history survives in `log.md` (which is part of the committed vault, so it's also in `.git/` — but the human-readable surface persists as a file the user can read even mid-recovery). Similarly, if `runs.db` is wiped, the `log.md` projection survives until the next `--repair` (which would re-project from the now-empty ledger).
 
-The cost is intentional duplication: two append-only operation logs (one for humans, one for git's content-history tooling). Per-workflow auto-commit keeps them aligned automatically; the user never maintains the alignment by hand. `log.md` is the *narrative* layer; `git log` is the *content-diff* layer. Both are useful; neither is sufficient alone.
+The cost is intentional duplication: the run ledger (the structured, queryable source) plus `log.md` (the human-readable, durable-in-markdown projection). `dome.log.append-log` keeps them aligned automatically; the user never maintains the alignment by hand. `log.md` is the *narrative* layer; the run ledger is the *structured-audit* layer; git trailers are the *durable-in-git* provenance layer. All three are useful; none is sufficient alone.
 
 **Related:**
-- [[wiki/specs/sdk-surface]] §"Tool catalog"
-- [[wiki/invariants/EVERY_WRITE_IS_LOGGED]]
-- [[wiki/matrices/tool-invariant-enforcement]]
+- [[wiki/specs/run-ledger]] — the structured audit source
+- [[wiki/specs/processors]] §"First-party processors" — the `dome.log` bundle
+- [[wiki/specs/capabilities]] §"owns.path"
+- [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]]
+- [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
+- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]
+- [[wiki/matrices/projection-table-x-owner]] — the per-path/table writer map
