@@ -8,6 +8,7 @@ import { domeExportContext } from "./commands/export-context";
 import { domeServe } from "./commands/serve";
 import { domeStats } from "./commands/stats";
 import { renderCliError } from "./render-error";
+import { openVault } from "../vault";
 
 // --------------------------------------------------------------------------
 // Exit codes
@@ -425,6 +426,77 @@ function buildProgram(outcome: RunOutcome): Command {
 }
 
 /**
+ * Scan argv for a global `--vault <path>` flag, returning the path if present
+ * and removing the two tokens. Used by `runCli` to surface bundle-contributed
+ * CLI commands before Commander parses argv — Commander needs the command set
+ * pre-registered, so this single pre-scan is the seam.
+ *
+ * Returns `{ vaultPath, rest }` where `rest` is argv with the two flag tokens
+ * removed. If `--vault` is not present, `vaultPath` is null and `rest === argv`.
+ */
+function extractVaultFlag(
+  argv: ReadonlyArray<string>,
+): { vaultPath: string | null; rest: ReadonlyArray<string> } {
+  const idx = argv.indexOf("--vault");
+  if (idx === -1 || idx + 1 >= argv.length) {
+    return { vaultPath: null, rest: argv };
+  }
+  const vaultPath = argv[idx + 1]!;
+  const rest = [...argv.slice(0, idx), ...argv.slice(idx + 2)];
+  return { vaultPath, rest };
+}
+
+interface BundleCliCommand {
+  name: string;
+  description: string;
+  action: (...args: unknown[]) => Promise<number> | number;
+}
+
+/**
+ * Open the vault at `vaultPath`, walk its loaded bundles' cliPaths, dynamically
+ * import each, and register the exported `command` object with the Commander
+ * program. Bundle CLI commands sit alongside the built-in `dome <verb>`
+ * commands — `runCli ["--vault", vault, "say-hi"]` resolves `say-hi` to the
+ * bundle's action.
+ *
+ * Errors are surfaced into `outcome.code` (Failure) so the CLI returns nonzero
+ * — matches the fail-loud posture for bundle load failures.
+ */
+async function registerBundleCliCommands(
+  program: Command,
+  vaultPath: string,
+  outcome: RunOutcome,
+): Promise<void> {
+  const vaultResult = await openVault(vaultPath);
+  if (!vaultResult.ok) {
+    console.error(renderCliError(vaultResult.error));
+    outcome.code = ExitCode.Failure;
+    return;
+  }
+  const vault = vaultResult.value;
+  try {
+    for (const bundle of vault.bundles) {
+      for (const cliPath of bundle.cliPaths) {
+        const mod = (await import(cliPath)) as { command?: BundleCliCommand };
+        if (mod.command === undefined) continue;
+        const cmd = mod.command;
+        program
+          .command(cmd.name)
+          .description(cmd.description)
+          .action(async (...args: unknown[]) => {
+            const exitCode = await cmd.action(...args);
+            if (typeof exitCode === "number" && exitCode !== 0) {
+              outcome.code = ExitCode.Failure;
+            }
+          });
+      }
+    }
+  } finally {
+    await vault.close();
+  }
+}
+
+/**
  * Execute the Dome CLI against `argv` (without the leading "dome" token).
  * Returns the exit code; the caller (bin/dome) is responsible for process.exit.
  */
@@ -432,10 +504,19 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<ExitCode> {
   const outcome: RunOutcome = { code: ExitCode.Success };
   const program = buildProgram(outcome);
 
+  // Pre-scan for `--vault <path>`. If present, open the vault and surface
+  // bundle CLI commands so Commander sees them before parseAsync. This is the
+  // entry-point seam for phase-0a-openvault-cli-register.
+  const { vaultPath, rest } = extractVaultFlag(argv);
+  if (vaultPath !== null) {
+    await registerBundleCliCommands(program, vaultPath, outcome);
+    if (outcome.code !== ExitCode.Success) return outcome.code;
+  }
+
   // Commander expects argv in `process.argv` shape (with two leading slots);
   // parseAsync from "user" treats argv[0] as the first user-supplied token.
   try {
-    await program.parseAsync([...argv], { from: "user" });
+    await program.parseAsync([...rest], { from: "user" });
   } catch (e) {
     if (e instanceof CommanderError) {
       // Commander signals --help and --version through CommanderError with
