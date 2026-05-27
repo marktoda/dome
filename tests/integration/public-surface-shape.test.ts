@@ -28,8 +28,23 @@ const REQUIRED_CORE_SYMBOLS: ReadonlyArray<string> = [
   "readDocument", "writeDocument", "appendLog", "searchIndex",
   "wikilinkResolve", "moveDocument", "deleteDocument",
   "HookRegistry", "HookDispatcher", "TOOL_NAMES", "MCP_TOOL_NAMES",
-  "MUTATING_TOOL_NAMES", "VaultWatcher", "reconcile",
+  "MUTATING_TOOL_NAMES", "VaultWatcher", "isDirtyGitState",
   "buildAbstractSurface",
+  // Phase 1+3 adoption substrate.
+  "sync", "getAdoptionStatus", "getAdoptedRef", "getCurrentBranch",
+  "adoptedRefName", "makeRunContext", "ENGINE_EXTENSION_ID", "ZERO_SHA",
+];
+
+// Symbols that used to be exported from @dome/sdk core and have been
+// pruned post-Phase-1+3. Keeps the structural-fence test as the canonical
+// signal that the rename / chokepoint move actually landed at the public
+// surface; if a future contributor restores any of these, this test fails.
+const RETIRED_CORE_SYMBOLS: ReadonlyArray<string> = [
+  // Replaced by `sync` per ADOPTED_REF_IS_SEMANTIC_CURSOR — reconcile
+  // remains callable via deep import from `src/reconcile.ts` but is no
+  // longer part of the public surface so it can't be invoked without
+  // advancing the adopted ref.
+  "reconcile", "ReconcileResult", "ReconcileOpts",
 ];
 
 describe("public surface shape — pruned symbols", () => {
@@ -49,5 +64,11 @@ describe("public surface shape — pruned symbols", () => {
     const exportedNames = new Set(Object.keys(core));
     const missing = REQUIRED_CORE_SYMBOLS.filter(s => !exportedNames.has(s));
     expect(missing).toEqual([]);
+  });
+
+  test("src/index.ts (core entrypoint) does not re-export retired symbols", () => {
+    const exportedNames = new Set(Object.keys(core));
+    const violations = RETIRED_CORE_SYMBOLS.filter(s => exportedNames.has(s));
+    expect(violations).toEqual([]);
   });
 });

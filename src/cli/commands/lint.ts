@@ -20,7 +20,7 @@ import type { CliError } from "../cli-error";
  *   per EVERY_WRITE_IS_LOGGED.
  *
  * Apply mode refuses to run if the vault is mid-merge/rebase/cherry-pick
- * (same guard as `dome reconcile` per wiki/gotchas/dirty-git-state-at-reconcile).
+ * (same guard as `dome sync` per wiki/gotchas/dirty-git-state-at-reconcile).
  * Empty ids are a CLI usage error — surfaced before any workflow dispatch.
  */
 export async function domeLint(

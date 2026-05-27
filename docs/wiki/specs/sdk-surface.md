@@ -29,8 +29,8 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 
 - `path: string`, `config: VaultConfig`, `pageTypes: PageTypesConfig` — readonly resolved-from-disk values.
 - `tools: BoundToolSurface` — the eight Tools curried with this Vault and the privileged writer. The canonical Tool entry point for in-process consumers; see §"Tool catalog" below.
-- `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far AND any in-flight quarantine persistence writes to settle. Tests, `dome reconcile`, and `vault.close()` call this to reach a deterministic state. Idempotent — re-callable without side effects.
-- `dispatchEvents(events: ReadonlyArray<HookEvent>): Promise<void>` — push the given events through the Vault's hook dispatcher. Used by `dome reconcile` (inbox scan, git-diff replay, scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive hook handlers without each subsystem having to assemble its own `ctxFactory`.
+- `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far AND any in-flight quarantine persistence writes to settle. Tests, `dome sync`, and `vault.close()` call this to reach a deterministic state. Idempotent — re-callable without side effects.
+- `dispatchEvents(events: ReadonlyArray<HookEvent>): Promise<void>` — push the given events through the Vault's hook dispatcher. Used by `dome sync` (inbox scan, git-diff replay, scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive hook handlers without each subsystem having to assemble its own `ctxFactory`.
 - `rebuildIndex(): Promise<void>` — regenerate `index.md` from scratch by walking every wiki page. Public SDK seam consulted by `dome doctor --rebuild-index` and any consumer that needs a from-scratch rebuild; consults the privileged writer internally rather than exposing it.
 - `close(): Promise<void>` — release the Vault. See §"Vault lifecycle" below for the full semantics.
 
@@ -60,7 +60,7 @@ openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
    └─→ close()        (one-shot; drains hooks then releases resources)
 ```
 
-**`drainHooks()`** is idempotent — re-callable any number of times. It awaits both `HookDispatcher.drain()` (the p-queue) AND `HookRegistry.flushPersist()` (the quarantine-write chain). Callers that need a deterministic post-hook state (tests, `dome reconcile`, the CLI's `--drain-hooks` flag) invoke it without coordinating with other callers.
+**`drainHooks()`** is idempotent — re-callable any number of times. It awaits both `HookDispatcher.drain()` (the p-queue) AND `HookRegistry.flushPersist()` (the quarantine-write chain). Callers that need a deterministic post-hook state (tests, `dome sync`, the CLI's `--drain-hooks` flag) invoke it without coordinating with other callers.
 
 **`close()`** is one-shot. Semantics: (a) call `drainHooks()` to settle outstanding work; (b) flip an internal `closed` flag so subsequent `vault.dispatchEvents(...)` calls become silent no-ops — the dispatcher accepts no new event work after close. `vault.tools.X` calls are NOT guarded in v0.5 (the Tool function still writes the file), but their hook-dispatch side-effects no-op via the closed flag, so post-close mutations are "silent": the file changes but `auto-update-index`, `auto-cross-reference`, and declarative-YAML hooks do not fire. The flag is the load-bearing v1+ seam for long-running mobile/desktop shells that open and re-open Vaults — calls that accidentally outlive the Vault's intended lifetime fail quietly rather than queueing events into a dispatcher whose handlers may have been freed. A stricter post-close guard on `vault.tools.X` is reserved for a future minor.
 
@@ -131,7 +131,7 @@ Documents are immutable values. Mutating a document means calling a Tool that pr
 
 A Tool is a typed function that operates on a Vault and one or more Documents. Every mutation *within Dome's own dispatcher / hook / workflow chain* flows through a Tool — Tools are the only legitimate path for internal mutation; see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] (axiom: hooks observe events and call Tools; they never write directly).
 
-Consumer shells (Claude Code's native `Write`, vim, Obsidian, the Dome mobile app once it ships) write to the vault filesystem directly. These external writes are *not* routed through Tools; the watcher catches them, fires `vault.out-of-band-edit`, hooks react, and `dome reconcile` catches up any events the daemon missed — see [[VISION]] §"Principles" #3 "Invariants are enforced two ways, by scope" and [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] for the integrity story for external writes.
+Consumer shells (Claude Code's native `Write`, vim, Obsidian, the Dome mobile app once it ships) write to the vault filesystem directly. These external writes are *not* routed through Tools; the watcher catches them, fires `vault.out-of-band-edit`, hooks react, and `dome sync` catches up any events the daemon missed — see [[VISION]] §"Principles" #3 "Invariants are enforced two ways, by scope" and [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] for the integrity story for external writes.
 
 Each Tool:
 
@@ -297,7 +297,7 @@ Events are derived from Effects automatically; there is no `fireEvent` API. See 
 
 `index.md` and `log.md` are dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. Public Tools reject these paths; the dispatcher provides a privileged internal API (`dispatcher.writeIndex`, `dispatcher.appendLogEntry`) that shipped-default hooks and the `appendLog` Tool call. The privileged API is not part of the registration mechanism — plugins cannot register their own dispatcher-owned paths, and plugin / vault-local hook handlers receive a `HookContext` without the `dispatcher` field.
 
-All three shipped defaults can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. When `intake-raw` is disabled (by removing the YAML or the `inbox/raw/` directory), quick-capture stops compiling automatically — captured files remain in `inbox/raw/` until the user runs `dome reconcile` or re-enables the hook. The Dome project's docs vault leaves all three enabled.
+All three shipped defaults can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. When `intake-raw` is disabled (by removing the YAML or the `inbox/raw/` directory), quick-capture stops compiling automatically — captured files remain in `inbox/raw/` until the user runs `dome sync` or re-enables the hook. The Dome project's docs vault leaves all three enabled.
 
 ## Registration
 
@@ -475,6 +475,45 @@ The bundle then optionally contributes to any of the five registration kinds:
 
 The Phase 1 `dailies` bundle is the canonical example: contributes `daily` and `weekly` page types, a preamble explaining Obsidian-Tasks-plugin-syntax conventions and the carry-forward semantic, two creator workflows + their schedule-driven hooks, and the `migrate-dailies` CLI command.
 
+## Adoption surface
+
+Per [[wiki/specs/adoption]], the SDK ships an adoption substrate in `@dome/sdk` core consisting of the `refs/dome/adopted/<branch>` ref, the `sync` adoption loop, the `getAdoptionStatus` accessor, and the `RunContext` factory consumed by `commitWorkflow`. The full normative spec is `adoption.md`; the public re-exports from `@dome/sdk` core are:
+
+```ts
+// from "@dome/sdk"
+export function sync(vault: Vault, opts?: { forceAdvance?: boolean }): Promise<Result<SyncResult, ToolError>>;
+export function getAdoptionStatus(vault: Vault): Promise<AdoptionStatus>;
+export function makeRunContext(opts: { extensionId: string; base: string; sourceHead: string }): RunContext;
+
+export function getAdoptedRef(vaultPath: string, branch?: string): Promise<string | null>;
+export function getCurrentBranch(vaultPath: string): Promise<string | null>; // null when HEAD is detached
+
+export type RunContext = { runId: string; extensionId: string; base: string; sourceHead: string };
+
+export type SyncResult = {
+  branch: string;
+  adoptedBefore: string | null;
+  adoptedAfter: string;
+  inboxProcessed: number;
+  changedFiles: number;
+  scheduledFired: number;
+  diverged: boolean;
+};
+
+export type AdoptionStatus = {
+  branch: string;
+  head: string;
+  adopted: string | null;
+  pendingCommits: number | null;
+  dirty: { modified: number; untracked: number };
+  diverged: boolean;
+};
+```
+
+The write side (`setAdoptedRef`) is **intentionally NOT exported** from `src/index.ts` — only the engine's own adoption loop advances the ref. Consumers that need to read the ref consume `getAdoptedRef`; consumers that need to advance it call `sync` (which performs the full adoption loop and the atomic advance as one operation).
+
+The relationship to existing `reconcile()`: `sync` is `reconcile` + atomic ref-advance. The pre-rewrite `reconcile()` is still exported for back-compat consumers (and the `dome reconcile` CLI's deprecated alias), but the spec recommends `sync` for new code.
+
 ## Consumer surfaces
 
 Every consumer shell that builds against Dome (the v0.5-shipped CLI and MCP server today; v1+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
@@ -573,7 +612,7 @@ This is the **anti-concept list**: things future contributors might be tempted t
   - `@dome/sdk` — **core**. Vault, Document, the eight Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `buildInstructions(vault)` + `PromptDescriptor` + `ResourceDescriptor`. (`buildInstructions(vault): Promise<string>` is the cold-start instructions composer the AbstractSurface threads through to its `instructions` field; it is also exported directly for consumers that need the composed string without the full surface — see [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle" and [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]].) No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
   - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@ai-sdk/anthropic`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
   - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `renderMcp(surface)`, `McpSurface` type, `ToolAdapter` / `McpPromptAdapter` / `ResourceAdapter` types, and the MCP-shaped request handlers. Bundled deps: `@modelcontextprotocol/sdk`. Consumes `AbstractSurface` from core.
-  - `@dome/sdk/cli` — **CLI shell**. `runCli`, the nine `dome*` command functions (`domeInit`, `domeMigrate`, `domeServe`, `domeReconcile`, `domeLint`, `domeStats`, `domeDoctor`, `domeRunHook`, `domeExportContext`), `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`) and from `@dome/sdk/mcp` for `dome serve`.
+  - `@dome/sdk/cli` — **CLI shell**. `runCli`, the eleven `dome*` command functions (`domeInit`, `domeMigrate`, `domeServe`, `domeStatus`, `domeSync`, `domeReconcile`, `domeLint`, `domeStats`, `domeDoctor`, `domeRunHook`, `domeExportContext`), `CliError`, `renderCliError`, `DoctorFlag`. `domeReconcile` is the deprecated alias for `domeSync` per [[wiki/specs/adoption]] §"Relationship to `dome reconcile`". The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`) and from `@dome/sdk/mcp` for `dome serve`.
 
   The split is wired via `package.json` `exports`. The boundary is structurally enforced by [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] + the regression test at `tests/integration/bundle-deps.test.ts`. See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer shell uses.
 
@@ -603,13 +642,15 @@ Bun built-ins used directly (no extra dependency): `Bun.write` (atomic file writ
 
 ### Derived operational state on disk
 
-The canonical inventory of derived operational state under `<vault>/.dome/state/` (gitignored, rebuildable, non-canonical) lives in [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`". As of v0.5: `last-reconciled-sha.txt`, `scheduled.json`, `quarantined.json`. Deleting any of them does not lose canonical knowledge — it just causes the next reconciliation pass or hook-dispatch cycle to do more work. The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
+The canonical inventory of derived operational state under `<vault>/.dome/state/` (gitignored, rebuildable, non-canonical) lives in [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`". As of v0.5+phase1+phase3: `last-reconcile-mtime.txt`, `scheduled.json`, `quarantined.json`. Deleting any of them does not lose canonical knowledge — it just causes the next sync pass or hook-dispatch cycle to do more work. The "have I compiled this revision" cursor itself is `refs/dome/adopted/<branch>` (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]) — a first-class git artifact living under `.git/refs/dome/adopted/`, not under `.dome/state/`. The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
 
 **Why no lockfile / in-flight tracking?** Earlier designs included `.dome/in-flight/<handler>-<event-id>.json` lockfiles for crash recovery. They're not needed: with per-workflow atomic commits (see §"Commit policy" below), idempotency contract on hooks (see [[wiki/specs/hooks]]), and `scheduled.json` for scheduled-event catchup, every hook-crash recovery case is covered by `git status` + `git diff` + `scheduled.json`. Adding lockfiles is overhead without solving a real problem.
 
 ### Commit policy
 
-Dome workflows commit at completion (per-workflow atomic commit). See [[wiki/specs/hooks]] §"Commit policy" for the full mechanism. The short version: each workflow accumulates Effects in memory; applies them atomically; writes the log.md entry; runs `git add <touched-paths>` then `git commit -m "<log-subject>"`. Hooks (which run as their own workflows) commit independently.
+Dome workflows commit at completion (per-workflow atomic commit). See [[wiki/specs/hooks]] §"Commit policy" for the full mechanism. The short version: each workflow accumulates Effects in memory; applies them atomically; writes the log.md entry; runs `git add <touched-paths>` then `git commit -m "<log-subject>\n\n<body-with-trailers>"`. Hooks (which run as their own workflows) commit independently.
+
+Per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]], every engine commit carries four trailers in the message body: `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head`. The `commitWorkflow` helper requires a `runContext: RunContext` parameter and refuses (throws) without it — the structural fence. The pre-phase1+phase3 `commitWorkflow(vault, { verb, subject, body?, touchedPaths, author? })` signature is replaced by `commitWorkflow(vault, { verb, subject, body?, touchedPaths, runContext, author? })`. Callers build the `RunContext` via `makeRunContext({ extensionId, base, sourceHead })` (see §"Adoption surface" above).
 
 User out-of-band edits remain uncommitted unless the user explicitly commits. Reconciliation handles both via `git diff` (committed) + `git status --porcelain` (uncommitted).
 
@@ -621,7 +662,7 @@ Three principles guide every design decision in this spec:
 
 **Four concepts, not more.** Every concept in the core is a thing future contributors must understand to make a correct change. Fewer concepts → less context required → safer changes. The anti-concept list above is the structural defense against scope creep — workflows, agents, events, plugins, intakes all *feel* like primitives, but adding them as concepts would mean every contributor must learn five extra things to make a one-line change.
 
-**Invariants are enforced two ways, by scope.** A second brain that silently writes wrong claims corrupts the user's thinking. Per [[VISION]] §"Principles" #3, invariants are enforced two ways, by scope. *Internally* — within Dome's own dispatcher / hook / workflow chain — every mutation flows through a Tool, and the Tool enforces invariants at the moment of the call. Hooks observe events and call Tools; hooks cannot mutate directly (axiom: [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]]). *Externally* — across the consumer-shell boundary — invariants are reconciled rather than gated. Consumer shells (Claude Code's native `Write`, vim, Obsidian, future mobile/desktop apps) write to the vault filesystem directly; the watcher catches those writes, `dome reconcile` catches up any events the daemon missed, and hooks reconcile to the same end state (axiom: [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]]). The internal path is gateway-shaped; the external path is compiler-shaped. Both converge on a vault that's structurally consistent.
+**Invariants are enforced two ways, by scope.** A second brain that silently writes wrong claims corrupts the user's thinking. Per [[VISION]] §"Principles" #3, invariants are enforced two ways, by scope. *Internally* — within Dome's own dispatcher / hook / workflow chain — every mutation flows through a Tool, and the Tool enforces invariants at the moment of the call. Hooks observe events and call Tools; hooks cannot mutate directly (axiom: [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]]). *Externally* — across the consumer-shell boundary — invariants are reconciled rather than gated. Consumer shells (Claude Code's native `Write`, vim, Obsidian, future mobile/desktop apps) write to the vault filesystem directly; the watcher catches those writes, `dome sync` catches up any events the daemon missed, and hooks reconcile to the same end state (axiom: [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]]). The internal path is gateway-shaped; the external path is compiler-shaped. Both converge on a vault that's structurally consistent.
 
 **Prompts are the contract.** Dome's behavior is encoded in *prompts* (markdown files), not in TypeScript code. Tools are mechanical (small, content-agnostic operations); the LLM, instructed by prompts, decides what to do with content. Behavior changes happen by editing prompts in `prompts/` (SDK default) or `<vault>/.dome/prompts/` (vault override), not by writing or modifying Tools. This is what makes Dome both *understandable* (prompts are user-readable) and *tunable* (prompts evolve at the speed of language, not at the speed of releases). The original LLM Wiki gist (line 50 of `raw/original-architecture.md`) names this: "the core product is the workflow encoded in prompts."
 

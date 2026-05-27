@@ -82,7 +82,7 @@ The YAML schema is validated by `DeclarativeHookSchema` in `src/hooks/yaml-loade
 
 A `schedule:` field carries a 5-field cron expression (`<minute> <hour> <dom> <month> <dow>`) validated at load time. When present, the hook fires on the cron schedule *in addition to* whatever `event:` it declares; an event-only hook fires only on event matches, a schedule-only hook fires only on the cron schedule, and a hook with both fires on either trigger. The per-vault scheduler in `wireDispatcher` consults `.dome/state/scheduled.json` (extended to track per-hook last-fire times under `scheduled.json.hooks[<hook-id>]` alongside the pre-existing fixed-cadence tick times under `scheduled.json.ticks[<interval>]`) and synthesizes `clock.tick.<hook-id>` events when each schedule-driven hook's interval elapses. This is distinct from the pre-existing fixed-cadence taxonomy where `clock.tick.<minutely|hourly|daily|weekly>` fires at the named cadence and any number of hooks may subscribe via `event: clock.tick.<interval>`; schedule-driven `clock.tick.<hook-id>` events name the specific hook by ID and fire only its handler.
 
-The catch-up semantic is **at most one fire per `dome reconcile` run, regardless of how many intervals elapsed.** A hook with `schedule: "0 6 * * *"` that missed three days fires exactly once on the next reconcile — not three times. See [[wiki/gotchas/scheduled-hook-idempotency]] for the full contract and the rationale for the at-most-once clamp.
+The catch-up semantic is **at most one fire per `dome sync` run, regardless of how many intervals elapsed.** A hook with `schedule: "0 6 * * *"` that missed three days fires exactly once on the next sync — not three times. See [[wiki/gotchas/scheduled-hook-idempotency]] for the full contract and the rationale for the at-most-once clamp.
 
 Schedule-only hooks default `event:` omission. The YAML loader accepts a YAML without an `event:` field only when `schedule:` is present; otherwise `event:` is required.
 
@@ -120,7 +120,7 @@ The dispatcher reads the YAML on `openVault`; the `wrote-document` effect's proj
 
 1. The YAML file itself (`schedule:` is required; `event:` is optional — omit it for a schedule-only hook, include it for a hook that fires on both triggers; `workflow:` and optional `async:` / `idempotent:`).
 
-The per-vault scheduler reads the schedule on `openVault`, persists last-fire times in `.dome/state/scheduled.json`, and synthesizes `clock.tick.<hook-id>` events when intervals elapse — both at live `dome serve` runtime and during `dome reconcile` Phase 3 (clamped to at most one fire per reconcile run; see [[wiki/gotchas/scheduled-hook-idempotency]]). The Phase 1 `dailies` bundle's `create-daily.yaml` is the canonical example (`schedule: "0 6 * * *"`).
+The per-vault scheduler reads the schedule on `openVault`, persists last-fire times in `.dome/state/scheduled.json`, and synthesizes `clock.tick.<hook-id>` events when intervals elapse — both at live `dome serve` runtime and during `dome sync` Phase 3 (clamped to at most one fire per sync run; see [[wiki/gotchas/scheduled-hook-idempotency]]). The Phase 1 `dailies` bundle's `create-daily.yaml` is the canonical example (`schedule: "0 6 * * *"`).
 
 **Programmatic form (v0.5.1+).** New TS at `<vault>/.dome/hooks/<name>.ts` exporting a `RegisteredHook`. v0.5 ships the source partition in code (`HookSource = "sdk" | "plugin" | "vault-local"`) and the dispatcher partitions `HookContext.privilegedWriter` accordingly; the loader path that picks up vault-local `.ts` hooks ships in v0.5.1. Until then, programmatic hooks ship only as shipped-default SDK hooks under `src/hooks/<name>.ts` exported from `@dome/sdk` core.
 
@@ -205,7 +205,7 @@ See [[wiki/specs/cli]] §"`dome lint`" for the full propose/apply contract.
 
 - **Async by default.** When a Tool returns its Effects, the Hook dispatcher enqueues matching events to a background queue and the Tool returns to its caller immediately.
 - **Manual invocation.** The `dome run-hook <id>` CLI command synthesizes a `hook.manual.invoked` event with the named hook's ID in the payload, dispatched as if it had fired naturally. The dispatcher matches the event against the hook by ID and runs the handler. Useful for backfill, dogfood, and integration testing — see [[wiki/specs/cli]] §"`dome run-hook`".
-- **Schedule-driven invocation.** Hooks with a `schedule:` field fire on cron intervals via a per-vault scheduler in `wireDispatcher`. The scheduler reads `.dome/state/scheduled.json` for each schedule-driven hook's last-fire time, fires when the next interval is due (at live `dome serve` runtime) or on the next `dome reconcile` Phase 3 (catch-up, clamped to at most one fire per reconcile per hook). The scheduler synthesizes `clock.tick.<hook-id>` events; the hook's handler matches by ID. See [[wiki/gotchas/scheduled-hook-idempotency]] for the catch-up contract.
+- **Schedule-driven invocation.** Hooks with a `schedule:` field fire on cron intervals via a per-vault scheduler in `wireDispatcher`. The scheduler reads `.dome/state/scheduled.json` for each schedule-driven hook's last-fire time, fires when the next interval is due (at live `dome serve` runtime) or on the next `dome sync` Phase 3 (catch-up, clamped to at most one fire per sync per hook). The scheduler synthesizes `clock.tick.<hook-id>` events; the hook's handler matches by ID. See [[wiki/gotchas/scheduled-hook-idempotency]] for the catch-up contract.
 - **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a frontmatter-shape validator that gates whether the write proceeds, or any future hook with a hard pre-write contract.
 - **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap for long-running shells that survive process death.
 - **Queue concurrency.** v0.5 ships with `asyncConcurrency: 1` (serialized hook execution per Vault). The setting is plumbed as a `HookDispatcherOpts.asyncConcurrency` field with default `1`. Serialization is the v0.5 default because per-vault hook handlers may share state through `.dome/state/`, write through the privileged-writer in append-only patterns, and read-after-write ordering of `auto-update-index` matters for `dome doctor` checks. v1 mobile/desktop shells with many concurrent inbox events may bump the knob; the default stays serialized because the in-process queue is intentionally low-concurrency and the per-(handler, target) repetition check is per-job, not per-queue.
@@ -231,10 +231,10 @@ Hooks are **durable** (crash-safe) and **at-least-once guaranteed** (every event
 The durability story rests on three observations:
 
 1. **The vault is canonical.** Filesystem state under `wiki/`, `raw/`, `inbox/`, etc. is the source of truth (per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]). Any "did this hook fire?" question can be answered by comparing current state to a reconciliation checkpoint.
-2. **Git tracks every content change.** `git diff --name-only <last-reconciled-sha> HEAD` + `git status --porcelain` together give us every file that changed since the last successful reconciliation. No custom hash-cache needed; no per-hook lockfiles needed.
+2. **Git tracks every content change.** `git diff --name-only refs/dome/adopted/<branch> HEAD` + `git status --porcelain` together give us every file that changed since the last successful sync. The cursor is the adopted ref (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]); no custom hash-cache needed; no per-hook lockfiles needed.
 3. **Inbox files signal pending work.** Per [[wiki/invariants/INBOX_IS_EPHEMERAL]], intake hooks MUST move/delete inbox files on completion. A file's presence in `inbox/<bucket>/` IS the "this is pending" signal.
 
-These three signals are the inputs to `dome reconcile`. No event log is parsed; no log.md scanning; no separate event store; no per-hook lockfiles.
+These three signals are the inputs to `dome sync` (and its deprecated alias `dome reconcile`). No event log is parsed; no log.md scanning; no separate event store; no per-hook lockfiles.
 
 ### Crash recovery without lockfiles
 
@@ -242,7 +242,7 @@ Per-workflow atomic commits (see §"Commit policy" below) combined with the idem
 
 | Crash scenario | Recovery |
 |---|---|
-| Workflow committed, hook hasn't fired yet, process died | `git diff <last-sha> HEAD` shows the workflow's commit; reconcile fires the event; hook runs |
+| Workflow committed, hook hasn't fired yet, process died | `git diff refs/dome/adopted/<branch>..HEAD` shows the workflow's commit; sync fires the event; hook runs |
 | Workflow committed, hook started but applied no effects, crashed | Same as above — reconcile re-fires from git diff; hook runs from scratch (idempotent) |
 | Workflow committed, hook applied partial effects, didn't commit, crashed | `git status` shows uncommitted partial work. User resolves (`git commit` if intentional; `git reset --hard HEAD` if broken). Reconcile then re-fires; idempotent hook re-runs cleanly. |
 | Workflow committed, hook completed and committed, then crashed | Already complete; no diff visible to reconcile. |
@@ -253,7 +253,7 @@ Every case is covered. Lockfiles would add complexity without solving a real pro
 
 ### The three reconciliation phases
 
-`dome reconcile` (invoked manually or automatically at `dome serve` startup) runs three phases:
+`dome sync` (invoked manually, automatically at `dome serve` startup, or via the deprecated `dome reconcile` alias) runs three phases inside the broader adoption state machine (per [[wiki/specs/adoption]] §"The adoption state machine"):
 
 ```
 Phase 1 — Inbox processing:
@@ -263,13 +263,14 @@ Phase 1 — Inbox processing:
   inbox/ ends empty when phase 1 completes successfully
 
 Phase 2 — Git diff:
-  read .dome/state/last-reconciled-sha.txt
+  read refs/dome/adopted/<branch>  (per ADOPTED_REF_IS_SEMANTIC_CURSOR)
   changed_files = git.statusMatrix(...)  # via isomorphic-git: uncommitted + staged
-                  + git diff --name-only <last_sha> HEAD  # committed since last reconcile
+                  + git diff --name-only <adopted-sha> HEAD  # committed since adoption
   for each changed file in wiki/<type>/, raw/, etc.:
     fire document.written.<category>.<type> (or .deleted, .moved as appropriate)
     (auto-update-index, auto-cross-reference, etc. respond)
-  write .dome/state/last-reconciled-sha.txt = current HEAD sha
+  # The adopted ref advances at the final adopt step of the adoption state
+  # machine (after drainHooks), not inside Phase 2.
 
 Phase 3 — Scheduled catch-up:
   read .dome/state/scheduled.json
@@ -288,7 +289,7 @@ Phase 3 — Scheduled catch-up:
 
 ### Dirty git state refusal
 
-`dome reconcile` refuses to run when the vault is mid-merge, mid-rebase, or mid-cherry-pick. See [[wiki/gotchas/dirty-git-state-at-reconcile]] for the detection criteria and the recovery flow.
+`dome sync` (and its deprecated alias `dome reconcile`) refuses to run when the vault is mid-merge, mid-rebase, or mid-cherry-pick. See [[wiki/gotchas/dirty-git-state-at-reconcile]] for the detection criteria and the recovery flow. The sibling diagnostic — adopted ref divergence — refuses on a separate axis; see [[wiki/gotchas/adopted-ref-divergence]] for the divergence-and-recovery flow.
 
 ### The idempotency contract
 
@@ -319,14 +320,16 @@ For human readability, the dispatcher also appends `hook-started`, `hook-complet
 
 ### Derived operational state
 
-Two files under `.dome/` are derived operational state, not canonical knowledge:
+One file under `.dome/` is derived operational state, not canonical knowledge:
 
 | Path | Purpose | If deleted, what happens |
 |---|---|---|
-| `.dome/state/last-reconciled-sha.txt` | Last reconciliation HEAD SHA | Next reconcile treats every file as changed (fires events for the whole vault once); idempotent so safe |
-| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
+| `.dome/state/last-reconcile-mtime.txt` | Mtime marker for `dome doctor --time-since-reconcile`; touched on every `dome sync` regardless of whether anything changed | Next `dome doctor --time-since-reconcile` reports "never" |
+| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next sync fires every scheduled hook once |
 
 Both are gitignored — they're per-machine operational state and shouldn't sync across devices. The `.gitignore` shipped by `dome init` excludes them.
+
+The canonical "have I compiled this revision" cursor is `refs/dome/adopted/<branch>` (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]) — a first-class git artifact, not a `.dome/state/` file. The pre-phase1+phase3 substrate carried `.dome/state/last-reconciled-sha.txt` in this role; it has been retired in favor of the ref. Existing v0.5 vaults' `last-reconciled-sha.txt` files are tolerated (read for the `dome doctor --time-since-reconcile` fallback) but no longer read for cursor purposes — see [[wiki/specs/adoption]] §"Migration from v0.5".
 
 ### Commit policy
 
@@ -335,12 +338,12 @@ Workflows commit at completion (per-workflow atomic commit). The mechanism:
 1. **Workflow accumulates Effects in memory.** Each Tool call within the workflow appends to an in-memory effect list; no on-disk changes yet.
 2. **At workflow completion**, the Effect list is applied to disk in one atomic batch: all writes happen via `writeDocument` / `moveDocument` / `deleteDocument` / `appendLog` against the filesystem.
 3. **The workflow writes its `log.md` entry** via `appendLog` as part of the batch.
-4. **The workflow commits**: `git add <paths-touched-by-workflow>` (selective, not `git add -A`); `git commit -m "<verb>: <subject>"`; commit body = log entry body. The commit message subject and the log.md entry's `## [date] verb | subject` line are byte-identical (modulo prefix conventions).
-5. **On failure during steps 2-4**: `git reset --hard HEAD` rolls back working-tree changes; no commit is made; reconciliation will re-fire the originating event on next run.
+4. **The workflow commits**: `git add <paths-touched-by-workflow>` (selective, not `git add -A`); `git commit -m "<verb>: <subject>\n\n<body>\n\n<trailers>"`. The commit message subject and the log.md entry's `## [date] verb | subject` line are byte-identical (modulo prefix conventions). The commit message body carries four trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]: `Dome-Run: <run-id>`, `Dome-Extension: <workflow-name>`, `Dome-Base: <adopted-sha-at-run-start>`, `Dome-Source-Head: <head-sha-at-run-start>`. The trailers are added by `commitWorkflow`, which requires a `runContext: { runId, extensionId, base, sourceHead }` parameter — the structural fence against trailer-less engine commits.
+5. **On failure during steps 2-4**: `git reset --hard HEAD` rolls back working-tree changes; no commit is made; the next `dome sync` will re-fire the originating event.
 
 Hooks run as their own workflows. The `auto-cross-reference` hook that writes backlinks across N pages commits all N writes + its log entry as ONE commit. The git history shows one commit per logical operation, not one per file write.
 
-User out-of-band edits remain uncommitted unless the user explicitly commits. Reconciliation handles both committed (`git diff`) and uncommitted (`git status`) state.
+User out-of-band edits remain uncommitted unless the user explicitly commits. When the user does commit out-of-band, the resulting commit does **not** carry the four Dome-* trailers — that's the structural difference between engine commits and user commits. `git log --grep="^Dome-Run:"` filters to engine history; `git log --invert-grep --grep="^Dome-Run:"` filters to user history. The next `dome sync` handles both committed (`git diff refs/dome/adopted/<branch>..HEAD`) and uncommitted (`git status`) state.
 
 **Configuration override**: `.dome/config.yaml` `git.auto_commit_workflows: false` disables per-workflow auto-commit. Reconciliation still works (uses `git status` for everything). Useful for users who want full manual commit control.
 
@@ -354,13 +357,13 @@ Specifically, hook-lifecycle events that don't map to a workflow commit (`hook-f
 
 | Property | log.md as event source | State-based (this) |
 |---|---|---|
-| Source for "did X fire?" | Parse log.md | git diff + inbox files |
+| Source for "did X fire?" | Parse log.md | git diff (`adopted..HEAD`) + inbox files |
 | Bootstrap cost | Parse entire log.md | Walk vault state (bounded by # files, not # operations) |
 | log.md role | Audit + execution state (mixed) | Audit only |
 | Honors MARKDOWN_IS_SOURCE_OF_TRUTH | Mixed — log.md becomes load-bearing | Clean — `.dome/state/*` is derived; vault is canonical |
-| Reuses existing infra | No (custom log parsing) | Yes (git, already required by [[wiki/invariants/VAULT_IS_GIT_REPO]]) |
+| Reuses existing infra | No (custom log parsing) | Yes (git, already required by [[wiki/invariants/VAULT_IS_GIT_REPO]]); adopted ref pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] |
 | Out-of-band edit detection | Needs separate tracking | Native (`git status` / `git diff`) |
-| Crash recovery | log.md `hook-started` w/o matching `hook-completed` | Per-workflow atomic commits + idempotency contract make recovery filesystem-derivable |
+| Crash recovery | log.md `hook-started` w/o matching `hook-completed` | Per-workflow atomic commits (with Dome-* trailers) + idempotency contract make recovery filesystem-derivable |
 
 State-based wins on every axis except "everything in one file," which isn't a property anyone needs.
 

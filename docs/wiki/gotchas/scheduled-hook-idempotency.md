@@ -11,9 +11,9 @@ first_observed: 2026-05-26
 
 # Scheduled hook idempotency
 
-**Symptom:** A declarative hook with `schedule: "0 6 * * *"` (fire daily at 6am) creates today's daily note. The user is offline / `dome serve` is off for three days, then runs `dome reconcile`. Without thinking, they declare the hook `idempotent: true`. Reconcile's Phase 3 fires the hook *three times* (once per missed interval), and the user lands with three calls to `create-daily` for the same target. Either the hook duplicates effects (three identical creates → conflict on existing-file detection if writeDocument is loose; three appended sections if writeDocument is loose; etc.), OR the hook's "is today already created?" guard inside the workflow catches it and the cost is just three wasted LLM calls.
+**Symptom:** A declarative hook with `schedule: "0 6 * * *"` (fire daily at 6am) creates today's daily note. The user is offline / `dome serve` is off for three days, then runs `dome sync`. Without thinking, they declare the hook `idempotent: true`. Reconcile's Phase 3 fires the hook *three times* (once per missed interval), and the user lands with three calls to `create-daily` for the same target. Either the hook duplicates effects (three identical creates → conflict on existing-file detection if writeDocument is loose; three appended sections if writeDocument is loose; etc.), OR the hook's "is today already created?" guard inside the workflow catches it and the cost is just three wasted LLM calls.
 
-The mirror failure: the user declares `idempotent: false` and runs `dome reconcile`. Phase 3 SKIPS the hook on reconcile per the hooks-spec contract — so the three missed daily creates *never* happen, and the user wakes up to a vault missing three days of daily notes that the schedule was supposed to produce.
+The mirror failure: the user declares `idempotent: false` and runs `dome sync`. Phase 3 SKIPS the hook on reconcile per the hooks-spec contract — so the three missed daily creates *never* happen, and the user wakes up to a vault missing three days of daily notes that the schedule was supposed to produce.
 
 **Root cause:** Scheduled hooks (declarative YAML with a `schedule:` field) interact with the existing idempotency contract in a way that's load-bearing but counterintuitive. The contract was designed for *event-reactive* hooks where the event itself is a fact ("`document.written.wiki.entity` fired; the file is on disk now"). For scheduled hooks the event is a *cadence intent* ("the 6am-daily clock tick was supposed to fire at some point in this window"). Reconcile's Phase 3 fires `clock.tick.<schedule-id>` for every elapsed interval since the last recorded fire — three days offline = three ticks fired.
 
@@ -23,7 +23,7 @@ The `idempotent: true` declaration triggers reconcile-time re-fire; `idempotent:
 
 **Structural mitigation:** Three parts:
 
-1. **Default catch-up is clamped.** `dome reconcile` Phase 3 fires each scheduled hook **at most once per reconcile run, regardless of how many intervals elapsed.** A daily-schedule hook off for three days fires once on the next reconcile. This is the v0.5 default; the scheduled-hook contract documents the semantic explicitly so authors don't expect three fires.
+1. **Default catch-up is clamped.** `dome sync` Phase 3 fires each scheduled hook **at most once per reconcile run, regardless of how many intervals elapsed.** A daily-schedule hook off for three days fires once on the next reconcile. This is the v0.5 default; the scheduled-hook contract documents the semantic explicitly so authors don't expect three fires.
 
 2. **The `idempotent:` declaration on scheduled hooks means something narrower than for event-reactive hooks.** For a scheduled hook, `idempotent: true` means "safe to re-fire if reconcile catch-up runs; my workflow guards against duplicate effects internally." `idempotent: false` means "skip me on reconcile catch-up entirely; only fire from a live clock tick when `dome serve` is running." The scheduled-hook section of `hooks.md` documents this distinction.
 

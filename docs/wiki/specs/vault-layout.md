@@ -40,7 +40,7 @@ A Dome vault is a directory containing:
     cli/                # vault-local CLI command additions (rarely used)
     extensions/         # extension bundles (per wiki/specs/sdk-surface §"Extension bundles")
       <bundle-name>/    # each bundle: manifest.yaml + any of page-types.yaml, preamble.md, workflows/, hooks/, cli/, tools/
-    state/              # derived: scheduled.json, last-reconciled-sha.txt, quarantined.json (gitignored)
+    state/              # derived: scheduled.json, last-reconcile-mtime.txt, quarantined.json (gitignored)
   .git/                 # git repository (axiom: every Dome vault is a git repo)
   .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
@@ -56,17 +56,19 @@ What gets committed to git:
 - `VISION.md`, `README.md`, `index.md`, `log.md` — committed.
 - `raw/`, `notes/`, `wiki/`, `inbox/` — all committed. Reconciliation works against committed AND uncommitted state.
 - `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/extensions/` — committed (these are the vault's identity, including which extension bundles the vault has installed).
-- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconciled-sha.txt`, `scheduled.json`, `quarantined.json`).
+- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconcile-mtime.txt`, `scheduled.json`, `quarantined.json`).
 
 ### Derived operational state under `.dome/`
 
 | Path | Role | If deleted |
 |---|---|---|
-| `.dome/state/last-reconciled-sha.txt` | The SHA at which the last `dome reconcile` completed | Next reconcile treats every file as changed; idempotent so safe |
-| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
+| `.dome/state/last-reconcile-mtime.txt` | Mtime marker for `dome doctor --time-since-reconcile`; touched on every `dome sync` regardless of whether anything changed | Next `dome doctor --time-since-reconcile` reports "never" |
+| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next sync fires every scheduled hook once |
 | `.dome/state/quarantined.json` | Hook handler quarantine list (handler IDs with three consecutive failures, per [[wiki/specs/hooks]] §"Execution model") | Quarantined handlers re-enter rotation at next process start; idempotent so safe |
 
-All three files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation or hook-dispatch cycle to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
+All three files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next sync or hook-dispatch cycle to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
+
+The canonical "have I compiled this revision" cursor is `refs/dome/adopted/<branch>` (per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]]) — a first-class git artifact living under `.git/refs/dome/adopted/`, not under `.dome/state/`. The pre-phase1+phase3 substrate carried `.dome/state/last-reconciled-sha.txt` in this role; it has been retired in favor of the ref. Existing v0.5 vaults' `last-reconciled-sha.txt` files are tolerated (read for the `dome doctor --time-since-reconcile` fallback when `last-reconcile-mtime.txt` is absent) but no longer carry the cursor role — see [[wiki/specs/adoption]] §"Migration from v0.5".
 
 (Plugins that need their own caches create their own subdirectories under `.dome/<plugin-name>/cache/` and gitignore them in the vault's `.gitignore`. The SDK base ships no `.dome/cache/` directory.)
 

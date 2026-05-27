@@ -54,6 +54,14 @@ Not a column above because no Tool refuses an invariant-violating call for it; t
 
 Not a column above because no Tool refuses an invariant-violating call for it; the boundary is the projection-construction layer (`bindTools` / `bindAiSdkTools` / future `renderHttp` / `renderVoice`), not the call site. Enforcement lives in two integration tests: `tests/integration/mcp-hook-dispatch.test.ts` (asserts a `writeDocument` via the MCP-rendered surface triggers `auto-update-index`) and `tests/integration/ai-sdk-hook-dispatch.test.ts` (asserts the same via `projectAiSdk(vault)`). The structural fence is the single-source helper `wrapMutatingInvoke(vault, entry, writer)` in `src/tools/registry.ts`: every projection consumes the helper rather than inlining the dispatch loop. A future projection that re-implements the wrap inline produces hook-dispatch behavior that drifts from the canonical helper's; the parallel integration test the future projection should ship catches the drift. See [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] for the rationale.
 
+### `ADOPTED_REF_IS_SEMANTIC_CURSOR` — adoption-enforced (off-matrix)
+
+Not a column above because no Tool refuses an invariant-violating call for it; the boundary is `src/adoption.ts`'s `setAdoptedRef` step (the single chokepoint for advancing the ref). Fast-forward-only by default: refuses if the new sha is not a descendant of the current ref value; the `forceAdvance: true` opt-out surfaces through `dome sync --force-advance`. Enforcement lives in `tests/integration/sync-advances-adopted-ref.test.ts` (asserts the three canonical cases: fresh-init, fast-forward, divergence-refuse + force-advance). The structural fence is that `setAdoptedRef` is not re-exported from `src/index.ts` — consumers reach the ref only via `getAdoptedRef` (read) and `sync` (which performs the advance as part of the full adoption loop). See [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] for the rationale.
+
+### `ENGINE_COMMITS_CARRY_DOME_TRAILERS` — commit-enforced (off-matrix)
+
+Not a column above because no Tool refuses an invariant-violating call for it; the boundary is `src/workflow-commit.ts`'s `commitWorkflow` — the single chokepoint for engine commits. The function requires a `runContext: { runId, extensionId, base, sourceHead }` parameter and refuses (throws) if the parameter is absent, producing the four-trailer message body via `Dome-Run: <runId>\nDome-Extension: <extensionId>\nDome-Base: <base>\nDome-Source-Head: <sourceHead>` after a blank separator from the body. Enforcement lives in `tests/integration/workflow-atomic-commit.test.ts` (asserts `git interpret-trailers --parse` extracts the four keys with the expected value shape). See [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] for the rationale.
+
 ## Reading the matrix
 
 - The axiom invariants are enforced unconditionally — the Tool refuses violations regardless of vault config.
@@ -70,7 +78,7 @@ Three sibling matrices remain **documentary** in v0.5 (not lockstep-checked): [[
 
 ## Test guarantees
 
-Each bolded enforcement cell maps to a test in `tests/invariants/<INVARIANT>.test.ts`. Off-matrix invariants (`VAULT_IS_GIT_REPO`, `INBOX_IS_EPHEMERAL`, `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, `HOOK_DISPATCH_IS_VAULT_BOUND`) carry their structural-enforcement tests at the boundaries named in the off-matrix sections above; the AC3 invariant-coverage lockstep test accepts those named tests as the lockstep counterpart and rejects no-op stubs per the convention in [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention".
+Each bolded enforcement cell maps to a test in `tests/invariants/<INVARIANT>.test.ts`. Off-matrix invariants (`VAULT_IS_GIT_REPO`, `INBOX_IS_EPHEMERAL`, `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, `HOOK_DISPATCH_IS_VAULT_BOUND`, `ADOPTED_REF_IS_SEMANTIC_CURSOR`, `ENGINE_COMMITS_CARRY_DOME_TRAILERS`) carry their structural-enforcement tests at the boundaries named in the off-matrix sections above; the AC3 invariant-coverage lockstep test accepts those named tests as the lockstep counterpart and rejects no-op stubs per the convention in [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention".
 
 - `RAW_IS_IMMUTABLE` — tests for `writeDocument`, `moveDocument`, and `deleteDocument` (refuses raw/ targets unconditionally).
 - `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` — tests for `writeDocument`, `moveDocument`, `deleteDocument` (refuses `index.md` and `log.md` unconditionally with `kind: 'dispatcher-owned-path'`); asserts `HookContext.dispatcher` is `undefined` for plugin / vault-local handlers and defined for shipped-default handlers.

@@ -15,6 +15,9 @@ import { commitWorkflow } from "../workflow-commit";
 import { MUTATING_TOOL_NAMES } from "../tools/registry";
 import { filterAiTools } from "../tools/ai-sdk-binding";
 import { projectAiSdk } from "./project-ai-sdk";
+import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
+import { makeRunContext, ZERO_SHA } from "../run-context";
+import { currentSha } from "../git";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";
 export const DEFAULT_MAX_STEPS = 50;
@@ -86,6 +89,15 @@ export async function runWorkflow(
 
   const prompt = userMessage.length > 0 ? userMessage : "Begin.";
 
+  // Snapshot the run's source state BEFORE generateText runs so the
+  // commitWorkflow trailers reflect the inputs the run reacted to, not the
+  // post-commit state. Per ENGINE_COMMITS_CARRY_DOME_TRAILERS:
+  //   - Dome-Base    = adopted ref at run start (ZERO_SHA when uninitialized)
+  //   - Dome-Source-Head = HEAD at run start (the commit the run is reacting to)
+  const branch = await getCurrentBranch(vault.path);
+  const base = (branch !== null ? await getAdoptedRef(vault.path, branch) : null) ?? ZERO_SHA;
+  const sourceHead = (await currentSha(vault.path)) ?? ZERO_SHA;
+
   // WORKFLOWS_KNOW_VAULT_CONTEXT: every workflow's LLM call receives a
   // composed system prompt that names vault.path and the rendering surface.
   // Structural enforcement now lives entirely in `system-base.md` (which
@@ -121,10 +133,16 @@ export async function runWorkflow(
     // auto-update-index by every wiki write). workflow-commit's git add is
     // tolerant of missing files, so adding them unconditionally is safe.
     const commitPaths = [...touchedPaths, "log.md", "index.md"];
+    const runContext = makeRunContext({
+      extensionId: workflowName,
+      base,
+      sourceHead,
+    });
     commitSha = await commitWorkflow(vault, {
       verb: workflowName,
       subject: subjectFromUserMessage(userMessage),
       touchedPaths: commitPaths,
+      runContext,
     });
   }
 

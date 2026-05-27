@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[cohesive/brainst
 
 This spec is normative for the `dome` command-line interface in v0.5. The CLI is **the primary explicit-operation surface across every consumer shell** — the way both the user (from any terminal) and an agentic harness (via shell-execution: Claude Code's `Bash`, Cursor's equivalent, etc.) invoke named structured operations against a vault. It is also the home for the things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
 
-The CLI is intentionally small. **Nine commands** in the shipped SDK; extension bundles can contribute additional bundle-conditional commands per [[wiki/specs/sdk-surface]] §"Extension bundles" (e.g., the first-party `dailies` bundle contributes `dome migrate-dailies` when installed). Each shipped command maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
+The CLI is intentionally small. **Eleven commands** in the shipped SDK; extension bundles can contribute additional bundle-conditional commands per [[wiki/specs/sdk-surface]] §"Extension bundles" (e.g., the first-party `dailies` bundle contributes `dome migrate-dailies` when installed). Each shipped command maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
 
 ## `dome init <path>`
 
@@ -65,35 +65,71 @@ dome serve --vault ~/vaults/work --port 7777   # HTTP/SSE (v0.5.1+)
 The serve command, in order:
 
 1. Opens the vault, loads the registry.
-2. **Runs `dome reconcile` automatically** to catch up on any events missed while serve wasn't running (pending inbox files, out-of-band edits, missed scheduled events, uncommitted-state recovery via `git status`). See `dome reconcile` below.
+2. **Runs `dome sync` automatically** to catch up on any events missed while serve wasn't running (pending inbox files, out-of-band edits, missed scheduled events, uncommitted-state recovery via `git status`) and advance `refs/dome/adopted/<branch>` to current HEAD on clean completion. See `dome sync` below.
 3. Starts the file watcher on `inbox/*/` directories and `wiki/*/` (for out-of-band-edit detection); declarative-hook intakes fire on file writes; reactive hooks (`auto-update-index`, `auto-cross-reference`, watcher-driven `appendLog`) fire on each change.
 4. Starts the clock source for scheduled hooks.
 5. Starts the MCP server (when MCP is configured for the vault — see [[wiki/specs/mcp-surface]] §"Status in v0.5"). MCP is the optional protocol-server overlay; the daemon's primary work (steps 3–4) does not depend on it.
 6. Runs until killed.
 
-If the auto-reconcile at step 2 fails (e.g., vault is mid-merge — see [[wiki/gotchas/dirty-git-state-at-reconcile]]), serve refuses to start with a clear error.
+If the auto-sync at step 2 fails (e.g., vault is mid-merge — see [[wiki/gotchas/dirty-git-state-at-reconcile]] — or adopted ref has diverged — see [[wiki/gotchas/adopted-ref-divergence]]), serve refuses to start with a clear error.
 
-**Deployment.** The canonical pattern is to run `dome serve` as a launchd / systemd service: continuous compilation, the watcher catching every native write in real time, scheduled hooks firing on their intervals. Claude Code (or any other agentic harness) interacts with the vault via the four surfaces of the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile) per [[wiki/specs/harnesses]] §"The compiler-boundary contract"; it does not spawn the daemon itself. For harnesses that mount the optional MCP server, the harness can configure `dome serve` to launch as a child process — see [[wiki/specs/harnesses]] §"Claude Code" for the MCP-mount configuration example. v0.5 documents the launchd / systemd setup pattern; v1+ may ship a service installer.
+**Deployment.** The canonical pattern is to run `dome serve` as a launchd / systemd service: continuous compilation, the watcher catching every native write in real time, scheduled hooks firing on their intervals. Claude Code (or any other agentic harness) interacts with the vault via the four surfaces of the compiler-boundary contract (AGENTS.md + CLI + daemon + sync) per [[wiki/specs/harnesses]] §"The compiler-boundary contract"; it does not spawn the daemon itself. For harnesses that mount the optional MCP server, the harness can configure `dome serve` to launch as a child process — see [[wiki/specs/harnesses]] §"Claude Code" for the MCP-mount configuration example. v0.5 documents the launchd / systemd setup pattern; v1+ may ship a service installer.
 
-## `dome reconcile`
+## `dome status`
 
-Catch up the vault's hook execution state to match the current filesystem state. Run automatically by `dome serve` at startup; can be invoked manually when serve isn't running or after an out-of-band sync (e.g., `git pull`).
+Read-only summary of the vault's adoption state. Surfaces `branch` / `HEAD` / `refs/dome/adopted/<branch>` / pending commits / dirty-tree state. See [[wiki/specs/adoption]] §"`dome status`" for the full specification.
 
 ```bash
-cd ~/vaults/work && dome reconcile
+cd ~/vaults/work && dome status
+cd ~/vaults/work && dome status --json
 ```
 
-Runs three phases in order (see [[wiki/specs/hooks]] §"Durability and reconciliation" for full detail):
+The text-mode output:
 
-1. **Inbox processing** — fire `document.written.inbox.<bucket>` for each file in `inbox/<bucket>/`. Intake hooks move the files out on completion (per [[wiki/invariants/INBOX_IS_EPHEMERAL]]).
-2. **Git diff** — fire `document.written.<category>.<type>` for each file changed since `.dome/state/last-reconciled-sha.txt`, using `git status --porcelain` + `git diff --name-only`.
-3. **Scheduled catch-up** — fire `clock.tick.<interval>` for each scheduled hook whose interval has elapsed.
+```text
+branch:   main
+HEAD:     41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
+adopted:  9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b (3 commits behind HEAD)
+pending:  3 commits to adopt
+dirty:    2 modified, 1 untracked
+```
 
-(No in-flight-recovery phase — see [[wiki/specs/hooks]] §"Crash recovery without lockfiles" for why per-workflow atomic commits + idempotency contract cover every recovery case.)
+`--json` emits a structured object suitable for cross-tool consumption (`{ branch, head, adopted, pendingCommits, dirty, diverged }`). When adopted is uninitialized (the freshly-init'd v0.5+phase1+phase3 case), `adopted` is `null` and `pendingCommits` is `null`. When adopted has diverged from HEAD's ancestry (per [[wiki/gotchas/adopted-ref-divergence]]), `diverged` is `true`.
 
-Refuses to run if the vault is mid-merge, mid-rebase, or mid-cherry-pick — see [[wiki/gotchas/dirty-git-state-at-reconcile]] for the detection and the recovery path.
+Read-only; never mutates. Exit code 0 on success; 1 if the vault open fails; 2 on usage error.
 
-Exit codes: 0 on success; nonzero if reconciliation could not complete (dirty git state, missing `.git/`, corrupted state files). Output: a summary of the events fired and hooks completed per phase.
+## `dome sync`
+
+Run the adoption state machine: compile `adopted..HEAD`, fire hooks, advance `refs/dome/adopted/<branch>` atomically on clean completion. See [[wiki/specs/adoption]] §"`dome sync`" for the full specification.
+
+```bash
+cd ~/vaults/work && dome sync
+cd ~/vaults/work && dome sync --force-advance   # accept divergent HEAD after manual confirmation
+```
+
+Five-step composition (in order):
+
+1. Identify source range (`adopted..HEAD` for the current branch; initialize the adopted ref at HEAD if absent).
+2. Diagnose preconditions (dirty git state, divergence; refuse unless `--force-advance` is set for the divergence case).
+3. Reconcile — run the existing three-phase machinery (inbox → git-diff → scheduled). Hooks fire; engine-driven writes commit via `commitWorkflow` with Dome-* trailers (per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]).
+4. Drain hooks — wait for the async queue to settle.
+5. Adopt — atomically advance `refs/dome/adopted/<branch>` to current HEAD; emit `engine.adoption.advanced`.
+
+When a blocking diagnostic stops the sync, the output names it ("dome sync: blocked — vault is in a dirty git state (mid-merge); resolve before syncing") and the engine emits `engine.adoption.blocked`. The adopted ref is unchanged.
+
+Exit codes: 0 on success (including no-op success: adopted already at HEAD); 1 on blocking diagnostic or sync-time error; 2 on usage error.
+
+## `dome reconcile` *(deprecated alias for `dome sync`)*
+
+Preserved for back-compat with v0.5 cron entries, test fixtures, and harness invocations. Invoking `dome reconcile` prints a one-line deprecation notice on stderr (`dome reconcile is deprecated; use dome sync`) and then runs `dome sync` against the current vault. See [[wiki/specs/adoption]] §"Relationship to `dome reconcile`".
+
+```bash
+cd ~/vaults/work && dome reconcile      # equivalent to `dome sync`; prints deprecation notice
+```
+
+The three-phase composition (inbox / git-diff / scheduled) is inherited from `dome sync` and unchanged. The only differences from `dome sync` are (a) the deprecation notice on stderr, (b) the legacy exit-code shape (matching `dome reconcile`'s pre-rewrite behavior; same exit codes as `dome sync` in practice). A future v1.x rewrite may retire `dome reconcile` entirely; v0.5+phase1+phase3 keeps the alias.
+
+Refuses to run if the vault is mid-merge, mid-rebase, or mid-cherry-pick — same guard as `dome sync` per [[wiki/gotchas/dirty-git-state-at-reconcile]].
 
 ## `dome lint`
 
@@ -132,7 +168,7 @@ Re-invokes the `lint` workflow with the named finding id(s) as its user message:
 
 When multiple ids are passed (`--apply H1 --apply H2`), apply proceeds through the list independently; a per-id failure does not abort the remaining ids. The CLI exits nonzero if any id failed, with a per-id summary on stderr naming each id's outcome (applied / failed / refused).
 
-Refuses to run if the vault is mid-merge / mid-rebase — same guard as `dome reconcile` per [[wiki/gotchas/dirty-git-state-at-reconcile]]. Applied findings produce ordinary git-tracked writes; `git revert` is the universal undo.
+Refuses to run if the vault is mid-merge / mid-rebase — same guard as `dome sync` per [[wiki/gotchas/dirty-git-state-at-reconcile]]. Applied findings produce ordinary git-tracked writes; `git revert` is the universal undo.
 
 ### Periodic operation
 
@@ -164,7 +200,7 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 
 - `--rebuild-index` — calls `dispatcher.writeIndex` directly to regenerate the full `index.md` from the wiki/ contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user wants a from-scratch rebuild. The dispatcher's privileged API is the only mutation path for `index.md` per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]; `writeDocument` refuses `index.md` unconditionally.
 - `--show review-queue` — list pending items in `inbox/review/` (lint reports awaiting human review per [[wiki/specs/cli]] §"`dome lint`").
-- `--time-since-reconcile` — report how long it's been since `dome reconcile` last ran successfully (read from `.dome/state/last-reconciled-sha.txt` mtime). Surfaces drift age so the user knows whether `dome serve` is keeping up. See [[wiki/gotchas/daemon-off-while-vault-mutating]].
+- `--time-since-reconcile` — report how long it's been since `dome sync` (formerly `dome reconcile`) last ran successfully. Reads from `.dome/state/last-reconcile-mtime.txt` mtime when present; falls back to the legacy `.dome/state/last-reconciled-sha.txt` mtime for vaults migrating from v0.5 pre-phase1+phase3 (per [[wiki/specs/adoption]] §"Migration from v0.5"). Surfaces drift age so the user knows whether `dome serve` is keeping up. See [[wiki/gotchas/daemon-off-while-vault-mutating]].
 - `--show raw-citations` — list which wiki pages cite each raw source (derived from `sources:` frontmatter on wiki pages; not a stored index).
 - `--show workflows` — list the resolved workflow set (shipped defaults + plugin + vault-local overrides), with their bound tool subsets and triggers.
 - `--show events` — list the resolved event taxonomy (Effect-derived + lifecycle), including plugin-registered events.
@@ -256,15 +292,15 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 
 ## Adding a new command
 
-Adding a tenth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding a 9th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
+Adding a twelfth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
 
-1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing nine `domeX` exports.
+1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing eleven `domeX` exports.
 
 2. **Wire the Commander arm** in `src/cli/cli.ts` `buildProgram` — `program.command("foo").description(...).option(...).action(async (...) => { ... domeFoo(path, opts) ... })`. If the command is workflow-driven, gate it with `requireApiKey()` before the action body runs (the `@dome/sdk/cli` pre-flight pattern at `src/cli/api-key-guard.ts`).
 
 3. **Re-export `domeFoo`** from `src/cli/index.ts`. The `cli-shell-shape` lockstep test (`tests/integration/cli-shell-shape.test.ts`) enumerates implementations in `src/cli/commands/` and asserts each is re-exported from `src/cli/index.ts` — a missed export fails the test.
 
-4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary above ("nine commands today") and the §"Implementation note" command-mapping table.
+4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary in the §"CLI" intro and the §"Implementation note" command-mapping table.
 
 5. **Add an end-to-end test** at `tests/integration/end-to-end.test.ts` covering one happy path.
 
@@ -272,7 +308,7 @@ Adding a tenth shipped `dome <foo>` command is **five file edits**, paralleling 
 
 ### Bundle-contributed commands
 
-Extension bundles contribute CLI commands via `<vault>/.dome/extensions/<bundle>/cli/<command>.ts` per [[wiki/specs/sdk-surface]] §"Extension bundles". Bundle-contributed commands are **bundle-conditional** — they exist only when the bundle is loaded. The shipped SDK CLI surface stays stable at nine commands; bundles grow the runtime surface independently.
+Extension bundles contribute CLI commands via `<vault>/.dome/extensions/<bundle>/cli/<command>.ts` per [[wiki/specs/sdk-surface]] §"Extension bundles". Bundle-contributed commands are **bundle-conditional** — they exist only when the bundle is loaded. The shipped SDK CLI surface stays stable at the count named in the §"CLI" intro; bundles grow the runtime surface independently.
 
 A bundle-contributed command follows the same `domeFoo(path, opts) → Result<FooReturn, CliError>` signature as shipped commands. The bundle loader registers each `<bundle>/cli/*.ts` into the `runCli` command set after vault-local `.dome/cli/*.ts` files; collisions across bundles or with shipped commands abort the load with a `bundle-load-failure` per [[wiki/gotchas/extension-bundle-load-order]]. The first-party `dailies` bundle's `migrate-dailies` command is the canonical example.
 
@@ -280,7 +316,7 @@ Bundle commands appear in `dome --help` output after the SDK's shipped commands;
 
 ## Implementation note
 
-CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`, `stats`, `run-hook`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 700 LOC; most of the work lives in the workflows and Tools.
+CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `sync`, `reconcile`, `status`, `stats`, `run-hook`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 800 LOC; most of the work lives in the workflows and Tools.
 
 ### The shared `--apply` idiom
 
@@ -295,14 +331,16 @@ The shared flag name signals shared semantics (propose-then-apply); the divergen
 
 Core `ToolError` (in `src/types.ts`) enumerates failures the eight Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
 
-The 9 shipped commands map cleanly to user actions:
+The 11 shipped commands map cleanly to user actions:
 
 | Command | Kind | When the user reaches for it |
 |---|---|---|
 | `dome init` | deterministic | First setup of a new vault |
 | `dome migrate` | workflow | Adopting Dome for an existing markdown vault |
-| `dome serve` | deterministic (with auto-reconcile at startup) | Running the compiler daemon (watcher + reconcile + hooks; optional MCP server) — typically a launchd / systemd service |
-| `dome reconcile` | deterministic | Catching up after `dome serve` was off (intakes pending, out-of-band edits, missed schedules) |
+| `dome serve` | deterministic (with auto-sync at startup) | Running the compiler daemon (watcher + sync + hooks; optional MCP server) — typically a launchd / systemd service |
+| `dome status` | deterministic | Read-only adoption snapshot (branch / HEAD / adopted / pending / dirty) |
+| `dome sync` | deterministic | Adoption pass: reconcile, then atomically advance `refs/dome/adopted/<branch>` on clean completion |
+| `dome reconcile` | deterministic (*deprecated alias for `dome sync`*) | Back-compat for v0.5 cron entries, test fixtures, and harness invocations |
 | `dome lint` | workflow | Periodic vault hygiene (weekly cron or manual); apply via `dome lint --apply <id>` |
 | `dome stats` | deterministic | Glanceable snapshot of structural state (page count, hubs, log activity, contributors) |
 | `dome doctor` | deterministic | Diagnostic structural check (no LLM) |

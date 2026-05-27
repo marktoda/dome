@@ -177,14 +177,14 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
-  test("--time-since-reconcile reports drift age based on last-reconciled-sha.txt mtime", async () => {
+  test("--time-since-reconcile reports drift age based on last-reconcile-mtime.txt mtime (canonical post-phase1+3)", async () => {
     const v = await makeTestVault();
     try {
-      const reconcilePath = join(v.path, ".dome", "state", "last-reconciled-sha.txt");
+      const mtimePath = join(v.path, ".dome", "state", "last-reconcile-mtime.txt");
       await mkdir(join(v.path, ".dome", "state"), { recursive: true });
-      await writeFile(reconcilePath, "abc123");
+      await writeFile(mtimePath, new Date().toISOString());
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-      await utimes(reconcilePath, twoHoursAgo, twoHoursAgo);
+      await utimes(mtimePath, twoHoursAgo, twoHoursAgo);
 
       const r = await domeDoctor(v.path, { timeSinceReconcile: true });
       expect(r.ok).toBe(true);
@@ -197,7 +197,31 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
-  test("--time-since-reconcile reports 'never' when last-reconciled-sha.txt is absent", async () => {
+  test("--time-since-reconcile falls back to legacy last-reconciled-sha.txt when only the v0.5 file exists (migration path)", async () => {
+    const v = await makeTestVault();
+    try {
+      // Simulate a v0.5 vault: legacy file present, new file absent. Per
+      // docs/wiki/specs/adoption.md §"Migration from v0.5", the doctor flag
+      // tolerates the legacy file's mtime until the next `dome sync` touches
+      // the new marker.
+      const legacyPath = join(v.path, ".dome", "state", "last-reconciled-sha.txt");
+      await mkdir(join(v.path, ".dome", "state"), { recursive: true });
+      await writeFile(legacyPath, "abc123");
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(legacyPath, twoHoursAgo, twoHoursAgo);
+
+      const r = await domeDoctor(v.path, { timeSinceReconcile: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const summary = r.value.info.find(s => s.startsWith("time-since-reconcile:"));
+      expect(summary).toBeDefined();
+      expect(summary!).toMatch(/2 hours?/);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--time-since-reconcile reports 'never' when neither marker file exists", async () => {
     const v = await makeTestVault();
     try {
       const r = await domeDoctor(v.path, { timeSinceReconcile: true });

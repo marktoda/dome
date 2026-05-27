@@ -6,7 +6,8 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Specs
 
-- [[wiki/specs/cli]] — The 9-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, run-hook, export-context. Bundle-contributed commands (e.g., `dome migrate-dailies` from the dailies bundle) appear when their bundles are loaded.
+- [[wiki/specs/adoption]] — The adoption state machine, the `refs/dome/adopted/<branch>` semantics, and the Dome-* trailer convention on engine commits.
+- [[wiki/specs/cli]] — The 11-command Dome CLI: init, migrate, serve, status, sync, reconcile (*deprecated alias for `sync`*), lint, stats, doctor, run-hook, export-context. Bundle-contributed commands (e.g., `dome migrate-dailies` from the dailies bundle) appear when their bundles are loaded.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile); MCP available as a non-primary fifth surface.
 - [[wiki/specs/hooks]] — Hook registration, shipped defaults, opt-in intakes, durability and reconciliation.
 - [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
@@ -19,8 +20,10 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
 
+- [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest commit Dome has fully compiled; advanced only after a clean `dome sync`. Fast-forward-only.
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; templated sections refreshed by `dome doctor --repair`.
 - [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
+- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces a log.md entry (Tool-mediated synchronously; native writes via the watcher).
 - [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] — *(axiom)* Every projection of `vault.tools` (`projectAiSdk`, `renderMcp`, future renderers) routes mutating-Tool invocations through the single-source `wrapMutatingInvoke` helper.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Internal scope: hooks observe events and call Tools; never mutate directly.
@@ -32,7 +35,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — *(shipped default)* Page type from immediate wiki/ subdirectory.
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* writeDocument refuses raw/.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
-- [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] — *(axiom)* External scope: native writes are caught by the watcher and/or `dome reconcile`; the vault converges on consistency.
+- [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] — *(axiom)* External scope: native writes are caught by the watcher and/or `dome sync`; the vault converges on consistency.
 - [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — *(shipped default)* [[wiki/entities/x]] not [[x]].
 - [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]] — *(axiom)* Every workflow's system prompt is prepended with a vault prologue naming vault.path.
 
@@ -46,6 +49,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 ## Gotchas
 
+- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; `dome sync` refuses; recovery via `--force-advance` or `git reflog`.
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
 - [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Registry's `Tool<>` cast bridges AI SDK v6 inference mismatch; revisit on next AI SDK major bump.
@@ -53,13 +57,13 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries hand-validate where Zod is the SDK's pattern; corruption is silent.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
 - [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-reconcile.
-- [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome reconcile` refuses to run during mid-merge / mid-rebase.
+- [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` (and its deprecated alias `dome reconcile`) refuses to run during mid-merge / mid-rebase.
 - [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declaring the same page type collide at load time; `openVault` rejects with `bundle-load-failure`.
 - [[wiki/gotchas/hook-cycle]] — Hook A triggers Tool that fires event that triggers hook A.
 - [[wiki/gotchas/hook-non-idempotent]] — Non-idempotent hooks double-fire effects during reconciliation.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the watcher catches them.
-- [[wiki/gotchas/scheduled-hook-idempotency]] — Schedule-driven hooks fire at-most-once per `dome reconcile` regardless of intervals missed; `idempotent:` declaration has narrower semantics than for event-reactive hooks.
+- [[wiki/gotchas/scheduled-hook-idempotency]] — Schedule-driven hooks fire at-most-once per `dome sync` (and its deprecated alias `dome reconcile`) regardless of intervals missed; `idempotent:` declaration has narrower semantics than for event-reactive hooks.
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 

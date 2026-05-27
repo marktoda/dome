@@ -65,6 +65,32 @@ function makeWriteDocumentMockModel(targetPath: string) {
   });
 }
 
+/**
+ * Parse the trailing `Key: value` block out of a commit message body. The
+ * trailers per ENGINE_COMMITS_CARRY_DOME_TRAILERS sit after a blank line at
+ * the end of the message. We walk from the bottom and stop at the first
+ * non-trailer line. Matches the substring `git interpret-trailers --parse`
+ * would extract without depending on a system git binary.
+ */
+function parseTrailers(message: string): Record<string, string> {
+  const lines = message.replace(/\n+$/, "").split("\n");
+  const out: Record<string, string> = {};
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    const m = line.match(/^([A-Z][A-Za-z0-9-]*):\s+(.+)$/);
+    if (m) {
+      out[m[1]!] = m[2]!;
+    } else if (line === "") {
+      // blank separator — stop
+      break;
+    } else {
+      // non-trailer line — stop
+      break;
+    }
+  }
+  return out;
+}
+
 describe("per-workflow atomic commit", () => {
   test("runWorkflow commits after a writeDocument tool call; HEAD advances", async () => {
     const fx = await makeFixtureVault({ files: {} });
@@ -103,6 +129,22 @@ describe("per-workflow atomic commit", () => {
       const message = logEntries[0]!.commit.message;
       expect(message.startsWith("ingest:")).toBe(true);
       expect(message).toContain("Capture an Atlas entity page");
+
+      // Per ENGINE_COMMITS_CARRY_DOME_TRAILERS — the commit body must carry
+      // the four Dome-* trailers, parseable as `<Key>: <value>` lines. We
+      // parse by hand (rather than invoking `git interpret-trailers`) so
+      // the assertion doesn't depend on a system git binary being available.
+      const trailers = parseTrailers(message);
+      expect(Object.keys(trailers).sort()).toEqual([
+        "Dome-Base",
+        "Dome-Extension",
+        "Dome-Run",
+        "Dome-Source-Head",
+      ]);
+      expect(trailers["Dome-Run"]).toMatch(/^run_\d+_[a-f0-9]{6}$/);
+      expect(trailers["Dome-Extension"]).toBe("ingest");
+      expect(trailers["Dome-Base"]).toMatch(/^[0-9a-f]{40}$/);
+      expect(trailers["Dome-Source-Head"]).toMatch(/^[0-9a-f]{40}$/);
     } finally {
       await fx.cleanup();
     }

@@ -3,7 +3,7 @@
 // embedding the dome CLI in their process (programmatic invocation, custom
 // shells) import from here. Keeping the two entrypoints separate lets a
 // v1+ shell that doesn't want the CLI surface avoid pulling Commander +
-// the eight `dome <cmd>` implementations into its bundle.
+// the `dome <cmd>` implementations into its bundle.
 
 export { runCli, ExitCode } from "./cli";
 export { domeInit } from "./commands/init";
@@ -14,6 +14,8 @@ export { domeMigrate } from "./commands/migrate";
 export { domeExportContext } from "./commands/export-context";
 export { domeServe, type ServeHandle } from "./commands/serve";
 export { domeStats } from "./commands/stats";
+export { domeSync } from "./commands/sync";
+export { domeStatus, statusToJson, type DomeStatusOutput } from "./commands/status";
 
 // CLI-layer error surface. `CliError` extends core `ToolError` with the
 // pre-flight `missing-api-key` shape; `renderCliError` is the default

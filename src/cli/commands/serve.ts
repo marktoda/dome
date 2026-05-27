@@ -1,5 +1,5 @@
 import { openVault } from "../../vault";
-import { reconcile } from "../../reconcile";
+import { sync } from "../../adoption";
 import { VaultWatcher } from "../../watcher";
 import { DomeMcpServer } from "../../mcp/server";
 import { renderMcp, type McpSurface } from "../../mcp/render-mcp";
@@ -41,16 +41,14 @@ export async function domeServe(
   const res = await openVault(vaultPath);
   if (!res.ok) return res;
   const vault = res.value;
-  // Auto-reconcile at startup; route events through the vault's hook
-  // dispatcher so the YAML-declared intake hooks (e.g., intake-raw.yaml)
-  // actually fire on inbox files present at boot.
-  const rec = await reconcile(vault, {
-    onEvent: (event) => vault.dispatchEvents([event]),
-  });
-  if (!rec.ok) return rec;
-  // Drain the startup-reconcile's async work before opening up to live
-  // events, so the harness sees a deterministic post-catchup state.
-  await vault.drainHooks();
+  // Auto-sync at startup per docs/wiki/specs/cli.md §"`dome serve`" — runs
+  // the full adoption loop (reconcile + ref advance) so the YAML-declared
+  // intake hooks (e.g., intake-raw.yaml) fire on inbox files present at
+  // boot AND refs/dome/adopted/<branch> reflects the post-catchup HEAD.
+  // The sync drains hooks internally before advancing the ref, so callers
+  // see a deterministic post-catchup state without a second drainHooks call.
+  const synced = await sync(vault);
+  if (!synced.ok) return synced;
   // Start watcher for out-of-band edits; route each one through the vault's
   // dispatcher so doctor's OOB-detection and any vault.out-of-band-edit
   // subscribers actually receive them.
