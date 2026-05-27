@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join } from "node:path";
 import { ok, err, type Result, type ToolError } from "./types";
 import { isGitRepo } from "./git";
+import { walkUpForAncestor } from "./path-walk";
 import { makePrivilegedWriter, type PrivilegedWriter } from "./privileged-writer";
 import { bindTools } from "./tools/registry";
 import { type CycleInfo } from "./hook-dispatcher";
@@ -122,15 +123,7 @@ export async function appendCycleLogEntry(
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
-  let current = resolve(start);
-  for (;;) {
-    if (existsSync(join(current, ".dome", "config.yaml"))) {
-      return current;
-    }
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
+  return walkUpForAncestor(start, (dir) => existsSync(join(dir, ".dome", "config.yaml")));
 }
 
 /**
