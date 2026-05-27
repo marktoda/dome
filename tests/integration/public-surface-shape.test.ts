@@ -1,0 +1,102 @@
+// Pin the v1 public API surface — every named runtime export from
+// src/index.ts must appear in EXPECTED_EXPORTS below, and vice versa.
+//
+// Adding or removing a public symbol from src/index.ts requires an
+// explicit update to this list. Type-only exports are intentionally not
+// pinned here (they erase at runtime and are exercised by the tsc check);
+// this test guards the *runtime* import surface that downstream
+// consumers actually reach.
+
+import { describe, expect, test } from "bun:test";
+
+import * as PublicApi from "../../src";
+
+const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
+  // Result + helpers.
+  "ok",
+  "err",
+
+  // Proposal constructors.
+  "clientProposal",
+  "agentProposal",
+  "gardenProposal",
+  "manualProposal",
+  "importProposal",
+
+  // Effect constructors.
+  "patchEffect",
+  "diagnosticEffect",
+  "factEffect",
+  "questionEffect",
+  "viewEffect",
+  "jobEffect",
+  "externalActionEffect",
+
+  // Processor types + helpers.
+  "defineProcessor",
+  "treeOid",
+
+  // Source-ref brand helpers.
+  "commitOid",
+
+  // Engine entry.
+  "submitProposal",
+  "openVaultRuntime",
+
+  // Extension bundle loader.
+  "loadBundles",
+  "flattenBundleProcessors",
+  "parseManifest",
+  "ManifestSchema",
+  "ProcessorDeclarationSchema",
+
+  // Engine commit-trailer chokepoint.
+  "commitWorkflow",
+  "composeCommitMessage",
+  "makeRunContext",
+  "ENGINE_EXTENSION_ID",
+  "ZERO_SHA",
+
+  // Adopted-ref read surface.
+  "getAdoptedRef",
+  "getCurrentBranch",
+  "adoptedRefName",
+
+  // DB open functions.
+  "openProjectionDb",
+  "openOutboxDb",
+  "openLedgerDb",
+]);
+
+describe("public-surface-shape", () => {
+  test("every runtime export from src/index.ts is in EXPECTED_RUNTIME_EXPORTS", () => {
+    const actualExports = new Set(
+      Object.keys(PublicApi).filter((k) => k !== "default"),
+    );
+
+    const unexpected: string[] = [];
+    for (const name of actualExports) {
+      if (!EXPECTED_RUNTIME_EXPORTS.has(name)) unexpected.push(name);
+    }
+
+    expect(
+      unexpected,
+      `Unexpected new public export(s): ${unexpected.join(", ")}. ` +
+        `If this is intentional, add the symbol to EXPECTED_RUNTIME_EXPORTS in this file.`,
+    ).toEqual([]);
+  });
+
+  test("every name in EXPECTED_RUNTIME_EXPORTS is still exported", () => {
+    const actualExports = new Set(Object.keys(PublicApi));
+    const missing: string[] = [];
+    for (const name of EXPECTED_RUNTIME_EXPORTS) {
+      if (!actualExports.has(name)) missing.push(name);
+    }
+
+    expect(
+      missing,
+      `Missing expected public export(s): ${missing.join(", ")}. ` +
+        `Either restore the export or remove the name from EXPECTED_RUNTIME_EXPORTS.`,
+    ).toEqual([]);
+  });
+});
