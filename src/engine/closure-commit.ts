@@ -26,15 +26,15 @@
 // src/engine/capability-broker.ts, src/engine/apply-effect.ts):
 //   - Banner cites the normative spec section + the structural invariant.
 //   - Imports tight: pure types from `../core/source-ref` (CommitOid),
-//     `../run-context` (makeRunContext + ENGINE_EXTENSION_ID), `../vault`
-//     (Vault type only), and `../workflow-commit` (commitWorkflow — the
+//     `../run-context` (makeRunContext + ENGINE_EXTENSION_ID), `./vault-shape`
+//     (EngineVault type only), and `../workflow-commit` (commitWorkflow — the
 //     engine-commit chokepoint per ENGINE_COMMITS_CARRY_DOME_TRAILERS).
 //   - JSDoc on the public function only; the file banner carries the prose.
 
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { ENGINE_EXTENSION_ID, makeRunContext } from "../run-context";
-import type { Vault } from "../vault";
 import { commitWorkflow } from "../workflow-commit";
+import type { EngineVault } from "./vault-shape";
 
 // ----- makeClosureCommit ----------------------------------------------------
 
@@ -65,7 +65,7 @@ import { commitWorkflow } from "../workflow-commit";
  *                           is `adopt: proposal <first-12-chars>`.
  */
 export async function makeClosureCommit(opts: {
-  readonly vault: Vault;
+  readonly vault: EngineVault;
   readonly base: CommitOid;
   readonly sourceHead: CommitOid;
   readonly touchedPaths: ReadonlyArray<string>;

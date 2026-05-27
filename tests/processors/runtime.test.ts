@@ -26,11 +26,14 @@ import {
 } from "../../src/core/effect";
 import { manualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/compile-range";
-import type { Vault } from "../../src/vault";
+import type { EngineVault } from "../../src/engine/vault-shape";
 
-// Stub Vault — the runtime never touches it (only passed through the
+// Stub EngineVault — the runtime never touches it (only passed through the
 // AdoptionPhaseRunner input contract).
-const STUB_VAULT = { path: "/tmp/stub-vault" } as unknown as Vault;
+const STUB_VAULT: EngineVault = {
+  path: "/tmp/stub-vault",
+  config: { git: { auto_commit_workflows: false } },
+};
 
 const BASE = commitOid("base000000000000000000000000000000000000");
 const CANDIDATE = commitOid("cand000000000000000000000000000000000000");

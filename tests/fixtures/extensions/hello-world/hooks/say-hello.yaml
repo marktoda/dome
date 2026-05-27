@@ -1,4 +1,0 @@
-event: document.written
-path_pattern: "wiki/hellos/*"
-workflow: say-hello
-async: true

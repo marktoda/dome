@@ -5,6 +5,7 @@ updated: 2026-05-25
 severity: medium
 coverage: off-matrix
 enforced_at: src/reconcile.ts
+enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 ---

@@ -21,14 +21,14 @@
 //     follow does not apply here — no runtime values are produced.
 //   - Imports limited to pure types from `../core/` (Effect, Capability,
 //     Proposal, CommitOid) and the `SignalEvent` type from
-//     `./compile-range`, plus the `Vault` type from `../vault`.
+//     `./compile-range`, plus the `EngineVault` type from `./vault-shape`.
 
 import type { Effect } from "../core/effect";
 import type { Capability } from "../core/processor";
 import type { Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
-import type { Vault } from "../vault";
 import type { SignalEvent } from "./compile-range";
+import type { EngineVault } from "./vault-shape";
 
 // ----- Branded RunId --------------------------------------------------------
 //
@@ -67,7 +67,7 @@ export type RunId = string & { readonly __brand: "RunId" };
  * may reach a fixed point on the next no-patch check.
  */
 export type AdoptionPhaseRunner = (input: {
-  readonly vault: Vault;
+  readonly vault: EngineVault;
   readonly candidate: CommitOid;
   readonly changedPaths: ReadonlyArray<string>;
   readonly signals: ReadonlyArray<SignalEvent>;

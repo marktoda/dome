@@ -52,21 +52,20 @@
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - Imports limited to v1 substrate: `./adopt`, `./vault-runtime`,
 //     `./apply-effect` (for the placeholder sink types), the `Proposal`
-//     and `AdoptionResult` types from `../core/proposal`, and the sink
-//     builder from `../projections/sinks`. The `Vault` type is needed by
-//     `adopt({vault: Vault, ...})`; it's imported as a type-only import
-//     (matches the existing pattern in `src/engine/runner-contract.ts`
-//     and the engine tests) — type imports erase at runtime, so this does
-//     not pull in any old-v0.5 runtime code.
+//     and `AdoptionResult` types from `../core/proposal`, the sink
+//     builder from `../projections/sinks`, and the engine-owned
+//     `EngineVault` shape from `./vault-shape` (the minimal structural
+//     type `adopt` consumes — see [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]
+//     §"engine reads vault by shape, not by class").
 
-import type { Vault } from "../vault";
 import type {
   AdoptionResult,
   Proposal,
 } from "../core/proposal";
+import { buildSqliteSinks } from "../projections/sinks";
 import { adopt } from "./adopt";
 import type { ApplyEffectSinks } from "./apply-effect";
-import { buildSqliteSinks } from "../projections/sinks";
+import type { EngineVault } from "./vault-shape";
 import type { VaultRuntime } from "./vault-runtime";
 
 // ----- Public types ---------------------------------------------------------
@@ -133,33 +132,24 @@ export async function submitProposal(
     captureView: captureViewPlaceholder,
   });
 
-  // Construct the minimal Vault shape `adopt()` consumes:
+  // Construct the minimal `EngineVault` shape `adopt()` consumes:
   //   - `path`                                 — for `currentSha`, `currentBranch`.
   //   - `config.git.auto_commit_workflows`     — read by `makeClosureCommit`.
   //
-  // The wider v0.5 `Vault` surface (tools, bundles, drainHooks, etc.) is
-  // not reached by the engine layer; we synthesize a minimal object here
-  // and cast via `unknown` rather than depending on the full `openVault`
-  // bootstrap chain. Phase 7b retires this cast once the engine layer's
-  // call sites all consume a v1-native vault handle.
-  const vault = {
+  // `EngineVault` (in `./vault-shape`) is the engine layer's own structural
+  // type — the engine reads vaults by shape, not by class. The user-facing
+  // `dome submit` CLI (Phase 8+) reads `auto_commit_workflows` from
+  // `.dome/config.yaml`; here we enable closure commits so the adopted-ref
+  // / dual-surface join lands the same way it does in the broader engine
+  // tests.
+  const vault: EngineVault = {
     path: runtime.path,
     config: {
-      invariants: {},
-      hooks: {
-        builtin: {},
-        max_causation_depth: 0,
-        inbox_stale_age_hours: 0,
-      },
       git: {
-        // Phase 7a: enable closure commits so the adopted-ref / dual-
-        // surface join lands the same way it does in the broader engine
-        // tests. The user-facing `dome submit` CLI (Phase 8+) reads the
-        // value from `.dome/config.yaml`.
         auto_commit_workflows: true,
       },
     },
-  } as unknown as Vault;
+  };
 
   return adopt({
     vault,

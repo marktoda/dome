@@ -1,109 +1,132 @@
-// Public API surface — @dome/sdk core.
+// Public API surface — @dome/sdk v1.
 //
-// Per CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY, this entrypoint does NOT
-// re-export workflow-runner or MCP-server symbols. Those live at:
+// Phase 7b retired the v0.5 Tools-surface (writeDocument, patchRegion, etc.),
+// the hooks dispatcher, the workflow runner, the MCP server, the CLI, the
+// prompts surface, the eval harness, and the bundle loader. What remains is
+// the v1 substrate: the proposal-construction layer, the engine entry point
+// (`submitProposal` + `openVaultRuntime`), the projection / outbox / ledger
+// query surface, the adopted-ref read accessors, and the engine commit-
+// trailer chokepoint.
 //
-//   @dome/sdk/workflows — runWorkflow, WorkflowRegistry, PromptLoader,
-//                         projectAiSdk, eval helpers, workflow types
-//   @dome/sdk/mcp       — DomeMcpServer, McpSurface, renderMcp,
-//                         ToolAdapter, McpPromptAdapter, ResourceAdapter
-//   @dome/sdk/cli       — runCli, the seven dome* command functions
+// Per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]], every write
+// into trusted vault state flows through `submitProposal`. The five
+// constructor functions (`clientProposal`, `agentProposal`, `gardenProposal`,
+// `manualProposal`, `importProposal`) are the only paths to a valid Proposal.
 //
-// The bundle-deps test at tests/integration/bundle-deps.test.ts pins
-// the axiom; the public-surface-shape test catches symbol re-exports
-// even when transitive deps stay clean.
+// Per [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this entrypoint
+// does NOT depend on any LLM SDK, MCP transport, or HTTP framework.
 
-export {
-  openVault,
-  appendCycleLogEntry,
-  type Vault,
-  type VaultConfig,
-  type PageTypesConfig,
-  type BoundToolSurface,
-} from "./vault";
-export { makeDocument, type Document, type DocumentCategory, type DocumentInput } from "./document";
-export type { HookContext, HookHandler, HookEvent } from "./hooks/hook-context";
+// ----- Core types: Result + ToolError ---------------------------------------
+
+export type { Result, ToolError } from "./types";
+export { ok, err } from "./types";
+
+// ----- Core domain types (proposals, effects, processors, source refs) ------
+
 export type {
-  Result,
+  Proposal,
+  ProposalSource,
+  ClientSource,
+  AgentSource,
+  GardenSource,
+  ManualSource,
+  ImportSource,
+  AdoptionResult,
+  SubmitInput,
+} from "./core/proposal";
+export {
+  clientProposal,
+  agentProposal,
+  gardenProposal,
+  manualProposal,
+  importProposal,
+} from "./core/proposal";
+
+export type {
   Effect,
-  ToolReturn,
-  ToolError,
-  LogEntry,
-  LogVerb,
-  CreationReason,
-  InvariantName,
-  WikiLink,
-  SearchMatch,
-} from "./types";
-export { INVARIANTS } from "./types";
+  PatchEffect,
+  DiagnosticEffect,
+  FactEffect,
+  QuestionEffect,
+  ViewEffect,
+  JobEffect,
+  ExternalActionEffect,
+} from "./core/effect";
+export {
+  patchEffect,
+  diagnosticEffect,
+  factEffect,
+  questionEffect,
+  viewEffect,
+  jobEffect,
+  externalActionEffect,
+} from "./core/effect";
+
+export type {
+  Capability,
+  Processor,
+  ProcessorContext,
+  ProcessorPhase,
+  Trigger,
+  TreeOid,
+} from "./core/processor";
+export { defineProcessor, treeOid } from "./core/processor";
+
+export type { CommitOid } from "./core/source-ref";
+export { commitOid } from "./core/source-ref";
+
+// ----- Engine entry point ---------------------------------------------------
+
+export { submitProposal, type SubmitProposalOpts } from "./engine/submit-proposal";
+export {
+  openVaultRuntime,
+  type VaultRuntime,
+  type OpenVaultRuntimeOpts,
+  type OpenVaultRuntimeError,
+} from "./engine/vault-runtime";
+export type { EngineVault } from "./engine/vault-shape";
+
+// ----- Engine commit-trailer chokepoint -------------------------------------
+//
+// `commitWorkflow` + `composeCommitMessage` are the structural fence behind
+// [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. `makeRunContext`
+// + the four Dome-* constants belong here so callers constructing a
+// RunContext don't have to import a separate package.
 
 export {
-  buildAbstractSurface,
-  type AbstractSurface,
-  type PromptDescriptor,
-  type ResourceDescriptor,
-} from "./abstract-surface";
-
-export { readDocument } from "./tools/read-document";
-export { writeDocument } from "./tools/write-document";
-export { appendLog } from "./tools/append-log";
-export { searchIndex } from "./tools/search-index";
-export { wikilinkResolve } from "./tools/wikilink-resolve";
-export { moveDocument } from "./tools/move-document";
-export { deleteDocument } from "./tools/delete-document";
-
-// The privileged-writer type (writeIndex / appendLogEntry / removeIndexEntry)
-// is INTENTIONALLY NOT exported. Plugin and vault-local code reach it only via
-// `HookContext.privilegedWriter`, which the hook-dispatcher partitions to
-// sdk-source hooks — the structural enforcement of
-// INDEX_AND_LOG_ARE_DISPATCHER_OWNED.
-export type { IndexEntry } from "./privileged-writer";
-
-export { parseFrontmatter, stringifyFrontmatter } from "./frontmatter";
-export { parseWikilinks, isFullPathLink, suggestFullPath } from "./wikilinks";
-
-export { HookRegistry, type RegisteredHook, type HookSource } from "./hooks/hook-registry";
-export { HookDispatcher, type CausationLink, type CycleInfo, type HookDispatcherOpts } from "./hooks/hook-dispatcher";
-export { autoUpdateIndex } from "./hooks/auto-update-index";
-export { autoCrossReference } from "./hooks/auto-cross-reference";
-export { VaultWatcher, type OOBEvent } from "./watcher";
-// `reconcile` is INTERNAL to the adoption chokepoint — consumers drive
-// compilation through `sync` (which advances the adopted ref atomically)
-// rather than running raw reconcile phases that would leave the ref stale
-// per ADOPTED_REF_IS_SEMANTIC_CURSOR. The shared precondition check
-// `isDirtyGitState` remains exported because consumers (e.g., `dome lint`'s
-// pre-flight) legitimately need to check the same git-state guard `sync`
-// applies before starting their own work.
-export { isDirtyGitState } from "./reconcile";
-export { commitWorkflow, composeCommitMessage, type WorkflowCommitInput } from "./workflow-commit";
-export { projectEffectToEvents, projectEffectsToEvents } from "./event-projection";
-
-// The adoption substrate per docs/wiki/specs/adoption.md. Public re-exports:
-// `sync` + `getAdoptionStatus` + `makeRunContext` + types. The write side
-// (`setAdoptedRef`) is intentionally NOT re-exported; consumers reach the
-// adopted ref via `getAdoptedRef` (read) and `sync` (advance as part of the
-// loop), so there is no public path to producing an unsequenced ref advance.
-export {
-  sync,
-  getAdoptionStatus,
-  type SyncResult,
-  type AdoptionStatus,
-} from "./adoption";
+  commitWorkflow,
+  composeCommitMessage,
+  type WorkflowCommitInput,
+} from "./workflow-commit";
 export {
   makeRunContext,
   ENGINE_EXTENSION_ID,
   ZERO_SHA,
   type RunContext,
 } from "./run-context";
+
+// ----- Adopted-ref read surface ---------------------------------------------
+//
+// Per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]], the adopted-ref
+// write side (`setAdoptedRef`) is INTERNAL to the engine's adoption loop and
+// intentionally NOT re-exported. Consumers reach the adopted ref via the
+// read accessors (`getAdoptedRef`, `getCurrentBranch`, `adoptedRefName`) and
+// advance it only as a side effect of `submitProposal`.
+
 export { getAdoptedRef, getCurrentBranch, adoptedRefName } from "./adopted-ref";
 
-// Canonical Tool registry — single source of truth for the seven Tools.
-// Plugin and harness authors that want to enumerate or extend the Tool
-// surface consume these. AI-SDK-shaped projections (`filterAiTools`,
-// `projectAiSdk`) live in @dome/sdk/workflows.
-export {
-  TOOL_NAMES,
-  MCP_TOOL_NAMES,
-  MUTATING_TOOL_NAMES,
-  type ToolName,
-} from "./tools/registry";
+// ----- Projection / outbox / ledger query surface ---------------------------
+//
+// The three DBs are the v1 read surface for diagnostics, facts, questions,
+// jobs, capability-use audit history, and the unprocessed-event outbox.
+// `openVaultRuntime` is the open-side; these query functions accept the
+// opened handles directly.
+
+export type { ProjectionDb } from "./projections/db";
+export { openProjectionDb } from "./projections/db";
+
+export type { OutboxDb } from "./outbox/db";
+export { openOutboxDb } from "./outbox/db";
+
+export type { LedgerDb } from "./ledger/db";
+export { openLedgerDb } from "./ledger/db";

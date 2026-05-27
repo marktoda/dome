@@ -4,21 +4,19 @@
 
 import { describe, test, expect } from "bun:test";
 import { makeClosureCommit } from "../../src/engine/closure-commit";
+import type { EngineVault } from "../../src/engine/vault-shape";
 import { commitOid } from "../../src/core/source-ref";
-import type { Vault } from "../../src/vault";
 
-// Minimal structural mock — makeClosureCommit only reads
-// `vault.config.git.auto_commit_workflows` and `vault.path` on the null-path
-// branches. Cast through `unknown` so we don't need a full Vault build.
-const mockVault = (autoCommit: boolean): Vault =>
-  ({
-    path: "/tmp/fake-vault",
-    config: {
-      invariants: {},
-      hooks: { builtin: {}, max_causation_depth: 0, inbox_stale_age_hours: 0 },
-      git: { auto_commit_workflows: autoCommit },
-    },
-  } as unknown as Vault);
+// Minimal `EngineVault` — `makeClosureCommit` only reads
+// `vault.config.git.auto_commit_workflows` and `vault.path` on the
+// null-path branches. The two-field shape is exactly what the engine
+// names, so no cast is needed.
+const mockVault = (autoCommit: boolean): EngineVault => ({
+  path: "/tmp/fake-vault",
+  config: {
+    git: { auto_commit_workflows: autoCommit },
+  },
+});
 
 describe("makeClosureCommit null-return paths", () => {
   test("returns null when touchedPaths is empty", async () => {

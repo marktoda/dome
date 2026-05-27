@@ -1,6 +1,6 @@
+import type { EngineVault } from "./engine/vault-shape";
 import { commit } from "./git";
 import type { RunContext } from "./run-context";
-import type { Vault } from "./vault";
 
 export interface WorkflowCommitInput {
   verb: string;
@@ -34,7 +34,7 @@ export interface WorkflowCommitInput {
  * commits in `src/adoption.ts`'s close step, Phase 4+'s patch-mediated
  * extension effects) construct their RunContext explicitly.
  */
-export async function commitWorkflow(vault: Vault, input: WorkflowCommitInput): Promise<string> {
+export async function commitWorkflow(vault: EngineVault, input: WorkflowCommitInput): Promise<string> {
   if (!vault.config.git.auto_commit_workflows) {
     return ""; // commit skipped; caller may still log
   }

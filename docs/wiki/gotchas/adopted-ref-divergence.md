@@ -6,6 +6,7 @@ sources: ["[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-t
 severity: medium
 coverage: off-matrix
 enforced_at: src/adoption.ts
+enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
 ---
 
 # adopted-ref-divergence

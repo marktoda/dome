@@ -25,8 +25,8 @@ import { noopSinks } from "../../src/engine/apply-effect";
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { manualProposal } from "../../src/core/proposal";
+import type { EngineVault } from "../../src/engine/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
-import type { Vault } from "../../src/vault";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import {
   insertQueued,
@@ -37,7 +37,7 @@ import {
 } from "../../src/ledger/runs";
 
 type Fixture = {
-  vault: Vault;
+  vault: EngineVault;
   ledger: LedgerDb;
   cleanup: () => Promise<void>;
 };
@@ -52,14 +52,12 @@ async function makeFixture(): Promise<Fixture> {
     message: "init\n",
     files: ["wiki/seed.md"],
   });
-  const vault = {
+  const vault: EngineVault = {
     path,
     config: {
-      invariants: {},
-      hooks: { builtin: {}, max_causation_depth: 0, inbox_stale_age_hours: 0 },
       git: { auto_commit_workflows: true },
     },
-  } as unknown as Vault;
+  };
   const ledgerResult = await openLedgerDb({
     path: join(path, ".dome", "state", "runs.db"),
   });

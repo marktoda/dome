@@ -55,7 +55,8 @@
 //     the adopted-ref read/write chokepoint from `../adopted-ref`, the
 //     git boundary from `../git`, the run-ledger handle + capability-use
 //     accessor from `../ledger/` (Phase 6 — optional, threaded only when
-//     the caller wires a ledger), and the `Vault` type from `../vault`.
+//     the caller wires a ledger), and the `EngineVault` type from
+//     `./vault-shape`.
 //     Note: `../run-context.makeRunContext` was previously imported to
 //     mint per-effect run ids; the runtime now owns run-id allocation and
 //     surfaces it on `RunnerResult.runId`, removing that dependency here.
@@ -75,13 +76,12 @@ import { currentBranch, currentSha } from "../git";
 import type { LedgerDb } from "../ledger/db";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import { updateOutputCommit } from "../ledger/runs";
-import type { RunId } from "./runner-contract";
-import type { Vault } from "../vault";
-import { compileRange } from "./compile-range";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
+import { compileRange } from "./compile-range";
 import { parsePatchPaths } from "./patch-parse";
-import type { AdoptionPhaseRunner } from "./runner-contract";
+import type { AdoptionPhaseRunner, RunId } from "./runner-contract";
+import type { EngineVault } from "./vault-shape";
 
 // ----- DEFAULT_MAX_ITERATIONS -----------------------------------------------
 
@@ -136,7 +136,7 @@ export const DEFAULT_MAX_ITERATIONS = 100;
  *                                    `DEFAULT_MAX_ITERATIONS`.
  */
 export async function adopt(opts: {
-  readonly vault: Vault;
+  readonly vault: EngineVault;
   readonly proposal: Proposal;
   readonly runAdoptionProcessors: AdoptionPhaseRunner;
   readonly sinks: ApplyEffectSinks;

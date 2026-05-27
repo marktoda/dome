@@ -18,11 +18,11 @@ import { noopSinks } from "../../src/engine/apply-effect";
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { manualProposal } from "../../src/core/proposal";
+import type { EngineVault } from "../../src/engine/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
-import type { Vault } from "../../src/vault";
 
 type Fixture = {
-  vault: Vault;
+  vault: EngineVault;
   baseSha: string;
   cleanup: () => Promise<void>;
 };
@@ -37,14 +37,12 @@ async function makeMinimalGitVault(autoCommit = true): Promise<Fixture> {
     message: "init\n",
     files: ["wiki/seed.md"],
   });
-  const vault = {
+  const vault: EngineVault = {
     path,
     config: {
-      invariants: {},
-      hooks: { builtin: {}, max_causation_depth: 0, inbox_stale_age_hours: 0 },
       git: { auto_commit_workflows: autoCommit },
     },
-  } as unknown as Vault;
+  };
   return {
     vault,
     baseSha,
