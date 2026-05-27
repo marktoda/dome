@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Vault } from "./vault";
 import type { HookEvent } from "./hook-context";
@@ -7,6 +7,7 @@ import { projectEffectToEvents } from "./event-projection";
 import { currentSha, statusMatrix, readTree } from "./git";
 import { ok, err, type Result, type ToolError } from "./types";
 import { ScheduledStateSchema, type ScheduledEntry } from "./state-schemas";
+import { INTAKE_EXCLUDED_BUCKETS } from "./shipped-defaults";
 
 export interface ReconcileOpts {
   onEvent: (event: HookEvent) => void | Promise<void>;
@@ -46,23 +47,24 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   let changedFiles = 0;
   let scheduledFired = 0;
 
-  // Phase 1: inbox processing.
+  // Phase 1: inbox processing. Walks `inbox/<bucket>/<file>` directly via
+  // Bun.Glob — non-recursive (intakes are flat by convention). Skips buckets
+  // in INTAKE_EXCLUDED_BUCKETS (e.g. `inbox/review/`, the destination for
+  // `dome lint` reports, which is not an intake surface).
   const inboxRoot = join(vault.path, "inbox");
   if (existsSync(inboxRoot)) {
-    const buckets = await readdir(inboxRoot, { withFileTypes: true });
-    for (const b of buckets) {
-      if (!b.isDirectory()) continue;
-      const bucketDir = join(inboxRoot, b.name);
-      const files = await readdir(bucketDir, { withFileTypes: true });
-      for (const f of files) {
-        if (!f.isFile()) continue;
-        const rel = relative(vault.path, join(bucketDir, f.name));
-        const events = projectEffectToEvents({ kind: "wrote-document", path: rel, diff: "[inbox]" });
-        for (const e of events) {
-          await opts.onEvent(e);
-        }
-        inboxProcessed++;
+    const glob = new Bun.Glob("*/*");
+    for await (const rel of glob.scan({ cwd: inboxRoot, dot: true, onlyFiles: true })) {
+      const slash = rel.indexOf("/");
+      if (slash === -1) continue;
+      const bucket = rel.slice(0, slash);
+      if (INTAKE_EXCLUDED_BUCKETS.has(bucket)) continue;
+      const fileRel = relative(vault.path, join(inboxRoot, rel));
+      const events = projectEffectToEvents({ kind: "wrote-document", path: fileRel, diff: "[inbox]" });
+      for (const e of events) {
+        await opts.onEvent(e);
       }
+      inboxProcessed++;
     }
   }
 
