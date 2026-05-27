@@ -3,7 +3,7 @@ type: gotcha
 created: 2026-05-27
 updated: 2026-05-27
 severity: medium
-coverage: tested
+coverage: off-matrix
 enforced_at: src/extensions/loader.ts
 first_observed: 2026-05-26 (v0.5 dailies-bundle phase)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]

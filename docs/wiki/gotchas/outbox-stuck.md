@@ -3,8 +3,9 @@ type: gotcha
 created: 2026-05-27
 updated: 2026-05-27
 severity: medium
-coverage: tested
+coverage: off-matrix
 enforced_at: src/outbox/dispatch.ts
+enforced_at_status: deferred
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
