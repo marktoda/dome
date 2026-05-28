@@ -55,7 +55,6 @@
 import {
   diagnosticEffect,
   type DiagnosticEffect,
-  type Effect,
 } from "../core/effect";
 import { type Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
@@ -329,12 +328,12 @@ async function runSchedulerInner(opts: {
       }
 
       // Success means the executor accepted the invocation as a processor
-      // success. Executor failures/timeouts/cancellations are normal
-      // RunnerResults carrying processor execution diagnostics, so inspect
-      // the returned effect stream rather than the dispatch call boundary.
+      // success. Executor failures/timeouts/cancellations and not-invoked
+      // policy skips are normal RunnerResults carrying an explicit runtime
+      // status, so use that stable boundary instead of diagnostic codes.
       // Per-effect denials by the broker don't count as run failure — they're
       // reported via `applied.diagnostics`.
-      success = !hasProcessorExecutionFailureDiagnostic(result.effects);
+      success = result.executionStatus === "succeeded";
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       diagnostics.push(
@@ -377,24 +376,6 @@ async function runSchedulerInner(opts: {
     skipped: Object.freeze(skipped),
     diagnostics: Object.freeze(diagnostics),
   });
-}
-
-const PROCESSOR_EXECUTION_FAILURE_CODES = new Set<string>([
-  "processor.threw",
-  "processor.invalid-output",
-  "processor.timeout",
-  "processor.cancelled",
-  "execution-policy.phase-class-denied",
-]);
-
-function hasProcessorExecutionFailureDiagnostic(
-  effects: ReadonlyArray<Effect>,
-): boolean {
-  return effects.some(
-    (effect) =>
-      effect.kind === "diagnostic" &&
-      PROCESSOR_EXECUTION_FAILURE_CODES.has(effect.code),
-  );
 }
 
 // ----- ScheduleRunInput envelope --------------------------------------------

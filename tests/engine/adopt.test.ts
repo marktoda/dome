@@ -100,6 +100,7 @@ describe("adopt fixed-point loop", () => {
       {
         runId: "run_test_blocker" as RunId,
         processorId: "test.blocker",
+        executionStatus: "succeeded",
         declared: [],
         granted: [],
         effects: [
@@ -144,6 +145,7 @@ describe("adopt fixed-point loop", () => {
       {
         runId: "run_test_diverger" as RunId,
         processorId: "test.diverger",
+        executionStatus: "succeeded",
         declared: [auto],
         granted: [auto],
         effects: [

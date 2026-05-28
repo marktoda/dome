@@ -132,6 +132,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
       {
         runId,
         processorId: "test.proc",
+        executionStatus: "succeeded",
         declared: [],
         granted: [],
         effects: [

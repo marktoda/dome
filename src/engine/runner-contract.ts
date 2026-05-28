@@ -78,6 +78,21 @@ export type ProcessorTimeoutExecutionError =
 export type ProcessorCancelledExecutionError =
   ProcessorExecutionErrorForCode<"processor.cancelled">;
 
+// ----- RunnerExecutionStatus -----------------------------------------------
+
+/**
+ * Runtime terminal status surfaced to engine consumers alongside emitted
+ * effects. This is deliberately separate from `effects`: processors may emit
+ * a DiagnosticEffect whose code looks like an executor failure code, so engine
+ * telemetry must not infer execution state by scanning arbitrary diagnostics.
+ */
+export type RunnerExecutionStatus =
+  | "succeeded"
+  | "failed"
+  | "timed_out"
+  | "cancelled"
+  | "skipped";
+
 // ----- AdoptionPhaseRunner --------------------------------------------------
 
 /**
@@ -197,6 +212,7 @@ export type GardenPhaseRunner = (input: {
 export type RunnerResult = {
   readonly runId: RunId;
   readonly processorId: string;
+  readonly executionStatus: RunnerExecutionStatus;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly effects: ReadonlyArray<Effect>;

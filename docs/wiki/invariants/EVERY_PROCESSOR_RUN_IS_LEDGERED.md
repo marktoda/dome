@@ -23,7 +23,7 @@ tier: shipped-default
 
 **Counter-example:** A processor that wants to "log to its own file" instead of the ledger. The ledger row gets written anyway (by the engine, before execution policy is resolved and before `run()` is called) — the processor's parallel logging is duplicate effort. If the processor crashes mid-run, the executor-result terminal write guarantees the ledger row reaches a terminal status, even though the processor's own log file may be incomplete.
 
-**Test guarantee:** `tests/invariants/every-processor-run-is-ledgered.test.ts` — drives 50 processor invocations through the engine (mix of adoption, garden, view; mix of success and failure); asserts 50 rows in `runs.db` with all-non-null `started_at` and all-non-null `finished_at` (for terminal states). Capability-use rows are joinable per the schema.
+**Test guarantee:** `tests/invariants/every-processor-run-is-ledgered.test.ts` is the AC3 lockstep marker that keeps this invariant document present at the canonical path. Behavioral coverage lives in the runtime, ledger, executor, scheduler, and lifecycle tests: those assert terminal status persistence, structured executor errors, skipped not-invoked rows, capability-use joins, and adoption blocking on failed processor execution.
 
 **Related:**
 - [[wiki/specs/run-ledger]]

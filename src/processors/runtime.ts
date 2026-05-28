@@ -590,6 +590,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     return Object.freeze({
       runId,
       processorId: processor.id,
+      executionStatus: "skipped",
       declared,
       granted,
       effects: Object.freeze([
@@ -684,6 +685,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
   return Object.freeze({
     runId,
     processorId: processor.id,
+    executionStatus: execution.status,
     declared,
     granted,
     effects:

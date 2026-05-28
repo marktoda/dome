@@ -102,6 +102,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       {
         runId: RUN_ID,
         processorId: "test.capuse.allowed",
+        executionStatus: "succeeded",
         declared: [{ kind: "patch.propose", paths: ["wiki/**"] }, auto],
         granted: [{ kind: "patch.propose", paths: ["wiki/**"] }, auto],
         effects: [
@@ -155,6 +156,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       {
         runId: RUN_ID,
         processorId: "test.capuse.downgraded",
+        executionStatus: "succeeded",
         declared: [propose],
         granted: [propose],
         effects: [
@@ -207,6 +209,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       {
         runId: RUN_ID,
         processorId: "test.capuse.denied",
+        executionStatus: "succeeded",
         declared: [],
         granted: [],
         effects: [
@@ -256,6 +259,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       {
         runId: RUN_ID,
         processorId: "test.capuse.no-ledger",
+        executionStatus: "succeeded",
         declared: [propose],
         granted: [propose],
         effects: [

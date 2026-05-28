@@ -47,7 +47,12 @@ The run ledger stores `status`, `started_at`, `finished_at`, `duration_ms`, `err
 
 ## Timeouts
 
-Timeouts are phase-scoped and configurable in `.dome/config.yaml`:
+Timeouts are phase-scoped. The current runtime resolves per-processor
+execution metadata and default phase policy inside `resolveExecutionPolicy`;
+vault-level timeout caps from `.dome/config.yaml` are a planned v1.x policy
+surface, not yet wired through `src/processors/runtime.ts`.
+
+Planned vault-level configuration:
 
 ```yaml
 engine:
@@ -65,7 +70,13 @@ Defaults:
 | `garden` | 120s per processor run | Garden work may call models or external systems, but must still be bounded. |
 | `view` | 30s per processor run | A user or protocol caller is waiting for output. |
 
-Timeouts are enforced by the executor boundary, not by individual processors. A timed-out processor produces a `processor.timeout` diagnostic, the executor returns `status: "timed_out"`, and no returned Effects from that invocation are routed. The runtime records the timed-out row through `markTimedOut`; late effects leave `effect_hashes_json` empty because the invocation did not succeed. Garden timed-out retry behavior is part of the target retry/quarantine surface below.
+Timeouts are enforced by the executor boundary, not by individual processors.
+A timed-out processor produces a `processor.timeout` diagnostic, the executor
+returns `status: "timed_out"`, and no returned Effects from that invocation
+are routed. The runtime records the timed-out row through `markTimedOut`; late
+effects leave `effect_hashes_json` empty because the invocation did not
+succeed. Garden timed-out retry behavior is part of the target
+retry/quarantine surface below.
 
 ## Output validation
 

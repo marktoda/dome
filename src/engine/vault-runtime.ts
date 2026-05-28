@@ -81,8 +81,8 @@ import {
 
 /**
  * The composed v1 runtime handle. Carries the open projection / outbox /
- * ledger database connections, the built `ProcessorRuntime`, and the
- * vault path the engine reads git state from.
+ * ledger database connections, the built `ProcessorRegistry` and
+ * `ProcessorRuntime`, and the vault path the engine reads git state from.
  *
  * Lifetime: opened once via `openVaultRuntime`, consumed by zero or more
  * adoption runs (the daemon's per-commit `adopt()` calls), released via
@@ -97,6 +97,7 @@ export type VaultRuntime = {
   readonly projectionDb: ProjectionDb;
   readonly outboxDb: OutboxDb;
   readonly ledgerDb: LedgerDb;
+  readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
   readonly close: () => Promise<void>;
 };
@@ -294,6 +295,7 @@ export async function openVaultRuntime(
     projectionDb,
     outboxDb,
     ledgerDb,
+    registry,
     processorRuntime,
     close: async () => {
       // Close in reverse-open order. SQLite handles are idempotent under
@@ -474,4 +476,3 @@ export function makeResolveTree(
     return treeOid(result.oid);
   };
 }
-

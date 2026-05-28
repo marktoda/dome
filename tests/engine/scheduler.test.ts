@@ -101,6 +101,38 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(recordedDiagnostics).not.toContain("test.scheduler.late");
   });
 
+  test("processor-emitted executor-like diagnostic code does not mark scheduled fire unsuccessful", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.user-diagnostic",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async () => [
+        diagnosticEffect({
+          severity: "error",
+          code: "processor.timeout",
+          message: "user-space diagnostic with executor-like code",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const recordedDiagnostics: string[] = [];
+
+    const result = await runWithProcessor(fixture, processor, {
+      recordDiagnostic: async ({ effect }) => {
+        recordedDiagnostics.push(effect.code);
+      },
+    });
+
+    expect(result.fired.length).toBe(1);
+    expect(result.fired[0]?.processorId).toBe("test.scheduler.user-diagnostic");
+    expect(result.fired[0]?.success).toBe(true);
+    expect(recordedDiagnostics).toContain("processor.timeout");
+  });
+
   test("broker diagnostics do not mark scheduled fire unsuccessful", async () => {
     const processor = defineProcessor({
       id: "test.scheduler.capability-denied",
