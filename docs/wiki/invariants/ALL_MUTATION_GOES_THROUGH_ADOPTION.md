@@ -18,7 +18,7 @@ This invariant replaces v0.5's `VAULT_RECONCILES_AFTER_NATIVE_WRITE`. The shape 
 
 **Structural enforcement:**
 
-1. **The watcher daemon turns branch movement into a Proposal.** `dome serve` polls `refs/heads/<branch>` against `refs/dome/adopted/<branch>`; when HEAD advances, it constructs a manual-source Proposal internally via `makeManualProposal`. The Proposal source kind is set to `manual` with the active branch (per [[wiki/specs/proposals]] §"Local-eventual mode").
+1. **The compiler host turns branch movement into a Proposal.** `dome serve` polls `refs/heads/<branch>` against `refs/dome/adopted/<branch>`; when HEAD advances, it constructs a manual-source Proposal internally via `makeManualProposal`. The Proposal source kind is set to `manual` with the active branch (per [[wiki/specs/proposals]] §"Local-eventual mode").
 2. **`dome sync` is the one-shot catch-up path.** When `dome serve` is off, native writes and git commits accumulate as draft state ahead of adopted. The next `dome sync` catches them up — the "draft state ahead of adopted" property per [[wiki/specs/adoption]].
 3. **The engine itself does not produce changes outside adoption.** Garden processors that emit PatchEffects don't write directly — they re-enter as new Proposals per [[wiki/specs/proposals]] §"Garden-emitted Proposals".
 4. **`refs/dome/adopted/<branch>` is the trust boundary.** Code reading "trusted state" reads the adopted ref, never HEAD. Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
@@ -27,7 +27,7 @@ This invariant replaces v0.5's `VAULT_RECONCILES_AFTER_NATIVE_WRITE`. The shape 
 
 If the user never runs `dome sync` and never starts `dome serve`, the three commits remain draft. `dome status` shows `pending: 3 commits to adopt`. Recall queries default to adopted state and don't see the draft commits. This is by design — draft state is the user's space; trusted state is the engine's.
 
-**Test guarantee:** `tests/invariants/all-mutation-goes-through-adoption.test.ts` — for each write path (working-tree edit + git commit; agent `Write` + git commit; `dome sync`; garden PatchEffect), asserts the change either reaches adoption directly through the daemon/sync path or accumulates as draft state visible to the next sync.
+**Test guarantee:** `tests/invariants/all-mutation-goes-through-adoption.test.ts` — for each write path (working-tree edit + git commit; agent `Write` + git commit; `dome sync`; garden PatchEffect), asserts the change either reaches adoption directly through the compiler-host/sync path or accumulates as draft state visible to the next sync.
 
 **Related:**
 - [[wiki/specs/adoption]]

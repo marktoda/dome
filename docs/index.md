@@ -17,7 +17,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
 - [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
-- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + git-native writes).
+- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/vault-layout]] — Directory structure; category from path; ownership rules; git repository structure; derived operational state under `.dome/state/`.
 
@@ -65,12 +65,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries Zod-validate; corruption surfaces as state-corruption diagnostics.
 - [[wiki/gotchas/capability-downgrade-surprise]] — `patch.auto` exceeding grant downgrades to `patch.propose` with a diagnostic.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes; both produce Proposals; adoption loop sequences them.
-- [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-last-sync.
+- [[wiki/gotchas/daemon-off-while-vault-mutating]] — Compiler host off; catch-up cost grows linearly with time-since-last-sync.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` refuses to run during mid-merge / mid-rebase.
 - [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declare the same page-type / processor / capability handler; `openVault` rejects with `bundle-load-failure`.
 - [[wiki/gotchas/garden-cascade-cap]] — Garden-emitted PatchEffects can recursively spawn sub-Proposals; depth cap (default 10) emits `garden.cascade-cap` diagnostic on hit.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page Proposals that adopt only some pages on block — atomic adoption mitigates.
-- [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); watcher catches them and constructs Proposals.
+- [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the compiler host catches committed branch movement and constructs Proposals.
 - [[wiki/gotchas/outbox-stuck]] — External-action retries exhausted; manual replay / abandon via `dome doctor`.
 - [[wiki/gotchas/processor-fixed-point-divergence]] — Adoption loop hits MAX_ITER cap; processors named in the diagnostic.
 - [[wiki/gotchas/processor-idempotency]] — Non-deterministic processors break the fixed-point loop and `dome rebuild`.

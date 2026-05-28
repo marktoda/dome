@@ -34,7 +34,7 @@ import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import { loadBundles } from "../../src/extensions/loader";
 
-import { commit, currentSha, initRepo } from "../../src/git";
+import { commit, currentSha, initRepo, readBlob } from "../../src/git";
 import { openProjectionDb } from "../../src/projections/db";
 import { queryDiagnostics } from "../../src/projections/diagnostics";
 
@@ -132,8 +132,8 @@ afterEach(async () => {
 // ----- runInit --------------------------------------------------------------
 
 describe("runInit", () => {
-  test("fresh dir → scaffold: dirs, config, AGENTS.md, git+HEAD (no bundle copy)", async () => {
-    // Fresh tmpdir — no git repo, no .dome/, no AGENTS.md.
+  test("fresh dir → scaffold: dirs, config, orientation files, git+HEAD (no bundle copy)", async () => {
+    // Fresh tmpdir — no git repo, no .dome/, no AGENTS.md / CLAUDE.md.
     const target = mkdtempSync(join(tmpdir(), "cli-init-"));
     try {
       const args = parseArgs(["init", target]);
@@ -154,10 +154,11 @@ describe("runInit", () => {
         existsSync(join(target, ".dome", "extensions", "dome.markdown")),
       ).toBe(false);
 
-      // config.yaml + AGENTS.md present with expected anchors.
+      // config.yaml + orientation files present with expected anchors.
       const configPath = join(target, ".dome", "config.yaml");
       expect(existsSync(configPath)).toBe(true);
       const configBody = await readFile(configPath, "utf8");
+      expect(configBody).toContain("dome.graph");
       expect(configBody).toContain("dome.lint");
       expect(configBody).toContain("dome.markdown");
       expect(configBody).toContain("max_iterations");
@@ -169,10 +170,27 @@ describe("runInit", () => {
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
       expect(agentsBody).toContain("<!-- END user-prose -->");
 
+      const claudePath = join(target, "CLAUDE.md");
+      expect(existsSync(claudePath)).toBe(true);
+      const claudeBody = await readFile(claudePath, "utf8");
+      expect(claudeBody.startsWith("@AGENTS.md")).toBe(true);
+      expect(claudeBody).toContain("dome status");
+      expect(claudeBody).toContain("dome sync");
+      expect(claudeBody).toContain("dome inspect <subject>");
+      expect(captured.out.join("\n")).toContain("CLAUDE.md:");
+
       // Git initialized + HEAD resolves (the initial scaffold commit landed).
       expect(existsSync(join(target, ".git"))).toBe(true);
       const head = await currentSha(target);
       expect(head).not.toBeNull();
+      if (head !== null) {
+        expect(
+          await readBlob({ path: target, commit: head, filepath: "AGENTS.md" }),
+        ).toBe(agentsBody);
+        expect(
+          await readBlob({ path: target, commit: head, filepath: "CLAUDE.md" }),
+        ).toBe(claudeBody);
+      }
 
       // The SDK-shipped bundles are still loadable from the resolved
       // shipped-bundles root. This is the load-bearing assertion that
@@ -182,6 +200,7 @@ describe("runInit", () => {
       expect(loaded.ok).toBe(true);
       if (loaded.ok) {
         const ids = loaded.value.map((b) => b.id);
+        expect(ids).toContain("dome.graph");
         expect(ids).toContain("dome.lint");
         expect(ids).toContain("dome.markdown");
       }
@@ -190,35 +209,41 @@ describe("runInit", () => {
     }
   });
 
-  test("is idempotent — re-run leaves AGENTS.md byte-identical + no errors", async () => {
+  test("is idempotent — re-run leaves orientation files byte-identical + no errors", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-idem-"));
     try {
       const args = parseArgs(["init", target]);
       expect(await runInit(args)).toBe(0);
 
       const agentsPath = join(target, "AGENTS.md");
+      const claudePath = join(target, "CLAUDE.md");
       const configPath = join(target, ".dome", "config.yaml");
       const firstAgents = await readFile(agentsPath, "utf8");
+      const firstClaude = await readFile(claudePath, "utf8");
       const firstConfig = await readFile(configPath, "utf8");
       const firstHead = await currentSha(target);
 
-      // Mutate the user-prose region to confirm `dome init` doesn't
-      // clobber post-init edits.
-      const mutated = firstAgents.replace(
+      // Mutate the user-prose region and Claude-specific shim notes to
+      // confirm `dome init` doesn't clobber post-init edits.
+      const mutatedAgents = firstAgents.replace(
         "<!-- BEGIN user-prose -->",
         "<!-- BEGIN user-prose -->\n\nMy private vault notes.",
       );
-      await writeFile(agentsPath, mutated, "utf8");
+      const mutatedClaude = `${firstClaude}\nPersonal Claude Code reminder.\n`;
+      await writeFile(agentsPath, mutatedAgents, "utf8");
+      await writeFile(claudePath, mutatedClaude, "utf8");
 
       expect(await runInit(args)).toBe(0);
 
       const secondAgents = await readFile(agentsPath, "utf8");
+      const secondClaude = await readFile(claudePath, "utf8");
       const secondConfig = await readFile(configPath, "utf8");
       const secondHead = await currentSha(target);
 
-      // User-prose mutation survives re-init; config untouched; HEAD
+      // Orientation mutations survive re-init; config untouched; HEAD
       // didn't advance (no second commit landed).
-      expect(secondAgents).toBe(mutated);
+      expect(secondAgents).toBe(mutatedAgents);
+      expect(secondClaude).toBe(mutatedClaude);
       expect(secondConfig).toBe(firstConfig);
       expect(secondHead).toBe(firstHead);
     } finally {

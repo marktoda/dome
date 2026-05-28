@@ -26,7 +26,7 @@ These four surfaces are the *load-bearing* contract. The MCP server ([[wiki/spec
 
 An agentic harness can write to the vault in three ways. Each goes through the engine's adoption loop:
 
-### 1. Native write + watcher pickup (the canonical path)
+### 1. Native write + compiler-host pickup (the canonical path)
 
 The agent uses its harness-native write tool (`Write` in Claude Code, `:w` in vim, the OS file API in Obsidian), then commits through ordinary git. The engine constructs a Proposal automatically when `dome serve` observes the branch ref moving (or on the next `dome sync` when the compiler host is not running). Adoption proceeds.
 
@@ -126,8 +126,8 @@ None of these change the SDK contract; they change the harness shape above it. T
 
 ## What's NOT a harness
 
-- Obsidian. Obsidian is a *browser* over the vault — it reads markdown directly. Obsidian-side edits are *native writes*; the watcher catches them and turns them into Proposals — see [[wiki/gotchas/out-of-band-vault-edits]] for the canonical-path framing.
-- `git`, `vim`, the filesystem. Same as Obsidian — these are vault-readers and vault-editors that produce native writes the engine catches up via the watcher.
+- Obsidian. Obsidian is a *browser* over the vault — it reads markdown directly. Obsidian-side edits are *native writes*; once committed, the compiler host turns them into Proposals — see [[wiki/gotchas/out-of-band-vault-edits]] for the canonical-path framing.
+- `git`, `vim`, the filesystem. Same as Obsidian — these are vault-readers and vault-editors that produce native writes the engine catches up through branch/adopted drift.
 
 ## What an agentic harness needs
 
@@ -147,7 +147,7 @@ The structural payoffs:
 
 - **No lock-in to one vendor.** Dome doesn't ship its own chat surface in v1. It augments wherever the user already lives.
 - **Multi-harness usage is natural.** Same vault, Claude Code on one machine and Cursor on another. Both read `AGENTS.md`; both can shell out to the CLI. Their MCP mounts (if any) are independent.
-- **The SDK is the contract internally; the compiler boundary is the contract externally.** Internal Dome flows (garden-phase processors compiling raw captures, scheduled processors running cron-driven jobs) go through the engine's adoption loop with full capability enforcement. External writes from any consumer shell are turned into Proposals by the watcher and adopted through the same loop. One pattern, one set of guarantees.
+- **The SDK is the contract internally; the compiler boundary is the contract externally.** Internal Dome flows (garden-phase processors compiling raw captures, scheduled processors running cron-driven jobs) go through the engine's adoption loop with full capability enforcement. External committed writes from any consumer shell are turned into Proposals by the compiler host and adopted through the same loop. One pattern, one set of guarantees.
 
 System prompts and orientation are markdown files, not harness-specific code. `AGENTS.md` is the orientation surface; every harness that honors the `AGENTS.md` convention picks it up the same way. Per-harness setup is documentation, not SDK code — the SDK doesn't auto-configure anything; that would create harness-version coupling.
 

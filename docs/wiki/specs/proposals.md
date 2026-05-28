@@ -21,7 +21,7 @@ interface Proposal {
 }
 
 type ProposalSource =
-  | { kind: "manual";  branch: string }                       // daemon-derived from working-tree drift
+  | { kind: "manual";  branch: string }                       // compiler-host-derived branch drift
   | { kind: "garden";  processorId: string; runId: string };  // a garden-phase processor emitted a PatchEffect
 
 interface ProposalMetadata {
@@ -49,7 +49,7 @@ This is pinned by [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 
 The vault is a single-user single-machine git repo. Writes land in the working tree (vim, Obsidian, Claude Code's native `Write`, the dailies CLI, etc.) and accumulate as commits on the source branch ahead of `refs/dome/adopted/<branch>`.
 
-In v1.0 the engine-internal watcher daemon (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes the new commits and constructs a Proposal:
+In v1.0 the local compiler host (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes the new commits and constructs a Proposal:
 
 ```text
 proposal = {
@@ -60,7 +60,7 @@ proposal = {
 }
 ```
 
-Per docs/v1.md §13.2 ("Claude Code does not need bespoke write tools"), every client — voice clients, Obsidian, Claude Code, mobile, etc. — writes markdown and commits via plain git. The daemon is the only thing that constructs Proposals in v1.0; there is no public submit-style API the client must call. The Proposal then enters the engine's adoption loop ([[wiki/specs/adoption]]).
+Per docs/v1.md §13.2 ("Claude Code does not need bespoke write tools"), every client — voice clients, Obsidian, Claude Code, mobile, etc. — writes markdown and commits via plain git. The compiler host is the only local runtime that constructs user-write Proposals in v1.0; there is no public submit-style API the client must call. `dome sync` uses the same internal construction path for one-shot catch-up when no long-running host is active. The Proposal then enters the engine's adoption loop ([[wiki/specs/adoption]]).
 
 ### Garden-emitted Proposals
 
@@ -126,7 +126,7 @@ The engine's adoption loop runs in CI; engine commits land on the PR branch; the
 
 In v1.0 there is no public submission API. Proposals are constructed exclusively by engine-internal code:
 
-- **The watcher daemon** (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes a new commit on `refs/heads/<branch>`, sees it diverges from `refs/dome/adopted/<branch>`, and synthesizes a `manual`-source Proposal via the internal `makeManualProposal` helper in `src/core/proposal.ts`.
+- **The local compiler host** (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes a new commit on `refs/heads/<branch>`, sees it diverges from `refs/dome/adopted/<branch>`, and synthesizes a `manual`-source Proposal via the internal `makeManualProposal` helper in `src/core/proposal.ts`.
 - **The engine itself** synthesizes a `garden`-source Proposal when a garden-phase processor emits a `PatchEffect` (per §"Garden-emitted Proposals" above).
 
 The internal helper signature:
@@ -155,7 +155,7 @@ interface AdoptionResult {
 }
 ```
 
-Per docs/v1.md §13.2, "Claude Code does not need bespoke write tools." A client that can write markdown and commit via plain git can participate; the daemon handles the rest. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@dome/sdk`.
+Per docs/v1.md §13.2, "Claude Code does not need bespoke write tools." A client that can write markdown and commit via plain git can participate; the compiler host handles the rest. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@dome/sdk`.
 
 This is the structural fence behind [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 

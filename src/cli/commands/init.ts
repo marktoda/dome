@@ -10,16 +10,17 @@
 //   - `.dome/config.yaml`  — extension activation + grants
 //   - `.gitignore`         — engine-managed
 //   - `AGENTS.md`          — orientation surface
+//   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
 // The vault does NOT carry the first-party extension bundles
-// (`dome.lint`, `dome.markdown`). They live with the SDK at
+// (`dome.graph`, `dome.lint`, `dome.markdown`). They live with the SDK at
 // `<SDK>/assets/extensions/` and are resolved at runtime by the bundle
 // loader (`resolveShippedBundlesRoot` in `./sync-shared.ts`). This
 // matches the v1.md model: "Core features are just built-in extensions"
 // (§10.1) — built-in means shipped with the SDK, not copied into every
 // vault.
 //
-// The five steps:
+// The scaffold steps:
 //
 //   1. Resolve target path (positional arg, else cwd).
 //   2. Run `git init` if `<target>/.git/` doesn't exist.
@@ -27,7 +28,8 @@
 //   4. Write `<target>/.dome/config.yaml` from a shipped default (below).
 //   5. Write `<target>/.gitignore` (ignores `.dome/state/`).
 //   6. Write `<target>/AGENTS.md` from the shipped orientation template.
-//   7. If the repo has no commits yet, make an initial scaffold commit so
+//   7. Write `<target>/CLAUDE.md` as a small Claude Code shim.
+//   8. If the repo has no commits yet, make an initial scaffold commit so
 //      the adopted ref substrate has somewhere to start.
 //
 // Users wanting vault-local bundles (to override a shipped bundle or
@@ -46,6 +48,8 @@
 //     write-only matches that contract — the merge regenerates templated
 //     sections on demand, today on `dome init` re-runs and in v1.x via the
 //     reserved `dome doctor --repair` verb.)
+//   - `CLAUDE.md`: skip if exists. Users may add local Claude-specific
+//     notes below the shim; re-init must not clobber them.
 //   - Initial scaffold commit: skip if HEAD already resolves.
 //
 // Exit codes per spec:
@@ -78,6 +82,7 @@ type InitSummary = {
   readonly configYaml: StepOutcome;
   readonly gitignore: StepOutcome;
   readonly agentsMd: StepOutcome;
+  readonly claudeMd: StepOutcome;
   readonly initialCommit: StepOutcome;
 };
 
@@ -135,7 +140,13 @@ export async function runInit(args: ParsedArgs): Promise<number> {
     const agentsPath = join(vaultPath, "AGENTS.md");
     const agentsOutcome = await writeIfMissing(agentsPath, AGENTS_MD_TEMPLATE);
 
-    // 7. Initial scaffold commit, if the repo has no commits yet. The
+    // 7. Write `CLAUDE.md`, the Claude Code auto-load shim. Claude Code
+    //    reads CLAUDE.md, so it imports AGENTS.md where the full cross-
+    //    harness orientation lives.
+    const claudePath = join(vaultPath, "CLAUDE.md");
+    const claudeOutcome = await writeIfMissing(claudePath, CLAUDE_MD_TEMPLATE);
+
+    // 8. Initial scaffold commit, if the repo has no commits yet. The
     //    adopted-ref substrate needs HEAD to resolve before `dome sync`
     //    or `dome serve` can compute drift.
     const headExists = (await currentSha(vaultPath)) !== null;
@@ -143,14 +154,15 @@ export async function runInit(args: ParsedArgs): Promise<number> {
     if (headExists) {
       initialCommitOutcome = "skipped (already present)";
     } else {
-      // Stage `.gitignore`, `AGENTS.md`, and `.dome/config.yaml`. Empty
-      // dirs (`wiki/`, `.dome/state/`) aren't committable by git; they
-      // survive on disk for the user's first write.
+      // Stage `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
+      // `.dome/config.yaml`. Empty dirs (`wiki/`, `.dome/state/`) aren't
+      // committable by git; they survive on disk for the user's first
+      // write.
       await commit({
         path: vaultPath,
         message: INITIAL_COMMIT_MESSAGE,
         author: { name: "dome init", email: "dome-init@local" },
-        files: [".gitignore", "AGENTS.md", ".dome/config.yaml"],
+        files: [".gitignore", "AGENTS.md", "CLAUDE.md", ".dome/config.yaml"],
       });
       initialCommitOutcome = "created";
     }
@@ -163,6 +175,7 @@ export async function runInit(args: ParsedArgs): Promise<number> {
       configYaml: configOutcome,
       gitignore: gitignoreOutcome,
       agentsMd: agentsOutcome,
+      claudeMd: claudeOutcome,
       initialCommit: initialCommitOutcome,
     };
 
@@ -213,16 +226,17 @@ function printSummary(s: InitSummary): void {
   console.log(`  .dome/config.yaml:       ${s.configYaml}`);
   console.log(`  .gitignore:              ${s.gitignore}`);
   console.log(`  AGENTS.md:               ${s.agentsMd}`);
+  console.log(`  CLAUDE.md:               ${s.claudeMd}`);
   console.log(`  initial commit:          ${s.initialCommit}`);
 }
 
 // ----- Templates ------------------------------------------------------------
 //
-// The default `.gitignore`, `.dome/config.yaml`, and `AGENTS.md` content
-// shipped into every new vault. Templates live in code (not under
-// assets/) so the binary is self-contained and a future
-// `bun build`-produced single-file CLI doesn't need to bundle a
-// templates directory.
+// The default `.gitignore`, `.dome/config.yaml`, `AGENTS.md`, and
+// `CLAUDE.md` content shipped into every new vault. Templates live in
+// code (not under assets/) so the binary is self-contained and a future
+// `bun build`-produced single-file CLI doesn't need to bundle a templates
+// directory.
 
 // The default `.gitignore` shipped into every new vault. Ignores
 // `.dome/state/` per [[wiki/specs/vault-layout]] §"Derived operational
@@ -238,10 +252,10 @@ Thumbs.db
 const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
-# grants. The shipped first-party bundles (\`dome.lint\`, \`dome.markdown\`,
-# \`dome.graph\`)
-# live with the SDK — the CLI's default \`--bundles-root\` resolves to the
-# SDK's \`assets/extensions/\` directory. To install a third-party bundle,
+# grants. The shipped first-party bundles (\`dome.graph\`, \`dome.lint\`,
+# \`dome.markdown\`) live with the SDK — the CLI's default
+# \`--bundles-root\` resolves to the SDK's \`assets/extensions/\` directory.
+# To install a third-party bundle,
 # create \`.dome/extensions/<bundle-id>/\` here and pass
 # \`--bundles-root .dome/extensions\` on the command line.
 
@@ -309,7 +323,7 @@ Commit your changes to \`main\`:
 git add . && git commit -m "your message"
 \`\`\`
 
-**Commit per logical change.** The daemon treats each commit as a Proposal —
+**Commit per logical change.** The compiler host treats each commit as a Proposal —
 one commit triggers one adoption cycle. Many small commits give you
 per-change diagnostic feedback and a clean \`git blame\`; one mega-commit
 bundles all diagnostics together and is harder to revert selectively. When
@@ -321,24 +335,25 @@ many-pages refactor you might discard — use a git worktree to isolate it
 from \`main\` until you're sure:
 
 \`\`\`bash
-git worktree add .worktrees/restructure -b experiment/restructure
-cd .worktrees/restructure
+git worktree add .Codex/worktrees/experiment-restructure -b experiment/restructure
+cd .Codex/worktrees/experiment-restructure
 # ...experimental edits + commits land on experiment/restructure...
 # merge back to main when ready, or rm -rf and discard
 \`\`\`
 
-The daemon watches \`refs/heads/main\` only, so worktree commits don't get
+The compiler host watches \`refs/heads/main\` only, so worktree commits don't get
 adopted until you merge them back. That's the point of using a worktree:
 the experiment is invisible to the engine until you decide it's worth
 keeping.
 
-A daemon (\`dome serve\`) running in the background watches for new commits.
-On each commit, the engine runs adoption: lint markdown, validate wikilinks,
-update projections, advance \`refs/dome/adopted/main\`. You see nothing on
-the happy path. If a processor surfaces a warning, it lands in the
-diagnostic projection.
+A compiler host (\`dome serve\`) watches for new commits. It can run in a
+foreground terminal like an LSP/watch process or under a local background
+service. On each commit, the engine runs adoption: lint markdown, validate
+wikilinks, update projections, advance \`refs/dome/adopted/main\`. You see
+nothing on the happy path. If a processor surfaces a warning, it lands in
+the diagnostic projection.
 
-If the daemon isn't running, run \`dome sync\` once after your commits to
+If the compiler host isn't running, run \`dome sync\` once after your commits to
 catch up.
 
 ## What you can ask the system
@@ -348,7 +363,7 @@ catch up.
 - \`dome inspect diagnostics\` — broken wikilinks, lint warnings,
   unresolved questions.
 - \`dome inspect runs\` — recent processor invocations + outcomes.
-- \`dome inspect outbox\` — pending external actions (none in v1.0).
+- \`dome inspect outbox\` — pending external actions.
 
 ## Vault conventions
 
@@ -356,13 +371,14 @@ catch up.
   Use bare names (\`[[danny]]\`) for vault-wide search; use paths
   (\`[[people/danny]]\`) for explicit references.
 - \`.dome/extensions/\` — optional directory for vault-local third-party
-  extension bundles. The shipped first-party bundles (\`dome.lint\`,
-  \`dome.markdown\`) live with the SDK and don't need to be copied here.
+  extension bundles. The shipped first-party bundles (\`dome.graph\`,
+  \`dome.lint\`, \`dome.markdown\`) live with the SDK and don't need to be
+  copied here.
   To install a third-party bundle, place its directory under
   \`.dome/extensions/<bundle-id>/\` and pass
   \`--bundles-root .dome/extensions\` to the CLI commands.
 - \`.dome/state/\` — SQLite databases for projections, outbox, and run
-  ledger. Don't edit by hand; rebuildable via \`dome rebuild\` (v1.1+).
+  ledger. Don't edit by hand; projection state is rebuildable via \`dome rebuild\`.
 - \`.dome/config.yaml\` — extension activation and engine config.
 
 ## Invariants you should know about
@@ -391,16 +407,27 @@ reserved \`dome doctor --repair\` verb.)
 <!-- END user-prose -->
 `;
 
+const CLAUDE_MD_TEMPLATE = `@AGENTS.md
+
+## Claude Code
+
+Use the Dome vault workflow described in AGENTS.md. Edit markdown normally,
+commit coherent changes with git, and use \`dome status\`, \`dome sync\`, and
+\`dome inspect <subject>\` only when the user wants adoption status or recovery
+details.
+`;
+
 const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold
 
 Includes:
 - AGENTS.md (orientation surface for Claude Code and other harnesses)
+- CLAUDE.md (Claude Code shim importing AGENTS.md)
 - .gitignore (ignores .dome/state/)
 - .dome/config.yaml (extension activation + engine settings)
 
-The first-party extension bundles (dome.lint, dome.markdown) live with
-the SDK at <SDK>/assets/extensions/ and are resolved at runtime — the
-vault doesn't carry copies.
+The first-party extension bundles (dome.graph, dome.lint, dome.markdown)
+live with the SDK at <SDK>/assets/extensions/ and are resolved at runtime
+— the vault doesn't carry copies.
 
 Generated by \`dome init\` v1.0
 `;

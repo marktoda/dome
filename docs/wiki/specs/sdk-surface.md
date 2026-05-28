@@ -53,7 +53,7 @@ interface Vault {
 }
 ```
 
-The public surface is **read or engine control** — there is no `vault.tools.writeDocument(...)`, `vault.write(...)`, or public `vault.submitProposal(...)`. To change vault state in v1.0, external callers write markdown and create normal git commits. The engine-internal daemon (`dome serve`) or one-shot catch-up command (`dome sync`) compares `refs/dome/adopted/<branch>` to `refs/heads/<branch>`, constructs the Proposal internally, and runs the adoption loop.
+The public surface is **read or engine control** — there is no `vault.tools.writeDocument(...)`, `vault.write(...)`, or public `vault.submitProposal(...)`. To change vault state in v1.0, external callers write markdown and create normal git commits. The compiler host (`dome serve`) or one-shot catch-up command (`dome sync`) compares `refs/dome/adopted/<branch>` to `refs/heads/<branch>`, constructs the Proposal internally, and runs the adoption loop.
 
 Garden processors that emit PatchEffects also do not call a public write method. The engine converts the patch into an internal garden-source Proposal and routes it through the same adoption loop. This is the structural enforcement of [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 

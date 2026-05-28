@@ -10,13 +10,13 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able. Disabling it changes what Dome is.
 
-**Statement:** Every mutation to vault state — human edit, agent write, garden-emitted patch, intake compilation, scheduled job — passes through a `Proposal` and the engine's adoption loop. In v1.0 the engine-internal daemon is the only thing that constructs Proposals and calls `adopt()`; there is no direct-write API on the SDK and no privileged escape hatch for internal code.
+**Statement:** Every mutation to vault state — human edit, agent write, garden-emitted patch, intake compilation, scheduled job — passes through a `Proposal` and the engine's adoption loop. In v1.0 the engine-internal compiler host/sync path is the only local runtime that constructs user-write Proposals and calls `adopt()`; there is no direct-write API on the SDK and no privileged escape hatch for internal code.
 
 **Why:** One write path is what makes the engine's guarantees tractable. Adoption is the only place capability enforcement runs, diagnostics are surfaced, the run ledger writes, and the projection store updates. A "trusted internal write" bypass would dissolve every property the engine layer provides — the design would degrade into the v0.5 model where some writes were Tool-enforced and others (the privileged-writer) weren't.
 
 **Structural enforcement:**
 
-1. **`src/index.ts` has no exports for direct mutation.** `vault.tools.writeDocument(...)` does not exist. No public submit-style API is exposed either — the engine-internal daemon is the only caller of `adopt()` in v1.0.
+1. **`src/index.ts` has no exports for direct mutation.** `vault.tools.writeDocument(...)` does not exist. No public submit-style API is exposed either — engine-internal runtime code is the only caller of `adopt()` in v1.0.
 2. **The engine routing layer is the only layer that reaches mutation primitives.** No `bun.write`, `fs.writeFile`, `git.commit`, or `db.execute("INSERT ...")` call outside `src/engine/`.
 3. **The semantic linter `no-direct-mutation-outside-engine`** ([[wiki/linters/no-direct-mutation-outside-engine]]) greps `src/` for mutation calls outside `src/engine/` and `src/projections/`. v1 ships this as a structural fence rather than reviewer-memory enforcement.
 4. **The capability broker rejects effects emitted outside the engine boundary.** A processor that calls `enforceCapability` directly (rather than emitting an Effect for the engine to route) crashes the run with `engine-bypass-attempt`.
@@ -36,10 +36,10 @@ tier: axiom
   - `src/engine/adopt.ts:adopt()` is the only function that mutates trusted state. There is no public submit-style API in `src/index.ts`; Proposals are constructed internally by engine code and routed through `adopt()`.
   - `src/index.ts` does NOT export `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog`, or the privileged-writer surface — those v0.5 paths were retired entirely.
   - `src/index.ts` does NOT export `submitProposal`, the Proposal source-constructors, or `openVaultRuntime` — the engine-internal write path is not reachable from SDK consumers in v1.0. The retired `submitProposal({runtime, proposal})` ceremony (Phase 11a demolition) was the wrong shape; the canonical v1.0 write path is `git commit` + the engine's adoption-on-new-commit run.
-  - The `Proposal` type carries a 2-way internal `ProposalSource` union (`manual` + `garden`); `makeManualProposal` in `src/core/proposal.ts` is the single internal constructor used by the daemon when it observes working-tree drift.
+  - The `Proposal` type carries a 2-way internal `ProposalSource` union (`manual` + `garden`); `makeManualProposal` in `src/core/proposal.ts` is the single internal constructor used by the compiler host/sync path when it observes branch/adopted drift.
 
 - Forward-looking (v1.x):
-  - **The watcher daemon (Phase 11b, `dome serve`)** is the only thing that calls `adopt()` against client-driven Proposals in v1.0. It watches `refs/heads/<branch>`, compares against `refs/dome/adopted/<branch>`, constructs a `manual`-source Proposal via `makeManualProposal`, and routes it through the engine. Until the daemon lands, the test fixtures construct Proposals directly and call `adopt()` in-process.
+  - **The local compiler host (`dome serve`)** is the long-running process that calls `adopt()` against client-driven Proposals in v1.0. It watches `refs/heads/<branch>`, compares against `refs/dome/adopted/<branch>`, constructs a `manual`-source Proposal via `makeManualProposal`, and routes it through the engine. `dome sync` uses the same internal construction path for one-shot catch-up.
   - **`PatchEffect` application** — the `applyPatch` sink seam is a placeholder pending the candidate-tree mutator. v1 ships the routing + capability + ledger machinery; the mutator lands later. Until then, the only effects that successfully route through adoption are non-patch kinds (diagnostic, fact, question, job, external, view).
   - **The semantic linter `no-direct-mutation-outside-engine`** ([[wiki/linters/no-direct-mutation-outside-engine]]) is a reviewable spec but not yet a CI check.
 

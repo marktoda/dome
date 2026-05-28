@@ -48,7 +48,7 @@ Everything else — first-party features, third-party plugins, integrations — 
 
 ## What Dome is
 
-- **A compiler over a markdown vault.** A background daemon (`dome serve`) watches for changes, runs the adoption loop on each Proposal, fires garden processors after, surfaces diagnostics. The compiler is what makes the vault self-maintaining.
+- **A compiler over a markdown vault.** A compiler host watches committed changes, runs the adoption loop on each Proposal, fires garden processors after, and surfaces diagnostics. The first host is `dome serve`, which can run foreground like an LSP/watch process or under a background service. The compiler is what makes the vault self-maintaining.
 - **A typed markdown vault.** Raw notes, sources, and clips on one side; a compiled wiki of entities, concepts, sources, and syntheses on the other. Bidirectional wikilinks. Index and log files as committed projections. Standard Obsidian-compatible markdown — open it in any editor and everything works.
 - **A small, portable SDK.** Four concepts in the core — **Vault, Proposal, Processor, Effect** — and nothing else. The same SDK powers the desktop CLI, embeds in a native mobile or web app, and drives headless processor runs. The compiler runs anywhere the SDK runs.
 - **A CLI for explicit operations.** `dome sync` adopts committed draft state; `dome query` reads from adopted state; `dome lint` walks the wiki and writes a report of findings; `dome rebuild` rebuilds the projection store from markdown. `dome stats`, `dome doctor`, `dome init`. Invokable from any shell.
@@ -60,7 +60,7 @@ Dome interacts with the world through two distinct kinds of surfaces, and the de
 
 **Native Dome surfaces** — the iPhone app, desktop app, web app, voice client. Dome ships these. The intake and recall flows are opinionated: deliberate UX for voice capture into `inbox/voice/`, share-sheets into `inbox/clip/`, hotkey quick-capture into `inbox/raw/`, guided recall and prep-mode briefings, structured review of pending wiki proposals. The compiler runs behind them; the surface controls the flow.
 
-**Agentic harnesses** — Claude Code today; Cursor, OpenCode, Codex, future agent harnesses. Dome doesn't ship these; you bring your own. They're general-purpose; they read and write your vault using whatever tools they have natively. **Dome's contract with these harnesses is the compiler boundary**: per-vault `AGENTS.md` teaches the agent your vault's conventions at session start; the watcher catches every native write and turns it into a Proposal; the engine adopts; the CLI exposes named structured operations the agent invokes when it wants them.
+**Agentic harnesses** — Claude Code today; Cursor, OpenCode, Codex, future agent harnesses. Dome doesn't ship these; you bring your own. They're general-purpose; they read and write your vault using whatever tools they have natively. **Dome's contract with these harnesses is the compiler boundary**: per-vault `AGENTS.md` teaches the agent your vault's conventions at session start; the compiler host catches committed native writes and turns them into Proposals; the engine adopts; the CLI exposes named structured operations the agent invokes when it wants them.
 
 Native surfaces optimize for friction (designed flows). Agentic harnesses optimize for openness (any tool, any conversation, any model). Both produce Proposals; the engine adopts every Proposal through the same loop, regardless of origin.
 
@@ -84,15 +84,15 @@ Native surfaces optimize for friction (designed flows). Agentic harnesses optimi
 
 **5. Provenance is mandatory.** Every Fact carries a SourceRef pointing into an adopted commit. Every external side effect goes through the outbox with an idempotency key. Every processor run lands in the ledger. There is no claim without evidence, no external action without an audit row, no run without provenance.
 
-**6. The compiler is universal; surface opinion is per-surface.** The same compiler runs over your vault regardless of which surface wrote into it. Native Dome surfaces layer opinionated UX on top; agentic harnesses bring their own UX. The compiler boundary — watcher + engine + adopted ref + CLI + `AGENTS.md` — is the explicit contract that lets every surface coexist.
+**6. The compiler is universal; surface opinion is per-surface.** The same compiler runs over your vault regardless of which surface wrote into it. Native Dome surfaces layer opinionated UX on top; agentic harnesses bring their own UX. The compiler boundary — compiler host + engine + adopted ref + CLI + `AGENTS.md` — is the explicit contract that lets every surface coexist.
 
 **7. Extensibility is uniform.** First-party features and third-party plugins ship as extension bundles registering processors via the same path. Adding a new behavior — for the SDK or for a single user's vault — is "write a processor; declare capabilities; ship a bundle." The four-concept core never changes. Years of features can land without touching the primitives.
 
 ## How it works
 
-**Quick-capture from anywhere.** A phone widget, a voice memo, a share-sheet, a terminal hotkey, a file drop into `inbox/`. The capture writes raw markdown; the watcher turns it into a Proposal; the engine adopts; garden processors compile raw → wiki updates while you walk.
+**Quick-capture from anywhere.** A phone widget, a voice memo, a share-sheet, a terminal hotkey, a file drop into `inbox/`. The capture writes raw markdown; the compiler host turns it into a Proposal; the engine adopts; garden processors compile raw → wiki updates while you walk.
 
-**Talk to your agent.** Today that's Claude Code, with `AGENTS.md` auto-loaded so the agent arrives oriented to your vault. The agent reads pages, writes updates, proposes cross-references, asks for confirmation. Whichever tools it uses — native filesystem operations or Dome's CLI commands invoked via `Bash` — the watcher catches the writes, the engine adopts them, the projection store updates, the vault stays coherent.
+**Talk to your agent.** Today that's Claude Code, with `CLAUDE.md` importing `AGENTS.md` so the agent arrives oriented to your vault. The agent reads pages, writes updates, proposes cross-references, asks for confirmation. Whichever tools it uses — native filesystem operations or Dome's CLI commands invoked via `Bash` — the compiler host catches committed writes, the engine adopts them, the projection store updates, the vault stays coherent.
 
 **Browse in Obsidian** — or any markdown editor, or the Dome mobile app once it ships. Nothing about the vault is proprietary.
 

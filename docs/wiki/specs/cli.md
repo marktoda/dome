@@ -82,8 +82,9 @@ The shipped five steps:
    path rather than polish. First-write-only — re-runs preserve any
    user-prose section the vault owner added.
 6. Creates an initial scaffold commit (`dome init: initial scaffold`)
-   staging `.gitignore`, `AGENTS.md`, and `.dome/config.yaml`. Skipped
-   if HEAD already resolves (re-init on a vault with commits is a
+   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
+   `.dome/config.yaml`. Skipped if HEAD already resolves (re-init on a
+   vault with commits is a
    no-op for this step).
 
 Deferred to v1.1:
