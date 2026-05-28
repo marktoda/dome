@@ -651,11 +651,10 @@ function frozenResult(result: {
  * True iff any diagnostic in the accumulator has `severity: "block"`. The
  * accumulator carries two diagnostic streams (the loop body merges both):
  *
- *   1. Broker-emitted diagnostics from `applied.diagnostics` — deny
- *      (`severity: "error"`), downgrade-surprise (`severity: "warning"`),
- *      phase-mismatch (`severity: "error"`). Only the deny path's diagnostic
- *      would carry block severity in practice; the broker does not emit
- *      block-severity diagnostics in v1.
+ *   1. Router/broker diagnostics from `applied.diagnostics` — adoption
+ *      PatchEffect denial and propose-mode review requirements are
+ *      `severity: "block"`; downgrade-surprise remains `warning`;
+ *      phase-mismatch remains `error`.
  *   2. Processor-emitted DiagnosticEffects pulled from
  *      `applied.appliedEffect` — these include block-severity adoption-
  *      blocking diagnostics (per adoption.md §"DiagnosticEffect"). The
@@ -673,4 +672,3 @@ function hasBlockingDiagnostic(
   }
   return false;
 }
-

@@ -81,7 +81,7 @@ afterEach(async () => {
 const RUN_ID = "run_test_capuse" as RunId;
 
 describe("adopt — capability-use recording (Phase 6)", () => {
-  test("PatchEffect (auto) with patch.auto granted → 'allowed' row joined to runner runId", async () => {
+  test("PatchEffect (propose) with patch.propose granted → blocks adoption and records 'allowed' row", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
@@ -93,18 +93,14 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       branch: "main",
     });
 
-    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
-    // The stub runner returns a single propose-mode patch (so the loop
-    // converges on iter 1 without re-running) but the broker still sees
-    // the original effect for capability evaluation. Use propose to avoid
-    // an auto-divergence path.
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
     const runner: AdoptionPhaseRunner = async () => [
       {
         runId: RUN_ID,
         processorId: "test.capuse.allowed",
         executionStatus: "succeeded",
-        declared: [{ kind: "patch.propose", paths: ["wiki/**"] }, auto],
-        granted: [{ kind: "patch.propose", paths: ["wiki/**"] }, auto],
+        declared: [propose],
+        granted: [propose],
         effects: [
           patchEffect({
             mode: "propose",
@@ -126,9 +122,10 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       ledger: f.ledger,
     });
 
-    // Propose-mode patches don't count as auto-patches for fixed-point
-    // detection, so the loop converges immediately.
-    expect(r.adopted).toBe(true);
+    expect(r.adopted).toBe(false);
+    expect(
+      r.diagnostics.some((d) => d.code === "patch.propose.requires-review"),
+    ).toBe(true);
 
     const uses = capabilityUsesByRun(f.ledger, RUN_ID);
     expect(uses.length).toBe(1);
@@ -180,9 +177,10 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       ledger: f.ledger,
     });
 
-    // Downgrade rewrites the effect to propose-mode; not an auto-patch
-    // for fixed-point purposes, so the loop converges.
-    expect(r.adopted).toBe(true);
+    expect(r.adopted).toBe(false);
+    expect(
+      r.diagnostics.some((d) => d.code === "patch.propose.requires-review"),
+    ).toBe(true);
 
     const uses = capabilityUsesByRun(f.ledger, RUN_ID);
     expect(uses.length).toBe(1);
@@ -225,13 +223,15 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       },
     ];
 
-    await adopt({
+    const r = await adopt({
       vault: f.vault,
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
       ledger: f.ledger,
     });
+
+    expect(r.adopted).toBe(false);
 
     const uses = capabilityUsesByRun(f.ledger, RUN_ID);
     expect(uses.length).toBe(1);
@@ -283,7 +283,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       // ledger intentionally absent
     });
 
-    expect(r.adopted).toBe(true);
+    expect(r.adopted).toBe(false);
 
     // The fixture's ledger was opened but not threaded through `adopt` —
     // so it sees zero rows.

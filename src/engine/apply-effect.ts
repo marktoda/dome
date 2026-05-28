@@ -164,8 +164,13 @@ export type ApplyEffectSinks = {
  *                           effect; the broker was not consulted. Nothing
  *                           routed. `diagnostics` carries a `phase-mismatch`
  *                           diagnostic.
+ *   - `blocked-for-review` — an adoption-phase PatchEffect resolved to
+ *                           `mode: "propose"` after broker enforcement.
+ *                           Nothing routed; `diagnostics` carries a block
+ *                           diagnostic that stops adoption.
  *
  * `appliedEffect` is `null` for `denied` and `rejected-by-phase`. For
+ * `blocked-for-review`, `denied`, and `rejected-by-phase` it is null. For
  * `applied` and `downgraded` it is non-null and equals the effect handed to
  * the sink.
  *
@@ -178,7 +183,12 @@ export type ApplyEffectSinks = {
  * phase-check provenance).
  */
 export type ApplyEffectResult = {
-  readonly outcome: "applied" | "downgraded" | "denied" | "rejected-by-phase";
+  readonly outcome:
+    | "applied"
+    | "downgraded"
+    | "denied"
+    | "rejected-by-phase"
+    | "blocked-for-review";
   readonly appliedEffect: Effect | null;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
   /**
@@ -278,10 +288,19 @@ export async function applyEffect(opts: {
   // 2. Capability enforcement.
   const verdict = enforceCapability(opts.effect, opts.declared, opts.granted);
   if (verdict.kind === "deny") {
+    const diagnostic =
+      opts.phase === "adoption" && opts.effect.kind === "patch"
+        ? diagnosticEffect({
+            severity: "block",
+            code: verdict.diagnostic.code,
+            message: verdict.diagnostic.message,
+            sourceRefs: verdict.diagnostic.sourceRefs,
+          })
+        : verdict.diagnostic;
     return frozen({
       outcome: "denied",
       appliedEffect: null,
-      diagnostics: Object.freeze([verdict.diagnostic]),
+      diagnostics: Object.freeze([diagnostic]),
       ...maybeCapabilityUse(opts.effect, "denied"),
     });
   }
@@ -291,6 +310,32 @@ export async function applyEffect(opts: {
     verdict.kind === "downgrade"
       ? Object.freeze([verdict.diagnostic])
       : EMPTY_DIAGNOSTICS;
+
+  // Adoption can auto-apply only auto-mode patches. A propose-mode patch
+  // means the processor is asking for human review; applying it inside the
+  // merge gate would silently bypass that review boundary. Run this after
+  // broker enforcement so denied proposals remain denied, and auto→propose
+  // downgrades still ledger the original `patch.auto` attempt as downgraded.
+  if (
+    opts.phase === "adoption" &&
+    routed.kind === "patch" &&
+    routed.mode === "propose"
+  ) {
+    const reviewDiagnostic = diagnosticEffect({
+      severity: "block",
+      code: "patch.propose.requires-review",
+      message: `PatchEffect from ${opts.processorId} requires review before adoption: ${routed.reason}`,
+      sourceRefs: routed.sourceRefs,
+    });
+    const capabilityOutcome: "allowed" | "downgraded" =
+      verdict.kind === "downgrade" ? "downgraded" : "allowed";
+    return frozen({
+      outcome: "blocked-for-review",
+      appliedEffect: null,
+      diagnostics: Object.freeze([...verdictDiagnostics, reviewDiagnostic]),
+      ...maybeCapabilityUse(opts.effect, capabilityOutcome),
+    });
+  }
 
   // 3. Route to the matching sink. Exhaustive on Effect.kind.
   const sinkResult = await routeToSink(routed, opts);

@@ -75,7 +75,7 @@ The loop has six properties that make it well-behaved:
 1. **Bounded.** `MAX_ITER` (default 100, configurable as `engine.max_iterations` in `.dome/config.yaml`) caps wall-clock cost. Hitting the cap is a blocking diagnostic, not an infinite loop.
 2. **Deterministic.** Adoption-phase processors are pure (snapshot in, effects out) and idempotent. The same Proposal against the same processor set converges to the same fixed point.
 3. **Atomic.** The adopted ref advances exactly once per Proposal, at the end. Mid-loop crashes leave the ref unchanged.
-4. **Capability-checked.** Every effect passes through `enforceCapability` before being applied. PatchEffects exceeding `patch.auto` grants are downgraded to `propose` and emit a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic.
+4. **Capability-checked.** Every effect passes through `enforceCapability` before being applied. PatchEffects exceeding `patch.auto` grants are downgraded to `propose` and emit a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic; in adoption, any proposed patch blocks the loop for human review instead of being silently applied.
 5. **Ledgered.** Every processor invocation writes a `RunRecord` row, regardless of outcome. Failed adoptions are debuggable.
 6. **Closure-explicit.** Engine-driven changes (the cumulative patches applied during the loop) land as one closure commit per Proposal, carrying the four Dome-* trailers. The trailers are the durable provenance surface in `git log`.
 

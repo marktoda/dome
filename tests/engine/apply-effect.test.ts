@@ -172,5 +172,56 @@ describe("capability denial flows through", () => {
     });
     expect(r.outcome).toBe("denied");
     expect(r.diagnostics[0]?.code).toBe("capability-deny-patch");
+    expect(r.diagnostics[0]?.severity).toBe("block");
+  });
+});
+
+describe("adoption propose patches block for review", () => {
+  test("PatchEffect mode propose in adoption returns blocked-for-review", async () => {
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [propose],
+      granted: [propose],
+      phase: "adoption",
+      effect: patchEffect({
+        mode: "propose",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+        reason: "needs review",
+        sourceRefs: [ref],
+      }),
+    });
+
+    expect(r.outcome).toBe("blocked-for-review");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics[0]?.severity).toBe("block");
+    expect(r.diagnostics[0]?.code).toBe("patch.propose.requires-review");
+    expect(r.capabilityUse?.capability).toBe("patch.propose");
+    expect(r.capabilityUse?.outcome).toBe("allowed");
+  });
+
+  test("auto downgraded to propose blocks for review", async () => {
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [propose],
+      granted: [propose],
+      phase: "adoption",
+      effect: patchEffect({
+        mode: "auto",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+        reason: "needs auto",
+        sourceRefs: [ref],
+      }),
+    });
+
+    expect(r.outcome).toBe("blocked-for-review");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics.map((d) => d.code)).toEqual([
+      "capability-downgrade-surprise",
+      "patch.propose.requires-review",
+    ]);
+    expect(r.capabilityUse?.capability).toBe("patch.auto");
+    expect(r.capabilityUse?.outcome).toBe("downgraded");
   });
 });

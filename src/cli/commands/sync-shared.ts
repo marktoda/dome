@@ -276,12 +276,9 @@ export async function runOneAdoption(opts: {
       candidate,
     }) => {
       // Only `mode: "auto"` patches mutate the candidate tree in the
-      // adoption phase. Per docs/wiki/specs/effects.md §"PatchEffect"
-      // routing, `mode: "propose"` patches are surfaced as diagnostics
-      // for human review (`dome lint --apply`) rather than landed inline.
-      // Surfacing the propose-diagnostic is a separate seam (Phase 12b);
-      // here we just drop the propose branch so the candidate doesn't
-      // advance.
+      // adoption phase. `applyEffect` blocks `mode: "propose"` before it
+      // reaches this sink; this guard is defensive so a direct sink call
+      // still cannot land a review-required patch inline.
       if (effect.mode !== "auto") return null;
 
       const result = await applyPatchToCandidate({
