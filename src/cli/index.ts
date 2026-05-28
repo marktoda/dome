@@ -36,6 +36,7 @@ import { parseArgs, type ParsedArgs } from "./args";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
+import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
@@ -66,6 +67,8 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
       return runDoctor(args);
     case "inspect":
       return runInspect(args);
+    case "run":
+      return runRun(args);
     case "serve":
       return runServe(args);
     case "status":
@@ -97,6 +100,7 @@ function printUsage(): void {
       "                                   Read-only view over the operational substrate.",
       "                                   Subjects: runs, diagnostics, questions, outbox.",
       "  doctor [--repair]                (reserved for v1.x) Engine-substrate health checks.",
+      "  run <name> [--json]              Invoke a view-phase command-triggered processor.",
       "  serve [--poll-interval-ms <n>]   Run the commit-watcher daemon.",
       "  status [--json]                  Read-only adoption snapshot.",
       "  sync [--json]                    One-shot catch-up: adopt working-tree HEAD.",

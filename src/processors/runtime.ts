@@ -76,6 +76,7 @@ import type {
   Capability,
   Processor,
   ProcessorContext,
+  ProjectionQueryView,
   Snapshot,
   TreeOid,
 } from "../core/processor";
@@ -222,6 +223,21 @@ export type BuildRuntimeOptions = {
    * is absent at its own seam).
    */
   readonly ledger?: LedgerDb;
+  /**
+   * Optional read-only projection query surface. When present, view-phase
+   * processor invocations populate `ctx.projection` so command-triggered
+   * views can read `dome.graph.links_to` facts, diagnostics, and questions
+   * out of the projection store. Adoption-phase and garden-phase
+   * invocations never receive the handle — those processors read state
+   * via `ctx.snapshot` from the candidate / adopted tree.
+   *
+   * Optional because tests that exercise only the adoption / garden runners
+   * (e.g., `tests/processors/runtime.test.ts`) don't need to wire a
+   * projection view. The composed runtime built by
+   * `src/engine/vault-runtime.ts` populates this against the open
+   * `ProjectionDb`.
+   */
+  readonly projection?: ProjectionQueryView;
 };
 
 // ----- buildRuntime ---------------------------------------------------------
@@ -250,6 +266,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     extensionIdFor,
     resolveTree,
     ledger,
+    projection,
   } = opts;
 
   const adoptionRunner: AdoptionPhaseRunner = async (input) => {
@@ -406,6 +423,14 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       resolveGrants,
       extensionIdFor,
       ledger,
+      // View-phase processors receive the projection query view so they
+      // can read facts / diagnostics / questions out of the projection
+      // store via `ctx.projection`. Adoption + garden phases do NOT pass
+      // the handle — those processors read state from `ctx.snapshot`.
+      // Conditional spread keeps the call site exactOptionalPropertyTypes-
+      // clean when no projection is wired (e.g., test harnesses that build
+      // a runtime without projection).
+      ...(projection !== undefined ? { projection } : {}),
     });
   };
 
@@ -466,6 +491,18 @@ async function dispatchOneProcessor<TEnvelope>(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger: LedgerDb | undefined;
+  /**
+   * The projection query view to thread onto `ctx.projection`. Only the
+   * view-phase caller passes this; adoption + garden callers leave it
+   * undefined so their processors see `ctx.projection === undefined` (they
+   * read state from `ctx.snapshot`, not from the projection store).
+   *
+   * Defensively, even when the caller mistakenly passes a projection on
+   * an adoption / garden dispatch, the body below gates the assignment
+   * on `phase === "view"` so the projection handle only ever lands on
+   * view-phase contexts.
+   */
+  readonly projection?: ProjectionQueryView;
 }): Promise<RunnerResult> {
   const {
     processor,
@@ -479,6 +516,7 @@ async function dispatchOneProcessor<TEnvelope>(opts: {
     resolveGrants,
     extensionIdFor,
     ledger,
+    projection,
   } = opts;
 
   const declared = processor.capabilities;
@@ -536,6 +574,14 @@ async function dispatchOneProcessor<TEnvelope>(opts: {
     // does not enable it — garden processors that require LLMs are
     // deferred bundles (dome.intake), and their wiring lands when
     // model.invoke is plumbed through ProcessorContext.
+    //
+    // `projection` is conditionally set below — only on view-phase
+    // dispatch — so adoption + garden contexts see
+    // `ctx.projection === undefined` per the v1 contract (those
+    // processors read from `ctx.snapshot`, not the projection store).
+    ...(phase === "view" && projection !== undefined
+      ? { projection }
+      : {}),
   };
   const ctx = makeProcessorContext(ctxInput);
 

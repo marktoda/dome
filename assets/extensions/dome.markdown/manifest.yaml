@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.2.0
+version: 0.3.0
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.1.0
@@ -28,3 +28,27 @@ processors:
       - kind: patch.auto
         paths: ["**/*.md"]
     module: processors/normalize-frontmatter.ts
+
+  - id: dome.markdown.lint-frontmatter
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/lint-frontmatter.ts
+
+  - id: dome.markdown.orphan-pages
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: orphan-pages
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/orphan-pages.ts

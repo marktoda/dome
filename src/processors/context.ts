@@ -46,6 +46,7 @@ import type {
   CapabilityToken,
   ModelInvokeFn,
   ProcessorContext,
+  ProjectionQueryView,
   Snapshot,
 } from "../core/processor";
 import type { SourceRef, TextRange } from "../core/source-ref";
@@ -79,6 +80,13 @@ export type ProcessorContextInput<TInput> = {
   readonly runId: string;
   readonly input: TInput;
   readonly modelInvoke?: ModelInvokeFn;
+  /**
+   * Optional read-only projection query surface. View-phase invocations
+   * pass a live `ProjectionQueryView` backed by the open projection
+   * database; adoption-phase and garden-phase invocations omit it (those
+   * processors read from `ctx.snapshot`).
+   */
+  readonly projection?: ProjectionQueryView;
 };
 
 // ----- CapabilityToken sentinel (module-private) ----------------------------
@@ -137,5 +145,6 @@ export function makeProcessorContext<TInput>(
     sourceRef: boundSourceRef,
   };
   if (opts.modelInvoke !== undefined) ctx.modelInvoke = opts.modelInvoke;
+  if (opts.projection !== undefined) ctx.projection = opts.projection;
   return Object.freeze(ctx);
 }

@@ -1,0 +1,273 @@
+// dome.markdown.lint-frontmatter — Phase 13a adoption-phase processor.
+//
+// Validates the minimal core schema of YAML frontmatter on every changed
+// markdown file: presence of a frontmatter block, presence of a `type:`
+// key, well-formed `created:` / `updated:` dates, well-formed `tags:`,
+// and parseable YAML. Diagnostic-only (no PatchEffect) — failures surface
+// as warnings; the fixed-point adoption loop converges in one iteration.
+//
+// Per [[wiki/specs/processors]] §"Adoption phase":
+//   - Deterministic: same content → same diagnostic set (every check is a
+//     pure function of the file's content; no clock, no random, no I/O
+//     outside `ctx.snapshot`).
+//   - Bounded cost: O(changed-files × frontmatter-size).
+//   - No LLM, no network, no patches.
+//
+// Scope decision (per the Phase 13a task spec): v1.0 ships WITHOUT
+// per-page-type schemas. `.dome/page-types.yaml` was retired in Phase 7b;
+// per-type schemas (e.g., "every `type: task` must have `dueDate`") are
+// Phase 13b+ work, when the page-types substrate lands. This processor
+// validates only the minimal core schema common to every page type.
+//
+// Per [[wiki/matrices/processor-phase-x-trigger]], adoption-phase
+// processors may subscribe to `signal` triggers; we subscribe to
+// `document.changed` (markdown overlay) and `file.created` (covers
+// newly-added paths whose `document.changed` may not fire if the path
+// was added without a content diff — defensive, matches sibling
+// processors validate-wikilinks + normalize-frontmatter).
+//
+// Per [[wiki/specs/effects]] §"DiagnosticEffect", `severity: "warning"`
+// is recorded + surfaced in `dome status` / `dome inspect` but does not
+// block adoption — frontmatter hygiene is a finding, not a merge gate.
+//
+// This file lives under `assets/` which is excluded from the root
+// `tsconfig.json`. Imports use relative paths into `src/`, resolved at
+// runtime by Bun's dynamic-import loader. The `gray-matter` import
+// resolves via Bun's node_modules lookup (gray-matter is already a
+// runtime dep of @dome/sdk per package.json).
+
+import matter from "gray-matter";
+
+import {
+  diagnosticEffect,
+  type DiagnosticEffect,
+  type Effect,
+} from "../../../../src/core/effect";
+import {
+  defineProcessor,
+  type Processor,
+  type ProcessorContext,
+} from "../../../../src/core/processor";
+
+// ----- Diagnostic codes -----------------------------------------------------
+//
+// All five codes are emitted at `severity: "warning"` (per the bundle's
+// diagnostic-only convention). Stable across versions — downstream tooling
+// (`dome inspect diagnostics --code <X>`) consumes them.
+
+const CODE_MISSING_FRONTMATTER = "dome.markdown.missing-frontmatter";
+const CODE_MISSING_TYPE = "dome.markdown.missing-type";
+const CODE_INVALID_DATE = "dome.markdown.invalid-date";
+const CODE_TAGS_NOT_LIST = "dome.markdown.tags-not-list";
+const CODE_MALFORMED_YAML = "dome.markdown.malformed-yaml";
+
+// ----- Processor ------------------------------------------------------------
+
+const lintFrontmatter: Processor = defineProcessor({
+  id: "dome.markdown.lint-frontmatter",
+  version: "0.1.0",
+  phase: "adoption",
+  triggers: [
+    { kind: "signal", name: "document.changed" },
+    { kind: "signal", name: "file.created" },
+  ],
+  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+  run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    const diagnostics: DiagnosticEffect[] = [];
+
+    // `file.created` fires for every added path; the only file shape that
+    // carries YAML frontmatter is markdown bodies.
+    const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+
+    for (const path of changedMarkdown) {
+      const content = await ctx.snapshot.readFile(path);
+      // `null` → path deleted or never existed in the candidate; nothing
+      // to lint.
+      if (content === null) continue;
+
+      const findings = lintContent(content);
+      for (const f of findings) {
+        diagnostics.push(
+          diagnosticEffect({
+            severity: "warning",
+            code: f.code,
+            message: f.message,
+            sourceRefs: [
+              ctx.sourceRef(path, { startLine: 1, endLine: 1 }),
+            ],
+          }),
+        );
+      }
+    }
+
+    return diagnostics;
+  },
+});
+
+export default lintFrontmatter;
+
+// ----- internals ------------------------------------------------------------
+
+type Finding = {
+  readonly code: string;
+  readonly message: string;
+};
+
+/**
+ * Detect whether the file has a frontmatter block. gray-matter accepts a
+ * file with no `---` delimiters and returns `data === {}` + `isEmpty:
+ * false` — indistinguishable at the `data` level from a file with `---\n---`
+ * (which returns `data === {}` + `isEmpty: true`). Detecting the
+ * "no-delimiters" case before parsing lets the lint surface
+ * `missing-frontmatter` accurately.
+ *
+ * The check is intentionally simple: a frontmatter block requires `---` at
+ * the start of file (column 0, line 1). Trailing-whitespace or BOM edge
+ * cases are common authoring mistakes but out of scope for v1.0 — a
+ * future tightening pass can normalize via `content.trimStart()`.
+ */
+function hasFrontmatterDelimiter(content: string): boolean {
+  // The first three characters must be `---` and the next character (if
+  // present) must be a newline or end-of-string. Anchored at the very
+  // start of the file.
+  if (!content.startsWith("---")) return false;
+  const next = content.charAt(3);
+  return next === "\n" || next === "\r" || next === "";
+}
+
+/**
+ * Lint a single markdown file's content. Returns an array of findings (may
+ * be empty). Pure — no I/O, no clock; the same input always produces the
+ * same output.
+ *
+ * Findings ordering: malformed-yaml (terminal — no other check runs);
+ * missing-frontmatter (terminal — no other check runs); then per-field
+ * checks (missing-type, invalid-date, tags-not-list) in a deterministic
+ * order. Multiple findings on the same file CAN coexist (e.g.,
+ * `missing-type` + `invalid-date` + `tags-not-list`).
+ */
+function lintContent(content: string): ReadonlyArray<Finding> {
+  if (!hasFrontmatterDelimiter(content)) {
+    return [
+      {
+        code: CODE_MISSING_FRONTMATTER,
+        message: "Markdown file has no YAML frontmatter block.",
+      },
+    ];
+  }
+
+  let parsed: matter.GrayMatterFile<string>;
+  try {
+    parsed = matter(content);
+  } catch (e) {
+    // gray-matter's YAML engine (js-yaml) throws a YAMLException on
+    // malformed YAML. Surface the parser's message so the operator can
+    // localize the error inside the frontmatter block.
+    const cause = e instanceof Error ? e.message : String(e);
+    return [
+      {
+        code: CODE_MALFORMED_YAML,
+        message: `Frontmatter YAML is malformed: ${cause}`,
+      },
+    ];
+  }
+
+  // `isEmpty: true` → `---\n---` with no content between delimiters.
+  // Treat as missing-frontmatter (the user opened a block but never
+  // populated it).
+  if (parsed.isEmpty || Object.keys(parsed.data).length === 0) {
+    return [
+      {
+        code: CODE_MISSING_FRONTMATTER,
+        message: "Markdown file has an empty YAML frontmatter block.",
+      },
+    ];
+  }
+
+  const findings: Finding[] = [];
+  const data = parsed.data;
+
+  // `type:` check — required, must be a non-empty string.
+  const typeValue = data["type"];
+  if (
+    typeValue === undefined ||
+    typeValue === null ||
+    (typeof typeValue === "string" && typeValue.trim().length === 0)
+  ) {
+    findings.push({
+      code: CODE_MISSING_TYPE,
+      message: "Frontmatter is missing the required `type:` key.",
+    });
+  }
+
+  // `created:` / `updated:` checks — optional, but if present must be a
+  // parseable ISO-8601 date or a JS Date (gray-matter coerces unquoted
+  // ISO date literals into `Date` objects).
+  for (const key of ["created", "updated"]) {
+    if (!(key in data)) continue;
+    const value = data[key];
+    if (!isValidIsoDate(value)) {
+      findings.push({
+        code: CODE_INVALID_DATE,
+        message: `Frontmatter \`${key}:\` is not a parseable ISO-8601 date (got: ${describeValue(value)}).`,
+      });
+    }
+  }
+
+  // `tags:` check — optional, but if present must be a YAML list. A list
+  // in JS lands as a JS array; gray-matter / js-yaml never coerces a
+  // bare string into an array.
+  if ("tags" in data) {
+    const tagsValue = data["tags"];
+    if (!Array.isArray(tagsValue)) {
+      findings.push({
+        code: CODE_TAGS_NOT_LIST,
+        message: `Frontmatter \`tags:\` must be a YAML list (got: ${describeValue(tagsValue)}).`,
+      });
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Validate that `value` is a parseable ISO-8601 date. Accepts:
+ *   - A `Date` instance (gray-matter coerces unquoted ISO date literals
+ *     into Date objects via js-yaml's `timestamp` type).
+ *   - A string that `new Date(...)` can parse without producing `NaN`.
+ *
+ * `null` / `undefined` / other types return false (the key was present
+ * but the value isn't date-shaped).
+ *
+ * Pure — no clock, no locale-dependent parsing.
+ */
+function isValidIsoDate(value: unknown): boolean {
+  if (value instanceof Date) {
+    // `Date` constructor accepts garbage strings and stores `NaN`; the
+    // `getTime()` method returns NaN for invalid Date objects.
+    return !Number.isNaN(value.getTime());
+  }
+  if (typeof value !== "string") return false;
+  if (value.trim().length === 0) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime());
+}
+
+/**
+ * Describe `value` for inclusion in a diagnostic message. Truncates long
+ * stringifications to keep messages readable.
+ */
+function describeValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "string") {
+    return value.length > 40 ? `"${value.slice(0, 40)}..."` : `"${value}"`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value instanceof Date) return value.toISOString();
+  // Object / array — describe shape, not full contents.
+  if (Array.isArray(value)) return `array(${value.length})`;
+  return typeof value;
+}

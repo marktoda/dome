@@ -58,6 +58,7 @@ import type { CommitOid } from "../core/source-ref";
 import { treeOid, type Capability, type TreeOid } from "../core/processor";
 import { readTree } from "../git";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
+import { buildProjectionQueryView } from "../projections/query-view";
 import { openOutboxDb, type OutboxDb } from "../outbox/db";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
 import {
@@ -275,12 +276,17 @@ export async function openVaultRuntime(
   //    runtime seams — see file banner. `resolveTree` is wired against
   //    the live git boundary so the runtime's per-iteration
   //    `Snapshot` construction doesn't trip on a throw placeholder.
+  //    `projection` wires a live `ProjectionQueryView` for view-phase
+  //    processors (Phase 13a) — the runtime's view-phase dispatcher
+  //    sets `ctx.projection` from this handle so command-triggered
+  //    views can read facts / diagnostics / questions.
   const processorRuntime = buildRuntime({
     registry,
     resolveGrants: defaultResolveGrants(registry),
     extensionIdFor: defaultExtensionIdFor,
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
+    projection: buildProjectionQueryView(projectionDb),
   });
 
   const runtime: VaultRuntime = Object.freeze({
