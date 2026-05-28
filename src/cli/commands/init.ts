@@ -273,6 +273,7 @@ extensions:
     grant:
       read:
         - "**/*.md"
+        - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
       patch.auto:
         - "**/*.md"
 

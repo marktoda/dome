@@ -2,7 +2,7 @@
 
 This document captures the roadmap from "v1.0 shipped (engine + one diagnostic-only processor)" through to "Dome is materially useful as a daily second-brain tool." Each phase delivers a coherent user-facing improvement, not just infrastructure.
 
-**Status:** v1.0 + Phase 11 (commit-watcher daemon, init polish, `dome.markdown.validate-wikilinks`) + Phase 12 (applyPatch substrate + `dome.markdown.normalize-frontmatter`) + Phase 13a (TIER 0 pack: `dome.markdown.lint-frontmatter` + `dome.graph.links` + `dome.markdown.orphan-pages` + `dome run` CLI + `ctx.projection` query surface) + Phase 13b partial (`dome.graph.tag-index`) are merged to `main`.
+**Status:** v1.0 + Phase 11 (commit-watcher daemon, init polish, `dome.markdown.validate-wikilinks`) + Phase 12 (applyPatch substrate + `dome.markdown.normalize-frontmatter`) + Phase 13a (TIER 0 pack: `dome.markdown.lint-frontmatter` + `dome.graph.links` + `dome.markdown.orphan-pages` + `dome run` CLI + `ctx.projection` query surface) + Phase 13b partial (`dome.graph.tag-index`, `dome.markdown.broken-images`) are merged to `main`.
 
 ## Capability dependency graph
 
@@ -39,7 +39,7 @@ Substrate added: `ctx.projection` query view on `ProcessorContext`; `dome run <n
 | ✅ `dome.graph.tag-index` | Parses frontmatter `tags: [...]` and inline `#tag` syntax. Emits `FactEffect(subject: page, predicate: "dome.graph.tagged", object: tag)`. | Foundation for tag-based recall. |
 | `dome.markdown.stale-dates` | Reads frontmatter `updated:` and compares to the file's commit date. If they disagree by more than N days, emit a diagnostic. | Catches the "I forgot to bump the date" hygiene issue. |
 | `dome.markdown.duplicate-detection` | Compares page titles + first paragraphs across the vault. Flags suspected duplicates with `QuestionEffect`. First Question-emitting processor. | Detects accidental fragmenting of an entity into two pages. |
-| `dome.markdown.broken-images` | Scans for `![](path)` references; emits diagnostic when the image isn't in the vault. | Sibling of the wikilink validator; same shape. |
+| ✅ `dome.markdown.broken-images` | Scans for `![](path)` references; emits diagnostic when the image isn't in the vault. | Sibling of the wikilink validator; same shape. |
 
 ### Phase 13c (planned) — per-page-type schemas
 
@@ -105,7 +105,7 @@ Substrate added:
 
 ### Phase 13b (planned) — remaining TIER 0 *(~1 week)*
 
-`dome.markdown.stale-dates`, `dome.markdown.duplicate-detection`, `dome.markdown.broken-images`.
+`dome.markdown.stale-dates`, `dome.markdown.duplicate-detection`.
 
 ### Phase 13c (planned) — per-page-type schemas *(~1 week)*
 

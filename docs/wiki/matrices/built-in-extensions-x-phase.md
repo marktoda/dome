@@ -13,7 +13,7 @@ The dense map of the nine first-party `dome.*` bundles × the three processor ph
 
 | Bundle | Adoption phase | Garden phase | View phase |
 |---|---|---|---|
-| **`dome.markdown`** | `parse` (parses every changed `.md` into `Document`; emits `FactEffect` for structure); `validate-wikilinks` (emits `DiagnosticEffect` for unresolved links); `validate-frontmatter` (per-type schema check) | — | — |
+| **`dome.markdown`** | `validate-wikilinks` (emits `DiagnosticEffect` for unresolved links); `normalize-frontmatter` (emits canonicalizing `PatchEffect`s); `lint-frontmatter` (minimal frontmatter diagnostics); `broken-images` (emits `DiagnosticEffect` for missing local image embeds) | — | `orphan-pages` (command-triggered view over `dome.graph.links_to` facts) |
 | **`dome.graph`** | `links` (emits `dome.graph.links_to` facts from wikilinks); `tag-index` (emits `dome.graph.tagged` facts from frontmatter and inline tags) | — | — |
 | **`dome.index`** | `update-index` (emits `PatchEffect` to rewrite `index.md` row for each changed wiki page) | — | — |
 | **`dome.log`** | `append-log` (emits `PatchEffect` to append per-adoption summary to `log.md` from the run ledger) | — | — |

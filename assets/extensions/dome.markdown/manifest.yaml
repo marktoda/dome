@@ -42,6 +42,19 @@ processors:
         paths: ["**/*.md"]
     module: processors/lint-frontmatter.ts
 
+  - id: dome.markdown.broken-images
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["**/*.md", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"]
+    module: processors/broken-images.ts
+
   - id: dome.markdown.orphan-pages
     version: 0.1.0
     phase: view

@@ -179,7 +179,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 
 | Bundle | Phase × processors | What it does |
 |---|---|---|
-| `dome.markdown` | adoption: parse, validate-wikilinks | Parses markdown structure; emits DiagnosticEffect on broken wikilinks and frontmatter schema violations. |
+| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, and frontmatter issues; provides the orphan-pages view. |
 | `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns the `index.md` path. |
 | `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns the `log.md` path. |
 | `dome.links` | garden: cross-reference | On entity-page creation, finds mentions in other wiki pages and emits PatchEffect to add backlinks. |

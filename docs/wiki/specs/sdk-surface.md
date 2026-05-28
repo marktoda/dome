@@ -244,7 +244,7 @@ The SDK ships nine `dome.*` bundles under `assets/extensions/`:
 
 | Bundle | Phase × processors | Purpose |
 |---|---|---|
-| `dome.markdown` | adoption: parse, validate-wikilinks | Parses markdown; emits diagnostics on broken wikilinks and frontmatter schema violations. |
+| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images; view: orphan-pages | Keeps markdown pages well-formed; emits diagnostics on broken references and frontmatter issues; provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns `index.md`. |
 | `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns `log.md`. |
