@@ -80,12 +80,12 @@ import { currentBranch, currentSha, writeRef } from "../git";
 // directly. `currentSha` is still imported for the source-head snapshot
 // taken once at loop start (`sourceHeadSha`).
 import type { LedgerDb } from "../ledger/db";
-import { recordCapabilityUse } from "../ledger/capability-uses";
 import { updateOutputCommit } from "../ledger/runs";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
 import { compileRange } from "./compile-range";
 import { recordDiagnosticsViaSink } from "./diagnostics";
+import { recordEffectCapabilityUse } from "./effect-capability-use";
 import type { AdoptionPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -372,15 +372,13 @@ export async function adopt(opts: {
         // where the broker was never consulted). Written here, with the
         // runtime-allocated `runId` joining the row to the ledger's
         // `runs.id`.
-        if (ledger !== undefined && applied.capabilityUse !== undefined) {
-          recordCapabilityUse(ledger, {
-            runId,
-            capability: applied.capabilityUse.capability,
-            resource: applied.capabilityUse.resource,
-            outcome: applied.capabilityUse.outcome,
-            recordedAt: new Date(),
-          });
-        }
+        recordEffectCapabilityUse({
+          ledger,
+          runId,
+          ...(applied.capabilityUse !== undefined
+            ? { capabilityUse: applied.capabilityUse }
+            : {}),
+        });
 
         // Broker-emitted diagnostics: deny / downgrade-surprise / phase-
         // mismatch. These ride on `applied.diagnostics` regardless of
@@ -537,17 +535,19 @@ export async function adopt(opts: {
   // live there), or the proposal head's resolved candidate otherwise.
   const newAdopted: CommitOid = closureCommitOid ?? candidate;
 
-  // Phase 12c: when a closure commit landed (chain head differs from the
-  // proposal head), advance `refs/heads/<branch>` to the closure commit
-  // BEFORE advancing the adopted ref. Per docs/v1.md §4.1 (local-eventual
-  // mode), the closure commit lives on the source branch's history — the
+  // Phase 12c: when the successful adoption target is not already the source
+  // branch's HEAD, advance `refs/heads/<branch>` to that target BEFORE
+  // advancing the adopted ref. Per docs/v1.md §4.1 (local-eventual mode),
+  // engine-produced commits live on the source branch's history — the
   // engine's commits are appended to `main` alongside the user's commits.
   //
-  // Without this step, the closure commit would float as an unreachable
-  // object on `main` (only `refs/dome/adopted/main` referenced it), and
-  // subsequent adoption cycles would re-construct identical-content
-  // closure commits as siblings (not descendants) of the previous one.
-  // `setAdoptedRef`'s fast-forward check would then refuse the advance:
+  // Without this step, an engine-produced target commit would float as an
+  // unreachable object on `main` (only `refs/dome/adopted/main` referenced
+  // it). This includes both adoption closure commits and garden-sub-Proposal
+  // heads that need no further adoption-phase normalization. Subsequent
+  // adoption cycles would then re-construct identical-content commits as
+  // siblings (not descendants) of the previous one. `setAdoptedRef`'s
+  // fast-forward check would then refuse the advance:
   //
   //   "adopted ref refs/dome/adopted/<branch> (<prev-closure>) is not
   //    an ancestor of <new-closure>"
@@ -562,23 +562,24 @@ export async function adopt(opts: {
   // This is expected v1.0 behavior in single-client mode; a future
   // working-tree-overlay step is a v1.x improvement.
   //
-  // Failure mode: if `writeRef` fails (disk full, permission denied),
-  // we surface as a blocking diagnostic and do not advance the adopted
-  // ref either. The next cycle will retry from a clean state since the
-  // closure commit is still a floating object the loop can reproduce.
-  if (closureCommitOid !== null && closureCommitOid !== proposal.head) {
+  // Failure mode: if `writeRef` fails (disk full, permission denied), we
+  // surface as a blocking diagnostic and do not advance the adopted ref
+  // either. The next cycle will retry from a clean state since the engine
+  // target commit is still a floating object the loop can reproduce.
+  const branchAdvanceTarget = newAdopted;
+  if (branchAdvanceTarget !== sourceHead) {
     try {
       await writeRef({
         path: vault.path,
         ref: `refs/heads/${branch}`,
-        value: closureCommitOid,
+        value: branchAdvanceTarget,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const branchAdvanceDiag = diagnosticEffect({
         severity: "block",
         code: "adoption.branch-advance-failed",
-        message: `Failed to advance refs/heads/${branch} to closure commit ${closureCommitOid.slice(0, 7)}: ${msg}`,
+        message: `Failed to advance refs/heads/${branch} to engine target ${branchAdvanceTarget.slice(0, 7)}: ${msg}`,
         sourceRefs: [],
       });
       allDiagnostics.push(branchAdvanceDiag);

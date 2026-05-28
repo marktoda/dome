@@ -16,7 +16,7 @@ tier: axiom
 
 **Structural enforcement:**
 
-1. **One enforcement point.** `enforceCapability` is called from `src/engine/apply-effect.ts` exactly once per effect. No other module calls it; the broker is not exposed outside the engine.
+1. **One enforcement boundary.** `enforceCapability` is called from the engine routing layer exactly once per routed effect. Adoption, view, and non-patch garden effects go through `src/engine/apply-effect.ts`; garden PatchEffects go through `src/engine/garden-patch-router.ts` because their destination is sub-Proposal construction. The broker is not exposed outside the engine.
 2. **Returns `allow | downgrade | deny`.** The applier branches on the broker's verdict — `allow` applies the effect, `downgrade` rewrites it (e.g., PatchEffect `auto → propose`) and applies, `deny` writes a diagnostic and discards.
 3. **Capability uses are ledgered.** Every enforcement decision writes a `CapabilityUse` row in the run ledger (per [[wiki/specs/run-ledger]] §"capability_uses"). The audit surface for "what did this processor reach" is structural, not heuristic.
 4. **Adoption-phase processors can't request `model.invoke`.** The bundle loader rejects manifests where an adoption-phase processor declares `model.invoke` capability — the broker refuses at registration time, not runtime.
@@ -45,11 +45,11 @@ The dynamic `import()` runs the linked test file's describe/test blocks; a regre
 **As of the v1 cut (Phases 1–10 complete):**
 
 - Structurally true now:
-  - **One enforcement function, one call site.** `src/engine/capability-broker.ts:enforceCapability` is invoked exactly once from `src/engine/apply-effect.ts:applyEffect` and from nowhere else in `src/`. The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it.
+  - **One enforcement function, engine-only call sites.** `src/engine/capability-broker.ts:enforceCapability` is invoked only from the engine routing layer (`apply-effect.ts` and `garden-patch-router.ts`). The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it.
   - **Verdict branching matches the spec.** `allow` routes the original effect, `downgrade` routes `verdict.rewrittenEffect`, `deny` returns `outcome: "denied"` with the broker's deny diagnostic.
   - **The Capability union is closed** in `src/core/processor.ts`. The bundle-manifest loader's Zod schemas in `src/extensions/manifest-schema.ts` validate declarations at registration boundary.
-  - **The end-to-end runtime path is wired.** `dome sync` / `dome serve` open the runtime via `openVaultRuntime`, construct a manual Proposal from git state, call `adopt()`, which invokes the runtime's `adoptionRunner`, which feeds returned Effects through `applyEffect` — the broker's only caller. Every Effect a processor emits passes through the broker.
-  - **Capability-use rows land in the ledger.** `src/engine/adopt.ts` calls `recordCapabilityUse` after each `applyEffect` returns a structured `capabilityUse` field. The `capability_uses` table joins back to `runs` by `run_id`.
+  - **The end-to-end runtime path is wired.** `dome sync` / `dome serve` open the runtime via `openVaultRuntime`, construct a manual Proposal from git state, call `adopt()`, and route returned Effects through the engine routing layer. Every Effect a processor emits passes through the broker before it can mutate state or write projections.
+  - **Capability-use rows land in the ledger.** The routing layer returns a structured `capabilityUse` field for every enforced effect attempt, and callers persist it through `recordEffectCapabilityUse`. The `capability_uses` table joins back to `runs` by `run_id`.
   - **Phase × kind compatibility check** runs upstream of the broker (`isPhaseCompatible` in `apply-effect.ts`); incompatible pairs produce a `phase-mismatch` diagnostic before the broker is consulted.
 
 - Forward-looking (v1.x):

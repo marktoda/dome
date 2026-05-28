@@ -50,6 +50,11 @@ describe("routeGardenPatchForSubProposal", () => {
     expect(routed.kind).toBe("dropped");
     expect(routed.rejected).toBe(true);
     expect(routed.diagnostics[0]?.code).toBe("capability-deny-patch");
+    expect(routed.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "denied",
+    });
     expect(recorded).toEqual(["capability-deny-patch"]);
   });
 
@@ -74,6 +79,11 @@ describe("routeGardenPatchForSubProposal", () => {
     expect(routed.kind).toBe("dropped");
     expect(routed.rejected).toBe(false);
     expect(routed.diagnostics[0]?.code).toBe("capability-downgrade-surprise");
+    expect(routed.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "downgraded",
+    });
     expect(recorded).toEqual(["capability-downgrade-surprise"]);
   });
 
@@ -92,6 +102,11 @@ describe("routeGardenPatchForSubProposal", () => {
     if (routed.kind !== "spawn") return;
     expect(routed.patch).toBe(autoPatch);
     expect(routed.diagnostics).toEqual([]);
+    expect(routed.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "allowed",
+    });
   });
 
   test("authorized propose patches are dropped until the review surface exists", async () => {
@@ -114,7 +129,14 @@ describe("routeGardenPatchForSubProposal", () => {
 
     expect(routed.kind).toBe("dropped");
     expect(routed.rejected).toBe(false);
-    expect(routed.diagnostics).toEqual([]);
-    expect(recorded).toEqual([]);
+    expect(routed.diagnostics[0]?.code).toBe(
+      "garden.patch-propose-review-unavailable",
+    );
+    expect(routed.capabilityUse).toEqual({
+      capability: "patch.propose",
+      resource: "wiki/x.md",
+      outcome: "allowed",
+    });
+    expect(recorded).toEqual(["garden.patch-propose-review-unavailable"]);
   });
 });

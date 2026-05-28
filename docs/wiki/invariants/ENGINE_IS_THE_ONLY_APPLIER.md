@@ -10,16 +10,16 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** Mutation of vault state happens exactly one place: `src/engine/apply-effect.ts`. Every Effect emitted by a processor is routed through this chokepoint, capability-checked, and applied. No other module in the SDK reaches the mutation primitives (filesystem writes, git operations, SQLite inserts/updates).
+**Statement:** Mutation of vault state happens only inside the engine routing layer. Every Effect emitted by a processor is routed through an engine chokepoint, capability-checked, and applied. Generic effect routes go through `src/engine/apply-effect.ts`; garden PatchEffects go through `src/engine/garden-patch-router.ts` and the shared sub-Proposal spawn boundary because they re-enter adoption instead of writing through an inline sink. No module outside the engine/storage layers reaches the mutation primitives (filesystem writes, git operations, SQLite inserts/updates).
 
 **Why:** A single applier is what makes the engine's other guarantees concrete. The capability broker runs at this chokepoint; the run ledger writes at this chokepoint; diagnostics surface at this chokepoint. Multiple appliers would mean multiple capability checks, multiple ledger paths, multiple diagnostic surfaces — the system would lose the property that "every change can be explained by tracing back through the engine."
 
 **Structural enforcement:**
 
-1. **Exhaustive routing.** `src/engine/apply-effect.ts` carries a `switch (effect.kind)` over the seven Effect kinds. TypeScript's `never`-type exhaustiveness check fires on any unrouted kind. Adding an 8th Effect without updating the switch fails compilation.
+1. **Exhaustive routing.** `src/engine/apply-effect.ts` carries a `switch (effect.kind)` over the seven Effect kinds for generic sink routes, and `src/engine/garden-patch-router.ts` owns the garden PatchEffect special case. TypeScript's `never`-type exhaustiveness check fires on any unrouted generic kind. Adding an 8th Effect without updating the route layer fails compilation.
 2. **No mutation imports outside the engine.** The semantic linter `engine-is-sole-applier` ([[wiki/linters/engine-is-sole-applier]]) greps `src/` for imports of `node:fs`, `bun:sqlite`, `isomorphic-git`'s commit/write functions, and the outbox handler interfaces — outside `src/engine/`, `src/projections/`, and `src/ledger/`, these imports fail the lint.
 3. **The engine's sinks are constructed inside the engine layer.** `buildSqliteSinks` (in `src/projections/sinks.ts`) is composed by `src/engine/vault-runtime.ts`'s `openVaultRuntime`; the seven-callback `ApplyEffectSinks` shape is consumed only by `src/engine/apply-effect.ts`'s `applyEffect`. Code outside `src/engine/` + `src/projections/` + `src/outbox/` + `src/ledger/` does not reach the writer-shaped surfaces.
-4. **The capability broker is invoked from one place.** `enforceCapability` is called from `apply-effect.ts` and nowhere else; greppable via `tests/integration/capability-enforcement.test.ts`'s import-graph check.
+4. **The capability broker is invoked only from the engine route layer.** `enforceCapability` is called from `apply-effect.ts` and `garden-patch-router.ts`; no non-engine module can bypass the broker.
 
 **Counter-example:** A garden-phase processor uses dynamic import (`await import("node:fs")`) to bypass the static linter. The processor calls `fs.writeFile` — but the file written is in the working tree, *not* in the candidate tree the engine built from the adopted commit. The write is invisible to the current Proposal's adoption (which reads from the candidate); it surfaces on the next watcher cycle as `vault.out-of-band-edit`, becoming a new Proposal. So the bypass doesn't corrupt adopted state; it just produces a confusing second Proposal. The semantic linter is upgraded to flag dynamic imports of mutation modules in v1.1+.
 
@@ -31,7 +31,7 @@ tier: axiom
 
 - Structurally true now:
   - **Exhaustive routing** — `src/engine/apply-effect.ts:routeToSink` switches on `Effect.kind` with a `never`-typed `_exhaustive` catch-all. Adding an 8th Effect without a route fails compilation.
-  - **One enforcement-broker call site** — `enforceCapability` (from `src/engine/capability-broker.ts`) is invoked only from `apply-effect.ts:applyEffect`. The broker module is not imported anywhere else under `src/`.
+  - **Engine-only enforcement call sites** — `enforceCapability` (from `src/engine/capability-broker.ts`) is invoked only from route modules under `src/engine/`. The broker module is not imported outside the engine.
   - **Sink injection shape is fixed** — `ApplyEffectSinks` enumerates the seven sink callbacks; the router is a pure dispatcher that owns no I/O of its own.
   - **Mutation modules confined to engine + storage layers.** Phase 7b retired `src/tools/`, `src/privileged-writer.ts`, `src/vault-dispatcher.ts`, and the other v0.5 mutation paths. The only modules under `src/` that import `bun:sqlite` are `src/{projections,outbox,ledger}/`; the only module that imports `isomorphic-git`'s commit/write functions is `src/git.ts`, consumed by `src/engine/closure-commit.ts`.
 

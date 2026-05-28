@@ -7,7 +7,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Effect × capability matrix
 
-Per-Effect-kind capability requirements enforced by the broker at the engine's `apply-effect.ts` chokepoint. The broker rejects effects emitted without the required capability; the integration test at `tests/integration/capability-enforcement.test.ts` exercises every cell of this matrix.
+Per-Effect-kind capability requirements enforced by the broker at the engine routing boundary. Generic routes go through `apply-effect.ts`; garden PatchEffects go through `garden-patch-router.ts` because their destination is sub-Proposal construction. The broker rejects effects emitted without the required capability; the integration test at `tests/integration/capability-enforcement.test.ts` exercises every cell of this matrix.
 
 ## The matrix
 

@@ -5,16 +5,14 @@
 // own capability scope. The projection store owns persistence; this module
 // owns the engine lifecycle around due jobs.
 
-import { diagnosticEffect, type DiagnosticEffect, type PatchEffect } from "../core/effect";
 import {
-  makeGardenProposal,
-  proposalMetadata,
-  type AdoptionResult,
-  type Proposal,
-} from "../core/proposal";
+  diagnosticEffect,
+  type DiagnosticEffect,
+  type PatchEffect,
+} from "../core/effect";
+import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import type { Capability, Processor, TreeOid } from "../core/processor";
-import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import {
   claimNextEligibleJob,
@@ -40,6 +38,8 @@ import {
 } from "./apply-patch";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
+import { spawnGardenSubProposal } from "./garden-sub-proposals";
+import { recordEffectCapabilityUse } from "./effect-capability-use";
 import type { RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -233,15 +233,13 @@ async function runOneJob(opts: {
     if (applied.diagnostics.length > 0) {
       opts.diagnostics.push(...applied.diagnostics);
     }
-    if (opts.ledger !== undefined && applied.capabilityUse !== undefined) {
-      recordCapabilityUse(opts.ledger, {
-        runId: result.runId,
-        capability: applied.capabilityUse.capability,
-        resource: applied.capabilityUse.resource,
-        outcome: applied.capabilityUse.outcome,
-        recordedAt: new Date(),
-      });
-    }
+    recordEffectCapabilityUse({
+      ledger: opts.ledger,
+      runId: result.runId,
+      ...(applied.capabilityUse !== undefined
+        ? { capabilityUse: applied.capabilityUse }
+        : {}),
+    });
   }
 
   if (result.executionStatus === "succeeded") {
@@ -369,34 +367,47 @@ async function routeJobGardenPatch(opts: {
     declared: opts.declared,
     granted: opts.granted,
     sinks: opts.sinks,
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+  });
+  recordEffectCapabilityUse({
+    ledger: opts.ledger,
+    runId: opts.runId,
+    ...(routed.capabilityUse !== undefined
+      ? { capabilityUse: routed.capabilityUse }
+      : {}),
   });
   opts.diagnostics.push(...routed.diagnostics);
   if (routed.kind === "dropped") return;
-  if (opts.adoptSubProposal === undefined) return;
-
-  const newHead = await opts.applyGardenPatch({
-    vaultPath: opts.vault.path,
-    candidate: opts.adopted,
-    patch: routed.patch,
-    runContext: {
-      runId: opts.runId,
+  if (opts.adoptSubProposal === undefined) {
+    const drop = diagnosticEffect({
+      severity: "info",
+      code: "jobs.garden-sub-proposal-spawn-disabled",
+      message:
+        `Queued job processor ${opts.processorId} emitted an authorized ` +
+        `PatchEffect, but no adoptSubProposal callback was wired; patch dropped.`,
+      sourceRefs: [],
+    });
+    opts.diagnostics.push(drop);
+    await opts.sinks.recordDiagnostic({
+      effect: drop,
       processorId: opts.processorId,
-      extensionId: opts.extensionId,
-      base: opts.adopted,
-      sourceHead: opts.adopted,
-    },
-  });
-  if (newHead === null) return;
+      runId: opts.runId,
+      proposalId: null,
+    });
+    return;
+  }
 
-  const subProposal = makeGardenProposal({
+  await spawnGardenSubProposal({
+    vault: opts.vault,
     base: opts.adopted,
-    head: newHead,
+    sourceHead: opts.adopted,
+    patch: routed.patch,
     processorId: opts.processorId,
     runId: opts.runId,
-    metadata: proposalMetadata({ reason: routed.patch.reason }),
+    extensionId: opts.extensionId,
+    cascadeDepth: 1,
+    applyPatch: opts.applyGardenPatch,
+    adoptSubProposal: opts.adoptSubProposal,
   });
-  await opts.adoptSubProposal(subProposal, 1);
 }
 
 function retryDelayMs(attemptsAfterRun: number): number {

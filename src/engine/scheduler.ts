@@ -57,12 +57,7 @@ import {
   type DiagnosticEffect,
   type PatchEffect,
 } from "../core/effect";
-import {
-  makeGardenProposal,
-  proposalMetadata,
-  type AdoptionResult,
-  type Proposal,
-} from "../core/proposal";
+import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import {
@@ -78,7 +73,6 @@ import {
 } from "../projections/schedule-cursors";
 import type { ProjectionDb } from "../projections/db";
 import type { ProcessorRegistry } from "../processors/registry";
-import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import type { Capability, Processor, TreeOid } from "../core/processor";
 import {
@@ -90,6 +84,8 @@ import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import type { RunId } from "./runner-contract";
+import { spawnGardenSubProposal } from "./garden-sub-proposals";
+import { recordEffectCapabilityUse } from "./effect-capability-use";
 
 type AdoptScheduledSubProposalFn = (
   proposal: Proposal,
@@ -378,15 +374,13 @@ async function runSchedulerInner(opts: {
         if (applied.diagnostics.length > 0) {
           diagnostics.push(...applied.diagnostics);
         }
-        if (ledger !== undefined && applied.capabilityUse !== undefined) {
-          recordCapabilityUse(ledger, {
-            runId: result.runId,
-            capability: applied.capabilityUse.capability,
-            resource: applied.capabilityUse.resource,
-            outcome: applied.capabilityUse.outcome,
-            recordedAt: new Date(),
-          });
-        }
+        recordEffectCapabilityUse({
+          ledger,
+          runId: result.runId,
+          ...(applied.capabilityUse !== undefined
+            ? { capabilityUse: applied.capabilityUse }
+            : {}),
+        });
       }
 
       // Success means the executor accepted the invocation as a processor
@@ -469,7 +463,13 @@ async function routeScheduledGardenPatch(opts: {
     declared: opts.declared,
     granted: opts.granted,
     sinks: opts.sinks,
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+  });
+  recordEffectCapabilityUse({
+    ledger: opts.ledger,
+    runId: opts.runId,
+    ...(routed.capabilityUse !== undefined
+      ? { capabilityUse: routed.capabilityUse }
+      : {}),
   });
   opts.diagnostics.push(...routed.diagnostics);
   if (routed.kind === "dropped") {
@@ -495,30 +495,18 @@ async function routeScheduledGardenPatch(opts: {
     return;
   }
 
-  const newHead = await opts.applyGardenPatch({
-    vaultPath: opts.vault.path,
-    candidate: opts.adopted,
-    patch: routed.patch,
-    runContext: {
-      runId: opts.runId,
-      processorId: opts.processorId,
-      extensionId: opts.extensionId,
-      base: opts.adopted,
-      sourceHead: opts.adopted,
-    },
-  });
-  if (newHead === null) {
-    return;
-  }
-
-  const subProposal = makeGardenProposal({
+  await spawnGardenSubProposal({
+    vault: opts.vault,
     base: opts.adopted,
-    head: newHead,
+    sourceHead: opts.adopted,
+    patch: routed.patch,
     processorId: opts.processorId,
     runId: opts.runId,
-    metadata: proposalMetadata({ reason: routed.patch.reason }),
+    extensionId: opts.extensionId,
+    cascadeDepth: 1,
+    applyPatch: opts.applyGardenPatch,
+    adoptSubProposal: opts.adoptSubProposal,
   });
-  await opts.adoptSubProposal(subProposal, 1);
 }
 
 // ----- ScheduleRunInput envelope --------------------------------------------

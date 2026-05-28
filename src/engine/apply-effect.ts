@@ -1,11 +1,13 @@
-// applyEffect: the single applier chokepoint.
+// applyEffect: the generic effect applier route.
 //
 // Every Effect emitted by a processor flows through this router. It performs
 // two checks in order — (1) phase compatibility, (2) capability enforcement —
 // and then dispatches to one of seven injected sinks via an exhaustive
 // `switch` on `Effect.kind`. The router itself is pure: it owns no I/O and
 // holds no state; the wired sinks (projection store, ledger, outbox, etc.)
-// live in Phase 4 + Phase 8.
+// live in Phase 4 + Phase 8. Garden-phase PatchEffects are the one route
+// owned by `garden-patch-router.ts`, because their destination is
+// sub-Proposal construction rather than an inline sink.
 //
 // Normative references:
 //   - docs/wiki/specs/effects.md §"The Effect union"
@@ -14,10 +16,9 @@
 //
 // Structural fence: TypeScript's `never`-type exhaustiveness check on the
 // `switch (effect.kind)` makes "adding an eighth Effect kind without a route"
-// a compile error here. The capability broker (`./capability-broker`) is
-// called from this file and nowhere else; the
-// [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] import-graph test
-// asserts that property.
+// a compile error here for the generic sink routes. The capability broker
+// (`./capability-broker`) is also called by `garden-patch-router.ts` for
+// garden PatchEffects; both call sites are inside the engine routing layer.
 //
 // v1 Phase 2 scope:
 //   - This file is the pure routing layer. The sinks are *injected* via the
@@ -48,8 +49,9 @@
 //   - Object.freeze on returned result objects so misbehaving callers fail
 //     loudly at runtime rather than silently corrupting downstream state.
 //   - Imports limited to pure types from `../core/` plus the
-//     `./capability-broker` decision function. No filesystem, git, sqlite,
-//     or network dependencies in this file.
+//     `./capability-broker` decision function and the pure capability-use
+//     label helper. No filesystem, git, sqlite, or network dependencies in
+//     this file.
 
 import type {
   DiagnosticEffect,
@@ -66,6 +68,10 @@ import type { Capability, ProcessorPhase } from "../core/processor";
 import type { CommitOid } from "../core/source-ref";
 import { enforceCapability } from "./capability-broker";
 import { recordDiagnosticsViaSink } from "./diagnostics";
+import {
+  capabilityUseForEffect,
+  type EffectCapabilityUse,
+} from "./effect-capability-use";
 import type { RunId } from "./runner-contract";
 
 // ----- ApplyEffectSinks -----------------------------------------------------
@@ -204,18 +210,14 @@ export type ApplyEffectResult = {
    * resource=effect.capability).
    *
    * Undefined for effect kinds the broker passes through without enforcement
-   * (`diagnostic`, `view`, `job` in v1 — see `enforceCapability`) and for
+   * (`diagnostic`, `view`) and for
    * `rejected-by-phase` outcomes (the broker was never consulted, so no
    * capability dimension exists). The engine's adoption loop forwards
-   * populated records to `recordCapabilityUse` per
+   * populated records to `recordEffectCapabilityUse` per
    * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural
    * enforcement" §2.
    */
-  readonly capabilityUse?: {
-    readonly capability: string;
-    readonly resource: string | null;
-    readonly outcome: "allowed" | "downgraded" | "denied";
-  };
+  readonly capabilityUse?: EffectCapabilityUse;
   /**
    * When the routed effect was a successful PatchEffect (broker outcome
    * `applied` or `downgraded`) AND the wired `applyPatch` sink returned a
@@ -257,8 +259,10 @@ export function noopSinks(): ApplyEffectSinks {
 // ----- applyEffect ----------------------------------------------------------
 
 /**
- * The single applier chokepoint. Routes one Effect through phase
- * compatibility + capability enforcement + the matching sink.
+ * The generic effect applier route. Routes one Effect through phase
+ * compatibility + capability enforcement + the matching sink. Garden
+ * PatchEffects are routed by `garden-patch-router.ts` because they spawn
+ * sub-Proposals instead of writing through the patch sink directly.
  *
  * Ordering invariant: phase compatibility is checked *before* capability
  * enforcement. An effect rejected by phase is discarded without consulting
@@ -312,7 +316,7 @@ export async function applyEffect(opts: {
       outcome: "denied",
       appliedEffect: null,
       diagnostics: Object.freeze([diagnostic]),
-      ...maybeCapabilityUse(opts.effect, "denied"),
+      ...capabilityUseField(opts.effect, "denied"),
     });
     await recordDiagnosticsViaSink({
       sinks: opts.sinks,
@@ -352,7 +356,7 @@ export async function applyEffect(opts: {
       outcome: "blocked-for-review",
       appliedEffect: null,
       diagnostics: Object.freeze([...verdictDiagnostics, reviewDiagnostic]),
-      ...maybeCapabilityUse(opts.effect, capabilityOutcome),
+      ...capabilityUseField(opts.effect, capabilityOutcome),
     });
     await recordDiagnosticsViaSink({
       sinks: opts.sinks,
@@ -383,7 +387,7 @@ export async function applyEffect(opts: {
     outcome: verdict.kind === "downgrade" ? "downgraded" : "applied",
     appliedEffect: routed,
     diagnostics: verdictDiagnostics,
-    ...maybeCapabilityUse(opts.effect, outcome),
+    ...capabilityUseField(opts.effect, outcome),
     ...(newCandidate !== undefined ? { newCandidate } : {}),
   });
   if (result.diagnostics.length > 0) {
@@ -398,87 +402,12 @@ export async function applyEffect(opts: {
   return result;
 }
 
-// ----- capability-use extraction -------------------------------------------
-
-/**
- * Build the structured `capabilityUse` record for the ledger from the
- * (effect, outcome) pair. Returns `{}` (no `capabilityUse` field) for effect
- * kinds the broker passes through without enforcement (`diagnostic`,
- * `view`, `job` — see `enforceCapability`); the run-ledger surface records
- * one row per *enforced* attempt, not per dispatch.
- *
- * The `capability` string uses the canonical `<kind>` form (e.g.,
- * `"patch.auto"`, `"graph.write"`, `"external:slack.post"`) consistent with
- * `capabilities.md` §"Canonical capability strings" and the example values
- * in `run-ledger.md` §"Tables — capability_uses".
- *
- * The spread-merge pattern `{ ...maybeCapabilityUse(...) }` at call sites
- * is intentional under `exactOptionalPropertyTypes`: returning `{}`
- * produces an object without the `capabilityUse` key (rather than one with
- * `capabilityUse: undefined`), which the type's `field?: T` shape demands.
- */
-function maybeCapabilityUse(
+function capabilityUseField(
   effect: Effect,
   outcome: "allowed" | "downgraded" | "denied",
-): { capabilityUse?: { readonly capability: string; readonly resource: string | null; readonly outcome: "allowed" | "downgraded" | "denied" } } {
-  switch (effect.kind) {
-    case "patch": {
-      const capability = effect.mode === "auto" ? "patch.auto" : "patch.propose";
-      // Representative path: first change's path (matches the broker's
-      // verdict surface — one capability_use row per PatchEffect, not per
-      // change). Empty changes is structurally impossible at this point
-      // (PatchEffectSchema enforces .min(1), and the broker denies an
-      // empty list defensively before reaching the ledger surface).
-      const resource = effect.changes[0]?.path ?? null;
-      return { capabilityUse: Object.freeze({ capability, resource, outcome }) };
-    }
-    case "fact": {
-      // Mirrors the broker's namespace extraction; keeping a single
-      // one-liner here avoids cross-file coupling to a private broker
-      // helper. Returns null when the predicate has no dot (the broker
-      // also denies that case — outcome will be "denied").
-      const lastDot = effect.predicate.lastIndexOf(".");
-      const resource = lastDot > 0 ? effect.predicate.slice(0, lastDot) : null;
-      return {
-        capabilityUse: Object.freeze({
-          capability: "graph.write",
-          resource,
-          outcome,
-        }),
-      };
-    }
-    case "question":
-      return {
-        capabilityUse: Object.freeze({
-          capability: "question.ask",
-          resource: null,
-          outcome,
-        }),
-      };
-    case "job":
-      return {
-        capabilityUse: Object.freeze({
-          capability: "job.enqueue",
-          resource: effect.processorId,
-          outcome,
-        }),
-      };
-    case "external":
-      return {
-        capabilityUse: Object.freeze({
-          capability: `external:${effect.capability}`,
-          resource: effect.capability,
-          outcome,
-        }),
-      };
-    case "diagnostic":
-    case "view":
-      // Broker passes these through without a capability dimension to
-      // record.
-      return {};
-  }
-  const _exhaustive: never = effect;
-  return _exhaustive;
+): { capabilityUse?: EffectCapabilityUse } {
+  const capabilityUse = capabilityUseForEffect(effect, outcome);
+  return capabilityUse === null ? {} : { capabilityUse };
 }
 
 // ----- phase compatibility --------------------------------------------------

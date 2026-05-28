@@ -45,20 +45,17 @@ import type {
   PatchEffect,
 } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
-import {
-  makeGardenProposal,
-  type AdoptionResult,
-  type Proposal,
-} from "../core/proposal";
+import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { applyPatchToCandidate } from "./apply-patch";
 import type { SignalEvent } from "./compile-range";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import { deriveExtensionId } from "../extensions/id-helpers";
-import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
+import { spawnGardenSubProposal } from "./garden-sub-proposals";
+import { recordEffectCapabilityUse } from "./effect-capability-use";
 import type { GardenPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -351,7 +348,13 @@ async function runGardenPhaseInner(opts: {
           declared: result.declared,
           granted: result.granted,
           sinks,
-          ...(ledger !== undefined ? { ledger } : {}),
+        });
+        recordEffectCapabilityUse({
+          ledger,
+          runId: result.runId,
+          ...(routed.capabilityUse !== undefined
+            ? { capabilityUse: routed.capabilityUse }
+            : {}),
         });
         if (routed.kind === "dropped") {
           allDiagnostics.push(...routed.diagnostics);
@@ -392,15 +395,13 @@ async function runGardenPhaseInner(opts: {
         allDiagnostics.push(...applied.diagnostics);
       }
 
-      if (ledger !== undefined && applied.capabilityUse !== undefined) {
-        recordCapabilityUse(ledger, {
-          runId: result.runId,
-          capability: applied.capabilityUse.capability,
-          resource: applied.capabilityUse.resource,
-          outcome: applied.capabilityUse.outcome,
-          recordedAt: new Date(),
-        });
-      }
+      recordEffectCapabilityUse({
+        ledger,
+        runId: result.runId,
+        ...(applied.capabilityUse !== undefined
+          ? { capabilityUse: applied.capabilityUse }
+          : {}),
+      });
     }
 
     runSummaries.push(
@@ -460,34 +461,24 @@ async function runGardenPhaseInner(opts: {
         proposalId: proposal.id,
       });
     } else {
-      // Spawn sub-Proposals for each authorized patch.
+      // Spawn sub-Proposals for each authorized patch through the shared
+      // conversion boundary used by garden, scheduler, and queued jobs.
       for (const req of spawnQueue) {
-        const newHead = await applyPatchToCandidate({
-          vaultPath: vault.path,
-          candidate: adopted,
-          patch: req.patch,
-          runContext: {
-            runId: req.runId,
-            processorId: req.processorId,
-            extensionId: deriveExtensionId(req.processorId),
-            base: adopted,
-            sourceHead: adopted,
-          },
-        });
-        if (newHead === null) {
-          // Patch didn't apply (malformed diff, hunk-doesn't-apply).
-          // Log + skip; the existing applyPatchToCandidate logs the
-          // detail. Garden run continues with the next queued patch.
-          continue;
-        }
-        const subProposal = makeGardenProposal({
+        const spawned = await spawnGardenSubProposal({
+          vault,
           base: adopted,
-          head: newHead,
+          sourceHead: adopted,
+          patch: req.patch,
           processorId: req.processorId,
           runId: req.runId,
+          extensionId: deriveExtensionId(req.processorId),
+          cascadeDepth: cascadeDepth + 1,
+          applyPatch: applyPatchToCandidate,
+          adoptSubProposal,
         });
-        await adoptSubProposal(subProposal, cascadeDepth + 1);
-        totalSubProposals += 1;
+        if (spawned.kind === "spawned") {
+          totalSubProposals += 1;
+        }
       }
     }
   }

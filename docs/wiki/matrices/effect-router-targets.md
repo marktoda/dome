@@ -7,14 +7,14 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Effect router targets
 
-The canonical mapping from Effect kind × processor phase → engine routing destination. Every Effect a Processor returns is routed by `src/engine/apply-effect.ts`; this matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
+The canonical mapping from Effect kind × processor phase → engine routing destination. Adoption, view, and non-patch garden effects route through `src/engine/apply-effect.ts`; garden PatchEffects route through `src/engine/garden-patch-router.ts` because their target is sub-Proposal construction rather than an inline sink. This matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
 
 ## The matrix
 
 | Effect kind | Adoption phase | Garden phase | View phase |
 |---|---|---|---|
 | **PatchEffect (mode: "auto")** | Applied to candidate tree; loop re-iterates | Spawns new Proposal via [[wiki/specs/proposals]] §"Garden-emitted Proposals"; routed through adoption | Rejected: `phase-mismatch` diagnostic |
-| **PatchEffect (mode: "propose")** | Blocks adoption with diagnostic naming patch; user reviews via `dome lint --apply` | Spawns new Proposal as `source: { kind: "garden", ... }` with metadata.reason = patch.reason; goes to user via PR (hosted) or review queue (local) | Rejected: `phase-mismatch` diagnostic |
+| **PatchEffect (mode: "propose")** | Blocks adoption with diagnostic naming patch; user reviews via `dome lint --apply` | v1.0: recorded as an allowed `patch.propose` capability use, diagnosed as `garden.patch-propose-review-unavailable`, and dropped until the garden review surface exists. v1.x: route to PR/review queue rather than apply inline. | Rejected: `phase-mismatch` diagnostic |
 | **DiagnosticEffect (severity: "block")** | Blocks adoption; emits `engine.adoption.blocked` | Recorded in `projection.db.diagnostics` as severity `error` (garden can't block adoption — it ran *after*); surfaced via `dome inspect diagnostics` | Rejected: `phase-mismatch` — view processors have no merge gate; block-severity from view phase is a programming error, surfaced as a diagnostic naming the offending processor. |
 | **DiagnosticEffect (severity: "error" \| "warning" \| "info")** | Recorded in `projection.db.diagnostics`; non-blocking | Same | Same |
 | **FactEffect** | Recorded in `projection.db.facts` (namespace-scoped per `graph.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors don't extract facts) |
@@ -44,7 +44,7 @@ Routing happens *after* capability enforcement. An effect that fails capability 
 - **Denied:** discarded with a capability-deny diagnostic (recorded in `capability_uses` with `outcome: "denied"`).
 - **Downgraded:** routed under the downgraded shape (e.g., PatchEffect `auto → propose`).
 
-So an unauthorized auto-patch goes to the propose route, not the deny route. In adoption, that route is `blocked-for-review` with a `patch.propose.requires-review` diagnostic; see [[wiki/gotchas/capability-downgrade-surprise]].
+So an unauthorized auto-patch with complete `patch.propose` coverage goes to the propose route, not the deny route. In adoption, that route is `blocked-for-review` with a `patch.propose.requires-review` diagnostic; in garden v1.0 it is diagnosed and dropped because the review queue is not yet wired. See [[wiki/gotchas/capability-downgrade-surprise]].
 
 ## Engine commit surface
 

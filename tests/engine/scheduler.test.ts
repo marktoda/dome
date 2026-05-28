@@ -325,7 +325,7 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(depths).toEqual([1]);
   });
 
-  test("scheduled garden propose-mode patch is authorized but not spawned", async () => {
+  test("scheduled garden propose-mode patch is diagnosed but not spawned", async () => {
     const patchCap = { kind: "patch.propose" as const, paths: ["wiki/**"] };
     const processor = defineProcessor({
       id: "test.scheduler.patch-propose",
@@ -349,10 +349,16 @@ describe("runScheduler — executor-result telemetry", () => {
     let applyPatchCalls = 0;
     let adoptionCalls = 0;
 
+    const recordedDiagnostics: string[] = [];
+
     const result = await runWithProcessor(
       fixture,
       processor,
-      {},
+      {
+        recordDiagnostic: async ({ effect }) => {
+          recordedDiagnostics.push(effect.code);
+        },
+      },
       {
         resolveGrants: () => [patchCap],
         applyGardenPatchToCandidate: async () => {
@@ -374,7 +380,12 @@ describe("runScheduler — executor-result telemetry", () => {
     );
 
     expect(result.fired[0]?.success).toBe(true);
-    expect(result.diagnostics).toEqual([]);
+    expect(result.diagnostics.map((d) => d.code)).toContain(
+      "garden.patch-propose-review-unavailable",
+    );
+    expect(recordedDiagnostics).toContain(
+      "garden.patch-propose-review-unavailable",
+    );
     expect(applyPatchCalls).toBe(0);
     expect(adoptionCalls).toBe(0);
   });

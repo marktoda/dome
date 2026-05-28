@@ -26,7 +26,7 @@ type Effect =
 
 Effects are immutable values. Once returned from a processor, they are routed by the engine but never modified. Effect validation (Zod schemas at the engine boundary) rejects malformed effects before routing.
 
-The engine routes effects via `src/engine/apply-effect.ts` — a single chokepoint with an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Adding an 8th effect kind without a route in `apply-effect.ts` fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-router.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding an 8th effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 ## PatchEffect
 
@@ -51,7 +51,8 @@ type FileChange =
 **Routing:**
 - **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic; the proposed patch then follows the blocking review path below.
 - **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes; the user reviews via `dome lint --apply` (per [[wiki/specs/cli]] §"dome lint").
-- **Garden phase:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
+- **Garden phase, `mode: "auto"`:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
+- **Garden phase, `mode: "propose"`:** v1.0 records the allowed `patch.propose` capability use, emits `garden.patch-propose-review-unavailable`, and drops the patch because the garden review queue is not wired yet. v1.x will route this to a PR/review queue rather than applying inline.
 - **View phase:** rejected — view processors cannot emit patches.
 
 **Idempotency requirement:** a processor that re-runs against the same input must produce the same change list (byte-equivalent `content` for writes, same `path` for deletes). If applying the changes a second time would produce no tree-level diff (because the contents already match), the processor returns no effect. This is what makes the fixed-point loop converge.
@@ -232,7 +233,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 
 Three properties depend on the union being closed:
 
-1. **Exhaustive routing.** The engine's `apply-effect.ts` uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
+1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
 3. **Substrate stability.** The seven kinds cover the operations Dome's design needs (patch, validate, extract facts, ask, enqueue work, touch the world, render). A new kind is a *design move*, not a plugin's convenience.
 

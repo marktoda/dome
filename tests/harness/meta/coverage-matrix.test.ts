@@ -55,6 +55,7 @@ import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scen
 import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
+import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
 import "../scenarios/triggers/document-changed-fires.scenario.test";
@@ -198,8 +199,8 @@ const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [
 
 const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
   // Phase 13a unblocked: fact (dome.graph.links), view (dome.markdown.orphan-pages).
+  // Effect-routing fixture coverage unblocked: job.
   "question",  // Phase 14+ — duplicate-detection and intake processors emit Questions
-  "job",       // Phase 18 — scheduled processors enqueue deferred Jobs
   "external",  // Phase 16+ — outbox-targeted external actions (calendar.write, etc.)
 ]);
 
@@ -211,11 +212,11 @@ const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
   // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
+  // Effect-routing fixture coverage unblocked: job.enqueue.
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
   "question.ask",  // Phase 14+ — duplicate-detection and intake processors emit Questions
-  "job.enqueue",   // Phase 18 — scheduled processors enqueue deferred Jobs
   "model.invoke",  // Phase 16 — model-invoking garden-phase processors
   "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);

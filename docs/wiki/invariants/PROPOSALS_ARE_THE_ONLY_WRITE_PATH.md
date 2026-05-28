@@ -17,7 +17,7 @@ tier: axiom
 **Structural enforcement:**
 
 1. **`src/index.ts` has no exports for direct mutation.** `vault.tools.writeDocument(...)` does not exist. No public submit-style API is exposed either — the engine-internal daemon is the only caller of `adopt()` in v1.0.
-2. **The engine's `apply-effect.ts` is the only module that reaches mutation primitives.** No `bun.write`, `fs.writeFile`, `git.commit`, or `db.execute("INSERT ...")` call outside `src/engine/`.
+2. **The engine routing layer is the only layer that reaches mutation primitives.** No `bun.write`, `fs.writeFile`, `git.commit`, or `db.execute("INSERT ...")` call outside `src/engine/`.
 3. **The semantic linter `no-direct-mutation-outside-engine`** ([[wiki/linters/no-direct-mutation-outside-engine]]) greps `src/` for mutation calls outside `src/engine/` and `src/projections/`. v1 ships this as a structural fence rather than reviewer-memory enforcement.
 4. **The capability broker rejects effects emitted outside the engine boundary.** A processor that calls `enforceCapability` directly (rather than emitting an Effect for the engine to route) crashes the run with `engine-bypass-attempt`.
 
@@ -31,8 +31,8 @@ tier: axiom
 
 - Structurally true now:
   - `src/core/effect.ts` carries the closed 7-kind Effect union — the only legal write-side payload shape a processor can emit.
-  - `src/engine/apply-effect.ts:applyEffect` is the sole router for Effects; its `routeToSink` is an exhaustive switch on `Effect.kind` with a `never`-typed catch-all — adding an 8th effect kind without a route fails compilation.
-  - `src/engine/capability-broker.ts:enforceCapability` is the single enforcement function, called only from `apply-effect.ts`.
+  - The engine route layer is the sole router for Effects; `src/engine/apply-effect.ts:routeToSink` is an exhaustive switch on generic sink routes, and garden PatchEffects route through `src/engine/garden-patch-router.ts` into sub-Proposals.
+  - `src/engine/capability-broker.ts:enforceCapability` is the single enforcement function, called only from engine route modules.
   - `src/engine/adopt.ts:adopt()` is the only function that mutates trusted state. There is no public submit-style API in `src/index.ts`; Proposals are constructed internally by engine code and routed through `adopt()`.
   - `src/index.ts` does NOT export `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog`, or the privileged-writer surface — those v0.5 paths were retired entirely.
   - `src/index.ts` does NOT export `submitProposal`, the Proposal source-constructors, or `openVaultRuntime` — the engine-internal write path is not reachable from SDK consumers in v1.0. The retired `submitProposal({runtime, proposal})` ceremony (Phase 11a demolition) was the wrong shape; the canonical v1.0 write path is `git commit` + the engine's adoption-on-new-commit run.

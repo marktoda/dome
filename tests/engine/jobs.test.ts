@@ -3,15 +3,21 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { diagnosticEffect, jobEffect } from "../../src/core/effect";
+import {
+  diagnosticEffect,
+  jobEffect,
+  patchEffect,
+} from "../../src/core/effect";
+import type { AdoptionResult, Proposal } from "../../src/core/proposal";
 import {
   defineProcessor,
   treeOid,
   type Capability,
   type Processor,
 } from "../../src/core/processor";
-import { commitOid } from "../../src/core/source-ref";
+import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { noopSinks } from "../../src/engine/apply-effect";
+import type { ApplyPatchInput } from "../../src/engine/apply-patch";
 import { runQueuedJobs } from "../../src/engine/jobs";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { enqueueJob } from "../../src/projections/jobs";
@@ -244,6 +250,121 @@ describe("runQueuedJobs", () => {
 
     expect(recorded).toEqual(["test.job.info"]);
   });
+
+  test("authorized job garden patch is surfaced when sub-Proposal adoption is not wired", async () => {
+    const patchCap = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    const processor = defineProcessor({
+      id: "test.jobs.patch-no-adopter",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [patchCap],
+      run: async () => [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            { kind: "write", path: "wiki/job.md", content: "job patch\n" },
+          ],
+          reason: "job patch",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-1", processor.id, null);
+    const recordedDiagnostics: string[] = [];
+    let applyPatchCalls = 0;
+
+    const result = await runWithProcessors(
+      fixture,
+      [processor],
+      undefined,
+      {
+        recordDiagnostic: async ({ effect }) => {
+          recordedDiagnostics.push(effect.code);
+        },
+      },
+      {
+        applyGardenPatchToCandidate: async () => {
+          applyPatchCalls += 1;
+          return commitOid("should-not-be-called");
+        },
+      },
+    );
+
+    expect(result.drained[0]?.status).toBe("succeeded");
+    expect(result.diagnostics.some((d) =>
+      d.code === "jobs.garden-sub-proposal-spawn-disabled"
+    )).toBe(true);
+    expect(recordedDiagnostics).toContain(
+      "jobs.garden-sub-proposal-spawn-disabled",
+    );
+    expect(applyPatchCalls).toBe(0);
+  });
+
+  test("authorized job garden patch becomes a garden sub-Proposal when wired", async () => {
+    const patchCap = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    const newHead = commitOid("jobgardenpatchhead0000000000000000000000");
+    const processor = defineProcessor({
+      id: "test.jobs.patch-adopter",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [patchCap],
+      run: async () => [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            { kind: "write", path: "wiki/job.md", content: "job patch\n" },
+          ],
+          reason: "job patch",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-1", processor.id, null);
+    const adoptedProposals: Proposal[] = [];
+    const depths: number[] = [];
+
+    const result = await runWithProcessors(
+      fixture,
+      [processor],
+      undefined,
+      {},
+      {
+        applyGardenPatchToCandidate: async ({ candidate, patch }) => {
+          expect(candidate).toBe(ADOPTED);
+          expect(patch.changes[0]?.path as string | undefined).toBe(
+            "wiki/job.md",
+          );
+          return newHead;
+        },
+        adoptSubProposal: async (proposal, cascadeDepth) => {
+          adoptedProposals.push(proposal);
+          depths.push(cascadeDepth);
+          return {
+            proposalId: proposal.id,
+            adopted: true,
+            adoptedRef: proposal.head,
+            diagnostics: [],
+            closureCommitOid: null,
+            iterations: 1,
+          };
+        },
+      },
+    );
+
+    expect(result.drained[0]?.status).toBe("succeeded");
+    expect(adoptedProposals.length).toBe(1);
+    expect(adoptedProposals[0]?.base).toBe(ADOPTED);
+    expect(adoptedProposals[0]?.head).toBe(newHead);
+    expect(adoptedProposals[0]?.source.kind).toBe("garden");
+    expect(adoptedProposals[0]?.metadata?.reason).toBe("job patch");
+    expect(depths).toEqual([1]);
+  });
 });
 
 async function makeFixture(): Promise<Fixture> {
@@ -294,6 +415,13 @@ async function runWithProcessors(
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
   runnerOverrides: {
     readonly resolveTree?: () => Promise<typeof TREE>;
+    readonly adoptSubProposal?: (
+      proposal: Proposal,
+      cascadeDepth: number,
+    ) => Promise<AdoptionResult>;
+    readonly applyGardenPatchToCandidate?: (
+      opts: ApplyPatchInput,
+    ) => Promise<CommitOid | null>;
   } = {},
 ) {
   const registryResult = buildRegistry(processors);
@@ -311,6 +439,15 @@ async function runWithProcessors(
     resolveGrants: (processorId: string): ReadonlyArray<Capability> =>
       registryResult.value.get(processorId)?.capabilities ?? [],
     extensionIdFor: (id: string) => id,
+    ...(runnerOverrides.adoptSubProposal !== undefined
+      ? { adoptSubProposal: runnerOverrides.adoptSubProposal }
+      : {}),
+    ...(runnerOverrides.applyGardenPatchToCandidate !== undefined
+      ? {
+          applyGardenPatchToCandidate:
+            runnerOverrides.applyGardenPatchToCandidate,
+        }
+      : {}),
   });
 }
 

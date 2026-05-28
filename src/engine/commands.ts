@@ -34,8 +34,8 @@ import type {
 } from "../core/effect";
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
-import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
+import { recordEffectCapabilityUse } from "./effect-capability-use";
 import type { RunId, ViewPhaseRunner } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -149,15 +149,13 @@ export async function runViewCommand(opts: {
       brokerDiagnostics.push(...applied.diagnostics);
     }
 
-    if (ledger !== undefined && applied.capabilityUse !== undefined) {
-      recordCapabilityUse(ledger, {
-        runId: result.runId,
-        capability: applied.capabilityUse.capability,
-        resource: applied.capabilityUse.resource,
-        outcome: applied.capabilityUse.outcome,
-        recordedAt: new Date(),
-      });
-    }
+    recordEffectCapabilityUse({
+      ledger,
+      runId: result.runId,
+      ...(applied.capabilityUse !== undefined
+        ? { capabilityUse: applied.capabilityUse }
+        : {}),
+    });
 
     // Collect the ViewEffect for return. We pull from
     // `applied.appliedEffect` (the post-broker effect) rather than
@@ -179,4 +177,3 @@ export async function runViewCommand(opts: {
     brokerDiagnostics: Object.freeze([...brokerDiagnostics]),
   });
 }
-
