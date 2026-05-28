@@ -160,6 +160,53 @@ describe("facts accessor", () => {
 // ----- diagnostics ---------------------------------------------------------
 
 describe("diagnostics accessor", () => {
+  // Regression: pre-fix, queryDiagnostics ordered by id ASC (oldest first).
+  // When N diagnostics accumulate, freshly-emitted diagnostics drop out of the
+  // default CLI window. User experience: "I just emitted a broken wikilink
+  // diagnostic; `dome doctor --show diagnostics` doesn't show it." Fix orders
+  // DESC so the freshest diagnostics are visible first.
+  it("queryDiagnostics returns rows in newest-first order (id DESC)", () => {
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "first",
+        message: "first inserted",
+        sourceRefs: [REF],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "second",
+        message: "second inserted",
+        sourceRefs: [REF],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "third",
+        message: "third inserted (most recent)",
+        sourceRefs: [REF],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+
+    const got = queryDiagnostics(db);
+    expect(got.length).toBe(3);
+    expect(got[0]?.code).toBe("third");
+    expect(got[1]?.code).toBe("second");
+    expect(got[2]?.code).toBe("first");
+  });
+
   it("insertDiagnostic is idempotent on (processorId, code, proposalId, sourceRefs)", () => {
     const effect = diagnosticEffect({
       severity: "warning",

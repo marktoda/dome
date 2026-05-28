@@ -297,6 +297,22 @@ describe("runInit", () => {
         } finally {
           projectionResult.value.db.close();
         }
+
+        // Step 7: the broken-wikilink must also appear in the user-facing
+        // CLI output. Regression: before queryDiagnostics ordered DESC, a
+        // user with N>20 accumulated diagnostics couldn't see freshly-
+        // emitted ones in `dome doctor --show diagnostics`'s default view.
+        // The DB had the row; the CLI didn't surface it. This step is the
+        // structural fence against that class of UX bug: we assert the
+        // freshest diagnostic appears in the CLI's default-limit output.
+        captured.out = [];
+        captured.err = [];
+        const doctorCode = await runDoctor(
+          parseArgs(["doctor", "--vault", target, "--show", "diagnostics"]),
+        );
+        expect(doctorCode).toBe(0);
+        const doctorOut = captured.out.join("\n");
+        expect(doctorOut).toContain("[[broken]]");
       } finally {
         await rm(target, { recursive: true, force: true });
       }

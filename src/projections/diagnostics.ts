@@ -63,28 +63,28 @@ const QUERY_ALL_SQL = `
 SELECT severity, code, message, source_refs
 FROM diagnostics
 WHERE resolved_at IS NULL
-ORDER BY id
+ORDER BY id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_SQL = `
 SELECT severity, code, message, source_refs
 FROM diagnostics
 WHERE resolved_at IS NULL AND severity = ?
-ORDER BY id
+ORDER BY id DESC
 `.trim();
 
 const QUERY_BY_PROCESSOR_SQL = `
 SELECT severity, code, message, source_refs
 FROM diagnostics
 WHERE resolved_at IS NULL AND processor_id = ?
-ORDER BY id
+ORDER BY id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_AND_PROCESSOR_SQL = `
 SELECT severity, code, message, source_refs
 FROM diagnostics
 WHERE resolved_at IS NULL AND severity = ? AND processor_id = ?
-ORDER BY id
+ORDER BY id DESC
 `.trim();
 
 const RESOLVE_SQL = `
@@ -137,7 +137,7 @@ export function insertDiagnostic(
 /**
  * Read every unresolved diagnostic, optionally filtered by severity and/or
  * processor. Returns a frozen array; ordering is insertion order
- * (`ORDER BY id`).
+ * (`ORDER BY id DESC`).
  */
 export function queryDiagnostics(
   db: ProjectionDb,
