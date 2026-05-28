@@ -1,5 +1,13 @@
 # Brainstorm — Completing the v1 engine: runners + supporting infrastructure
 
+> **Design evolution note (2026-05-28).** The plan went through three design passes on the question / answer / substrate-mutation surface area. The shape that landed:
+> - **Questions are for content decisions where a bundle drives the resolution** (intake disambiguation, lint wikilink resolution, calendar conflict). The bundle that emits the question is the bundle that handles the answer — symmetric pattern via a new `answer` trigger kind.
+> - **Operational substrate maintenance uses direct CLI verbs** (`dome outbox retry`, `dome quarantine reset`, `dome runs fail`) — small closed set, engine-owned, not bundle-extensible. Probes in `dome.health` emit Diagnostics pointing at the verbs.
+> - **Question / answer is multi-surface from day one** — first-class on `AbstractSurface.questions.*`, rendered by CLI (`dome answer`) and MCP (`dome.questions.answer`) in Phase 4h, future HTTP / mobile / voice in v2. The long-term UX is conversational ("agent surfaces open questions in chat"), not CLI-driven.
+> - **Open questions are non-blocking.** Pinned as `OPEN_QUESTIONS_DO_NOT_BLOCK` invariant — a processor's QuestionEffect emission completes its invocation; sibling work proceeds.
+>
+> Earlier passes considered (a) a new 8th Effect kind, (b) an engine-internal `(question.code → handler)` registry — both rejected. Option (c)'s `engine.substrate-mutate` capability tier with typed ProcessorContext handles was also rejected as overcomplicated for what is really mechanical engine self-maintenance. The shape above replaces option (c) entirely.
+
 ### Driving observation
 
 The v1 engine ships only the adoption-phase pipeline. Garden + view phases — plus the entire supporting infrastructure they need (scheduler, signal pub/sub, JobEffect routing, drainProcessors, the `dome answer` channel) — are deferred to "Phase 4+" with no concrete plan. This came into focus while implementing [[wiki/specs/cli]] §"dome doctor" / §"dome answer" (the reserved-for-v1.x verbs from the CLI surface recut at [[cohesive/delta-ledgers/2026-05-27-cli-surface-recut]] — or its merge commit on main): every operation `dome.health` would need to perform sits on machinery that doesn't exist.
@@ -62,15 +70,32 @@ Spec at [[wiki/specs/effects]] §"JobEffect" says: *"in-memory `p-queue` plus pe
 
 **Proposal:** ship the persistent table now (its schema is already in [[wiki/specs/projection-store]] §"`scheduled_jobs`"). The in-memory dispatcher uses Bun's native promise scheduling rather than pulling `p-queue` (one less dep, fewer constraints). Re-evaluate if concurrency limits become a problem in practice — adding a queue library is a one-file change later.
 
-**D. Answer-handler substrate-mutation channel.** **★ Owner decision.**
+**D. The question / answer / substrate-mutation surface area.** **Resolved 2026-05-28 — see design evolution note at top of doc.**
 
-The load-bearing design question. How does a Question being answered cause the substrate mutation (replay an outbox row, reset quarantine state, fail an orphan run) to fire? Three options:
+The shape that landed:
 
-- **(a) New 8th Effect kind (`OperationalEffect`).** Answer-handlers emit an Effect carrying `{ kind: "operational", op: "outbox.replay", key: "..." }`; the engine routes it through `apply-effect.ts`. Pros: stays inside the Effect taxonomy. Cons: breaks the closed 7-kind promise; [[wiki/specs/effects]] §"Why a closed taxonomy" explicitly says new kinds are design moves.
-- **(b) Engine-internal registry of `(question.code → handler)` mappings.** Bundles register handlers via manifest; engine subscribes to `engine.question.answered` and dispatches. Bypasses the processor model for this narrow case. Pros: simple. Cons: creates a parallel control path that doesn't go through the broker, the run ledger, or capability enforcement.
-- **(c) Answer-handlers are garden-phase processors** with `signal: "engine.question.answered"` triggers + a **new capability tier** `engine.substrate-mutate` (granular sub-grants like `outbox.replay`, `outbox.abandon`, `quarantine.reset`, `runs.fail`). The broker enforces. ProcessorContext exposes typed handles (`ctx.outbox.replay(key)`) gated by the granted capability.
+1. **Questions are for content decisions** (intake disambiguation, lint resolution, calendar conflict, daily catch-up, recommendation confirmation). Bundles emit, bundles handle.
 
-**Recommendation: (c).** Preserves "every behavior is a processor." Adds one capability tier; no new Effect kind. Broker enforcement uniformity is preserved. The cost is the new capability tier — a substrate addition, not a contract break. This needs to settle before Phase 4i.
+2. **The handler pattern is symmetric**, implemented via a **new `answer` trigger kind**:
+
+   ```ts
+   type Trigger =
+     | { kind: "signal";   name: string; pathPattern?: string }
+     | { kind: "path";     pattern: string }
+     | { kind: "schedule"; cron: string }
+     | { kind: "command";  name: string }
+     | { kind: "answer";   codePrefix: string };  // NEW
+   ```
+
+   A bundle declares both a normal trigger (e.g., `signal: file.created`) and an `answer` trigger (`codePrefix: "intake."`). On normal fire it may emit a Question; on answer fire it receives `ctx.input = { kind: "answer", question, answer }` and emits the resolution Effect.
+
+3. **Questions are non-blocking.** Emitting a QuestionEffect completes the processor's invocation. The pause is data-shaped (a `projection.db.questions` row), not control-shaped. Pinned by the `OPEN_QUESTIONS_DO_NOT_BLOCK` shipped-default invariant added in Phase 4k.
+
+4. **Question / answer is multi-surface.** First-class on `AbstractSurface.questions.list/answer/openCount`. Rendered by CLI (`dome inspect questions` / `dome answer <key> <value>`) and MCP (`dome.questions.list` / `dome.questions.answer`) in Phase 4h. Long-term UX is conversational ("agent surfaces open questions in chat at session start" — see AGENTS.md template additions in Phase 4k).
+
+5. **Operational substrate maintenance uses direct CLI verbs** — `dome outbox retry/abandon/retry-by-capability`, `dome quarantine reset/list`, `dome runs fail`. Small closed set; engine-owned; not bundle-extensible. Probes in `dome.health` emit `DiagnosticEffect`s pointing at the relevant verb when substrate gets stuck.
+
+The earlier proposals (new Effect kind / engine-internal handler registry / `engine.substrate-mutate` capability tier with typed ProcessorContext handles) were all rejected. They tried to squeeze mechanical engine self-maintenance into the question-answer flow that was actually designed for content decisions; the resulting complexity didn't earn its keep.
 
 **E. Signal pub/sub mechanism — sync or async.** *Decidable by me.*
 
@@ -151,9 +176,9 @@ Ten phases. Each is reviewable in isolation; some parallelizable.
 
 **Estimate:** ~3 days.
 
-#### Phase 4d — Engine signal pub/sub
+#### Phase 4d — Engine signal pub/sub + `answer` trigger kind
 
-**Scope:** Engine event bus that emits typed signals at structural locations; processors with `signal: "engine.<name>"` triggers fire on matching emissions per design decision (A).
+**Scope:** Engine event bus that emits typed signals at structural locations; processors with `signal: "engine.<name>"` triggers fire on matching emissions per design decision (A). **Also adds the new `answer` trigger kind** for the symmetric question-answer handler pattern per design decision (D).
 
 **Code locations:**
 - `src/engine/signals.ts` (new) — typed signal emission API. Async enqueue per decision (E).
@@ -164,17 +189,21 @@ Ten phases. Each is reviewable in isolation; some parallelizable.
 - Extend `Signal` literal-union in `src/core/processor.ts` per decision (A).
 - Update `triggers.ts:matchTriggers` to dispatch by prefix (`file.*` vs `engine.*`).
 - Validator at bundle load: reject `signal: "engine.<name>"` if name doesn't match a known engine signal.
+- **Extend `Trigger` union with `answer` kind** per decision (D). Triggered when a user answer matches `codePrefix`. Carries `ctx.input = { kind: "answer", question, answer }`.
+- Update `triggers.ts` to match `answer` triggers against incoming answers (separate from signal triggers).
 
 **Tests:**
 - An outbox row going to `status: "failed"` emits `engine.outbox.terminal-failure`; a processor with that signal trigger fires.
 - An adoption block emits `engine.adoption.blocked`; a processor reacts.
 - Unknown engine signal name in a manifest → bundle-load failure with clear error.
+- A processor with `answer` trigger declaring `codePrefix: "intake."` fires when an answer to question code `intake.disambig` lands. Receives the question + answer in `ctx.input`.
+- Invalid codePrefix (e.g., empty, or with whitespace) → bundle-load failure.
 
 **Depends on:** 4a.
 
-**Substrate updates:** [[wiki/specs/processors]] §"Triggers and signals" — extend the `Signal` shape; new gotcha/matrix row for engine signals.
+**Substrate updates:** [[wiki/specs/processors]] §"Triggers and signals" — extend the `Signal` shape + add the `answer` trigger kind; new gotcha/matrix row for engine signals; update [[wiki/matrices/processor-phase-x-trigger]] to add the `answer` column (allowed in garden phase only — answers always trigger async resolution work).
 
-**Estimate:** ~3 days.
+**Estimate:** ~4 days (was 3; added the `answer` trigger kind).
 
 #### Phase 4e — JobEffect routing
 
@@ -229,85 +258,163 @@ Ten phases. Each is reviewable in isolation; some parallelizable.
 
 **Estimate:** ~1 day.
 
-#### Phase 4h — `dome answer` + question.answered signal
+#### Phase 4h — `AbstractSurface.questions` operations (CLI + MCP)
 
-**Scope:** Replace the [[wiki/specs/cli]] §"dome answer" stub with real impl + emit signal on answer per [[wiki/specs/effects]] §"QuestionEffect" §"When the user answers".
+**Scope:** Question / answer is a first-class `AbstractSurface` operation, rendered by both CLI and MCP in this phase. Long-term it also renders to HTTP (v2), voice (v2), mobile (v2), and is the surface an agent uses to surface pending questions in conversation per the AGENTS.md template additions in Phase 4k.
+
+**The AbstractSurface contract:**
+
+```ts
+interface AbstractSurface {
+  // ...existing
+  readonly questions: {
+    list(filter?: QuestionFilter): Promise<QuestionEffect[]>;
+    answer(idempotencyKey: string, value: string): Promise<AnswerResult>;
+    openCount(): Promise<number>;  // for the "blocking gardening" metric
+  };
+}
+```
 
 **Code locations:**
-- `src/cli/commands/answer.ts` (new) — accepts `<question-id> [<value>]`; resolves question-id (idempotency-key per decision F); writes `answered_at` + `answer` to `projection.db.questions`; emits `engine.question.answered` via Phase 4d.
-- `src/cli/index.ts` — register the `answer` case (currently absent).
+- `src/engine/surface.ts` (or extension to vault-runtime) — implement `surface.questions.list/answer/openCount` against `projection.db.questions`. `answer()` writes `answered_at` + `answer`, then emits `engine.question.answered` via Phase 4d.
+- `src/cli/commands/answer.ts` (new) — thin renderer over `surface.questions.answer()`. Accepts `<question-id> [<value>]`; resolves question-id (idempotency-key per decision F). Replaces the v1.0 stub at the current `src/cli/commands/answer.ts` location (no `--repair`-style flag work).
+- `src/cli/index.ts` — register the `answer` case.
 - `src/projections/questions.ts` — add `recordAnswer(db, opts)` if not present.
+- **MCP renderer in `src/protocols/mcp/`** — register two new tools:
+  - `dome.questions.list` — wraps `surface.questions.list()`.
+  - `dome.questions.answer` — wraps `surface.questions.answer()`.
+  - Both consume the same underlying engine path as the CLI renderer.
 
 **Tests:**
-- `dome answer <key> retry` updates the row, fires the signal, a processor subscribed to the signal observes the answer.
-- Unknown question-id: 64 exit code with helpful error.
-- Already-answered question: error (or replace, depending on policy — open Q).
+- CLI: `dome answer <key> retry` → row updated → signal fires → matching `answer` trigger (Phase 4d) fires.
+- MCP: `dome.questions.answer({ idempotencyKey, value })` → same engine path → same signal → same trigger.
+- Both renderers produce identical effects (test via SurfaceFixture that swaps the renderer but reuses the engine).
+- Unknown question-id: error result (CLI: 64 exit; MCP: structured error).
+- Already-answered question: error result with clear message.
+- `surface.questions.openCount()` returns the right number after answer + after garden-phase resolution.
 
-**Depends on:** 4d.
+**Depends on:** 4d (for the `answer` trigger kind + signal pub/sub), 4b (for `AbstractSurface` substrate from view runner work).
 
-**Substrate updates:** [[wiki/specs/cli]] §"dome answer" — remove reserved-for-v1.x markers; lock in the question-id shape.
+**Substrate updates:**
+- [[wiki/specs/cli]] §"dome answer" — remove reserved-for-v1.x markers; lock in the question-id shape (idempotency-key per decision F).
+- [[wiki/specs/mcp-surface]] — add the two new tools; clarify "question/answer writes" are not vault writes (they're operational signals; the resulting Effects still go through the broker).
+- [[wiki/matrices/protocol-adapter]] — new row for "Resolve question" mapping `surface.questions.answer` to its per-protocol renderers.
 
-**Estimate:** ~2 days.
+**Estimate:** ~3 days (was 2; added MCP renderer + AbstractSurface lifting).
 
-#### Phase 4i — Answer-handler substrate-mutation channel
+#### Phase 4i — Operational substrate CLI verbs
 
-**Scope:** Per design decision (D) option (c). New capability tier `engine.substrate-mutate` with sub-grants. ProcessorContext exposes typed handles for granted operations. Broker enforces at the boundary.
+**Scope:** Per design decision (D), operational substrate maintenance ships as a small closed set of CLI verbs — engine-owned, not bundle-extensible. These replace the pre-recut admin flags (`--outbox-replay`, `--reset-quarantined-processors`, etc.) that the recut retired.
+
+The set is **closed and engine-owned** because operational substrate is engine-owned. A third-party bundle that wants its own substrate-mutation pattern (rare; usually an anti-pattern) would need to merge code into the engine.
+
+**Verbs (each a top-level command):**
+- `dome outbox retry <key>` — reset a failed row to pending (calls `outbox.replayFailed`).
+- `dome outbox abandon <key>` — mark a failed row abandoned (calls `outbox.markAbandoned`).
+- `dome outbox retry-by-capability <cap>` — bulk retry every failed row for a capability (after a credential rotation, etc.).
+- `dome quarantine reset <processor-id>` — clear quarantine state for a specific processor.
+- `dome quarantine list` — list currently-quarantined processors.
+- `dome runs fail <run-id>` — manually transition an orphan run to failed (the engine-asks framing for orphan-run recovery).
 
 **Code locations:**
-- `src/capabilities/index.ts` — declare the new tier + sub-grants (`outbox.replay`, `outbox.abandon`, `quarantine.reset`, `runs.fail`).
-- `src/engine/capability-broker.ts` — enforce on the typed handles.
-- `src/core/processor.ts` — extend `ProcessorContext` with optional `outbox`, `quarantine`, `runs` mutation handles (typed; present only when capability granted).
-- `docs/wiki/specs/capabilities.md` — substrate update for the new tier.
+- `src/cli/commands/outbox.ts` (new) — subcommand router for `retry`, `abandon`, `retry-by-capability`. Wraps existing `outbox.replayFailed` / `outbox.markAbandoned` functions; writes a `RunRecord` per invocation for audit.
+- `src/cli/commands/quarantine.ts` (new) — subcommand router for `reset`, `list`. Wraps existing quarantine-store helpers.
+- `src/cli/commands/runs.ts` (new) — subcommand router for `fail`. Wraps `runs.failOrphaned`.
+- `src/cli/index.ts` — register the three new top-level commands.
+- `src/cli/help.ts` — extend usage with the new verbs.
 
 **Tests:**
-- A garden processor with the right grant can call `ctx.outbox.replay(key)`.
-- Without the grant, the call fails with a capability-deny diagnostic.
-- A processor that declares the grant but the vault config doesn't grant it gets downgrade/deny diagnostics on attempt per [[wiki/gotchas/capability-downgrade-surprise]].
+- `dome outbox retry <key>` resets the row and writes a RunRecord with `processor_id: "cli.outbox.retry"`.
+- `dome outbox retry-by-capability calendar.write` resets every failed row matching the capability; single RunRecord per row.
+- `dome quarantine reset <id>` clears the quarantined.json entry.
+- Each verb returns 64 (EX_USAGE) on missing required args.
+- The audit trail is visible via `dome inspect runs --processor cli.outbox.*`.
 
-**Depends on:** 4d + 4h.
+**Depends on:** none (these wrap existing functions; no engine work required).
 
-**Substrate updates:** [[wiki/specs/capabilities]] §"Capability tiers" — new row; [[wiki/matrices/effect-x-capability]] — new column for substrate-mutate.
+**Substrate updates:**
+- [[wiki/specs/cli]] — add §"dome outbox", §"dome quarantine", §"dome runs" sections.
+- Update gotchas: [[wiki/gotchas/outbox-stuck]] — the recovery flow names these verbs explicitly (replaces the engine-asks-model framing from the recut).
+- Update [[wiki/invariants/INBOX_IS_EPHEMERAL]] — the quarantine-recovery flow uses `dome quarantine reset` instead of the engine-asks model.
+- Update [[wiki/specs/projection-store]] §"Outbox" lifecycle — point at the verbs.
+- Update [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — orphan-run recovery uses `dome runs fail` instead of the engine-asks model.
 
-**Estimate:** ~3 days (the capability work is the bulk).
+**Estimate:** ~2 days (thin wrappers; the existing functions do the work).
 
-#### Phase 4j — `dome.health` bundle
+#### Phase 4j — `dome.health` bundle (probe-only)
 
-**Scope:** Now the bundle actually works. Five processors:
+**Scope:** Probe-only bundle that detects stuck operational substrate and surfaces it via DiagnosticEffects. The diagnostics name the recovery verb so the user knows what to run. **No question-answer handlers** — those collapsed into direct CLI verbs in Phase 4i.
 
-- **`dome.health.detect-outbox-failure`** — garden, `signal: engine.outbox.terminal-failure`, emits `QuestionEffect` with options `["retry", "abandon", "wait"]`.
-- **`dome.health.detect-orphan-runs`** — garden, `schedule: "0 * * * *"` (hourly), queries `runs.db`, emits diagnostics + Questions for stuck rows.
-- **`dome.health.detect-quarantine`** — garden, `signal: engine.processor-quarantined`, emits Question with options `["reset", "keep", "uninstall"]`.
-- **`dome.health.handle-answer`** — garden, `signal: engine.question.answered`, dispatches per question code (calls `ctx.outbox.replay(key)`, `ctx.outbox.abandon(key)`, `ctx.quarantine.reset()`, `ctx.runs.fail(id)`).
-- **`dome.health.render-report`** — view, `command: doctor`, walks `projection.db.diagnostics` + `projection.db.questions`, returns ViewEffect with the assembled health report.
+**Four processors:**
+
+- **`dome.health.detect-outbox-failure`** — garden, `signal: engine.outbox.terminal-failure`. Emits a `DiagnosticEffect`:
+  ```
+  severity: warning
+  code: dome.health.outbox-failure
+  message: "Outbox dispatch failed terminally for <capability>/<key>: <last error>.
+            Recover with: `dome outbox retry <key>` or `dome outbox abandon <key>`."
+  ```
+- **`dome.health.detect-orphan-runs`** — garden, `schedule: "0 * * * *"` (hourly). Queries `runs.db` for rows stuck in `status: "running"` past a threshold; emits `DiagnosticEffect` per orphan with `message` pointing at `dome runs fail <id>`.
+- **`dome.health.detect-quarantine`** — garden, `signal: engine.processor-quarantined`. Emits `DiagnosticEffect` pointing at `dome quarantine reset <processor-id>`.
+- **`dome.health.render-report`** — view, `command: doctor`. Walks `projection.db.diagnostics` (the recent operational diagnostics) and `surface.questions.openCount()` (the blocked-gardening metric); returns `ViewEffect` with an assembled report.
 
 **Code locations:**
 - `assets/extensions/dome.health/manifest.yaml`
-- `assets/extensions/dome.health/processors/*.ts`
-- `assets/extensions/dome.health/preamble.md` — bundle conventions for AGENTS.md per [[wiki/matrices/extension-bundle-shape]]
+- `assets/extensions/dome.health/processors/*.ts` — four processors per above.
+- `assets/extensions/dome.health/preamble.md` — bundle conventions for AGENTS.md per [[wiki/matrices/extension-bundle-shape]]. Teaches the agent: "if `dome inspect diagnostics` surfaces a `dome.health.*` code, surface the recovery verb to the user."
 - Wire `dome doctor` to invoke `dome.health.render-report` (replace the v1.0 stub in `src/cli/commands/doctor.ts`).
 
 **Tests:**
-- End-to-end: outbox dispatch fails 3× → engine emits terminal-failure → detect-outbox-failure emits a Question → user runs `dome answer <key> retry` → handle-answer invokes `ctx.outbox.replay(key)` → row transitions to `pending`.
-- Doctor verb: `dome doctor` invokes the render-report processor, prints the assembled view of diagnostics + questions.
+- End-to-end: outbox dispatch fails 3× → engine emits terminal-failure → `detect-outbox-failure` emits a Diagnostic visible via `dome inspect diagnostics` → user runs `dome outbox retry <key>` → row transitions to `pending` → next dispatch succeeds (clears the diagnostic).
+- Orphan-run flow: cron fires `detect-orphan-runs` → finds stuck row → emits diagnostic → user runs `dome runs fail <id>` → next probe sees no orphans → diagnostic resolves.
+- Doctor verb: `dome doctor` invokes the render-report processor, prints the assembled view of diagnostics + open-question count + blocked-gardening summary.
 
-**Depends on:** 4a, 4b, 4c, 4d, 4h, 4i — basically everything before.
+**Depends on:** 4a (garden runner), 4b (view runner), 4c (scheduler), 4d (engine signals). **Does NOT depend on 4h or 4i** — the probes emit Diagnostics; recovery happens via the CLI verbs from 4i (which are independent).
 
-**Substrate updates:** [[wiki/specs/cli]] §"dome doctor" — remove reserved-for-v1.x markers; [[wiki/matrices/built-in-extensions-x-phase]] — new row for `dome.health`; [[wiki/specs/processors]] §"First-party processors" — add `dome.health` row.
+**Substrate updates:**
+- [[wiki/specs/cli]] §"dome doctor" — remove reserved-for-v1.x markers.
+- [[wiki/matrices/built-in-extensions-x-phase]] — new row for `dome.health`.
+- [[wiki/specs/processors]] §"First-party processors" — add `dome.health` row.
 
-**Estimate:** ~4 days.
+**Estimate:** ~3 days (was 4; one fewer processor, simpler semantics, no end-to-end answer-handler integration to test).
 
-#### Phase 4k — Substrate polish
+#### Phase 4k — Substrate polish + new invariants
 
 **Scope:** Pick up everything we promised but didn't ship inline. The substrate-doc-first discipline of earlier phases will catch most of it; this phase is the sweep for what's left.
 
 **Includes:**
-- New `docs/wiki/concepts/processor-class.md` — names the implicit pure / model-backed / external dimension (we discussed this; it's now load-bearing for capability declarations across all the new bundles).
-- New `wiki/matrices/processor-class-x-phase.md` — pins "adoption ⇒ pure" as a matrix row.
+
+*New substrate docs:*
+- New `docs/wiki/concepts/processor-class.md` — names the implicit pure / model-backed / external dimension (load-bearing for capability declarations across all the new bundles).
+- New `docs/wiki/matrices/processor-class-x-phase.md` — pins "adoption ⇒ pure" as a matrix row.
+- New `docs/wiki/gotchas/sub-proposal-cascade.md` (from Phase 4a risk) — the depth-cap gotcha.
+
+*New invariants:*
+- New `docs/wiki/invariants/OPEN_QUESTIONS_DO_NOT_BLOCK.md` *(shipped default)*. Statement: open questions in `projection.db.questions` never block other processor invocations. A processor that emits a QuestionEffect completes its invocation; the question is durable state, not a held lock. Sibling processors, new triggers, scheduled work, and adoption all proceed unaffected. The only suspended unit is the specific work that asked, which resumes via the `answer` trigger when the user replies. Pinned by `tests/invariants/open-questions-do-not-block.test.ts` — fixture vault with an open question + concurrent garden work; asserts sibling processors fire and complete while the question stays pending. Specifically asserts `drainProcessors()` returns while questions are open (drain awaits machine work, not human work).
+
+*AGENTS.md template additions* (so the agent surfaces pending questions in conversation per the long-term UX vision):
+- Update `src/cli/commands/init.ts` AGENTS.md template to include a new section:
+  ```markdown
+  ## Pending questions
+
+  At session start, check pending questions via `dome inspect questions
+  --json` (or the `dome.questions.list` MCP tool if mounted). If there
+  are open questions, mention them to the user alongside whatever else
+  you're doing — they represent garden work blocked waiting on a
+  decision the user is best placed to make.
+
+  When the user replies, translate the response to a structured answer
+  and submit via `dome answer <key> <value>` (or the
+  `dome.questions.answer` MCP tool).
+  ```
+- Lockstep test ensuring the section is present in the templated portion of every newly-init'd vault per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]].
+
+*Cleanups:*
 - [[wiki/specs/processors]] §"Idempotency" — name the per-class idempotency contracts.
 - [[wiki/specs/cli]] — remove every remaining "reserved for v1.x" marker now that they ship.
-- New `wiki/gotchas/sub-proposal-cascade.md` (from Phase 4a risk) — the depth-cap gotcha.
+- Convert the design-evolution note from this doc into a [[cohesive/delta-ledgers/2026-05-28-v1-engine-completion]] entry capturing the design pivots for the historical record.
 
-**Estimate:** ~2 days substrate polish.
+**Estimate:** ~3 days substrate polish (was 2; added AGENTS.md template work + new invariant).
 
 ### Sequencing graph
 
@@ -343,70 +450,84 @@ Ten phases. Each is reviewable in isolation; some parallelizable.
                   └────────┬────────┘
                            │
                   ┌────────▼────────┐
-                  │ 4h dome answer  │
-                  │  + answered sig │
+                  │ 4h Abstract-    │
+                  │  Surface.       │
+                  │  questions      │
+                  │  (CLI + MCP)    │
                   └────────┬────────┘
                            │
-                  ┌────────▼────────┐
-                  │ 4i Substrate-   │
-                  │  mutate cap +   │
-                  │  ProcessorCtx   │
-                  └────────┬────────┘
-                           │
-                  ┌────────▼────────┐
-                  │ 4j dome.health  │
-                  │    bundle       │
-                  └────────┬────────┘
+              ┌────────────┼────────────┐
+              │                         │
+     ┌────────▼─────────┐      ┌────────▼─────────┐
+     │ 4i Operational   │      │ 4j dome.health   │
+     │  CLI verbs       │      │  bundle (probe-  │
+     │  (independent)   │      │  only)           │
+     └────────┬─────────┘      └────────┬─────────┘
+              │                         │
+              └────────────┬────────────┘
                            │
                   ┌────────▼────────┐
                   │ 4k Substrate    │
-                  │    polish       │
+                  │  polish + new   │
+                  │  invariants     │
                   └─────────────────┘
 ```
 
-**Critical path:** 4a → 4c → 4f → 4g → 4h → 4i → 4j → 4k.
-**Parallel-able:** 4b alongside 4a; 4d + 4e alongside 4a.
+**Critical path:** 4a → 4c → 4f → 4g → 4h → 4k.
+**Parallel-able:** 4b alongside 4a; 4d + 4e alongside 4a; 4i and 4j alongside each other (both depend on the earlier phases but are independent of each other since 4j is probe-only now).
 
 ### Effort estimate
 
-| Phase | Days |
-|---|---|
-| 4a Garden-phase runner | 5 |
-| 4b View-phase runner | 3 |
-| 4c Scheduler | 3 |
-| 4d Signal pub/sub | 3 |
-| 4e JobEffect routing | 3 |
-| 4f Outbox dispatcher loop | 3 |
-| 4g `drainProcessors()` API | 1 |
-| 4h `dome answer` + signal | 2 |
-| 4i Substrate-mutate channel | 3 |
-| 4j `dome.health` bundle | 4 |
-| 4k Substrate polish | 2 |
-| **Total** | **~32 days focused work** |
+| Phase | Days | Δ from original |
+|---|---|---|
+| 4a Garden-phase runner | 5 | — |
+| 4b View-phase runner | 3 | — |
+| 4c Scheduler | 3 | — |
+| 4d Signal pub/sub + `answer` trigger kind | 4 | +1 |
+| 4e JobEffect routing | 3 | — |
+| 4f Outbox dispatcher loop | 3 | — |
+| 4g `drainProcessors()` API | 1 | — |
+| 4h `AbstractSurface.questions` (CLI + MCP) | 3 | +1 (MCP + AbstractSurface lifting) |
+| 4i Operational CLI verbs | 2 | −1 (collapsed from substrate-mutate channel) |
+| 4j `dome.health` bundle (probe-only) | 3 | −1 (one fewer processor) |
+| 4k Substrate polish + new invariants | 3 | +1 (AGENTS.md template + invariant) |
+| **Total** | **~33 days focused work** | +1 net |
 
 Real calendar time depends on review velocity + how often Phase-12-style work lands concurrently (this estimate doesn't include rebase/merge-conflict tax).
 
 ### Open scope questions
 
-Before kicking off Phase 4a:
+All originally-listed design decisions have settled (see Design Evolution note at top of doc + the Design Decisions section). The remaining process questions:
 
-1. **Design decision (D) — substrate-mutation channel.** Confirm option (c) — new `engine.substrate-mutate` capability tier with typed handles on ProcessorContext. Or pick (a) or (b). **Blocks Phase 4i; only affects code after 4h.**
+1. ~~**Design decision (D) — substrate-mutation channel.**~~ **Resolved 2026-05-28.** Question / answer is for content decisions with bundle-driven symmetric handlers (new `answer` trigger kind, multi-surface via AbstractSurface). Operational substrate uses direct CLI verbs. See Phase 4d + 4h + 4i.
 
-2. **One PR per phase, or one PR end-to-end?** Recommend **one PR per phase, stacked** (the Phase 12 precedent on main shows this is house style). Lets reviewers digest the work in chunks; catches issues phase-by-phase.
+2. **One PR per phase, or one PR end-to-end?** **Resolved: one PR end-to-end** per owner direction 2026-05-28. Will involve a thorough self-review pass at the end to verify cohesion + robustness + completeness before merge.
 
 3. **Substrate-doc-first or code-first per phase?** Recommend **substrate-doc-first per phase**, given the AGENTS.md directive "Read the substrate before changing code." Each phase opens with a spec update naming what shipped + what changed; the code follows.
 
 ### Recommended starting move
 
-Phase 4a in a fresh worktree (`.claude/worktrees/phase-4a-garden-runner` per the harness convention from `~/.claude/CLAUDE.md`). The flow:
+Per owner direction (2026-05-28): **one end-to-end PR** rather than one per phase. The work happens in a fresh worktree (`.claude/worktrees/v1-engine-completion` per the harness convention from `~/.claude/CLAUDE.md`). The flow:
 
-1. Substrate update first: [[wiki/specs/processors]] §"Garden phase" implementation status, removing the deferral markers and naming what's about to ship.
-2. Code: `gardenRunner` in `src/processors/runtime.ts` + `garden.ts` orchestrator + the wiring from `adopt()`.
-3. Tests covering the four scenarios named in Phase 4a.
-4. Open the PR; review pass; merge.
-5. Move to Phase 4b (parallel) or Phase 4d (the next critical-path dep).
+1. **Phase-by-phase implementation in the worktree**, substrate-doc-first per phase per process Q3. Each phase's commits land on the branch; the branch grows linearly through Phase 4a → 4b → 4d → ... → 4k.
+2. **Thorough self-review pass at the end** before opening the PR — verifies cohesion + robustness + completeness across all phases. Cross-checks every substrate update against the code, every test against the spec, every closed gotcha against the new behavior. Catches what slipped between phases.
+3. **Open the end-to-end PR**; review pass; merge.
 
-Phase 4a alone unblocks every garden-phase processor across every shipped + future bundle. It's the highest-leverage single piece in the bucket; everything stacks on it.
+Phase 4a alone unblocks every garden-phase processor across every shipped + future bundle. It's the highest-leverage single piece in the bucket; everything stacks on it. The end-to-end PR approach means each subsequent phase can reference and verify against the prior phases' work in-tree rather than waiting for separate merges.
+
+**Self-review checklist (to be expanded as phases land):**
+- [ ] Every spec update reflects what actually shipped (no aspirational language).
+- [ ] Every test in the phase's plan is implemented and passing.
+- [ ] The `OPEN_QUESTIONS_DO_NOT_BLOCK` invariant is structurally enforced.
+- [ ] `drainProcessors()` returns cleanly with open questions outstanding.
+- [ ] Bundle-load failures surface clear diagnostics.
+- [ ] Sub-Proposal cascades respect the depth cap.
+- [ ] All retired `dome doctor --<flag>` admin flags are removed from substrate (no leftover references).
+- [ ] AGENTS.md template includes the pending-questions section.
+- [ ] MCP `dome.questions.list/answer` tools route through `AbstractSurface.questions.*` (same engine path as the CLI).
+- [ ] `dome inspect diagnostics` + `dome doctor` both render the new `dome.health.*` diagnostics with their recovery-verb hints.
+- [ ] No leftover scaffolding or commented-out code.
+- [ ] Existing tests (303 from main) still pass alongside the new phase-specific tests.
 
 ### Risks and unknowns
 
@@ -418,15 +539,30 @@ Phase 4a alone unblocks every garden-phase processor across every shipped + futu
 
 ### Related substrate
 
-- [[wiki/specs/processors]] — every phase touches this
-- [[wiki/specs/effects]] — JobEffect, QuestionEffect, ExternalActionEffect routing
+*Specs touched by multiple phases:*
+- [[wiki/specs/processors]] — every phase touches this; adds `answer` trigger kind, engine signals, garden + view phase status
+- [[wiki/specs/effects]] — JobEffect, QuestionEffect, ExternalActionEffect routing (no new kinds added; closed taxonomy preserved)
 - [[wiki/specs/adoption]] — where garden hooks into the adoption-success path
 - [[wiki/specs/projection-store]] — `schedule_cursors`, `scheduled_jobs`, `questions` tables
-- [[wiki/specs/capabilities]] — new tier in Phase 4i
-- [[wiki/specs/cli]] — `dome answer`, `dome doctor`, `dome wait` (future) surfaces
+- [[wiki/specs/cli]] — `dome answer`, `dome doctor`, `dome outbox/quarantine/runs` verbs, `dome wait` (future)
+- [[wiki/specs/mcp-surface]] — new `dome.questions.list/answer` tools (Phase 4h)
+- [[wiki/specs/sdk-surface]] — new `AbstractSurface.questions.*` operations
+
+*New substrate to be added:*
+- New invariant `OPEN_QUESTIONS_DO_NOT_BLOCK` (Phase 4k) — *shipped default*
+- New concept doc `processor-class.md` (Phase 4k) — pure / model-backed / external
+- New matrix `processor-class-x-phase.md` (Phase 4k) — pins "adoption ⇒ pure"
+- New gotcha `sub-proposal-cascade.md` (Phase 4k) — from Phase 4a risk
+- New delta-ledger `2026-05-28-v1-engine-completion.md` (Phase 4k) — captures the design pivots for historical record
+
+*Gotchas referenced:*
 - [[wiki/gotchas/scheduled-hook-idempotency]] — at-most-once-per-sync clamp
 - [[wiki/gotchas/processor-fixed-point-divergence]] — cascade-cap pattern to mirror for sub-Proposals
 - [[wiki/gotchas/async-read-after-write-staleness]] — `drainProcessors()` callers
-- [[wiki/matrices/processor-phase-x-trigger]] — every cell in this matrix becomes load-bearing for the first time
-- [[wiki/matrices/effect-router-targets]] — view/garden columns are documented but not implemented today
-- [[wiki/matrices/effect-x-capability]] — new column for substrate-mutate in Phase 4i
+- [[wiki/gotchas/outbox-stuck]] — recovery flow names the new CLI verbs from Phase 4i
+
+*Matrices touched:*
+- [[wiki/matrices/processor-phase-x-trigger]] — every cell becomes load-bearing for the first time; adds new `answer` row
+- [[wiki/matrices/effect-router-targets]] — view/garden columns are documented but not implemented today; this work implements them
+- [[wiki/matrices/protocol-adapter]] — new row for "Resolve question" mapping `surface.questions.answer` to per-protocol renderers
+- [[wiki/matrices/built-in-extensions-x-phase]] — new row for `dome.health`
