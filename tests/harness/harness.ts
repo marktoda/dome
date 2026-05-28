@@ -65,6 +65,7 @@ import { RefMatcherImpl } from "./assertions/refs";
 import { runAllAlwaysTrue } from "./assertions/always-true";
 import { TestClock } from "./test-clock";
 import type {
+  BundleSpec,
   CommitMatcher,
   FileMatcher,
   GitView,
@@ -172,17 +173,22 @@ export class HarnessImpl implements Harness {
     }
 
     // Set up bundles. The shipped-bundle directory is the SDK's
-    // `assets/extensions/`; each requested id is *symlinked* into the
-    // vault's `.dome/extensions/<id>/`. We symlink (not copy) so the
-    // processor module's relative imports (`../../../../src/core/effect`)
-    // continue to resolve against the SDK's real location after Bun
-    // canonicalizes the file URL during dynamic-import.
-    const installedBundles = new Set<string>(opts.bundles ?? []);
+    // `assets/extensions/` for plain-string bundle ids; fixture-bundle
+    // specs (`{ id, root }`) resolve to their declared root. Each
+    // bundle is *symlinked* into the vault's `.dome/extensions/<id>/`.
+    // We symlink (not copy) so the processor module's relative imports
+    // (`../../../../src/core/effect`) continue to resolve against the
+    // source location after Bun canonicalizes the file URL during
+    // dynamic-import — this matters for fixture bundles that may live
+    // under `tests/harness/fixtures/bundles/...`, whose relative imports
+    // need to land in the SDK's `src/` tree.
+    const installedBundles = new Set<string>();
     await mkdir(join(vaultPath, ".dome", "extensions"), { recursive: true });
-    for (const id of installedBundles) {
-      const src = join(resolveShippedBundlesRoot(), id);
+    for (const spec of opts.bundles ?? []) {
+      const { id, src } = resolveBundleSource(spec);
       const dst = join(vaultPath, ".dome", "extensions", id);
       await symlink(src, dst, "dir");
+      installedBundles.add(id);
     }
 
     // Open the runtime against the (possibly-empty) bundles root.
@@ -350,12 +356,12 @@ export class HarnessImpl implements Harness {
 
   // ----- Bundle moves ------------------------------------------------------
 
-  async install(bundleIds: ReadonlyArray<string>): Promise<void> {
+  async install(bundles: ReadonlyArray<BundleSpec>): Promise<void> {
     await this.snapshot();
     const newlyInstalled: string[] = [];
-    for (const id of bundleIds) {
+    for (const spec of bundles) {
+      const { id, src } = resolveBundleSource(spec);
       if (this.installedBundles.has(id)) continue;
-      const src = join(resolveShippedBundlesRoot(), id);
       const dst = join(this.vaultPath, ".dome", "extensions", id);
       await symlink(src, dst, "dir");
       this.installedBundles.add(id);
@@ -365,7 +371,7 @@ export class HarnessImpl implements Harness {
       await this.runtime.close();
       this.runtime = await openRuntime(this.vaultPath);
     }
-    await runAllAlwaysTrue(this, `install([${bundleIds.join(", ")}])`);
+    await runAllAlwaysTrue(this, `install([${newlyInstalled.join(", ")}])`);
   }
 
   async uninstall(bundleId: string): Promise<void> {
@@ -555,4 +561,20 @@ function makeGitView(h: HarnessImpl): GitView {
 function extractSubject(message: string): string {
   const idx = message.indexOf("\n");
   return idx === -1 ? message : message.slice(0, idx);
+}
+
+/**
+ * Resolve a `BundleSpec` to `(id, src)` — the symlink name and the
+ * source directory to symlink. Shipped-bundle ids (`string`) resolve
+ * against `resolveShippedBundlesRoot()`; fixture-bundle specs
+ * (`{ id, root }`) resolve directly against their declared root.
+ *
+ * Lives as a pure helper so both `HarnessImpl.create` and
+ * `HarnessImpl.install` share one resolution rule.
+ */
+function resolveBundleSource(spec: BundleSpec): { id: string; src: string } {
+  if (typeof spec === "string") {
+    return { id: spec, src: join(resolveShippedBundlesRoot(), spec) };
+  }
+  return { id: spec.id, src: spec.root };
 }

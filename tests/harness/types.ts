@@ -35,17 +35,41 @@ import type { Effect } from "../../src/core/effect";
 // ============================================================================
 
 /**
+ * A bundle to install into the harness vault. Two shapes:
+ *
+ *   - A plain `string` — the bundle id. Resolved from the SDK's shipped-
+ *     bundles directory (`assets/extensions/<id>`). This is the common
+ *     case: `"dome.markdown"`, `"dome.lint"`, etc.
+ *   - A `{ id, root }` object — a **fixture bundle** at a custom
+ *     directory root. Used by scenarios that need to exercise behavior
+ *     no shipped bundle provides today (e.g., a garden-phase processor
+ *     that emits a PatchEffect, for testing the cascade path). The
+ *     `id` becomes the symlink name under `.dome/extensions/`; the
+ *     `root` is the absolute path to the bundle's source directory
+ *     (containing `manifest.yaml` + `processors/`).
+ *
+ * Fixture bundles live under `tests/harness/fixtures/bundles/<id>/` by
+ * convention. The `root` field lets callers point anywhere — the harness
+ * doesn't enforce a fixtures location.
+ */
+export type BundleSpec =
+  | string
+  | { readonly id: string; readonly root: string };
+
+/**
  * Options for constructing a fresh harness fixture. All optional; sensible
  * defaults give an empty git-initialized vault with no bundles.
  */
 export type HarnessOpts = {
   /**
-   * Shipped bundle ids to install at startup (e.g., `"dome.markdown"`,
-   * `"dome.lint"`). The harness resolves these via the SDK's shipped-
-   * bundles directory and copies the bundle root into the vault's
-   * `.dome/extensions/` so the runtime loads them.
+   * Bundles to install at startup. Each entry is either a shipped-
+   * bundle id (`string`) resolved from the SDK's `assets/extensions/`,
+   * or a fixture-bundle spec (`{ id, root }`) resolved from an
+   * arbitrary directory. The harness symlinks each bundle's root into
+   * the vault's `.dome/extensions/<id>/` so the runtime's bundle
+   * loader picks it up.
    */
-  readonly bundles?: ReadonlyArray<string>;
+  readonly bundles?: ReadonlyArray<BundleSpec>;
 
   /**
    * Pre-seeded files to write into the vault's working tree before the
@@ -299,6 +323,13 @@ export interface ProjectionMatcher {
   diagnostics(filter?: { severity?: string; code?: string }): {
     toHaveCount(n: number): Promise<void>;
     toContainMessage(substring: string): Promise<void>;
+    /**
+     * Assert every matching row's `adopted_commit` column equals
+     * `expected`. Designed for sub-Proposal frame-correctness
+     * scenarios — diagnostics emitted inside a sub-adoption should be
+     * tagged with the sub-Proposal's head, not the parent's.
+     */
+    toAllHaveAdoptedCommit(expected: string): Promise<void>;
   };
   /** Assert N rows in the facts table match the filter. */
   facts(filter?: { predicate?: string; subjectId?: string }): {
@@ -320,6 +351,15 @@ export interface OutboxMatcher {
 
 export interface CommitMatcher {
   toHaveAllTrailers(required: ReadonlyArray<string>): Promise<void>;
+  /**
+   * Assert specific trailer values. Each key/value pair in `expected` must
+   * be present on the commit AND its value must equal exactly. Useful for
+   * verifying `Dome-Base` / `Dome-Source-Head` correctness on engine
+   * commits — the Phase 4a' sink-frame bug landed wrong values without
+   * affecting trailer presence, so `toHaveAllTrailers` alone wouldn't
+   * have caught it.
+   */
+  toHaveTrailerValues(expected: Record<string, string>): Promise<void>;
   toHaveSubjectMatching(pattern: RegExp): Promise<void>;
   toHaveParent(expectedParent: string): Promise<void>;
 }
@@ -390,9 +430,11 @@ export interface Harness {
   reopenRuntime(): Promise<void>;
 
   // ----- Bundle moves -----
-  /** Install shipped bundle ids (e.g., "dome.markdown"). Reopens the
-   *  runtime so the new bundle's processors are loaded. */
-  install(bundleIds: ReadonlyArray<string>): Promise<void>;
+  /** Install bundles. Each entry is either a shipped-bundle id
+   *  (e.g., `"dome.markdown"`) or a fixture-bundle spec
+   *  (`{ id, root }`) per `BundleSpec`. Reopens the runtime so the
+   *  new bundle's processors are loaded. */
+  install(bundles: ReadonlyArray<BundleSpec>): Promise<void>;
   /** Uninstall a bundle by id. Reopens the runtime. */
   uninstall(bundleId: string): Promise<void>;
 
