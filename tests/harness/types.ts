@@ -347,6 +347,7 @@ export interface ProjectionMatcher {
   /** Assert N rows in the questions table match the filter. */
   questions(): {
     toHaveCount(n: number): Promise<void>;
+    toContainQuestion(substring: string): Promise<void>;
   };
 }
 

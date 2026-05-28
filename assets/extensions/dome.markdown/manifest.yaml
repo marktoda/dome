@@ -55,6 +55,20 @@ processors:
         paths: ["**/*.md", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"]
     module: processors/broken-images.ts
 
+  - id: dome.markdown.duplicate-detection
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: question.ask
+    module: processors/duplicate-detection.ts
+
   - id: dome.markdown.orphan-pages
     version: 0.1.0
     phase: view

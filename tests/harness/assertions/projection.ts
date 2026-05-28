@@ -75,7 +75,10 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
     };
   }
 
-  questions(): { toHaveCount(n: number): Promise<void> } {
+  questions(): {
+    toHaveCount(n: number): Promise<void>;
+    toContainQuestion(substring: string): Promise<void>;
+  } {
     const h = this.h;
     return {
       async toHaveCount(n: number): Promise<void> {
@@ -86,6 +89,16 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
           rows.length,
           `expected ${n} questions row(s); got ${rows.length}`,
         ).toBe(n);
+      },
+      async toContainQuestion(substring: string): Promise<void> {
+        const rows = h.projection.raw
+          .query<{ question: string }, []>("SELECT question FROM questions")
+          .all();
+        const found = rows.some((r) => r.question.includes(substring));
+        expect(
+          found,
+          `expected a question containing ${JSON.stringify(substring)}; searched ${rows.length} row(s)`,
+        ).toBe(true);
       },
     };
   }

@@ -276,6 +276,7 @@ extensions:
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
       patch.auto:
         - "**/*.md"
+      question.ask: true
 
   dome.graph:
     enabled: true

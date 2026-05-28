@@ -157,7 +157,7 @@ extensions:
 
 The broker enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`). A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Shipped-default grants (the ones a fresh `dome init` writes): `dome.markdown`, `dome.index`, `dome.log`, `dome.links`, `dome.intake`, `dome.daily`, `dome.lint`, `dome.search` all receive their declared capabilities. Third-party bundles default to `enabled: false` until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
 
 ## Enforcement chokepoint
 

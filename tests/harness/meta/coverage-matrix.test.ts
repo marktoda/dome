@@ -54,6 +54,9 @@ import "../scenarios/effect-kinds/multiple-processors-same-commit.scenario.test"
 import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test";
 import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
+import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
+import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
+import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
@@ -201,8 +204,8 @@ const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [
 
 const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
   // Phase 13a unblocked: fact (dome.graph.links), view (dome.markdown.orphan-pages).
+  // Phase 13b unblocked: question (dome.markdown.duplicate-detection).
   // Effect-routing fixture coverage unblocked: job.
-  "question",  // Phase 14+ — duplicate-detection and intake processors emit Questions
   "external",  // Phase 16+ — outbox-targeted external actions (calendar.write, etc.)
 ]);
 
@@ -214,12 +217,12 @@ const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
   // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
+  // Phase 13b unblocked: question.ask (dome.markdown.duplicate-detection).
   // Effect-routing fixture coverage unblocked: job.enqueue.
   // Harness operational-work coverage unblocked: model.invoke.
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
-  "question.ask",  // Phase 14+ — duplicate-detection and intake processors emit Questions
   "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);
 
