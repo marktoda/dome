@@ -187,7 +187,7 @@ The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engi
 | Phase | What ships | Status |
 |---|---|---|
 | Adoption-phase runner | `adoptionRunner` (`src/processors/runtime.ts`) fires adoption-phase processors inside the fixed-point loop | **Shipped** (Phase 3) |
-| Garden-phase runner | `gardenRunner` fires post-adoption garden-phase processors against signal + path triggers; the engine constructs sub-Proposals from garden-emitted PatchEffects | **Shipped** (Phase 4a) |
+| Garden-phase runner | `gardenRunner` fires post-adoption garden-phase processors against signal + path triggers; the engine constructs sub-Proposals from garden-emitted PatchEffects with a depth cap (`garden.cascade-cap` diagnostic on hit) | **Shipped** (Phases 4a + 4a') |
 | View-phase runner | `viewRunner` + `AbstractSurface.commands` registry; enables `command:` triggers (`dome lint` and friends) | Phase 4b |
 | Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table | Phase 4c |
 | Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) + the `answer` trigger kind | Phase 4d |

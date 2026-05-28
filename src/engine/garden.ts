@@ -1,42 +1,37 @@
 // engine/garden: the garden-phase orchestrator.
 //
 // Per [[wiki/specs/processors]] §"Garden phase" and the v1 engine
-// completion plan (Phase 4a in
+// completion plan (Phases 4a + 4a' in
 // [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]), the
 // orchestrator runs **after** a successful adoption. It walks the
 // garden-phase processors via the injected `GardenPhaseRunner`,
-// routes each emitted effect through `applyEffect` with
-// `phase: "garden"`, and aggregates the outcome for the engine's
-// caller.
+// routes each emitted effect, and (Phase 4a') spawns sub-Proposals
+// for garden-emitted PatchEffects.
 //
-// Phase 4a scope:
-//   - Garden-phase processors fire against the post-adoption signal
-//     stream computed from `base..adopted` (the same signals the
-//     adoption loop saw via `compileRange`).
-//   - Effects route through the same `applyEffect` chokepoint
-//     adoption uses, ensuring uniform broker enforcement, capability-
-//     use ledgering, and phase-compatibility checking.
-//   - Garden-emitted PatchEffects (which should spawn **sub-Proposals**
-//     per [[wiki/specs/proposals]] §"Garden-emitted Proposals") are
-//     currently log+dropped by the wired `applyPatch` sink — see
-//     §"Deferred to Phase 4a'" below.
+// Phase 4a (shipped): garden-phase processors fire against the
+// post-adoption signal stream; non-Patch effects (Diagnostic, Fact,
+// Question, Job, External) route through `applyEffect` with
+// `phase: "garden"` ensuring uniform broker enforcement +
+// capability-use ledgering.
 //
-// Phase 4a' (deferred follow-up, same end-to-end PR per the plan):
-//   - Sub-Proposal spawn from garden-emitted PatchEffect: apply patch
-//     to a candidate tree off the adopted ref, construct a Proposal
-//     with `source: { kind: "garden", processorId, runId }`, route it
-//     through `adopt()` recursively.
-//   - Cascade-depth cap (default 10) with `garden.cascade-cap`
-//     diagnostic on hit (mirrors the fixed-point divergence pattern).
-//   - `drainProcessors()` semantics for in-flight cascade work.
+// Phase 4a' (this commit): garden-emitted auto-mode PatchEffects
+// spawn sub-Proposals. The orchestrator checks the broker via
+// `enforceCapability`, applies the patch to the adopted tree via
+// `applyPatchToCandidate` to produce a new commit head, constructs a
+// Proposal with `source: { kind: "garden", processorId, runId }`,
+// and routes it through the injected `adoptSubProposal` callback —
+// which is wired by the caller (sync-shared.ts) to recurse into
+// `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
 //
-// Until 4a' lands, garden-phase PatchEffects are visible in the run
-// ledger (the processor's RunRecord captures the emitted effects'
-// hashes via `markSucceeded`) but don't yet land patches into the
-// vault. Bundles that emit garden-phase patches (`dome.intake`,
-// `dome.links`) don't ship in this batch, so no real flow is blocked;
-// the placeholder is documented in [[wiki/specs/processors]]
-// §"Implementation status".
+// Cascade-depth cap: default 10. When a garden run at the cap emits
+// a PatchEffect, the orchestrator records a `garden.cascade-cap`
+// DiagnosticEffect (severity warning) and skips the spawn. This
+// mirrors the fixed-point divergence pattern from
+// [[wiki/gotchas/processor-fixed-point-divergence]].
+//
+// Propose-mode patches: log+drop in v1.0; surfaced as diagnostics
+// once the lint-review flow is fully wired (cross-references
+// [[wiki/specs/effects]] §"PatchEffect" §"mode: propose").
 //
 // House-style notes (matches src/engine/adopt.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -47,89 +42,147 @@
 
 import type {
   DiagnosticEffect,
-  Effect,
   PatchEffect,
 } from "../core/effect";
-import type { Proposal } from "../core/proposal";
+import { diagnosticEffect } from "../core/effect";
+import {
+  makeGardenProposal,
+  type AdoptionResult,
+  type Proposal,
+} from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
+import { applyPatchToCandidate } from "./apply-patch";
+import { enforceCapability } from "./capability-broker";
 import type { SignalEvent } from "./compile-range";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import type { GardenPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
+// ----- DEFAULT_MAX_CASCADE_DEPTH --------------------------------------------
+
+/**
+ * The default cap on garden → sub-Proposal recursion depth. A garden
+ * processor that emits a PatchEffect spawns a sub-Proposal; if THAT
+ * adoption's garden phase emits another PatchEffect, depth is 2; and
+ * so on. The cap prevents unbounded recursion when garden processors
+ * react to each other in cycles.
+ *
+ * The default of 10 is generous; legitimate cascades (entity created →
+ * backlinks added → search-index updated) usually reach depth 2-3.
+ * Hitting the cap surfaces a `garden.cascade-cap` DiagnosticEffect;
+ * the cap can be raised per-call via `maxCascadeDepth`.
+ *
+ * Mirrors the philosophy of `DEFAULT_MAX_ITERATIONS` in adopt.ts —
+ * generous default, explicit override, structural fence against
+ * pathological cycles.
+ */
+export const DEFAULT_MAX_CASCADE_DEPTH = 10;
+
 // ----- GardenPhaseResult ----------------------------------------------------
 
 /**
  * The outcome of one `runGardenPhase` invocation. Carries the per-processor
  * run summary (id, effect counts, broker outcomes), the aggregated
- * broker-emitted diagnostics, and a count of garden-phase PatchEffects that
- * were observed but deferred (until Phase 4a' wires sub-Proposal spawn).
- *
- * Returned to the caller (currently `adopt.ts`'s post-success hook) so the
- * caller can surface garden activity in event streams or telemetry without
- * itself touching the runner output.
+ * broker-emitted diagnostics, and a count of sub-Proposals spawned.
  */
 export type GardenPhaseResult = {
   readonly proposalId: string;
   readonly runs: ReadonlyArray<GardenRunSummary>;
   /**
-   * Count of PatchEffects emitted by garden-phase processors. Today these
-   * are observed but not applied (the wired `applyPatch` sink for garden
-   * phase log+drops). Phase 4a' will route them through sub-Proposal
-   * construction.
+   * Count of sub-Proposals spawned from garden-emitted PatchEffects
+   * during this run. Each spawned sub-Proposal is itself routed
+   * through `adopt()` (recursively); their results aren't surfaced
+   * directly here — they land in the run ledger.
    */
-  readonly deferredPatchCount: number;
+  readonly subProposalCount: number;
+  /**
+   * Count of garden-phase patches that were broker-rejected
+   * (capability deny) and therefore did NOT spawn sub-Proposals.
+   * The corresponding deny diagnostic is in `diagnostics`.
+   */
+  readonly rejectedPatchCount: number;
   /**
    * Broker-emitted diagnostics aggregated across all garden effect-routing
-   * calls (downgrade / deny / phase-mismatch). Processor-emitted
+   * calls (downgrade / deny / phase-mismatch) plus orchestrator-emitted
+   * diagnostics like `garden.cascade-cap`. Processor-emitted
    * `DiagnosticEffect`s are NOT included here — those route to their sink
    * normally and are visible via `projection.db.diagnostics`.
    */
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  /**
+   * The cascade depth at which this orchestrator was invoked. Top-level
+   * garden runs are depth 0; sub-Proposal adoptions' garden runs are
+   * depth 1; their sub-Proposals' garden runs are depth 2; etc. Visible
+   * for telemetry / debugging.
+   */
+  readonly cascadeDepth: number;
 };
 
 /**
- * Per-processor summary of one garden invocation. Mirrors what the engine
- * already surfaces for adoption-phase runs via `AdoptEvent`'s
- * `processor-result` shape — minus the iteration counter (garden runs
- * once, not in a loop).
+ * Per-processor summary of one garden invocation.
  */
 export type GardenRunSummary = {
   readonly runId: RunId;
   readonly processorId: string;
   readonly effectCount: number;
   /**
-   * Count of PatchEffects this processor emitted that were deferred (see
-   * `GardenPhaseResult.deferredPatchCount`). Sums across all processors
-   * equal the aggregated `deferredPatchCount`.
+   * Count of PatchEffects this processor emitted that spawned a
+   * sub-Proposal. May be less than the total PatchEffects emitted if
+   * some were broker-denied or hit the cascade cap.
    */
-  readonly deferredPatchCount: number;
+  readonly subProposalCount: number;
 };
+
+// ----- AdoptSubProposalFn ---------------------------------------------------
+
+/**
+ * The callback signature the orchestrator invokes to adopt a sub-Proposal
+ * spawned from a garden-emitted PatchEffect.
+ *
+ * Wired by the caller (typically `sync-shared.ts`'s `runOneAdoption`)
+ * to a recursive closure: the closure calls `adopt()` on the sub-Proposal,
+ * then if adopted, calls `runGardenPhase()` again with `cascadeDepth + 1`
+ * + the same closure. This is the structural recursion that lets garden
+ * cascades unfold.
+ *
+ * The orchestrator does NOT inspect the returned `AdoptionResult` other
+ * than to surface its successful-spawn count. Sub-Proposal failures (a
+ * blocking diagnostic during the sub-adoption) land in the run ledger
+ * and projection diagnostics like any other adoption block; they don't
+ * propagate up to the parent garden run.
+ */
+export type AdoptSubProposalFn = (
+  subProposal: Proposal,
+  cascadeDepth: number,
+) => Promise<AdoptionResult>;
 
 // ----- runGardenPhase -------------------------------------------------------
 
 /**
  * Run the garden phase against a just-adopted commit. The orchestrator:
  *
- *   1. Invokes the injected `GardenPhaseRunner` (the processor-runtime
- *      callback from `src/processors/runtime.ts`'s `buildRuntime`).
- *   2. For each runner result, walks the emitted effects and routes them
- *      through `applyEffect({ phase: "garden", ... })`.
- *   3. Aggregates broker diagnostics, deferred-patch counts, and per-
- *      processor summaries.
+ *   1. Invokes the injected `GardenPhaseRunner`.
+ *   2. For each runner result, walks the emitted effects:
+ *      - Non-Patch effects route through `applyEffect({ phase: "garden", ... })`.
+ *      - Auto-mode Patch effects pass through the broker manually (via
+ *        `enforceCapability`); accepted ones are queued for sub-Proposal
+ *        spawn.
+ *      - Propose-mode Patch effects log+drop (v1.0; full lint-review
+ *        wiring is a separate phase).
+ *   3. After the effects pass, processes the spawn queue: applies each
+ *      queued patch to the adopted tree via `applyPatchToCandidate` to
+ *      produce a new commit, constructs a garden-source Proposal, and
+ *      calls `adoptSubProposal` (or emits cascade-cap diagnostic when
+ *      `cascadeDepth >= maxCascadeDepth`).
  *
- * Garden does **not** have a fixed-point loop — every processor fires at
- * most once per adoption (no convergence semantics, no iteration cap).
- * Schedule + signal triggers may fire the same processor on subsequent
- * adoptions, but within a single adoption's garden phase each processor
- * fires zero-or-one time.
+ * Garden does **not** have a fixed-point loop. Each garden processor
+ * fires at most once per adoption.
  *
- * Garden-phase failures (a processor throwing, an effect being denied) do
- * NOT undo adoption. The adopted ref has already advanced when this is
- * called; garden work is best-effort. Failures land in the run ledger
- * (`status: "failed"`) and are recoverable via `dome inspect runs`.
+ * Garden-phase failures (a processor throwing, an effect being denied,
+ * a sub-Proposal blocking) do NOT undo adoption. By the time this is
+ * called, the adopted ref has already advanced.
  *
  * Returns the aggregated `GardenPhaseResult`; never throws. Caller is
  * expected to thread the result into its own telemetry / event stream.
@@ -143,6 +196,20 @@ export async function runGardenPhase(opts: {
   readonly runGardenProcessors: GardenPhaseRunner;
   readonly sinks: ApplyEffectSinks;
   readonly ledger?: LedgerDb;
+  /**
+   * Optional sub-Proposal adoption callback. When absent, garden-emitted
+   * PatchEffects log+drop (Phase 4a behavior). When present, they spawn
+   * sub-Proposals routed through this callback (Phase 4a' behavior).
+   *
+   * Caller wiring: `sync-shared.ts` constructs this as a recursive
+   * closure that calls `adopt()` + `runGardenPhase()` with
+   * `cascadeDepth + 1`.
+   */
+  readonly adoptSubProposal?: AdoptSubProposalFn;
+  /** Current cascade depth. Top-level call passes 0 (or omits). */
+  readonly cascadeDepth?: number;
+  /** Cap on cascade recursion. Defaults to `DEFAULT_MAX_CASCADE_DEPTH`. */
+  readonly maxCascadeDepth?: number;
 }): Promise<GardenPhaseResult> {
   const {
     vault,
@@ -153,7 +220,11 @@ export async function runGardenPhase(opts: {
     runGardenProcessors,
     sinks,
     ledger,
+    adoptSubProposal,
   } = opts;
+  const cascadeDepth = opts.cascadeDepth ?? 0;
+  const maxCascadeDepth =
+    opts.maxCascadeDepth ?? DEFAULT_MAX_CASCADE_DEPTH;
 
   const runnerResults = await runGardenProcessors({
     vault,
@@ -167,30 +238,118 @@ export async function runGardenPhase(opts: {
     return frozenResult({
       proposalId: proposal.id,
       runs: [],
-      deferredPatchCount: 0,
+      subProposalCount: 0,
+      rejectedPatchCount: 0,
       diagnostics: [],
+      cascadeDepth,
     });
   }
 
   const allDiagnostics: DiagnosticEffect[] = [];
   const runSummaries: GardenRunSummary[] = [];
-  let totalDeferredPatches = 0;
+  let totalSubProposals = 0;
+  let totalRejectedPatches = 0;
+
+  // Queue of patches authorized for sub-Proposal spawn, collected
+  // across all runner results in this orchestrator invocation. Processed
+  // after the per-effect loop completes (so all broker decisions are
+  // recorded before any recursive adopt() fires).
+  type SpawnRequest = {
+    readonly patch: PatchEffect;
+    readonly processorId: string;
+    readonly runId: RunId;
+  };
+  const spawnQueue: SpawnRequest[] = [];
+  // Per-processor count of patches queued for spawn (for the summary).
+  const spawnCountByProcessor = new Map<string, number>();
 
   for (const result of runnerResults) {
-    let deferredPatchesForRun = 0;
-
     for (const effect of result.effects) {
-      // Garden-phase PatchEffect: deferred to Phase 4a'. We still route
-      // it through applyEffect so the broker + ledger get a fair look at
-      // the effect (capability check, phase-compatibility check), but
-      // the wired `applyPatch` sink log+drops the patch. This means a
-      // processor whose patch exceeds its grant still sees a deny
-      // diagnostic; the only thing missing is the actual patch landing.
       if (effect.kind === "patch") {
-        deferredPatchesForRun += 1;
-        totalDeferredPatches += 1;
+        // Garden-phase PatchEffect: broker-check manually here (rather
+        // than via applyEffect) so we can route the patch into the
+        // spawn queue rather than the in-place applyPatch sink.
+        const verdict = enforceCapability(
+          effect,
+          result.declared,
+          result.granted,
+        );
+        if (verdict.kind === "deny") {
+          totalRejectedPatches += 1;
+          allDiagnostics.push(verdict.diagnostic);
+          if (ledger !== undefined) {
+            recordCapabilityUse(ledger, {
+              runId: result.runId,
+              capability: capabilityForPatch(effect),
+              resource: firstPatchedPath(effect) ?? null,
+              outcome: "denied",
+              recordedAt: new Date(),
+            });
+          }
+          // The deny diagnostic is also routed through recordDiagnostic
+          // so it lands in projection.db.diagnostics like any other
+          // surfaced diagnostic.
+          await sinks.recordDiagnostic({
+            effect: verdict.diagnostic,
+            processorId: result.processorId,
+            runId: result.runId,
+            proposalId: proposal.id,
+          });
+          continue;
+        }
+        // Allowed or downgraded. For downgrade (auto → propose), the
+        // patch is no longer eligible for sub-Proposal spawn; log+drop
+        // with the downgrade diagnostic (which the broker already
+        // emitted) added to the aggregated diagnostics.
+        if (verdict.kind === "downgrade") {
+          allDiagnostics.push(verdict.diagnostic);
+          await sinks.recordDiagnostic({
+            effect: verdict.diagnostic,
+            processorId: result.processorId,
+            runId: result.runId,
+            proposalId: proposal.id,
+          });
+          if (ledger !== undefined) {
+            recordCapabilityUse(ledger, {
+              runId: result.runId,
+              capability: capabilityForPatch(effect),
+              resource: firstPatchedPath(effect) ?? null,
+              outcome: "downgraded",
+              recordedAt: new Date(),
+            });
+          }
+          // Propose-mode behavior is the same log+drop as before.
+          continue;
+        }
+        // Allowed. Queue for spawn (assuming auto-mode; propose-mode
+        // patches log+drop here too in v1.0).
+        if (effect.mode !== "auto") {
+          // Propose-mode auto-allowed patch — still log+drop in v1.0;
+          // the lint-review surface lands separately.
+          continue;
+        }
+        if (ledger !== undefined) {
+          recordCapabilityUse(ledger, {
+            runId: result.runId,
+            capability: capabilityForPatch(effect),
+            resource: firstPatchedPath(effect) ?? null,
+            outcome: "allowed",
+            recordedAt: new Date(),
+          });
+        }
+        spawnQueue.push({
+          patch: effect,
+          processorId: result.processorId,
+          runId: result.runId,
+        });
+        spawnCountByProcessor.set(
+          result.processorId,
+          (spawnCountByProcessor.get(result.processorId) ?? 0) + 1,
+        );
+        continue;
       }
 
+      // Non-Patch effect: route through applyEffect normally.
       const applied = await applyEffect({
         effect,
         processorId: result.processorId,
@@ -200,25 +359,13 @@ export async function runGardenPhase(opts: {
         declared: result.declared,
         granted: result.granted,
         sinks,
-        // For garden, `candidate` is the adopted commit — the snapshot
-        // the processor read from. The `applyPatch` sink ignores this
-        // for garden-phase patches in Phase 4a (log+drop placeholder);
-        // it'll be the base for sub-Proposal construction in 4a'.
         candidate: adopted,
       });
 
-      // Broker-emitted diagnostics (downgrade / deny / phase-mismatch)
-      // accumulate. Processor-emitted DiagnosticEffects already route
-      // to their sink via the applyEffect call above; not collected here.
       if (applied.diagnostics.length > 0) {
         allDiagnostics.push(...applied.diagnostics);
       }
 
-      // Capability-use ledgering mirrors adopt.ts's loop. The structured
-      // verdict surfaces on `applied.capabilityUse` for enforced effect
-      // kinds (patch / fact / question / external). Pinned by
-      // [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural
-      // enforcement" §2.
       if (ledger !== undefined && applied.capabilityUse !== undefined) {
         recordCapabilityUse(ledger, {
           runId: result.runId,
@@ -235,43 +382,148 @@ export async function runGardenPhase(opts: {
         runId: result.runId,
         processorId: result.processorId,
         effectCount: result.effects.length,
-        deferredPatchCount: deferredPatchesForRun,
+        subProposalCount: spawnCountByProcessor.get(result.processorId) ?? 0,
       }),
     );
+  }
+
+  // Process the spawn queue.
+  if (spawnQueue.length > 0) {
+    if (adoptSubProposal === undefined) {
+      // Caller didn't wire sub-Proposal spawn; log+drop the entire
+      // queue with a v1.0-placeholder diagnostic so operators see the
+      // dropped work. (Today this path fires when a caller invokes
+      // runGardenPhase without wiring the cascade — e.g., tests.)
+      const drop = diagnosticEffect({
+        severity: "info",
+        code: "garden.sub-proposal-spawn-disabled",
+        message:
+          `Garden orchestrator received ${spawnQueue.length} authorized ` +
+          `PatchEffect(s) but no adoptSubProposal callback was wired; ` +
+          `patches dropped. Wire adoptSubProposal in the caller to enable ` +
+          `sub-Proposal spawning.`,
+        sourceRefs: [],
+      });
+      allDiagnostics.push(drop);
+    } else if (cascadeDepth >= maxCascadeDepth) {
+      // Cascade-cap hit. Emit one diagnostic naming the depth and the
+      // count of skipped patches; don't fire any sub-Proposals.
+      const capDiag = diagnosticEffect({
+        severity: "warning",
+        code: "garden.cascade-cap",
+        message:
+          `Garden sub-Proposal cascade hit cap=${maxCascadeDepth} at ` +
+          `depth=${cascadeDepth}; ${spawnQueue.length} PatchEffect(s) ` +
+          `skipped. Garden processors named: ` +
+          `${[...new Set(spawnQueue.map((s) => s.processorId))].join(", ")}.`,
+        sourceRefs: [],
+      });
+      allDiagnostics.push(capDiag);
+      // Also record the cap diagnostic via the sinks so it lands in
+      // projection.db.diagnostics for operator visibility.
+      await sinks.recordDiagnostic({
+        effect: capDiag,
+        processorId: "engine.garden",
+        runId: spawnQueue[0]!.runId,
+        proposalId: proposal.id,
+      });
+    } else {
+      // Spawn sub-Proposals for each authorized patch.
+      for (const req of spawnQueue) {
+        const newHead = await applyPatchToCandidate({
+          vaultPath: vault.path,
+          candidate: adopted,
+          patch: req.patch,
+          runContext: {
+            runId: req.runId,
+            processorId: req.processorId,
+            extensionId: deriveExtensionId(req.processorId),
+            base: adopted,
+            sourceHead: adopted,
+          },
+        });
+        if (newHead === null) {
+          // Patch didn't apply (malformed diff, hunk-doesn't-apply).
+          // Log + skip; the existing applyPatchToCandidate logs the
+          // detail. Garden run continues with the next queued patch.
+          continue;
+        }
+        const subProposal = makeGardenProposal({
+          base: adopted,
+          head: newHead,
+          processorId: req.processorId,
+          runId: req.runId,
+        });
+        await adoptSubProposal(subProposal, cascadeDepth + 1);
+        totalSubProposals += 1;
+      }
+    }
   }
 
   return frozenResult({
     proposalId: proposal.id,
     runs: runSummaries,
-    deferredPatchCount: totalDeferredPatches,
+    subProposalCount: totalSubProposals,
+    rejectedPatchCount: totalRejectedPatches,
     diagnostics: allDiagnostics,
+    cascadeDepth,
   });
 }
 
 // ----- internals ------------------------------------------------------------
 
-/**
- * Build a frozen `GardenPhaseResult`. Mirrors the `frozenResult` helper in
- * `adopt.ts` — freezes both the outer result and the inner arrays so
- * downstream consumers cannot mutate the returned shape.
- */
 function frozenResult(result: {
   readonly proposalId: string;
   readonly runs: ReadonlyArray<GardenRunSummary>;
-  readonly deferredPatchCount: number;
+  readonly subProposalCount: number;
+  readonly rejectedPatchCount: number;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  readonly cascadeDepth: number;
 }): GardenPhaseResult {
   return Object.freeze({
     proposalId: result.proposalId,
     runs: Object.freeze([...result.runs]),
-    deferredPatchCount: result.deferredPatchCount,
+    subProposalCount: result.subProposalCount,
+    rejectedPatchCount: result.rejectedPatchCount,
     diagnostics: Object.freeze([...result.diagnostics]),
+    cascadeDepth: result.cascadeDepth,
   });
 }
 
-// Type marker to keep the unused-import linter quiet on `PatchEffect` —
-// it's used by the §"Deferred to Phase 4a'" docs at top of file and will
-// be the real type when sub-Proposal spawn lands. Removing this is a
-// follow-up cleanup when 4a' lands.
-type _PatchEffectIsUsedInDocs = PatchEffect;
-type _EffectIsUsedInDocs = Effect;
+/**
+ * Derive the required capability tier for a PatchEffect — `patch.auto` for
+ * auto-mode patches, `patch.propose` for propose-mode. Used to record the
+ * capability_use row when the broker decides (we look up the right
+ * capability label for the audit).
+ */
+function capabilityForPatch(effect: PatchEffect): string {
+  return effect.mode === "auto" ? "patch.auto" : "patch.propose";
+}
+
+/**
+ * Extract the first patched path from a PatchEffect's unified diff for
+ * the capability_use `resource` column. The broker's per-path enforcement
+ * checks every patched path; for the audit trail we record the first
+ * (most representative). A more complete audit could record all paths
+ * but `resource` is scalar in v1.0.
+ */
+function firstPatchedPath(effect: PatchEffect): string | null {
+  // The patch text starts with `--- a/<path>` / `+++ b/<path>` headers.
+  // Extract the first `+++ b/<path>` (the destination — `--- a/<path>`
+  // may be `/dev/null` for file creation).
+  const match = /\+\+\+ b\/(.+?)\n/.exec(effect.patch);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Convention: first two dotted segments of a processor id name the bundle
+ * (e.g., `dome.intake.extract-capture` → bundle `dome.intake`). Mirror of
+ * the same helper in `sync-shared.ts`; duplicated here so this module
+ * doesn't import from `cli/`.
+ */
+function deriveExtensionId(processorId: string): string {
+  const segments = processorId.split(".");
+  if (segments.length === 0) return processorId;
+  if (segments.length === 1) return processorId;
+  return `${segments[0]}.${segments[1]}`;
+}

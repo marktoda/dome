@@ -55,7 +55,7 @@ The `ALLOWED` constant is derived from this matrix at module-load time (or from 
 
 ## Implementation status
 
-**As of Phase 4a (garden runner shipping; view runner + scheduler + signal pub/sub + `answer` trigger kind in subsequent phases per [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]):**
+**As of Phase 4a' (garden runner + sub-Proposal spawn shipping; view runner + scheduler + signal pub/sub + `answer` trigger kind in subsequent phases per [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]):**
 
 The phase × trigger matrix is **the canonical contract** that the manifest validator will enforce. The type-system fences at the `Trigger` and `ProcessorPhase` level are real today; the per-processor declaration check at bundle load ships with Phase 6.
 
@@ -65,6 +65,7 @@ The phase × trigger matrix is **the canonical contract** that the manifest vali
   - `src/processors/triggers.ts:matchTriggers` consumes `signal` and `path` triggers; `schedule` and `command` triggers return no match (the clock-cursor and command-dispatch layers ship in Phase 4c and Phase 4b respectively).
   - **Adoption-phase runner** (`adoptionRunner` in `src/processors/runtime.ts`) — operational since Phase 3.
   - **Garden-phase runner** (`gardenRunner` in `src/processors/runtime.ts`) — operational as of Phase 4a. Fires garden-phase processors against post-adoption signals + paths. Schedule triggers still no-op (Phase 4c). Engine signal triggers (`signal: "engine.*"`) ship in Phase 4d.
+  - **Garden-emitted PatchEffect → sub-Proposal spawn** (`src/engine/garden.ts`) — operational as of Phase 4a'. Auto-mode PatchEffects from garden-phase processors go through broker enforcement, then spawn sub-Proposals routed through `adopt()` recursively. Cascade depth capped at `DEFAULT_MAX_CASCADE_DEPTH` (10); cap-hit emits `garden.cascade-cap` DiagnosticEffect via the sinks. Propose-mode patches log+drop in v1.0 pending the lint-review surface.
 
 - Forward-looking (subsequent Phase 4 phases):
   - **View-phase runner** (Phase 4b) — `viewRunner` + `AbstractSurface.commands` registry; enables `command:` triggers to actually fire `dome lint`-style processors.

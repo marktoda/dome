@@ -248,6 +248,49 @@ export function makeManualProposal(opts: {
   return Object.freeze(built);
 }
 
+// ----- makeGardenProposal ---------------------------------------------------
+//
+// The garden orchestrator's sub-Proposal constructor. When a garden-phase
+// processor emits a PatchEffect, the orchestrator builds a Proposal with
+// `source.kind: "garden"` carrying the originating processor + run id; the
+// engine routes it through `adopt()` recursively (Phase 4a' — see
+// [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]).
+//
+// The `runId` here is the garden-phase processor's RunRecord id — the
+// audit trail joins the parent (garden) and child (sub-Proposal) work
+// through this id. The `Dome-Source` trailer on the sub-Proposal's
+// closure commit (if any) will name the garden processor as the
+// originator.
+
+/**
+ * Build a `Proposal` with `source.kind: "garden"`. Internal helper — the
+ * garden orchestrator at `src/engine/garden.ts` calls this to wrap a
+ * garden-emitted PatchEffect into a sub-Proposal the adoption loop can
+ * consume.
+ */
+export function makeGardenProposal(opts: {
+  readonly id?: string;
+  readonly base: CommitOid;
+  readonly head: CommitOid;
+  readonly processorId: string;
+  readonly runId: string;
+  readonly metadata?: ProposalMetadata;
+}): Proposal {
+  const source: ProposalSource = Object.freeze({
+    kind: "garden" as const,
+    processorId: opts.processorId,
+    runId: opts.runId,
+  });
+  const built: { -readonly [K in keyof Proposal]: Proposal[K] } = {
+    id: opts.id ?? makeProposalId(),
+    base: opts.base,
+    head: opts.head,
+    source,
+  };
+  if (opts.metadata !== undefined) built.metadata = opts.metadata;
+  return Object.freeze(built);
+}
+
 // ----- ProposalMetadata constructor helper ----------------------------------
 
 /**

@@ -36,7 +36,10 @@ import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
 import { adopt, type AdoptEvent } from "../../engine/adopt";
 import { applyPatchToCandidate } from "../../engine/apply-patch";
 import { compileRange } from "../../engine/compile-range";
-import { runGardenPhase } from "../../engine/garden";
+import {
+  runGardenPhase,
+  type AdoptSubProposalFn,
+} from "../../engine/garden";
 import type { VaultRuntime } from "../../engine/vault-runtime";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
@@ -317,22 +320,59 @@ export async function runOneAdoption(opts: {
   if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
   const adoptionResult = await adopt(adoptOpts);
 
-  // Phase 4a: invoke garden-phase processors after a successful adoption.
+  // Phase 4a + 4a': invoke garden-phase processors after a successful
+  // adoption, and recursively adopt garden-emitted sub-Proposals.
+  //
   // Garden runs against the post-adoption signals computed from
   // `(proposal.base, adoptedRef)` — the full delta of what was just
   // adopted. Garden failures never undo adoption; outputs flow through
   // the normal sinks (projection.db / outbox.db / runs.db) and are
   // visible via `dome inspect` after the fact.
   //
-  // For now, garden outcomes are intentionally not surfaced through
-  // `AdoptionResult` — they're observable via the run ledger and
-  // projection tables. A future polish may extend AdoptEvent with
-  // garden-phase markers for verbose-mode rendering.
+  // The `adoptSubProposal` closure (defined below) threads the cascade
+  // recursion: garden processors that emit auto-mode PatchEffects spawn
+  // sub-Proposals; each sub-adoption fires its own garden phase at
+  // `cascadeDepth + 1`; the cap is enforced at the orchestrator level
+  // (per `DEFAULT_MAX_CASCADE_DEPTH`).
   //
-  // See [[wiki/specs/processors]] §"Garden phase" and Phase 4a in
-  // [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]. Phase 4a'
-  // will wire sub-Proposal spawn for garden-emitted PatchEffects.
+  // See [[wiki/specs/processors]] §"Garden phase" and Phases 4a + 4a'
+  // in [[cohesive/brainstorms/2026-05-27-v1-engine-completion]].
   if (adoptionResult.adopted) {
+    // The recursive closure. `adoptSubProposal` references itself
+    // inside its body; that works because the const binding is
+    // initialized before the runGardenPhase call below reads it (the
+    // body executes only when called).
+    const adoptSubProposal: AdoptSubProposalFn = async (
+      subProposal,
+      cascadeDepth,
+    ) => {
+      const subAdoptOpts: typeof adoptOpts = {
+        ...adoptOpts,
+        proposal: subProposal,
+      };
+      const subResult = await adopt(subAdoptOpts);
+      if (subResult.adopted) {
+        const subCompiled = await compileRange({
+          vaultPath: runtime.path,
+          base: subProposal.base,
+          head: subResult.adoptedRef,
+        });
+        await runGardenPhase({
+          vault: subAdoptOpts.vault,
+          proposal: subProposal,
+          adopted: subResult.adoptedRef,
+          changedPaths: subCompiled.changedPaths,
+          signals: subCompiled.signals,
+          runGardenProcessors: runtime.processorRuntime.gardenRunner,
+          sinks,
+          ledger: runtime.ledgerDb,
+          adoptSubProposal,
+          cascadeDepth,
+        });
+      }
+      return subResult;
+    };
+
     const gardenCompiled = await compileRange({
       vaultPath: runtime.path,
       base: drift.base,
@@ -347,6 +387,8 @@ export async function runOneAdoption(opts: {
       runGardenProcessors: runtime.processorRuntime.gardenRunner,
       sinks,
       ledger: runtime.ledgerDb,
+      adoptSubProposal,
+      cascadeDepth: 0,
     });
   }
 
