@@ -12,44 +12,54 @@ import {
   diagnosticForExecutionError,
   errorMessage,
   makeExecutionError,
-  type ProcessorExecutionError,
+  type ProcessorCancelledExecutionError,
+  type ProcessorFailedExecutionError,
+  type ProcessorTimeoutExecutionError,
 } from "./execution-error";
 
 export const MAX_EFFECTS_PER_INVOCATION = 10_000;
 
 export type ProcessorExecutionResult =
-  | {
-      readonly status: "succeeded";
-      readonly runId: RunId;
-      readonly processorId: string;
-      readonly effects: ReadonlyArray<Effect>;
-      readonly effectHashes: ReadonlyArray<string>;
-      readonly durationMs: number;
-    }
-  | {
-      readonly status: "failed";
-      readonly runId: RunId;
-      readonly processorId: string;
-      readonly error: ProcessorExecutionError;
-      readonly diagnostic: DiagnosticEffect;
-      readonly durationMs: number;
-    }
-  | {
-      readonly status: "timed_out";
-      readonly runId: RunId;
-      readonly processorId: string;
-      readonly error: ProcessorExecutionError;
-      readonly diagnostic: DiagnosticEffect;
-      readonly durationMs: number;
-    }
-  | {
-      readonly status: "cancelled";
-      readonly runId: RunId;
-      readonly processorId: string;
-      readonly error: ProcessorExecutionError;
-      readonly diagnostic: DiagnosticEffect;
-      readonly durationMs: number;
-    };
+  | ProcessorSucceededExecutionResult
+  | ProcessorFailedExecutionResult
+  | ProcessorTimedOutExecutionResult
+  | ProcessorCancelledExecutionResult;
+
+export type ProcessorSucceededExecutionResult = {
+  readonly status: "succeeded";
+  readonly runId: RunId;
+  readonly processorId: string;
+  readonly effects: ReadonlyArray<Effect>;
+  readonly effectHashes: ReadonlyArray<string>;
+  readonly durationMs: number;
+};
+
+export type ProcessorFailedExecutionResult = {
+  readonly status: "failed";
+  readonly runId: RunId;
+  readonly processorId: string;
+  readonly error: ProcessorFailedExecutionError;
+  readonly diagnostic: DiagnosticEffect;
+  readonly durationMs: number;
+};
+
+export type ProcessorTimedOutExecutionResult = {
+  readonly status: "timed_out";
+  readonly runId: RunId;
+  readonly processorId: string;
+  readonly error: ProcessorTimeoutExecutionError;
+  readonly diagnostic: DiagnosticEffect;
+  readonly durationMs: number;
+};
+
+export type ProcessorCancelledExecutionResult = {
+  readonly status: "cancelled";
+  readonly runId: RunId;
+  readonly processorId: string;
+  readonly error: ProcessorCancelledExecutionError;
+  readonly diagnostic: DiagnosticEffect;
+  readonly durationMs: number;
+};
 
 export async function executeProcessor(opts: {
   readonly processorId: string;
@@ -365,19 +375,62 @@ function outputResult(input: {
   });
 }
 
-function terminalResult(input: {
-  readonly status: "failed" | "timed_out" | "cancelled";
-  readonly runId: RunId;
-  readonly processorId: string;
-  readonly error: ProcessorExecutionError;
-  readonly durationMs: number;
-}): ProcessorExecutionResult {
-  return Object.freeze({
-    status: input.status,
-    runId: input.runId,
-    processorId: input.processorId,
-    error: input.error,
-    diagnostic: diagnosticForExecutionError(input.error),
-    durationMs: input.durationMs,
-  });
+type TerminalResultInput =
+  | {
+      readonly status: "failed";
+      readonly runId: RunId;
+      readonly processorId: string;
+      readonly error: ProcessorFailedExecutionError;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "timed_out";
+      readonly runId: RunId;
+      readonly processorId: string;
+      readonly error: ProcessorTimeoutExecutionError;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "cancelled";
+      readonly runId: RunId;
+      readonly processorId: string;
+      readonly error: ProcessorCancelledExecutionError;
+      readonly durationMs: number;
+    };
+
+function terminalResult(
+  input: TerminalResultInput,
+):
+  | ProcessorFailedExecutionResult
+  | ProcessorTimedOutExecutionResult
+  | ProcessorCancelledExecutionResult {
+  switch (input.status) {
+    case "failed":
+      return Object.freeze({
+        status: "failed",
+        runId: input.runId,
+        processorId: input.processorId,
+        error: input.error,
+        diagnostic: diagnosticForExecutionError(input.error),
+        durationMs: input.durationMs,
+      });
+    case "timed_out":
+      return Object.freeze({
+        status: "timed_out",
+        runId: input.runId,
+        processorId: input.processorId,
+        error: input.error,
+        diagnostic: diagnosticForExecutionError(input.error),
+        durationMs: input.durationMs,
+      });
+    case "cancelled":
+      return Object.freeze({
+        status: "cancelled",
+        runId: input.runId,
+        processorId: input.processorId,
+        error: input.error,
+        diagnostic: diagnosticForExecutionError(input.error),
+        durationMs: input.durationMs,
+      });
+  }
 }

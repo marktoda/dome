@@ -125,7 +125,7 @@ Execution diagnostics use stable codes:
 |---|---|
 | `processor.invalid-output` | Return value is not `Effect[]` or an effect fails schema validation. |
 | `processor.timeout` | Phase timeout exceeded. |
-| `processor.failed` | Processor threw a non-specialized runtime error. |
+| `processor.threw` | Processor threw a non-specialized runtime error. |
 | `processor.cancelled` | Engine cancelled the run during shutdown/operator intervention. |
 | `processor.quarantined` | A matching trigger is skipped because the processor is quarantined. |
 | `model.invoke.denied` | Missing model capability, model not allowlisted, or cost cap exceeded. |

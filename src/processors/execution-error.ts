@@ -10,10 +10,10 @@ export type {
   ProcessorTimeoutExecutionError,
 } from "../engine/runner-contract";
 
-export function makeExecutionError(
-  input: ProcessorExecutionError,
-): ProcessorExecutionError {
-  return Object.freeze({ ...input });
+export function makeExecutionError<T extends ProcessorExecutionError>(
+  input: T,
+): T {
+  return Object.freeze({ ...input }) as T;
 }
 
 export function executionErrorToJson(error: ProcessorExecutionError): string {
