@@ -37,13 +37,31 @@ export function diagnosticForExecutionError(
 }
 
 export function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
+  try {
+    if (e instanceof Error) {
+      try {
+        return e.message;
+      } catch {
+        return "[unprintable Error message]";
+      }
+    }
+  } catch {
+    // Fall through to other formatting paths.
+  }
+  try {
+    if (typeof e === "string") return e;
+  } catch {
+    // Fall through to JSON formatting.
+  }
   try {
     const json = JSON.stringify(e);
     if (json !== undefined) return json;
   } catch {
     // Fall through to String below.
   }
-  return String(e);
+  try {
+    return String(e);
+  } catch {
+    return "[unprintable thrown value]";
+  }
 }

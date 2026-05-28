@@ -15,6 +15,8 @@ import {
   type ProcessorExecutionError,
 } from "./execution-error";
 
+export const MAX_EFFECTS_PER_INVOCATION = 10_000;
+
 export type ProcessorExecutionResult =
   | {
       readonly status: "succeeded";
@@ -262,6 +264,22 @@ function outputResult(input: {
     const error = makeExecutionError({
       code: "processor.invalid-output",
       message: "Processor returned invalid output: array length was invalid.",
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+  if (effectCount > MAX_EFFECTS_PER_INVOCATION) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: `Processor returned invalid output: too many effects (${effectCount}); limit is ${MAX_EFFECTS_PER_INVOCATION}.`,
       retryable: false,
       phase: input.phase,
       processorId: input.processorId,

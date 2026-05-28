@@ -262,6 +262,65 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.severity).toBe("block");
   });
 
+  test("hostile thrown value becomes structured processor.threw", async () => {
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+
+    const result = await executeProcessor({
+      processorId: "test.executor.hostile-throw",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw revoked.proxy;
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.threw");
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
+  test("huge output array length fails invalid-output before iteration", async () => {
+    const hostileOutput = new Proxy([validEffect()] as Array<unknown>, {
+      get(target, prop, receiver) {
+        if (prop === "length") return 10_001;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const result = await executeProcessor({
+      processorId: "test.executor.too-many-effects",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => hostileOutput,
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.invalid-output");
+    expect(result.error.message).toMatch(/too many|limit|count|length/i);
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
   test("pre-aborted upstream signal cancels without invoking run", async () => {
     const upstream = new AbortController();
     upstream.abort();
