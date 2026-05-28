@@ -118,7 +118,7 @@ The MCP server boots when the harness mounts it (typically via the harness's MCP
 2. `buildAbstractSurface(vault)` constructs the surface.
 3. `renderMcp(surface)` constructs the McpSurface.
 4. `DomeMcpServer(McpSurface)` starts the MCP server, registering tools, resources, prompts.
-5. On shutdown (harness disconnect, vault close): `vault.close()` drains processors and releases SQLite handles.
+5. On shutdown (harness disconnect, vault close): current `vault.close()` releases SQLite handles. The planned v1.x drain-integrated close path will first drain queued/running garden/view processor work, then release handles.
 
 The MCP server is **single-vault per process**. Multi-vault MCP setups run multiple MCP server processes, one per vault.
 

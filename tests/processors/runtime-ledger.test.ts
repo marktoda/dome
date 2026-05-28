@@ -282,6 +282,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     );
     expect(parsed.phase).toBe("adoption");
     expect(parsed.processorId).toBe("test.ledger.policy-denied");
+    expect(parsed.class).toBe("llm");
     expect(row.durationMs).toBeNull();
     expect(row.finishedAt).not.toBeNull();
   });

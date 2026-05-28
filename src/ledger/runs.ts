@@ -456,10 +456,10 @@ export function markSucceeded(db: LedgerDb, opts: MarkSucceededOpts): void {
  * and `finished_at`. UPDATE filters by `status = 'running'` so a
  * double-call is a no-op.
  *
- * Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural
- * enforcement" §3: "Failed processor runs still complete the ledger row.
- * A `try/catch` around `processor.run()` writes `status: 'failed'`,
- * `error: <message>`, before rethrowing."
+ * The executor-wired runtime calls this for failed terminal results:
+ * thrown processors, invalid output, or other non-timeout/non-cancelled
+ * execution failures. Structured executor errors are JSON-encoded here;
+ * legacy string callers are still accepted for orphan recovery and tests.
  */
 export function markFailed(db: LedgerDb, opts: MarkFailedOpts): void {
   const error =

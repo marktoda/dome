@@ -23,7 +23,10 @@ A Vault, once unwrapped:
 - Holds the engine, processor runtime, projection store, run ledger, and outbox.
 - Exposes read/Recall APIs plus engine-control operations such as `sync`, `rebuild`, and adoption status.
 
-A Vault is opened, used, drained, and closed in one process lifetime.
+A Vault is opened, used, and closed in one process lifetime. Drain semantics
+for queued/running garden and view work are staged below; the current runtime
+close path releases SQLite handles but does not yet expose a full
+`drainProcessors()` API.
 
 #### Vault surface
 
@@ -45,7 +48,7 @@ interface Vault {
   getAdoptionStatus(): Promise<AdoptionStatus>;
 
   // Lifecycle
-  drainProcessors(): Promise<void>;
+  drainProcessors(): Promise<void>; // planned v1.x drain surface
   close(): Promise<void>;
 }
 ```
@@ -63,14 +66,14 @@ openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
    │     vault.query(...)             — read path
    │     vault.sync(...)              — engine adoption loop
    │
-   ├─→ drainProcessors()              (idempotent; settles async garden-phase queue)
+   ├─→ drainProcessors()              (planned; idempotent; settles async garden/view work)
    │
-   └─→ close()                         (one-shot; drains and releases resources)
+   └─→ close()                         (current: releases resources; future: drains first)
 ```
 
-`drainProcessors()` is idempotent — re-callable any number of times. It awaits both the engine's garden-phase processor queue and any in-flight outbox dispatch attempts.
+`drainProcessors()` is the planned v1.x drain surface. When implemented, it is idempotent — re-callable any number of times — and awaits the engine's garden/view processor work plus any in-flight outbox dispatch attempts.
 
-`close()` is one-shot. It calls `drainProcessors()`, then releases the SQLite handles for projection store / run ledger / outbox, then sets a `closed` flag so subsequent `query` / `sync` / `rebuild` calls return `Result.err({ kind: "vault-closed" })`.
+`close()` currently releases the SQLite handles for projection store / run ledger / outbox. The future drain-integrated close path calls `drainProcessors()` first, then releases handles, then sets a `closed` flag so subsequent `query` / `sync` / `rebuild` calls return `Result.err({ kind: "vault-closed" })`.
 
 #### Composable construction
 

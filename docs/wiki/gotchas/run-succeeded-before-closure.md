@@ -15,7 +15,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 **Root cause:** Two distinct state machines coexist in the engine, and conflating them breaks the per-run lifecycle invariant.
 
-1. **Per-run state machine** (`queued → running → succeeded | failed | skipped`). Owned by `Processor.run()`. Its terminal mark fires at the *end of the processor's unit of work* — the moment `run()` returns or throws. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural enforcement" §3: "Failed processor runs still complete the ledger row. A `try/catch` around `processor.run()` writes `status: 'failed'`, ... before rethrowing."
+1. **Per-run state machine** (`queued → skipped` for not-invoked runs, or `queued → running → succeeded | failed | timed_out | cancelled` for invoked runs). Owned by the processor runtime and executor. Its terminal mark fires at the *end of the processor's unit of work* — the moment the executor returns a terminal result. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural enforcement": failed, timed-out, and cancelled processor runs still complete the ledger row with structured executor errors.
 
 2. **Per-iteration adoption cycle** (`compile → run-all-processors → apply-all-effects → check-fixed-point → close → advance`). Owned by `src/engine/adopt.ts`. Its closure step (`makeClosureCommit`) fires *once per iteration*, after every processor has terminated.
 
@@ -25,7 +25,7 @@ Symmetrically: a closure commit may never materialize (the convergence iteration
 
 **What to do instead:** Keep the two writes separate, as substrate ships them.
 
-1. The runtime (`src/processors/runtime.ts`) calls `markSucceeded` with `outputCommit: null` immediately after `processor.run()` returns. This bounds the run's lifetime to the processor's unit of work.
+1. The runtime (`src/processors/runtime.ts`) calls `markSucceeded` with `outputCommit: null` immediately after `executeProcessor` returns `status: "succeeded"`. This bounds the run's lifetime to the processor's unit of work. Other executor terminal states write `failed`, `timed_out`, or `cancelled`; pre-run policy denial writes `skipped`.
 
 2. The engine's adoption loop (`src/engine/adopt.ts`) accumulates the run ids that contributed to the iteration. After `makeClosureCommit` returns a non-null OID, it calls `updateOutputCommit(ledger, { runIds, outputCommit })`. The accessor filters by `status = 'succeeded' AND output_commit IS NULL` — so calling twice is a no-op, and runs that never reached `succeeded` (failed mid-flight) are untouched.
 

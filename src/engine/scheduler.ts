@@ -46,15 +46,19 @@
 // House-style notes (matches src/engine/garden.ts, src/engine/adopt.ts):
 //   - `type X = { ... }` aliases, every field `readonly`.
 //   - Pure orchestrator — never mutates outside its sinks/ledger.
-//   - Throw-free at the call site: substrate failures (sink throws,
-//     processor throws) are absorbed via the existing runner exception
-//     synthesis pattern. The orchestrator's outer try/catch wraps any
-//     leaked throw as a `scheduler.crashed` diagnostic so the operator
-//     surface is honest.
+//   - Throw-free at the call site: substrate failures (sink throws) are
+//     wrapped as diagnostics, while processor execution failures are returned
+//     by the executor boundary as diagnostic effects. The orchestrator's
+//     outer try/catch wraps any leaked throw as a `scheduler.crashed`
+//     diagnostic so the operator surface is honest.
 
-import { diagnosticEffect, type DiagnosticEffect } from "../core/effect";
+import {
+  diagnosticEffect,
+  type DiagnosticEffect,
+  type Effect,
+} from "../core/effect";
 import { type Proposal } from "../core/proposal";
-import type { CommitOid, TreeOid } from "../core/source-ref";
+import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
 import type { EngineVault } from "./vault-shape";
@@ -66,7 +70,7 @@ import type { ProjectionDb } from "../projections/db";
 import type { ProcessorRegistry } from "../processors/registry";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
-import type { Capability, Processor } from "../core/processor";
+import type { Capability, Processor, TreeOid } from "../core/processor";
 import {
   dispatchOneProcessor,
   makeSnapshot,
@@ -324,10 +328,13 @@ async function runSchedulerInner(opts: {
         }
       }
 
-      // Success means the processor's run() returned without throwing.
-      // Per-effect denials by the broker don't count as run failure —
-      // they're reported via `applied.diagnostics`.
-      success = true;
+      // Success means the executor accepted the invocation as a processor
+      // success. Executor failures/timeouts/cancellations are normal
+      // RunnerResults carrying processor execution diagnostics, so inspect
+      // the returned effect stream rather than the dispatch call boundary.
+      // Per-effect denials by the broker don't count as run failure — they're
+      // reported via `applied.diagnostics`.
+      success = !hasProcessorExecutionFailureDiagnostic(result.effects);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       diagnostics.push(
@@ -370,6 +377,24 @@ async function runSchedulerInner(opts: {
     skipped: Object.freeze(skipped),
     diagnostics: Object.freeze(diagnostics),
   });
+}
+
+const PROCESSOR_EXECUTION_FAILURE_CODES = new Set<string>([
+  "processor.threw",
+  "processor.invalid-output",
+  "processor.timeout",
+  "processor.cancelled",
+  "execution-policy.phase-class-denied",
+]);
+
+function hasProcessorExecutionFailureDiagnostic(
+  effects: ReadonlyArray<Effect>,
+): boolean {
+  return effects.some(
+    (effect) =>
+      effect.kind === "diagnostic" &&
+      PROCESSOR_EXECUTION_FAILURE_CODES.has(effect.code),
+  );
 }
 
 // ----- ScheduleRunInput envelope --------------------------------------------

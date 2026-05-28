@@ -578,6 +578,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       message: policyResult.error.message,
       phase,
       processorId: processor.id,
+      class: policyResult.error.class,
     };
     if (ledger !== undefined) {
       markSkipped(ledger, {
