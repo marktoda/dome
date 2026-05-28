@@ -11,7 +11,7 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter. The MCP 
 
 ## Status in v1
 
-The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (AGENTS.md + CLI + daemon + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP surface ships in the codebase and works correctly when mounted, but the SDK does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively.
+The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (CLAUDE/AGENTS orientation + CLI + compiler host + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP design remains useful, but the complete Claude Code v1 plan does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively. Until `AbstractSurface` and the MCP adapter are implemented, this page is a target protocol spec rather than a v1 acceptance gate; see [[wiki/syntheses/v1-claude-code-vault-plan]].
 
 The MCP surface earns its keep in two scenarios:
 
@@ -126,7 +126,7 @@ The MCP server is **single-vault per process**. Multi-vault MCP setups run multi
 
 To keep the surface minimal:
 
-- **No write tools.** No `dome.submit`, no `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. External writes are Git-native and adoption catch-up is CLI/daemon-driven in v1.0.
+- **No write tools.** No `dome.submit`, no `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. External writes are Git-native and adoption catch-up is CLI/compiler-host-driven in v1.0.
 - **No privileged operations.** No way to advance the adopted ref directly, no way to bypass capability checks, no way to write the projection store.
 - **No multi-vault routing.** One vault per server process.
 - **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome inspect runs` via CLI when needed).

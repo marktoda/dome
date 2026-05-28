@@ -113,5 +113,6 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 
 ## Syntheses
 
+- [[wiki/syntheses/v1-claude-code-vault-plan]] — Explicit v1 implementation plan for the Claude Code vault workflow, compiler host modes, CLI priorities, first-party bundle cut, and hosted-queue runway.
 - [[wiki/syntheses/v0.5-build-plan]] — The v0.5 → v1 sequencing (historical).
 - [[wiki/syntheses/why-dome-vs-mem-tana-granola]] — Positioning against the existing PKM landscape.

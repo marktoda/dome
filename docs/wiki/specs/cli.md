@@ -24,14 +24,13 @@ dome stats                      Vault size / processor counts / ledger summary.
 dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox.
-dome doctor [--repair]          (reserved for v1.x) Run engine-substrate
-                                health checks; emit Diagnostics; --repair
-                                applies safe mitigations.
+dome doctor [--repair]          Run engine-substrate health checks; emit
+                                Diagnostics; --repair applies safe mitigations.
 dome answer <question-id> [<value>]
-                                (reserved for v1.x) Resolve an engine-raised
-                                QuestionEffect from the user-decision channel.
+                                Resolve an engine-raised QuestionEffect from
+                                the user-decision channel.
 dome serve [--vault <path>] [--poll-interval-ms <n>]
-                                Run the commit-watcher daemon. Polls refs/heads/<branch>
+                                Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
 dome export-context <topic>     Render a portable context packet for cross-AI handoff.
 dome migrate                    Upgrade vault for newer SDK schema.
@@ -44,10 +43,10 @@ The CLI is the user-facing primary surface in v1. Every command above maps to on
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
 - **Recall:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. `dome doctor` and `dome answer` are **reserved for v1.x** per §"dome doctor" and §"dome answer" below; only `dome rebuild` and `dome serve` ship in v1.0.
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current minimal implementation still stubs `dome doctor` / lacks `dome answer`; the complete Claude Code v1 plan treats both as required recovery surfaces because `QuestionEffect` and operational failures otherwise have no humane resolution path. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
-The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the engine's watcher daemon (`dome serve`). For a one-shot catch-up (the daemon isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
+The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
 ## Per-command specs
 
@@ -77,10 +76,11 @@ The shipped five steps:
 4. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 5. Writes `<vault>/AGENTS.md` from the shipped orientation template
-   (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]). The
-   `CLAUDE.md` shim is a v1.1 follow-up — Claude Code is the v1.0
-   harness and auto-loads `AGENTS.md` directly. First-write-only —
-   re-runs preserve any user-prose section the vault owner added.
+   (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
+   `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
+   Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
+   path rather than polish. First-write-only — re-runs preserve any
+   user-prose section the vault owner added.
 6. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, and `.dome/config.yaml`. Skipped
    if HEAD already resolves (re-init on a vault with commits is a
@@ -109,7 +109,7 @@ unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
 
 ### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [--force-advance]`
 
-The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome/adopted/<branch>`, construct a `manual`-source Proposal, run it through the engine's adoption loop, print the result, exit. This is the manual trigger for users who don't want a `dome serve` daemon running continuously.
+The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome/adopted/<branch>`, construct a `manual`-source Proposal, run it through the engine's adoption loop, print the result, exit. This is the manual trigger for users who don't want a `dome serve` compiler host running continuously.
 
 Composition (v1.0):
 
@@ -239,12 +239,13 @@ Future subjects (v1.x): `cost`, `orphan-runs`, `recent-activity`,
 `recent-processor-divergence`. Adding a subject is one new query
 function + one case in the dispatcher; no new CLI surface per subject.
 
-### `dome doctor [--repair]` *(reserved for v1.x)*
+### `dome doctor [--repair]` *(currently stubbed; required for complete v1 recovery)*
 
-Engine-substrate **health check** verb. v1.0 reserves the name and
-ships no checks; v1.x implements the surface.
+Engine-substrate **health check** verb. The current minimal implementation
+reserves the name and ships no checks; complete Claude Code v1 implements
+the surface.
 
-**Design (v1.x).** `dome doctor` (no flags) runs a closed set of
+**Design (complete v1).** `dome doctor` (no flags) runs a closed set of
 health-check probes against the engine substrate — orphan runs,
 stuck-outbox rows, dirty git state, drift age, schema skew, AGENTS.md
 template drift, bundle load failures. Each probe is a **garden-phase
@@ -265,10 +266,9 @@ audit trail.
 processors for any pending `dome.health.*` questions and triggering
 garden-phase repair processors (e.g., AGENTS.md template re-merge).
 
-**v1.0 placeholder behavior.** `dome doctor` prints a one-line notice
-("`dome doctor`: no health checks ship in v1.0; reserved for v1.x —
-see `wiki/specs/cli.md` §`dome doctor`") and exits 0. `--repair` exits
-64 with the same pointer.
+**Current placeholder behavior.** `dome doctor` prints a one-line notice
+("`dome doctor`: no health checks ship yet — see `wiki/specs/cli.md`
+§`dome doctor`") and exits 0. `--repair` exits 64 with the same pointer.
 
 **Why this isn't a kitchen-sink admin command.** Pre-recut, the spec
 described `dome doctor` as a single verb covering reads (`--show`),
@@ -294,7 +294,7 @@ This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
 three named surfaces (`show`, `doctor`, `answer`) plus the existing
 processor substrate.
 
-### `dome answer <question-id> [<value>]` *(reserved for v1.x)*
+### `dome answer <question-id> [<value>]` *(required for complete v1 recovery)*
 
 The universal **user-decision channel** for QuestionEffects the engine
 has raised but cannot resolve autonomously.
@@ -323,7 +323,7 @@ lives in the `dome.health` bundle's answer-handler processors. Adding
 a new operational mutation type is one new question-emitter + one
 new answer-handler in the bundle; no new CLI command.
 
-**Design (v1.x).** `<question-id>` is the question row's id (from
+**Design (complete v1).** `<question-id>` is the question row's id (from
 `dome inspect questions`). `<value>` is one of the question's options
 (when `options` is set) or free-form text (when `options` is null).
 Without `<value>`, `dome answer <question-id>` prints the question
@@ -334,9 +334,8 @@ Answering writes to `projection.db.questions` (sets `answered_at` +
 relevant garden-phase answer-handler processor catches the signal
 and applies the mutation.
 
-**v1.0 placeholder behavior.** `dome answer` exits 64 with a pointer
-to this section. Since `dome.health` doesn't ship in v1.0, no
-processor in the v1.0 substrate emits operational QuestionEffects;
+**Current placeholder behavior.** `dome answer` is not implemented yet.
+Until `dome.health` ships, no processor in the substrate emits operational QuestionEffects;
 the only Questions on the table today are content-questions written
 back to the originating page via `dome.intake` per
 [[wiki/specs/effects]] §"QuestionEffect" (also pending the `dome.intake`
@@ -344,7 +343,7 @@ shipping date).
 
 ### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 
-Runs the commit-watcher daemon — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the daemon catches up by adopting the new HEAD.
+Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the host catches up by adopting the new HEAD.
 
 Composition (v1.0):
 
@@ -352,10 +351,10 @@ Composition (v1.0):
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
-   - If HEAD equals the adopted ref: no adoption work; quiet in-sync ticks may still run due operational work on the daemon's internal cadence.
+   - If HEAD equals the adopted ref: no adoption work; quiet in-sync ticks may still run due operational work on the host's internal cadence.
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
 4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
-5. The daemon also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+5. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 6. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
