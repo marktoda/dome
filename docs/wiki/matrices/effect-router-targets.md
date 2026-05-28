@@ -33,7 +33,7 @@ code: "phase-mismatch"
 message: "Processor <id> (phase=<phase>) emitted <effect-kind>; this combination is not routed."
 ```
 
-The original effect is **discarded** (not applied, not recorded in its expected sink). The run is marked `failed` with the diagnostic as the error message.
+The original effect is **discarded** (not applied, not recorded in its expected sink). This is a routing outcome, not a processor execution failure: if `Processor.run()` returned a valid `Effect[]`, the run lifecycle can still be `succeeded` while the router reports a diagnostic for the rejected effect.
 
 This catches bugs in processor authoring — a processor declared `phase: "view"` that emits a `PatchEffect` (likely a copy-paste error or a phase mis-declaration) fails loudly on the first invocation.
 
@@ -44,13 +44,13 @@ Routing happens *after* capability enforcement. An effect that fails capability 
 - **Denied:** discarded with a capability-deny diagnostic (recorded in `capability_uses` with `outcome: "denied"`).
 - **Downgraded:** routed under the downgraded shape (e.g., PatchEffect `auto → propose`).
 
-So an unauthorized auto-patch goes to the propose route, not the deny route — see [[wiki/gotchas/capability-downgrade-surprise]].
+So an unauthorized auto-patch goes to the propose route, not the deny route. In adoption, that route is `blocked-for-review` with a `patch.propose.requires-review` diagnostic; see [[wiki/gotchas/capability-downgrade-surprise]].
 
-## Engine commit consolidation
+## Engine commit surface
 
-PatchEffects with `mode: "auto"` accumulate across loop iterations. At the end of the adoption loop, if the candidate tree differs from `Proposal.head`, the cumulative diff lands as **one closure commit** with the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. Multiple PatchEffects from multiple processors become one closure commit per Proposal — not one commit per effect.
+PatchEffects with `mode: "auto"` advance the candidate tree across loop iterations. In the current plumbing implementation, each successful auto PatchEffect writes one engine commit with the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]], and the adoption result reports the final candidate chain head as `closureCommitOid`.
 
-This is what keeps `git log` readable: a Proposal that triggered 12 adoption-phase patches (markdown normalization, wikilink resolution, ID insertion, index update, etc.) shows two commits in the log: the user's Proposal head + the engine's single closure commit. Not 13 engine commits.
+The contract callers rely on is the final closure OID and trailer-bearing engine history. A future compaction/squash layer can reduce multi-patch chains to one human-facing commit without changing the effect-routing matrix.
 
 ## Why this matrix is closed
 

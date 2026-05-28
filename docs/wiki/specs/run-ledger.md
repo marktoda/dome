@@ -27,7 +27,7 @@ The ledger augments the trailers with data git cannot carry:
 | Wall-clock duration | ledger | performance debugging |
 | Error message / not-invoked reason | ledger | failed-run and skipped-run forensics |
 
-Successful adoption-phase runs that contribute to a closure commit appear in **both** surfaces. The `Dome-Run` trailer is the join key — the ledger row's `id` matches the trailer's value. This is the dual-surface enforcement of [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]].
+Successful adoption-phase runs that contribute engine patches appear in **both** surfaces. In the current plumbing path, each patch commit carries the producing run's `Dome-Run` trailer; the run ledger also back-fills `output_commit` to the Proposal's final closure chain head for proposal-level lookup. This is the dual-surface enforcement of [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]].
 
 ## File layout
 

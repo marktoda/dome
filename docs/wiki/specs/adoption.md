@@ -58,9 +58,10 @@ if iteration == MAX_ITER:
   emit engine.adoption.blocked { proposal, diagnostics: [{ severity: "block", code: "fixed-point.divergence", ... }] }
   return { adopted: false, ... }
 
-# Close: if the loop produced engine-driven changes, commit them as the closure commit
+# Close: if the loop produced engine-driven changes, the candidate chain head
+# is the closure commit OID surfaced to callers
 if candidate != P.head:
-  closureCommit := commitWorkflow({ ..., candidate, runContext })
+  closureCommit := candidate
 else:
   closureCommit := null
 
@@ -77,7 +78,7 @@ The loop has six properties that make it well-behaved:
 3. **Atomic.** The adopted ref advances exactly once per Proposal, at the end. Mid-loop crashes leave the ref unchanged.
 4. **Capability-checked.** Every effect passes through `enforceCapability` before being applied. PatchEffects exceeding `patch.auto` grants are downgraded to `propose` and emit a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic; in adoption, any proposed patch blocks the loop for human review instead of being silently applied.
 5. **Ledgered.** Every processor invocation writes a `RunRecord` row, regardless of outcome. Failed adoptions are debuggable.
-6. **Closure-explicit.** Engine-driven changes (the cumulative patches applied during the loop) land as one closure commit per Proposal, carrying the four Dome-* trailers. The trailers are the durable provenance surface in `git log`.
+6. **Closure-explicit.** Engine-driven changes land as git commits carrying the four Dome-* trailers. In the current plumbing path, each auto PatchEffect writes one candidate commit and the final candidate chain head is surfaced as `closureCommitOid`; a future squash/compaction layer may make that a single commit without changing the adoption result contract. The trailers are the durable provenance surface in `git log`.
 
 Pinned by [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]], [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]], [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]].
 
@@ -253,7 +254,7 @@ The adopted-ref + Dome-* trailer machinery landed in v0.5 (per the prior `2026-0
 
 What changes in v1:
 - The reconcile machinery (three-phase inbox/diff/scheduled) dissolves into adoption-phase + scheduled-trigger processors. The same work happens; it happens through the processor runtime instead of a separate function.
-- The closure step is no longer a no-op (in v0.5 it was a no-op because per-workflow atomic commits made closure unnecessary). In v1, the fixed-point loop's accumulated patches land as one closure commit per Proposal.
+- The closure step is no longer a no-op (in v0.5 it was a no-op because per-workflow atomic commits made closure unnecessary). In v1, the fixed-point loop's accumulated patches advance the candidate via engine-produced commits; the final chain head is the Proposal's closure OID.
 - Garden-emitted Proposals (a new concept in v1) re-enter the adoption loop instead of writing directly via the workflow-commit chokepoint.
 
 The migration is non-invasive:
