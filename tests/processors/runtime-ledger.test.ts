@@ -219,8 +219,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       proposal,
     });
 
-    // The synthesized `processor-threw` diagnostic still flows back to the
-    // adoption loop — the existing non-blocking behavior is preserved.
+    // The engine-generated block diagnostic flows back to the adoption loop.
     expect(results.length).toBe(1);
     expect(results[0]?.effects.length).toBe(1);
 
@@ -230,7 +229,10 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     if (row === undefined) throw new Error("expected row");
 
     expect(row.status).toBe("failed");
-    expect(row.error).toContain("boom from test");
+    const parsed = JSON.parse(row.error ?? "{}");
+    expect(parsed.code).toBe("processor.threw");
+    expect(parsed.message).toContain("boom from test");
+    expect(parsed.processorId).toBe("test.ledger.thrower");
     expect(row.finishedAt).not.toBeNull();
     expect(row.durationMs).not.toBeNull();
   });

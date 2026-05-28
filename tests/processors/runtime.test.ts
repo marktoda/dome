@@ -207,7 +207,7 @@ describe("adoptionRunner — dispatch + match filtering", () => {
 });
 
 describe("adoptionRunner — processor exception synthesis", () => {
-  test("processor that throws → synthesized DiagnosticEffect with code 'processor-threw', severity 'error'; loop does not crash", async () => {
+  test("processor that throws → processor.threw block diagnostic; loop does not crash", async () => {
     const p = makeFixtureProcessor({
       id: "test.thrower",
       phase: "adoption",
@@ -233,10 +233,36 @@ describe("adoptionRunner — processor exception synthesis", () => {
     const synthesized = effects[0];
     expect(synthesized?.kind).toBe("diagnostic");
     if (synthesized?.kind !== "diagnostic") return;
-    expect(synthesized.code).toBe("processor-threw");
-    expect(synthesized.severity).toBe("error");
+    expect(synthesized.code).toBe("processor.threw");
+    expect(synthesized.severity).toBe("block");
     expect(synthesized.message).toContain("test.thrower");
     expect(synthesized.message).toContain("boom");
+  });
+
+  test("processor returning malformed effect → processor.invalid-output block diagnostic", async () => {
+    const p = makeFixtureProcessor({
+      id: "test.invalid-output",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => [{ kind: "patch", mode: "auto", changes: [], reason: "bad", sourceRefs: [] } as never],
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const results = await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    expect(results.length).toBe(1);
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("processor.invalid-output");
+    expect(effect.severity).toBe("block");
   });
 });
 

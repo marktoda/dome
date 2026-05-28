@@ -34,11 +34,9 @@
 //     processors.md §"Adoption phase — bounded, deterministic,
 //     merge-blocking" — adoption-phase processors never receive a model
 //     handle). The factory's `modelInvoke` slot is left unset.
-//   - Processor exceptions are caught per-processor and synthesized into a
-//     `DiagnosticEffect` with `code: "processor-threw"`; the loop does not
-//     crash. The synthesized diagnostic's severity is `error` (non-blocking)
-//     so a single misbehaving processor does not refuse adoption — the
-//     run-ledger surface and operator telemetry are the recovery path.
+//   - Processor execution is delegated through `executeProcessor`, which
+//     validates output, enforces execution policy, and turns terminal
+//     failures into diagnostics without crashing the loop.
 //
 // House-style notes (matches src/processors/registry.ts,
 // src/processors/triggers.ts, src/processors/context.ts):
@@ -47,8 +45,8 @@
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating runner outputs.
-//   - Imports limited to: `../core/effect` (Effect + DiagnosticEffect +
-//     `diagnosticEffect` helper), `../core/processor` (Processor +
+//   - Imports limited to: `../core/effect` (`diagnosticEffect` helper),
+//     `../core/processor` (Processor +
 //     Capability + Snapshot + TreeOid types), `../core/source-ref`
 //     (CommitOid), `../engine/runner-contract` (AdoptionPhaseRunner +
 //     RunnerResult — the neutral home for the engine's outbound runner
@@ -58,19 +56,18 @@
 //     + RunId & TriggerKind types — the per-run ledger writes pinned by
 //     EVERY_PROCESSOR_RUN_IS_LEDGERED), `./registry` (ProcessorRegistry),
 //     `./triggers` (matchTriggers + TriggerMatch), `./context`
-//     (makeProcessorContext + ProcessorContextInput), `../run-context`
-//     (makeRunContext — the no-ledger fallback for runner-result runId).
-//     `node:crypto` for the `hashEffect` content hash. The `../git` import
+//     (makeProcessorContext + ProcessorContextInput), `./executor`
+//     (executeProcessor), `./execution-policy` (resolveExecutionPolicy),
+//     `../run-context` (makeRunContext — the no-ledger fallback for
+//     runner-result runId). The `../git` import
 //     surfaces `readBlob` / `readTree` for the Snapshot's read closures
 //     (`readFile`, `listMarkdownFiles`); the closures are lazy — invoked
 //     only when an adoption-phase processor reads from `ctx.snapshot` —
 //     so runtimes whose processors don't touch the snapshot incur no git
 //     I/O. The ledger handle's SQLite I/O is owned by `src/ledger/`.
 
-import { createHash } from "node:crypto";
 import { posix } from "node:path";
 
-import type { DiagnosticEffect, Effect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
@@ -90,11 +87,16 @@ import type {
   ViewPhaseRunner,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "../ledger/db";
+import { executeProcessor } from "./executor";
+import { resolveExecutionPolicy } from "./execution-policy";
 import {
   insertQueued,
+  markCancelled,
   markFailed,
   markRunning,
+  markSkipped,
   markSucceeded,
+  markTimedOut,
   newRunId,
   type RunId,
   type TriggerKind,
@@ -106,12 +108,6 @@ import {
   type ProcessorContextInput,
 } from "./context";
 import { makeRunContext } from "../run-context";
-
-// Transitional seam for Task 1: processor contexts expose a signal before the
-// executor owns cancellation. Task 2 should replace this with an invocation-
-// owned AbortSignal supplied by the executor boundary.
-const TRANSITIONAL_NON_CANCELLING_PROCESSOR_SIGNAL =
-  new AbortController().signal;
 
 // ----- AdoptionRunInput -----------------------------------------------------
 
@@ -254,12 +250,12 @@ export type BuildRuntimeOptions = {
  * per-iteration `(candidate, changedPaths, signals, iteration, proposal,
  * vault)` tuple, it walks the registry's adoption-phase processors, fires
  * each whose triggers match the signals, constructs a `ProcessorContext`,
- * invokes `processor.run`, and returns one `RunnerResult` per firing
+ * invokes the executor boundary, and returns one `RunnerResult` per firing
  * processor.
  *
- * Per-processor exceptions are caught and synthesized into a
- * `DiagnosticEffect` with `code: "processor-threw"` (severity `error`,
- * non-blocking). The loop does not crash on a single misbehaving processor.
+ * Per-processor terminal failures are converted into diagnostics by the
+ * executor boundary. The loop does not crash on a single misbehaving
+ * processor.
  *
  * Returned values are frozen: the outer results array, each `RunnerResult`,
  * and each effect list are `Object.freeze`d so downstream consumers (the
@@ -564,16 +560,46 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       triggerPayload: triggerPayloadOf(matches),
       startedAt,
     });
+  }
+
+  const policyResult = resolveExecutionPolicy({
+    phase,
+    request: processor.execution,
+    vaultCap: undefined,
+  });
+  if (!policyResult.ok) {
+    const finishedAt = new Date();
+    if (ledger !== undefined) {
+      markSkipped(ledger, { id: runId, finishedAt });
+    }
+    return Object.freeze({
+      runId,
+      processorId: processor.id,
+      declared,
+      granted,
+      effects: Object.freeze([
+        diagnosticEffect({
+          severity: phase === "adoption" ? "block" : "error",
+          code: policyResult.error.code,
+          message: `${processor.id}: ${policyResult.error.message}`,
+          sourceRefs: [],
+        }),
+      ]),
+    });
+  }
+
+  if (ledger !== undefined) {
     markRunning(ledger, runId, startedAt);
   }
 
+  const controller = new AbortController();
   const ctxInput: ProcessorContextInput<TEnvelope> = {
     snapshot,
     changedPaths,
     proposal,
     runId,
     input: envelope,
-    signal: TRANSITIONAL_NON_CANCELLING_PROCESSOR_SIGNAL,
+    signal: controller.signal,
     // `modelInvoke` intentionally unset for both phases in Phase 4a.
     // Adoption never receives a model handle (processors.md §"Adoption
     // phase"). Garden MAY receive one when the `model.invoke` capability
@@ -592,36 +618,46 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
   };
   const ctx = makeProcessorContext(ctxInput);
 
-  const runOutcome = await runOneProcessor(
-    processor.run,
-    ctx,
-    processor.id,
+  const execution = await executeProcessor({
+    processorId: processor.id,
     phase,
-  );
+    runId,
+    ctx: ctx as ProcessorContext<unknown>,
+    policy: policyResult.value,
+    run: processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
+  });
 
   // Ledger lifecycle: terminal mark.
   if (ledger !== undefined) {
     const finishedAt = new Date();
-    const durationMs = finishedAt.getTime() - startedAt.getTime();
-    if (runOutcome.error === null) {
+    if (execution.status === "succeeded") {
       markSucceeded(ledger, {
         id: runId,
-        effectHashes: runOutcome.effects.map(hashEffect),
+        effectHashes: execution.effectHashes,
         costUsd: null,
-        durationMs,
-        // `output_commit` is the closure-commit OID for adoption-phase
-        // runs (back-filled by the engine's `updateOutputCommit` after
-        // closure). Garden-phase runs land NULL here; garden's audit
-        // trail is the parent adoption's closure commit (recoverable
-        // via `proposal_id` joining back through the ledger).
+        durationMs: execution.durationMs,
         outputCommit: null,
+        finishedAt,
+      });
+    } else if (execution.status === "timed_out") {
+      markTimedOut(ledger, {
+        id: runId,
+        error: execution.error,
+        durationMs: execution.durationMs,
+        finishedAt,
+      });
+    } else if (execution.status === "cancelled") {
+      markCancelled(ledger, {
+        id: runId,
+        error: execution.error,
+        durationMs: execution.durationMs,
         finishedAt,
       });
     } else {
       markFailed(ledger, {
         id: runId,
-        error: runOutcome.error,
-        durationMs,
+        error: execution.error,
+        durationMs: execution.durationMs,
         finishedAt,
       });
     }
@@ -632,93 +668,14 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     processorId: processor.id,
     declared,
     granted,
-    effects: runOutcome.effects,
+    effects:
+      execution.status === "succeeded"
+        ? execution.effects
+        : Object.freeze([execution.diagnostic]),
   });
 }
 
 // ----- internals ------------------------------------------------------------
-
-/**
- * The result of one `processor.run()` dispatch. `effects` is the (possibly
- * synthesized) effect list returned to the adoption loop; `error` is `null`
- * on the success path and the error message on the failure path. The
- * separation lets the ledger lifecycle write the correct terminal state
- * (`markSucceeded` vs `markFailed`) while preserving the synthesized
- * `processor-threw` DiagnosticEffect for the engine loop's existing
- * "non-blocking diagnostic" behavior.
- */
-type RunOutcome = {
-  readonly effects: ReadonlyArray<Effect>;
-  readonly error: string | null;
-};
-
-/**
- * Invoke a processor's `run` method with try/catch insulation. A thrown
- * exception (including async rejection) is synthesized into a single
- * `DiagnosticEffect` with `code: "processor-threw"` and severity `error`
- * (non-blocking — a single misbehaving processor should not refuse
- * adoption; the operator surface is the run ledger + telemetry). The
- * returned `error` field carries the thrown message so the caller's
- * ledger-lifecycle writer can land `status: "failed"` with `error` set.
- *
- * The processor's static `TInput` is its own concern; the runtime stores
- * processors as `Processor<unknown>` (per registry.ts §"Type-erased at
- * storage"). The cast from `ProcessorContext<AdoptionRunInput>` to
- * `ProcessorContext<unknown>` is structurally safe — `unknown` is the top
- * type, and `AdoptionRunInput` is assignable to it; the cast is needed
- * because `ProcessorContext` is invariant in `TInput`.
- */
-async function runOneProcessor<TEnvelope>(
-  run: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>,
-  ctx: ProcessorContext<TEnvelope>,
-  processorId: string,
-  phase: "adoption" | "garden" | "view",
-): Promise<RunOutcome> {
-  try {
-    const effects = await run(ctx as ProcessorContext<unknown>);
-    return { effects: Object.freeze([...effects]), error: null };
-  } catch (e) {
-    const message = errorMessage(e);
-    const synthesized: DiagnosticEffect = diagnosticEffect({
-      severity: "error",
-      code: "processor-threw",
-      message: `Processor ${processorId} threw during ${phase}-phase run: ${message}`,
-      sourceRefs: [],
-    });
-    return { effects: Object.freeze([synthesized]), error: message };
-  }
-}
-
-/**
- * Stable, deterministic content hash for an Effect — `sha256(JSON.stringify(e))`,
- * hex-encoded. The hash lands in `runs.effect_hashes_json` so a future audit
- * surface can dedupe / diff effects across runs without storing the effect
- * payloads themselves.
- *
- * `JSON.stringify` ordering matches the construction order of the effect
- * literal — processors emit effects via the `*Effect()` constructor helpers
- * in `src/core/effect.ts`, which build object literals with a deterministic
- * key order. The hash is therefore stable across runs of the same effect.
- */
-function hashEffect(effect: Effect): string {
-  return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
-}
-
-/**
- * Stringify an arbitrary thrown value for the ledger's `error` column.
- * Mirrors the helper in `src/projections/db.ts` / `src/outbox/db.ts` —
- * `Error` → `.message`; raw string → itself; otherwise JSON-stringify with
- * a `String(e)` last-resort fallback for non-serializable values.
- */
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
-}
 
 /**
  * Extract the `trigger_kind` column value from the matched-triggers list.
