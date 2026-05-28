@@ -26,6 +26,7 @@ import {
   type ProcessorPhase,
   type Trigger,
 } from "../../src/core/processor";
+import { transientProcessorError } from "../../src/core/processor-error";
 import { commitOid } from "../../src/core/source-ref";
 import {
   diagnosticEffect,
@@ -370,9 +371,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       triggers: [{ kind: "signal", name: "file.created" }],
       run: async () => {
         invocations += 1;
-        throw Object.assign(new Error("retryable outage"), {
-          retryable: true,
-        });
+        throw transientProcessorError("retryable outage");
       },
     });
     const rt = buildRuntimeFor([p], ledger);

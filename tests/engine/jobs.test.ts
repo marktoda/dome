@@ -15,6 +15,7 @@ import {
   type Capability,
   type Processor,
 } from "../../src/core/processor";
+import { transientProcessorError } from "../../src/core/processor-error";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { noopSinks } from "../../src/engine/apply-effect";
 import type { ApplyPatchInput } from "../../src/engine/apply-patch";
@@ -86,9 +87,7 @@ describe("runQueuedJobs", () => {
       triggers: [{ kind: "signal", name: "document.changed" }],
       capabilities: [],
       run: async () => {
-        throw Object.assign(new Error("temporary job boom"), {
-          retryable: true,
-        });
+        throw transientProcessorError("temporary job boom");
       },
     });
     const fixture = await makeFixture();

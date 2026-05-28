@@ -140,7 +140,7 @@ Non-idempotent processors are a design defect, not a runtime exception. The engi
 
 ## Execution semantics
 
-Every invocation is wrapped by the runtime contract in [[wiki/specs/processor-execution]]: one RunRecord, a bounded phase-specific timeout, schema validation for returned effects, typed model-invoke failures, and explicit retry/quarantine behavior for garden runs. This page defines what a processor is allowed to declare and return; the execution spec defines how the engine calls it and records the outcome.
+Every invocation is wrapped by the runtime contract in [[wiki/specs/processor-execution]]: one RunRecord, a bounded phase-specific timeout, schema validation for returned effects, typed model-invoke failures, and explicit retry/quarantine behavior for garden runs. Processor authors mark a known transient processor failure by throwing `transientProcessorError(message)`; arbitrary thrown shapes are not trusted. This page defines what a processor is allowed to declare and return; the execution spec defines how the engine calls it and records the outcome.
 
 ## Registration
 

@@ -5,6 +5,7 @@ import {
   type DiagnosticEffect,
   type Effect,
 } from "../core/effect";
+import { isTransientProcessorError } from "../core/processor-error";
 import type { ProcessorContext, ProcessorPhase } from "../core/processor";
 import { isModelExecutionError } from "../engine/model-invoke";
 import type { RunId } from "../engine/runner-contract";
@@ -215,9 +216,7 @@ function isRetryableThrownError(
 ): boolean {
   if (phase === "adoption") return false;
   try {
-    if (typeof error !== "object" || error === null) return false;
-    const retryable = (error as { readonly retryable?: unknown }).retryable;
-    return retryable === true;
+    return isTransientProcessorError(error);
   } catch {
     return false;
   }

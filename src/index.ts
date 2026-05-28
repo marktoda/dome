@@ -74,6 +74,8 @@ export type {
   ModelInvokeStructuredInput,
 } from "./core/processor";
 export { defineProcessor, treeOid } from "./core/processor";
+export type { TransientProcessorError } from "./core/processor-error";
+export { transientProcessorError } from "./core/processor-error";
 
 export type { CommitOid, SourceRef, SourceRefInput } from "./core/source-ref";
 export { commitOid } from "./core/source-ref";

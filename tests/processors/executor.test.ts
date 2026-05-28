@@ -7,6 +7,7 @@ import {
   patchEffect,
 } from "../../src/core/effect";
 import type { Effect } from "../../src/core/effect";
+import { transientProcessorError } from "../../src/core/processor-error";
 import type { ProcessorContext } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { RunId } from "../../src/engine/runner-contract";
@@ -254,11 +255,7 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.severity).toBe("block");
   });
 
-  test("garden thrown error can mark itself retryable", async () => {
-    const transient = Object.assign(new Error("temporary provider failure"), {
-      retryable: true,
-    });
-
+  test("garden transientProcessorError marks itself retryable", async () => {
     const result = await executeProcessor({
       processorId: "test.executor.retryable-throw",
       phase: "garden",
@@ -270,7 +267,7 @@ describe("executeProcessor", () => {
         lateEffectBehavior: "discard",
       },
       run: async () => {
-        throw transient;
+        throw transientProcessorError("temporary provider failure");
       },
     });
 
@@ -278,6 +275,31 @@ describe("executeProcessor", () => {
     if (result.status !== "failed") return;
     expect(result.error.code).toBe("processor.threw");
     expect(result.error.retryable).toBe(true);
+  });
+
+  test("retryable-shaped processor throws are not retryable", async () => {
+    const result = await executeProcessor({
+      processorId: "test.executor.retryable-spoof",
+      phase: "garden",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw Object.assign(new Error("fake transient failure"), {
+          retryable: true,
+        });
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.threw");
+    expect(result.error.message).toContain("fake transient failure");
+    expect(result.error.retryable).toBe(false);
   });
 
   test("SDK-created model execution errors are not wrapped as processor.threw", async () => {
@@ -356,7 +378,7 @@ describe("executeProcessor", () => {
     if (result.status !== "failed") return;
     expect(result.error.code).toBe("processor.threw");
     expect(result.error.message).toContain("fake model json failure");
-    expect(result.error.retryable).toBe(true);
+    expect(result.error.retryable).toBe(false);
     expect(result.diagnostic.code).toBe("processor.threw");
   });
 

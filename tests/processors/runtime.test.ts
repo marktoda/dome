@@ -21,6 +21,7 @@ import {
   type Snapshot,
   type Trigger,
 } from "../../src/core/processor";
+import { transientProcessorError } from "../../src/core/processor-error";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   diagnosticEffect,
@@ -322,9 +323,7 @@ describe("gardenRunner — executor diagnostics", () => {
       triggers: [{ kind: "signal", name: "file.created" }],
       run: async () => {
         invocations += 1;
-        throw Object.assign(new Error("temporary downstream failure"), {
-          retryable: true,
-        });
+        throw transientProcessorError("temporary downstream failure");
       },
     });
     const rt = buildRuntimeFor([p]);

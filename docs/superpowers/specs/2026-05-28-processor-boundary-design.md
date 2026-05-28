@@ -62,6 +62,9 @@ or returning malformed output is.
 Model-specific execution errors are an SDK-internal exception path. The
 executor may preserve `model.*` failure codes from `ctx.modelInvoke`, but a
 processor-thrown object with a `code` field is still just a processor throw.
+Likewise, retryable processor failures must use the SDK's nominal
+`transientProcessorError`; a plain thrown object with `retryable: true` is not
+trusted by shape.
 
 ## Registration Contract
 
