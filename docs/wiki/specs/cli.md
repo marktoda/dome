@@ -14,7 +14,7 @@ This spec is normative for Dome's command-line interface. The CLI is **one proto
 ```text
 dome init [path]                Initialize a new vault.
 dome sync [--force-advance]     Catch-up: construct Proposal from working-tree HEAD; adopt.
-dome status [--json]            Read-only adoption snapshot.
+dome status [--json]            Vault health + content dashboard.
 dome query <text> [--filter ...] [--require-evidence]
                                 FTS + structured query against adopted state.
 dome lint [--apply <id>] [--report-only]
@@ -41,7 +41,7 @@ dome run-processor <id> [--args ...]
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
+- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current minimal implementation still stubs `dome doctor` / lacks `dome answer`; the complete Claude Code v1 plan treats both as required recovery surfaces because `QuestionEffect` and operational failures otherwise have no humane resolution path. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
@@ -140,7 +140,36 @@ See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative descriptio
 
 ### `dome status [--json]`
 
-See [[wiki/specs/adoption]] §"`dome status`".
+The health pulse for a vault. It is read-only and cheap enough for an
+agent or user to run at session start/end. Status intentionally combines
+the old "am I adopted?" pulse with cheap vault analytics so Claude Code
+and a human operator get one useful first glance, not two separate
+commands. Text mode renders a compact dashboard:
+
+```text
+DOME status
+vault     /Users/mark/vaults/work
+git       branch main | head 41a98c2 | adopted 41a98c2
+draft     0 modified | 0 untracked
+content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
+engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0
+health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
+```
+
+`--json` emits the same stable keys for agent consumption:
+
+```json
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+```
+
+The analytics are cheap first-glance counts, not a graph report:
+markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
+occurrences in those markdown files; raw file count and bytes under
+`raw/`; and dirty working-tree counts excluding rebuildable
+`.dome/state/` files. The operational counts are pointers, not full
+reports. Use `dome inspect diagnostics`, `dome inspect questions`,
+`dome inspect outbox`, or `dome inspect runs` for details. See
+[[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing.
 
 ### `dome query <text> [--filter category=<c>] [--filter type=<t>] [--require-evidence] [--json]`
 

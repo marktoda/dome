@@ -2,7 +2,7 @@
 //
 // Runs adoption exactly once for the current HEAD vs the adopted ref,
 // prints the AdoptionResult, exits. This is the manual trigger for users
-// who don't want a `dome serve` daemon running continuously.
+// who don't want a `dome serve` compiler host running continuously.
 //
 // Per docs/wiki/specs/cli.md §"dome sync" + docs/wiki/specs/adoption.md
 // §"dome sync":
@@ -14,7 +14,7 @@
 //   - Exit.
 //
 // Drift detection + adoption-invocation are shared with `dome serve` via
-// `./sync-shared.ts`; this command is the daemon's per-tick body invoked
+// `./sync-shared.ts`; this command is the host's per-tick body invoked
 // exactly once and surfaced with a CLI-shaped output / exit code.
 //
 // Exit codes:

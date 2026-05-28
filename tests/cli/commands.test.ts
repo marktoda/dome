@@ -34,9 +34,32 @@ import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import { loadBundles } from "../../src/extensions/loader";
 
+import {
+  diagnosticEffect,
+  externalActionEffect,
+  questionEffect,
+} from "../../src/core/effect";
+import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo, readBlob } from "../../src/git";
+import { openQuarantineStore } from "../../src/engine/quarantine-store";
+import { openLedgerDb } from "../../src/ledger/db";
+import {
+  insertQueued,
+  markFailed as markRunFailed,
+  markRunning,
+  newRunId,
+} from "../../src/ledger/runs";
+import { openOutboxDb } from "../../src/outbox/db";
+import {
+  insertPending,
+  markFailed as markOutboxFailed,
+} from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
-import { queryDiagnostics } from "../../src/projections/diagnostics";
+import {
+  insertDiagnostic,
+  queryDiagnostics,
+} from "../../src/projections/diagnostics";
+import { insertQuestion } from "../../src/projections/questions";
 
 // ----- Console capture ------------------------------------------------------
 //
@@ -486,6 +509,13 @@ describe("runStatus", () => {
     const out = captured.out.join("\n");
     expect(out).toContain("(uninitialized)"); // adopted ref
     expect(out).toContain("(never)"); // last_sync
+    expect(out).toContain("DOME status");
+    expect(out).toContain("content   2 pages");
+    expect(out).toContain("links 0");
+    expect(out).toContain("diagnostics 0");
+    expect(out).toContain("questions 0");
+    expect(out).toContain("outbox 0 pending / 0 failed");
+    expect(out).toContain("quarantine 0");
   });
 
   test("--json mode emits a parseable JSON object with expected keys", async () => {
@@ -501,7 +531,193 @@ describe("runStatus", () => {
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["vault"]).toBe(f.vaultPath);
     expect(parsed["branch"]).toBeDefined();
+    expect(parsed["dirty_modified"]).toBe(0);
+    expect(parsed["dirty_untracked"]).toBe(0);
+    expect(parsed["content_pages"]).toBe(2);
+    expect(parsed["wiki_pages"]).toBe(2);
+    expect(parsed["notes_pages"]).toBe(0);
+    expect(parsed["inbox_pages"]).toBe(0);
+    expect(parsed["wikilinks"]).toBe(0);
+    expect(parsed["raw_files"]).toBe(0);
+    expect(parsed["raw_bytes"]).toBe(0);
     expect(parsed["pending_runs"]).toBe(0);
+    expect(parsed["failed_runs"]).toBe(0);
+    expect(parsed["diagnostics"]).toBe(0);
+    expect(parsed["questions"]).toBe(0);
+    expect(parsed["outbox_pending"]).toBe(0);
+    expect(parsed["outbox_failed"]).toBe(0);
+    expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json mode reports vault content analytics", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await mkdir(join(f.vaultPath, "notes"), { recursive: true });
+    await mkdir(join(f.vaultPath, "inbox"), { recursive: true });
+    await mkdir(join(f.vaultPath, "raw"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, "wiki/links.md"),
+      "[[wiki/seed.md]] [[notes/day.md]]\n",
+      "utf8",
+    );
+    await writeFile(
+      join(f.vaultPath, "notes/day.md"),
+      "review [[wiki/new.md]]\n",
+      "utf8",
+    );
+    await writeFile(join(f.vaultPath, "inbox/todo.md"), "- [ ] inbox\n", "utf8");
+    await writeFile(join(f.vaultPath, "raw/capture.txt"), "raw", "utf8");
+
+    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
+    expect(await runStatus(args)).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["content_pages"]).toBe(5);
+    expect(parsed["wiki_pages"]).toBe(3);
+    expect(parsed["notes_pages"]).toBe(1);
+    expect(parsed["inbox_pages"]).toBe(1);
+    expect(parsed["wikilinks"]).toBe(3);
+    expect(parsed["raw_files"]).toBe(1);
+    expect(parsed["raw_bytes"]).toBe(3);
+    expect(parsed["dirty_untracked"]).toBe(4);
+  });
+
+  test("--json mode reports operational health counts", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    if (!projection.ok) {
+      throw new Error(`projection open failed: ${projection.error.kind}`);
+    }
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "status.test",
+          message: "status diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Choose one?",
+          options: ["one", "two"],
+          sourceRefs: [ref],
+          idempotencyKey: "status-question",
+        }),
+        processorId: "test.status",
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    const outbox = await openOutboxDb({
+      path: join(f.vaultPath, ".dome", "state", "outbox.db"),
+    });
+    if (!outbox.ok) {
+      throw new Error(`outbox open failed: ${outbox.error.kind}`);
+    }
+    try {
+      insertPending(outbox.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "status-pending",
+          payload: { event: "pending" },
+          sourceRefs: [ref],
+        }),
+        runId: "run-status-pending",
+      });
+      insertPending(outbox.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "status-failed",
+          payload: { event: "failed" },
+          sourceRefs: [ref],
+        }),
+        runId: "run-status-failed",
+      });
+      markOutboxFailed(outbox.value.db, "status-failed", "terminal failure");
+    } finally {
+      outbox.value.db.close();
+    }
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) {
+      throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    }
+    try {
+      const runId = newRunId(new Date(0), () => "status");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.status",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: true },
+        startedAt: new Date(0),
+      });
+      markRunning(ledger.value.db, runId, new Date(1));
+      markRunFailed(ledger.value.db, {
+        id: runId,
+        error: "failed",
+        durationMs: 1,
+        finishedAt: new Date(2),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    const quarantine = openQuarantineStore({
+      path: join(f.vaultPath, ".dome", "state", "quarantined.json"),
+      quarantineThreshold: 2,
+    });
+    if (!quarantine.ok) {
+      throw new Error(`quarantine open failed: ${quarantine.error.kind}`);
+    }
+    const key = Object.freeze({
+      phase: "garden" as const,
+      processorId: "test.status",
+      processorVersion: "0.0.1",
+      triggerHash: "status-trigger",
+    });
+    quarantine.value.recordRetryableTerminalFailure(key, "first");
+    quarantine.value.recordRetryableTerminalFailure(key, "second");
+
+    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
+    expect(await runStatus(args)).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["questions"]).toBe(1);
+    expect(parsed["outbox_pending"]).toBe(1);
+    expect(parsed["outbox_failed"]).toBe(1);
+    expect(parsed["failed_runs"]).toBe(1);
+    expect(parsed["quarantined"]).toBe(1);
   });
 
   // The "status after a submit reports the advanced adopted ref" test

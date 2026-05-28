@@ -1,6 +1,6 @@
 // cli/commands/sync-shared: drift detection + one-shot adoption invocation.
 //
-// Shared by `dome serve` (Phase 11b daemon — calls these in a poll loop)
+// Shared by `dome serve` (Phase 11b compiler host — calls these in a poll loop)
 // and `dome sync` (Phase 11c catch-up — calls them exactly once). Both
 // commands surface the same underlying operation:
 //
@@ -9,7 +9,7 @@
 //      `adopt()` against the open `VaultRuntime`.
 //
 // Extracting this here keeps the two callers structurally aligned — the
-// daemon's per-tick body and the one-shot command's body are the same
+// host's per-tick body and the one-shot command's body are the same
 // function call, just invoked under different lifecycles. Refactoring
 // invariants:
 //
@@ -88,7 +88,7 @@ export function resolveShippedBundlesRoot(): string {
 
 /**
  * The (base, head, branch) triple that names a single drift range. The
- * daemon's poll body builds this on every tick that detects drift; `dome
+ * host's poll body builds this on every tick that detects drift; `dome
  * sync` builds it exactly once. Both pass it to `runOneAdoption`.
  *
  * `base === head` is a valid value — it represents the "empty-diff init"
@@ -181,7 +181,7 @@ export type { AdoptEvent };
 /**
  * Format an `AdoptEvent` as a single human-readable stdout line for
  * `dome serve --verbose` / `dome sync --verbose`. Lines are indented
- * under the daemon's top-level summary so the iteration structure is
+ * under the host's top-level summary so the iteration structure is
  * scannable.
  *
  * The format is human-targeted (not machine-parseable); structured

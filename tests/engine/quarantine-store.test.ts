@@ -31,6 +31,7 @@ describe("quarantine store", () => {
       const quarantine =
         opened.value.recordRetryableTerminalFailure(key, "second");
       expect(quarantine?.consecutiveRetryableFailures).toBe(2);
+      expect(opened.value.quarantines().length).toBe(1);
 
       const body = JSON.parse(await readFile(path, "utf8"));
       expect(body.version).toBe(1);
@@ -45,6 +46,9 @@ describe("quarantine store", () => {
       expect(
         reopened.value.quarantineFor(key)?.consecutiveRetryableFailures,
       ).toBe(2);
+      expect(reopened.value.quarantines()[0]?.key.processorId).toBe(
+        "test.processor",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

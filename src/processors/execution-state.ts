@@ -26,6 +26,7 @@ export type ProcessorQuarantineSnapshot = {
 };
 
 export type ProcessorExecutionState = {
+  readonly quarantines: () => ReadonlyArray<ProcessorQuarantineSnapshot>;
   readonly quarantineFor: (
     key: ProcessorExecutionKey,
   ) => ProcessorQuarantineSnapshot | null;
@@ -93,6 +94,7 @@ export function buildProcessorExecutionState(opts?: {
   };
 
   return Object.freeze({
+    quarantines: () => quarantineSnapshots(entries),
     quarantineFor,
     recordSuccess: (key) => {
       if (entries.delete(keyId(key))) persist();
@@ -211,5 +213,25 @@ function snapshotEntries(
     );
   }
   out.sort((a, b) => keyId(a).localeCompare(keyId(b)));
+  return Object.freeze(out);
+}
+
+function quarantineSnapshots(
+  entries: ReadonlyMap<string, MutableEntry>,
+): ReadonlyArray<ProcessorQuarantineSnapshot> {
+  const out: ProcessorQuarantineSnapshot[] = [];
+  for (const entry of snapshotEntries(entries)) {
+    if (entry.quarantinedAt === undefined || entry.reason === undefined) {
+      continue;
+    }
+    out.push(
+      freezeSnapshot(entry, {
+        consecutiveRetryableFailures:
+          entry.consecutiveRetryableFailures,
+        quarantinedAt: entry.quarantinedAt,
+        reason: entry.reason,
+      }),
+    );
+  }
   return Object.freeze(out);
 }

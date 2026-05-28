@@ -2,7 +2,7 @@
 //
 // Per docs/v1.md §4.1 ("Local eventual mode") + §13.2 ("Claude Code edits
 // project notes") + docs/wiki/specs/cli.md §"dome serve" +
-// docs/wiki/specs/harnesses.md §"Native write + watcher pickup", this is
+// docs/wiki/specs/harnesses.md §"Native write + compiler-host pickup", this is
 // **surface 3** of the four compiler-boundary surfaces. It watches the
 // current branch's HEAD for drift against `refs/dome/adopted/<branch>`
 // and runs the adoption loop whenever drift appears.

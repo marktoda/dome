@@ -202,7 +202,7 @@ describe("runServe smoke", () => {
     const code = await servePromise;
     expect(code).toBe(0);
 
-    // Open the ledger READ-ONLY through a separate handle (the daemon's
+    // Open the ledger READ-ONLY through a separate handle (the host's
     // runtime already closed). The dome.lint v1.0 bundle ships only a
     // view-phase, command-triggered processor — adoption-phase processors
     // for `wiki/new.md` don't yet exist in the shipped first-party set

@@ -102,7 +102,7 @@ function printUsage(): void {
       "  doctor [--repair]                (reserved for v1.x) Engine-substrate health checks.",
       "  run <name> [--json]              Invoke a view-phase command-triggered processor.",
       "  serve [--poll-interval-ms <n>]   Run the commit-watcher daemon.",
-      "  status [--json]                  Read-only adoption snapshot.",
+      "  status [--json]                  Vault health + content dashboard.",
       "  sync [--json]                    One-shot catch-up: adopt working-tree HEAD.",
       "",
       "Common flags:",

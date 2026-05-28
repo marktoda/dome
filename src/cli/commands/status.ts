@@ -1,25 +1,41 @@
 // cli/commands/status: the `dome status [--json]` command.
 //
-// Per [[wiki/specs/cli]] §"dome status", a read-only snapshot of the
-// vault's adoption state. Phase 9 prints:
+// Per [[wiki/specs/cli]] §"dome status", a read-only dashboard for the
+// vault's git cursor, cheap content analytics, and operational health.
+// Prints:
 //
-//   - branch:          the current git branch (`currentBranch`).
-//   - head:            the current HEAD commit OID (`currentSha`).
-//   - adopted:         `refs/dome/adopted/<branch>` value, or "(uninitialized)".
-//   - last_sync:       `started_at` of the most recent succeeded run
-//                      (max startedAt across queryRuns status=succeeded).
-//   - pending_runs:    count of ledger rows in `status='queued'`.
+//   - branch:           the current git branch (`currentBranch`).
+//   - head:             the current HEAD commit OID (`currentSha`).
+//   - adopted:          `refs/dome/adopted/<branch>` value, or "(uninitialized)".
+//   - dirty_modified:   working-tree paths modified/deleted/staged.
+//   - dirty_untracked:  working-tree paths not present at HEAD.
+//   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
+//   - wiki_pages:       markdown pages under wiki/.
+//   - notes_pages:      markdown pages under notes/.
+//   - inbox_pages:      markdown pages under inbox/.
+//   - wikilinks:        total wikilink occurrences in content markdown.
+//   - raw_files:        file count under raw/.
+//   - raw_bytes:        byte count under raw/.
+//   - last_sync:        `started_at` of the most recent succeeded run
+//                       (max startedAt across queryRuns status=succeeded).
+//   - pending_runs:     count of ledger rows in `status='queued'`.
+//   - failed_runs:      count of ledger rows in `status='failed'`.
+//   - diagnostics:      count of unresolved projection diagnostics.
+//   - questions:        count of unanswered projection questions.
+//   - outbox_pending:   count of pending external-action rows.
+//   - outbox_failed:    count of terminally-failed external-action rows.
+//   - quarantined:      count of quarantined processor trigger keys.
 //
-// All values are derived from existing v1 read surfaces — `src/git`,
-// `src/adopted-ref`, `src/ledger/runs`. The command opens the runtime
-// (only to read the ledger), does not submit a Proposal, and closes on
-// exit. Exit codes:
+// Values are derived from cheap local read surfaces — `src/git`, a bounded
+// vault filesystem walk, `src/adopted-ref`, `src/ledger/runs`, projections,
+// outbox, and processor execution state. The command opens the runtime
+// read-only, does not submit a Proposal, and closes on exit. Exit codes:
 //   - 0 on a clean read.
 //   - 1 if the vault is malformed (no git repo, runtime open failure).
 //
 // House-style notes:
-//   - `--json` emits the snapshot as a JSON object. The text mode
-//     renders a key-aligned summary (no table — only one row).
+//   - `--json` emits the snapshot as a JSON object. Text mode renders
+//     a compact dashboard intended for humans and agent transcripts.
 
 import { resolve } from "node:path";
 
@@ -27,25 +43,44 @@ import { currentSha } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
+import { queryOutbox } from "../../outbox/dispatch";
+import { queryDiagnostics } from "../../projections/diagnostics";
+import { queryQuestions } from "../../projections/questions";
 
 import { resolveShippedBundlesRoot } from "./sync-shared";
 
 import type { ParsedArgs } from "../args";
 import { formatJson } from "../format";
+import { collectVaultAnalytics } from "../vault-analytics";
 
 // ----- Public types ---------------------------------------------------------
 
 /**
- * The status snapshot. All fields are `string | null` so a JSON emit
- * has stable keys regardless of vault state.
+ * The status snapshot. Keys stay stable across vault states so agent
+ * consumers can read one JSON shape.
  */
 type StatusSnapshot = {
   readonly vault: string;
   readonly branch: string | null;
   readonly head: string | null;
   readonly adopted: string | null;
+  readonly dirty_modified: number;
+  readonly dirty_untracked: number;
+  readonly content_pages: number;
+  readonly wiki_pages: number;
+  readonly notes_pages: number;
+  readonly inbox_pages: number;
+  readonly wikilinks: number;
+  readonly raw_files: number;
+  readonly raw_bytes: number;
   readonly last_sync: string | null;
   readonly pending_runs: number;
+  readonly failed_runs: number;
+  readonly diagnostics: number;
+  readonly questions: number;
+  readonly outbox_pending: number;
+  readonly outbox_failed: number;
+  readonly quarantined: number;
 };
 
 // ----- runStatus ------------------------------------------------------------
@@ -87,6 +122,8 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
   const runtime = runtimeResult.value;
 
   try {
+    const analytics = await collectVaultAnalytics(vaultPath);
+
     // Most recent succeeded run, ordered by started_at desc (the
     // `queryRuns` default ordering). The limit-1 cap keeps the read
     // cheap; the result either has one row (the most recent succeeded
@@ -102,14 +139,44 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
     // surfaces via `dome inspect runs`.
     const queued = queryRuns(runtime.ledgerDb, { status: "queued" });
     const pending_runs = queued.length;
+    const failed_runs = queryRuns(runtime.ledgerDb, {
+      status: "failed",
+    }).length;
+    const diagnostics = queryDiagnostics(runtime.projectionDb).length;
+    const questions = queryQuestions(runtime.projectionDb, {
+      resolved: false,
+    }).length;
+    const outbox_pending = queryOutbox(runtime.outboxDb, {
+      status: "pending",
+    }).length;
+    const outbox_failed = queryOutbox(runtime.outboxDb, {
+      status: "failed",
+    }).length;
+    const quarantined =
+      runtime.processorRuntime.executionState.quarantines().length;
 
     const snapshot: StatusSnapshot = {
       vault: vaultPath,
       branch,
       head,
       adopted,
+      dirty_modified: analytics.dirty_modified,
+      dirty_untracked: analytics.dirty_untracked,
+      content_pages: analytics.content_pages,
+      wiki_pages: analytics.wiki_pages,
+      notes_pages: analytics.notes_pages,
+      inbox_pages: analytics.inbox_pages,
+      wikilinks: analytics.wikilinks,
+      raw_files: analytics.raw_files,
+      raw_bytes: analytics.raw_bytes,
       last_sync,
       pending_runs,
+      failed_runs,
+      diagnostics,
+      questions,
+      outbox_pending,
+      outbox_failed,
+      quarantined,
     };
 
     if (args.flags["json"] === true) {
@@ -126,17 +193,39 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 // ----- internals ------------------------------------------------------------
 
 /**
- * Render the snapshot as a multi-line key-aligned summary.
- * Mirrors the `dome stats` output shape from the CLI spec, scaled
- * down to the Phase 9 surface.
+ * Render the snapshot as a compact dashboard. The rows intentionally
+ * group facts by the question a user is asking: where is git, what is
+ * in the vault, is the engine healthy?
  */
 function printStatusText(s: StatusSnapshot): void {
-  console.log(`vault:        ${s.vault}`);
-  console.log(`  branch:     ${s.branch ?? "(detached)"}`);
-  console.log(`  head:       ${s.head === null ? "(none)" : s.head.slice(0, 7)}`);
+  console.log("DOME status");
+  console.log(`vault     ${s.vault}`);
   console.log(
-    `  adopted:    ${s.adopted === null ? "(uninitialized)" : s.adopted.slice(0, 7)}`,
+    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")}`,
   );
-  console.log(`  last_sync:  ${s.last_sync ?? "(never)"}`);
-  console.log(`  pending:    ${s.pending_runs}`);
+  console.log(
+    `draft     ${s.dirty_modified} modified | ${s.dirty_untracked} untracked`,
+  );
+  console.log(
+    `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${s.inbox_pages} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
+  );
+  console.log(
+    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs}`,
+  );
+  console.log(
+    `health    diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
+  );
+}
+
+function shortOid(oid: string | null, fallback: string): string {
+  return oid === null ? fallback : oid.slice(0, 7);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${kib.toFixed(1)} KB`;
+  const mib = kib / 1024;
+  if (mib < 1024) return `${mib.toFixed(1)} MB`;
+  return `${(mib / 1024).toFixed(1)} GB`;
 }
