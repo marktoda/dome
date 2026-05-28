@@ -306,9 +306,15 @@ export class HarnessImpl implements Harness {
     // drift.kind === "drift"
     const adoptedBefore = drift.info.base;
     const adoptedTargetBefore = drift.info.head;
+    // Phase 4c: thread the TestClock through to the scheduler so
+    // schedule triggers fire deterministically against simulated time.
+    // CLI callers default to `() => new Date()` (real time); harness
+    // scenarios advance time via `h.clock.advance(ms)` and the scheduler
+    // sees the advanced value.
     const result = await runOneAdoption({
       runtime: this.runtime,
       drift: drift.info,
+      now: () => this.clock.now(),
     });
     await runAllAlwaysTrue(
       this,

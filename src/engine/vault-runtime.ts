@@ -414,7 +414,7 @@ function deriveProcessorVersionList(
  * occasionally mutates a granted-set in place; the registry's stored
  * `Processor.capabilities` array is already frozen by `defineProcessor`.
  */
-function defaultResolveGrants(
+export function defaultResolveGrants(
   registry: ProcessorRegistry,
 ): (processorId: string) => ReadonlyArray<Capability> {
   return (processorId: string): ReadonlyArray<Capability> => {
@@ -442,7 +442,7 @@ function defaultResolveGrants(
  * per-processor → bundle map through to `openVaultRuntime`; the seam is
  * the `extensionIdFor` callback of `buildRuntime`.
  */
-function defaultExtensionIdFor(processorId: string): string {
+export function defaultExtensionIdFor(processorId: string): string {
   return processorId;
 }
 
@@ -466,7 +466,7 @@ function defaultExtensionIdFor(processorId: string): string {
  * may add memoization once the model-invoke / view-phase surfaces drive
  * more frequent resolves.
  */
-function makeResolveTree(
+export function makeResolveTree(
   vaultPath: string,
 ): (commit: CommitOid) => Promise<TreeOid> {
   return async (commit: CommitOid): Promise<TreeOid> => {

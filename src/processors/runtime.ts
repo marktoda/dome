@@ -449,7 +449,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
  * (commit = adopted). Identical shape; the only variation is which commit
  * the closures resolve against.
  */
-async function makeSnapshot(
+export async function makeSnapshot(
   vaultPath: string,
   commit: CommitOid,
   resolveTree: (commit: CommitOid) => Promise<TreeOid>,
@@ -479,7 +479,7 @@ async function makeSnapshot(
  * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] contract) is
  * structurally identical across phases.
  */
-async function dispatchOneProcessor<TEnvelope>(opts: {
+export async function dispatchOneProcessor<TEnvelope>(opts: {
   readonly processor: Processor<unknown>;
   readonly phase: "adoption" | "garden" | "view";
   readonly envelope: TEnvelope;

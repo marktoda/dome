@@ -40,7 +40,13 @@ import {
   runGardenPhase,
   type AdoptSubProposalFn,
 } from "../../engine/garden";
-import type { VaultRuntime } from "../../engine/vault-runtime";
+import { runScheduler } from "../../engine/scheduler";
+import {
+  defaultExtensionIdFor,
+  defaultResolveGrants,
+  makeResolveTree,
+  type VaultRuntime,
+} from "../../engine/vault-runtime";
 import { deriveExtensionId } from "../../extensions/id-helpers";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
@@ -223,6 +229,13 @@ export async function runOneAdoption(opts: {
   readonly runtime: VaultRuntime;
   readonly drift: DriftInfo;
   /**
+   * Optional clock injection. Defaults to `() => new Date()` (real
+   * time). The harness's `tick()` passes its `TestClock`'s `now`
+   * callback so scenarios can advance time deterministically and
+   * observe schedule triggers fire predictably. Phase 4c.
+   */
+  readonly now?: () => Date;
+  /**
    * Optional observability callback forwarded to `adopt()` — surfaces
    * per-iteration + per-processor events for verbose-mode CLI rendering.
    * `dome serve --verbose` / `dome sync --verbose` wire a callback that
@@ -231,6 +244,7 @@ export async function runOneAdoption(opts: {
   readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<AdoptionResult> {
   const { runtime, drift, onEvent } = opts;
+  const now = opts.now ?? ((): Date => new Date());
 
   const proposal = makeManualProposal({
     base: drift.base,
@@ -400,6 +414,26 @@ export async function runOneAdoption(opts: {
       ledger: runtime.ledgerDb,
       adoptSubProposal,
       cascadeDepth: 0,
+    });
+
+    // Phase 4c: run the scheduler against the just-adopted state. Fires
+    // any garden / view processors whose `schedule:` triggers are due
+    // per `projection.db.schedule_cursors`. Runs ONCE per top-level
+    // adoption attempt (not per sub-Proposal — schedule semantics are
+    // "what's due since last fire," independent of cascade depth).
+    // See [[wiki/specs/processors]] §"Triggers and signals" + Phase 4c
+    // in [[cohesive/brainstorms/2026-05-27-v1-engine-completion]].
+    await runScheduler({
+      vault: adoptOpts.vault,
+      adopted: adoptionResult.adoptedRef,
+      registry: runtime.registry,
+      projection: runtime.projectionDb,
+      sinks,
+      resolveTree: makeResolveTree(runtime.path),
+      now,
+      ledger: runtime.ledgerDb,
+      resolveGrants: defaultResolveGrants(runtime.registry),
+      extensionIdFor: defaultExtensionIdFor,
     });
   }
 
