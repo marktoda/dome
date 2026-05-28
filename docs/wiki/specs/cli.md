@@ -46,17 +46,59 @@ The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was 
 
 ### `dome init [path]`
 
-Creates a new Dome vault at `<path>` (defaults to `.`):
+Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
+hotfix: `dome init` no longer copies the shipped first-party bundles
+into the vault. They live with the SDK at `<SDK>/assets/extensions/`
+and are resolved at runtime via `resolveShippedBundlesRoot()` (the
+default `--bundles-root` for every CLI command). Per [[wiki/specs/vault-layout]]
+§"`extensions/`" and docs/v1.md §10.1, the vault carries activations +
+grants in `.dome/config.yaml`; the bundle code itself doesn't need to
+be copied into every vault.
 
-1. Initializes a git repository if one doesn't exist.
-2. Creates the directory scaffold: `wiki/`, `raw/`, `inbox/raw/`, `notes/`, `.dome/`.
-3. Writes `AGENTS.md` and `CLAUDE.md` at vault root.
-4. Writes `.dome/config.yaml` and `.dome/page-types.yaml` from shipped defaults.
-5. Copies `assets/extensions/dome.*` bundles into `.dome/extensions/`.
-6. Creates initial `log.md` and `index.md` (empty projections).
-7. Runs an initial `dome sync` to adopt the initial commit and produce `refs/dome/adopted/main`.
+The shipped five steps:
 
-Exit codes: 0 on success; 1 if directory exists with a vault (`config.yaml` present); 2 on usage error.
+1. Initializes a git repository if one doesn't exist (`git init` is
+   idempotent — a no-op when `.git/` already exists).
+2. Creates the directory scaffold: `wiki/`, `.dome/state/`. (The
+   `raw/`, `inbox/raw/`, `notes/` dirs are created lazily by the
+   processors that write into them; pre-creating them is a v1.1 polish
+   once the intake / capture surfaces ship. `.dome/extensions/` is not
+   created — the shipped bundles live with the SDK; users wanting
+   vault-local third-party bundles create the directory themselves.)
+3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
+   activation + engine settings). First-write-only.
+4. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
+   [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
+5. Writes `<vault>/AGENTS.md` from the shipped orientation template
+   (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]). The
+   `CLAUDE.md` shim is a v1.1 follow-up — Claude Code is the v1.0
+   harness and auto-loads `AGENTS.md` directly. First-write-only —
+   re-runs preserve any user-prose section the vault owner added.
+6. Creates an initial scaffold commit (`dome init: initial scaffold`)
+   staging `.gitignore`, `AGENTS.md`, and `.dome/config.yaml`. Skipped
+   if HEAD already resolves (re-init on a vault with commits is a
+   no-op for this step).
+
+Deferred to v1.1:
+- `.dome/page-types.yaml` (page-type registry) — lands when the
+  page-types substrate ships.
+- The initial `dome sync` to produce `refs/dome/adopted/main` — the
+  user runs `dome sync` (or `dome serve`) manually as their next step;
+  the adopted-ref substrate initializes on first sync.
+
+Installing a third-party bundle: create
+`<vault>/.dome/extensions/<bundle-id>/` and pass
+`--bundles-root <vault>/.dome/extensions` to the CLI commands. The
+default `--bundles-root` (the SDK's shipped first-party bundles) does
+not need to be passed explicitly. Multi-root resolution (merging the
+SDK's shipped bundles with a vault-local third-party set in one
+runtime) is a v1.x polish.
+
+Each step prints a one-line outcome (`created` or `skipped (already
+present)`); idempotent re-runs surface as all-skipped no-ops.
+
+Exit codes: 0 on success (including idempotent re-runs); 1 on
+unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
 
 ### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [--force-advance]`
 

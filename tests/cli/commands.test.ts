@@ -1,9 +1,14 @@
 // Phase 9 — end-to-end tests for the four CLI commands.
 //
 // Each describe block sets up a fresh tmpdir vault (a real git repo
-// with two commits + the shipped dome.lint bundle copied in), invokes
-// the relevant `run<Command>` function with parsed args, and asserts on
-// the returned exit code + the side effects on disk / DBs.
+// with two commits), invokes the relevant `run<Command>` function with
+// parsed args, and asserts on the returned exit code + the side effects
+// on disk / DBs.
+//
+// Phase 11f: the CLI commands default `--bundles-root` to the SDK's
+// shipped `assets/extensions/`. Tests no longer need to copy bundles
+// into the tmpdir vault — they just rely on the default resolver. The
+// fixture is correspondingly thinner.
 //
 // Tests run the command handlers directly — they don't spawn `bun`
 // subprocesses. That keeps the suite fast and lets us assert on
@@ -15,23 +20,21 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { parseArgs } from "../../src/cli/args";
 import { runInit } from "../../src/cli/commands/init";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runStatus } from "../../src/cli/commands/status";
+import { runSync } from "../../src/cli/commands/sync";
+import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
+import { loadBundles } from "../../src/extensions/loader";
 
-import { commit, initRepo } from "../../src/git";
-
-// ----- Paths ----------------------------------------------------------------
-
-const THIS_FILE = fileURLToPath(import.meta.url);
-const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
-const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+import { commit, currentSha, initRepo } from "../../src/git";
+import { openProjectionDb } from "../../src/projections/db";
+import { queryDiagnostics } from "../../src/projections/diagnostics";
 
 // ----- Console capture ------------------------------------------------------
 //
@@ -69,17 +72,17 @@ afterEach(() => {
 
 type Fixture = {
   vaultPath: string;
-  bundlesRoot: string;
   baseSha: string;
   headSha: string;
   cleanup: () => Promise<void>;
 };
 
 /**
- * Build a fresh tmpdir vault with two commits + the shipped dome.lint
- * bundle copied in. The two commits give submit something to propose
- * (base = first commit, head = second commit). The bundle gives the
- * runtime something to load. The vault path is a fresh tmpdir; the
+ * Build a fresh tmpdir vault with two commits. The two commits give
+ * submit something to propose (base = first commit, head = second
+ * commit). Phase 11f: no bundle copy — the CLI defaults `bundlesRoot`
+ * to the SDK's shipped first-party bundles via
+ * `resolveShippedBundlesRoot`. The vault path is a fresh tmpdir; the
  * cleanup removes it after the test.
  */
 async function makeFixture(): Promise<Fixture> {
@@ -101,42 +104,19 @@ async function makeFixture(): Promise<Fixture> {
     files: ["wiki/new.md"],
   });
 
-  // Copy the shipped dome.lint bundle into .dome/extensions/ so
-  // openVaultRuntime has a real bundle root to load.
+  // `.dome/state/` is where the engine writes sqlite handles; the runtime
+  // creates it on open, but pre-creating mirrors what `dome init` does
+  // and keeps the test's setup explicit.
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "extensions"), { recursive: true });
-  await copyTree(
-    join(SHIPPED_BUNDLES_ROOT, "dome.lint"),
-    join(vaultPath, ".dome", "extensions", "dome.lint"),
-  );
 
   return {
     vaultPath,
-    bundlesRoot: SHIPPED_BUNDLES_ROOT,
     baseSha,
     headSha,
     cleanup: async () => {
       await rm(vaultPath, { recursive: true, force: true });
     },
   };
-}
-
-/** Recursive copy helper for the fixture. Mirrors `init.ts`'s `copyTree`. */
-async function copyTree(src: string, dst: string): Promise<void> {
-  const s = await stat(src);
-  if (!s.isDirectory()) {
-    await mkdir(dirname(dst), { recursive: true });
-    await copyFile(src, dst);
-    return;
-  }
-  await mkdir(dst, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcChild = join(src, entry.name);
-    const dstChild = join(dst, entry.name);
-    if (entry.isDirectory()) await copyTree(srcChild, dstChild);
-    else if (entry.isFile()) await copyFile(srcChild, dstChild);
-  }
 }
 
 const fixtures: Fixture[] = [];
@@ -150,46 +130,183 @@ afterEach(async () => {
 // ----- runInit --------------------------------------------------------------
 
 describe("runInit", () => {
-  test("creates .dome/state/ + copies dome.lint bundle into a fresh dir", async () => {
-    // Fresh tmpdir — no git repo, no .dome/ — just a directory.
+  test("fresh dir → scaffold: dirs, config, AGENTS.md, git+HEAD (no bundle copy)", async () => {
+    // Fresh tmpdir — no git repo, no .dome/, no AGENTS.md.
     const target = mkdtempSync(join(tmpdir(), "cli-init-"));
     try {
       const args = parseArgs(["init", target]);
       const code = await runInit(args);
       expect(code).toBe(0);
 
+      // Scaffold dirs. `.dome/extensions/` is NOT created — the shipped
+      // first-party bundles live with the SDK, not in the vault.
+      expect(existsSync(join(target, "wiki"))).toBe(true);
       expect(existsSync(join(target, ".dome", "state"))).toBe(true);
+      expect(existsSync(join(target, ".dome", "extensions"))).toBe(false);
+
+      // No bundle directories under .dome/extensions/.
       expect(
-        existsSync(join(target, ".dome", "extensions", "dome.lint", "manifest.yaml")),
-      ).toBe(true);
+        existsSync(join(target, ".dome", "extensions", "dome.lint")),
+      ).toBe(false);
       expect(
-        existsSync(
-          join(
-            target,
-            ".dome",
-            "extensions",
-            "dome.lint",
-            "processors",
-            "markdown-format.ts",
-          ),
-        ),
-      ).toBe(true);
+        existsSync(join(target, ".dome", "extensions", "dome.markdown")),
+      ).toBe(false);
+
+      // config.yaml + AGENTS.md present with expected anchors.
+      const configPath = join(target, ".dome", "config.yaml");
+      expect(existsSync(configPath)).toBe(true);
+      const configBody = await readFile(configPath, "utf8");
+      expect(configBody).toContain("dome.lint");
+      expect(configBody).toContain("dome.markdown");
+      expect(configBody).toContain("max_iterations");
+
+      const agentsPath = join(target, "AGENTS.md");
+      expect(existsSync(agentsPath)).toBe(true);
+      const agentsBody = await readFile(agentsPath, "utf8");
+      expect(agentsBody).toContain("This is a Dome vault");
+      expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
+      expect(agentsBody).toContain("<!-- END user-prose -->");
+
+      // Git initialized + HEAD resolves (the initial scaffold commit landed).
+      expect(existsSync(join(target, ".git"))).toBe(true);
+      const head = await currentSha(target);
+      expect(head).not.toBeNull();
+
+      // The SDK-shipped bundles are still loadable from the resolved
+      // shipped-bundles root. This is the load-bearing assertion that
+      // replaces the dropped per-file bundle-copy checks above.
+      const bundlesRoot = resolveShippedBundlesRoot();
+      const loaded = await loadBundles({ bundlesRoot });
+      expect(loaded.ok).toBe(true);
+      if (loaded.ok) {
+        const ids = loaded.value.map((b) => b.id);
+        expect(ids).toContain("dome.lint");
+        expect(ids).toContain("dome.markdown");
+      }
     } finally {
       await rm(target, { recursive: true, force: true });
     }
   });
 
-  test("is idempotent — re-running on an initialized dir is a no-op success", async () => {
+  test("is idempotent — re-run leaves AGENTS.md byte-identical + no errors", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-idem-"));
     try {
       const args = parseArgs(["init", target]);
       expect(await runInit(args)).toBe(0);
+
+      const agentsPath = join(target, "AGENTS.md");
+      const configPath = join(target, ".dome", "config.yaml");
+      const firstAgents = await readFile(agentsPath, "utf8");
+      const firstConfig = await readFile(configPath, "utf8");
+      const firstHead = await currentSha(target);
+
+      // Mutate the user-prose region to confirm `dome init` doesn't
+      // clobber post-init edits.
+      const mutated = firstAgents.replace(
+        "<!-- BEGIN user-prose -->",
+        "<!-- BEGIN user-prose -->\n\nMy private vault notes.",
+      );
+      await writeFile(agentsPath, mutated, "utf8");
+
       expect(await runInit(args)).toBe(0);
-      expect(existsSync(join(target, ".dome", "state"))).toBe(true);
+
+      const secondAgents = await readFile(agentsPath, "utf8");
+      const secondConfig = await readFile(configPath, "utf8");
+      const secondHead = await currentSha(target);
+
+      // User-prose mutation survives re-init; config untouched; HEAD
+      // didn't advance (no second commit landed).
+      expect(secondAgents).toBe(mutated);
+      expect(secondConfig).toBe(firstConfig);
+      expect(secondHead).toBe(firstHead);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
   });
+
+  test(
+    "end-to-end demo: init → sync init → broken wikilink commit → sync → diagnostic lands",
+    async () => {
+      const target = mkdtempSync(join(tmpdir(), "cli-init-e2e-"));
+      try {
+        // Step 1: dome init produces a fully-scaffolded vault with an
+        //         initial commit on `main` (HEAD resolves; the adopted
+        //         ref is still uninitialized — first `dome sync`
+        //         empty-diff-initializes it).
+        expect(await runInit(parseArgs(["init", target]))).toBe(0);
+
+        // Phase 11f: `dome sync` defaults `--bundles-root` to the SDK's
+        // shipped `assets/extensions/` directory via
+        // `resolveShippedBundlesRoot`. The vault doesn't carry any
+        // bundle copies; the runtime resolves them at the SDK source.
+        // This test runs without `--bundles-root` to exercise the
+        // production demo path.
+
+        // Step 2: initialize the adopted ref. Per detectDrift, an
+        //         uninitialized adopted ref surfaces as an empty-diff
+        //         drift (base === head === HEAD); the engine runs a
+        //         no-effect iteration and advances the ref so the next
+        //         sync can compute a real diff.
+        expect(
+          await runSync(parseArgs(["sync", "--vault", target])),
+        ).toBe(0);
+
+        // Step 3: user writes a markdown file with a broken wikilink.
+        await writeFile(join(target, "wiki", "foo.md"), "[[broken]]\n", "utf8");
+
+        // Step 4: user commits the new file.
+        await commit({
+          path: target,
+          message: "add wiki/foo.md\n",
+          files: ["wiki/foo.md"],
+        });
+
+        // Step 5: dome sync — this run sees base=initial-scaffold,
+        //         head=new-commit, emits `file.created` +
+        //         `document.changed` for wiki/foo.md, and
+        //         dome.markdown.validate-wikilinks fires.
+        expect(
+          await runSync(parseArgs(["sync", "--vault", target])),
+        ).toBe(0);
+
+        // Step 6: the broken-wikilink diagnostic lands in the projection.
+        const projectionPath = join(target, ".dome", "state", "projection.db");
+        expect(existsSync(projectionPath)).toBe(true);
+
+        const projectionResult = await openProjectionDb({
+          path: projectionPath,
+          extensionSet: [
+            { name: "dome.lint", version: "0.1.0" },
+            { name: "dome.markdown", version: "0.1.0" },
+          ],
+          processorVersions: [
+            { id: "dome.lint.markdown-format", version: "0.1.0" },
+            { id: "dome.markdown.validate-wikilinks", version: "0.1.0" },
+          ],
+        });
+        expect(projectionResult.ok).toBe(true);
+        if (!projectionResult.ok) return;
+
+        try {
+          const diagnostics = queryDiagnostics(projectionResult.value.db);
+          const broken = diagnostics.find(
+            (d) => d.code === "dome.markdown.broken-wikilink",
+          );
+          expect(broken).toBeDefined();
+          expect(broken?.message).toContain("[[broken]]");
+        } finally {
+          projectionResult.value.db.close();
+        }
+      } finally {
+        await rm(target, { recursive: true, force: true });
+      }
+    },
+    // The end-to-end test spins up two full adoption runs (the
+    // empty-diff init + the wiki/foo.md drift) and opens four sqlite
+    // handles across the engine + the test's direct projection read.
+    // 30s is comfortably above the observed runtime on CI.
+    30_000,
+  );
 });
 
 // ----- runDoctor ------------------------------------------------------------
@@ -203,8 +320,6 @@ describe("runDoctor", () => {
       "doctor",
       "--vault",
       f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
       "--show",
       "runs",
     ]);
@@ -221,8 +336,6 @@ describe("runDoctor", () => {
       "doctor",
       "--vault",
       f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
       "--show",
       "diagnostics",
     ]);
@@ -235,12 +348,12 @@ describe("runDoctor", () => {
 
     expect(
       await runDoctor(
-        parseArgs(["doctor", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot, "--show", "questions"]),
+        parseArgs(["doctor", "--vault", f.vaultPath, "--show", "questions"]),
       ),
     ).toBe(0);
     expect(
       await runDoctor(
-        parseArgs(["doctor", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot, "--show", "outbox"]),
+        parseArgs(["doctor", "--vault", f.vaultPath, "--show", "outbox"]),
       ),
     ).toBe(0);
   });
@@ -275,7 +388,7 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["status", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot]);
+    const args = parseArgs(["status", "--vault", f.vaultPath]);
     const code = await runStatus(args);
     expect(code).toBe(0);
 
@@ -288,7 +401,7 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["status", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot, "--json"]);
+    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
     expect(await runStatus(args)).toBe(0);
 
     const blob = captured.out.find((l) => l.includes("\"vault\""));

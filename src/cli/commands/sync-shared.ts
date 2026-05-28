@@ -29,6 +29,8 @@
 //   - The placeholder sinks live here so both commands share the same
 //     v1.0 behavior; if v1.1 wires real sinks it lands at this seam.
 
+import { fileURLToPath } from "node:url";
+
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
 import { adopt } from "../../engine/adopt";
@@ -38,6 +40,35 @@ import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { currentSha } from "../../git";
 
 import type { ApplyEffectSinks } from "../../engine/apply-effect";
+
+// ----- Shipped-bundles resolver --------------------------------------------
+
+/**
+ * Returns the absolute path to the SDK's shipped first-party bundles
+ * directory (`<SDK>/assets/extensions/`).
+ *
+ * Resolved relative to this module's location via `import.meta.url`, so
+ * the math works regardless of where the user installed the SDK (global
+ * `bun install -g`, local `node_modules`, `bun link` symlink, or a
+ * `bun build`-produced single-file). From
+ * `src/cli/commands/sync-shared.ts`, three directories up reaches the
+ * SDK package root; `assets/extensions/` is the canonical shipped-bundles
+ * dir holding `dome.lint/` and `dome.markdown/`.
+ *
+ * This is the default `bundlesRoot` for every CLI command (`serve`,
+ * `sync`, `doctor`, `status`). Users override via `--bundles-root <path>`
+ * to point at vault-local bundles or a third-party install.
+ *
+ * Per docs/v1.md §"Vault" + §10.1, the vault carries `.dome/config.yaml`
+ * (activations + grants); the bundle code lives in the SDK or in user-
+ * installed third-party packages. The vault directory does not need to
+ * contain `.dome/extensions/` for the shipped bundles to load.
+ */
+export function resolveShippedBundlesRoot(): string {
+  // `src/cli/commands/sync-shared.ts` → SDK root is three directories up.
+  const url = new URL("../../../assets/extensions", import.meta.url);
+  return fileURLToPath(url);
+}
 
 // ----- Public types ---------------------------------------------------------
 

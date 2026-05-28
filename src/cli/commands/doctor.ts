@@ -32,6 +32,8 @@ import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
 
+import { resolveShippedBundlesRoot } from "./sync-shared";
+
 import type { ParsedArgs } from "../args";
 import { formatJson, formatTable } from "../format";
 
@@ -78,15 +80,18 @@ export async function runDoctor(args: ParsedArgs): Promise<number> {
     return 64;
   }
 
+  // Default `bundlesRoot` is the SDK's shipped first-party bundles.
+  // Override via `--bundles-root <path>` for vault-local third-party
+  // bundles or testing.
   const bundlesRootFlag = args.flags["bundles-root"];
   const bundlesRoot =
     typeof bundlesRootFlag === "string"
       ? bundlesRootFlag
-      : `${vaultPath}/.dome/extensions`;
+      : resolveShippedBundlesRoot();
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(
-      `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Make sure ${vaultPath}/.dome/extensions/ exists (run \`dome init\` first).`,
+      `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
     );
     return 1;
   }

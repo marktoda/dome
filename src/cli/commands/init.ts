@@ -1,77 +1,171 @@
-// cli/commands/init: the `dome init [path]` command.
+// cli/commands/init: the `dome init [path]` command — Phase 11f hotfix.
 //
-// Phase 9 minimal surface per [[wiki/specs/cli]] §"dome init". The full
-// spec lists seven steps (git init, scaffold dirs, AGENTS.md/CLAUDE.md,
-// config.yaml, page-types.yaml, log.md/index.md seeds, initial sync);
-// Phase 9 ships the two load-bearing pieces:
+// Per docs/wiki/specs/cli.md §"dome init" + docs/v1.md §"Vault" + §10.1,
+// `dome init` initializes a vault with the minimum surface the engine
+// needs to operate. The vault carries:
 //
-//   1. Create `<path>/.dome/state/` so the projection / outbox / ledger
-//      DB opens have somewhere to land.
-//   2. Copy the shipped `assets/extensions/dome.lint/` bundle into
-//      `<path>/.dome/extensions/` so a Phase 9 `dome submit` against
-//      the fresh vault has a non-empty registry to compose against.
+//   - `.git/`              — git repository
+//   - `wiki/`              — markdown content
+//   - `.dome/state/`       — derived sqlite databases (gitignored)
+//   - `.dome/config.yaml`  — extension activation + grants
+//   - `.gitignore`         — engine-managed
+//   - `AGENTS.md`          — orientation surface
 //
-// Idempotent: re-running on an already-initialized vault is a no-op
-// (`mkdir -p` semantics; existing extension files are overwritten on
-// re-copy — re-copy lands the latest shipped bundle, which is the
-// expected upgrade semantic).
+// The vault does NOT carry the first-party extension bundles
+// (`dome.lint`, `dome.markdown`). They live with the SDK at
+// `<SDK>/assets/extensions/` and are resolved at runtime by the bundle
+// loader (`resolveShippedBundlesRoot` in `./sync-shared.ts`). This
+// matches the v1.md model: "Core features are just built-in extensions"
+// (§10.1) — built-in means shipped with the SDK, not copied into every
+// vault.
+//
+// The five steps:
+//
+//   1. Resolve target path (positional arg, else cwd).
+//   2. Run `git init` if `<target>/.git/` doesn't exist.
+//   3. Create dirs `<target>/wiki/` and `<target>/.dome/state/`.
+//   4. Write `<target>/.dome/config.yaml` from a shipped default (below).
+//   5. Write `<target>/.gitignore` (ignores `.dome/state/`).
+//   6. Write `<target>/AGENTS.md` from the shipped orientation template.
+//   7. If the repo has no commits yet, make an initial scaffold commit so
+//      the adopted ref substrate has somewhere to start.
+//
+// Users wanting vault-local bundles (to override a shipped bundle or
+// install a third-party one) create `<target>/.dome/extensions/<id>/`
+// themselves and pass `--bundles-root <path>` to the CLI commands.
+//
+// Idempotency contract (re-running on an already-initialized vault must be
+// a no-op):
+//   - `git init` is already idempotent.
+//   - Directory creation uses `mkdir({recursive: true})`.
+//   - `config.yaml`: skip if exists.
+//   - `.gitignore`: skip if exists.
+//   - `AGENTS.md`: skip if exists. (Per
+//     [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]], the file has a
+//     user-prose section that survives `dome doctor --repair`; first-write-
+//     only matches that contract — `dome doctor --repair` is the surface
+//     that regenerates templated sections on demand.)
+//   - Initial scaffold commit: skip if HEAD already resolves.
 //
 // Exit codes per spec:
-//   - 0 on success.
-//   - 1 on unexpected I/O failure (we surface the underlying error).
-//   - 64 (EX_USAGE) if the `path` arg is malformed.
-//
-// House-style notes:
-//   - No DB opens here. The runtime is opened on first command that
-//     needs it (submit, doctor, status). `init` is filesystem-only.
-//   - Resolve the bundles source path relative to `__dirname` so the
-//     command works whether the CLI is invoked from a global install,
-//     a local clone, or a bundled binary.
+//   - 0 on success (including idempotent no-op re-runs).
+//   - 1 on unexpected I/O failure.
+//   - 64 (EX_USAGE) if the `path` arg is malformed (unused in v1.0 — any
+//     non-empty string is accepted; tracked here for the future spec).
 
-import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 
 import type { ParsedArgs } from "../args";
 
-// ----- Paths ----------------------------------------------------------------
+// ----- Internal types -------------------------------------------------------
 
-const THIS_FILE = fileURLToPath(import.meta.url);
-// `src/cli/commands/init.ts` → repo root is three directories up.
-const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..", "..");
-const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+/**
+ * One-line audit trail of what `runInit` did (or skipped) for each step.
+ * Module-private; the CLI prints these as a small block via `printSummary`.
+ */
+type StepOutcome = "created" | "skipped (already present)";
+
+type InitSummary = {
+  readonly vaultPath: string;
+  readonly gitInit: StepOutcome;
+  readonly wikiDir: StepOutcome;
+  readonly stateDir: StepOutcome;
+  readonly configYaml: StepOutcome;
+  readonly gitignore: StepOutcome;
+  readonly agentsMd: StepOutcome;
+  readonly initialCommit: StepOutcome;
+};
 
 // ----- runInit --------------------------------------------------------------
 
 /**
- * Execute `dome init`. Returns the exit code; never throws on expected
- * I/O paths (a missing source bundle directory is a programmer error
- * worth raising, not a recoverable case).
+ * Execute `dome init`. Returns the exit code. On unexpected I/O failure,
+ * surfaces the underlying message on stderr and returns 1; happy paths
+ * (including idempotent re-runs) return 0.
  */
 export async function runInit(args: ParsedArgs): Promise<number> {
-  // Resolve the target vault path: `dome init` defaults to `.`; an
-  // optional positional overrides it.
+  // 1. Resolve the target vault path.
   const target = args.positionals[0] ?? ".";
   const vaultPath = resolve(target);
 
   try {
-    // 1. Create `<vault>/.dome/state/`.
-    const statePath = join(vaultPath, ".dome", "state");
-    await mkdir(statePath, { recursive: true });
+    // Ensure the target dir itself exists (a `dome init ~/vaults/new` on a
+    // non-existent path should create it, not error).
+    await mkdir(vaultPath, { recursive: true });
 
-    // 2. Copy the shipped `dome.lint/` bundle into
-    //    `<vault>/.dome/extensions/dome.lint/`. The destination root
-    //    `<vault>/.dome/extensions/` is created via `mkdir -p`.
-    const extensionsRoot = join(vaultPath, ".dome", "extensions");
-    await mkdir(extensionsRoot, { recursive: true });
-    await copyTree(
-      join(SHIPPED_BUNDLES_ROOT, "dome.lint"),
-      join(extensionsRoot, "dome.lint"),
-    );
+    // 2. git init (idempotent — initRepo is a no-op when `.git/` exists).
+    const gitAlreadyInit = await isGitRepo(vaultPath);
+    if (!gitAlreadyInit) {
+      await initRepo(vaultPath);
+    }
+    const gitInitOutcome: StepOutcome = gitAlreadyInit
+      ? "skipped (already present)"
+      : "created";
 
-    console.log(`dome init: initialized vault at ${vaultPath}`);
-    console.log(`  created: .dome/state/`);
-    console.log(`  copied:  .dome/extensions/dome.lint/`);
+    // 3. Scaffold dirs. No `.dome/extensions/` here — the shipped
+    //    first-party bundles live with the SDK and are resolved at
+    //    runtime via `resolveShippedBundlesRoot`. A user installing a
+    //    third-party bundle creates `<vault>/.dome/extensions/<id>/`
+    //    themselves and passes `--bundles-root <path>` to the CLI.
+    const wikiDir = join(vaultPath, "wiki");
+    const stateDir = join(vaultPath, ".dome", "state");
+
+    const wikiOutcome = await ensureDir(wikiDir);
+    const stateOutcome = await ensureDir(stateDir);
+
+    // 4. Write `.dome/config.yaml` (first-write-only).
+    const configPath = join(vaultPath, ".dome", "config.yaml");
+    const configOutcome = await writeIfMissing(configPath, DEFAULT_CONFIG_YAML);
+
+    // 5. Write `.gitignore` so `.dome/state/` (derived operational
+    //    state — sqlite databases, marker files) is never committed.
+    //    Per vault-layout.md §"Git repository structure", the SDK is
+    //    responsible for this file. First-write-only — if the user
+    //    authored their own .gitignore we leave it alone.
+    const gitignorePath = join(vaultPath, ".gitignore");
+    const gitignoreOutcome = await writeIfMissing(gitignorePath, DEFAULT_GITIGNORE);
+
+    // 6. Write `AGENTS.md` (first-write-only — preserves user-prose section
+    //    across re-runs per AGENTS_MD_IS_ORIENTATION_SURFACE).
+    const agentsPath = join(vaultPath, "AGENTS.md");
+    const agentsOutcome = await writeIfMissing(agentsPath, AGENTS_MD_TEMPLATE);
+
+    // 7. Initial scaffold commit, if the repo has no commits yet. The
+    //    adopted-ref substrate needs HEAD to resolve before `dome sync`
+    //    or `dome serve` can compute drift.
+    const headExists = (await currentSha(vaultPath)) !== null;
+    let initialCommitOutcome: StepOutcome;
+    if (headExists) {
+      initialCommitOutcome = "skipped (already present)";
+    } else {
+      // Stage `.gitignore`, `AGENTS.md`, and `.dome/config.yaml`. Empty
+      // dirs (`wiki/`, `.dome/state/`) aren't committable by git; they
+      // survive on disk for the user's first write.
+      await commit({
+        path: vaultPath,
+        message: INITIAL_COMMIT_MESSAGE,
+        author: { name: "dome init", email: "dome-init@local" },
+        files: [".gitignore", "AGENTS.md", ".dome/config.yaml"],
+      });
+      initialCommitOutcome = "created";
+    }
+
+    const summary: InitSummary = {
+      vaultPath,
+      gitInit: gitInitOutcome,
+      wikiDir: wikiOutcome,
+      stateDir: stateOutcome,
+      configYaml: configOutcome,
+      gitignore: gitignoreOutcome,
+      agentsMd: agentsOutcome,
+      initialCommit: initialCommitOutcome,
+    };
+
+    printSummary(summary);
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -83,33 +177,193 @@ export async function runInit(args: ParsedArgs): Promise<number> {
 // ----- internals ------------------------------------------------------------
 
 /**
- * Recursively copy `src` to `dst`, creating intermediate directories as
- * needed. Mirrors `cp -r src dst`. Files are overwritten on collision —
- * `dome init` is idempotent re-copy at the bundle level.
- *
- * No symlink handling: bundle source trees ship as regular files only.
- * A symlink in the source surface would surface as the underlying file
- * content (the default `copyFile` semantic).
+ * Create `dir` if absent, return whether the call did work. Errors
+ * (permission denied, ENOSPC, etc.) propagate — `runInit`'s try/catch
+ * surfaces them on stderr.
  */
-async function copyTree(src: string, dst: string): Promise<void> {
-  const srcStat = await stat(src);
-  if (!srcStat.isDirectory()) {
-    // Single file — ensure dest dir exists, then copy.
-    await mkdir(dirname(dst), { recursive: true });
-    await copyFile(src, dst);
-    return;
-  }
-
-  await mkdir(dst, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcChild = join(src, entry.name);
-    const dstChild = join(dst, entry.name);
-    if (entry.isDirectory()) {
-      await copyTree(srcChild, dstChild);
-    } else if (entry.isFile()) {
-      await copyFile(srcChild, dstChild);
-    }
-    // Sockets / fifos / symlinks are skipped — not part of any bundle.
-  }
+async function ensureDir(dir: string): Promise<StepOutcome> {
+  const existed = existsSync(dir);
+  await mkdir(dir, { recursive: true });
+  return existed ? "skipped (already present)" : "created";
 }
+
+/**
+ * Write `content` to `path` only if the file does not already exist.
+ * Returns whether the call did work. Idempotent on re-run; the existing
+ * file is left untouched.
+ */
+async function writeIfMissing(path: string, content: string): Promise<StepOutcome> {
+  if (existsSync(path)) return "skipped (already present)";
+  await writeFile(path, content, "utf8");
+  return "created";
+}
+
+/**
+ * Print a small block summarizing what `dome init` did. One line per
+ * step, "created" vs "skipped". The format is human-oriented; downstream
+ * tooling that wants a structured shape can shell out to `dome doctor`
+ * after init for the canonical state read.
+ */
+function printSummary(s: InitSummary): void {
+  console.log(`dome init: initialized vault at ${s.vaultPath}`);
+  console.log(`  git init:                ${s.gitInit}`);
+  console.log(`  wiki/:                   ${s.wikiDir}`);
+  console.log(`  .dome/state/:            ${s.stateDir}`);
+  console.log(`  .dome/config.yaml:       ${s.configYaml}`);
+  console.log(`  .gitignore:              ${s.gitignore}`);
+  console.log(`  AGENTS.md:               ${s.agentsMd}`);
+  console.log(`  initial commit:          ${s.initialCommit}`);
+}
+
+// ----- Templates ------------------------------------------------------------
+//
+// The default `.gitignore`, `.dome/config.yaml`, and `AGENTS.md` content
+// shipped into every new vault. Templates live in code (not under
+// assets/) so the binary is self-contained and a future
+// `bun build`-produced single-file CLI doesn't need to bundle a
+// templates directory.
+
+// The default `.gitignore` shipped into every new vault. Ignores
+// `.dome/state/` per [[wiki/specs/vault-layout]] §"Derived operational
+// state under .dome/state/" and a few common OS-metadata files.
+const DEFAULT_GITIGNORE = `# Dome — derived operational state. Rebuildable from markdown + git.
+.dome/state/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+`;
+
+const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
+#
+# This file controls which extensions are active and their capability
+# grants. The shipped first-party bundles (\`dome.lint\`, \`dome.markdown\`)
+# live with the SDK — the CLI's default \`--bundles-root\` resolves to the
+# SDK's \`assets/extensions/\` directory. To install a third-party bundle,
+# create \`.dome/extensions/<bundle-id>/\` here and pass
+# \`--bundles-root .dome/extensions\` on the command line.
+
+extensions:
+  dome.lint:
+    enabled: true
+    # No capability grants needed — view-phase processor; reads are
+    # implicitly allowed by the read.paths declaration in its manifest.
+
+  dome.markdown:
+    enabled: true
+    # validate-wikilinks is read-only across the vault. The bundle's
+    # manifest requests read on **/*.md; the grant below confirms it.
+    grant:
+      read:
+        - "**/*.md"
+
+engine:
+  # Maximum iterations of the fixed-point adoption loop per Proposal.
+  # Hitting this cap is a programmer error (processors not idempotent
+  # or in a patch-fight); surface diagnostic + block.
+  max_iterations: 100
+
+  # Auto-commit closure commits when adoption-phase processors emit
+  # patches that converge. When false, processors that emit PatchEffect
+  # are dropped (with a diagnostic). Default true for normal vaults.
+  auto_commit_workflows: true
+
+git:
+  # Mirror of engine.auto_commit_workflows so workflow-commit.ts can
+  # read it via EngineVault.config.git.auto_commit_workflows. Kept in
+  # sync by \`dome doctor --repair\` when both surfaces evolve.
+  auto_commit_workflows: true
+`;
+
+// The AGENTS.md template — orientation surface for agentic harnesses. The
+// delimiters `<!-- BEGIN user-prose -->` / `<!-- END user-prose -->` match
+// the canonical strings pinned by
+// [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] and the
+// [[wiki/gotchas/agents-md-delimiter-shape]] lockstep contract — DO NOT
+// edit them without updating the invariant doc + any future
+// `src/agents-md.ts` parser.
+
+const AGENTS_MD_TEMPLATE = `# This is a Dome vault.
+
+This directory is a Git-backed markdown vault managed by Dome v1.0 (\`@dome/sdk\`).
+
+## How writes work
+
+You write markdown files normally — use your harness's native write tools
+(\`Write\` / \`Edit\` in Claude Code, \`:w\` in vim, the OS file API in Obsidian).
+Commit your changes to \`main\`:
+
+\`\`\`bash
+git add . && git commit -m "your message"
+\`\`\`
+
+A daemon (\`dome serve\`) running in the background watches for new commits.
+On each commit, the engine runs adoption: lint markdown, validate wikilinks,
+update projections, advance \`refs/dome/adopted/main\`. You see nothing on
+the happy path. If a processor surfaces a warning, it lands in the
+diagnostic projection.
+
+If the daemon isn't running, run \`dome sync\` once after your commits to
+catch up.
+
+## What you can ask the system
+
+- \`dome status\` — what branch you're on, adopted ref, last sync time,
+  pending runs.
+- \`dome doctor --show diagnostics\` — broken wikilinks, lint warnings,
+  unresolved questions.
+- \`dome doctor --show runs\` — recent processor invocations + outcomes.
+- \`dome doctor --show outbox\` — pending external actions (none in v1.0).
+
+## Vault conventions
+
+- \`wiki/\` — your main markdown content. Pages link via \`[[wikilinks]]\`.
+  Use bare names (\`[[danny]]\`) for vault-wide search; use paths
+  (\`[[people/danny]]\`) for explicit references.
+- \`.dome/extensions/\` — optional directory for vault-local third-party
+  extension bundles. The shipped first-party bundles (\`dome.lint\`,
+  \`dome.markdown\`) live with the SDK and don't need to be copied here.
+  To install a third-party bundle, place its directory under
+  \`.dome/extensions/<bundle-id>/\` and pass
+  \`--bundles-root .dome/extensions\` to the CLI commands.
+- \`.dome/state/\` — SQLite databases for projections, outbox, and run
+  ledger. Don't edit by hand; rebuildable via \`dome rebuild\` (v1.1+).
+- \`.dome/config.yaml\` — extension activation and engine config.
+
+## Invariants you should know about
+
+- **Markdown is the source of truth.** Anything in \`.dome/state/\` is
+  derived and rebuildable from the git history + the projection-store
+  cache keys.
+- **The engine is the only thing that applies effects.** Processors
+  return Effects; the engine routes them. No processor mutates state
+  directly.
+- **Every processor run is ledgered.** Even failed runs leave a row in
+  \`.dome/state/runs.db\` for forensics.
+- **Engine commits carry four \`Dome-*\` trailers.** \`git log --grep="Dome-Run:"\`
+  yields the engine history; reverting an engine commit is safe.
+
+<!-- BEGIN user-prose -->
+
+## Your own notes about this vault
+
+(Anything you add between the BEGIN / END user-prose delimiters above
+and below survives \`dome doctor --repair\`. The templated sections
+above the delimiter are regenerated by Dome.)
+
+<!-- END user-prose -->
+`;
+
+const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold
+
+Includes:
+- AGENTS.md (orientation surface for Claude Code and other harnesses)
+- .gitignore (ignores .dome/state/)
+- .dome/config.yaml (extension activation + engine settings)
+
+The first-party extension bundles (dome.lint, dome.markdown) live with
+the SDK at <SDK>/assets/extensions/ and are resolved at runtime — the
+vault doesn't carry copies.
+
+Generated by \`dome init\` v1.0
+`;

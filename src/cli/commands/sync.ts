@@ -38,7 +38,11 @@ import { resolve } from "node:path";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
 
-import { detectDrift, runOneAdoption } from "./sync-shared";
+import {
+  detectDrift,
+  resolveShippedBundlesRoot,
+  runOneAdoption,
+} from "./sync-shared";
 import { formatJson } from "../format";
 
 import type { ParsedArgs } from "../args";
@@ -92,11 +96,13 @@ export async function runSync(args: ParsedArgs): Promise<number> {
     typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
   );
 
+  // Default to the SDK's shipped first-party bundles. See serve.ts /
+  // sync-shared.ts `resolveShippedBundlesRoot` for the rationale.
   const bundlesRootFlag = args.flags["bundles-root"];
   const bundlesRoot =
     typeof bundlesRootFlag === "string"
       ? bundlesRootFlag
-      : `${vaultPath}/.dome/extensions`;
+      : resolveShippedBundlesRoot();
 
   const jsonMode = args.flags["json"] === true;
 

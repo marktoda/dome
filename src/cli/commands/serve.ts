@@ -38,7 +38,12 @@ import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime"
 import type { AdoptionResult } from "../../core/proposal";
 import { getCurrentBranch } from "../../adopted-ref";
 
-import { detectDrift, runOneAdoption, type DriftInfo } from "./sync-shared";
+import {
+  detectDrift,
+  resolveShippedBundlesRoot,
+  runOneAdoption,
+  type DriftInfo,
+} from "./sync-shared";
 
 import type { ParsedArgs } from "../args";
 
@@ -96,11 +101,16 @@ export async function runServe(
     typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
   );
 
+  // Default to the SDK's shipped first-party bundles. The vault-local
+  // `.dome/extensions/` is no longer the default: per docs/v1.md §"Vault"
+  // + §10.1, shipped bundles live with the SDK, not in every user's
+  // vault. `--bundles-root <path>` overrides for vault-local third-party
+  // installs or testing.
   const bundlesRootFlag = args.flags["bundles-root"];
   const bundlesRoot =
     typeof bundlesRootFlag === "string"
       ? bundlesRootFlag
-      : `${vaultPath}/.dome/extensions`;
+      : resolveShippedBundlesRoot();
 
   const pollIntervalMs = parsePollInterval(args.flags["poll-interval-ms"]);
   if (pollIntervalMs === null) {

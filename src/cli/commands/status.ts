@@ -28,6 +28,8 @@ import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
 
+import { resolveShippedBundlesRoot } from "./sync-shared";
+
 import type { ParsedArgs } from "../args";
 import { formatJson } from "../format";
 
@@ -66,11 +68,15 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
   // Open the runtime to read the ledger. If the runtime can't open (no
   // .dome/extensions/, missing bundles), surface a useful error and exit
   // non-zero — the ledger is part of the snapshot.
+  //
+  // Default `bundlesRoot` is the SDK's shipped first-party bundles
+  // (`resolveShippedBundlesRoot`). The vault-local `.dome/extensions/`
+  // is no longer the default; `--bundles-root <path>` overrides.
   const bundlesRootFlag = args.flags["bundles-root"];
   const bundlesRoot =
     typeof bundlesRootFlag === "string"
       ? bundlesRootFlag
-      : `${vaultPath}/.dome/extensions`;
+      : resolveShippedBundlesRoot();
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(

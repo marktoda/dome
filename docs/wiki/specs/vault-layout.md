@@ -117,17 +117,11 @@ Rebuilt by `dome rebuild` or `dome doctor --rebuild-index` when stale.
 <vault>/.dome/
   config.yaml             # vault config — invariant enable/disable, bundle grants, engine knobs
   page-types.yaml         # default + extension page types declared for this vault
-  extensions/
-    dome.markdown/        # first-party bundle (copied from SDK by dome init)
-    dome.index/
-    dome.log/
-    dome.links/
-    dome.intake/
-    dome.daily/
-    dome.lint/
-    dome.search/
-    dome.migrate/
-    <user-installed>/     # user-installed bundles (third-party)
+  extensions/             # OPTIONAL — vault-local third-party bundles
+    <user-installed>/     # any user-installed bundle (directory copy)
+                          # The SDK-shipped first-party bundles (dome.lint,
+                          # dome.markdown, ...) live with the SDK and don't
+                          # need to be copied here. See `extensions/` below.
   state/                  # derived operational state (gitignored)
     projection.db         # Bun.sqlite — facts, fts5, diagnostics, questions, schedule_cursors
     runs.db               # Bun.sqlite — run ledger
@@ -191,7 +185,9 @@ extensions:
 
 ### `extensions/`
 
-Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs/sdk-surface]] §"Bundle directory shape". The SDK-shipped `dome.*` bundles land here via `dome init` and are refreshed by `dome doctor --repair`. Third-party bundles install by directory copy.
+Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs/sdk-surface]] §"Bundle directory shape". The SDK-shipped first-party `dome.*` bundles do **not** live here in v1.0 — they ship with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()` (the default `--bundles-root` for every CLI command). The vault carries activations + grants in `.dome/config.yaml`; the bundle code is the SDK's responsibility.
+
+`.dome/extensions/` is therefore **optional** and used only for vault-local overrides: a third-party bundle the user installs, or a customized version of a shipped first-party bundle. Install by creating the bundle directory under `.dome/extensions/<bundle-id>/` and passing `--bundles-root .dome/extensions` to the CLI commands. Multi-root resolution (merging the SDK's shipped bundles with a vault-local set in one runtime) is a v1.x polish; v1.0 picks exactly one root.
 
 ### Derived operational state under `.dome/state/`
 
