@@ -72,7 +72,7 @@ import type {
 } from "../core/proposal";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
-import { currentBranch, currentSha } from "../git";
+import { currentBranch, currentSha, writeRef } from "../git";
 // Note: `currentSha` was used Phase-2 to re-read HEAD after each iteration
 // to detect candidate progression by an out-of-band sink mutation. Phase
 // 12a removes that pattern — `applyPatch` returns the new candidate OID
@@ -511,6 +511,64 @@ export async function adopt(opts: {
   // the closure commit when one was made (the engine's accumulated patches
   // live there), or the proposal head's resolved candidate otherwise.
   const newAdopted: CommitOid = closureCommitOid ?? candidate;
+
+  // Phase 12c: when a closure commit landed (chain head differs from the
+  // proposal head), advance `refs/heads/<branch>` to the closure commit
+  // BEFORE advancing the adopted ref. Per docs/v1.md §4.1 (local-eventual
+  // mode), the closure commit lives on the source branch's history — the
+  // engine's commits are appended to `main` alongside the user's commits.
+  //
+  // Without this step, the closure commit would float as an unreachable
+  // object on `main` (only `refs/dome/adopted/main` referenced it), and
+  // subsequent adoption cycles would re-construct identical-content
+  // closure commits as siblings (not descendants) of the previous one.
+  // `setAdoptedRef`'s fast-forward check would then refuse the advance:
+  //
+  //   "adopted ref refs/dome/adopted/<branch> (<prev-closure>) is not
+  //    an ancestor of <new-closure>"
+  //
+  // forming a hard error loop on every poll. The fix is structural:
+  // advance the branch so the closure commit is on its history.
+  //
+  // Working-tree impact: `writeRef` updates only the ref, not the
+  // working tree. The user's `git status` may show "modified" files
+  // for any path the closure normalized (their working tree has the
+  // pre-closure content; `main` now points at the normalized content).
+  // This is expected v1.0 behavior in single-client mode; a future
+  // working-tree-overlay step is a v1.x improvement.
+  //
+  // Failure mode: if `writeRef` fails (disk full, permission denied),
+  // we surface as a blocking diagnostic and do not advance the adopted
+  // ref either. The next cycle will retry from a clean state since the
+  // closure commit is still a floating object the loop can reproduce.
+  if (closureCommitOid !== null && closureCommitOid !== proposal.head) {
+    try {
+      await writeRef({
+        path: vault.path,
+        ref: `refs/heads/${branch}`,
+        value: closureCommitOid,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      allDiagnostics.push(
+        diagnosticEffect({
+          severity: "block",
+          code: "adoption.branch-advance-failed",
+          message: `Failed to advance refs/heads/${branch} to closure commit ${closureCommitOid.slice(0, 7)}: ${msg}`,
+          sourceRefs: [],
+        }),
+      );
+      return frozenResult({
+        proposalId: proposal.id,
+        adopted: false,
+        adoptedRef: adopted,
+        diagnostics: allDiagnostics,
+        closureCommitOid,
+        iterations: iteration,
+      });
+    }
+  }
+
   const writeResult = await setAdoptedRef(
     vault.path,
     branch,
