@@ -152,13 +152,33 @@ export async function loadBundles(
     return err({ kind: "root-not-found", path: rootAbs });
   }
 
-  // 2. Enumerate immediate children. `withFileTypes: true` lets us filter
-  //    directories without a second stat per entry.
+  // 2. Enumerate immediate children. `Dirent.isDirectory()` from
+  //    `readdir({withFileTypes: true})` does NOT follow symlinks — a
+  //    symlink-to-directory reports as `isSymbolicLink: true,
+  //    isDirectory: false`. Real-world bundle installs may legitimately
+  //    use symlinks (shared bundles across vaults, dev-mode
+  //    symlinks into an SDK checkout), so we resolve each symlink via
+  //    `stat()` (which DOES follow) and accept anything whose target
+  //    is a directory.
   const entries = await readdir(rootAbs, { withFileTypes: true });
-  const bundleDirs = entries
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort();
+  const bundleDirs: string[] = [];
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      bundleDirs.push(e.name);
+      continue;
+    }
+    if (e.isSymbolicLink()) {
+      try {
+        const targetStat = await stat(join(rootAbs, e.name));
+        if (targetStat.isDirectory()) bundleDirs.push(e.name);
+      } catch {
+        // Broken symlink — skip silently. The loader is best-effort
+        // on enumeration; a real-bundle-load failure surfaces at
+        // manifest-read time with a structured error.
+      }
+    }
+  }
+  bundleDirs.sort();
 
   // 3. Load each bundle in turn. First failure aborts.
   const loaded: LoadedBundle[] = [];

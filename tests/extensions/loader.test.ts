@@ -213,4 +213,29 @@ describe("loadBundles — error variants", () => {
     expect(b.id).toBe("test.empty");
     expect(b.processors.length).toBe(0);
   });
+
+  // Regression: pre-fix, Dirent.isDirectory() reported false for
+  // symlink-to-directory entries, so symlinked bundles were silently
+  // skipped — the loader returned an empty result. Real-world use
+  // cases for symlinks: dev-mode (symlink into an SDK checkout),
+  // shared bundles across vaults, and the test harness's bundle
+  // install strategy. The fix stat()s each symlink to follow it.
+  test("symlinked bundle directory is loaded (follows symlinks)", async () => {
+    const root = makeTmpRoot("loader-symlink-");
+    const target = join(SHIPPED_BUNDLES_ROOT, "dome.markdown");
+    const symlinkPath = join(root, "dome.markdown");
+    const { symlink } = await import("node:fs/promises");
+    await symlink(target, symlinkPath, "dir");
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.length).toBe(1);
+    const b = result.value[0];
+    if (b === undefined) throw new Error("expected one bundle");
+    expect(b.id).toBe("dome.markdown");
+    const procIds = b.processors.map((p) => p.id).sort();
+    expect(procIds).toContain("dome.markdown.normalize-frontmatter");
+    expect(procIds).toContain("dome.markdown.validate-wikilinks");
+  });
 });
