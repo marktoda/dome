@@ -50,6 +50,12 @@ import { parse as parseYaml } from "yaml";
 import { err, ok, type Result } from "../types";
 import type { Processor } from "../core/processor";
 import {
+  mergePageTypeDeclarations,
+  parsePageTypesYaml,
+  type PageTypeDeclaration,
+  type PageTypeMergeError,
+} from "../page-types";
+import {
   parseManifest,
   type Manifest,
   type ManifestError,
@@ -67,6 +73,7 @@ export type LoadedBundle = {
   readonly id: string;
   readonly version: string;
   readonly processors: ReadonlyArray<Processor<unknown>>;
+  readonly pageTypes: ReadonlyArray<PageTypeDeclaration>;
   readonly bundlePath: string;
 };
 
@@ -109,6 +116,20 @@ export type LoadBundlesError =
       readonly kind: "processor-missing-default-export";
       readonly bundleId: string;
       readonly modulePath: string;
+    }
+  | {
+      readonly kind: "page-type-read-failed";
+      readonly bundleId: string;
+      readonly cause: string;
+    }
+  | {
+      readonly kind: "page-type-invalid";
+      readonly bundleId: string;
+      readonly cause: string;
+    }
+  | {
+      readonly kind: "page-type-collision";
+      readonly cause: PageTypeMergeError;
     };
 
 export type LoadBundlesOpts = {
@@ -189,6 +210,17 @@ export async function loadBundles(
     loaded.push(result.value);
   }
 
+  const pageTypeCollisionCheck = mergePageTypeDeclarations(
+    loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    { enforceKnownTypes: true },
+  );
+  if (!pageTypeCollisionCheck.ok) {
+    return err({
+      kind: "page-type-collision",
+      cause: pageTypeCollisionCheck.error,
+    });
+  }
+
   return ok(Object.freeze(loaded));
 }
 
@@ -251,6 +283,11 @@ async function loadOneBundle(
     });
   }
   const manifest: Manifest = parsed.value;
+  const pageTypesResult = await readBundlePageTypes(bundlePath, manifest.id);
+  if (!pageTypesResult.ok) {
+    return err(pageTypesResult.error);
+  }
+  const pageTypes = pageTypesResult.value;
 
   // 3. For each declared processor, dynamic-import its module and bind.
   const processors: Processor<unknown>[] = [];
@@ -265,6 +302,7 @@ async function loadOneBundle(
       id: manifest.id,
       version: manifest.version,
       processors: Object.freeze(processors),
+      pageTypes,
       bundlePath,
     }),
   );
@@ -310,6 +348,33 @@ async function readBundleManifest(
   return err(
     `neither manifest.yaml nor manifest.json found in ${bundlePath}`,
   );
+}
+
+async function readBundlePageTypes(
+  bundlePath: string,
+  bundleId: string,
+): Promise<Result<ReadonlyArray<PageTypeDeclaration>, LoadBundlesError>> {
+  const path = join(bundlePath, "page-types.yaml");
+  const text = await tryReadFile(path);
+  if (!text.ok) {
+    if (/ENOENT|no such file/i.test(text.error)) {
+      return ok(Object.freeze([]));
+    }
+    return err({
+      kind: "page-type-read-failed",
+      bundleId,
+      cause: text.error,
+    });
+  }
+  const parsed = parsePageTypesYaml(text.value, `bundle:${bundleId}`);
+  if (!parsed.ok) {
+    return err({
+      kind: "page-type-invalid",
+      bundleId,
+      cause: parsed.error.message,
+    });
+  }
+  return ok(parsed.value);
 }
 
 /** Best-effort file read. Returns the contents on success, or err with a cause. */

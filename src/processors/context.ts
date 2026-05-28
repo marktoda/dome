@@ -49,6 +49,7 @@ import type {
   ProjectionQueryView,
   Snapshot,
 } from "../core/processor";
+import type { PageTypeRegistry } from "../page-types";
 import type { SourceRef, TextRange } from "../core/source-ref";
 import { sourceRef } from "../core/source-ref";
 import type { Proposal } from "../core/proposal";
@@ -82,6 +83,7 @@ export type ProcessorContextInput<TInput> = {
   readonly input: TInput;
   readonly signal: AbortSignal;
   readonly modelInvoke?: ModelInvokeFn;
+  readonly pageTypes?: PageTypeRegistry;
   /**
    * Optional read-only projection query surface. View-phase invocations
    * pass a live `ProjectionQueryView` backed by the open projection
@@ -149,5 +151,6 @@ export function makeProcessorContext<TInput>(
   };
   if (opts.modelInvoke !== undefined) ctx.modelInvoke = opts.modelInvoke;
   if (opts.projection !== undefined) ctx.projection = opts.projection;
+  if (opts.pageTypes !== undefined) ctx.pageTypes = opts.pageTypes;
   return Object.freeze(ctx);
 }

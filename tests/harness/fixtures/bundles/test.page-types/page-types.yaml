@@ -1,0 +1,5 @@
+extensions:
+  - name: decision
+    frontmatter_extras:
+      owner: required
+      status: optional

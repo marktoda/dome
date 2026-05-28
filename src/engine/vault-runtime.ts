@@ -80,6 +80,12 @@ import {
   type LoadBundlesError,
   type LoadedBundle,
 } from "../extensions/loader";
+import {
+  DEFAULT_PAGE_TYPE_DECLARATIONS,
+  mergePageTypeDeclarations,
+  type PageTypeDeclaration,
+  type PageTypeRegistry,
+} from "../page-types";
 
 const EMPTY_EXTERNAL_HANDLERS: ExternalHandlerRegistry = Object.freeze({});
 
@@ -155,6 +161,7 @@ export type OpenVaultRuntimeWithRegistryOpts = {
    * extension names by longest prefix.
    */
   readonly processorExtensionIds?: ReadonlyMap<string, string>;
+  readonly pageTypes?: PageTypeRegistry;
   /**
    * Capability handlers used by the outbox dispatcher for
    * ExternalActionEffects. Omitted means no external side effects are
@@ -270,6 +277,7 @@ export async function openVaultRuntime(
     extensions,
     processorVersions,
     processorExtensionIds,
+    pageTypes,
   } = resolved.value;
 
   const policyResult = await loadCapabilityPolicy(opts.vaultPath);
@@ -356,6 +364,7 @@ export async function openVaultRuntime(
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
     projection: buildProjectionQueryView(projectionDb),
+    pageTypes,
     executionState,
     ...(modelProvider !== undefined ? { modelProvider } : {}),
   });
@@ -401,6 +410,7 @@ type ResolvedRegistry = {
     readonly version: string;
   }>;
   readonly processorExtensionIds: ReadonlyMap<string, string>;
+  readonly pageTypes: PageTypeRegistry;
 };
 
 /**
@@ -428,6 +438,7 @@ async function resolveRegistryFromOpts(
           opts.registry,
           opts.extensions.map((e) => e.name),
         ),
+      pageTypes: opts.pageTypes ?? buildPageTypeRegistryForBundles([]),
     });
   }
 
@@ -452,6 +463,7 @@ async function resolveRegistryFromOpts(
     extensions: deriveExtensionList(bundles),
     processorVersions: deriveProcessorVersionList(processors),
     processorExtensionIds: deriveProcessorExtensionIds(bundles),
+    pageTypes: buildPageTypeRegistryForBundles(bundles),
   });
 }
 
@@ -488,6 +500,27 @@ function deriveProcessorExtensionIds(
     }
   }
   return out;
+}
+
+function buildPageTypeRegistryForBundles(
+  bundles: ReadonlyArray<LoadedBundle>,
+): PageTypeRegistry {
+  const declarations: PageTypeDeclaration[] = [
+    ...DEFAULT_PAGE_TYPE_DECLARATIONS,
+  ];
+  for (const bundle of bundles) {
+    declarations.push(...bundle.pageTypes);
+  }
+  const result = mergePageTypeDeclarations(declarations, {
+    enforceKnownTypes: bundles.some((bundle) => bundle.pageTypes.length > 0),
+  });
+  if (!result.ok) {
+    throw new Error(
+      `page type collision for '${result.error.name}' between ` +
+        `${result.error.firstSource} and ${result.error.secondSource}`,
+    );
+  }
+  return result.value;
 }
 
 function inferProcessorExtensionIds(

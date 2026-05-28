@@ -34,6 +34,7 @@ interface ProcessorContext<TInput = unknown> {
   readonly capabilities: CapabilityToken; // opaque token; the broker resolves on effect emission
   readonly modelInvoke?: ModelInvokeFn;   // present iff non-adoption run has effective `model.invoke`; supports text + structured JSON
   readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it)
+  readonly pageTypes?: PageTypeRegistry; // default + bundle page-type declarations; vault-local schemas stay in ctx.snapshot
   readonly sourceRef(path: string, range?: TextRange): SourceRef;  // helper for SourceRef construction
 }
 

@@ -48,6 +48,13 @@ import {
   type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import {
+  DEFAULT_PAGE_TYPE_REGISTRY,
+  extendPageTypeRegistry,
+  parsePageTypesYaml,
+  type PageTypeRegistry,
+  type PageTypeSchema,
+} from "../../../../src/page-types";
 
 // ----- Diagnostic codes -----------------------------------------------------
 //
@@ -60,6 +67,11 @@ const CODE_MISSING_TYPE = "dome.markdown.missing-type";
 const CODE_INVALID_DATE = "dome.markdown.invalid-date";
 const CODE_TAGS_NOT_LIST = "dome.markdown.tags-not-list";
 const CODE_MALFORMED_YAML = "dome.markdown.malformed-yaml";
+const CODE_PAGE_TYPES_MALFORMED = "dome.markdown.page-types-malformed";
+const CODE_UNKNOWN_TYPE = "dome.markdown.type-unknown";
+const CODE_MISSING_REQUIRED_FIELD = "dome.markdown.missing-required-field";
+const CODE_UNKNOWN_FRONTMATTER_FIELD = "dome.markdown.unknown-frontmatter-field";
+const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 // ----- Processor ------------------------------------------------------------
 
@@ -71,9 +83,13 @@ const lintFrontmatter: Processor = defineProcessor({
     { kind: "signal", name: "document.changed" },
     { kind: "signal", name: "file.created" },
   ],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+  capabilities: [{ kind: "read", paths: ["**/*.md", PAGE_TYPES_PATH] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const diagnostics: DiagnosticEffect[] = [];
+    const pageTypes = await loadPageTypeRegistry(ctx);
+    if (pageTypes.finding !== null) {
+      diagnostics.push(diagnosticForFinding(ctx, PAGE_TYPES_PATH, pageTypes.finding));
+    }
 
     // `file.created` fires for every added path; the only file shape that
     // carries YAML frontmatter is markdown bodies.
@@ -85,18 +101,9 @@ const lintFrontmatter: Processor = defineProcessor({
       // to lint.
       if (content === null) continue;
 
-      const findings = lintContent(content);
+      const findings = lintContent(content, pageTypes.registry);
       for (const f of findings) {
-        diagnostics.push(
-          diagnosticEffect({
-            severity: "warning",
-            code: f.code,
-            message: f.message,
-            sourceRefs: [
-              ctx.sourceRef(path, { startLine: 1, endLine: 1 }),
-            ],
-          }),
-        );
+        diagnostics.push(diagnosticForFinding(ctx, path, f));
       }
     }
 
@@ -111,6 +118,7 @@ export default lintFrontmatter;
 type Finding = {
   readonly code: string;
   readonly message: string;
+  readonly line?: number;
 };
 
 /**
@@ -146,7 +154,10 @@ function hasFrontmatterDelimiter(content: string): boolean {
  * order. Multiple findings on the same file CAN coexist (e.g.,
  * `missing-type` + `invalid-date` + `tags-not-list`).
  */
-function lintContent(content: string): ReadonlyArray<Finding> {
+function lintContent(
+  content: string,
+  pageTypes: PageTypeRegistry,
+): ReadonlyArray<Finding> {
   if (!hasFrontmatterDelimiter(content)) {
     return [
       {
@@ -189,6 +200,7 @@ function lintContent(content: string): ReadonlyArray<Finding> {
 
   // `type:` check — required, must be a non-empty string.
   const typeValue = data["type"];
+  let normalizedType: string | null = null;
   if (
     typeValue === undefined ||
     typeValue === null ||
@@ -198,6 +210,13 @@ function lintContent(content: string): ReadonlyArray<Finding> {
       code: CODE_MISSING_TYPE,
       message: "Frontmatter is missing the required `type:` key.",
     });
+  } else if (typeof typeValue !== "string") {
+    findings.push({
+      code: CODE_MISSING_TYPE,
+      message: `Frontmatter \`type:\` must be a string (got: ${describeValue(typeValue)}).`,
+    });
+  } else {
+    normalizedType = typeValue.trim();
   }
 
   // `created:` / `updated:` checks — optional, but if present must be a
@@ -227,7 +246,121 @@ function lintContent(content: string): ReadonlyArray<Finding> {
     }
   }
 
+  if (normalizedType !== null) {
+    findings.push(...lintPageTypeFields(data, normalizedType, pageTypes));
+  }
+
   return findings;
+}
+
+function lintPageTypeFields(
+  data: Record<string, unknown>,
+  typeName: string,
+  registry: PageTypeRegistry,
+): ReadonlyArray<Finding> {
+  const schema = registry.types.get(typeName);
+  if (schema === undefined) {
+    if (!registry.enforceKnownTypes) return [];
+    return [
+      {
+        code: CODE_UNKNOWN_TYPE,
+        message: `Frontmatter \`type:\` references unknown page type "${typeName}".`,
+      },
+    ];
+  }
+
+  const findings: Finding[] = [];
+  for (const field of schema.required) {
+    if (!hasMeaningfulValue(data[field])) {
+      findings.push({
+        code: CODE_MISSING_REQUIRED_FIELD,
+        message:
+          `Page type "${typeName}" requires frontmatter field \`${field}:\`.`,
+      });
+    }
+  }
+
+  const known = knownFieldsFor(schema);
+  for (const field of Object.keys(data).sort()) {
+    if (known.has(field)) continue;
+    findings.push({
+      code: CODE_UNKNOWN_FRONTMATTER_FIELD,
+      message:
+        `Frontmatter field \`${field}:\` is not declared for page type "${typeName}".`,
+    });
+  }
+  return findings;
+}
+
+async function loadPageTypeRegistry(ctx: ProcessorContext): Promise<{
+  readonly registry: PageTypeRegistry;
+  readonly finding: Finding | null;
+}> {
+  const base = ctx.pageTypes ?? DEFAULT_PAGE_TYPE_REGISTRY;
+  const content = await ctx.snapshot.readFile(PAGE_TYPES_PATH);
+  if (content === null) {
+    return { registry: base, finding: null };
+  }
+
+  const parsed = parsePageTypesYaml(content, PAGE_TYPES_PATH);
+  if (!parsed.ok) {
+    return {
+      registry: base,
+      finding: {
+        code: CODE_PAGE_TYPES_MALFORMED,
+        message: `.dome/page-types.yaml does not match the page-types schema: ${parsed.error.message}`,
+      },
+    };
+  }
+
+  const merged = extendPageTypeRegistry(base, parsed.value, {
+    enforceKnownTypes: true,
+  });
+  if (!merged.ok) {
+    return {
+      registry: base,
+      finding: {
+        code: CODE_PAGE_TYPES_MALFORMED,
+        message:
+          `.dome/page-types.yaml redeclares page type "${merged.error.name}" ` +
+          `already declared by ${merged.error.firstSource}.`,
+      },
+    };
+  }
+
+  return { registry: merged.value, finding: null };
+}
+
+function knownFieldsFor(schema: PageTypeSchema): ReadonlySet<string> {
+  return new Set([
+    "type",
+    "created",
+    "updated",
+    "sources",
+    "tags",
+    ...schema.required,
+    ...schema.optional,
+  ]);
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function diagnosticForFinding(
+  ctx: ProcessorContext,
+  path: string,
+  finding: Finding,
+): DiagnosticEffect {
+  const line = finding.line ?? 1;
+  return diagnosticEffect({
+    severity: "warning",
+    code: finding.code,
+    message: finding.message,
+    sourceRefs: [ctx.sourceRef(path, { startLine: line, endLine: line })],
+  });
 }
 
 /**

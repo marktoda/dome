@@ -41,9 +41,9 @@ Substrate added: `ctx.projection` query view on `ProcessorContext`; `dome run <n
 | ✅ `dome.markdown.duplicate-detection` | Compares page titles + first paragraphs across the vault. Flags suspected duplicates with `QuestionEffect`. First Question-emitting processor. | Detects accidental fragmenting of an entity into two pages. |
 | ✅ `dome.markdown.broken-images` | Scans for `![](path)` references; emits diagnostic when the image isn't in the vault. | Sibling of the wikilink validator; same shape. |
 
-### Phase 13c (planned) — per-page-type schemas
+### Phase 13c (in progress) — per-page-type schemas
 
-Restores a v0.5-era concept retired in Phase 7b: `.dome/page-types.yaml` (or successor substrate) declaring per-type schemas, then `dome.markdown.lint-frontmatter` extends to validate against the declared schema for each page's declared `type:`. Requires page-types substrate to land first.
+Restores a v0.5-era concept retired in Phase 7b: `.dome/page-types.yaml` and bundle-root `page-types.yaml` declaring per-type schemas, then `dome.markdown.lint-frontmatter` extends to validate against the declared schema for each page's declared `type:`. The substrate is a small `PageTypeRegistry`, not a service: bundle schemas load at runtime open and vault-local schemas are read from the candidate snapshot.
 
 **Estimated effort:** each remaining processor is ~150-300 LOC + tests. ~1 day per processor.
 
@@ -107,9 +107,9 @@ Substrate added:
 
 Shipped `dome.graph.tag-index`, `dome.markdown.broken-images`, `dome.markdown.duplicate-detection`, and `dome.markdown.stale-dates`. Substrate added: `ctx.snapshot.getFileInfo(path)` exposes commit-bound path metadata through the same read-capability gate as snapshot content reads.
 
-### Phase 13c (planned) — per-page-type schemas *(~1 week)*
+### Phase 13c (in progress) — per-page-type schemas *(~1 week)*
 
-`.dome/page-types.yaml` substrate (or successor) + `dome.markdown.lint-frontmatter` extension to validate per-type fields. Requires the page-types substrate to land first.
+`.dome/page-types.yaml` + bundle-root `page-types.yaml` substrate and `dome.markdown.lint-frontmatter` extension to validate per-type fields.
 
 ### Phase 14 — Diagnostic auto-resolve + processor versioning + `dome rebuild` *(~1 week)*
 

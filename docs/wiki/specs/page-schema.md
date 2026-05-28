@@ -112,7 +112,7 @@ Syntheses are higher-order claims built from other pages — positioning documen
 
 ## Extension types (from bundles)
 
-Extension bundles contribute additional page types via their `page-types.yaml`. The first-party bundles contribute:
+Extension bundles contribute additional page types via a bundle-root `page-types.yaml`. The bundle loader parses these at runtime open, merges them with the SDK defaults, rejects cross-bundle collisions, and threads the frozen registry to processors as `ctx.pageTypes`. The first-party bundles contribute:
 
 | Type | Bundle | Directory |
 |---|---|---|
@@ -145,6 +145,8 @@ extensions:
 ```
 
 The corresponding `wiki/recipes/` directory is the page-type's home; pages there carry `type: recipe`.
+
+Vault-local page types are read through `ctx.snapshot.readFile(".dome/page-types.yaml")`, not from the live filesystem, so a Proposal that edits `.dome/page-types.yaml` and adds pages using the new type is validated against the candidate version of the schema. Field rules are intentionally small for v1: exact `required` means the field must be present and non-empty; `optional` and descriptive strings such as `draft | review | normative` declare the field as known but not required.
 
 ## Frontmatter parsing
 

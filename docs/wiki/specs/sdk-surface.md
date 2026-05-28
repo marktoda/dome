@@ -221,7 +221,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `processor-module-load-failed` | A `<bundle>/processors/<name>.ts` fails to import, has identity drift against the manifest, or default-exports an object without a `run` function. |
 | `processor-missing-default-export` | A processor module imports but does not default-export an object. |
 | `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids or empty triggers. |
-| `page-type-collision` | Two bundles declare the same page-type name; or a bundle's page-type collides with a vault-local declaration. |
+| `page-type-collision` | Two bundles declare the same page-type name; the loader fails before opening the runtime. Vault-local collisions with bundle/default page types are surfaced by `dome.markdown.lint-frontmatter` from the candidate snapshot. |
 | `capability-handler-collision` | Two bundles register handlers for the same external capability. |
 | `bundle-deps-unmet` | A `deps:` entry names a bundle not present in `.dome/extensions/`. |
 
@@ -230,7 +230,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 `openVault` loads bundles in this order: (1) the SDK-shipped first-party bundles from `assets/extensions/dome.*/` (resolved at runtime via `resolveShippedBundlesRoot()` per the Phase 11f hotfix — bundles are no longer copied into the vault); (2) vault-local third-party bundles from `<vault>/.dome/extensions/` when `--bundles-root` is set there. Within each tier, alphabetical by directory name. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
-2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are appended to the vault's `PageTypesConfig.extensions` list.
+2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`.
 3. **Preamble fragment** is captured for `AGENTS.md`'s `## Extension conventions` section (refreshed via the templated-section merge mechanism — today on `dome init` re-runs, v1.x via the reserved `dome doctor --repair` verb plus the planned `dome.health.agents-md-template-drift` garden-phase processor).
 4. **Processors register** into the engine's processor registry under id `<bundle>:<processor-id>`.
 5. **Capabilities register** with the broker.

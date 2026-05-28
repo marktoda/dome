@@ -269,6 +269,56 @@ describe("loadBundles — error variants", () => {
     expect(b.processors.length).toBe(0);
   });
 
+  test("empty bundle can contribute page types", async () => {
+    const root = makeTmpRoot("loader-page-types-");
+    const bundleDir = join(root, "page-types-bundle");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.page-types",
+        version: "0.1.0",
+        processors: [],
+      }),
+    );
+    await writeFile(
+      join(bundleDir, "page-types.yaml"),
+      "extensions:\n  - name: decision\n    frontmatter_extras:\n      owner: required\n",
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const b = result.value[0];
+    if (b === undefined) throw new Error("expected one bundle");
+    expect(b.pageTypes.map((pageType) => pageType.name)).toEqual(["decision"]);
+  });
+
+  test("duplicate bundle page types fail loudly", async () => {
+    const root = makeTmpRoot("loader-page-type-collision-");
+    for (const id of ["a", "b"]) {
+      const bundleDir = join(root, id);
+      await mkdir(bundleDir, { recursive: true });
+      await writeFile(
+        join(bundleDir, "manifest.json"),
+        JSON.stringify({
+          id: `test.${id}`,
+          version: "0.1.0",
+          processors: [],
+        }),
+      );
+      await writeFile(
+        join(bundleDir, "page-types.yaml"),
+        "extensions:\n  - name: decision\n",
+      );
+    }
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("page-type-collision");
+  });
+
   // Regression: pre-fix, Dirent.isDirectory() reported false for
   // symlink-to-directory entries, so symlinked bundles were silently
   // skipped — the loader returned an empty result. Real-world use

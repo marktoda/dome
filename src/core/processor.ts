@@ -40,6 +40,7 @@ import type {
   FactEffect,
   QuestionEffect,
 } from "./effect";
+import type { PageTypeRegistry } from "../page-types";
 import type { Proposal } from "./proposal";
 import type { CommitOid, SourceRef, TextRange } from "./source-ref";
 
@@ -354,6 +355,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly capabilities: CapabilityToken;
   readonly modelInvoke?: ModelInvokeFn;
   readonly projection?: ProjectionQueryView;
+  readonly pageTypes?: PageTypeRegistry;
   readonly sourceRef: (path: string, range?: TextRange) => SourceRef;
 };
 

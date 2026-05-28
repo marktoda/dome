@@ -39,7 +39,7 @@ processors:
         name: file.created
     capabilities:
       - kind: read
-        paths: ["**/*.md"]
+        paths: ["**/*.md", ".dome/page-types.yaml"]
     module: processors/lint-frontmatter.ts
 
   - id: dome.markdown.broken-images

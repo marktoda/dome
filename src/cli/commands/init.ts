@@ -273,6 +273,7 @@ extensions:
     grant:
       read:
         - "**/*.md"
+        - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
       patch.auto:
         - "**/*.md"

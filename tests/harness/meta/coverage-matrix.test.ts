@@ -53,6 +53,8 @@ import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test"
 import "../scenarios/effect-kinds/multiple-processors-same-commit.scenario.test";
 import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test";
 import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
+import "../scenarios/effect-kinds/page-type-schema-diagnostics.scenario.test";
+import "../scenarios/effect-kinds/bundle-page-type-schema.scenario.test";
 import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";

@@ -79,6 +79,7 @@ import type {
 } from "../core/processor";
 import type { Proposal } from "../core/proposal";
 import { commitOid, type CommitOid } from "../core/source-ref";
+import type { PageTypeRegistry } from "../page-types";
 import { fileInfoAtCommit, readBlob, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
@@ -264,6 +265,7 @@ export type BuildRuntimeOptions = {
    * `ProjectionDb`.
    */
   readonly projection?: ProjectionQueryView;
+  readonly pageTypes?: PageTypeRegistry;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
 };
@@ -295,6 +297,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     resolveTree,
     ledger,
     projection,
+    pageTypes,
     modelProvider,
   } = opts;
   const executionState =
@@ -333,6 +336,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
       results.push(result);
@@ -381,6 +385,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
       results.push(result);
@@ -459,6 +464,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       extensionIdFor,
       ledger,
       executionState,
+      ...(pageTypes !== undefined ? { pageTypes } : {}),
       ...(modelProvider !== undefined ? { modelProvider } : {}),
       // View-phase processors receive the projection query view so they
       // can read facts / diagnostics / questions out of the projection
@@ -546,6 +552,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly ledger: LedgerDb | undefined;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly pageTypes?: PageTypeRegistry;
   /**
    * The projection query view to thread onto `ctx.projection`. Only the
    * view-phase caller passes this; adoption + garden callers leave it
@@ -795,6 +802,7 @@ function buildExecutionContext<TEnvelope>(
         ...(frame.phase === "view" && opts.projection !== undefined
           ? { projection: opts.projection }
           : {}),
+        ...(opts.pageTypes !== undefined ? { pageTypes: opts.pageTypes } : {}),
         ...(modelInvoke !== undefined ? { modelInvoke } : {}),
       };
 
