@@ -19,6 +19,7 @@
 // load-bearing surface).
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -367,6 +368,44 @@ describe("runInspect", () => {
         parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
       ),
     ).toBe(0);
+  });
+
+  test("corrupt operational JSON returns a clear state-read failure", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect(
+        parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
+      ),
+    ).toBe(0);
+    const db = new Database(join(f.vaultPath, ".dome", "state", "outbox.db"));
+    try {
+      db.query(
+        "INSERT INTO outbox (capability, idempotency_key, payload_json, source_refs, status, attempts, max_attempts, enqueued_at, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(
+        "calendar.write",
+        "bad-json",
+        "{not-json",
+        "[]",
+        "pending",
+        0,
+        3,
+        new Date().toISOString(),
+        "run_bad_json",
+      );
+    } finally {
+      db.close();
+    }
+
+    const code = await runInspect(
+      parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
+    );
+    expect(code).toBe(1);
+    expect(captured.err.join("\n")).toContain("state read failed");
+    expect(captured.err.join("\n")).toContain(
+      "operational database may be corrupt",
+    );
   });
 
   test("missing positional subject returns 64 (EX_USAGE)", async () => {

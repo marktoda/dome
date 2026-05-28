@@ -10,10 +10,7 @@
 //   - The four-concept core types (Vault / Proposal / Processor / Effect).
 //   - Effect constructors (for processor authors).
 //   - Processor authoring helpers (`defineProcessor`).
-//   - The three DB-open functions (for harnesses that want to query the
-//     projection / outbox / ledger directly).
 //   - The adopted-ref read accessors.
-//   - The commit-trailer chokepoint (for advanced commit construction).
 //   - The bundle loader (for the daemon and for tests).
 //
 // What this surface does NOT expose:
@@ -21,6 +18,7 @@
 //   - The Proposal constructors — internal; the daemon synthesizes from
 //     working-tree drift.
 //   - openVaultRuntime — internal to the daemon.
+//   - commitWorkflow / raw DB openers — internal write-capable handles.
 //
 // Per [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this
 // entrypoint depends on no LLM SDK, MCP transport, or HTTP framework.
@@ -66,6 +64,9 @@ export type {
   ProcessorPhase,
   Trigger,
   TreeOid,
+  ModelInvokeFn,
+  ModelInvokeTextInput,
+  ModelInvokeStructuredInput,
 } from "./core/processor";
 export { defineProcessor, treeOid } from "./core/processor";
 
@@ -101,18 +102,13 @@ export {
   type TriggerKind,
 } from "./extensions/manifest-schema";
 
-// ----- Engine commit-trailer chokepoint -------------------------------------
+// ----- Engine commit-trailer helpers ----------------------------------------
 //
-// `commitWorkflow` + `composeCommitMessage` are the structural fence behind
-// [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. `makeRunContext`
-// + the four Dome-* constants belong here so callers constructing a
-// RunContext don't have to import a separate package.
+// `composeCommitMessage` is pure and exposed for tests/tools that need to
+// render the Dome trailer shape. `commitWorkflow` is intentionally internal:
+// it performs a real git commit and is part of the engine write boundary.
 
-export {
-  commitWorkflow,
-  composeCommitMessage,
-  type WorkflowCommitInput,
-} from "./workflow-commit";
+export { composeCommitMessage, type WorkflowCommitInput } from "./workflow-commit";
 export {
   makeRunContext,
   ENGINE_EXTENSION_ID,
@@ -129,19 +125,3 @@ export {
 // advance it only as a side effect of the daemon's adoption runs.
 
 export { getAdoptedRef, getCurrentBranch, adoptedRefName } from "./adopted-ref";
-
-// ----- Projection / outbox / ledger query surface ---------------------------
-//
-// The three DBs are the v1 read surface for diagnostics, facts, questions,
-// jobs, capability-use audit history, and the unprocessed-event outbox.
-// The daemon (Phase 11b) is the open-side; these query functions accept the
-// opened handles directly.
-
-export type { ProjectionDb } from "./projections/db";
-export { openProjectionDb } from "./projections/db";
-
-export type { OutboxDb } from "./outbox/db";
-export { openOutboxDb } from "./outbox/db";
-
-export type { LedgerDb } from "./ledger/db";
-export { openLedgerDb } from "./ledger/db";

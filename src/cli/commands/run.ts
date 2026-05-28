@@ -171,6 +171,7 @@ export async function runRun(args: ParsedArgs): Promise<number> {
       adoptedCommit: adopted,
       captureView,
       applyPatch,
+      externalHandlers: runtime.externalHandlers,
     });
 
     // ----- 6. Dispatch via runViewCommand ---------------------------------

@@ -375,14 +375,9 @@ isomorphic-git (the git boundary)
 gray-matter (frontmatter parsing)
 yaml (config + manifest loading)
 zod (schema validation)
-p-queue (processor runtime queue)
-picocolors (CLI output coloring)
-commander (CLI argument parsing)
-zod-to-json-schema (MCP tool schema generation; in @dome/sdk/mcp only)
-chokidar (working-tree watcher)
 ```
 
-`@dome/sdk/workflows` adds:
+Planned `@dome/sdk/workflows` provider adapters add:
 ```
 ai (Vercel AI SDK; for model.invoke in garden-LLM processors)
 @ai-sdk/anthropic

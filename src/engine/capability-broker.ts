@@ -18,13 +18,13 @@
 //   - docs/wiki/specs/effects.md §"The Effect union"
 //
 // v1 Phase 2 limitations (documented for downstream phases):
-//   - PatchEffect path extraction reads `effect.changes[0].path` — the first
-//     change's path as a single representative path for the verdict. The
-//     v1 broker emits one verdict per effect, not per change; per-change
-//     enforcement is a future Phase 2.x refinement. A PatchEffect with an
-//     empty `changes` list is structurally impossible (`PatchEffectSchema`
-//     enforces `.min(1)`); the broker defensively denies if it ever sees
-//     one.
+//   - PatchEffect enforcement emits one verdict per effect, not per change.
+//     The verdict is computed against every changed path: an auto patch is
+//     auto-applied only when every path has effective `patch.auto`, and it is
+//     downgraded only when every path has effective `patch.propose`.
+//     A PatchEffect with an empty `changes` list is structurally impossible
+//     (`PatchEffectSchema` enforces `.min(1)`); the broker defensively denies
+//     if it ever sees one.
 //   - `owns.region` detection is deferred to Phase 6 (the `dome.markdown`
 //     region parser produces region ids from marker pairs in the candidate
 //     tree). For now the broker falls through to the regular
@@ -53,6 +53,7 @@ import type {
   Effect,
   ExternalActionEffect,
   FactEffect,
+  JobEffect,
   PatchEffect,
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
@@ -108,8 +109,8 @@ const downgrade = (
  *   - patch      → `patch.auto` (with auto→propose downgrade) / `patch.propose`
  *   - diagnostic → always allow
  *   - fact       → `graph.write` matching the predicate's namespace
- *   - question   → any `graph.write` (implicit)
- *   - job        → implicit grant in v1 (cross-bundle scoping deferred)
+ *   - question   → `question.ask`
+ *   - job        → `job.enqueue` matching the target processor id
  *   - external   → `external:<capability>` matching effect's `capability`
  *   - view       → always allow at this layer (phase check lives elsewhere)
  */
@@ -128,9 +129,7 @@ export function enforceCapability(
     case "question":
       return enforceQuestion(declared, granted);
     case "job":
-      // v1 lenient: cross-bundle JobEffect routing is permissive; future
-      // `job.enqueue` grant scoping lives at the routing layer, not here.
-      return allow();
+      return enforceJob(effect, declared, granted);
     case "external":
       return enforceExternal(effect, declared, granted);
     case "view":
@@ -148,17 +147,15 @@ export function enforceCapability(
 /**
  * PatchEffect enforcement. Steps (per the matrix):
  *
- *   1. Extract the representative touched path from `effect.changes[0]`
- *      (v1 limitation: one verdict per effect, against the first change's
- *      path).
- *   2. If a third party owns the path (any `owns.path` grant whose pattern
+ *   1. Extract the unique touched paths from `effect.changes`.
+ *   2. If a third party owns any path (any `owns.path` grant whose pattern
  *      matches, but not declared by this processor), deny.
  *   3. For `mode: "auto"`:
- *      - If `patch.auto` is effective for the path → allow.
- *      - Else if `patch.propose` is effective for the path → downgrade.
+ *      - If `patch.auto` is effective for every path → allow.
+ *      - Else if `patch.propose` is effective for every path → downgrade.
  *      - Else → deny.
  *   4. For `mode: "propose"`:
- *      - If `patch.propose` is effective for the path → allow.
+ *      - If `patch.propose` is effective for every path → allow.
  *      - Else → deny.
  *
  * `owns.region` enforcement is deferred (Phase 6 region parser); the
@@ -169,14 +166,14 @@ function enforcePatch(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const path = effect.changes[0]?.path ?? null;
-  if (path === null) {
+  const paths = uniqueChangedPaths(effect);
+  if (paths.length === 0) {
     return deny(
       diagnosticEffect({
         severity: "error",
         code: "capability-deny-patch",
         message:
-          "PatchEffect denied: `changes` is empty; the v1 broker cannot determine the touched path. A PatchEffect must carry at least one FileChange (this is also enforced by PatchEffectSchema).",
+          "PatchEffect denied: `changes` is empty; the broker cannot determine the touched paths. A PatchEffect must carry at least one FileChange (this is also enforced by PatchEffectSchema).",
         sourceRefs: [],
       }),
     );
@@ -191,25 +188,30 @@ function enforcePatch(
   // per-call. Downstream Phase 6 will plumb a region-parser callback
   // through this function.
 
-  // owns.path: if a granted owns.path covers the touched path and the
+  // owns.path: if a granted owns.path covers any touched path and the
   // emitting processor does NOT declare the same owns.path coverage, the
   // patch is reaching into another processor's territory. Deny.
-  if (pathIsOwnedByThirdParty(path, declared, granted)) {
-    return deny(
-      diagnosticEffect({
-        severity: "error",
-        code: "capability-deny-patch",
-        message: `PatchEffect denied: path '${path}' is owned by another processor via 'owns.path'. Only the owning processor may emit patches against an owned path; declare 'owns.path' in the manifest and grant it in config.yaml if this processor should own the file.`,
-        sourceRefs: [],
-      }),
-    );
+  for (const path of paths) {
+    if (pathIsOwnedByThirdParty(path, declared, granted)) {
+      return deny(
+        diagnosticEffect({
+          severity: "error",
+          code: "capability-deny-patch",
+          message: `PatchEffect denied: path '${path}' is owned by another processor via 'owns.path'. Only the owning processor may emit patches against an owned path; declare 'owns.path' in the manifest and grant it in config.yaml if this processor should own the file.`,
+          sourceRefs: [],
+        }),
+      );
+    }
   }
 
   if (effect.mode === "auto") {
-    if (pathEffectiveFor("patch.auto", path, declared, granted)) {
+    if (paths.every((path) => pathEffectiveFor("patch.auto", path, declared, granted))) {
       return allow();
     }
-    if (pathEffectiveFor("patch.propose", path, declared, granted)) {
+    const missingAutoPath = paths.find(
+      (path) => !pathEffectiveFor("patch.auto", path, declared, granted),
+    );
+    if (paths.every((path) => pathEffectiveFor("patch.propose", path, declared, granted))) {
       const rewritten: PatchEffect = patchEffect({
         mode: "propose",
         changes: effect.changes,
@@ -221,33 +223,49 @@ function enforcePatch(
         diagnosticEffect({
           severity: "warning",
           code: "capability-downgrade-surprise",
-          message: `PatchEffect downgraded from 'auto' to 'propose' for path '${path}': no effective 'patch.auto' grant matches this path. Declare 'patch.auto' for this path in the manifest and grant it in config.yaml to keep auto-apply.`,
+          message: `PatchEffect downgraded from 'auto' to 'propose': path '${missingAutoPath ?? paths[0]}' has no effective 'patch.auto' grant. Every changed path must have effective 'patch.auto' to keep auto-apply.`,
           sourceRefs: [],
         }),
       );
     }
+    const missingPatchPath = paths.find(
+      (path) =>
+        !pathEffectiveFor("patch.auto", path, declared, granted) &&
+        !pathEffectiveFor("patch.propose", path, declared, granted),
+    );
     return deny(
       diagnosticEffect({
         severity: "error",
         code: "capability-deny-patch",
-        message: `PatchEffect denied: path '${path}' has no effective 'patch.auto' or 'patch.propose' grant. Declare 'patch.propose' in the manifest and grant it in config.yaml to emit propose-mode patches against this path.`,
+        message: `PatchEffect denied: path '${missingPatchPath ?? paths[0]}' has no effective 'patch.auto' or 'patch.propose' grant. Every changed path must have an effective patch grant before one PatchEffect can proceed.`,
         sourceRefs: [],
       }),
     );
   }
 
   // mode === "propose"
-  if (pathEffectiveFor("patch.propose", path, declared, granted)) {
+  if (paths.every((path) => pathEffectiveFor("patch.propose", path, declared, granted))) {
     return allow();
   }
+  const missingProposePath = paths.find(
+    (path) => !pathEffectiveFor("patch.propose", path, declared, granted),
+  );
   return deny(
     diagnosticEffect({
       severity: "error",
       code: "capability-deny-patch",
-      message: `PatchEffect denied: path '${path}' has no effective 'patch.propose' grant. Declare 'patch.propose' in the manifest and grant it in config.yaml.`,
+      message: `PatchEffect denied: path '${missingProposePath ?? paths[0]}' has no effective 'patch.propose' grant. Every changed path must have an effective 'patch.propose' grant.`,
       sourceRefs: [],
     }),
   );
+}
+
+function uniqueChangedPaths(effect: PatchEffect): ReadonlyArray<string> {
+  const paths = new Set<string>();
+  for (const change of effect.changes) {
+    paths.add(change.path);
+  }
+  return Object.freeze([...paths]);
 }
 
 // ----- FactEffect enforcement ----------------------------------------------
@@ -288,22 +306,48 @@ function enforceFact(
 // ----- QuestionEffect enforcement ------------------------------------------
 
 /**
- * QuestionEffect requires *any* `graph.write` grant (implicit per the
- * matrix: a processor that writes to the graph at all may ask questions).
+ * QuestionEffect requires an explicit `question.ask` grant. The current
+ * QuestionEffect shape has no namespace/channel field, so namespace-scoped
+ * `question.ask` capabilities are accepted as effective grants but cannot
+ * further narrow the effect until the effect carries that namespace.
  */
 function enforceQuestion(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const hasDeclared = declared.some((c) => c.kind === "graph.write");
-  const hasGranted = granted.some((c) => c.kind === "graph.write");
+  const hasDeclared = declared.some((c) => c.kind === "question.ask");
+  const hasGranted = granted.some((c) => c.kind === "question.ask");
   if (hasDeclared && hasGranted) return allow();
   return deny(
     diagnosticEffect({
       severity: "error",
-      code: "capability-deny-graph-write",
+      code: "capability-deny-question-ask",
       message:
-        "QuestionEffect denied: no effective 'graph.write' grant of any namespace. Declare 'graph.write' in the manifest and grant it in config.yaml.",
+        "QuestionEffect denied: no effective 'question.ask' grant. Declare 'question.ask' in the manifest and grant it in config.yaml.",
+      sourceRefs: [],
+    }),
+  );
+}
+
+// ----- JobEffect enforcement ------------------------------------------------
+
+/**
+ * JobEffect requires a `job.enqueue` grant whose processor patterns cover
+ * the target processor id.
+ */
+function enforceJob(
+  effect: JobEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  if (processorEffectiveFor(effect.processorId, declared, granted)) {
+    return allow();
+  }
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: "capability-deny-job-enqueue",
+      message: `JobEffect denied: target processor '${effect.processorId}' has no effective 'job.enqueue' grant. Declare 'job.enqueue' with a matching processor id or glob and grant it in config.yaml.`,
       sourceRefs: [],
     }),
   );
@@ -411,6 +455,32 @@ function pathIsOwnedByThirdParty(
 // is bounded by the loaded bundle set (~tens to low hundreds of patterns
 // in practice).
 
+// ----- Processor-id / glob helpers -----------------------------------------
+
+function processorEffectiveFor(
+  processorId: string,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  return (
+    anyProcessorCapabilityMatches(processorId, declared) &&
+    anyProcessorCapabilityMatches(processorId, granted)
+  );
+}
+
+function anyProcessorCapabilityMatches(
+  processorId: string,
+  caps: ReadonlyArray<Capability>,
+): boolean {
+  for (const cap of caps) {
+    if (cap.kind !== "job.enqueue") continue;
+    for (const pattern of cap.processors) {
+      if (globMatch(pattern, processorId)) return true;
+    }
+  }
+  return false;
+}
+
 // ----- Namespace helpers ----------------------------------------------------
 
 /**
@@ -471,4 +541,3 @@ function namespaceCovers(declaredNs: string, predicateNs: string): boolean {
   if (stripped === predicateNs) return true;
   return predicateNs.startsWith(`${stripped}.`);
 }
-

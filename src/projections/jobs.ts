@@ -18,8 +18,8 @@
 //     caller (engine runner) needs the `id`, `attempts`, `status`, etc.
 //     fields that aren't part of the JobEffect shape.
 //   - Status transitions are explicit one-liners (`markJobRunning` /
-//     `markJobSucceeded` / `markJobFailed`) rather than a generic
-//     `setStatus` — keeps the call sites in the engine runner self-
+//     `markJobPending` / `markJobSucceeded` / `markJobFailed`) rather than
+//     a generic `setStatus` — keeps the call sites in the engine runner self-
 //     describing and bounds the legal transitions per the spec.
 
 import type { JobEffect } from "../core/effect";
@@ -33,7 +33,11 @@ export type JobInsertOpts = {
    * (the spec's "runs as soon as the queue permits" semantic).
    */
   readonly effect: JobEffect;
-  /** The processor that *emitted* the job — not the target processor. */
+  /**
+   * The processor that emitted the job. The current table stores only the
+   * target processor (`effect.processorId`); this value is kept at the sink
+   * boundary for future audit expansion.
+   */
   readonly processorId: string;
 };
 
@@ -74,6 +78,12 @@ const MARK_RUNNING_SQL = `
 UPDATE scheduled_jobs
 SET status = 'running', attempts = attempts + 1
 WHERE id = ? AND status = 'pending'
+`.trim();
+
+const MARK_PENDING_SQL = `
+UPDATE scheduled_jobs
+SET status = 'pending', run_after = ?, completed_at = NULL
+WHERE id = ? AND status = 'running'
 `.trim();
 
 const MARK_SUCCEEDED_SQL = `
@@ -125,12 +135,12 @@ const DEFAULT_MAX_ATTEMPTS = 3;
  * Throws on SQLite-level failure (disk full).
  */
 export function enqueueJob(db: ProjectionDb, opts: JobInsertOpts): void {
-  const { effect, processorId } = opts;
+  const { effect } = opts;
   const now = new Date().toISOString();
   const runAfter = effect.runAfter ?? now;
   const maxAttempts = effect.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   db.raw.query(ENQUEUE_JOB_SQL).run(
-    processorId,
+    effect.processorId,
     JSON.stringify(effect.input ?? null),
     runAfter,
     effect.idempotencyKey,
@@ -165,6 +175,19 @@ export function nextEligibleJob(
  */
 export function markJobRunning(db: ProjectionDb, id: number): void {
   db.raw.query(MARK_RUNNING_SQL).run(id);
+}
+
+/**
+ * Transition a `running` row back to `pending` for a later retry. Attempts
+ * are not changed here — `markJobRunning` already bumped the counter for
+ * the attempt that just failed.
+ */
+export function markJobPending(
+  db: ProjectionDb,
+  id: number,
+  runAfter: Date,
+): void {
+  db.raw.query(MARK_PENDING_SQL).run(runAfter.toISOString(), id);
 }
 
 /**

@@ -39,8 +39,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "ManifestSchema",
   "ProcessorDeclarationSchema",
 
-  // Engine commit-trailer chokepoint.
-  "commitWorkflow",
+  // Engine commit-trailer helpers.
   "composeCommitMessage",
   "makeRunContext",
   "ENGINE_EXTENSION_ID",
@@ -51,7 +50,10 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "getCurrentBranch",
   "adoptedRefName",
 
-  // DB open functions.
+]);
+
+const FORBIDDEN_RUNTIME_EXPORTS = new Set<string>([
+  "commitWorkflow",
   "openProjectionDb",
   "openOutboxDb",
   "openLedgerDb",
@@ -86,6 +88,19 @@ describe("public-surface-shape", () => {
       missing,
       `Missing expected public export(s): ${missing.join(", ")}. ` +
         `Either restore the export or remove the name from EXPECTED_RUNTIME_EXPORTS.`,
+    ).toEqual([]);
+  });
+
+  test("write-capable internals are not exported from the package root", () => {
+    const actualExports = new Set(Object.keys(PublicApi));
+    const leaked = [...FORBIDDEN_RUNTIME_EXPORTS].filter((name) =>
+      actualExports.has(name),
+    );
+
+    expect(
+      leaked,
+      `Forbidden public export(s): ${leaked.join(", ")}. ` +
+        `Keep write-capable internals behind implementation paths.`,
     ).toEqual([]);
   });
 });

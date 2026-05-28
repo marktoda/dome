@@ -80,7 +80,9 @@ describe("makeProcessorContext — optional modelInvoke", () => {
   });
 
   test("when modelInvoke is supplied, ctx.modelInvoke is the same function", () => {
-    const fn: ModelInvokeFn = async () => "ok";
+    const fn = Object.assign(async () => "ok", {
+      structured: async <T,>() => null as T,
+    }) as ModelInvokeFn;
     const ctx = makeProcessorContext(baseInput({ input: null, modelInvoke: fn }));
     expect(ctx.modelInvoke).toBe(fn);
   });

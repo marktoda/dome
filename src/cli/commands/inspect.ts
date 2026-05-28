@@ -105,7 +105,16 @@ export async function runInspect(args: ParsedArgs): Promise<number> {
   const runtime = runtimeResult.value;
 
   try {
-    const rows = collectRows(subject, runtime, limit);
+    let rows: ReadonlyArray<Row>;
+    try {
+      rows = collectRows(subject, runtime, limit);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(
+        `dome inspect ${subject}: state read failed. The operational database may be corrupt: ${msg}`,
+      );
+      return 1;
+    }
     if (args.flags["json"] === true) {
       console.log(formatJson(rows));
     } else {

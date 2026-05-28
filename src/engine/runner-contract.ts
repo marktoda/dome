@@ -54,7 +54,12 @@ export type ProcessorExecutionErrorCode =
   | "processor.threw"
   | "processor.invalid-output"
   | "processor.timeout"
-  | "processor.cancelled";
+  | "processor.cancelled"
+  | "model.invoke.denied"
+  | "model.invoke.provider-failed"
+  | "model.invoke.timeout"
+  | "model.output.invalid-json"
+  | "model.output.schema-mismatch";
 
 export type ProcessorExecutionError = {
   readonly code: ProcessorExecutionErrorCode;
@@ -68,15 +73,36 @@ export type ProcessorExecutionErrorForCode<
   C extends ProcessorExecutionErrorCode,
 > = Omit<ProcessorExecutionError, "code"> & { readonly code: C };
 
-export type ProcessorFailedExecutionError = ProcessorExecutionErrorForCode<
-  "processor.threw" | "processor.invalid-output"
->;
+export type ProcessorFailedExecutionError =
+  ProcessorExecutionErrorForCode<
+    Exclude<
+      ProcessorExecutionErrorCode,
+      "processor.timeout" | "processor.cancelled"
+    >
+  >;
 
 export type ProcessorTimeoutExecutionError =
   ProcessorExecutionErrorForCode<"processor.timeout">;
 
 export type ProcessorCancelledExecutionError =
   ProcessorExecutionErrorForCode<"processor.cancelled">;
+
+export type ProcessorSkippedExecutionErrorCode =
+  | "execution-policy.phase-class-denied"
+  | "processor.quarantined";
+
+export type ProcessorSkippedExecutionError = {
+  readonly code: ProcessorSkippedExecutionErrorCode;
+  readonly message: string;
+  readonly retryable: false;
+  readonly phase: ProcessorPhase;
+  readonly processorId: string;
+  readonly class?: string;
+};
+
+export type RunnerError =
+  | ProcessorExecutionError
+  | ProcessorSkippedExecutionError;
 
 // ----- RunnerExecutionStatus -----------------------------------------------
 
@@ -213,6 +239,7 @@ export type RunnerResult = {
   readonly runId: RunId;
   readonly processorId: string;
   readonly executionStatus: RunnerExecutionStatus;
+  readonly executionError?: RunnerError;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly effects: ReadonlyArray<Effect>;

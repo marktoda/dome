@@ -15,6 +15,8 @@ import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { openOutboxDb, type OutboxDb } from "../../src/outbox/db";
 import {
+  dispatchExternalEffect,
+  dispatchPendingOutbox,
   incrementAttempts,
   insertPending,
   markAbandoned,
@@ -169,5 +171,117 @@ describe("outbox lifecycle", () => {
     expect(got.length).toBe(1);
     expect(got[0]?.idempotencyKey).toBe("key-pending");
     expect(got[0]?.status).toBe("pending");
+  });
+
+  it("dispatchExternalEffect inserts before handler and marks the row sent", async () => {
+    const calls: string[] = [];
+
+    const result = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers: {
+        "calendar.write": async ({ idempotencyKey, attempt }) => {
+          calls.push(`${idempotencyKey}:${attempt}`);
+          expect(queryOutbox(db)[0]?.status).toBe("pending");
+          return { externalId: "external-abc" };
+        },
+      },
+    });
+
+    expect(result.kind).toBe("sent");
+    expect(calls).toEqual(["key-1:1"]);
+    const rows = queryOutbox(db);
+    expect(rows[0]?.status).toBe("sent");
+    expect(rows[0]?.externalId).toBe("external-abc");
+  });
+
+  it("dispatchExternalEffect does not re-call the handler for an already-sent key", async () => {
+    let calls = 0;
+    const handlers = {
+      "calendar.write": async () => {
+        calls += 1;
+        return { externalId: "external-abc" };
+      },
+    };
+
+    await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers,
+    });
+    const second = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers,
+    });
+
+    expect(calls).toBe(1);
+    expect(second.kind).toBe("already-sent");
+    const rows = queryOutbox(db);
+    expect(rows.length).toBe(1);
+  });
+
+  it("handler failures stay pending until max attempts, then fail terminally", async () => {
+    const handlers = {
+      "calendar.write": async () => {
+        throw new Error("remote 503");
+      },
+    };
+
+    const first = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers,
+    });
+    const second = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers,
+    });
+    const third = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers,
+    });
+
+    expect(first.kind).toBe("pending");
+    expect(second.kind).toBe("pending");
+    expect(third.kind).toBe("failed");
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("failed");
+    expect(row?.attempts).toBe(3);
+    expect(row?.lastError).toBe("remote 503");
+  });
+
+  it("missing handler marks the row failed instead of leaving it pending forever", async () => {
+    const result = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-1"),
+      runId: RUN_ID,
+      handlers: {},
+    });
+
+    expect(result.kind).toBe("failed");
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("failed");
+    expect(row?.attempts).toBe(1);
+    expect(row?.lastError).toContain("No external handler registered");
+  });
+
+  it("dispatchPendingOutbox retries pending rows from a prior process", async () => {
+    insertPending(db, { effect: makeEffect("key-1"), runId: RUN_ID });
+
+    const results = await dispatchPendingOutbox(db, {
+      handlers: {
+        "calendar.write": async ({ attempt }) => ({
+          externalId: `external-${attempt}`,
+        }),
+      },
+    });
+
+    expect(results.length).toBe(1);
+    expect(results[0]?.kind).toBe("sent");
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("sent");
+    expect(row?.externalId).toBe("external-1");
   });
 });

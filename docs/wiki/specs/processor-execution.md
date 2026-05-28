@@ -17,9 +17,11 @@ As of the processor-executor-boundary branch:
 
 - `src/processors/executor.ts` provides the executor boundary. It validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
-- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial is recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`.
+- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
-- Model invocation, retry/quarantine, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented by this branch.
+- `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
+- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim enforces effective `model.invoke` grants and allowlists, per-call timeout, structured JSON parse/schema errors, and run-local cost capture.
+- Daily cost caps, provider adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented by this branch.
 
 ## Run state machine
 
@@ -76,8 +78,9 @@ A timed-out processor produces a `processor.timeout` diagnostic, the executor
 returns `status: "timed_out"`, and no returned Effects from that invocation
 are routed. The runtime records the timed-out row through `markTimedOut`; late
 effects leave `effect_hashes_json` empty because the invocation did not
-succeed. Garden timed-out retry behavior is part of the target
-retry/quarantine surface below.
+succeed. Timeouts are not retried inside the same processor invocation.
+Durable JobEffect retries may schedule a later attempt, and repeated retryable
+timeouts can contribute to garden/scheduled quarantine.
 
 ## Output validation
 
@@ -98,36 +101,40 @@ Validation failure returns `status: "failed"` with `code: "processor.invalid-out
 
 ## Model invocation and structured output
 
-This section describes the target model-invocation surface. It is not fully implemented by the current processor-executor-boundary branch.
+Processors should never import LLM SDKs directly. A non-adoption processor with an effective `model.invoke` declaration + grant receives `ctx.modelInvoke`; processors without the capability receive no model function. Core stays provider-neutral through an injected `ModelProvider` interface. Provider adapters may live in a workflow package, but they are outside the `@dome/sdk` root import graph.
 
-Processors should never import LLM SDKs directly. A processor with `model.invoke` receives `ctx.modelInvoke`; processors without the capability receive no model function.
+The `ctx.modelInvoke` runtime boundary has these guarantees:
 
-The planned `ctx.modelInvoke` runtime boundary has these guarantees:
+- Checks the processor's effective `model.invoke` grant and model allowlist before the call.
+- Fails with `model.invoke.denied` when no provider is configured, the prompt is empty, or the requested model is outside the effective allowlist.
+- Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
+- Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
+- Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.
+- Returns typed success or throws a structured `model.invoke.*` / `model.output.*` error that the executor preserves in the run ledger.
 
-- Checks the processor's `model.invoke` grant, model allowlist, and daily cost cap before the call.
-- Records token/cost metadata into the current RunRecord.
-- Supports structured output by requiring a Zod schema or JSON schema at the call site.
-- Retries provider-transient failures with bounded backoff inside the run timeout.
-- Returns typed success or throws a structured `model.invoke.*` error.
-
-Structured-output parse failures are not repaired by prompt-only retry loops unless the processor explicitly asks for one through `ctx.modelInvoke({ retries: n })`. After retries are exhausted, the run fails with `code: "model.output.invalid-json"` or `code: "model.output.schema-mismatch"`. The diagnostic includes the schema name and a short parse reason, not the full prompt or full model output.
+Structured-output parse failures are not repaired by prompt-only retry loops unless the processor explicitly asks for one through `ctx.modelInvoke.structured({ retries: n, ... })`. After retries are exhausted, the run fails with `code: "model.output.invalid-json"` or `code: "model.output.schema-mismatch"`. The diagnostic includes the schema name and a short parse reason, not the full prompt or full model output.
 
 Adoption-phase processors cannot receive `ctx.modelInvoke`. Registration rejects an adoption-phase manifest that declares `model.invoke`.
 
 ## Retries and quarantine
 
-This section describes the target retry/quarantine policy. It is not fully implemented by the current processor-executor-boundary branch.
+Dome does not perform generic immediate whole-processor retries for adoption,
+garden, schedule, or command dispatch. `executeProcessor` remains a
+single-attempt boundary for timeout/cancellation/output validation. Durable
+whole-run retries belong to JobEffect rows in `scheduled_jobs`; model-provider
+transient retries belong inside the future `ctx.modelInvoke` boundary while
+still respecting the run timeout.
 
 The target runtime classifies run failures:
 
 | Class | Examples | Retry behavior |
 |---|---|---|
 | `deterministic` | invalid output, phase mismatch, capability schema violation | No automatic retry. Mark failed. |
-| `transient` | model provider 429/5xx, network timeout, temporary SQLite busy | Retry with exponential backoff within the run's phase policy. |
-| `timeout` | phase timeout exceeded | No in-run retry. Garden jobs may be rescheduled if their JobEffect policy allows it. |
+| `transient` | model provider 429/5xx, network timeout, temporary SQLite busy | No generic processor rerun. Model calls may retry internally; JobEffect attempts may retry durably. Retryable terminal failures count toward quarantine. |
+| `timeout` | phase timeout exceeded | No in-run retry. Garden jobs may be rescheduled if their JobEffect policy allows it. Retryable timeouts count toward quarantine. |
 | `operator` | cancellation, shutdown | Mark cancelled; no retry unless explicitly re-run. |
 
-In the target architecture, garden and scheduled runs maintain consecutive failure counters keyed by `(processorId, processorVersion, triggerHash)`. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user or a health processor clears the quarantine.
+Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user or a health processor clears the quarantine.
 
 Adoption-phase processors are never quarantined automatically. If an adoption processor fails, adoption blocks: trusted state cannot advance while the deterministic gate is unhealthy.
 
@@ -158,6 +165,8 @@ The executor contract uses stable diagnostic codes:
 | `execution-policy.phase-class-denied` | Runtime refused to invoke a processor because its declared execution class is invalid for the phase; the run is marked `skipped`. |
 | `processor.quarantined` | A matching trigger is skipped because the processor is quarantined. |
 | `model.invoke.denied` | Missing model capability, model not allowlisted, or cost cap exceeded. |
+| `model.invoke.provider-failed` | The injected provider threw before producing a response. |
+| `model.invoke.timeout` | A model call exceeded its per-call timeout. |
 | `model.output.invalid-json` | Structured model output was not parseable JSON after retries. |
 | `model.output.schema-mismatch` | Structured model output parsed but failed the requested schema. |
 
@@ -173,11 +182,12 @@ Already pinned in this branch:
 - Ledger tests assert `timed_out` / `cancelled` status persistence, structured error JSON, query filtering, and terminal transition filtering.
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, and garden timeout discards late output while recording `timed_out`.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
+- Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
+- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, executor preservation of model error codes, and ledgered model cost on failed structured-output runs.
 
 Pending:
 
-- Model-invoke tests assert capability denial, invalid JSON, schema mismatch, and cost-cap errors become structured run failures.
-- Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers and subsequent invocations skip with diagnostics.
+- Daily cost-cap tests assert historical run cost is enforced before provider calls.
 - Drain tests assert `close()` cancels or settles in-flight runs and releases SQLite handles only after run records are terminal.
 
 ## Related

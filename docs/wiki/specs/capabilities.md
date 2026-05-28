@@ -77,11 +77,13 @@ Permits emitting JobEffects. The `processors` list scopes which target processor
 
 ### `model.invoke`
 
-Permits the processor to call LLMs via `ctx.modelInvoke`. Adoption-phase processors **never** get this capability — the broker rejects `model.invoke` in adoption manifests at registration time. Garden-phase processors typically request it.
+Permits the processor to call LLMs via `ctx.modelInvoke`. Adoption-phase processors **never** get this capability — the loader rejects `model.invoke` in adoption manifests at registration time. Garden- and view-phase processors receive a model handle only when the capability is both declared and granted. The handle is provider-neutral: core receives an injected `ModelProvider`, not a direct import of a vendor SDK.
 
 Optional fields:
-- `maxDailyCostUsd: number` — cap on per-processor LLM spend per day; engine tracks via the run ledger's `cost` field.
+- `maxDailyCostUsd: number` — cap on per-processor LLM spend per day. The run ledger already records provider-reported run-local cost; daily cap enforcement is the next policy layer.
 - `modelAllowlist: string[]` — restrict to specific model identifiers (e.g., `["claude-3-5-sonnet"]`); default allows the harness's configured default.
+
+The runtime enforces the intersection of the declared and granted allowlists before any provider call. Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become typed `model.output.*` run errors rather than generic `processor.threw`.
 
 ### `external`
 

@@ -55,11 +55,22 @@
 import {
   diagnosticEffect,
   type DiagnosticEffect,
+  type PatchEffect,
 } from "../core/effect";
-import { type Proposal } from "../core/proposal";
+import {
+  makeGardenProposal,
+  proposalMetadata,
+  type AdoptionResult,
+  type Proposal,
+} from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
+import {
+  applyPatchToCandidate,
+  type ApplyPatchInput,
+} from "./apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
+import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import type { EngineVault } from "./vault-shape";
 import {
   getCursor,
@@ -74,7 +85,15 @@ import {
   dispatchOneProcessor,
   makeSnapshot,
 } from "../processors/runtime";
+import type { ProcessorExecutionState } from "../processors/execution-state";
+import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
+import type { RunId } from "./runner-contract";
+
+type AdoptScheduledSubProposalFn = (
+  proposal: Proposal,
+  cascadeDepth: number,
+) => Promise<AdoptionResult>;
 
 // ----- ScheduledFireResult --------------------------------------------------
 
@@ -129,8 +148,14 @@ export async function runScheduler(opts: {
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
   readonly ledger?: LedgerDb;
+  readonly executionState?: ProcessorExecutionState;
+  readonly modelProvider?: ModelProvider;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
+  readonly applyGardenPatchToCandidate?: (
+    opts: ApplyPatchInput,
+  ) => Promise<CommitOid | null>;
 }): Promise<SchedulerResult> {
   try {
     return await runSchedulerInner(opts);
@@ -160,8 +185,14 @@ async function runSchedulerInner(opts: {
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
   readonly ledger?: LedgerDb;
+  readonly executionState?: ProcessorExecutionState;
+  readonly modelProvider?: ModelProvider;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
+  readonly applyGardenPatchToCandidate?: (
+    opts: ApplyPatchInput,
+  ) => Promise<CommitOid | null>;
 }): Promise<SchedulerResult> {
   const {
     vault,
@@ -172,9 +203,14 @@ async function runSchedulerInner(opts: {
     resolveTree,
     now,
     ledger,
+    executionState,
+    modelProvider,
     resolveGrants,
     extensionIdFor,
+    adoptSubProposal,
   } = opts;
+  const applyGardenPatch =
+    opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
   const nowDate = now();
   const fired: ScheduledFireResult[] = [];
@@ -297,11 +333,35 @@ async function runSchedulerInner(opts: {
         resolveGrants,
         extensionIdFor,
         ledger,
+        ...(executionState !== undefined ? { executionState } : {}),
+        ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
 
-      // Route each emitted effect through applyEffect with the right
-      // phase. Same broker enforcement uniformity as garden / adoption.
+      // Route each emitted effect through the phase-appropriate boundary.
+      // Scheduled garden PatchEffects become garden sub-Proposals, matching
+      // signal-triggered garden semantics instead of mutating a candidate
+      // through the generic applyPatch sink.
       for (const effect of result.effects) {
+        if (phase === "garden" && effect.kind === "patch") {
+          await routeScheduledGardenPatch({
+            effect,
+            vault,
+            adopted,
+            processorId: result.processorId,
+            runId: result.runId,
+            proposalId: syntheticProposal.id,
+            declared: result.declared,
+            granted: result.granted,
+            sinks,
+            diagnostics,
+            applyGardenPatch,
+            extensionId: extensionIdFor(result.processorId),
+            ...(ledger !== undefined ? { ledger } : {}),
+            ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
+          });
+          continue;
+        }
+
         const applied = await applyEffect({
           effect,
           processorId: result.processorId,
@@ -376,6 +436,82 @@ async function runSchedulerInner(opts: {
     skipped: Object.freeze(skipped),
     diagnostics: Object.freeze(diagnostics),
   });
+}
+
+async function routeScheduledGardenPatch(opts: {
+  readonly effect: PatchEffect;
+  readonly vault: EngineVault;
+  readonly adopted: CommitOid;
+  readonly processorId: string;
+  readonly runId: RunId;
+  readonly proposalId: string;
+  readonly declared: ReadonlyArray<Capability>;
+  readonly granted: ReadonlyArray<Capability>;
+  readonly sinks: ApplyEffectSinks;
+  readonly ledger?: LedgerDb;
+  readonly diagnostics: DiagnosticEffect[];
+  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
+  readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
+  readonly extensionId: string;
+}): Promise<void> {
+  const routed = await routeGardenPatchForSubProposal({
+    effect: opts.effect,
+    processorId: opts.processorId,
+    runId: opts.runId,
+    proposalId: opts.proposalId,
+    declared: opts.declared,
+    granted: opts.granted,
+    sinks: opts.sinks,
+    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+  });
+  opts.diagnostics.push(...routed.diagnostics);
+  if (routed.kind === "dropped") {
+    return;
+  }
+
+  if (opts.adoptSubProposal === undefined) {
+    const drop = diagnosticEffect({
+      severity: "info",
+      code: "scheduler.garden-sub-proposal-spawn-disabled",
+      message:
+        `Scheduled garden processor ${opts.processorId} emitted an authorized ` +
+        `PatchEffect, but no adoptSubProposal callback was wired; patch dropped.`,
+      sourceRefs: [],
+    });
+    opts.diagnostics.push(drop);
+    await opts.sinks.recordDiagnostic({
+      effect: drop,
+      processorId: opts.processorId,
+      runId: opts.runId,
+      proposalId: opts.proposalId,
+    });
+    return;
+  }
+
+  const newHead = await opts.applyGardenPatch({
+    vaultPath: opts.vault.path,
+    candidate: opts.adopted,
+    patch: routed.patch,
+    runContext: {
+      runId: opts.runId,
+      processorId: opts.processorId,
+      extensionId: opts.extensionId,
+      base: opts.adopted,
+      sourceHead: opts.adopted,
+    },
+  });
+  if (newHead === null) {
+    return;
+  }
+
+  const subProposal = makeGardenProposal({
+    base: opts.adopted,
+    head: newHead,
+    processorId: opts.processorId,
+    runId: opts.runId,
+    metadata: proposalMetadata({ reason: routed.patch.reason }),
+  });
+  await opts.adoptSubProposal(subProposal, 1);
 }
 
 // ----- ScheduleRunInput envelope --------------------------------------------

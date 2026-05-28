@@ -88,7 +88,7 @@ describe("TriggerSchema (discriminated union)", () => {
   });
 });
 
-describe("CapabilitySchema (discriminated union, 8 kinds)", () => {
+describe("CapabilitySchema (discriminated union, 10 kinds)", () => {
   test("read", () => {
     expect(CapabilitySchema.parse({ kind: "read", paths: ["wiki/**"] }).kind).toBe("read");
   });
@@ -121,6 +121,18 @@ describe("CapabilitySchema (discriminated union, 8 kinds)", () => {
     expect(
       CapabilitySchema.parse({ kind: "graph.write", namespaces: ["dome.tasks"] }).kind,
     ).toBe("graph.write");
+  });
+
+  test("question.ask", () => {
+    expect(
+      CapabilitySchema.parse({ kind: "question.ask", namespaces: ["dome.intake"] }).kind,
+    ).toBe("question.ask");
+  });
+
+  test("job.enqueue", () => {
+    expect(
+      CapabilitySchema.parse({ kind: "job.enqueue", processors: ["dome.worker.*"] }).kind,
+    ).toBe("job.enqueue");
   });
 
   test("model.invoke", () => {

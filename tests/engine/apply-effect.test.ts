@@ -9,6 +9,7 @@ import {
   externalActionEffect,
   jobEffect,
   patchEffect,
+  questionEffect,
   viewEffect,
 } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
@@ -156,6 +157,44 @@ describe("successful routes (noopSinks)", () => {
     });
     expect(r.outcome).toBe("applied");
   });
+
+  test("QuestionEffect in garden phase with question.ask granted → applied", async () => {
+    const ask: Capability = { kind: "question.ask" };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [ask],
+      granted: [ask],
+      phase: "garden",
+      effect: questionEffect({
+        question: "Continue?",
+        sourceRefs: [ref],
+        idempotencyKey: "q-1",
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("question.ask");
+  });
+
+  test("JobEffect in garden phase with job.enqueue granted → applied", async () => {
+    const enqueue: Capability = {
+      kind: "job.enqueue",
+      processors: ["test.worker"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [enqueue],
+      granted: [enqueue],
+      phase: "garden",
+      effect: jobEffect({
+        processorId: "test.worker",
+        input: null,
+        idempotencyKey: "j-1",
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("job.enqueue");
+    expect(r.capabilityUse?.resource).toBe("test.worker");
+  });
 });
 
 describe("capability denial flows through", () => {
@@ -173,6 +212,38 @@ describe("capability denial flows through", () => {
     expect(r.outcome).toBe("denied");
     expect(r.diagnostics[0]?.code).toBe("capability-deny-patch");
     expect(r.diagnostics[0]?.severity).toBe("block");
+  });
+
+  test("QuestionEffect with no question.ask grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: questionEffect({
+        question: "Continue?",
+        sourceRefs: [ref],
+        idempotencyKey: "q-1",
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-question-ask");
+    expect(r.capabilityUse?.capability).toBe("question.ask");
+    expect(r.capabilityUse?.outcome).toBe("denied");
+  });
+
+  test("JobEffect with no matching job.enqueue grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: jobEffect({
+        processorId: "test.worker",
+        input: null,
+        idempotencyKey: "j-1",
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-job-enqueue");
+    expect(r.capabilityUse?.capability).toBe("job.enqueue");
+    expect(r.capabilityUse?.resource).toBe("test.worker");
   });
 });
 

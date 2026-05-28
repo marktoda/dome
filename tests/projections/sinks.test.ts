@@ -203,13 +203,20 @@ describe("buildSqliteSinks projection-store sinks", () => {
     expect(next?.idempotencyKey).toBe("j-1");
   });
 
-  it("dispatchExternal writes a row to the outbox visible via queryOutbox", async () => {
+  it("dispatchExternal writes a row and dispatches through the outbox handler", async () => {
+    const calls: string[] = [];
     const sinks = buildSqliteSinks({
       projectionDb,
       outboxDb,
       adoptedCommit: ADOPTED,
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
+      externalHandlers: {
+        "calendar.write": async ({ idempotencyKey }) => {
+          calls.push(idempotencyKey);
+          return { externalId: "ext-1" };
+        },
+      },
     });
 
     const effect = externalActionEffect({
@@ -227,7 +234,9 @@ describe("buildSqliteSinks projection-store sinks", () => {
     const got = queryOutbox(outboxDb);
     expect(got.length).toBe(1);
     expect(got[0]?.idempotencyKey).toBe("ext-1");
-    expect(got[0]?.status).toBe("pending");
+    expect(got[0]?.status).toBe("sent");
+    expect(got[0]?.externalId).toBe("ext-1");
+    expect(calls).toEqual(["ext-1"]);
   });
 });
 

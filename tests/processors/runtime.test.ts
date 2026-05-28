@@ -28,6 +28,7 @@ import {
 import { makeManualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/compile-range";
 import type { EngineVault } from "../../src/engine/vault-shape";
+import type { ModelProvider } from "../../src/engine/model-invoke";
 
 // Stub EngineVault — the runtime never touches it (only passed through the
 // AdoptionPhaseRunner input contract).
@@ -76,6 +77,7 @@ function buildRuntimeFor(
     resolveGrants?: (processorId: string) => ReadonlyArray<Capability>;
     extensionIdFor?: (processorId: string) => string;
     resolveTree?: (commit: CommitOid) => Promise<typeof TREE>;
+    modelProvider?: ModelProvider;
   },
 ) {
   const reg = buildRegistry(processors);
@@ -85,6 +87,9 @@ function buildRuntimeFor(
     resolveGrants: overrides?.resolveGrants ?? (() => []),
     extensionIdFor: overrides?.extensionIdFor ?? ((id) => id),
     resolveTree: overrides?.resolveTree ?? (async () => TREE),
+    ...(overrides?.modelProvider !== undefined
+      ? { modelProvider: overrides.modelProvider }
+      : {}),
   });
 }
 
@@ -305,6 +310,174 @@ describe("gardenRunner — executor diagnostics", () => {
     expect(effect.severity).toBe("error");
     expect(effect.message).toContain("test.garden.thrower");
     expect(effect.message).toContain("garden boom");
+  });
+
+  test("three retryable garden failures quarantine the matching trigger", async () => {
+    let invocations = 0;
+    const p = makeFixtureProcessor({
+      id: "test.garden.quarantine",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        invocations += 1;
+        throw Object.assign(new Error("temporary downstream failure"), {
+          retryable: true,
+        });
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    for (let i = 0; i < 3; i += 1) {
+      const results = await rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        proposal,
+      });
+      expect(results[0]?.executionStatus).toBe("failed");
+      expect(results[0]?.executionError?.code).toBe("processor.threw");
+      expect(results[0]?.executionError?.retryable).toBe(true);
+    }
+
+    const quarantined = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(invocations).toBe(3);
+    expect(quarantined.length).toBe(1);
+    expect(quarantined[0]?.executionStatus).toBe("skipped");
+    expect(quarantined[0]?.executionError?.code).toBe("processor.quarantined");
+    const effect = quarantined[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("processor.quarantined");
+    expect(effect.severity).toBe("error");
+  });
+
+  test("non-retryable garden failures do not quarantine", async () => {
+    let invocations = 0;
+    const p = makeFixtureProcessor({
+      id: "test.garden.nonretryable",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        invocations += 1;
+        throw new Error("permanent bug");
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    for (let i = 0; i < 4; i += 1) {
+      const results = await rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        proposal,
+      });
+      expect(results[0]?.executionStatus).toBe("failed");
+      expect(results[0]?.executionError?.code).toBe("processor.threw");
+      expect(results[0]?.executionError?.retryable).toBe(false);
+    }
+
+    expect(invocations).toBe(4);
+  });
+
+  test("garden processor with effective model.invoke grant receives ctx.modelInvoke", async () => {
+    const cap: Capability = {
+      kind: "model.invoke",
+      modelAllowlist: ["test-model"],
+    };
+    let providerPrompt = "";
+    const p = makeFixtureProcessor({
+      id: "test.garden.model",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      execution: { class: "llm", modelCallTimeoutMs: 500 },
+      run: async (ctx) => {
+        if (ctx.modelInvoke === undefined) {
+          throw new Error("missing modelInvoke");
+        }
+        const text = await ctx.modelInvoke({
+          prompt: "summarize",
+          model: "test-model",
+        });
+        return [
+          diagnosticEffect({
+            severity: "info",
+            code: "model.ok",
+            message: text,
+            sourceRefs: [],
+          }),
+        ];
+      },
+    });
+    const rt = buildRuntimeFor([p], {
+      resolveGrants: () => [cap],
+      modelProvider: async (request) => {
+        providerPrompt = request.prompt;
+        return { text: "model result" };
+      },
+    });
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(providerPrompt).toBe("summarize");
+    expect(results[0]?.executionStatus).toBe("succeeded");
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.message).toBe("model result");
+  });
+
+  test("model output parse errors preserve model-specific execution codes", async () => {
+    const cap: Capability = { kind: "model.invoke" };
+    const p = makeFixtureProcessor({
+      id: "test.garden.model-json",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      execution: { class: "llm" },
+      run: async (ctx) => {
+        await ctx.modelInvoke?.structured({
+          prompt: "json",
+          schemaName: "test.schema/v1",
+          parse: (value) => value,
+        });
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], {
+      resolveGrants: () => [cap],
+      modelProvider: async () => ({ text: "not-json" }),
+    });
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(results[0]?.executionStatus).toBe("failed");
+    expect(results[0]?.executionError?.code).toBe("model.output.invalid-json");
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("model.output.invalid-json");
   });
 });
 

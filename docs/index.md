@@ -1,6 +1,6 @@
 # Dome design substrate — Index
 
-The catalog of all wiki pages in this vault. Maintained by Dome's `dome.index` adoption-phase processor; entries added when pages are created, sorted alphabetically within each section.
+The catalog of all wiki pages in this vault. In the current SDK it is maintained manually; a future `dome.index` bundle may own regeneration.
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
@@ -13,11 +13,11 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/effects]] — The seven-kind Effect taxonomy (Patch / Diagnostic / Fact / Question / Job / ExternalAction / View); SourceRef shape; exhaustive routing.
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
-- [[wiki/specs/capabilities]] — Eight capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
+- [[wiki/specs/capabilities]] — Ten capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
-- [[wiki/specs/mcp-surface]] — MCP server: one Recall/Submit protocol adapter over `AbstractSurface`; non-primary in v1.
-- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + Submit).
+- [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
+- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + git-native writes).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/vault-layout]] — Directory structure; category from path; ownership rules; git repository structure; derived operational state under `.dome/state/`.
 

@@ -162,12 +162,14 @@ CREATE TABLE questions (
 
 ### `scheduled_jobs`
 
-Stores `JobEffect` rows for jobs that run later (when `runAfter` is set).
+Stores `JobEffect` rows for deferred garden-phase work. `runAfter` defaults
+to enqueue time when absent, so immediate jobs and delayed jobs share the same
+durable queue.
 
 ```sql
 CREATE TABLE scheduled_jobs (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  processor_id    TEXT NOT NULL,
+  processor_id    TEXT NOT NULL,        -- target processor id
   input_json      TEXT NOT NULL,
   run_after       TEXT NOT NULL,        -- ISO-8601
   idempotency_key TEXT NOT NULL UNIQUE,

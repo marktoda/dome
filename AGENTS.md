@@ -33,13 +33,13 @@ By substrate type:
 
 - **The named invariants are pinned by AC3 lockstep.** `tests/integration/invariant-coverage.test.ts` iterates `INVARIANTS` (the typed const in `src/types.ts`) and requires `tests/invariants/<slug>.test.ts` per name. Off-matrix invariants delegate via `import(...)` to the canonical enforcement test.
 - **The four-concept core is sealed.** Vault, Proposal, Processor, Effect. There is no Tool, no Hook, no Workflow as a separate primitive — those concepts dissolve into processors emitting effects. See [[docs/wiki/specs/sdk-surface]] §"Outputs the SDK does not have."
-- **Proposals are the only write path.** No `vault.tools.X(...)`, no privileged-writer escape hatch. Every mutation goes through `submitProposal` and the adoption loop. Pinned by [[docs/wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] and [[docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+- **Proposals are the only engine write path.** No `vault.tools.X(...)`, no privileged-writer escape hatch, and no public `submitProposal` API. Human/agent writes are ordinary git commits; the daemon constructs Proposals from branch drift, and garden PatchEffects construct internal sub-Proposals. Pinned by [[docs/wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] and [[docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 - **Effects are the only processor output.** A processor returns `Promise<Effect[]>` from its `run(ctx)` body. No direct mutation surface. Pinned by [[docs/wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
 - **Every effect is capability-checked.** The broker at `src/engine/apply-effect.ts` is the single chokepoint. Pinned by [[docs/wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 - **`@dome/sdk` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `model.invoke` or MCP machinery from `src/index.ts` fails CI. Pinned by [[docs/wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
 - **Markdown is the source of truth.** Anything Dome derives — projection store, run ledger, outbox, index.md, log.md — can be rebuilt from markdown alone. `.dome/state/` is gitignored and rebuildable.
 - **Every vault is a git repo.** Axiom; enforced at `openVault`.
-- **The compiler boundary** (AGENTS.md + CLI + daemon + Submit) is the contract every agentic harness interacts with — see [[docs/wiki/specs/harnesses]].
+- **The compiler boundary** (AGENTS.md + CLI + daemon + git-native writes) is the contract every agentic harness interacts with — see [[docs/wiki/specs/harnesses]].
 
 ## How to run
 
@@ -53,31 +53,23 @@ By substrate type:
 
 ```
 src/
-  vault.ts              # openVault — single entry; composes engine + processors + projections
   index.ts              # public surface re-exports
+  adopted-ref.ts        # adopted-ref read/write helpers
   core/                 # the four core types (Proposal, Effect, Processor, SourceRef)
   engine/               # adoption loop + effect application (the single applier)
   processors/           # processor runtime + registry
   projections/          # Bun.sqlite-backed projection store
   ledger/               # run ledger (Bun.sqlite)
   outbox/               # external-action outbox (Bun.sqlite)
-  capabilities/         # broker + grant resolution
-  query/                # Recall API
-  protocols/            # mcp/ + cli/ + workflows/ (per-protocol adapters)
+  cli/                  # CLI command adapters
   extensions/           # bundle loader
-  git/                  # isomorphic-git boundary
-  watcher.ts            # working-tree watcher → Proposal construction
+  git.ts                # isomorphic-git boundary
+  workflow-commit.ts    # internal engine commit helper
 
 assets/extensions/      # first-party dome.* bundles
   dome.markdown/
-  dome.index/
-  dome.log/
-  dome.links/
-  dome.intake/
-  dome.daily/
+  dome.graph/
   dome.lint/
-  dome.search/
-  dome.migrate/
 
 tests/                  # bun test files
   invariants/           # AC3 lockstep surface
@@ -85,8 +77,6 @@ tests/                  # bun test files
   processors/           # per-processor unit tests
 
 docs/                   # the dogfood vault (substrate + reviews + delta ledgers + brainstorms)
-
-assets/dome-init/       # scaffolding `dome init` copies into new vaults
 
 bin/dome                # the CLI entrypoint script
 ```
@@ -96,7 +86,7 @@ bin/dome                # the CLI entrypoint script
 **Submit** — a write becomes a Proposal:
 
 ```
-working-tree edit / dome submit / garden PatchEffect
+git commit on the active branch / garden PatchEffect
   → Proposal { base = adopted, head, source }
   → engine.adoptionLoop(proposal)
 ```

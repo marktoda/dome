@@ -176,6 +176,8 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "owns.region",
   "owns.path",
   "graph.write",
+  "question.ask",
+  "job.enqueue",
   "model.invoke",
   "external",
 ];
@@ -209,6 +211,8 @@ const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKin
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
+  "question.ask",  // Phase 14+ — duplicate-detection and intake processors emit Questions
+  "job.enqueue",   // Phase 18 — scheduled processors enqueue deferred Jobs
   "model.invoke",  // Phase 16 — model-invoking garden-phase processors
   "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);

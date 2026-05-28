@@ -259,7 +259,64 @@ describe("executeProcessor", () => {
     if (result.status !== "failed") return;
     expect(result.error.code).toBe("processor.threw");
     expect(result.error.message).toContain("boom");
+    expect(result.error.retryable).toBe(false);
     expect(result.diagnostic.severity).toBe("block");
+  });
+
+  test("garden thrown error can mark itself retryable", async () => {
+    const transient = Object.assign(new Error("temporary provider failure"), {
+      retryable: true,
+    });
+
+    const result = await executeProcessor({
+      processorId: "test.executor.retryable-throw",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw transient;
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.threw");
+    expect(result.error.retryable).toBe(true);
+  });
+
+  test("specialized model execution errors are not wrapped as processor.threw", async () => {
+    const result = await executeProcessor({
+      processorId: "test.executor.model-json",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "llm",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw Object.assign(new Error("invalid json for schema x"), {
+          code: "model.output.invalid-json",
+          retryable: false,
+        });
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("model.output.invalid-json");
+    expect(result.error.retryable).toBe(false);
+    expect(result.diagnostic.code).toBe("model.output.invalid-json");
   });
 
   test("hostile thrown value becomes structured processor.threw", async () => {
@@ -348,6 +405,7 @@ describe("executeProcessor", () => {
     expect(result.status).toBe("cancelled");
     if (result.status !== "cancelled") return;
     expect(result.error.code).toBe("processor.cancelled");
+    expect(result.error.retryable).toBe(false);
     expect(result.diagnostic.severity).toBe("block");
     expect("effects" in result).toBe(false);
     expect("effectHashes" in result).toBe(false);
@@ -396,6 +454,7 @@ describe("executeProcessor", () => {
     expect(result.status).toBe("cancelled");
     if (result.status !== "cancelled") return;
     expect(result.error.code).toBe("processor.cancelled");
+    expect(result.error.retryable).toBe(false);
     expect(result.diagnostic.severity).toBe("error");
     expect(observedSignalAborted).toBe(true);
     expect("effects" in result).toBe(false);

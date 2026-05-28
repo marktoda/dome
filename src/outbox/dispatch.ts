@@ -1,8 +1,8 @@
-// outbox-dispatch: the per-row insert + lifecycle accessors for the
-// `outbox` table. Owns the SQL for the four state transitions
+// outbox-dispatch: the durable boundary for ExternalActionEffect. Owns the
+// insert-before-call dispatch path, retry state transitions
 // (pending → sent / failed / abandoned), attempt-counter bookkeeping,
-// the user-triggered replay path, and the read surface for
-// `dome inspect outbox`.
+// the user-triggered replay path, and the read surface for `dome inspect
+// outbox`.
 //
 // Normative references:
 //   - docs/wiki/specs/projection-store.md §"Outbox (separate database:
@@ -14,8 +14,8 @@
 //     file is the named structural enforcement point ("The applier in
 //     `src/engine/apply-effect.ts` routes `external` effects to
 //     `src/outbox/dispatch.ts` exclusively"). Every ExternalActionEffect
-//     emitted by a processor flows through `insertPending` here before
-//     any external call is attempted.
+//     emitted by a processor flows through `dispatchExternalEffect` here:
+//     it inserts via `insertPending` before any external call is attempted.
 //   - The UNIQUE constraint on `idempotency_key` in `outbox.db` is
 //     respected via `INSERT OR IGNORE` — a processor re-emitting the
 //     same effect on retry produces one row, one external call.
@@ -33,11 +33,13 @@
 //
 //   insertPending     → row created, status="pending", attempts=0.
 //
-//   incrementAttempts → status stays "pending", attempts++. **The caller**
-//                       compares attempts to max_attempts and calls
-//                       markFailed when exhausted; this file never
-//                       auto-transitions (per spec §"Lifecycle": the
-//                       engine controls retry logic).
+//   dispatchExternalEffect
+//                     → insertPending, call the registered handler, then
+//                       markSent / incrementAttempts / markFailed.
+//
+//   incrementAttempts → status stays "pending", attempts++. Exposed for
+//                       tests and manual recovery paths; the dispatch
+//                       helper above performs the normal retry decision.
 //
 //   markSent          → "pending" → "sent". Terminal. Sets external_id,
 //                       sent_at. UPDATE filters by status="pending" so
@@ -56,10 +58,7 @@
 //
 // Imports (tight by design — outbox is the SQLite boundary):
 //   - `bun:sqlite` (transitively, via `OutboxDb` from `./db`).
-//   - `../core/effect` for the `ExternalActionEffect` type +
-//     `diagnosticEffect` helper (kept available per the allowed-import
-//     surface even though the v1 happy path doesn't emit diagnostics
-//     from this file directly).
+//   - `../core/effect` for the `ExternalActionEffect` type.
 //   - `../core/source-ref` for the `SourceRef` type (deserialization
 //     boundary).
 //   - `./db` for the `OutboxDb` handle.
@@ -75,14 +74,6 @@
 import type { ExternalActionEffect } from "../core/effect";
 import type { SourceRef } from "../core/source-ref";
 import type { OutboxDb } from "./db";
-
-// Note on the allowed-import surface: `diagnosticEffect` from `../core/effect`
-// is listed as allowed for this file's Phase 4 substrate. It's not used here
-// in the v1 happy path — the engine surfaces outbox failures via the
-// `engine.outbox.failed` event per [[wiki/gotchas/outbox-stuck]], not as
-// DiagnosticEffects from dispatch. A future Phase 4.5+ may add diagnostic
-// emission (e.g., warning when an abandoned row would have been retried);
-// re-add the import there. `noUnusedLocals` keeps speculative imports out.
 
 // ----- Constants ------------------------------------------------------------
 
@@ -141,6 +132,68 @@ export type OutboxQueryFilter = {
   readonly olderThanHours?: number;
 };
 
+export type ExternalHandlerInput = {
+  readonly capability: string;
+  readonly idempotencyKey: string;
+  readonly payload: unknown;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+  readonly runId: string;
+  /**
+   * 1-based attempt number for the call the engine is about to make.
+   * Previous failed attempts are already recorded on the outbox row.
+   */
+  readonly attempt: number;
+};
+
+export type ExternalHandlerResult = {
+  readonly externalId: string;
+  /**
+   * True when the handler did not perform a fresh side effect, but discovered
+   * that the idempotency key had already succeeded remotely.
+   */
+  readonly recovered?: boolean;
+};
+
+export type ExternalHandler = (
+  input: ExternalHandlerInput,
+) => Promise<ExternalHandlerResult>;
+
+export type ExternalHandlerRegistry =
+  | ReadonlyMap<string, ExternalHandler>
+  | Readonly<Record<string, ExternalHandler>>;
+
+export type ExternalDispatchResult =
+  | {
+      readonly kind: "sent";
+      readonly idempotencyKey: string;
+      readonly externalId: string;
+      readonly recovered: boolean;
+    }
+  | {
+      readonly kind: "already-sent";
+      readonly idempotencyKey: string;
+      readonly externalId: string;
+    }
+  | {
+      readonly kind: "pending";
+      readonly idempotencyKey: string;
+      readonly attempts: number;
+      readonly maxAttempts: number;
+      readonly lastError: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly idempotencyKey: string;
+      readonly attempts: number;
+      readonly maxAttempts: number;
+      readonly lastError: string;
+    }
+  | {
+      readonly kind: "skipped";
+      readonly idempotencyKey: string;
+      readonly status: "failed" | "abandoned";
+    };
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_PENDING_SQL = `
@@ -186,6 +239,8 @@ SELECT id, capability, idempotency_key, payload_json, source_refs,
        sent_at, last_error, run_id
 FROM outbox
 `.trim();
+
+const SELECT_OUTBOX_BY_KEY_SQL = `${SELECT_OUTBOX_BASE_SQL} WHERE idempotency_key = ?`;
 
 // ----- Row shape ------------------------------------------------------------
 
@@ -233,6 +288,58 @@ export function insertPending(db: OutboxDb, opts: OutboxInsertOpts): void {
     new Date().toISOString(),
     opts.runId,
   );
+}
+
+/**
+ * Insert the outbox row, then dispatch it through the registered capability
+ * handler. This is the no-fire-and-forget boundary: the durable row is
+ * written before the external handler is invoked, and every handler outcome
+ * transitions the row through the outbox state machine.
+ *
+ * Duplicate idempotency keys are safe. If the existing row is already sent,
+ * the cached external id is returned and the handler is not called. If the
+ * row is pending, the function performs one retry attempt. Failed/abandoned
+ * rows are left terminal until the explicit replay path resets them.
+ */
+export async function dispatchExternalEffect(
+  db: OutboxDb,
+  opts: {
+    readonly effect: ExternalActionEffect;
+    readonly runId: string;
+    readonly handlers: ExternalHandlerRegistry;
+  },
+): Promise<ExternalDispatchResult> {
+  insertPending(db, { effect: opts.effect, runId: opts.runId });
+  const row = getOutboxByIdempotencyKey(db, opts.effect.idempotencyKey);
+  if (row === null) {
+    const msg =
+      `Outbox dispatch invariant failed: row '${opts.effect.idempotencyKey}' ` +
+      "was not readable after insert.";
+    throw new Error(msg);
+  }
+  return dispatchOutboxRow(db, row, opts.handlers);
+}
+
+/**
+ * Retry pending rows that survived a prior crash or process exit. The caller
+ * chooses when to invoke this drain; the function performs at most one
+ * handler call per row per invocation so retries remain externally paced.
+ */
+export async function dispatchPendingOutbox(
+  db: OutboxDb,
+  opts: {
+    readonly handlers: ExternalHandlerRegistry;
+    readonly limit?: number;
+  },
+): Promise<ReadonlyArray<ExternalDispatchResult>> {
+  const pending = queryOutbox(db, { status: "pending" });
+  const bounded =
+    opts.limit === undefined ? pending : pending.slice(0, opts.limit);
+  const results: ExternalDispatchResult[] = [];
+  for (const row of bounded) {
+    results.push(await dispatchOutboxRow(db, row, opts.handlers));
+  }
+  return Object.freeze(results);
 }
 
 /**
@@ -377,7 +484,115 @@ export function queryOutbox(
   return Object.freeze(rows.map(rowToOutboxRow));
 }
 
+export function getOutboxByIdempotencyKey(
+  db: OutboxDb,
+  idempotencyKey: string,
+): OutboxRow | null {
+  const row = db.raw
+    .query<OutboxRawRow, [string]>(SELECT_OUTBOX_BY_KEY_SQL)
+    .get(idempotencyKey);
+  return row === null ? null : rowToOutboxRow(row);
+}
+
 // ----- internals ------------------------------------------------------------
+
+async function dispatchOutboxRow(
+  db: OutboxDb,
+  row: OutboxRow,
+  handlers: ExternalHandlerRegistry,
+): Promise<ExternalDispatchResult> {
+  if (row.status === "sent") {
+    return Object.freeze({
+      kind: "already-sent",
+      idempotencyKey: row.idempotencyKey,
+      externalId: row.externalId ?? "",
+    });
+  }
+  if (row.status === "failed" || row.status === "abandoned") {
+    return Object.freeze({
+      kind: "skipped",
+      idempotencyKey: row.idempotencyKey,
+      status: row.status,
+    });
+  }
+
+  const handler = lookupHandler(handlers, row.capability);
+  if (handler === undefined) {
+    const msg = `No external handler registered for capability '${row.capability}'.`;
+    return recordFailedAttempt(db, row, msg, { terminal: true });
+  }
+
+  try {
+    const result = await handler({
+      capability: row.capability,
+      idempotencyKey: row.idempotencyKey,
+      payload: row.payload,
+      sourceRefs: row.sourceRefs,
+      runId: row.runId,
+      attempt: row.attempts + 1,
+    });
+    if (typeof result.externalId !== "string" || result.externalId.length === 0) {
+      throw new Error("External handler returned an empty externalId.");
+    }
+    markSent(db, row.idempotencyKey, result.externalId, new Date());
+    return Object.freeze({
+      kind: "sent",
+      idempotencyKey: row.idempotencyKey,
+      externalId: result.externalId,
+      recovered: result.recovered ?? false,
+    });
+  } catch (e) {
+    return recordFailedAttempt(db, row, errorMessage(e), { terminal: false });
+  }
+}
+
+function recordFailedAttempt(
+  db: OutboxDb,
+  row: OutboxRow,
+  lastError: string,
+  opts: { readonly terminal: boolean },
+): ExternalDispatchResult {
+  const attempts = row.attempts + 1;
+  incrementAttempts(db, row.idempotencyKey, lastError);
+  const terminal = opts.terminal || attempts >= row.maxAttempts;
+  if (terminal) {
+    markFailed(db, row.idempotencyKey, lastError);
+    return Object.freeze({
+      kind: "failed",
+      idempotencyKey: row.idempotencyKey,
+      attempts,
+      maxAttempts: row.maxAttempts,
+      lastError,
+    });
+  }
+  return Object.freeze({
+    kind: "pending",
+    idempotencyKey: row.idempotencyKey,
+    attempts,
+    maxAttempts: row.maxAttempts,
+    lastError,
+  });
+}
+
+function lookupHandler(
+  handlers: ExternalHandlerRegistry,
+  capability: string,
+): ExternalHandler | undefined {
+  if (isReadonlyMap(handlers)) {
+    return handlers.get(capability);
+  }
+  return handlers[capability];
+}
+
+function isReadonlyMap(
+  handlers: ExternalHandlerRegistry,
+): handlers is ReadonlyMap<string, ExternalHandler> {
+  return typeof (handlers as ReadonlyMap<string, ExternalHandler>).get === "function";
+}
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 /**
  * Row → OutboxRow. Deserializes JSON columns and narrows the `status`

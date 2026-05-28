@@ -88,6 +88,12 @@ import type {
 } from "../engine/runner-contract";
 import type { LedgerDb } from "../ledger/db";
 import { executeProcessor } from "./executor";
+import {
+  buildProcessorExecutionState,
+  processorExecutionKey,
+  type ProcessorExecutionState,
+  type ProcessorExecutionKey,
+} from "./execution-state";
 import { resolveExecutionPolicy } from "./execution-policy";
 import {
   insertQueued,
@@ -108,6 +114,10 @@ import {
   type ProcessorContextInput,
 } from "./context";
 import { makeRunContext } from "../run-context";
+import {
+  modelInvokeForProcessor,
+  type ModelProvider,
+} from "../engine/model-invoke";
 
 // ----- AdoptionRunInput -----------------------------------------------------
 
@@ -184,6 +194,7 @@ export type ProcessorRuntime = {
   readonly adoptionRunner: AdoptionPhaseRunner;
   readonly gardenRunner: GardenPhaseRunner;
   readonly viewRunner: ViewPhaseRunner;
+  readonly executionState: ProcessorExecutionState;
 };
 
 // ----- BuildRuntimeOptions --------------------------------------------------
@@ -241,6 +252,8 @@ export type BuildRuntimeOptions = {
    * `ProjectionDb`.
    */
   readonly projection?: ProjectionQueryView;
+  readonly executionState?: ProcessorExecutionState;
+  readonly modelProvider?: ModelProvider;
 };
 
 // ----- buildRuntime ---------------------------------------------------------
@@ -270,7 +283,10 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     resolveTree,
     ledger,
     projection,
+    modelProvider,
   } = opts;
+  const executionState =
+    opts.executionState ?? buildProcessorExecutionState();
 
   const adoptionRunner: AdoptionPhaseRunner = async (input) => {
     const adoptionProcessors = registry.byPhase("adoption");
@@ -304,6 +320,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         resolveGrants,
         extensionIdFor,
         ledger,
+        executionState,
+        ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
       results.push(result);
     }
@@ -350,6 +368,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         resolveGrants,
         extensionIdFor,
         ledger,
+        executionState,
+        ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
       results.push(result);
     }
@@ -426,6 +446,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       resolveGrants,
       extensionIdFor,
       ledger,
+      executionState,
+      ...(modelProvider !== undefined ? { modelProvider } : {}),
       // View-phase processors receive the projection query view so they
       // can read facts / diagnostics / questions out of the projection
       // store via `ctx.projection`. Adoption + garden phases do NOT pass
@@ -437,7 +459,12 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     });
   };
 
-  return Object.freeze({ adoptionRunner, gardenRunner, viewRunner });
+  return Object.freeze({
+    adoptionRunner,
+    gardenRunner,
+    viewRunner,
+    executionState,
+  });
 }
 
 // ----- shared dispatch helpers ----------------------------------------------
@@ -496,6 +523,8 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger: LedgerDb | undefined;
+  readonly executionState?: ProcessorExecutionState;
+  readonly modelProvider?: ModelProvider;
   /**
    * The projection query view to thread onto `ctx.projection`. Only the
    * view-phase caller passes this; adoption + garden callers leave it
@@ -521,6 +550,8 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     resolveGrants,
     extensionIdFor,
     ledger,
+    executionState,
+    modelProvider,
     projection,
   } = opts;
 
@@ -576,6 +607,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     const error = {
       code: policyResult.error.code,
       message: policyResult.error.message,
+      retryable: false as const,
       phase,
       processorId: processor.id,
       class: policyResult.error.class,
@@ -591,6 +623,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       runId,
       processorId: processor.id,
       executionStatus: "skipped",
+      executionError: error,
       declared,
       granted,
       effects: Object.freeze([
@@ -604,11 +637,73 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     });
   }
 
+  const quarantineKey =
+    executionState === undefined || !quarantineEligible(phase, matches)
+      ? null
+      : processorExecutionKey({
+          phase,
+          processorId: processor.id,
+          processorVersion: processor.version,
+          matches,
+        });
+  if (executionState !== undefined && quarantineKey !== null) {
+    const quarantine = executionState.quarantineFor(quarantineKey);
+    if (quarantine !== null) {
+      const finishedAt = new Date();
+      const error = {
+        code: "processor.quarantined" as const,
+        message:
+          `Processor is quarantined for this trigger after ` +
+          `${quarantine.consecutiveRetryableFailures} consecutive ` +
+          `retryable failures: ${quarantine.reason}`,
+        retryable: false as const,
+        phase,
+        processorId: processor.id,
+      };
+      if (ledger !== undefined) {
+        markSkipped(ledger, {
+          id: runId,
+          finishedAt,
+          error: JSON.stringify(error),
+        });
+      }
+      return Object.freeze({
+        runId,
+        processorId: processor.id,
+        executionStatus: "skipped",
+        executionError: error,
+        declared,
+        granted,
+        effects: Object.freeze([
+          diagnosticEffect({
+            severity: "error",
+            code: "processor.quarantined",
+            message: `${processor.id}: ${error.message}`,
+            sourceRefs: [],
+          }),
+        ]),
+      });
+    }
+  }
+
   if (ledger !== undefined) {
     markRunning(ledger, runId, startedAt);
   }
 
   const controller = new AbortController();
+  let costUsd = 0;
+  const modelInvoke = modelInvokeForProcessor({
+    phase,
+    processorId: processor.id,
+    declared,
+    granted,
+    policy: policyResult.value,
+    signal: controller.signal,
+    ...(modelProvider !== undefined ? { provider: modelProvider } : {}),
+    onCost: (cost) => {
+      costUsd += cost;
+    },
+  });
   const ctxInput: ProcessorContextInput<TEnvelope> = {
     snapshot,
     changedPaths,
@@ -616,13 +711,10 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     runId,
     input: envelope,
     signal: controller.signal,
-    // `modelInvoke` intentionally unset for both phases in Phase 4a.
-    // Adoption never receives a model handle (processors.md §"Adoption
-    // phase"). Garden MAY receive one when the `model.invoke` capability
-    // wiring lands in a later phase (Phase 4d-adjacent), but Phase 4a
-    // does not enable it — garden processors that require LLMs are
-    // deferred bundles (dome.intake), and their wiring lands when
-    // model.invoke is plumbed through ProcessorContext.
+    // `modelInvoke` is conditionally set below. Adoption never receives a
+    // model handle; garden/view processors receive one only when they both
+    // declare and are granted model.invoke and a provider-neutral model
+    // boundary can enforce model policy for the run.
     //
     // `projection` is conditionally set below — only on view-phase
     // dispatch — so adoption + garden contexts see
@@ -631,6 +723,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     ...(phase === "view" && projection !== undefined
       ? { projection }
       : {}),
+    ...(modelInvoke !== undefined ? { modelInvoke } : {}),
   };
   const ctx = makeProcessorContext(ctxInput);
 
@@ -653,7 +746,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       markSucceeded(ledger, {
         id: runId,
         effectHashes: execution.effectHashes,
-        costUsd: null,
+        costUsd: costUsdOrNull(costUsd),
         durationMs: execution.durationMs,
         outputCommit: null,
         finishedAt,
@@ -662,6 +755,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       markTimedOut(ledger, {
         id: runId,
         error: execution.error,
+        costUsd: costUsdOrNull(costUsd),
         durationMs: execution.durationMs,
         finishedAt,
       });
@@ -669,6 +763,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       markCancelled(ledger, {
         id: runId,
         error: execution.error,
+        costUsd: costUsdOrNull(costUsd),
         durationMs: execution.durationMs,
         finishedAt,
       });
@@ -676,16 +771,29 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
       markFailed(ledger, {
         id: runId,
         error: execution.error,
+        costUsd: costUsdOrNull(costUsd),
         durationMs: execution.durationMs,
         finishedAt,
       });
     }
   }
 
+  if (executionState !== undefined && quarantineKey !== null) {
+    updateExecutionStateAfterRun({
+      state: executionState,
+      key: quarantineKey,
+      execution,
+    });
+  }
+
+  const executionError =
+    execution.status === "succeeded" ? undefined : execution.error;
+
   return Object.freeze({
     runId,
     processorId: processor.id,
     executionStatus: execution.status,
+    ...(executionError !== undefined ? { executionError } : {}),
     declared,
     granted,
     effects:
@@ -718,6 +826,38 @@ function triggerKindOf(matches: ReadonlyArray<TriggerMatch>): TriggerKind {
     throw new Error("runtime: triggerKindOf called with empty matches");
   }
   return first.trigger.kind;
+}
+
+function quarantineEligible(
+  phase: "adoption" | "garden" | "view",
+  matches: ReadonlyArray<TriggerMatch>,
+): boolean {
+  if (phase === "garden") return true;
+  if (phase !== "view") return false;
+  return matches.some((m) => m.trigger.kind === "schedule");
+}
+
+function updateExecutionStateAfterRun(opts: {
+  readonly state: ProcessorExecutionState;
+  readonly key: ProcessorExecutionKey;
+  readonly execution: Awaited<ReturnType<typeof executeProcessor>>;
+}): void {
+  if (opts.execution.status === "succeeded") {
+    opts.state.recordSuccess(opts.key);
+    return;
+  }
+  if (opts.execution.error.retryable) {
+    opts.state.recordRetryableTerminalFailure(
+      opts.key,
+      `${opts.execution.error.code}: ${opts.execution.error.message}`,
+    );
+    return;
+  }
+  opts.state.recordNonRetryableTerminalFailure(opts.key);
+}
+
+function costUsdOrNull(costUsd: number): number | null {
+  return costUsd > 0 ? costUsd : null;
 }
 
 /**

@@ -10,7 +10,7 @@
 //   - recordFact       → src/projections/facts.ts:       insertFact
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
-//   - dispatchExternal → src/outbox/dispatch.ts:         insertPending
+//   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //
 // Two sinks are injected by the caller (engine layer):
 //
@@ -32,7 +32,7 @@
 //     fence that pins all Effect mutation to flow through `applyEffect` and
 //     its injected `ApplyEffectSinks`.
 //   - docs/wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX.md — pins
-//     `dispatchExternal` to `outbox.dispatch.insertPending` exclusively.
+//     `dispatchExternal` to the outbox dispatcher exclusively.
 //
 // House-style notes (matches src/projections/facts.ts, src/engine/apply-effect.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -46,7 +46,9 @@
 //     the inserts are synchronous SQL calls (Bun's sqlite is sync) wrapped
 //     in an async function for structural compatibility with the
 //     `Promise<void>` return signature of `ApplyEffectSinks`.
-//   - No filesystem, no network, no git. Pure composition layer.
+//   - No filesystem and no git. ExternalActionEffects delegate to the
+//     supplied outbox handlers, so network-capable behavior is injected at
+//     this boundary rather than hidden in processors.
 
 import type { ApplyEffectSinks } from "../engine/apply-effect";
 import type { CommitOid } from "../core/source-ref";
@@ -57,7 +59,12 @@ import { insertDiagnostic } from "./diagnostics";
 import { insertFact } from "./facts";
 import { insertQuestion } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
-import { insertPending as insertOutboxRow } from "../outbox/dispatch";
+import {
+  dispatchExternalEffect,
+  type ExternalHandlerRegistry,
+} from "../outbox/dispatch";
+
+const EMPTY_EXTERNAL_HANDLERS = Object.freeze({});
 
 // ----- Public types ---------------------------------------------------------
 
@@ -85,6 +92,12 @@ export type BuildSqliteSinksOpts = {
    * neither belongs in this factory.
    */
   readonly applyPatch: ApplyEffectSinks["applyPatch"];
+  /**
+   * Registered handlers for ExternalActionEffect capabilities. When omitted,
+   * external effects still go through the outbox, but the row terminally
+   * fails with a missing-handler error instead of lingering as pending.
+   */
+  readonly externalHandlers?: ExternalHandlerRegistry;
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -92,7 +105,7 @@ export type BuildSqliteSinksOpts = {
 /**
  * Assemble the seven-sink `ApplyEffectSinks` object the engine's
  * `applyEffect` router calls into. Five sinks delegate to the per-table
- * projection accessors + the outbox `insertPending`; two are pass-through
+ * projection accessors + the outbox dispatcher; two are pass-through
  * injections from the engine layer (`applyPatch`, `captureView`).
  *
  * The returned object is `Object.freeze`'d so a misbehaving caller cannot
@@ -138,9 +151,10 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
     },
 
     dispatchExternal: async ({ effect, runId }) => {
-      insertOutboxRow(opts.outboxDb, {
+      await dispatchExternalEffect(opts.outboxDb, {
         effect,
         runId,
+        handlers: opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
       });
     },
   });

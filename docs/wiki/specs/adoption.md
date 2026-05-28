@@ -177,7 +177,7 @@ Output (`--json`):
 {"status":"adopted","branch":"main","base":"9c1e002...","head":"41a98c2...","adoptedRef":"41a98c2...","iterations":1,"closureCommit":null,"diagnostics":[]}
 ```
 
-Garden-phase scheduled-trigger processors are deferred to v1.1; `dome sync` in v1.0 runs the adoption-phase fixed-point loop only.
+Garden-phase and view-phase scheduled-trigger processors run after a successful top-level adoption attempt. Scheduled garden PatchEffects must re-enter adoption as garden sub-Proposals; they do not mutate the adopted candidate directly.
 
 The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place via `setAdoptedRef`, but the user-facing bypass lands with the adopted-ref-divergence recovery flow in v1.1. Until then, a divergent HEAD surfaces as a blocking diagnostic and the operator resolves manually (e.g., `git reset --hard <adopted-ref>` to realign).
 

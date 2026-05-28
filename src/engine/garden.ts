@@ -15,8 +15,8 @@
 // capability-use ledgering.
 //
 // Phase 4a' (this commit): garden-emitted auto-mode PatchEffects
-// spawn sub-Proposals. The orchestrator checks the broker via
-// `enforceCapability`, applies the patch to the adopted tree via
+// spawn sub-Proposals. The orchestrator routes the patch through the shared
+// garden patch router, applies the patch to the adopted tree via
 // `applyPatchToCandidate` to produce a new commit head, constructs a
 // Proposal with `source: { kind: "garden", processorId, runId }`,
 // and routes it through the injected `adoptSubProposal` callback —
@@ -53,11 +53,11 @@ import {
 import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { applyPatchToCandidate } from "./apply-patch";
-import { enforceCapability } from "./capability-broker";
 import type { SignalEvent } from "./compile-range";
 import { deriveExtensionId } from "../extensions/id-helpers";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
+import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import type { GardenPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -171,8 +171,8 @@ export type AdoptSubProposalFn = (
  *   1. Invokes the injected `GardenPhaseRunner`.
  *   2. For each runner result, walks the emitted effects:
  *      - Non-Patch effects route through `applyEffect({ phase: "garden", ... })`.
- *      - Auto-mode Patch effects pass through the broker manually (via
- *        `enforceCapability`); accepted ones are queued for sub-Proposal
+ *      - Auto-mode Patch effects pass through the shared garden patch router;
+ *        accepted ones are queued for sub-Proposal
  *        spawn.
  *      - Propose-mode Patch effects log+drop (v1.0; full lint-review
  *        wiring is a separate phase).
@@ -328,79 +328,28 @@ async function runGardenPhaseInner(opts: {
   for (const result of runnerResults) {
     for (const effect of result.effects) {
       if (effect.kind === "patch") {
-        // Garden-phase PatchEffect: broker-check manually here (rather
-        // than via applyEffect) so we can route the patch into the
-        // spawn queue rather than the in-place applyPatch sink.
-        const verdict = enforceCapability(
+        const routed = await routeGardenPatchForSubProposal({
           effect,
-          result.declared,
-          result.granted,
-        );
-        if (verdict.kind === "deny") {
-          totalRejectedPatches += 1;
-          allDiagnostics.push(verdict.diagnostic);
-          if (ledger !== undefined) {
-            recordCapabilityUse(ledger, {
-              runId: result.runId,
-              capability: capabilityForPatch(effect),
-              resource: firstPatchedPath(effect) ?? null,
-              outcome: "denied",
-              recordedAt: new Date(),
-            });
+          processorId: result.processorId,
+          runId: result.runId,
+          proposalId: proposal.id,
+          declared: result.declared,
+          granted: result.granted,
+          sinks,
+          ...(ledger !== undefined ? { ledger } : {}),
+        });
+        if (routed.kind === "dropped") {
+          allDiagnostics.push(...routed.diagnostics);
+          if (routed.rejected) {
+            totalRejectedPatches += 1;
           }
-          // The deny diagnostic is also routed through recordDiagnostic
-          // so it lands in projection.db.diagnostics like any other
-          // surfaced diagnostic.
-          await sinks.recordDiagnostic({
-            effect: verdict.diagnostic,
-            processorId: result.processorId,
-            runId: result.runId,
-            proposalId: proposal.id,
-          });
           continue;
         }
-        // Allowed or downgraded. For downgrade (auto → propose), the
-        // patch is no longer eligible for sub-Proposal spawn; log+drop
-        // with the downgrade diagnostic (which the broker already
-        // emitted) added to the aggregated diagnostics.
-        if (verdict.kind === "downgrade") {
-          allDiagnostics.push(verdict.diagnostic);
-          await sinks.recordDiagnostic({
-            effect: verdict.diagnostic,
-            processorId: result.processorId,
-            runId: result.runId,
-            proposalId: proposal.id,
-          });
-          if (ledger !== undefined) {
-            recordCapabilityUse(ledger, {
-              runId: result.runId,
-              capability: capabilityForPatch(effect),
-              resource: firstPatchedPath(effect) ?? null,
-              outcome: "downgraded",
-              recordedAt: new Date(),
-            });
-          }
-          // Propose-mode behavior is the same log+drop as before.
-          continue;
-        }
-        // Allowed. Queue for spawn (assuming auto-mode; propose-mode
-        // patches log+drop here too in v1.0).
-        if (effect.mode !== "auto") {
-          // Propose-mode auto-allowed patch — still log+drop in v1.0;
-          // the lint-review surface lands separately.
-          continue;
-        }
-        if (ledger !== undefined) {
-          recordCapabilityUse(ledger, {
-            runId: result.runId,
-            capability: capabilityForPatch(effect),
-            resource: firstPatchedPath(effect) ?? null,
-            outcome: "allowed",
-            recordedAt: new Date(),
-          });
+        if (routed.diagnostics.length > 0) {
+          allDiagnostics.push(...routed.diagnostics);
         }
         spawnQueue.push({
-          patch: effect,
+          patch: routed.patch,
           processorId: result.processorId,
           runId: result.runId,
         });
@@ -551,26 +500,3 @@ function frozenResult(result: {
     cascadeDepth: result.cascadeDepth,
   });
 }
-
-/**
- * Derive the required capability tier for a PatchEffect — `patch.auto` for
- * auto-mode patches, `patch.propose` for propose-mode. Used to record the
- * capability_use row when the broker decides (we look up the right
- * capability label for the audit).
- */
-function capabilityForPatch(effect: PatchEffect): string {
-  return effect.mode === "auto" ? "patch.auto" : "patch.propose";
-}
-
-/**
- * First patched path from a PatchEffect for the `capability_use.resource`
- * audit column. The broker enforces per-path against every change; the
- * scalar `resource` records the first one as the representative.
- */
-function firstPatchedPath(effect: PatchEffect): string | null {
-  return effect.changes[0]?.path ?? null;
-}
-
-// `deriveExtensionId` lives in `src/extensions/id-helpers.ts` (Phase 4a'
-// fix-up) so the convention has one source of truth shared by this
-// orchestrator and `src/cli/commands/sync-shared.ts`'s `realApplyPatch`.

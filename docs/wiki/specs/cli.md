@@ -197,7 +197,7 @@ vault: /Users/mark/vaults/work
   log:      8,143 entries
   ledger:   13,847 runs (last 30d: 412; last 7d: 89)
   outbox:   2 pending, 0 failed
-  bundles:  9 (dome.markdown, dome.index, dome.log, dome.links, dome.intake, dome.daily, dome.lint, dome.search, dome.migrate)
+  bundles:  3 (dome.markdown, dome.graph, dome.lint)
   invariants: <linked count from canonical INVARIANTS const>
 ```
 
@@ -353,12 +353,12 @@ Composition (v1.0):
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
    - If HEAD equals the adopted ref: no-op (steady state).
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
-4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's `applyPatch` / `captureView` placeholder sinks (which log + drop in v1.0 — the candidate-tree mutator + view delivery wiring lands in v1.1).
+4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
 5. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
 
-The scheduled-trigger dispatcher (garden-phase cron processors) and the `--mcp` toggle are deferred to v1.1.
+The scheduled-trigger dispatcher for garden/view processors is wired through the same runtime grant resolver as adoption. The `--mcp` toggle remains deferred to v1.1.
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 

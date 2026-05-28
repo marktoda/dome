@@ -32,7 +32,7 @@ interface ProcessorContext<TInput = unknown> {
   readonly runId: string;                 // matches the RunRecord row's id
   readonly input: TInput;                 // trigger-specific payload (e.g., Signal, ClockTick, CommandArgs)
   readonly capabilities: CapabilityToken; // opaque token; the broker resolves on effect emission
-  readonly modelInvoke?: ModelInvokeFn;   // present iff capability `model.invoke` granted
+  readonly modelInvoke?: ModelInvokeFn;   // present iff non-adoption run has effective `model.invoke`; supports text + structured JSON
   readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it)
   readonly sourceRef(path: string, range?: TextRange): SourceRef;  // helper for SourceRef construction
 }
@@ -214,7 +214,7 @@ The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engi
 | View-phase runner | `viewRunner` (`src/processors/runtime.ts`) + `runViewCommand` dispatcher (`src/engine/commands.ts`) — command-driven view processors fire; non-View effect emissions are phase-rejected | **Shipped** (Phase 4b) |
 | Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table; minimal in-tree cron evaluator (`src/engine/cron.ts`); clock injection via `runOneAdoption({ now })` for deterministic harness testing | **Shipped** (Phase 4c) |
 | Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) + the `answer` trigger kind | Phase 4d |
-| JobEffect runtime | `scheduled_jobs` table + in-memory dispatcher firing due jobs as garden-phase work | Phase 4e |
+| JobEffect runtime | `scheduled_jobs` table + `runQueuedJobs` dispatcher firing due jobs as garden-phase work with retry/backoff | **Shipped** (Phase 4e) |
 
 See the brainstorm doc for the full plan including dependencies, tests, and the question-answer surface.
 

@@ -19,15 +19,12 @@
 //
 // v1.0 scope (intentional deferrals, documented inline):
 //
-//   - `resolveGrants`: granted := declared (every declared capability is
-//     granted). Matches the v1 "trust the bundle manifest" default. A
-//     follow-up phase wires real per-extension grant lookups from
-//     `.dome/config.yaml` via the capability-policy resolver.
-//   - `extensionIdFor`: identity (`processorId === extensionId`). The
-//     registry already keys by bundle-prefixed processor id per
-//     [[wiki/specs/sdk-surface]] §"Bundle load lifecycle"; the bundle id
-//     is the processor id verbatim for v1. A follow-up phase refines this
-//     once the bundle loader threads a per-processor → bundle map through.
+//   - `resolveGrants`: `.dome/config.yaml` grant lookup when a config file
+//     exists; compatibility fallback to declared capabilities only for
+//     config-less test/dev vaults.
+//   - `extensionIdFor`: processor → bundle id map derived from loaded
+//     bundles (or inferred from the supplied extension list for prebuilt
+//     registries).
 //   - `resolveTree`: a thin wrapper over `../git`'s `readTree`. The
 //     runtime calls `resolveTree(candidate)` once per adoption iteration
 //     whenever the registry has any adoption-phase processors — even
@@ -56,11 +53,18 @@ import { join } from "node:path";
 import { err, ok, type Result } from "../types";
 import type { CommitOid } from "../core/source-ref";
 import { treeOid, type Capability, type TreeOid } from "../core/processor";
+import {
+  loadCapabilityPolicy,
+  type CapabilityPolicy,
+} from "./capability-policy";
 import { readTree } from "../git";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
 import { buildProjectionQueryView } from "../projections/query-view";
 import { openOutboxDb, type OutboxDb } from "../outbox/db";
+import type { ExternalHandlerRegistry } from "../outbox/dispatch";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
+import { openQuarantineStore } from "./quarantine-store";
+import type { ModelProvider } from "./model-invoke";
 import {
   buildRuntime,
   type ProcessorRuntime,
@@ -76,6 +80,8 @@ import {
   type LoadBundlesError,
   type LoadedBundle,
 } from "../extensions/loader";
+
+const EMPTY_EXTERNAL_HANDLERS: ExternalHandlerRegistry = Object.freeze({});
 
 // ----- Public types ---------------------------------------------------------
 
@@ -99,6 +105,10 @@ export type VaultRuntime = {
   readonly ledgerDb: LedgerDb;
   readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly extensionIdFor: (processorId: string) => string;
+  readonly externalHandlers: ExternalHandlerRegistry;
+  readonly modelProvider?: ModelProvider;
   readonly close: () => Promise<void>;
 };
 
@@ -139,6 +149,19 @@ export type OpenVaultRuntimeWithRegistryOpts = {
     readonly id: string;
     readonly version: string;
   }>;
+  /**
+   * Optional processor → extension map for callers that pre-build a
+   * registry. When omitted, the runtime infers the map from the supplied
+   * extension names by longest prefix.
+   */
+  readonly processorExtensionIds?: ReadonlyMap<string, string>;
+  /**
+   * Capability handlers used by the outbox dispatcher for
+   * ExternalActionEffects. Omitted means no external side effects are
+   * performable; emitted rows fail explicitly with a missing-handler error.
+   */
+  readonly externalHandlers?: ExternalHandlerRegistry;
+  readonly modelProvider?: ModelProvider;
 };
 
 /**
@@ -160,6 +183,13 @@ export type OpenVaultRuntimeWithBundlesOpts = {
    * directory with the declared processor modules.
    */
   readonly bundlesRoot: string;
+  /**
+   * Capability handlers used by the outbox dispatcher for
+   * ExternalActionEffects. Bundle-discovered handlers are a future loader
+   * extension; callers may inject handlers directly today.
+   */
+  readonly externalHandlers?: ExternalHandlerRegistry;
+  readonly modelProvider?: ModelProvider;
 };
 
 /**
@@ -179,6 +209,8 @@ export type OpenVaultRuntimeOpts =
  *
  *   - `projection-db-open-failed`, `outbox-db-open-failed`,
  *     `ledger-db-open-failed`: the three DB-open seams.
+ *   - `quarantine-store-open-failed`: the processor quarantine JSON store
+ *     could not be read or parsed.
  *   - `bundle-load-failed`: the bundle loader rejected the bundlesRoot
  *     (root missing, manifest invalid, processor import failure, etc.).
  *     Carries the nested `LoadBundlesError` for the operator's diagnostic.
@@ -190,6 +222,8 @@ export type OpenVaultRuntimeError =
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }
   | { readonly kind: "outbox-db-open-failed"; readonly cause: string }
   | { readonly kind: "ledger-db-open-failed"; readonly cause: string }
+  | { readonly kind: "quarantine-store-open-failed"; readonly cause: string }
+  | { readonly kind: "capability-policy-load-failed"; readonly cause: string }
   | { readonly kind: "bundle-load-failed"; readonly cause: LoadBundlesError }
   | { readonly kind: "registry-build-failed"; readonly cause: RegistryError };
 
@@ -215,11 +249,11 @@ export type OpenVaultRuntimeError =
  * opened DB is closed before the error is returned — no leaked handles on
  * the error path.
  *
- * v1.0 defaults (documented in the file banner; this comment lists the
+ * v1 defaults (documented in the file banner; this comment lists the
  * wired seams the function injects):
- *   - `resolveGrants` := identity-on-declared (grant set = declared set).
- *   - `extensionIdFor` := identity (`processorId` is treated as the
- *     extension id).
+ *   - `resolveGrants` := vault config grants when `.dome/config.yaml`
+ *     exists, compatibility declared-grant fallback only when it does not.
+ *   - `extensionIdFor` := processor → bundle id map.
  *   - `resolveTree` := the live git boundary (`../git`'s `readTree`).
  */
 export async function openVaultRuntime(
@@ -231,7 +265,41 @@ export async function openVaultRuntime(
   //    no need to clean up handles on these paths.
   const resolved = await resolveRegistryFromOpts(opts);
   if (!resolved.ok) return err(resolved.error);
-  const { registry, extensions, processorVersions } = resolved.value;
+  const {
+    registry,
+    extensions,
+    processorVersions,
+    processorExtensionIds,
+  } = resolved.value;
+
+  const policyResult = await loadCapabilityPolicy(opts.vaultPath);
+  if (!policyResult.ok) {
+    return err({
+      kind: "capability-policy-load-failed",
+      cause: policyResult.error,
+    });
+  }
+  const resolveGrants = policyResult.value.foundConfig
+    ? resolveGrantsFromPolicy(registry, policyResult.value, processorExtensionIds)
+    : defaultResolveGrants(registry);
+  const extensionIdFor = extensionIdForProcessor(processorExtensionIds);
+  const externalHandlers = opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS;
+  const modelProvider = opts.modelProvider;
+
+  const quarantinePath = join(
+    opts.vaultPath,
+    ".dome",
+    "state",
+    "quarantined.json",
+  );
+  const quarantineResult = openQuarantineStore({ path: quarantinePath });
+  if (!quarantineResult.ok) {
+    return err({
+      kind: "quarantine-store-open-failed",
+      cause: `${quarantineResult.error.kind}: ${quarantineResult.error.cause}`,
+    });
+  }
+  const executionState = quarantineResult.value;
 
   // 2. Projection DB.
   const projectionPath = join(opts.vaultPath, ".dome", "state", "projection.db");
@@ -283,11 +351,13 @@ export async function openVaultRuntime(
   //    views can read facts / diagnostics / questions.
   const processorRuntime = buildRuntime({
     registry,
-    resolveGrants: defaultResolveGrants(registry),
-    extensionIdFor: defaultExtensionIdFor,
+    resolveGrants,
+    extensionIdFor,
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
     projection: buildProjectionQueryView(projectionDb),
+    executionState,
+    ...(modelProvider !== undefined ? { modelProvider } : {}),
   });
 
   const runtime: VaultRuntime = Object.freeze({
@@ -297,6 +367,10 @@ export async function openVaultRuntime(
     ledgerDb,
     registry,
     processorRuntime,
+    resolveGrants,
+    extensionIdFor,
+    externalHandlers,
+    ...(modelProvider !== undefined ? { modelProvider } : {}),
     close: async () => {
       // Close in reverse-open order. SQLite handles are idempotent under
       // `sqlite3_close_v2`, so a double-close is safe.
@@ -326,6 +400,7 @@ type ResolvedRegistry = {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly processorExtensionIds: ReadonlyMap<string, string>;
 };
 
 /**
@@ -347,6 +422,12 @@ async function resolveRegistryFromOpts(
       registry: opts.registry,
       extensions: opts.extensions,
       processorVersions: opts.processorVersions,
+      processorExtensionIds:
+        opts.processorExtensionIds ??
+        inferProcessorExtensionIds(
+          opts.registry,
+          opts.extensions.map((e) => e.name),
+        ),
     });
   }
 
@@ -370,6 +451,7 @@ async function resolveRegistryFromOpts(
     registry: registryResult.value,
     extensions: deriveExtensionList(bundles),
     processorVersions: deriveProcessorVersionList(processors),
+    processorExtensionIds: deriveProcessorExtensionIds(bundles),
   });
 }
 
@@ -396,19 +478,41 @@ function deriveProcessorVersionList(
   return processors.map((p) => ({ id: p.id, version: p.version }));
 }
 
-// ----- v1.0 default seam injections -----------------------------------------
+function deriveProcessorExtensionIds(
+  bundles: ReadonlyArray<LoadedBundle>,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const bundle of bundles) {
+    for (const processor of bundle.processors) {
+      out.set(processor.id, bundle.id);
+    }
+  }
+  return out;
+}
+
+function inferProcessorExtensionIds(
+  registry: ProcessorRegistry,
+  extensionIds: ReadonlyArray<string>,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  const sorted = [...extensionIds].sort((a, b) => b.length - a.length);
+  for (const processor of registry.all()) {
+    const match = sorted.find(
+      (extensionId) =>
+        processor.id === extensionId || processor.id.startsWith(`${extensionId}.`),
+    );
+    out.set(processor.id, match ?? processor.id);
+  }
+  return out;
+}
+
+// ----- Runtime seam injections ----------------------------------------------
 
 /**
- * v1.0 default: grant = declared. Every capability a processor declares
- * in its bundle manifest is granted at adoption time. This matches the
- * v1 "trust the bundle manifest" default — third-party extensions
- * installed into the vault are assumed vetted at install time.
- *
- * A follow-up phase replaces this with a real per-extension grant lookup
- * driven by `.dome/config.yaml`'s capability-policy section (per
- * [[wiki/specs/capabilities]] §"Vault policy"). The seam is the
- * `resolveGrants` callback of `buildRuntime`; this function is the v1
- * stand-in.
+ * Compatibility fallback for config-less test/dev vaults: grant =
+ * declared. Normal vaults use `resolveGrantsFromPolicy`, which reads
+ * `.dome/config.yaml`. Keep this function exported for low-level tests
+ * that intentionally hand-compose a registry without a vault config.
  *
  * Returned arrays are NOT frozen here — the caller (`buildRuntime`)
  * passes them through to `RunnerResult.granted`, which the engine treats
@@ -433,19 +537,36 @@ export function defaultResolveGrants(
   };
 }
 
+function resolveGrantsFromPolicy(
+  registry: ProcessorRegistry,
+  policy: CapabilityPolicy,
+  processorExtensionIds: ReadonlyMap<string, string>,
+): (processorId: string) => ReadonlyArray<Capability> {
+  return (processorId: string): ReadonlyArray<Capability> => {
+    const p = registry.get(processorId);
+    if (p === undefined) {
+      throw new Error(
+        `openVaultRuntime: resolveGrants asked about unknown processor id '${processorId}'`,
+      );
+    }
+    const extensionId = processorExtensionIds.get(processorId) ?? processorId;
+    return policy.grantsForExtension(extensionId);
+  };
+}
+
 /**
- * v1.0 default: extension id := processor id. The bundle loader prefixes
- * each processor id with its bundle id (per
- * [[wiki/specs/sdk-surface]] §"Bundle load lifecycle" step 4), so the
- * processor id itself is a reasonable extension-id surrogate for the
- * `Dome-Extension` trailer.
- *
- * A follow-up phase refines this once the bundle loader threads a
- * per-processor → bundle map through to `openVaultRuntime`; the seam is
- * the `extensionIdFor` callback of `buildRuntime`.
+ * Compatibility fallback for callers that have no processor → bundle map.
+ * `openVaultRuntime` now derives the real map for loaded bundles.
  */
 export function defaultExtensionIdFor(processorId: string): string {
   return processorId;
+}
+
+function extensionIdForProcessor(
+  processorExtensionIds: ReadonlyMap<string, string>,
+): (processorId: string) => string {
+  return (processorId: string): string =>
+    processorExtensionIds.get(processorId) ?? defaultExtensionIdFor(processorId);
 }
 
 /**

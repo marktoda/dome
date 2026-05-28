@@ -444,7 +444,7 @@ describe("jobs accessor", () => {
     expect(next).not.toBeNull();
     if (next === null) return;
     expect(next.idempotencyKey).toBe("j-1");
-    expect(next.processorId).toBe("p.emitter");
+    expect(next.processorId).toBe("dome.deferred");
     expect(next.status).toBe("pending");
     expect(next.attempts).toBe(0);
     expect(next.runAfter).toBe(earlier);

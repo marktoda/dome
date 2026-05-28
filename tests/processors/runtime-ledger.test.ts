@@ -34,6 +34,7 @@ import {
 import { makeManualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/compile-range";
 import type { EngineVault } from "../../src/engine/vault-shape";
+import type { ModelProvider } from "../../src/engine/model-invoke";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 
@@ -85,15 +86,22 @@ function makeFixtureProcessor(opts: {
 function buildRuntimeFor(
   processors: ReadonlyArray<Processor>,
   ledger: LedgerDb,
+  overrides?: {
+    resolveGrants?: (processorId: string) => ReadonlyArray<Capability>;
+    modelProvider?: ModelProvider;
+  },
 ) {
   const reg = buildRegistry(processors);
   if (!reg.ok) throw new Error(`registry build failed: ${reg.error.kind}`);
   return buildRuntime({
     registry: reg.value,
-    resolveGrants: () => [],
+    resolveGrants: overrides?.resolveGrants ?? (() => []),
     extensionIdFor: (id) => id,
     resolveTree: async () => TREE,
     ledger,
+    ...(overrides?.modelProvider !== undefined
+      ? { modelProvider: overrides.modelProvider }
+      : {}),
   });
 }
 
@@ -344,6 +352,96 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(parsed.phase).toBe("garden");
     expect(row.finishedAt).not.toBeNull();
     expect(row.durationMs).not.toBeNull();
+  });
+
+  test("quarantined garden trigger is recorded as skipped with structured error", async () => {
+    const ledger = await openLedger();
+    let invocations = 0;
+    const p = makeFixtureProcessor({
+      id: "test.ledger.quarantine",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        invocations += 1;
+        throw Object.assign(new Error("retryable outage"), {
+          retryable: true,
+        });
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    for (let i = 0; i < 4; i += 1) {
+      await rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        proposal,
+      });
+    }
+
+    expect(invocations).toBe(3);
+    const rows = queryRuns(ledger, { processorId: "test.ledger.quarantine" });
+    expect(rows.length).toBe(4);
+    expect(rows.filter((row) => row.status === "failed").length).toBe(3);
+    const skipped = rows.find((row) => row.status === "skipped");
+    if (skipped === undefined) throw new Error("expected skipped row");
+    const parsed = JSON.parse(skipped.error ?? "{}");
+    expect(parsed.code).toBe("processor.quarantined");
+    expect(parsed.retryable).toBe(false);
+    expect(parsed.phase).toBe("garden");
+    expect(parsed.processorId).toBe("test.ledger.quarantine");
+    expect(skipped.durationMs).toBeNull();
+    expect(skipped.finishedAt).not.toBeNull();
+  });
+
+  test("model cost and structured model failure are persisted on failed runs", async () => {
+    const ledger = await openLedger();
+    const cap: Capability = { kind: "model.invoke" };
+    const p = makeFixtureProcessor({
+      id: "test.ledger.model-json",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      execution: { class: "llm" },
+      run: async (ctx) => {
+        if (ctx.modelInvoke === undefined) {
+          throw new Error("missing modelInvoke");
+        }
+        await ctx.modelInvoke.structured({
+          prompt: "json",
+          schemaName: "test.schema/v1",
+          parse: (value) => value,
+        });
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger, {
+      resolveGrants: () => [cap],
+      modelProvider: async () => ({
+        text: "not-json",
+        costUsd: 0.125,
+      }),
+    });
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(results[0]?.executionStatus).toBe("failed");
+    expect(results[0]?.executionError?.code).toBe("model.output.invalid-json");
+    const rows = queryRuns(ledger, { processorId: "test.ledger.model-json" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    expect(row.status).toBe("failed");
+    expect(row.costUsd).toBe(0.125);
+    const parsed = JSON.parse(row.error ?? "{}");
+    expect(parsed.code).toBe("model.output.invalid-json");
   });
 
   test("no ledger wired (Phase 6 transitional) — runs proceed and no rows are written", async () => {

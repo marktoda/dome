@@ -46,6 +46,13 @@ import { globMatch } from "../engine/glob-cache";
 
 // ----- TriggerMatch ---------------------------------------------------------
 
+export type JobDispatchTrigger = {
+  readonly kind: "job";
+  readonly idempotencyKey: string;
+};
+
+export type RuntimeTrigger = Trigger | JobDispatchTrigger;
+
 /**
  * One firing trigger plus the SignalEvents that caused it to fire. The
  * matcher returns one `TriggerMatch` per trigger that had at least one
@@ -53,7 +60,7 @@ import { globMatch } from "../engine/glob-cache";
  * input signals that matched this trigger.
  */
 export type TriggerMatch = {
-  readonly trigger: Trigger;
+  readonly trigger: RuntimeTrigger;
   readonly matchedSignals: ReadonlyArray<SignalEvent>;
 };
 

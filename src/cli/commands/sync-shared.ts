@@ -40,10 +40,9 @@ import {
   runGardenPhase,
   type AdoptSubProposalFn,
 } from "../../engine/garden";
+import { runQueuedJobs } from "../../engine/jobs";
 import { runScheduler } from "../../engine/scheduler";
 import {
-  defaultExtensionIdFor,
-  defaultResolveGrants,
   makeResolveTree,
   type VaultRuntime,
 } from "../../engine/vault-runtime";
@@ -310,6 +309,7 @@ export async function runOneAdoption(opts: {
       adoptedCommit: frame.head,
       applyPatch: realApplyPatch,
       captureView: captureViewPlaceholder,
+      externalHandlers: runtime.externalHandlers,
     });
   };
 
@@ -429,8 +429,31 @@ export async function runOneAdoption(opts: {
       resolveTree: makeResolveTree(runtime.path),
       now,
       ledger: runtime.ledgerDb,
-      resolveGrants: defaultResolveGrants(runtime.registry),
-      extensionIdFor: defaultExtensionIdFor,
+      executionState: runtime.processorRuntime.executionState,
+      ...(runtime.modelProvider !== undefined
+        ? { modelProvider: runtime.modelProvider }
+        : {}),
+      resolveGrants: runtime.resolveGrants,
+      extensionIdFor: runtime.extensionIdFor,
+      adoptSubProposal,
+    });
+
+    await runQueuedJobs({
+      vault: adoptOpts.vault,
+      adopted: adoptionResult.adoptedRef,
+      registry: runtime.registry,
+      projection: runtime.projectionDb,
+      sinks,
+      resolveTree: makeResolveTree(runtime.path),
+      now,
+      ledger: runtime.ledgerDb,
+      executionState: runtime.processorRuntime.executionState,
+      ...(runtime.modelProvider !== undefined
+        ? { modelProvider: runtime.modelProvider }
+        : {}),
+      resolveGrants: runtime.resolveGrants,
+      extensionIdFor: runtime.extensionIdFor,
+      adoptSubProposal,
     });
   }
 

@@ -27,6 +27,14 @@ const patchTouching = (path: string) =>
     sourceRefs: [ref],
   });
 
+const patchTouchingMany = (paths: ReadonlyArray<string>) =>
+  patchEffect({
+    mode: "auto",
+    changes: paths.map((path) => ({ kind: "write" as const, path, content: "x\n" })),
+    reason: "test",
+    sourceRefs: [ref],
+  });
+
 const proposePatchTouching = (path: string) =>
   patchEffect({
     mode: "propose",
@@ -64,12 +72,68 @@ describe("PatchEffect (mode: auto)", () => {
     const r = enforceCapability(patchTouching("wiki/x.md"), [auto], [auto]);
     expect(r.kind).toBe("allow");
   });
+
+  test("denied when any changed path lacks an effective patch grant", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+    const r = enforceCapability(
+      patchTouchingMany(["wiki/x.md", "private/y.md"]),
+      [auto],
+      [auto],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.message).toContain("private/y.md");
+  });
+
+  test("downgraded only when patch.propose covers every changed path", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**", "notes/**"] };
+    const r = enforceCapability(
+      patchTouchingMany(["wiki/x.md", "notes/y.md"]),
+      [auto, propose],
+      [auto, propose],
+    );
+    expect(r.kind).toBe("downgrade");
+  });
+
+  test("denied when a later changed path is owned by another processor", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["**"] };
+    const owner: Capability = { kind: "owns.path", paths: ["owned/**"] };
+    const r = enforceCapability(
+      patchTouchingMany(["wiki/x.md", "owned/y.md"]),
+      [auto],
+      [auto, owner],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.message).toContain("owned/y.md");
+  });
 });
 
 describe("PatchEffect (mode: propose)", () => {
   test("denied when no patch.propose granted", () => {
     const r = enforceCapability(proposePatchTouching("wiki/x.md"), [], []);
     expect(r.kind).toBe("deny");
+  });
+
+  test("denied when a later changed path lacks patch.propose", () => {
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    const r = enforceCapability(
+      patchEffect({
+        mode: "propose",
+        changes: [
+          { kind: "write", path: "wiki/x.md", content: "x\n" },
+          { kind: "write", path: "private/y.md", content: "y\n" },
+        ],
+        reason: "test",
+        sourceRefs: [ref],
+      }),
+      [propose],
+      [propose],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.message).toContain("private/y.md");
   });
 });
 
@@ -133,7 +197,7 @@ describe("ExternalActionEffect", () => {
   });
 });
 
-describe("ViewEffect / JobEffect (always allowed at this layer)", () => {
+describe("ViewEffect", () => {
   test("ViewEffect always allowed (phase-mismatch handled elsewhere)", () => {
     const e = viewEffect({
       name: "x",
@@ -143,14 +207,29 @@ describe("ViewEffect / JobEffect (always allowed at this layer)", () => {
     const r = enforceCapability(e, [], []);
     expect(r.kind).toBe("allow");
   });
+});
 
-  test("JobEffect always allowed (v1 lenient)", () => {
+describe("JobEffect", () => {
+  test("denied when no matching job.enqueue grant exists", () => {
     const e = jobEffect({
       processorId: "dome.test",
       input: null,
       idempotencyKey: "j-1",
     });
     const r = enforceCapability(e, [], []);
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-job-enqueue");
+  });
+
+  test("allowed when job.enqueue covers the target processor", () => {
+    const e = jobEffect({
+      processorId: "dome.test.worker",
+      input: null,
+      idempotencyKey: "j-1",
+    });
+    const cap: Capability = { kind: "job.enqueue", processors: ["dome.test.*"] };
+    const r = enforceCapability(e, [cap], [cap]);
     expect(r.kind).toBe("allow");
   });
 });
@@ -162,16 +241,16 @@ describe("QuestionEffect", () => {
     idempotencyKey: "q-1",
   });
 
-  test("allowed when any graph.write granted (declared + granted)", () => {
-    const cap: Capability = { kind: "graph.write", namespaces: ["dome.x"] };
+  test("allowed when question.ask granted (declared + granted)", () => {
+    const cap: Capability = { kind: "question.ask" };
     const r = enforceCapability(q, [cap], [cap]);
     expect(r.kind).toBe("allow");
   });
 
-  test("denied when no graph.write granted", () => {
+  test("denied when no question.ask granted", () => {
     const r = enforceCapability(q, [], []);
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
-    expect(r.diagnostic.code).toBe("capability-deny-graph-write");
+    expect(r.diagnostic.code).toBe("capability-deny-question-ask");
   });
 });

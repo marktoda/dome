@@ -173,7 +173,9 @@ export type Trigger =
  *   - `patch.auto`    — emit PatchEffect with `mode: "auto"`.
  *   - `owns.region`   — exclusive write ownership of marker-delimited regions.
  *   - `owns.path`     — exclusive write ownership of whole files.
- *   - `graph.write`   — emit FactEffect / QuestionEffect under named namespaces.
+ *   - `graph.write`   — emit FactEffect under named namespaces.
+ *   - `question.ask`  — emit QuestionEffect.
+ *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
  *   - `external`      — emit ExternalActionEffect with the named capability.
  */
@@ -201,6 +203,14 @@ export type GraphWriteCapability = {
   readonly kind: "graph.write";
   readonly namespaces: ReadonlyArray<string>;
 };
+export type QuestionAskCapability = {
+  readonly kind: "question.ask";
+  readonly namespaces?: ReadonlyArray<string>;
+};
+export type JobEnqueueCapability = {
+  readonly kind: "job.enqueue";
+  readonly processors: ReadonlyArray<string>;
+};
 export type ModelInvokeCapability = {
   readonly kind: "model.invoke";
   readonly maxDailyCostUsd?: number;
@@ -218,6 +228,8 @@ export type Capability =
   | OwnsRegionCapability
   | OwnsPathCapability
   | GraphWriteCapability
+  | QuestionAskCapability
+  | JobEnqueueCapability
   | ModelInvokeCapability
   | ExternalCapability;
 
@@ -236,15 +248,28 @@ export type CapabilityToken = { readonly __brand: "CapabilityToken" };
 
 /**
  * Model-invocation signature available on `ProcessorContext` when the
- * processor's capabilities include `model.invoke`. v1 contract is
- * string-in, string-out; richer structured-output / streaming wraps live in
- * `@dome/sdk/workflows`.
+ * processor declares and is granted `model.invoke`. The SDK core stays
+ * provider-agnostic: callers inject a provider at the runtime boundary, and
+ * processors consume a small text + structured JSON surface.
  */
-export type ModelInvokeFn = (input: {
+export type ModelInvokeTextInput = {
   readonly prompt: string;
   readonly model?: string;
   readonly temperature?: number;
-}) => Promise<string>;
+};
+
+export type ModelInvokeStructuredInput<T> = ModelInvokeTextInput & {
+  readonly schemaName: string;
+  readonly parse: (value: unknown) => T;
+  readonly retries?: number;
+};
+
+export type ModelInvokeFn = {
+  (input: ModelInvokeTextInput): Promise<string>;
+  readonly structured: <T>(
+    input: ModelInvokeStructuredInput<T>,
+  ) => Promise<T>;
+};
 
 // ----- ProjectionQueryView --------------------------------------------------
 
@@ -468,6 +493,20 @@ export const GraphWriteCapabilitySchema = z
   })
   .strict();
 
+export const QuestionAskCapabilitySchema = z
+  .object({
+    kind: z.literal("question.ask"),
+    namespaces: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+export const JobEnqueueCapabilitySchema = z
+  .object({
+    kind: z.literal("job.enqueue"),
+    processors: z.array(z.string().min(1)),
+  })
+  .strict();
+
 export const ModelInvokeCapabilitySchema = z
   .object({
     kind: z.literal("model.invoke"),
@@ -490,6 +529,8 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OwnsRegionCapabilitySchema,
   OwnsPathCapabilitySchema,
   GraphWriteCapabilitySchema,
+  QuestionAskCapabilitySchema,
+  JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,
   ExternalCapabilitySchema,
 ]);

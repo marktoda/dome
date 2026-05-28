@@ -7,6 +7,7 @@ import {
 } from "../core/effect";
 import type { ProcessorContext, ProcessorPhase } from "../core/processor";
 import type { RunId } from "../engine/runner-contract";
+import type { ProcessorExecutionErrorCode } from "../engine/runner-contract";
 import type { ResolvedExecutionPolicy } from "./execution-policy";
 import {
   diagnosticForExecutionError,
@@ -81,7 +82,7 @@ export async function executeProcessor(opts: {
       error: makeExecutionError({
         code: "processor.cancelled",
         message: "Processor execution was cancelled.",
-        retryable: opts.phase !== "adoption",
+        retryable: false,
         phase: opts.phase,
         processorId: opts.processorId,
       }),
@@ -150,13 +151,19 @@ export async function executeProcessor(opts: {
         runId: opts.runId,
         processorId: opts.processorId,
         durationMs: durationMs(),
-        error: makeExecutionError({
-          code: "processor.threw",
-          message: errorMessage(outcome.error),
-          retryable: false,
-          phase: opts.phase,
-          processorId: opts.processorId,
-        }),
+        error:
+          specializedThrownExecutionError({
+            error: outcome.error,
+            phase: opts.phase,
+            processorId: opts.processorId,
+          }) ??
+          makeExecutionError({
+            code: "processor.threw",
+            message: errorMessage(outcome.error),
+            retryable: isRetryableThrownError(outcome.error, opts.phase),
+            phase: opts.phase,
+            processorId: opts.processorId,
+          }),
       });
     case "timed_out":
       return terminalResult({
@@ -181,11 +188,66 @@ export async function executeProcessor(opts: {
         error: makeExecutionError({
           code: "processor.cancelled",
           message: "Processor execution was cancelled.",
-          retryable: opts.phase !== "adoption",
+          retryable: false,
           phase: opts.phase,
           processorId: opts.processorId,
         }),
       });
+  }
+}
+
+function specializedThrownExecutionError(opts: {
+  readonly error: unknown;
+  readonly phase: ProcessorPhase;
+  readonly processorId: string;
+}): ProcessorFailedExecutionError | null {
+  try {
+    if (typeof opts.error !== "object" || opts.error === null) {
+      return null;
+    }
+    const code = (opts.error as { readonly code?: unknown }).code;
+    if (!isSpecializedFailureCode(code)) return null;
+    const retryable =
+      (opts.error as { readonly retryable?: unknown }).retryable === true;
+    return makeExecutionError({
+      code,
+      message: errorMessage(opts.error),
+      retryable,
+      phase: opts.phase,
+      processorId: opts.processorId,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function isSpecializedFailureCode(
+  code: unknown,
+): code is Exclude<
+  ProcessorExecutionErrorCode,
+  "processor.timeout" | "processor.cancelled" | "processor.threw"
+> {
+  return (
+    code === "processor.invalid-output" ||
+    code === "model.invoke.denied" ||
+    code === "model.invoke.provider-failed" ||
+    code === "model.invoke.timeout" ||
+    code === "model.output.invalid-json" ||
+    code === "model.output.schema-mismatch"
+  );
+}
+
+function isRetryableThrownError(
+  error: unknown,
+  phase: ProcessorPhase,
+): boolean {
+  if (phase === "adoption") return false;
+  try {
+    if (typeof error !== "object" || error === null) return false;
+    const retryable = (error as { readonly retryable?: unknown }).retryable;
+    return retryable === true;
+  } catch {
+    return false;
   }
 }
 

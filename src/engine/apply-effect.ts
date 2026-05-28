@@ -196,7 +196,7 @@ export type ApplyEffectResult = {
    * every effect kind the broker actually enforces against a named
    * capability — `patch` (capability=`patch.auto` | `patch.propose`,
    * resource=touched path), `fact` (capability=`graph.write`,
-   * resource=predicate namespace), `question` (capability=`graph.write`,
+   * resource=predicate namespace), `question` (capability=`question.ask`,
    * resource=null), `external` (capability=`external:<name>`,
    * resource=effect.capability).
    *
@@ -413,8 +413,16 @@ function maybeCapabilityUse(
     case "question":
       return {
         capabilityUse: Object.freeze({
-          capability: "graph.write",
+          capability: "question.ask",
           resource: null,
+          outcome,
+        }),
+      };
+    case "job":
+      return {
+        capabilityUse: Object.freeze({
+          capability: "job.enqueue",
+          resource: effect.processorId,
           outcome,
         }),
       };
@@ -427,10 +435,9 @@ function maybeCapabilityUse(
         }),
       };
     case "diagnostic":
-    case "job":
     case "view":
-      // Broker passes these through without enforcement in v1 — no
-      // capability dimension to record.
+      // Broker passes these through without a capability dimension to
+      // record.
       return {};
   }
   const _exhaustive: never = effect;

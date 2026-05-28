@@ -238,7 +238,8 @@ Thumbs.db
 const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
-# grants. The shipped first-party bundles (\`dome.lint\`, \`dome.markdown\`)
+# grants. The shipped first-party bundles (\`dome.lint\`, \`dome.markdown\`,
+# \`dome.graph\`)
 # live with the SDK — the CLI's default \`--bundles-root\` resolves to the
 # SDK's \`assets/extensions/\` directory. To install a third-party bundle,
 # create \`.dome/extensions/<bundle-id>/\` here and pass
@@ -252,11 +253,20 @@ extensions:
 
   dome.markdown:
     enabled: true
-    # validate-wikilinks is read-only across the vault. The bundle's
-    # manifest requests read on **/*.md; the grant below confirms it.
+    # Markdown adoption processors read markdown and normalize frontmatter.
     grant:
       read:
         - "**/*.md"
+      patch.auto:
+        - "**/*.md"
+
+  dome.graph:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+      graph.write:
+        - "dome.graph.*"
 
 engine:
   # Maximum iterations of the fixed-point adoption loop per Proposal.

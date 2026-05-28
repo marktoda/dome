@@ -134,7 +134,7 @@ export type RunStatus =
  * stored as a plain string in SQLite (the full Trigger payload is captured
  * separately via `trigger_payload_json`).
  */
-export type TriggerKind = "signal" | "path" | "schedule" | "command";
+export type TriggerKind = "signal" | "path" | "schedule" | "command" | "job";
 
 // ----- newRunId -------------------------------------------------------------
 
@@ -191,6 +191,7 @@ export type MarkSucceededOpts = {
 export type MarkFailedOpts = {
   readonly id: RunId;
   readonly error: string | ProcessorFailedExecutionError;
+  readonly costUsd?: number | null;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
@@ -198,6 +199,7 @@ export type MarkFailedOpts = {
 export type MarkTimedOutOpts = {
   readonly id: RunId;
   readonly error: ProcessorTimeoutExecutionError;
+  readonly costUsd?: number | null;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
@@ -205,6 +207,7 @@ export type MarkTimedOutOpts = {
 export type MarkCancelledOpts = {
   readonly id: RunId;
   readonly error: ProcessorCancelledExecutionError;
+  readonly costUsd?: number | null;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
@@ -301,6 +304,7 @@ const MARK_FAILED_SQL = `
 UPDATE runs
 SET status = 'failed',
     error = ?,
+    cost_usd = ?,
     duration_ms = ?,
     finished_at = ?
 WHERE id = ? AND status = 'running'
@@ -310,6 +314,7 @@ const MARK_TIMED_OUT_SQL = `
 UPDATE runs
 SET status = 'timed_out',
     error = ?,
+    cost_usd = ?,
     duration_ms = ?,
     finished_at = ?
 WHERE id = ? AND status = 'running'
@@ -319,6 +324,7 @@ const MARK_CANCELLED_SQL = `
 UPDATE runs
 SET status = 'cancelled',
     error = ?,
+    cost_usd = ?,
     duration_ms = ?,
     finished_at = ?
 WHERE id = ? AND status = 'running'
@@ -466,6 +472,7 @@ export function markFailed(db: LedgerDb, opts: MarkFailedOpts): void {
     typeof opts.error === "string" ? opts.error : JSON.stringify(opts.error);
   db.raw.query(MARK_FAILED_SQL).run(
     error,
+    opts.costUsd ?? null,
     opts.durationMs,
     opts.finishedAt.toISOString(),
     opts.id,
@@ -475,6 +482,7 @@ export function markFailed(db: LedgerDb, opts: MarkFailedOpts): void {
 export function markTimedOut(db: LedgerDb, opts: MarkTimedOutOpts): void {
   db.raw.query(MARK_TIMED_OUT_SQL).run(
     JSON.stringify(opts.error),
+    opts.costUsd ?? null,
     opts.durationMs,
     opts.finishedAt.toISOString(),
     opts.id,
@@ -484,6 +492,7 @@ export function markTimedOut(db: LedgerDb, opts: MarkTimedOutOpts): void {
 export function markCancelled(db: LedgerDb, opts: MarkCancelledOpts): void {
   db.raw.query(MARK_CANCELLED_SQL).run(
     JSON.stringify(opts.error),
+    opts.costUsd ?? null,
     opts.durationMs,
     opts.finishedAt.toISOString(),
     opts.id,
@@ -704,6 +713,7 @@ function narrowTriggerKind(s: string): TriggerKind {
     case "path":
     case "schedule":
     case "command":
+    case "job":
       return s;
     default:
       throw new Error(`ledger.runs: unknown trigger_kind '${s}'`);

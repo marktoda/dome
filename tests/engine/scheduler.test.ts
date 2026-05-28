@@ -4,9 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
-import { defineProcessor, treeOid, type Processor } from "../../src/core/processor";
-import { commitOid } from "../../src/core/source-ref";
+import type { AdoptionResult, Proposal } from "../../src/core/proposal";
+import {
+  defineProcessor,
+  treeOid,
+  type Capability,
+  type Processor,
+} from "../../src/core/processor";
+import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { noopSinks } from "../../src/engine/apply-effect";
+import type { ApplyPatchInput } from "../../src/engine/apply-patch";
 import { runScheduler } from "../../src/engine/scheduler";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
@@ -162,6 +169,167 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(result.diagnostics.some((d) => d.code === "capability-deny-patch"))
       .toBe(true);
   });
+
+  test("authorized scheduled garden patch is dropped when sub-Proposal adoption is not wired", async () => {
+    const patchCap = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    const processor = defineProcessor({
+      id: "test.scheduler.patch-no-adopter",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [patchCap],
+      run: async () => [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            { kind: "write", path: "wiki/scheduled.md", content: "scheduled\n" },
+          ],
+          reason: "scheduled patch",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const recordedDiagnostics: string[] = [];
+    let applyPatchCalls = 0;
+
+    const result = await runWithProcessor(
+      fixture,
+      processor,
+      {
+        recordDiagnostic: async ({ effect }) => {
+          recordedDiagnostics.push(effect.code);
+        },
+        applyPatch: async () => {
+          applyPatchCalls += 1;
+          return commitOid("should-not-be-called");
+        },
+      },
+      {
+        resolveGrants: () => [patchCap],
+      },
+    );
+
+    expect(result.fired[0]?.success).toBe(true);
+    expect(recordedDiagnostics).toContain(
+      "scheduler.garden-sub-proposal-spawn-disabled",
+    );
+    expect(applyPatchCalls).toBe(0);
+  });
+
+  test("authorized scheduled garden patch becomes a garden sub-Proposal when wired", async () => {
+    const patchCap = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    const newHead = commitOid("scheduledgardenpatchhead00000000000000000");
+    const processor = defineProcessor({
+      id: "test.scheduler.patch-adopter",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [patchCap],
+      run: async () => [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            { kind: "write", path: "wiki/scheduled.md", content: "scheduled\n" },
+          ],
+          reason: "scheduled patch",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const adoptedProposals: Proposal[] = [];
+    const depths: number[] = [];
+
+    const result = await runWithProcessor(
+      fixture,
+      processor,
+      {},
+      {
+        resolveGrants: () => [patchCap],
+        applyGardenPatchToCandidate: async ({ candidate, patch }) => {
+          expect(candidate).toBe(ADOPTED);
+          expect(patch.changes[0]?.path).toBe("wiki/scheduled.md");
+          return newHead;
+        },
+        adoptSubProposal: async (proposal, cascadeDepth) => {
+          adoptedProposals.push(proposal);
+          depths.push(cascadeDepth);
+          return {
+            proposalId: proposal.id,
+            adopted: true,
+            adoptedRef: proposal.head,
+            diagnostics: [],
+            closureCommitOid: null,
+            iterations: 1,
+          };
+        },
+      },
+    );
+
+    expect(result.fired[0]?.success).toBe(true);
+    expect(adoptedProposals.length).toBe(1);
+    expect(adoptedProposals[0]?.base).toBe(ADOPTED);
+    expect(adoptedProposals[0]?.head).toBe(newHead);
+    expect(adoptedProposals[0]?.source.kind).toBe("garden");
+    expect(depths).toEqual([1]);
+  });
+
+  test("scheduled garden propose-mode patch is authorized but not spawned", async () => {
+    const patchCap = { kind: "patch.propose" as const, paths: ["wiki/**"] };
+    const processor = defineProcessor({
+      id: "test.scheduler.patch-propose",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [patchCap],
+      run: async () => [
+        patchEffect({
+          mode: "propose",
+          changes: [
+            { kind: "write", path: "wiki/scheduled.md", content: "scheduled\n" },
+          ],
+          reason: "scheduled propose patch",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    let applyPatchCalls = 0;
+    let adoptionCalls = 0;
+
+    const result = await runWithProcessor(
+      fixture,
+      processor,
+      {},
+      {
+        resolveGrants: () => [patchCap],
+        applyGardenPatchToCandidate: async () => {
+          applyPatchCalls += 1;
+          return commitOid("should-not-be-called");
+        },
+        adoptSubProposal: async (proposal) => {
+          adoptionCalls += 1;
+          return {
+            proposalId: proposal.id,
+            adopted: true,
+            adoptedRef: proposal.head,
+            diagnostics: [],
+            closureCommitOid: null,
+            iterations: 1,
+          };
+        },
+      },
+    );
+
+    expect(result.fired[0]?.success).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(applyPatchCalls).toBe(0);
+    expect(adoptionCalls).toBe(0);
+  });
 });
 
 async function makeFixture(): Promise<Fixture> {
@@ -190,12 +358,22 @@ async function runWithProcessor(
   fixture: Fixture,
   processor: Processor,
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
+  schedulerOverrides: {
+    readonly resolveGrants?: () => ReadonlyArray<Capability>;
+    readonly adoptSubProposal?: (
+      proposal: Proposal,
+      cascadeDepth: number,
+    ) => Promise<AdoptionResult>;
+    readonly applyGardenPatchToCandidate?: (
+      opts: ApplyPatchInput,
+    ) => Promise<CommitOid | null>;
+  } = {},
 ) {
   const registryResult = buildRegistry([processor]);
   if (!registryResult.ok) {
     throw new Error(`registry build failed: ${registryResult.error.kind}`);
   }
-  return runScheduler({
+  const opts = {
     vault: fixture.vault,
     adopted: ADOPTED,
     registry: registryResult.value,
@@ -203,7 +381,17 @@ async function runWithProcessor(
     sinks: { ...noopSinks(), ...sinkOverrides },
     resolveTree: async () => TREE,
     now: () => NOW,
-    resolveGrants: () => [],
-    extensionIdFor: (id) => id,
-  });
+    resolveGrants: schedulerOverrides.resolveGrants ?? (() => []),
+    extensionIdFor: (id: string) => id,
+    ...(schedulerOverrides.adoptSubProposal !== undefined
+      ? { adoptSubProposal: schedulerOverrides.adoptSubProposal }
+      : {}),
+    ...(schedulerOverrides.applyGardenPatchToCandidate !== undefined
+      ? {
+          applyGardenPatchToCandidate:
+            schedulerOverrides.applyGardenPatchToCandidate,
+        }
+      : {}),
+  };
+  return runScheduler(opts);
 }

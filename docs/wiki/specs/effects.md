@@ -146,7 +146,7 @@ interface JobEffect {
 }
 ```
 
-**Routing:** the engine enqueues the job in the runtime queue (an in-memory `p-queue` plus persistent `projection.db.scheduled_jobs` for survival across restarts) when the processor holds `job.enqueue` for the target processor. The job runs as a garden-phase invocation of the named processor; same effect-routing applies.
+**Routing:** the engine enqueues the job in `projection.db.scheduled_jobs` when the processor holds `job.enqueue` for the target processor. After adoption/garden/scheduler work completes, due jobs are drained as garden-phase invocations of the named processor. The target sees `JobEffect.input` as `ctx.input`; its emitted effects route through the same garden boundary. Failed jobs are retried up to `maxAttempts` with bounded backoff, then marked `failed`.
 
 **Why a job vs a direct call:** a processor emits JobEffect when it wants follow-on work to happen *after* the current adoption loop completes, with its own RunRecord and capability scope. This is how `dome.intake` schedules `dome.daily.refresh-brief` without synchronously calling it.
 
