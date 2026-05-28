@@ -118,8 +118,8 @@ Composition (v1.0):
 3. Branch on drift outcome:
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
-   - **in-sync** → print `dome sync: already in sync (<head> on <branch>)`, exit 0.
-   - **drift** → open the runtime, run `runOneAdoption`, print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
+   - **in-sync** → open the runtime, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, exit 0.
+   - **drift** → open the runtime, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
 4. Close the runtime on the way out.
 
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
@@ -129,6 +129,7 @@ Composition (v1.0):
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "error"`. The `error` field is only present on the usage-error variant.
+For `"in-sync"`, `diagnostics` contains diagnostics produced by the operational-work pump, if any; no adoption diagnostics are synthesized because no adoption ran.
 
 The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD surfaces as a blocking diagnostic from `setAdoptedRef` and the operator resolves manually.
 
@@ -354,7 +355,8 @@ Composition (v1.0):
    - If HEAD equals the adopted ref: no-op (steady state).
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
 4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
-5. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
+5. After a successful adoption, the daemon runs one operational-work pump against the new adopted commit: due schedule triggers, durable jobs, and outbox rows already pending before the pump started. In-sync ticks remain quiet steady-state ticks.
+6. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
 

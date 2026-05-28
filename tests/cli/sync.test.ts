@@ -34,10 +34,14 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "../../src/cli/args";
 import { runSync } from "../../src/cli/commands/sync";
 
+import { externalActionEffect } from "../../src/core/effect";
+import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
+import { openOutboxDb } from "../../src/outbox/db";
+import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 
 // ----- Paths ----------------------------------------------------------------
 
@@ -227,6 +231,65 @@ describe("runSync idempotent", () => {
       expect(runsAfterSecond).toBe(runsAfterFirst);
     } finally {
       ledger2.value.db.close();
+    }
+  }, 10_000);
+
+  test("in-sync sync still drains durable operational work", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const args = parseArgs([
+      "sync",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+    ]);
+
+    const code1 = await runSync(args);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
+    const outbox1 = await openOutboxDb({ path: outboxPath });
+    if (!outbox1.ok) throw new Error(`could not open outbox: ${outbox1.error.kind}`);
+    try {
+      insertPending(outbox1.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "sync-in-sync-drain",
+          payload: { event: "x" },
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        runId: "run-test",
+      });
+      expect(queryOutbox(outbox1.value.db)[0]?.status).toBe("pending");
+    } finally {
+      outbox1.value.db.close();
+    }
+
+    captured.out = [];
+    captured.err = [];
+
+    const code2 = await runSync(args);
+    expect(code2).toBe(0);
+    expect(captured.out.join("\n")).toContain("already in sync");
+
+    const outbox2 = await openOutboxDb({ path: outboxPath });
+    if (!outbox2.ok) throw new Error(`could not reopen outbox: ${outbox2.error.kind}`);
+    try {
+      const rows = queryOutbox(outbox2.value.db);
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.status).toBe("failed");
+      expect(rows[0]?.lastError).toContain("No external handler registered");
+    } finally {
+      outbox2.value.db.close();
     }
   }, 10_000);
 });

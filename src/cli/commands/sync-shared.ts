@@ -40,8 +40,10 @@ import {
   runGardenPhase,
   type AdoptSubProposalFn,
 } from "../../engine/garden";
-import { runQueuedJobs } from "../../engine/jobs";
-import { runScheduler } from "../../engine/scheduler";
+import {
+  runOperationalWork,
+  type OperationalWorkResult,
+} from "../../engine/operational-work";
 import {
   makeResolveTree,
   type VaultRuntime,
@@ -251,23 +253,123 @@ export async function runOneAdoption(opts: {
     branch: drift.branch,
   });
 
-  const vault = {
+  const vault = runtimeVault(runtime);
+  const sinksFor = sinksForRuntime(runtime);
+
+  const sinks = sinksFor({ base: proposal.base, head: proposal.head });
+
+  const adoptOpts: {
+    vault: typeof vault;
+    proposal: typeof proposal;
+    runAdoptionProcessors: typeof runtime.processorRuntime.adoptionRunner;
+    sinks: ApplyEffectSinks;
+    ledger: typeof runtime.ledgerDb;
+    onEvent?: (event: AdoptEvent) => void;
+  } = {
+    vault,
+    proposal,
+    runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
+    sinks,
+    ledger: runtime.ledgerDb,
+  };
+  if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
+  const adoptionResult = await adopt(adoptOpts);
+
+  if (adoptionResult.adopted) {
+    const adoptSubProposal = makeAdoptSubProposal({
+      runtime,
+      vault: adoptOpts.vault,
+      sinksFor,
+      ...(onEvent !== undefined ? { onEvent } : {}),
+    });
+    const gardenCompiled = await compileRange({
+      vaultPath: runtime.path,
+      base: drift.base,
+      head: adoptionResult.adoptedRef,
+    });
+    await runGardenPhase({
+      vault: adoptOpts.vault,
+      proposal,
+      adopted: adoptionResult.adoptedRef,
+      changedPaths: gardenCompiled.changedPaths,
+      signals: gardenCompiled.signals,
+      runGardenProcessors: runtime.processorRuntime.gardenRunner,
+      sinks,
+      ledger: runtime.ledgerDb,
+      adoptSubProposal,
+      cascadeDepth: 0,
+    });
+
+    await runOperationalWorkForAdopted({
+      runtime,
+      adopted: adoptionResult.adoptedRef,
+      now,
+      sinks,
+      adoptSubProposal,
+    });
+  }
+
+  return adoptionResult;
+}
+
+export async function runOperationalWorkForAdopted(opts: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly now?: () => Date;
+  readonly sinks?: ApplyEffectSinks;
+  readonly adoptSubProposal?: AdoptSubProposalFn;
+}): Promise<OperationalWorkResult> {
+  const now = opts.now ?? ((): Date => new Date());
+  const vault = runtimeVault(opts.runtime);
+  const sinksFor = sinksForRuntime(opts.runtime);
+  const sinks =
+    opts.sinks ?? sinksFor({ base: opts.adopted, head: opts.adopted });
+  const adoptSubProposal =
+    opts.adoptSubProposal ??
+    makeAdoptSubProposal({
+      runtime: opts.runtime,
+      vault,
+      sinksFor,
+    });
+
+  return runOperationalWork({
+    vault,
+    adopted: opts.adopted,
+    registry: opts.runtime.registry,
+    projection: opts.runtime.projectionDb,
+    outbox: opts.runtime.outboxDb,
+    sinks,
+    resolveTree: makeResolveTree(opts.runtime.path),
+    now,
+    ledger: opts.runtime.ledgerDb,
+    executionState: opts.runtime.processorRuntime.executionState,
+    ...(opts.runtime.modelProvider !== undefined
+      ? { modelProvider: opts.runtime.modelProvider }
+      : {}),
+    resolveGrants: opts.runtime.resolveGrants,
+    extensionIdFor: opts.runtime.extensionIdFor,
+    externalHandlers: opts.runtime.externalHandlers,
+    adoptSubProposal,
+  });
+}
+
+function runtimeVault(runtime: VaultRuntime): {
+  readonly path: string;
+  readonly config: { readonly git: { readonly auto_commit_workflows: true } };
+} {
+  return {
     path: runtime.path,
     config: { git: { auto_commit_workflows: true } },
   };
+}
 
-  // Phase 4a' fix-up: sinks and the `applyPatch` closure are
-  // frame-aware — each carries the `(base, head)` of the specific
-  // Proposal being adopted. Building them per-Proposal (rather than
-  // once at runOneAdoption entry and reusing for sub-Proposals)
-  // ensures the engine commits stamped during sub-Proposal adoption
-  // carry the *sub*-Proposal's base/sourceHead in their Dome-* trailers
-  // (per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]) and
-  // projection rows emitted during sub-adoption are keyed to the
-  // sub-Proposal's adopted commit (per [[wiki/specs/projection-store]]
-  // §"Cache key"). The pre-fix-up shape captured `drift.base`/
-  // `drift.head` once and reused them recursively — incorrect.
-  const sinksFor = (frame: { base: CommitOid; head: CommitOid }): ApplyEffectSinks => {
+// Sinks are frame-aware: each Proposal/sub-Proposal gets its own
+// `(base, head)` pair so engine commit trailers and projection rows are
+// keyed to the proposal that actually produced them.
+function sinksForRuntime(
+  runtime: VaultRuntime,
+): (frame: { readonly base: CommitOid; readonly head: CommitOid }) => ApplyEffectSinks {
+  return (frame) => {
     const realApplyPatch: ApplyEffectSinks["applyPatch"] = async ({
       effect,
       processorId,
@@ -312,152 +414,63 @@ export async function runOneAdoption(opts: {
       externalHandlers: runtime.externalHandlers,
     });
   };
+}
 
-  const sinks = sinksFor({ base: proposal.base, head: proposal.head });
-
-  const adoptOpts: {
-    vault: typeof vault;
-    proposal: typeof proposal;
-    runAdoptionProcessors: typeof runtime.processorRuntime.adoptionRunner;
-    sinks: ApplyEffectSinks;
-    ledger: typeof runtime.ledgerDb;
-    onEvent?: (event: AdoptEvent) => void;
-  } = {
-    vault,
-    proposal,
-    runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
-    sinks,
-    ledger: runtime.ledgerDb,
-  };
-  if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
-  const adoptionResult = await adopt(adoptOpts);
-
-  // Phase 4a + 4a': invoke garden-phase processors after a successful
-  // adoption, and recursively adopt garden-emitted sub-Proposals.
-  //
-  // Garden runs against the post-adoption signals computed from
-  // `(proposal.base, adoptedRef)` — the full delta of what was just
-  // adopted. Garden failures never undo adoption; outputs flow through
-  // the normal sinks (projection.db / outbox.db / runs.db) and are
-  // visible via `dome inspect` after the fact.
-  //
-  // The `adoptSubProposal` closure (defined below) threads the cascade
-  // recursion: garden processors that emit auto-mode PatchEffects spawn
-  // sub-Proposals; each sub-adoption fires its own garden phase at
-  // `cascadeDepth + 1`; the cap is enforced at the orchestrator level
-  // (per `DEFAULT_MAX_CASCADE_DEPTH`).
-  //
-  // Sub-Proposal sinks are built fresh per sub-Proposal frame via
-  // `sinksFor(...)` so the projection-row `adopted_commit` column and
-  // the engine-commit `Dome-Base` / `Dome-Source-Head` trailers are
-  // correctly scoped to each sub-Proposal (Phase 4a' fix-up).
-  //
-  // See [[wiki/specs/processors]] §"Garden phase" and Phases 4a + 4a'
-  // in [[cohesive/brainstorms/2026-05-27-v1-engine-completion]].
-  if (adoptionResult.adopted) {
-    // The recursive closure. `adoptSubProposal` references itself
-    // inside its body; that works because the const binding is
-    // initialized before the runGardenPhase call below reads it (the
-    // body executes only when called).
-    const adoptSubProposal: AdoptSubProposalFn = async (
-      subProposal,
-      cascadeDepth,
-    ) => {
-      const subSinks = sinksFor({
-        base: subProposal.base,
-        head: subProposal.head,
-      });
-      const subAdoptOpts: typeof adoptOpts = {
-        ...adoptOpts,
-        proposal: subProposal,
-        sinks: subSinks,
-      };
-      const subResult = await adopt(subAdoptOpts);
-      if (subResult.adopted) {
-        const subCompiled = await compileRange({
-          vaultPath: runtime.path,
-          base: subProposal.base,
-          head: subResult.adoptedRef,
-        });
-        await runGardenPhase({
-          vault: subAdoptOpts.vault,
-          proposal: subProposal,
-          adopted: subResult.adoptedRef,
-          changedPaths: subCompiled.changedPaths,
-          signals: subCompiled.signals,
-          runGardenProcessors: runtime.processorRuntime.gardenRunner,
-          sinks: subSinks,
-          ledger: runtime.ledgerDb,
-          adoptSubProposal,
-          cascadeDepth,
-        });
-      }
-      return subResult;
+// Garden patches can spawn sub-Proposals recursively. The closure is
+// shared by the primary garden phase, scheduled garden work, and queued
+// jobs so every patch route lands back on the same adoption boundary.
+function makeAdoptSubProposal(opts: {
+  readonly runtime: VaultRuntime;
+  readonly vault: ReturnType<typeof runtimeVault>;
+  readonly sinksFor: ReturnType<typeof sinksForRuntime>;
+  readonly onEvent?: (event: AdoptEvent) => void;
+}): AdoptSubProposalFn {
+  const adoptSubProposal: AdoptSubProposalFn = async (
+    subProposal,
+    cascadeDepth,
+  ) => {
+    const subSinks = opts.sinksFor({
+      base: subProposal.base,
+      head: subProposal.head,
+    });
+    const subAdoptOpts: {
+      vault: typeof opts.vault;
+      proposal: typeof subProposal;
+      runAdoptionProcessors: typeof opts.runtime.processorRuntime.adoptionRunner;
+      sinks: ApplyEffectSinks;
+      ledger: typeof opts.runtime.ledgerDb;
+      onEvent?: (event: AdoptEvent) => void;
+    } = {
+      vault: opts.vault,
+      proposal: subProposal,
+      runAdoptionProcessors: opts.runtime.processorRuntime.adoptionRunner,
+      sinks: subSinks,
+      ledger: opts.runtime.ledgerDb,
     };
-
-    const gardenCompiled = await compileRange({
-      vaultPath: runtime.path,
-      base: drift.base,
-      head: adoptionResult.adoptedRef,
-    });
-    await runGardenPhase({
-      vault: adoptOpts.vault,
-      proposal,
-      adopted: adoptionResult.adoptedRef,
-      changedPaths: gardenCompiled.changedPaths,
-      signals: gardenCompiled.signals,
-      runGardenProcessors: runtime.processorRuntime.gardenRunner,
-      sinks,
-      ledger: runtime.ledgerDb,
-      adoptSubProposal,
-      cascadeDepth: 0,
-    });
-
-    // Phase 4c: run the scheduler against the just-adopted state. Fires
-    // any garden / view processors whose `schedule:` triggers are due
-    // per `projection.db.schedule_cursors`. Runs ONCE per top-level
-    // adoption attempt (not per sub-Proposal — schedule semantics are
-    // "what's due since last fire," independent of cascade depth).
-    // See [[wiki/specs/processors]] §"Triggers and signals" + Phase 4c
-    // in [[cohesive/brainstorms/2026-05-27-v1-engine-completion]].
-    await runScheduler({
-      vault: adoptOpts.vault,
-      adopted: adoptionResult.adoptedRef,
-      registry: runtime.registry,
-      projection: runtime.projectionDb,
-      sinks,
-      resolveTree: makeResolveTree(runtime.path),
-      now,
-      ledger: runtime.ledgerDb,
-      executionState: runtime.processorRuntime.executionState,
-      ...(runtime.modelProvider !== undefined
-        ? { modelProvider: runtime.modelProvider }
-        : {}),
-      resolveGrants: runtime.resolveGrants,
-      extensionIdFor: runtime.extensionIdFor,
-      adoptSubProposal,
-    });
-
-    await runQueuedJobs({
-      vault: adoptOpts.vault,
-      adopted: adoptionResult.adoptedRef,
-      registry: runtime.registry,
-      projection: runtime.projectionDb,
-      sinks,
-      resolveTree: makeResolveTree(runtime.path),
-      now,
-      ledger: runtime.ledgerDb,
-      executionState: runtime.processorRuntime.executionState,
-      ...(runtime.modelProvider !== undefined
-        ? { modelProvider: runtime.modelProvider }
-        : {}),
-      resolveGrants: runtime.resolveGrants,
-      extensionIdFor: runtime.extensionIdFor,
-      adoptSubProposal,
-    });
-  }
-
-  return adoptionResult;
+    if (opts.onEvent !== undefined) subAdoptOpts.onEvent = opts.onEvent;
+    const subResult = await adopt(subAdoptOpts);
+    if (subResult.adopted) {
+      const subCompiled = await compileRange({
+        vaultPath: opts.runtime.path,
+        base: subProposal.base,
+        head: subResult.adoptedRef,
+      });
+      await runGardenPhase({
+        vault: subAdoptOpts.vault,
+        proposal: subProposal,
+        adopted: subResult.adoptedRef,
+        changedPaths: subCompiled.changedPaths,
+        signals: subCompiled.signals,
+        runGardenProcessors: opts.runtime.processorRuntime.gardenRunner,
+        sinks: subSinks,
+        ledger: opts.runtime.ledgerDb,
+        adoptSubProposal,
+        cascadeDepth,
+      });
+    }
+    return subResult;
+  };
+  return adoptSubProposal;
 }
 
 // `deriveExtensionId` moved to `src/extensions/id-helpers.ts` (Phase 4a'

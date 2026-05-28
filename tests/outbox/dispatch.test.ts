@@ -284,4 +284,24 @@ describe("outbox lifecycle", () => {
     expect(row?.status).toBe("sent");
     expect(row?.externalId).toBe("external-1");
   });
+
+  it("dispatchPendingOutbox can skip rows enqueued after the drain cutoff", async () => {
+    const cutoff = new Date();
+    insertPending(db, { effect: makeEffect("key-1"), runId: RUN_ID });
+
+    let calls = 0;
+    const results = await dispatchPendingOutbox(db, {
+      enqueuedBefore: cutoff,
+      handlers: {
+        "calendar.write": async () => {
+          calls += 1;
+          return { externalId: "external-1" };
+        },
+      },
+    });
+
+    expect(results.length).toBe(0);
+    expect(calls).toBe(0);
+    expect(queryOutbox(db)[0]?.status).toBe("pending");
+  });
 });

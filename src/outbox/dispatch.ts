@@ -125,6 +125,12 @@ export type OutboxQueryFilter = {
   readonly status?: OutboxStatus;
   readonly capability?: string;
   /**
+   * Match only rows enqueued strictly before this timestamp. Used by
+   * operational drains to avoid immediately retrying rows that were
+   * created by the same scheduler/job pump.
+   */
+  readonly enqueuedBefore?: Date;
+  /**
    * Match only rows whose `enqueued_at` is older than `now - hours`. Used
    * by `dome inspect outbox --age 24h+` to surface stuck rows.
    * Computed against the current wall clock at query time.
@@ -330,9 +336,15 @@ export async function dispatchPendingOutbox(
   opts: {
     readonly handlers: ExternalHandlerRegistry;
     readonly limit?: number;
+    readonly enqueuedBefore?: Date;
   },
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
-  const pending = queryOutbox(db, { status: "pending" });
+  const pending = queryOutbox(db, {
+    status: "pending",
+    ...(opts.enqueuedBefore !== undefined
+      ? { enqueuedBefore: opts.enqueuedBefore }
+      : {}),
+  });
   const bounded =
     opts.limit === undefined ? pending : pending.slice(0, opts.limit);
   const results: ExternalDispatchResult[] = [];
@@ -468,6 +480,10 @@ export function queryOutbox(
   if (filter?.capability !== undefined) {
     clauses.push("capability = ?");
     params.push(filter.capability);
+  }
+  if (filter?.enqueuedBefore !== undefined) {
+    clauses.push("enqueued_at < ?");
+    params.push(filter.enqueuedBefore.toISOString());
   }
   if (filter?.olderThanHours !== undefined) {
     const cutoff = new Date(

@@ -40,9 +40,11 @@ import type { AdoptionResult } from "../../core/proposal";
 
 import {
   detectDrift,
+  type DriftResult,
   formatAdoptEvent,
   resolveShippedBundlesRoot,
   runOneAdoption,
+  runOperationalWorkForAdopted,
 } from "./sync-shared";
 import { formatJson } from "../format";
 
@@ -60,7 +62,8 @@ import type { ParsedArgs } from "../args";
  *   - `blocked`     — adoption ran but block-severity diagnostics
  *                     prevented the adopted ref from advancing. `head`
  *                     reflects the working-tree HEAD that was attempted.
- *   - `in-sync`     — HEAD already equals the adopted ref; no work done.
+ *   - `in-sync`     — HEAD already equals the adopted ref; no adoption
+ *                     work ran. Due operational queues may still drain.
  *   - `error`       — detached HEAD or no commits; the substrate cannot
  *                     operate. `branch` is null in this case.
  */
@@ -134,24 +137,12 @@ export async function runSync(args: ParsedArgs): Promise<number> {
     return 64;
   }
   if (drift.kind === "in-sync") {
-    if (jsonMode) {
-      const payload: SyncJsonResult = {
-        status: "in-sync",
-        branch: drift.branch,
-        base: drift.head,
-        head: drift.head,
-        adoptedRef: drift.head,
-        iterations: 0,
-        closureCommit: null,
-        diagnostics: [],
-      };
-      console.log(formatJson(payload));
-    } else {
-      console.log(
-        `dome sync: already in sync (${drift.head.slice(0, 7)} on ${drift.branch})`,
-      );
-    }
-    return 0;
+    return runInSyncOperationalWork({
+      vaultPath,
+      bundlesRoot,
+      drift,
+      jsonMode,
+    });
   }
 
   // ----- 3. Open the runtime ------------------------------------------------
@@ -192,6 +183,65 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 }
 
 // ----- Internals ------------------------------------------------------------
+
+async function runInSyncOperationalWork(opts: {
+  readonly vaultPath: string;
+  readonly bundlesRoot: string;
+  readonly drift: Extract<DriftResult, { readonly kind: "in-sync" }>;
+  readonly jsonMode: boolean;
+}): Promise<number> {
+  const runtimeResult = await openVaultRuntime({
+    vaultPath: opts.vaultPath,
+    bundlesRoot: opts.bundlesRoot,
+  });
+  if (!runtimeResult.ok) {
+    const msg = `dome sync: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`;
+    if (opts.jsonMode) {
+      emitErrorJson({
+        branch: opts.drift.branch,
+        error: runtimeResult.error.kind,
+        message: msg,
+      });
+    } else {
+      console.error(msg);
+    }
+    return 1;
+  }
+  const runtime = runtimeResult.value;
+  let operationalDiagnostics: SyncJsonResult["diagnostics"] = [];
+  try {
+    const operational = await runOperationalWorkForAdopted({
+      runtime,
+      adopted: opts.drift.head,
+    });
+    operationalDiagnostics = operational.diagnostics.map((d) => ({
+      severity: d.severity,
+      code: d.code,
+      message: d.message,
+    }));
+  } finally {
+    await runtime.close();
+  }
+
+  if (opts.jsonMode) {
+    const payload: SyncJsonResult = {
+      status: "in-sync",
+      branch: opts.drift.branch,
+      base: opts.drift.head,
+      head: opts.drift.head,
+      adoptedRef: opts.drift.head,
+      iterations: 0,
+      closureCommit: null,
+      diagnostics: operationalDiagnostics,
+    };
+    console.log(formatJson(payload));
+  } else {
+    console.log(
+      `dome sync: already in sync (${opts.drift.head.slice(0, 7)} on ${opts.drift.branch})`,
+    );
+  }
+  return 0;
+}
 
 /**
  * Render the adoption result as a small block of lines on stdout. The
