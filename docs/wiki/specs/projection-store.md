@@ -108,7 +108,7 @@ Updated incrementally on `document.changed` signals during adoption.
 
 ### `diagnostics`
 
-Stores `DiagnosticEffect` rows.
+Stores `DiagnosticEffect` rows. Both processor-emitted diagnostics and engine-created diagnostics land here; engine-created rows use synthetic `processor_id` producer ids such as `engine.adoption`, `engine.scheduler`, `engine.jobs`, and `engine.garden`.
 
 ```sql
 CREATE TABLE diagnostics (

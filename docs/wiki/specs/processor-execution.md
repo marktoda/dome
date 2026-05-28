@@ -174,6 +174,8 @@ The executor contract uses stable diagnostic codes:
 
 Diagnostics point at the processor/run, not at arbitrary vault content, unless the failed Effect carried valid SourceRefs before validation failed.
 
+Engine orchestration layers may add diagnostics outside a processor run: adoption emits `engine.adoption` rows for structural blockages such as `fixed-point.divergence`; the scheduler emits `engine.scheduler` rows for invalid cron or dispatch crashes; queued jobs emit `engine.jobs` rows for missing targets or dispatch crashes. These diagnostics are returned to callers for immediate control flow and also written through the same diagnostic projection sink so `dome inspect diagnostics` is the durable operator surface.
+
 ## Test guarantees
 
 The execution contract is pinned in stages.

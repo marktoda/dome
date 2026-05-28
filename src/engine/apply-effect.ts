@@ -23,6 +23,10 @@
 //   - This file is the pure routing layer. The sinks are *injected* via the
 //     `ApplyEffectSinks` shape; `noopSinks()` returns a no-op implementation
 //     suitable for unit tests and Phase 2 standalone validation.
+//   - Engine-created diagnostics returned by this router are also recorded
+//     through `sinks.recordDiagnostic` before return. Callers still inspect
+//     the returned array for control flow, but they do not need to remember a
+//     second persistence step.
 //   - The garden-phase PatchEffect → "spawn a new Proposal" semantics
 //     (matrix §"Garden-emitted Proposals") is the responsibility of the
 //     `applyPatch` sink, not this router. The router calls `sinks.applyPatch`
@@ -61,6 +65,7 @@ import { diagnosticEffect } from "../core/effect";
 import type { Capability, ProcessorPhase } from "../core/processor";
 import type { CommitOid } from "../core/source-ref";
 import { enforceCapability } from "./capability-broker";
+import { recordDiagnosticsViaSink } from "./diagnostics";
 import type { RunId } from "./runner-contract";
 
 // ----- ApplyEffectSinks -----------------------------------------------------
@@ -104,7 +109,7 @@ export type ApplyEffectSinks = {
   readonly recordDiagnostic: (input: {
     readonly effect: DiagnosticEffect;
     readonly processorId: string;
-    readonly runId: RunId;
+    readonly runId?: RunId;
     readonly proposalId: string | null;
   }) => Promise<void>;
 
@@ -176,11 +181,9 @@ export type ApplyEffectSinks = {
  *
  * `diagnostics` is empty for plain `applied`; it carries the broker's
  * diagnostic for `downgraded` / `denied` and the router's `phase-mismatch`
- * diagnostic for `rejected-by-phase`. The diagnostics are *not* sent to
- * `sinks.recordDiagnostic` by this router — the caller (adopt.ts) appends
- * them to the run's effect stream so they flow through `applyEffect` itself
- * on a subsequent call (and thus get recorded with full capability +
- * phase-check provenance).
+ * diagnostic for `rejected-by-phase`. Returned diagnostics have already
+ * been sent to `sinks.recordDiagnostic`; callers inspect them for control
+ * flow and user output, not for a second persistence pass.
  */
 export type ApplyEffectResult = {
   readonly outcome:
@@ -282,7 +285,15 @@ export async function applyEffect(opts: {
 }): Promise<ApplyEffectResult> {
   // 1. Phase compatibility.
   if (!isPhaseCompatible(opts.effect, opts.phase)) {
-    return rejectedByPhase(opts.effect, opts.phase);
+    const rejected = rejectedByPhase(opts.effect, opts.phase);
+    await recordDiagnosticsViaSink({
+      sinks: opts.sinks,
+      diagnostics: rejected.diagnostics,
+      processorId: opts.processorId,
+      proposalId: opts.proposalId,
+      runId: opts.runId,
+    });
+    return rejected;
   }
 
   // 2. Capability enforcement.
@@ -297,12 +308,20 @@ export async function applyEffect(opts: {
             sourceRefs: verdict.diagnostic.sourceRefs,
           })
         : verdict.diagnostic;
-    return frozen({
+    const denied = frozen({
       outcome: "denied",
       appliedEffect: null,
       diagnostics: Object.freeze([diagnostic]),
       ...maybeCapabilityUse(opts.effect, "denied"),
     });
+    await recordDiagnosticsViaSink({
+      sinks: opts.sinks,
+      diagnostics: denied.diagnostics,
+      processorId: opts.processorId,
+      proposalId: opts.proposalId,
+      runId: opts.runId,
+    });
+    return denied;
   }
   const routed: Effect =
     verdict.kind === "downgrade" ? verdict.rewrittenEffect : opts.effect;
@@ -329,12 +348,20 @@ export async function applyEffect(opts: {
     });
     const capabilityOutcome: "allowed" | "downgraded" =
       verdict.kind === "downgrade" ? "downgraded" : "allowed";
-    return frozen({
+    const blocked = frozen({
       outcome: "blocked-for-review",
       appliedEffect: null,
       diagnostics: Object.freeze([...verdictDiagnostics, reviewDiagnostic]),
       ...maybeCapabilityUse(opts.effect, capabilityOutcome),
     });
+    await recordDiagnosticsViaSink({
+      sinks: opts.sinks,
+      diagnostics: blocked.diagnostics,
+      processorId: opts.processorId,
+      proposalId: opts.proposalId,
+      runId: opts.runId,
+    });
+    return blocked;
   }
 
   // 3. Route to the matching sink. Exhaustive on Effect.kind.
@@ -352,13 +379,23 @@ export async function applyEffect(opts: {
     routed.kind === "patch" && sinkResult.newCandidate !== null
       ? sinkResult.newCandidate
       : undefined;
-  return frozen({
+  const result = frozen({
     outcome: verdict.kind === "downgrade" ? "downgraded" : "applied",
     appliedEffect: routed,
     diagnostics: verdictDiagnostics,
     ...maybeCapabilityUse(opts.effect, outcome),
     ...(newCandidate !== undefined ? { newCandidate } : {}),
   });
+  if (result.diagnostics.length > 0) {
+    await recordDiagnosticsViaSink({
+      sinks: opts.sinks,
+      diagnostics: result.diagnostics,
+      processorId: opts.processorId,
+      proposalId: opts.proposalId,
+      runId: opts.runId,
+    });
+  }
+  return result;
 }
 
 // ----- capability-use extraction -------------------------------------------

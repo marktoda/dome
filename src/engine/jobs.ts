@@ -38,6 +38,7 @@ import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "./apply-patch";
+import { recordDiagnosticsViaSink } from "./diagnostics";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import type { RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
@@ -94,14 +95,19 @@ export async function runQueuedJobs(opts: {
     const processor = opts.registry.get(job.processorId);
     if (processor === undefined || processor.phase !== "garden") {
       markJobFailed(opts.projection, job.id, opts.now());
-      diagnostics.push(
-        diagnosticEffect({
-          severity: "error",
-          code: "job.target-unavailable",
-          message: `Job ${job.id} targets '${job.processorId}', but no garden-phase processor with that id is registered.`,
-          sourceRefs: [],
-        }),
-      );
+      const targetDiag = diagnosticEffect({
+        severity: "error",
+        code: "job.target-unavailable",
+        message: `Job ${job.id} targets '${job.processorId}', but no garden-phase processor with that id is registered.`,
+        sourceRefs: [],
+      });
+      diagnostics.push(targetDiag);
+      await recordDiagnosticsViaSink({
+        sinks: opts.sinks,
+        diagnostics: [targetDiag],
+        processorId: "engine.jobs",
+        proposalId: null,
+      });
       drained.push(
         Object.freeze({
           jobId: job.id,
@@ -124,8 +130,9 @@ export async function runQueuedJobs(opts: {
       drained.push(result);
     } catch (e) {
       drained.push(
-        recoverCrashedClaimedJob({
+        await recoverCrashedClaimedJob({
           projection: opts.projection,
+          sinks: opts.sinks,
           job,
           now: opts.now,
           diagnostics,
@@ -291,43 +298,52 @@ async function runOneJob(opts: {
   });
 }
 
-function recoverCrashedClaimedJob(opts: {
+async function recoverCrashedClaimedJob(opts: {
   readonly projection: ProjectionDb;
+  readonly sinks: ApplyEffectSinks;
   readonly job: ScheduledJobRow;
   readonly now: () => Date;
   readonly diagnostics: DiagnosticEffect[];
   readonly message: string;
-}): JobDrainSummary {
+}): Promise<JobDrainSummary> {
   const retry = opts.job.attempts < opts.job.maxAttempts;
-  opts.diagnostics.push(
-    diagnosticEffect({
-      severity: "error",
-      code: "job.dispatch-crashed",
-      message: `Job ${opts.job.id} dispatch crashed before completion: ${opts.message}`,
-      sourceRefs: [],
-    }),
-  );
+  const dispatchDiag = diagnosticEffect({
+    severity: "error",
+    code: "job.dispatch-crashed",
+    message: `Job ${opts.job.id} dispatch crashed before completion: ${opts.message}`,
+    sourceRefs: [],
+  });
+  opts.diagnostics.push(dispatchDiag);
+  let summary: JobDrainSummary;
   if (retry) {
     markJobPending(
       opts.projection,
       opts.job.id,
       new Date(opts.now().getTime() + retryDelayMs(opts.job.attempts)),
     );
-    return Object.freeze({
+    summary = Object.freeze({
       jobId: opts.job.id,
       processorId: opts.job.processorId,
       status: "rescheduled" as const,
       runId: null,
     });
+  } else {
+    markJobFailed(opts.projection, opts.job.id, opts.now());
+    summary = Object.freeze({
+      jobId: opts.job.id,
+      processorId: opts.job.processorId,
+      status: "failed" as const,
+      runId: null,
+    });
   }
 
-  markJobFailed(opts.projection, opts.job.id, opts.now());
-  return Object.freeze({
-    jobId: opts.job.id,
-    processorId: opts.job.processorId,
-    status: "failed" as const,
-    runId: null,
+  await recordDiagnosticsViaSink({
+    sinks: opts.sinks,
+    diagnostics: [dispatchDiag],
+    processorId: "engine.jobs",
+    proposalId: null,
   });
+  return summary;
 }
 
 async function routeJobGardenPatch(opts: {

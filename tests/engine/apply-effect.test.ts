@@ -99,6 +99,51 @@ describe("phase-mismatch rejections", () => {
     expect(r.outcome).toBe("rejected-by-phase");
   });
 
+  test("phase-mismatch diagnostics are recorded through the diagnostic sink", async () => {
+    const recorded: Array<{
+      readonly code: string;
+      readonly processorId: string;
+      readonly runId: RunId | undefined;
+      readonly proposalId: string | null;
+    }> = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({
+          effect,
+          processorId,
+          runId,
+          proposalId,
+        }) => {
+          recorded.push({
+            code: effect.code,
+            processorId,
+            runId,
+            proposalId,
+          });
+        },
+      },
+      phase: "view",
+      effect: patchEffect({
+        mode: "auto",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+        reason: "x",
+        sourceRefs: [ref],
+      }),
+    });
+
+    expect(r.outcome).toBe("rejected-by-phase");
+    expect(recorded).toEqual([
+      {
+        code: "phase-mismatch",
+        processorId: "test.proc",
+        runId: "run-1" as RunId,
+        proposalId: "prop_1_aaaaaa",
+      },
+    ]);
+  });
+
   test("DiagnosticEffect (severity: block) in view phase", async () => {
     const r = await applyEffect({
       ...baseOpts,

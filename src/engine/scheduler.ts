@@ -88,6 +88,7 @@ import {
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
+import { recordDiagnosticsViaSink } from "./diagnostics";
 import type { RunId } from "./runner-contract";
 
 type AdoptScheduledSubProposalFn = (
@@ -168,6 +169,20 @@ export async function runScheduler(opts: {
       sourceRefs: [],
     });
     console.warn(`dome: scheduler crashed: ${msg}`);
+    try {
+      await recordDiagnosticsViaSink({
+        sinks: opts.sinks,
+        diagnostics: [crashDiag],
+        processorId: "engine.scheduler",
+        proposalId: null,
+      });
+    } catch (recordError) {
+      const recordMsg =
+        recordError instanceof Error ? recordError.message : String(recordError);
+      console.warn(
+        `dome: scheduler crash diagnostic was not recorded: ${recordMsg}`,
+      );
+    }
     return Object.freeze({
       fired: Object.freeze([]),
       skipped: Object.freeze([]),
@@ -240,14 +255,19 @@ async function runSchedulerInner(opts: {
       parsed = parseCron(cron);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      diagnostics.push(
-        diagnosticEffect({
-          severity: "error",
-          code: "scheduler.cron-parse-failed",
-          message: `Processor ${processor.id} has invalid cron "${cron}": ${msg}`,
-          sourceRefs: [],
-        }),
-      );
+      const cronDiag = diagnosticEffect({
+        severity: "error",
+        code: "scheduler.cron-parse-failed",
+        message: `Processor ${processor.id} has invalid cron "${cron}": ${msg}`,
+        sourceRefs: [],
+      });
+      diagnostics.push(cronDiag);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [cronDiag],
+        processorId: "engine.scheduler",
+        proposalId: null,
+      });
       skipped.push({ processorId: processor.id, reason: "cron-parse-failed" });
       continue;
     }
@@ -378,14 +398,19 @@ async function runSchedulerInner(opts: {
       success = result.executionStatus === "succeeded";
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      diagnostics.push(
-        diagnosticEffect({
-          severity: "error",
-          code: "scheduler.dispatch-failed",
-          message: `Scheduler dispatch of ${processor.id} crashed: ${msg}`,
-          sourceRefs: [],
-        }),
-      );
+      const dispatchDiag = diagnosticEffect({
+        severity: "error",
+        code: "scheduler.dispatch-failed",
+        message: `Scheduler dispatch of ${processor.id} crashed: ${msg}`,
+        sourceRefs: [],
+      });
+      diagnostics.push(dispatchDiag);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [dispatchDiag],
+        processorId: "engine.scheduler",
+        proposalId: null,
+      });
       success = false;
     }
 

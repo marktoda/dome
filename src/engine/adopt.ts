@@ -85,6 +85,7 @@ import { updateOutputCommit } from "../ledger/runs";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
 import { compileRange } from "./compile-range";
+import { recordDiagnosticsViaSink } from "./diagnostics";
 import type { AdoptionPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -245,19 +246,24 @@ export async function adopt(opts: {
   // an unhandled exception.
   const branch = await currentBranch(vault.path);
   if (branch === null) {
+    const detachedDiag = diagnosticEffect({
+      severity: "block",
+      code: "adoption.detached-head",
+      message:
+        "Cannot run adoption: HEAD is detached (no branch). The adopted-ref substrate requires a branch name to namespace under. Check out a branch and retry.",
+      sourceRefs: [],
+    });
+    await recordDiagnosticsViaSink({
+      sinks,
+      diagnostics: [detachedDiag],
+      processorId: "engine.adoption",
+      proposalId: proposal.id,
+    });
     return frozenResult({
       proposalId: proposal.id,
       adopted: false,
       adoptedRef: proposal.base,
-      diagnostics: [
-        diagnosticEffect({
-          severity: "block",
-          code: "adoption.detached-head",
-          message:
-            "Cannot run adoption: HEAD is detached (no branch). The adopted-ref substrate requires a branch name to namespace under. Check out a branch and retry.",
-          sourceRefs: [],
-        }),
-      ],
+      diagnostics: [detachedDiag],
       closureCommitOid: null,
       iterations: 0,
     });
@@ -466,14 +472,19 @@ export async function adopt(opts: {
   // we fell through the for-loop, iteration is `maxIterations + 1` because
   // the post-condition increments after the last successful execution.)
   if (iteration > maxIterations) {
-    allDiagnostics.push(
-      diagnosticEffect({
-        severity: "block",
-        code: "fixed-point.divergence",
-        message: `Adoption loop hit MAX_ITER=${maxIterations} without reaching fixed point. The last iteration's processors emitted patches that didn't converge.`,
-        sourceRefs: [],
-      }),
-    );
+    const divergenceDiag = diagnosticEffect({
+      severity: "block",
+      code: "fixed-point.divergence",
+      message: `Adoption loop hit MAX_ITER=${maxIterations} without reaching fixed point. The last iteration's processors emitted patches that didn't converge.`,
+      sourceRefs: [],
+    });
+    allDiagnostics.push(divergenceDiag);
+    await recordDiagnosticsViaSink({
+      sinks,
+      diagnostics: [divergenceDiag],
+      processorId: "engine.adoption",
+      proposalId: proposal.id,
+    });
     return frozenResult({
       proposalId: proposal.id,
       adopted: false,
@@ -564,14 +575,19 @@ export async function adopt(opts: {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      allDiagnostics.push(
-        diagnosticEffect({
-          severity: "block",
-          code: "adoption.branch-advance-failed",
-          message: `Failed to advance refs/heads/${branch} to closure commit ${closureCommitOid.slice(0, 7)}: ${msg}`,
-          sourceRefs: [],
-        }),
-      );
+      const branchAdvanceDiag = diagnosticEffect({
+        severity: "block",
+        code: "adoption.branch-advance-failed",
+        message: `Failed to advance refs/heads/${branch} to closure commit ${closureCommitOid.slice(0, 7)}: ${msg}`,
+        sourceRefs: [],
+      });
+      allDiagnostics.push(branchAdvanceDiag);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [branchAdvanceDiag],
+        processorId: "engine.adoption",
+        proposalId: proposal.id,
+      });
       return frozenResult({
         proposalId: proposal.id,
         adopted: false,
@@ -593,14 +609,19 @@ export async function adopt(opts: {
     // Ref-advance failed (typically `adopted-ref-divergence` per
     // ADOPTED_REF_IS_SEMANTIC_CURSOR). Surface as a blocking diagnostic;
     // the loop ran cleanly but the substrate refused the advance.
-    allDiagnostics.push(
-      diagnosticEffect({
-        severity: "block",
-        code: "adoption.ref-advance-refused",
-        message: `Failed to advance refs/dome/adopted/${branch}: ${writeResult.error.kind === "validation" ? writeResult.error.message : writeResult.error.kind}`,
-        sourceRefs: [],
-      }),
-    );
+    const refAdvanceDiag = diagnosticEffect({
+      severity: "block",
+      code: "adoption.ref-advance-refused",
+      message: `Failed to advance refs/dome/adopted/${branch}: ${writeResult.error.kind === "validation" ? writeResult.error.message : writeResult.error.kind}`,
+      sourceRefs: [],
+    });
+    allDiagnostics.push(refAdvanceDiag);
+    await recordDiagnosticsViaSink({
+      sinks,
+      diagnostics: [refAdvanceDiag],
+      processorId: "engine.adoption",
+      proposalId: proposal.id,
+    });
     return frozenResult({
       proposalId: proposal.id,
       adopted: false,

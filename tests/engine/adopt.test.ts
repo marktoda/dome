@@ -141,6 +141,11 @@ describe("adopt fixed-point loop", () => {
     // the loop counts it as an auto patch (without these, the broker would
     // deny and the loop would converge on iter 1).
     const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    const recorded: Array<{
+      readonly code: string;
+      readonly processorId: string;
+      readonly proposalId: string | null;
+    }> = [];
     const runner: AdoptionPhaseRunner = async () => [
       {
         runId: "run_test_diverger" as RunId,
@@ -165,7 +170,12 @@ describe("adopt fixed-point loop", () => {
       vault: f.vault,
       proposal,
       runAdoptionProcessors: runner,
-      sinks: noopSinks(),
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect, processorId, proposalId }) => {
+          recorded.push({ code: effect.code, processorId, proposalId });
+        },
+      },
       maxIterations: 3,
     });
 
@@ -174,5 +184,12 @@ describe("adopt fixed-point loop", () => {
     expect(r.diagnostics.some((d) => d.code === "fixed-point.divergence")).toBe(
       true,
     );
+    expect(recorded).toEqual([
+      {
+        code: "fixed-point.divergence",
+        processorId: "engine.adoption",
+        proposalId: "prop_1_aaaaaa",
+      },
+    ]);
   });
 });

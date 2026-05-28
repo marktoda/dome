@@ -81,7 +81,7 @@ interface DiagnosticEffect {
 
 In the garden phase, `block` is treated as `error` — garden processors cannot block adoption (they run *after* it). In the view phase, only `info` and `warning` are emitted.
 
-**Persistence:** diagnostics are written to `projection_store.diagnostics` ([[wiki/specs/projection-store]] §"Tables") with `(proposalId, processorId, code)` as the upsert key. `dome inspect diagnostics` reads from there.
+**Persistence:** diagnostics are written to `projection_store.diagnostics` ([[wiki/specs/projection-store]] §"Tables") with `(processor_id, code, proposal_id, subject_hash)` as the dedup key. Processor-emitted diagnostics and engine-created diagnostics (capability denials, phase mismatches, adoption/scheduler/job orchestration failures) use the same table; engine-created rows use synthetic producer ids such as `engine.adoption`, `engine.scheduler`, and `engine.jobs`. `dome inspect diagnostics` reads from there.
 
 ## FactEffect
 

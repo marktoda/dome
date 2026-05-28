@@ -54,6 +54,7 @@ import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { applyPatchToCandidate } from "./apply-patch";
 import type { SignalEvent } from "./compile-range";
+import { recordDiagnosticsViaSink } from "./diagnostics";
 import { deriveExtensionId } from "../extensions/id-helpers";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
@@ -243,6 +244,20 @@ export async function runGardenPhase(opts: {
       `dome: garden phase crashed (proposal=${opts.proposal.id}, ` +
         `depth=${cascadeDepth}): ${msg}`,
     );
+    try {
+      await recordDiagnosticsViaSink({
+        sinks: opts.sinks,
+        diagnostics: [crashDiag],
+        processorId: "engine.garden",
+        proposalId: opts.proposal.id,
+      });
+    } catch (recordError) {
+      const recordMsg =
+        recordError instanceof Error ? recordError.message : String(recordError);
+      console.warn(
+        `dome: garden crash diagnostic was not recorded: ${recordMsg}`,
+      );
+    }
     return frozenResult({
       proposalId: opts.proposal.id,
       runs: [],
@@ -416,6 +431,12 @@ async function runGardenPhaseInner(opts: {
         sourceRefs: [],
       });
       allDiagnostics.push(drop);
+      await sinks.recordDiagnostic({
+        effect: drop,
+        processorId: "engine.garden",
+        runId: spawnQueue[0]!.runId,
+        proposalId: proposal.id,
+      });
     } else if (cascadeDepth >= maxCascadeDepth) {
       // Cascade-cap hit. Emit one diagnostic naming the depth and the
       // count of skipped patches; don't fire any sub-Proposals.

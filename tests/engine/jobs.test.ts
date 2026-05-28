@@ -132,11 +132,27 @@ describe("runQueuedJobs", () => {
     const fixture = await makeFixture();
     fixtures.push(fixture);
     enqueue(fixture, "job-1", "test.jobs.missing", null);
+    const recorded: Array<{
+      readonly code: string;
+      readonly processorId: string;
+      readonly proposalId: string | null;
+    }> = [];
 
-    const result = await runWithProcessors(fixture, []);
+    const result = await runWithProcessors(fixture, [], () => NOW, {
+      recordDiagnostic: async ({ effect, processorId, proposalId }) => {
+        recorded.push({ code: effect.code, processorId, proposalId });
+      },
+    });
 
     expect(result.drained[0]?.status).toBe("failed");
     expect(result.diagnostics[0]?.code).toBe("job.target-unavailable");
+    expect(recorded).toEqual([
+      {
+        code: "job.target-unavailable",
+        processorId: "engine.jobs",
+        proposalId: null,
+      },
+    ]);
     expect(jobRow(fixture.projection, "job-1")).toMatchObject({
       status: "failed",
       attempts: 1,
@@ -159,12 +175,17 @@ describe("runQueuedJobs", () => {
     const crashingResolveTree = async () => {
       throw new Error("tree unavailable");
     };
+    const recorded: string[] = [];
 
     const first = await runWithProcessors(
       fixture,
       [processor],
       () => now,
-      {},
+      {
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
       { resolveTree: crashingResolveTree },
     );
     const afterFirst = jobRow(fixture.projection, "job-1");
@@ -173,13 +194,21 @@ describe("runQueuedJobs", () => {
       fixture,
       [processor],
       () => now,
-      {},
+      {
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
       { resolveTree: crashingResolveTree },
     );
 
     expect(first.drained[0]?.status).toBe("rescheduled");
     expect(first.diagnostics[0]?.code).toBe("job.dispatch-crashed");
     expect(second.drained[0]?.status).toBe("failed");
+    expect(recorded).toEqual([
+      "job.dispatch-crashed",
+      "job.dispatch-crashed",
+    ]);
     expect(jobRow(fixture.projection, "job-1")).toMatchObject({
       status: "failed",
       attempts: 2,

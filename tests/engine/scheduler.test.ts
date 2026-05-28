@@ -140,6 +140,43 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(recordedDiagnostics).toContain("processor.timeout");
   });
 
+  test("invalid cron diagnostics are recorded through the diagnostic sink", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.bad-cron",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "not a cron" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const recorded: Array<{
+      readonly code: string;
+      readonly processorId: string;
+      readonly proposalId: string | null;
+    }> = [];
+
+    const result = await runWithProcessor(fixture, processor, {
+      recordDiagnostic: async ({ effect, processorId, proposalId }) => {
+        recorded.push({ code: effect.code, processorId, proposalId });
+      },
+    });
+
+    expect(result.fired.length).toBe(0);
+    expect(result.skipped[0]).toEqual({
+      processorId: "test.scheduler.bad-cron",
+      reason: "cron-parse-failed",
+    });
+    expect(recorded).toEqual([
+      {
+        code: "scheduler.cron-parse-failed",
+        processorId: "engine.scheduler",
+        proposalId: null,
+      },
+    ]);
+  });
+
   test("broker diagnostics do not mark scheduled fire unsuccessful", async () => {
     const processor = defineProcessor({
       id: "test.scheduler.capability-denied",
