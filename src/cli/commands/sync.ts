@@ -40,6 +40,7 @@ import type { AdoptionResult } from "../../core/proposal";
 
 import {
   detectDrift,
+  formatAdoptEvent,
   resolveShippedBundlesRoot,
   runOneAdoption,
 } from "./sync-shared";
@@ -105,6 +106,8 @@ export async function runSync(args: ParsedArgs): Promise<number> {
       : resolveShippedBundlesRoot();
 
   const jsonMode = args.flags["json"] === true;
+  const verbose =
+    args.flags["verbose"] === true || args.flags["v"] === true;
 
   // ----- 2. Detect drift ----------------------------------------------------
   // The shared helper short-circuits the unworkable states (detached
@@ -170,7 +173,13 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 
   // ----- 4. Run one adoption cycle ------------------------------------------
   try {
-    const result = await runOneAdoption({ runtime, drift: drift.info });
+    const result = await runOneAdoption({
+      runtime,
+      drift: drift.info,
+      ...(verbose && !jsonMode
+        ? { onEvent: (e) => console.log(formatAdoptEvent(e)) }
+        : {}),
+    });
     if (jsonMode) {
       console.log(formatJson(adoptionResultJson(drift.info.branch, drift.info, result)));
     } else {

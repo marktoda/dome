@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
-import { adopt } from "../../engine/adopt";
+import { adopt, type AdoptEvent } from "../../engine/adopt";
 import type { VaultRuntime } from "../../engine/vault-runtime";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
@@ -160,6 +160,40 @@ export async function detectDrift(vaultPath: string): Promise<DriftResult> {
   };
 }
 
+// ----- Verbose event formatter ---------------------------------------------
+
+export type { AdoptEvent };
+
+/**
+ * Format an `AdoptEvent` as a single human-readable stdout line for
+ * `dome serve --verbose` / `dome sync --verbose`. Lines are indented
+ * under the daemon's top-level summary so the iteration structure is
+ * scannable.
+ *
+ * The format is human-targeted (not machine-parseable); structured
+ * consumers should query the run-ledger + projection DBs directly.
+ */
+export function formatAdoptEvent(event: AdoptEvent): string {
+  switch (event.kind) {
+    case "iteration-start":
+      return (
+        `dome serve:   iteration ${event.iteration}: ` +
+        `${event.changedPathCount} changed path${event.changedPathCount === 1 ? "" : "s"}, ` +
+        `${event.signalCount} signal${event.signalCount === 1 ? "" : "s"}`
+      );
+    case "processor-result":
+      return (
+        `dome serve:     ↳ ${event.processorId}: ` +
+        `${event.effectCount} effect${event.effectCount === 1 ? "" : "s"}`
+      );
+    case "iteration-end":
+      return event.converged
+        ? `dome serve:   iteration ${event.iteration}: converged`
+        : `dome serve:   iteration ${event.iteration}: ` +
+          `${event.autoPatchCount} auto-patch${event.autoPatchCount === 1 ? "" : "es"} accumulated → re-iterating`;
+  }
+}
+
 // ----- runOneAdoption -------------------------------------------------------
 
 /**
@@ -181,8 +215,15 @@ export async function detectDrift(vaultPath: string): Promise<DriftResult> {
 export async function runOneAdoption(opts: {
   readonly runtime: VaultRuntime;
   readonly drift: DriftInfo;
+  /**
+   * Optional observability callback forwarded to `adopt()` — surfaces
+   * per-iteration + per-processor events for verbose-mode CLI rendering.
+   * `dome serve --verbose` / `dome sync --verbose` wire a callback that
+   * prints each event; default callers pass nothing.
+   */
+  readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<AdoptionResult> {
-  const { runtime, drift } = opts;
+  const { runtime, drift, onEvent } = opts;
 
   const proposal = makeManualProposal({
     base: drift.base,
@@ -198,7 +239,14 @@ export async function runOneAdoption(opts: {
     captureView: captureViewPlaceholder,
   });
 
-  return adopt({
+  const adoptOpts: {
+    vault: { path: string; config: { git: { auto_commit_workflows: boolean } } };
+    proposal: typeof proposal;
+    runAdoptionProcessors: typeof runtime.processorRuntime.adoptionRunner;
+    sinks: typeof sinks;
+    ledger: typeof runtime.ledgerDb;
+    onEvent?: (event: AdoptEvent) => void;
+  } = {
     vault: {
       path: runtime.path,
       config: { git: { auto_commit_workflows: true } },
@@ -207,7 +255,9 @@ export async function runOneAdoption(opts: {
     runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
     sinks,
     ledger: runtime.ledgerDb,
-  });
+  };
+  if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
+  return adopt(adoptOpts);
 }
 
 // ----- Placeholder sinks (v1.0) ---------------------------------------------

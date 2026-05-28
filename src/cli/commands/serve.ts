@@ -40,6 +40,7 @@ import { getCurrentBranch } from "../../adopted-ref";
 
 import {
   detectDrift,
+  formatAdoptEvent,
   resolveShippedBundlesRoot,
   runOneAdoption,
   type DriftInfo,
@@ -120,6 +121,13 @@ export async function runServe(
     return 1;
   }
 
+  // Verbose mode: emit per-iteration + per-processor structured lines via
+  // the shared `formatAdoptEvent` formatter. Default mode keeps the
+  // one-line-per-commit summary; verbose adds 1-3 indented lines per
+  // adoption cycle (iteration-start, processor-result(s), iteration-end).
+  const verbose =
+    args.flags["verbose"] === true || args.flags["v"] === true;
+
   // ----- 2. Resolve initial branch ------------------------------------------
   // A detached HEAD has no branch name; the adopted-ref substrate requires
   // a branch to namespace under. Refuse to start so the operator sees a
@@ -157,7 +165,7 @@ export async function runServe(
         ? startupDrift.info.branch
         : ((await getCurrentBranch(vaultPath)) ?? "(unknown)");
   console.log(
-    `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms)`,
+    `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms${verbose ? ", verbose" : ""})`,
   );
 
   // ----- 5. Register cancellation handlers ----------------------------------
@@ -186,6 +194,7 @@ export async function runServe(
       vaultPath,
       pollIntervalMs,
       cancel: controller.signal,
+      verbose,
     });
   } finally {
     // Detach signal handlers BEFORE closing the runtime, so a stray
@@ -226,8 +235,9 @@ async function pollLoop(input: {
   readonly vaultPath: string;
   readonly pollIntervalMs: number;
   readonly cancel: AbortSignal;
+  readonly verbose: boolean;
 }): Promise<void> {
-  const { runtime, vaultPath, pollIntervalMs, cancel } = input;
+  const { runtime, vaultPath, pollIntervalMs, cancel, verbose } = input;
 
   // `lastKind` suppresses repeated log lines when the daemon enters an
   // unworkable state mid-run (detached HEAD, no-commits). The operator
@@ -237,9 +247,15 @@ async function pollLoop(input: {
   while (!cancel.aborted) {
     const drift = await detectDrift(vaultPath);
     if (drift.kind === "drift") {
+      if (verbose) {
+        console.log(
+          `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
+        );
+      }
       await runOneAdoptionWithErrorHandling({
         runtime,
         drift: drift.info,
+        verbose,
       });
     } else if (drift.kind === "detached-head" && lastKind !== "detached-head") {
       // Operator detached HEAD mid-run. Log once on transition and keep
@@ -268,11 +284,16 @@ async function pollLoop(input: {
 async function runOneAdoptionWithErrorHandling(input: {
   readonly runtime: VaultRuntime;
   readonly drift: DriftInfo;
+  readonly verbose: boolean;
 }): Promise<void> {
-  const { runtime, drift } = input;
+  const { runtime, drift, verbose } = input;
 
   try {
-    const result = await runOneAdoption({ runtime, drift });
+    const result = await runOneAdoption({
+      runtime,
+      drift,
+      ...(verbose ? { onEvent: (e) => console.log(formatAdoptEvent(e)) } : {}),
+    });
     printAdoptionLine(drift.branch, result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

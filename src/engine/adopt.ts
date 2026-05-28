@@ -83,6 +83,62 @@ import { parsePatchPaths } from "./patch-parse";
 import type { AdoptionPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
+// ----- AdoptEvent (verbose-mode observability) -----------------------------
+
+/**
+ * Per-step observability events the loop emits while it runs. Callers wire
+ * an `onEvent` callback on `adopt(opts)` to receive them; the engine itself
+ * never logs to stdout (separation of concerns — the CLI / daemon owns
+ * formatting). Three event kinds, one per natural step boundary:
+ *
+ *   - `iteration-start`: the loop is about to invoke the runner. Surfaces
+ *     the size of the work (changed paths, signals).
+ *   - `processor-result`: a single processor's run completed (success
+ *     or thrown — a throwing processor returns one synthesized
+ *     diagnostic effect, surfaced here with `effectCount: 1`).
+ *   - `iteration-end`: the loop finished one pass and is about to either
+ *     converge (no auto-patches) or re-enter with a new candidate.
+ *
+ * The events are *advisory*. They do not affect adoption semantics; if
+ * the callback throws, the loop still completes (the engine wraps the
+ * callback in a try/catch so a misbehaving observer doesn't corrupt the
+ * adoption pipeline).
+ */
+export type AdoptEvent =
+  | {
+      readonly kind: "iteration-start";
+      readonly iteration: number;
+      readonly changedPathCount: number;
+      readonly signalCount: number;
+    }
+  | {
+      readonly kind: "processor-result";
+      readonly iteration: number;
+      readonly processorId: string;
+      readonly runId: RunId;
+      readonly effectCount: number;
+    }
+  | {
+      readonly kind: "iteration-end";
+      readonly iteration: number;
+      readonly autoPatchCount: number;
+      readonly converged: boolean;
+    };
+
+/** Safely invoke an `onEvent` callback. Failures in the observer never
+ *  corrupt the adoption loop — they're swallowed at the boundary. */
+function emitEvent(
+  onEvent: ((event: AdoptEvent) => void) | undefined,
+  event: AdoptEvent,
+): void {
+  if (onEvent === undefined) return;
+  try {
+    onEvent(event);
+  } catch {
+    // Advisory event; never fail adoption because the observer threw.
+  }
+}
+
 // ----- DEFAULT_MAX_ITERATIONS -----------------------------------------------
 
 /**
@@ -157,8 +213,16 @@ export async function adopt(opts: {
    * Phase 5 (no ledger writes). Phase 7+ wires both end-to-end.
    */
   readonly ledger?: LedgerDb;
+  /**
+   * Optional observability callback. When provided, the loop emits
+   * `AdoptEvent`s at iteration-start, processor-result, and iteration-end
+   * boundaries. Used by `dome serve --verbose` / `dome sync --verbose` to
+   * surface per-step progress to stdout. The engine itself never logs;
+   * the callback owns formatting + output.
+   */
+  readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<AdoptionResult> {
-  const { vault, proposal, runAdoptionProcessors, sinks, ledger } = opts;
+  const { vault, proposal, runAdoptionProcessors, sinks, ledger, onEvent } = opts;
   const maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const forceAdvance = opts.forceAdvance ?? false;
 
@@ -222,6 +286,13 @@ export async function adopt(opts: {
       head: candidate,
     });
 
+    emitEvent(onEvent, {
+      kind: "iteration-start",
+      iteration,
+      changedPathCount: compiled.changedPaths.length,
+      signalCount: compiled.signals.length,
+    });
+
     const runnerResults = await runAdoptionProcessors({
       vault,
       candidate,
@@ -239,6 +310,13 @@ export async function adopt(opts: {
 
     for (const { runId, processorId, declared, granted, effects } of runnerResults) {
       contributingRunIds.add(runId);
+      emitEvent(onEvent, {
+        kind: "processor-result",
+        iteration,
+        processorId,
+        runId,
+        effectCount: effects.length,
+      });
       for (const effect of effects) {
         const applied = await applyEffect({
           effect,
@@ -318,7 +396,14 @@ export async function adopt(opts: {
     const autoPatchesThisIteration = effectsThisIteration.filter(
       (e): e is PatchEffect => e.kind === "patch" && e.mode === "auto",
     );
-    if (autoPatchesThisIteration.length === 0) {
+    const converged = autoPatchesThisIteration.length === 0;
+    emitEvent(onEvent, {
+      kind: "iteration-end",
+      iteration,
+      autoPatchCount: autoPatchesThisIteration.length,
+      converged,
+    });
+    if (converged) {
       break;
     }
 
