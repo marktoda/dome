@@ -297,6 +297,29 @@ Commit your changes to \`main\`:
 git add . && git commit -m "your message"
 \`\`\`
 
+**Commit per logical change.** The daemon treats each commit as a Proposal —
+one commit triggers one adoption cycle. Many small commits give you
+per-change diagnostic feedback and a clean \`git blame\`; one mega-commit
+bundles all diagnostics together and is harder to revert selectively. When
+you finish a coherent unit of work (one entity updated, one source ingested,
+one section rewritten), commit it.
+
+For experimental work — a structural rewrite, a directory rename, a
+many-pages refactor you might discard — use a git worktree to isolate it
+from \`main\` until you're sure:
+
+\`\`\`bash
+git worktree add .worktrees/restructure -b experiment/restructure
+cd .worktrees/restructure
+# ...experimental edits + commits land on experiment/restructure...
+# merge back to main when ready, or rm -rf and discard
+\`\`\`
+
+The daemon watches \`refs/heads/main\` only, so worktree commits don't get
+adopted until you merge them back. That's the point of using a worktree:
+the experiment is invisible to the engine until you decide it's worth
+keeping.
+
 A daemon (\`dome serve\`) running in the background watches for new commits.
 On each commit, the engine runs adoption: lint markdown, validate wikilinks,
 update projections, advance \`refs/dome/adopted/main\`. You see nothing on

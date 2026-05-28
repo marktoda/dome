@@ -236,4 +236,63 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.message).not.toContain("[[a]]");
     expect(diag.message).not.toContain("[[b]]");
   });
+
+  // Regression: [[parent/child]] resolves to <anything>/parent/child.md via
+  // suffix-match. Pre-fix, the resolver only tried vault-root-relative
+  // paths and would flag this as broken.
+  test("partial-path wikilink [[entities/danny]] resolves via suffix-match", async () => {
+    const f = await makeVaultWithFiles([
+      { path: "wiki/page.md", content: "Hello [[entities/danny]].\n" },
+      { path: "wiki/entities/danny.md", content: "Danny.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-suffix",
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(0);
+  });
+
+  // Regression: two broken wikilinks on the same line produced one diagnostic
+  // after dedup (the source-refs hash was line-level, so the second collided
+  // with the first). Now each wikilink carries its own startChar/endChar in
+  // the SourceRef, distinct per-match.
+  test("two broken wikilinks on one line → two distinct diagnostics with distinct ranges", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/page.md",
+        content: "On one line: [[fake-alpha]] and also [[fake-beta]].\n",
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-coline",
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(2);
+
+    const diagnostics = effects.map((e) => e as DiagnosticEffect);
+    const ranges = diagnostics.map((d) => d.sourceRefs[0]?.range);
+
+    // Both on line 1, but distinct character spans.
+    expect(ranges[0]?.startLine).toBe(1);
+    expect(ranges[1]?.startLine).toBe(1);
+    expect(ranges[0]?.startChar).toBeDefined();
+    expect(ranges[1]?.startChar).toBeDefined();
+    expect(ranges[0]?.startChar).not.toBe(ranges[1]?.startChar);
+  });
 });

@@ -113,7 +113,12 @@ const validateWikilinks: Processor = defineProcessor({
         if (resolved !== null) continue;
 
         // Unresolved target → emit a warning diagnostic anchored to the
-        // line where the wikilink appears in `changedPath`.
+        // exact span where the wikilink appears in `changedPath`. The
+        // character offsets are load-bearing: they disambiguate multiple
+        // wikilinks on the same line (the diagnostic dedup key is
+        // (processor_id, code, proposal_id, source_refs_hash); without
+        // distinct char offsets, two broken wikilinks on one line would
+        // dedupe to a single row).
         diagnostics.push(
           diagnosticEffect({
             severity: "warning",
@@ -123,6 +128,8 @@ const validateWikilinks: Processor = defineProcessor({
               ctx.sourceRef(changedPath, {
                 startLine: match.line,
                 endLine: match.line,
+                startChar: match.startChar,
+                endChar: match.endChar,
               }),
             ],
           }),
@@ -140,14 +147,17 @@ export default validateWikilinks;
 
 type WikilinkMatch = {
   readonly target: string;
-  readonly line: number; // 1-indexed line number in the source file
+  readonly line: number; // 1-indexed line number where the match begins
+  readonly startChar: number; // 0-indexed column of `[[` within the line
+  readonly endChar: number; // 0-indexed column of one past `]]` within the line
 };
 
 /**
  * Find every wikilink in `content`. Returns one entry per match with the
- * target (the part before `|`, if any) and the 1-indexed line number where
- * the match begins. The regex is reset per call (fresh `lastIndex = 0`) so
- * the module-level `WIKILINK_RE` can be reused without per-call allocation.
+ * target (the part before `|`, if any), the 1-indexed line number, and
+ * the 0-indexed start/end column within that line. The regex is reset per
+ * call (fresh `lastIndex = 0`) so the module-level `WIKILINK_RE` can be
+ * reused without per-call allocation.
  */
 function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
   const matches: WikilinkMatch[] = [];
@@ -158,24 +168,35 @@ function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
     if (target === undefined) continue;
     const trimmed = target.trim();
     if (trimmed.length === 0) continue;
+    const pos = positionAt(content, m.index);
     matches.push({
       target: trimmed,
-      line: lineNumberAt(content, m.index),
+      line: pos.line,
+      startChar: pos.col,
+      endChar: pos.col + m[0].length,
     });
   }
   return matches;
 }
 
 /**
- * 1-indexed line number for `offset` within `content`. Counts `\n`s before
- * the offset. Used to anchor diagnostic SourceRefs to the wikilink's line.
+ * 1-indexed line + 0-indexed column for `offset` within `content`. Walks
+ * forward from the start of content counting `\n`s; the column resets
+ * after each newline. Used to anchor diagnostic SourceRefs to the exact
+ * span of each wikilink.
  */
-function lineNumberAt(content: string, offset: number): number {
+function positionAt(content: string, offset: number): { line: number; col: number } {
   let line = 1;
+  let col = 0;
   for (let i = 0; i < offset && i < content.length; i++) {
-    if (content.charCodeAt(i) === 10 /* \n */) line += 1;
+    if (content.charCodeAt(i) === 10 /* \n */) {
+      line += 1;
+      col = 0;
+    } else {
+      col += 1;
+    }
   }
-  return line;
+  return { line, col };
 }
 
 /**
@@ -205,13 +226,21 @@ function buildBasenameIndex(
  * set. Returns the resolved vault-relative path on success; null on miss.
  *
  * Resolution order:
- *   1. If `target` contains a slash, treat as a vault-relative path. Try
- *      `<target>.md` first (the common case where users omit the extension),
- *      then `<target>` verbatim.
- *   2. Otherwise (bare name), look for `<target>.md` under each of the
+ *   1. If `target` contains a slash, try resolving as a vault-relative path:
+ *      first `<target>.md`, then `<target>` verbatim. This catches the
+ *      explicit-path Obsidian convention (`[[wiki/entities/danny]]` →
+ *      `wiki/entities/danny.md`).
+ *   2. If still unresolved AND `target` contains a slash, try suffix-match:
+ *      any vault path that ends with `/<target>.md` (or `/<target>`) is a
+ *      candidate. This catches the partial-path Obsidian convention
+ *      (`[[entities/danny]]` resolving to `wiki/entities/danny.md` —
+ *      "the danny under entities/, wherever entities/ lives"). On
+ *      collisions (multiple matches), returns the first; the basename
+ *      index used here is insertion-ordered.
+ *   3. Otherwise (bare name), look for `<target>.md` under each of the
  *      common roots (`wiki/`, `notes/`, `inbox/`, `captures/`) in order;
  *      first match wins.
- *   3. Fallback: basename-anywhere search — `<target>.md` matched against the
+ *   4. Fallback: basename-anywhere search — `<target>.md` matched against the
  *      basename index. Catches files in non-standard subdirs (e.g.,
  *      `wiki/people/danny.md` for `[[danny]]`).
  */
@@ -224,6 +253,20 @@ function resolveWikilinkTarget(
     const withMd = target.endsWith(".md") ? target : `${target}.md`;
     if (pathSet.has(withMd)) return withMd;
     if (pathSet.has(target)) return target;
+
+    // Suffix-match: any vault path ending in `/<target>.md` is a candidate.
+    // The basename index buckets by filename, so we filter to entries whose
+    // full path ends with the slash-prefixed target. This matches Obsidian's
+    // "shortest-suffix" wikilink resolution for `[[parent/child]]` form.
+    const basename = withMd.slice(withMd.lastIndexOf("/") + 1);
+    const candidates = basenameIndex.get(basename);
+    if (candidates !== undefined) {
+      const needle = `/${withMd}`;
+      for (const candidate of candidates) {
+        if (candidate.endsWith(needle)) return candidate;
+      }
+    }
+
     return null;
   }
 
