@@ -105,7 +105,7 @@ The executor boundary validates returned values before routing:
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
 4. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
 
-Validation failure returns `status: "failed"` with `code: "processor.invalid-output"` and emits a diagnostic naming the offending processor and effect index. No effects from that executor result are routed. This all-or-nothing rule prevents partial application of a processor that returned a mixed valid/invalid effect list.
+Validation failure returns `status: "failed"` with `code: "processor.invalid-output"` and emits a diagnostic naming the offending processor and effect index. `processor.invalid-output` is executor-created from returned output; a processor-thrown object that happens to carry this code is still classified as `processor.threw`. No effects from that executor result are routed. This all-or-nothing rule prevents partial application of a processor that returned a mixed valid/invalid effect list.
 
 ## Model invocation and structured output
 
@@ -120,7 +120,7 @@ The `ctx.modelInvoke` runtime boundary has these guarantees:
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.
 - Aborts provider calls when the processor invocation times out or is cancelled.
 - Validates provider responses before returning them to processors: `text` must be a string; optional `model` must be a string; optional `costUsd` must be a finite non-negative number.
-- Returns typed success or throws a structured `model.invoke.*` / `model.output.*` error that the executor preserves in the run ledger.
+- Returns typed success or throws a nominal runtime-created `model.invoke.*` / `model.output.*` error that the executor preserves in the run ledger. Processor-thrown or provider-thrown lookalikes are not trusted by shape.
 
 Structured-output parse failures are not repaired by prompt-only retry loops unless the processor explicitly asks for one through `ctx.modelInvoke.structured({ retries: n, ... })`. After retries are exhausted, the run fails with `code: "model.output.invalid-json"` or `code: "model.output.schema-mismatch"`. The diagnostic includes the schema name and a short parse reason, not the full prompt or full model output.
 

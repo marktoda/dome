@@ -202,6 +202,23 @@ describe("modelInvokeForProcessor", () => {
     }
   });
 
+  test("provider-thrown model-shaped errors are provider failures", async () => {
+    const invoke = buildInvoke({
+      provider: async () => {
+        throw Object.assign(new Error("spoofed model failure"), {
+          code: "model.output.invalid-json",
+          retryable: false,
+        });
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.provider-failed",
+      retryable: true,
+    });
+  });
+
   test("pre-aborted processor signal prevents provider invocation", async () => {
     const controller = new AbortController();
     controller.abort();

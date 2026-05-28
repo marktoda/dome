@@ -6,8 +6,8 @@ import {
   type Effect,
 } from "../core/effect";
 import type { ProcessorContext, ProcessorPhase } from "../core/processor";
+import { isModelExecutionError } from "../engine/model-invoke";
 import type { RunId } from "../engine/runner-contract";
-import type { ProcessorExecutionErrorCode } from "../engine/runner-contract";
 import type { ResolvedExecutionPolicy } from "./execution-policy";
 import {
   diagnosticForExecutionError,
@@ -199,40 +199,14 @@ function specializedThrownExecutionError(opts: {
   readonly phase: ProcessorPhase;
   readonly processorId: string;
 }): ProcessorFailedExecutionError | null {
-  try {
-    if (typeof opts.error !== "object" || opts.error === null) {
-      return null;
-    }
-    const code = (opts.error as { readonly code?: unknown }).code;
-    if (!isSpecializedFailureCode(code)) return null;
-    const retryable =
-      (opts.error as { readonly retryable?: unknown }).retryable === true;
-    return makeExecutionError({
-      code,
-      message: errorMessage(opts.error),
-      retryable,
-      phase: opts.phase,
-      processorId: opts.processorId,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function isSpecializedFailureCode(
-  code: unknown,
-): code is Exclude<
-  ProcessorExecutionErrorCode,
-  "processor.timeout" | "processor.cancelled" | "processor.threw"
-> {
-  return (
-    code === "processor.invalid-output" ||
-    code === "model.invoke.denied" ||
-    code === "model.invoke.provider-failed" ||
-    code === "model.invoke.timeout" ||
-    code === "model.output.invalid-json" ||
-    code === "model.output.schema-mismatch"
-  );
+  if (!isModelExecutionError(opts.error)) return null;
+  return makeExecutionError({
+    code: opts.error.code,
+    message: errorMessage(opts.error),
+    retryable: opts.error.retryable,
+    phase: opts.phase,
+    processorId: opts.processorId,
+  });
 }
 
 function isRetryableThrownError(

@@ -280,22 +280,49 @@ describe("executeProcessor", () => {
     expect(result.error.retryable).toBe(true);
   });
 
-  test("specialized model execution errors are not wrapped as processor.threw", async () => {
+  test("SDK-created model execution errors are not wrapped as processor.threw", async () => {
+    const cap = Object.freeze({ kind: "model.invoke" as const });
+    const policy = Object.freeze({
+      class: "llm" as const,
+      timeoutMs: 100,
+      lateEffectBehavior: "discard" as const,
+      modelCallTimeoutMs: 100,
+    });
+    const provider: ModelProvider = async () => ({ text: "not json" });
+
     const result = await executeProcessor({
       processorId: "test.executor.model-json",
       phase: "garden",
       runId: RUN_ID,
-      makeContext: contextWithSignal,
-      policy: {
-        class: "llm",
-        timeoutMs: 100,
-        lateEffectBehavior: "discard",
-      },
-      run: async () => {
-        throw Object.assign(new Error("invalid json for schema x"), {
-          code: "model.output.invalid-json",
-          retryable: false,
+      makeContext: (signal) => {
+        const modelInvoke = modelInvokeForProcessor({
+          phase: "garden",
+          processorId: "test.executor.model-json",
+          declared: [cap],
+          granted: [cap],
+          policy,
+          signal,
+          provider,
         });
+        if (modelInvoke === undefined) {
+          throw new Error("expected modelInvoke");
+        }
+        return Object.freeze({
+          ...contextWithSignal(signal),
+          modelInvoke,
+        }) as ProcessorContext<unknown>;
+      },
+      policy,
+      run: async (runCtx) => {
+        if (runCtx.modelInvoke === undefined) {
+          throw new Error("expected modelInvoke");
+        }
+        await runCtx.modelInvoke.structured({
+          prompt: "return json",
+          schemaName: "x",
+          parse: (value) => value,
+        });
+        return [];
       },
     });
 
@@ -304,6 +331,60 @@ describe("executeProcessor", () => {
     expect(result.error.code).toBe("model.output.invalid-json");
     expect(result.error.retryable).toBe(false);
     expect(result.diagnostic.code).toBe("model.output.invalid-json");
+  });
+
+  test("processor-thrown model-shaped errors are still processor.threw", async () => {
+    const result = await executeProcessor({
+      processorId: "test.executor.model-spoof",
+      phase: "garden",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw Object.assign(new Error("fake model json failure"), {
+          code: "model.output.invalid-json",
+          retryable: true,
+        });
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.threw");
+    expect(result.error.message).toContain("fake model json failure");
+    expect(result.error.retryable).toBe(true);
+    expect(result.diagnostic.code).toBe("processor.threw");
+  });
+
+  test("processor-thrown invalid-output-shaped errors are still processor.threw", async () => {
+    const result = await executeProcessor({
+      processorId: "test.executor.invalid-output-spoof",
+      phase: "garden",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        throw Object.assign(new Error("fake validation failure"), {
+          code: "processor.invalid-output",
+          retryable: false,
+        });
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.threw");
+    expect(result.error.message).toContain("fake validation failure");
+    expect(result.error.retryable).toBe(false);
+    expect(result.diagnostic.code).toBe("processor.threw");
   });
 
   test("hostile thrown value becomes structured processor.threw", async () => {

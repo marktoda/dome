@@ -8,6 +8,18 @@ import type {
 import type { ResolvedExecutionPolicy } from "../processors/execution-policy";
 import type { ProcessorExecutionErrorCode } from "./runner-contract";
 
+const MODEL_EXECUTION_ERRORS = new WeakSet<object>();
+
+export type ModelExecutionErrorCode = Extract<
+  ProcessorExecutionErrorCode,
+  `model.${string}`
+>;
+
+export type ModelExecutionError = Error & {
+  readonly code: ModelExecutionErrorCode;
+  readonly retryable: boolean;
+};
+
 export type ModelProviderRequest = {
   readonly prompt: string;
   readonly model?: string;
@@ -243,7 +255,7 @@ function copyOptionalString(
 }
 
 function invalidProviderResponse(message: string): Error & {
-  readonly code: ProcessorExecutionErrorCode;
+  readonly code: ModelExecutionErrorCode;
   readonly retryable: boolean;
 } {
   return modelError(
@@ -254,7 +266,7 @@ function invalidProviderResponse(message: string): Error & {
 }
 
 function modelAbortError(message: string): Error & {
-  readonly code: ProcessorExecutionErrorCode;
+  readonly code: ModelExecutionErrorCode;
   readonly retryable: boolean;
 } {
   return modelError("model.invoke.timeout", message, true);
@@ -315,31 +327,26 @@ function intersectAllDefined(
 }
 
 function modelError(
-  code: Exclude<
-    ProcessorExecutionErrorCode,
-    | "processor.threw"
-    | "processor.invalid-output"
-    | "processor.timeout"
-    | "processor.cancelled"
-  >,
+  code: ModelExecutionErrorCode,
   message: string,
   retryable: boolean,
-): Error & {
-  readonly code: ProcessorExecutionErrorCode;
-  readonly retryable: boolean;
-} {
-  return Object.assign(new Error(message), { code, retryable });
+): ModelExecutionError {
+  const error = new Error(message) as ModelExecutionError;
+  Object.defineProperties(error, {
+    code: { value: code, enumerable: true },
+    retryable: { value: retryable, enumerable: true },
+  });
+  MODEL_EXECUTION_ERRORS.add(error);
+  return Object.freeze(error);
 }
 
-function isModelExecutionError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const code = (error as { readonly code?: unknown }).code;
+export function isModelExecutionError(
+  error: unknown,
+): error is ModelExecutionError {
   return (
-    code === "model.invoke.denied" ||
-    code === "model.invoke.provider-failed" ||
-    code === "model.invoke.timeout" ||
-    code === "model.output.invalid-json" ||
-    code === "model.output.schema-mismatch"
+    typeof error === "object" &&
+    error !== null &&
+    MODEL_EXECUTION_ERRORS.has(error)
   );
 }
 
