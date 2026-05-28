@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
 import { adopt, type AdoptEvent } from "../../engine/adopt";
+import { applyPatchToCandidate } from "../../engine/apply-patch";
 import type { VaultRuntime } from "../../engine/vault-runtime";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
@@ -231,11 +232,66 @@ export async function runOneAdoption(opts: {
     branch: drift.branch,
   });
 
+  // Phase 12a: real `applyPatch` wiring. The candidate-tree mutator
+  // applies each PatchEffect's unified diff to the candidate tree via
+  // git plumbing (no working-tree touch) and returns the new candidate
+  // OID. The adoption loop threads the OID through subsequent iterations
+  // via `ApplyEffectResult.newCandidate`. See
+  // docs/wiki/specs/adoption.md §"The fixed-point adoption loop" and
+  // `src/engine/apply-patch.ts`.
+  const realApplyPatch: ApplyEffectSinks["applyPatch"] = async ({
+    effect,
+    processorId,
+    runId,
+    candidate,
+  }) => {
+    // Only `mode: "auto"` patches mutate the candidate tree in the
+    // adoption phase. Per docs/wiki/specs/effects.md §"PatchEffect" routing,
+    // `mode: "propose"` patches are surfaced as diagnostics for human
+    // review (`dome lint --apply`) rather than landed inline. Surfacing
+    // the propose-diagnostic is a separate seam (Phase 12b); here we just
+    // drop the propose branch so the candidate doesn't advance.
+    if (effect.mode !== "auto") return null;
+
+    const result = await applyPatchToCandidate({
+      vaultPath: runtime.path,
+      candidate,
+      patch: effect,
+      runContext: {
+        runId,
+        processorId,
+        // Derive the originating bundle id from the processor id's first
+        // dotted segment (e.g., `dome.markdown.normalize` → `dome.markdown`).
+        // For ids without a dot, the whole id is the extension id.
+        extensionId: deriveExtensionId(processorId),
+        base: drift.base,
+        sourceHead: drift.head,
+      },
+    });
+
+    if (result === null) {
+      // Soft failure surface: the patch didn't apply against the
+      // candidate (malformed diff, drifted content, no recognizable
+      // header). Log a warning here so operators see the dropped
+      // patch; the loop continues with the candidate unchanged. The
+      // adoption fixed-point check will treat this iteration as
+      // having an auto-patch in `effectsThisIteration` (which keeps
+      // the loop going) until either MAX_ITER hits or the processor
+      // emits something the sink can apply.
+      console.warn(
+        `dome: applyPatch dropped — patch from ${processorId} did not apply ` +
+          `against candidate ${candidate.slice(0, 12)}`,
+      );
+    }
+
+    return result;
+  };
+
   const sinks = buildSqliteSinks({
     projectionDb: runtime.projectionDb,
     outboxDb: runtime.outboxDb,
     adoptedCommit: drift.head,
-    applyPatch: applyPatchPlaceholder,
+    applyPatch: realApplyPatch,
     captureView: captureViewPlaceholder,
   });
 
@@ -260,26 +316,29 @@ export async function runOneAdoption(opts: {
   return adopt(adoptOpts);
 }
 
-// ----- Placeholder sinks (v1.0) ---------------------------------------------
+// ----- deriveExtensionId ---------------------------------------------------
 
 /**
- * `applyPatch` placeholder for v1.0. Logs + drops the effect; does NOT
- * throw. The first-party processor v1.0 ships is diagnostic-only, so
- * this path is dead under normal operation; a third-party bundle that
- * emits a PatchEffect lands here.
+ * Derive the originating bundle id from a fully-qualified processor id.
+ * The convention (per docs/wiki/specs/processors.md) is that processor ids
+ * are dotted names whose first two segments name the bundle (e.g.,
+ * `dome.markdown.normalize-frontmatter` → bundle `dome.markdown`). For
+ * less-canonical ids, return the first segment; for ids without a dot,
+ * return the whole id unchanged.
  *
- * The candidate-tree mutator (the real `applyPatch`) lands in v1.1
- * alongside garden-phase patch routing.
+ * Used to stamp the `Dome-Extension` trailer on engine commits the
+ * Phase 12a `applyPatch` sink writes — that trailer is the bundle id, not
+ * the processor id, per the trailer spec.
  */
-const applyPatchPlaceholder: ApplyEffectSinks["applyPatch"] = async ({
-  effect,
-  processorId,
-}) => {
-  console.warn(
-    `dome: PatchEffect from ${processorId} (mode: ${effect.mode}) dropped — ` +
-      `applyPatch not yet wired in v1.0. The candidate-tree mutator lands in v1.1.`,
-  );
-};
+function deriveExtensionId(processorId: string): string {
+  const segments = processorId.split(".");
+  if (segments.length === 0) return processorId;
+  if (segments.length === 1) return processorId;
+  // Convention: first two dotted segments are the bundle id.
+  return `${segments[0]}.${segments[1]}`;
+}
+
+// ----- Placeholder sinks (v1.0) ---------------------------------------------
 
 /**
  * `captureView` placeholder for v1.0. Logs + drops the effect; does NOT

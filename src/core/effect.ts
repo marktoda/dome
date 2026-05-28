@@ -24,10 +24,27 @@
 import { z } from "zod";
 import { SourceRefSchema, type SourceRef } from "./source-ref";
 
-// ----- UnifiedDiff ----------------------------------------------------------
+// ----- FileChange (PatchEffect payload) -------------------------------------
 
-/** Standard unified-diff text. Kept as `string` in v1; no structural parsing at the type layer. */
-export type UnifiedDiff = string;
+/**
+ * A single file-level mutation a PatchEffect proposes. Whole-content writes
+ * and outright deletes — no in-place diffing at the value layer. The engine's
+ * applier (`src/engine/apply-patch.ts`) overlays each change onto the
+ * candidate's tree without consulting a diff library.
+ *
+ * v1 chose whole-content over unified-diff because the engine's apply-side
+ * was already plumbing-only (read candidate tree → overlay → write new tree)
+ * and the diff-text shape forced an extra parse + hunk-apply step that
+ * surfaced an entire class of "drift" failure modes the simpler shape
+ * doesn't have. Processors that need to *compute* a diff (e.g., to surface
+ * to the user) do so against `change.content` themselves.
+ *
+ *   - `kind: "write"`  — overwrite (or create) `path` with `content`.
+ *   - `kind: "delete"` — remove `path` from the tree.
+ */
+export type FileChange =
+  | { readonly kind: "write"; readonly path: string; readonly content: string }
+  | { readonly kind: "delete"; readonly path: string };
 
 // ----- NodeRef / Literal (FactEffect operands) ------------------------------
 
@@ -67,14 +84,19 @@ export type ViewContent =
 
 /**
  * A proposed change to vault markdown. `mode: "auto"` lets the engine
- * apply the patch inline during adoption (subject to `patch.auto`
+ * apply the changes inline during adoption (subject to `patch.auto`
  * capability); `mode: "propose"` blocks adoption with a diagnostic and
- * surfaces the patch for human review (`dome lint --apply`).
+ * surfaces the changes for human review (`dome lint --apply`).
+ *
+ * `changes` is a non-empty list of whole-content file mutations (writes or
+ * deletes). Each entry names a single vault-relative path; the engine's
+ * applier overlays them in order onto the candidate tree. See `FileChange`
+ * above for the rationale behind whole-content vs unified-diff.
  */
 export type PatchEffect = {
   readonly kind: "patch";
   readonly mode: "auto" | "propose";
-  readonly patch: UnifiedDiff;
+  readonly changes: ReadonlyArray<FileChange>;
   readonly reason: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -220,11 +242,29 @@ export const ViewContentSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+export const FileChangeSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("write"),
+      path: z.string().min(1),
+      content: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("delete"),
+      path: z.string().min(1),
+    })
+    .strict(),
+]);
+
 export const PatchEffectSchema = z
   .object({
     kind: z.literal("patch"),
     mode: z.enum(["auto", "propose"]),
-    patch: z.string(),
+    // At least one change required — an empty PatchEffect is a programmer
+    // error (processors that have nothing to do should return no effect).
+    changes: z.array(FileChangeSchema).min(1),
     reason: z.string().min(1),
     sourceRefs: z.array(SourceRefSchema),
   })
@@ -380,7 +420,7 @@ export function patchEffect(input: Omit<PatchEffect, "kind">): PatchEffect {
   const e: { -readonly [K in keyof PatchEffect]: PatchEffect[K] } = {
     kind: "patch",
     mode: input.mode,
-    patch: input.patch,
+    changes: input.changes,
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };

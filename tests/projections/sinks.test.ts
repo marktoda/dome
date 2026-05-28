@@ -40,7 +40,7 @@ const RUN_ID = "run-1" as RunId;
 
 // Default no-op injections for the two engine-layer sinks. Individual tests
 // override these to verify the pass-through invocation.
-const noopApplyPatch: ApplyEffectSinks["applyPatch"] = async () => undefined;
+const noopApplyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
 const noopCaptureView: ApplyEffectSinks["captureView"] = async () => undefined;
 
 let root: string;
@@ -237,13 +237,16 @@ describe("buildSqliteSinks pass-through injections", () => {
       effect: PatchEffect;
       processorId: string;
       runId: string;
+      candidate: string;
     }> = [];
     const spyApplyPatch: ApplyEffectSinks["applyPatch"] = async (input) => {
       calls.push({
         effect: input.effect,
         processorId: input.processorId,
         runId: input.runId,
+        candidate: input.candidate,
       });
+      return null;
     };
 
     const sinks = buildSqliteSinks({
@@ -256,7 +259,7 @@ describe("buildSqliteSinks pass-through injections", () => {
 
     const effect = patchEffect({
       mode: "auto",
-      patch: "--- a/wiki/x.md\n+++ b/wiki/x.md\n",
+      changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
       reason: "fix",
       sourceRefs: [REF],
     });
@@ -264,12 +267,14 @@ describe("buildSqliteSinks pass-through injections", () => {
       effect,
       processorId: PROCESSOR_ID,
       runId: RUN_ID,
+      candidate: ADOPTED,
     });
 
     expect(calls.length).toBe(1);
     expect(calls[0]?.effect).toBe(effect);
     expect(calls[0]?.processorId).toBe(PROCESSOR_ID);
     expect(calls[0]?.runId).toBe(RUN_ID);
+    expect(calls[0]?.candidate).toBe(ADOPTED);
   });
 
   it("captureView is invoked with the input verbatim (pass-through)", async () => {

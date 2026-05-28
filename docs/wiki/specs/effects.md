@@ -30,25 +30,31 @@ The engine routes effects via `src/engine/apply-effect.ts` — a single chokepoi
 
 ## PatchEffect
 
-A proposed change to vault markdown.
+A proposed change to vault markdown. Carries a non-empty list of whole-content `FileChange` entries — each entry either overwrites (or creates) a file at a vault-relative path, or deletes one.
 
 ```ts
 interface PatchEffect {
   readonly kind: "patch";
   readonly mode: "auto" | "propose";
-  readonly patch: UnifiedDiff;        // standard unified-diff format
+  readonly changes: FileChange[];     // non-empty; whole-content writes/deletes
   readonly reason: string;            // one-line explanation for the run ledger
-  readonly sourceRefs: SourceRef[];   // evidence: what the patch was derived from
+  readonly sourceRefs: SourceRef[];   // evidence: what the change list was derived from
 }
+
+type FileChange =
+  | { kind: "write";  path: string; content: string }
+  | { kind: "delete"; path: string };
 ```
 
+**Why whole-content instead of a unified diff?** Earlier drafts of this spec described `patch` as a `UnifiedDiff` string. The implementation chose whole-content writes because (a) the engine's applier is pure git plumbing — it builds a new tree by overlaying blob OIDs onto the candidate's tree, so it never needed a diff library, and (b) the unified-diff shape introduced an entire class of "hunk failed to apply" failure modes (driven by content drift between when the processor ran and when the engine applied) that the whole-content shape simply doesn't have. Processors that need to surface a textual diff to the user (e.g., `dome lint --apply`) compute it themselves against the candidate's blob, where the side-by-side render is a presentation concern rather than an applier prerequisite.
+
 **Routing:**
-- **Adoption phase, `mode: "auto"`:** the engine applies the patch to the candidate tree, then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic.
-- **Adoption phase, `mode: "propose"`:** the engine blocks adoption with a diagnostic naming the proposed patch; the user reviews via `dome lint --apply` (per [[wiki/specs/cli]] §"dome lint").
-- **Garden phase:** the engine constructs a new Proposal from the patch and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
+- **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic.
+- **Adoption phase, `mode: "propose"`:** the engine blocks adoption with a diagnostic naming the proposed changes; the user reviews via `dome lint --apply` (per [[wiki/specs/cli]] §"dome lint").
+- **Garden phase:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
 - **View phase:** rejected — view processors cannot emit patches.
 
-**Idempotency requirement:** a processor that re-runs against the same input must produce the same patch (byte-equivalent). If applying the patch a second time would produce no diff (because the patch is already in the tree), the processor returns no effect. This is what makes the fixed-point loop converge.
+**Idempotency requirement:** a processor that re-runs against the same input must produce the same change list (byte-equivalent `content` for writes, same `path` for deletes). If applying the changes a second time would produce no tree-level diff (because the contents already match), the processor returns no effect. This is what makes the fixed-point loop converge.
 
 ## DiagnosticEffect
 

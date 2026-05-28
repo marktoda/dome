@@ -59,8 +59,8 @@ import type {
 } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
 import type { Capability, ProcessorPhase } from "../core/processor";
+import type { CommitOid } from "../core/source-ref";
 import { enforceCapability } from "./capability-broker";
-import { firstPatchPath } from "./patch-parse";
 import type { RunId } from "./runner-contract";
 
 // ----- ApplyEffectSinks -----------------------------------------------------
@@ -71,9 +71,12 @@ import type { RunId } from "./runner-contract";
  * the ledger + outbox). For unit tests and Phase 2 standalone validation,
  * see `noopSinks()` below.
  *
- * Sinks return `void` (well, `Promise<void>`): the routing layer does not
- * branch on sink results. Errors a sink throws propagate up to the caller —
- * `applyEffect` does not catch.
+ * Most sinks return `void` (well, `Promise<void>`): the routing layer does
+ * not branch on their results. The exception is `applyPatch`, which since
+ * Phase 12a returns the new candidate's commit OID (or `null` when the
+ * patch didn't apply) — the adoption loop reads this on `ApplyEffectResult.
+ * newCandidate` and advances its candidate variable accordingly. Errors a
+ * sink throws propagate up to the caller — `applyEffect` does not catch.
  */
 export type ApplyEffectSinks = {
   /**
@@ -81,12 +84,21 @@ export type ApplyEffectSinks = {
    * spawn a new Proposal (garden phase, per
    * [[wiki/specs/proposals]] §"Garden-emitted Proposals"). The router passes
    * the effect through verbatim; the wired sink decides which behavior.
+   *
+   * Returns the new candidate's commit OID when the sink advanced the
+   * candidate (the adoption-phase candidate-tree mutator path), or `null`
+   * when the sink dropped the effect or the patch didn't apply (placeholder
+   * sink, malformed diff, hunk-doesn't-apply). The adoption loop reads
+   * `ApplyEffectResult.newCandidate` and threads the returned OID into the
+   * next iteration's candidate. Pinned by Phase 12a's
+   * candidate-OID-progression contract.
    */
   readonly applyPatch: (input: {
     readonly effect: PatchEffect;
     readonly processorId: string;
     readonly runId: RunId;
-  }) => Promise<void>;
+    readonly candidate: CommitOid;
+  }) => Promise<CommitOid | null>;
 
   /** DiagnosticEffect — written to `projection_store.diagnostics`. */
   readonly recordDiagnostic: (input: {
@@ -191,6 +203,19 @@ export type ApplyEffectResult = {
     readonly resource: string | null;
     readonly outcome: "allowed" | "downgraded" | "denied";
   };
+  /**
+   * When the routed effect was a successful PatchEffect (broker outcome
+   * `applied` or `downgraded`) AND the wired `applyPatch` sink returned a
+   * non-null OID, this carries the new candidate's commit OID. The
+   * adoption loop reads this to advance its `candidate` variable for the
+   * next iteration, replacing the Phase-2 behavior of re-reading HEAD via
+   * `currentSha`. Pinned by Phase 12a's candidate-OID-progression contract.
+   *
+   * Absent for every other outcome — non-patch effects, denied patches,
+   * phase-rejected patches, and successful patches whose sink returned
+   * `null` (placeholder sink, malformed diff, hunk-doesn't-apply).
+   */
+  readonly newCandidate?: CommitOid;
 };
 
 // ----- noopSinks ------------------------------------------------------------
@@ -206,7 +231,7 @@ export type ApplyEffectResult = {
  */
 export function noopSinks(): ApplyEffectSinks {
   return {
-    applyPatch: async () => undefined,
+    applyPatch: async () => null,
     recordDiagnostic: async () => undefined,
     recordFact: async () => undefined,
     recordQuestion: async () => undefined,
@@ -236,6 +261,14 @@ export async function applyEffect(opts: {
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly sinks: ApplyEffectSinks;
+  /**
+   * The current adoption-loop candidate OID. Threaded into the `applyPatch`
+   * sink so the candidate-tree mutator can apply the patch against the
+   * correct base commit. Other effect kinds ignore it. Pinned by Phase
+   * 12a's candidate-OID-progression contract (see
+   * docs/wiki/specs/adoption.md §"The fixed-point adoption loop").
+   */
+  readonly candidate: CommitOid;
 }): Promise<ApplyEffectResult> {
   // 1. Phase compatibility.
   if (!isPhaseCompatible(opts.effect, opts.phase)) {
@@ -260,7 +293,7 @@ export async function applyEffect(opts: {
       : EMPTY_DIAGNOSTICS;
 
   // 3. Route to the matching sink. Exhaustive on Effect.kind.
-  await routeToSink(routed, opts);
+  const sinkResult = await routeToSink(routed, opts);
 
   const outcome: "downgraded" | "allowed" =
     verdict.kind === "downgrade" ? "downgraded" : "allowed";
@@ -270,11 +303,16 @@ export async function applyEffect(opts: {
   // ledger row records `capability: "patch.auto"` with `outcome:
   // "downgraded"` — that's the surface a "this processor tried to auto-
   // apply but lacked the grant" audit query needs.
+  const newCandidate =
+    routed.kind === "patch" && sinkResult.newCandidate !== null
+      ? sinkResult.newCandidate
+      : undefined;
   return frozen({
     outcome: verdict.kind === "downgrade" ? "downgraded" : "applied",
     appliedEffect: routed,
     diagnostics: verdictDiagnostics,
     ...maybeCapabilityUse(opts.effect, outcome),
+    ...(newCandidate !== undefined ? { newCandidate } : {}),
   });
 }
 
@@ -304,7 +342,12 @@ function maybeCapabilityUse(
   switch (effect.kind) {
     case "patch": {
       const capability = effect.mode === "auto" ? "patch.auto" : "patch.propose";
-      const resource = firstPatchPath(effect.patch);
+      // Representative path: first change's path (matches the broker's
+      // verdict surface — one capability_use row per PatchEffect, not per
+      // change). Empty changes is structurally impossible at this point
+      // (PatchEffectSchema enforces .min(1), and the broker denies an
+      // empty list defensively before reaching the ledger surface).
+      const resource = effect.changes[0]?.path ?? null;
       return { capabilityUse: Object.freeze({ capability, resource, outcome }) };
     }
     case "fact": {
@@ -422,16 +465,19 @@ async function routeToSink(
     readonly runId: RunId;
     readonly proposalId: string | null;
     readonly sinks: ApplyEffectSinks;
+    readonly candidate: CommitOid;
   },
-): Promise<void> {
+): Promise<{ readonly newCandidate: CommitOid | null }> {
   switch (effect.kind) {
-    case "patch":
-      await opts.sinks.applyPatch({
+    case "patch": {
+      const newCandidate = await opts.sinks.applyPatch({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
+        candidate: opts.candidate,
       });
-      return;
+      return { newCandidate };
+    }
     case "diagnostic":
       await opts.sinks.recordDiagnostic({
         effect,
@@ -439,42 +485,42 @@ async function routeToSink(
         runId: opts.runId,
         proposalId: opts.proposalId,
       });
-      return;
+      return { newCandidate: null };
     case "fact":
       await opts.sinks.recordFact({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return;
+      return { newCandidate: null };
     case "question":
       await opts.sinks.recordQuestion({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return;
+      return { newCandidate: null };
     case "job":
       await opts.sinks.enqueueJob({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return;
+      return { newCandidate: null };
     case "external":
       await opts.sinks.dispatchExternal({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return;
+      return { newCandidate: null };
     case "view":
       await opts.sinks.captureView({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return;
+      return { newCandidate: null };
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
   // Adding an eighth Effect kind here is a compile error until every branch

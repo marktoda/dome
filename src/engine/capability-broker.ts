@@ -18,12 +18,13 @@
 //   - docs/wiki/specs/effects.md §"The Effect union"
 //
 // v1 Phase 2 limitations (documented for downstream phases):
-//   - PatchEffect path extraction uses the first non-empty line beginning
-//     with `+++` or `---` in the patch text as a single representative
-//     path. A future Phase 2.x patch parser will enumerate every path
-//     touched by every hunk and enforce per-path. If the patch has no
-//     recognizable header, enforcement denies with a diagnostic naming the
-//     malformed patch.
+//   - PatchEffect path extraction reads `effect.changes[0].path` — the first
+//     change's path as a single representative path for the verdict. The
+//     v1 broker emits one verdict per effect, not per change; per-change
+//     enforcement is a future Phase 2.x refinement. A PatchEffect with an
+//     empty `changes` list is structurally impossible (`PatchEffectSchema`
+//     enforces `.min(1)`); the broker defensively denies if it ever sees
+//     one.
 //   - `owns.region` detection is deferred to Phase 6 (the `dome.markdown`
 //     region parser produces region ids from marker pairs in the candidate
 //     tree). For now the broker falls through to the regular
@@ -57,7 +58,6 @@ import type {
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
 import { globMatch } from "./glob-cache";
-import { firstPatchPath } from "./patch-parse";
 
 // ----- EnforcementResult ----------------------------------------------------
 
@@ -148,8 +148,9 @@ export function enforceCapability(
 /**
  * PatchEffect enforcement. Steps (per the matrix):
  *
- *   1. Extract the representative touched path from the patch text (v1
- *      limitation: first +++/--- header line).
+ *   1. Extract the representative touched path from `effect.changes[0]`
+ *      (v1 limitation: one verdict per effect, against the first change's
+ *      path).
  *   2. If a third party owns the path (any `owns.path` grant whose pattern
  *      matches, but not declared by this processor), deny.
  *   3. For `mode: "auto"`:
@@ -168,20 +169,20 @@ function enforcePatch(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const path = firstPatchPath(effect.patch);
+  const path = effect.changes[0]?.path ?? null;
   if (path === null) {
     return deny(
       diagnosticEffect({
         severity: "error",
         code: "capability-deny-patch",
         message:
-          "PatchEffect denied: patch text has no `+++` or `---` header line; the v1 broker cannot determine the touched path. Ensure the patch is a well-formed unified diff.",
+          "PatchEffect denied: `changes` is empty; the v1 broker cannot determine the touched path. A PatchEffect must carry at least one FileChange (this is also enforced by PatchEffectSchema).",
         sourceRefs: [],
       }),
     );
   }
 
-  // Phase 2 limitation: `owns.region` verification (matching patch hunks
+  // Phase 2 limitation: `owns.region` verification (matching changes
   // against marker-delimited regions in the candidate tree) is deferred to
   // Phase 6's region parser. The broker currently falls through to the
   // patch.auto / patch.propose check without enforcing region ownership;
@@ -211,7 +212,7 @@ function enforcePatch(
     if (pathEffectiveFor("patch.propose", path, declared, granted)) {
       const rewritten: PatchEffect = patchEffect({
         mode: "propose",
-        patch: effect.patch,
+        changes: effect.changes,
         reason: effect.reason,
         sourceRefs: effect.sourceRefs,
       });

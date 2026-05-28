@@ -41,6 +41,7 @@ export type {
 export type {
   Effect,
   PatchEffect,
+  FileChange,
   DiagnosticEffect,
   FactEffect,
   QuestionEffect,
