@@ -162,6 +162,7 @@ describe("dome.markdown.validate-wikilinks", () => {
       changedPaths: ["wiki/a.md"],
       proposal: null,
       runId: "run-test-1",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -181,6 +182,7 @@ describe("dome.markdown.validate-wikilinks", () => {
       changedPaths: ["wiki/a.md"],
       proposal: null,
       runId: "run-test-2",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -221,6 +223,7 @@ describe("dome.markdown.validate-wikilinks", () => {
       changedPaths: ["wiki/page.md"],
       proposal: null,
       runId: "run-test-3",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -253,6 +256,7 @@ describe("dome.markdown.validate-wikilinks", () => {
       changedPaths: ["wiki/page.md"],
       proposal: null,
       runId: "run-test-suffix",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -279,6 +283,7 @@ describe("dome.markdown.validate-wikilinks", () => {
       changedPaths: ["wiki/page.md"],
       proposal: null,
       runId: "run-test-coline",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 

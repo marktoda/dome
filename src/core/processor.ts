@@ -91,6 +91,23 @@ export type Snapshot = {
  */
 export type ProcessorPhase = "adoption" | "garden" | "view";
 
+// ----- ExecutionPolicyRequest ----------------------------------------------
+
+export type ExecutionClass =
+  | "deterministic"
+  | "interactive"
+  | "background"
+  | "llm"
+  | "batch";
+
+export type ExecutionPolicyRequest = {
+  readonly class: ExecutionClass;
+  readonly timeoutMs?: number;
+  readonly retryBudgetMs?: number;
+  readonly maxAttempts?: number;
+  readonly modelCallTimeoutMs?: number;
+};
+
 // ----- Signal ---------------------------------------------------------------
 
 /**
@@ -285,9 +302,9 @@ export type ProjectionQueryView = {
  * The per-run context handed to a Processor's `run` method. Carries the
  * candidate snapshot, the changed-paths delta, the originating Proposal
  * (present for adoption + garden-PatchEffect-derived runs), the trigger
- * input (typed by the processor's `TInput` parameter), the opaque
- * capability token, the optional model-invoke handle (present iff
- * `model.invoke` capability granted), the optional projection query view
+ * input (typed by the processor's `TInput` parameter), the cancellation
+ * signal, the opaque capability token, the optional model-invoke handle
+ * (present iff `model.invoke` capability granted), the optional projection query view
  * (present iff the runtime wired one — view-phase processors require it;
  * adoption-phase processors typically don't), and the `sourceRef` helper.
  *
@@ -301,6 +318,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly proposal: Proposal | null;
   readonly runId: string;
   readonly input: TInput;
+  readonly signal: AbortSignal;
   readonly capabilities: CapabilityToken;
   readonly modelInvoke?: ModelInvokeFn;
   readonly projection?: ProjectionQueryView;
@@ -327,6 +345,7 @@ export type Processor<TInput = unknown> = {
   readonly phase: ProcessorPhase;
   readonly triggers: ReadonlyArray<Trigger>;
   readonly capabilities: ReadonlyArray<Capability>;
+  readonly execution?: ExecutionPolicyRequest;
   readonly run: (ctx: ProcessorContext<TInput>) => Promise<ReadonlyArray<Effect>>;
 };
 
@@ -341,6 +360,24 @@ export type Processor<TInput = unknown> = {
 // `key?: T | undefined`, which collides with exactOptionalPropertyTypes.
 
 export const ProcessorPhaseSchema = z.enum(["adoption", "garden", "view"]);
+
+export const ExecutionClassSchema = z.enum([
+  "deterministic",
+  "interactive",
+  "background",
+  "llm",
+  "batch",
+]);
+
+export const ExecutionPolicyRequestSchema = z
+  .object({
+    class: ExecutionClassSchema,
+    timeoutMs: z.number().int().positive().optional(),
+    retryBudgetMs: z.number().int().nonnegative().optional(),
+    maxAttempts: z.number().int().positive().optional(),
+    modelCallTimeoutMs: z.number().int().positive().optional(),
+  })
+  .strict();
 
 export const SignalSchema = z.enum([
   "file.created",

@@ -1,0 +1,142 @@
+import type {
+  ExecutionClass,
+  ExecutionPolicyRequest,
+  ProcessorPhase,
+} from "../core/processor";
+import { err, ok, type Result } from "../types";
+
+export type { ExecutionPolicyRequest } from "../core/processor";
+
+export type ExecutionPolicyCap = {
+  readonly timeoutMs?: number;
+  readonly retryBudgetMs?: number;
+  readonly maxAttempts?: number;
+  readonly modelCallTimeoutMs?: number;
+};
+
+export type ResolvedExecutionPolicy = {
+  readonly class: ExecutionClass;
+  readonly timeoutMs: number;
+  readonly retryBudgetMs: number;
+  readonly maxAttempts: number;
+  readonly lateEffectBehavior: "discard";
+  readonly modelCallTimeoutMs?: number;
+};
+
+export type ExecutionPolicyError = {
+  readonly code: "execution-policy.phase-class-denied";
+  readonly phase: ProcessorPhase;
+  readonly class: ExecutionClass;
+  readonly message: string;
+};
+
+export const DEFAULT_EXECUTION_POLICY_BY_CLASS: Readonly<
+  Record<ExecutionClass, ResolvedExecutionPolicy>
+> = Object.freeze({
+  deterministic: Object.freeze({
+    class: "deterministic",
+    timeoutMs: 2_000,
+    retryBudgetMs: 0,
+    maxAttempts: 1,
+    lateEffectBehavior: "discard",
+  }),
+  interactive: Object.freeze({
+    class: "interactive",
+    timeoutMs: 30_000,
+    retryBudgetMs: 0,
+    maxAttempts: 1,
+    lateEffectBehavior: "discard",
+  }),
+  background: Object.freeze({
+    class: "background",
+    timeoutMs: 120_000,
+    retryBudgetMs: 0,
+    maxAttempts: 1,
+    lateEffectBehavior: "discard",
+  }),
+  llm: Object.freeze({
+    class: "llm",
+    timeoutMs: 600_000,
+    retryBudgetMs: 0,
+    maxAttempts: 1,
+    lateEffectBehavior: "discard",
+    modelCallTimeoutMs: 180_000,
+  }),
+  batch: Object.freeze({
+    class: "batch",
+    timeoutMs: 600_000,
+    retryBudgetMs: 0,
+    maxAttempts: 1,
+    lateEffectBehavior: "discard",
+  }),
+});
+
+export function defaultExecutionClassForPhase(
+  phase: ProcessorPhase,
+): ExecutionClass {
+  switch (phase) {
+    case "adoption":
+      return "deterministic";
+    case "garden":
+      return "background";
+    case "view":
+      return "interactive";
+  }
+}
+
+export function resolveExecutionPolicy(opts: {
+  readonly phase: ProcessorPhase;
+  readonly request?: ExecutionPolicyRequest | undefined;
+  readonly vaultCap?: ExecutionPolicyCap | undefined;
+}): Result<ResolvedExecutionPolicy, ExecutionPolicyError> {
+  const executionClass =
+    opts.request?.class ?? defaultExecutionClassForPhase(opts.phase);
+  if (opts.phase === "adoption" && executionClass !== "deterministic") {
+    return err({
+      code: "execution-policy.phase-class-denied",
+      phase: opts.phase,
+      class: executionClass,
+      message: "Adoption processors must use deterministic execution.",
+    });
+  }
+
+  const defaults = DEFAULT_EXECUTION_POLICY_BY_CLASS[executionClass];
+  const requested = {
+    class: executionClass,
+    timeoutMs: opts.request?.timeoutMs ?? defaults.timeoutMs,
+    retryBudgetMs: opts.request?.retryBudgetMs ?? defaults.retryBudgetMs,
+    maxAttempts: opts.request?.maxAttempts ?? defaults.maxAttempts,
+    lateEffectBehavior: defaults.lateEffectBehavior,
+    modelCallTimeoutMs: opts.request?.modelCallTimeoutMs ?? defaults.modelCallTimeoutMs,
+  };
+
+  const resolved: {
+    -readonly [K in keyof ResolvedExecutionPolicy]: ResolvedExecutionPolicy[K];
+  } = {
+    class: requested.class,
+    timeoutMs:
+      opts.vaultCap?.timeoutMs !== undefined
+        ? Math.min(requested.timeoutMs, opts.vaultCap.timeoutMs)
+        : requested.timeoutMs,
+    retryBudgetMs:
+      opts.vaultCap?.retryBudgetMs !== undefined
+        ? Math.min(requested.retryBudgetMs, opts.vaultCap.retryBudgetMs)
+        : requested.retryBudgetMs,
+    maxAttempts:
+      opts.vaultCap?.maxAttempts !== undefined
+        ? Math.min(requested.maxAttempts, opts.vaultCap.maxAttempts)
+        : requested.maxAttempts,
+    lateEffectBehavior: requested.lateEffectBehavior,
+  };
+
+  const requestedModelCallTimeoutMs =
+    requested.modelCallTimeoutMs !== undefined &&
+    opts.vaultCap?.modelCallTimeoutMs !== undefined
+      ? Math.min(requested.modelCallTimeoutMs, opts.vaultCap.modelCallTimeoutMs)
+      : requested.modelCallTimeoutMs;
+  if (requestedModelCallTimeoutMs !== undefined) {
+    resolved.modelCallTimeoutMs = requestedModelCallTimeoutMs;
+  }
+
+  return ok(Object.freeze(resolved));
+}

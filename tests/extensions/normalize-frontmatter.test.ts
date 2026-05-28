@@ -201,6 +201,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/plain.md"],
       proposal: null,
       runId: "run-nfm-1",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -232,6 +233,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/danny.md"],
       proposal: null,
       runId: "run-nfm-2",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -256,6 +258,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/danny.md"],
       proposal: null,
       runId: "run-nfm-3",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -319,6 +322,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       ],
       proposal: null,
       runId: "run-nfm-4",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -346,6 +350,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/broken.md"],
       proposal: null,
       runId: "run-nfm-5",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
 
@@ -375,6 +380,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/paper.md"],
       proposal: null,
       runId: "run-nfm-6a",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
     const effects1 = await proc.run(ctx1);
@@ -397,6 +403,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
       changedPaths: ["wiki/paper.md"],
       proposal: null,
       runId: "run-nfm-6b",
+      signal: new AbortController().signal,
       input: { kind: "adoption", matchedTriggers: [] } as unknown,
     });
     const effects2 = await proc.run(ctx2);

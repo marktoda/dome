@@ -567,6 +567,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     proposal,
     runId,
     input: envelope,
+    signal: new AbortController().signal,
     // `modelInvoke` intentionally unset for both phases in Phase 4a.
     // Adoption never receives a model handle (processors.md §"Adoption
     // phase"). Garden MAY receive one when the `model.invoke` capability

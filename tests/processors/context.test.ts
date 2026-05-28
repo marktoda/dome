@@ -29,6 +29,7 @@ function baseInput<TInput>(overrides: Partial<ProcessorContextInput<TInput>> & {
     changedPaths: ["wiki/x.md"],
     proposal: null,
     runId: "run-1",
+    signal: new AbortController().signal,
     ...overrides,
   };
 }
@@ -113,5 +114,16 @@ describe("makeProcessorContext — primary inputs round-trip", () => {
     expect(ctx.changedPaths).toEqual(["a.md", "b.md"]);
     expect(ctx.runId).toBe("run-42");
     expect(ctx.input).toBe(input);
+  });
+});
+
+describe("makeProcessorContext — cancellation signal", () => {
+  test("ctx.signal is the same AbortSignal passed by the runtime", () => {
+    const controller = new AbortController();
+    const ctx = makeProcessorContext(
+      baseInput({ input: null, signal: controller.signal }),
+    );
+    expect(ctx.signal).toBe(controller.signal);
+    expect(ctx.signal.aborted).toBe(false);
   });
 });

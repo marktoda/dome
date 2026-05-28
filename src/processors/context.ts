@@ -4,7 +4,7 @@
 //
 // See docs/wiki/specs/processors.md §"The Processor type" for the normative
 // `ProcessorContext` shape (snapshot, changedPaths, proposal, runId, input,
-// capabilities token, optional modelInvoke, and the `sourceRef` helper).
+// signal, capabilities token, optional modelInvoke, and the `sourceRef` helper).
 //
 // v1 Phase 3 scope:
 //   - Pure factory. No filesystem, no git, no sqlite, no network. The runtime
@@ -69,6 +69,7 @@ import type { Proposal } from "../core/proposal";
  *                      derived runs), or `null` (e.g., command runs).
  *   - `runId`        — matches the run ledger row's id.
  *   - `input`        — trigger-specific payload, typed by `TInput`.
+ *   - `signal`       — runtime-owned cancellation signal for this invocation.
  *   - `modelInvoke`  — present iff the processor has the `model.invoke`
  *                      capability granted by the broker; the runtime decides
  *                      whether to pass it.
@@ -79,6 +80,7 @@ export type ProcessorContextInput<TInput> = {
   readonly proposal: Proposal | null;
   readonly runId: string;
   readonly input: TInput;
+  readonly signal: AbortSignal;
   readonly modelInvoke?: ModelInvokeFn;
   /**
    * Optional read-only projection query surface. View-phase invocations
@@ -141,6 +143,7 @@ export function makeProcessorContext<TInput>(
     proposal: opts.proposal,
     runId: opts.runId,
     input: opts.input,
+    signal: opts.signal,
     capabilities: CAPABILITY_TOKEN,
     sourceRef: boundSourceRef,
   };

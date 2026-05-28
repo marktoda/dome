@@ -39,6 +39,26 @@ describe("defineProcessor", () => {
     expect(p.version).toBe(input.version);
     expect(p.phase).toBe(input.phase);
   });
+
+  test("defineProcessor preserves execution metadata", () => {
+    const p = defineProcessor({
+      id: "test.execution",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [],
+      execution: {
+        class: "llm",
+        timeoutMs: 600_000,
+        maxAttempts: 1,
+        modelCallTimeoutMs: 180_000,
+      },
+      run: async () => [],
+    });
+
+    expect(p.execution?.class).toBe("llm");
+    expect(p.execution?.timeoutMs).toBe(600_000);
+  });
 });
 
 describe("TriggerSchema (discriminated union)", () => {
