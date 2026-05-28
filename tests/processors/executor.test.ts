@@ -83,6 +83,8 @@ describe("executeProcessor", () => {
     expect(result.error.code).toBe("processor.invalid-output");
     expect(result.diagnostic.severity).toBe("block");
     expect(result.diagnostic.code).toBe("processor.invalid-output");
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
   });
 
   test("one malformed effect fails the whole invocation", async () => {
@@ -166,6 +168,8 @@ describe("executeProcessor", () => {
     if (result.status !== "timed_out") return;
     expect(result.error.code).toBe("processor.timeout");
     expect(result.diagnostic.severity).toBe("error");
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(released).toBe(true);
   });
