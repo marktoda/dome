@@ -160,14 +160,20 @@ describe("runScheduler — executor-result telemetry", () => {
     });
     const fixture = await makeFixture();
     fixtures.push(fixture);
+    const recordedProposalIds: Array<string | null> = [];
 
-    const result = await runWithProcessor(fixture, processor);
+    const result = await runWithProcessor(fixture, processor, {
+      recordDiagnostic: async ({ proposalId }) => {
+        recordedProposalIds.push(proposalId);
+      },
+    });
 
     expect(result.fired.length).toBe(1);
     expect(result.fired[0]?.processorId).toBe("test.scheduler.capability-denied");
     expect(result.fired[0]?.success).toBe(true);
     expect(result.diagnostics.some((d) => d.code === "capability-deny-patch"))
       .toBe(true);
+    expect(recordedProposalIds).toEqual([null]);
   });
 
   test("authorized scheduled garden patch is dropped when sub-Proposal adoption is not wired", async () => {
@@ -192,14 +198,16 @@ describe("runScheduler — executor-result telemetry", () => {
     const fixture = await makeFixture();
     fixtures.push(fixture);
     const recordedDiagnostics: string[] = [];
+    const recordedProposalIds: Array<string | null> = [];
     let applyPatchCalls = 0;
 
     const result = await runWithProcessor(
       fixture,
       processor,
       {
-        recordDiagnostic: async ({ effect }) => {
+        recordDiagnostic: async ({ effect, proposalId }) => {
           recordedDiagnostics.push(effect.code);
+          recordedProposalIds.push(proposalId);
         },
         applyPatch: async () => {
           applyPatchCalls += 1;
@@ -215,6 +223,7 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(recordedDiagnostics).toContain(
       "scheduler.garden-sub-proposal-spawn-disabled",
     );
+    expect(recordedProposalIds).toEqual([null]);
     expect(applyPatchCalls).toBe(0);
   });
 

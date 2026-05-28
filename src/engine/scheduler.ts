@@ -280,22 +280,6 @@ async function runSchedulerInner(opts: {
       continue;
     }
 
-    // Dispatch. Use a synthetic Proposal for ledger linkage — schedule-
-    // fired runs are not anchored to a specific user-drift Proposal,
-    // but the runner machinery expects a Proposal-shaped envelope.
-    // The synthetic id is namespaced `prop_sched_<unix-ms>_<rand>` so
-    // it's distinguishable from `prop_<unix-ms>_<rand>` user-drift ids.
-    const syntheticProposal: Proposal = Object.freeze({
-      id: `prop_sched_${nowDate.getTime()}_${Math.random().toString(36).slice(2, 8)}`,
-      base: adopted,
-      head: adopted,
-      source: Object.freeze({
-        kind: "garden",
-        processorId: processor.id,
-        runId: `sched_${nowDate.getTime()}`,
-      }),
-    });
-
     let success: boolean;
     try {
       // Build the snapshot once per fire — same shape adoptionRunner /
@@ -322,12 +306,10 @@ async function runSchedulerInner(opts: {
         }),
         snapshot,
         changedPaths: Object.freeze([]),
-        // Schedule fires aren't tied to a user-drift Proposal but the
-        // dispatcher's ledger lifecycle expects a Proposal-shaped
-        // envelope. The synthetic Proposal (with both base+head = adopted
-        // commit) gives the dispatcher what it needs for `runs.input_commit`
-        // + the makeRunContext fallback path.
-        proposal: syntheticProposal,
+        // Schedule fires are not tied to a user-drift Proposal. The run
+        // ledger records proposal_id = NULL; inputCommit records the adopted
+        // snapshot the schedule fired against.
+        proposal: null,
         inputCommit: adopted,
         matches,
         resolveGrants,
@@ -349,7 +331,7 @@ async function runSchedulerInner(opts: {
             adopted,
             processorId: result.processorId,
             runId: result.runId,
-            proposalId: syntheticProposal.id,
+            proposalId: null,
             declared: result.declared,
             granted: result.granted,
             sinks,
@@ -366,7 +348,7 @@ async function runSchedulerInner(opts: {
           effect,
           processorId: result.processorId,
           runId: result.runId,
-          proposalId: syntheticProposal.id,
+          proposalId: null,
           phase,
           declared: result.declared,
           granted: result.granted,
@@ -444,7 +426,7 @@ async function routeScheduledGardenPatch(opts: {
   readonly adopted: CommitOid;
   readonly processorId: string;
   readonly runId: RunId;
-  readonly proposalId: string;
+  readonly proposalId: string | null;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly sinks: ApplyEffectSinks;
