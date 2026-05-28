@@ -49,7 +49,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 - First-party `dome.*` bundles are guaranteed not to collide with each other (curated by the SDK team).
 - Third-party bundle authors should namespace their page types and processor names to avoid collision (`acme.calendar.event`, not `event`).
-- Bundle-load failures surface as engine-emitted DiagnosticEffects (`code: "bundle-load-failure"`, with the colliding-key detail in `message`) and are visible via `dome show diagnostics`. A v1.x `dome doctor` invocation will run the same load-validation probe ahead of time as part of its check set in the deferred `dome.health` bundle.
+- Bundle-load failures surface as engine-emitted DiagnosticEffects (`code: "bundle-load-failure"`, with the colliding-key detail in `message`) and are visible via `dome inspect diagnostics`. A v1.x `dome doctor` invocation will run the same load-validation probe ahead of time as part of its check set in the deferred `dome.health` bundle.
 
 **Related:**
 - [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy"

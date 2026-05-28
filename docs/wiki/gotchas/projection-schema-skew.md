@@ -41,8 +41,8 @@ The run ledger (`runs.db`) and outbox (`outbox.db`) carry their own schema_hashe
 
 **Operational notes:**
 
-- The rebuild is logged in the run ledger (`status: "succeeded"`, `processor_id: "engine.projection-rebuild"`). Reviewable via `dome show runs --processor engine.projection-rebuild`.
-- For large vaults (50k+ pages), the rebuild may take a minute or two. `dome show rebuild-progress` (v1.x subject) provides a tail-of-walk view.
+- The rebuild is logged in the run ledger (`status: "succeeded"`, `processor_id: "engine.projection-rebuild"`). Reviewable via `dome inspect runs --processor engine.projection-rebuild`.
+- For large vaults (50k+ pages), the rebuild may take a minute or two. `dome inspect rebuild-progress` (v1.x subject) provides a tail-of-walk view.
 - The engine never asks "do you want to rebuild" — the rebuild is automatic. The user-visibility is the one-line message; the rebuild's idempotency means re-running it is safe.
 
 **Related:**

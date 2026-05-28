@@ -29,7 +29,7 @@ This is correctness-preserving by design (per [[wiki/invariants/ALL_MUTATION_GOE
 
 - **Run `dome serve` as a launchd / systemd service.** The recommended deployment for users who want continuous compilation. Cost stays bounded because each Proposal stays small — the adopted ref advances frequently, leaving no pending range.
 - **Use `dome status`** to surface the adoption snapshot at any time — branch / HEAD / adopted / pending commits / dirty-tree state / pending outbox / runs summary. The pending-commits count tells the user how much catch-up the next sync will do.
-- **Use `dome status`** to surface the pending-commits count and drift state — the v1.0 canonical answer. A future `dome show drift-age` subject (v1.x, reads the `.dome/state/last-reconcile-mtime.txt` marker; supersedes the retired `dome doctor --time-since-reconcile` flag) surfaces drift age in CI / scripts / habitual checks once the marker semantics are settled.
+- **Use `dome status`** to surface the pending-commits count and drift state — the v1.0 canonical answer. A future `dome inspect drift-age` subject (v1.x, reads the `.dome/state/last-reconcile-mtime.txt` marker; supersedes the retired `dome doctor --time-since-reconcile` flag) surfaces drift age in CI / scripts / habitual checks once the marker semantics are settled.
 - **Cap intake-processor LLM cost** via the `model.invoke.maxDailyCostUsd` capability grant in `<vault>/.dome/config.yaml`. The `dome.intake.extract-capture` processor's default cap is $5/day; once exceeded, the processor's `modelInvoke` calls are denied for the rest of the day. Accumulated files re-process the next day. Configurable per-vault per [[wiki/specs/capabilities]] §"model.invoke".
 
 **What NOT to do:**
@@ -47,7 +47,7 @@ This is correctness-preserving by design (per [[wiki/invariants/ALL_MUTATION_GOE
 - [[wiki/specs/capabilities]] §"model.invoke" — the LLM cost cap.
 - [[wiki/specs/cli]] §"`dome sync`" — the catch-up mechanism.
 - [[wiki/specs/cli]] §"`dome status`" — the snapshot surface.
-- [[wiki/specs/cli]] §"`dome show`" — the drift-age subject (v1.x); also §"`dome status`" for the v1.0 pending-commits surface.
+- [[wiki/specs/cli]] §"`dome inspect`" — the drift-age subject (v1.x); also §"`dome status`" for the v1.0 pending-commits surface.
 - [[wiki/gotchas/out-of-band-vault-edits]] — the canonical-path framing for native writes.
 - [[wiki/gotchas/adopted-ref-divergence]] — the sibling "catch-up refused because state is wrong" diagnostic.
 - [[wiki/specs/harnesses]] §"The compiler-boundary contract" — the four-surface contract.

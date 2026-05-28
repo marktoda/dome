@@ -163,8 +163,8 @@ describe("diagnostics accessor", () => {
   // Regression: pre-fix, queryDiagnostics ordered by id ASC (oldest first).
   // When N diagnostics accumulate, freshly-emitted diagnostics drop out of the
   // default CLI window. User experience: "I just emitted a broken wikilink
-  // diagnostic; `dome doctor --show diagnostics` doesn't show it." Fix orders
-  // DESC so the freshest diagnostics are visible first.
+  // diagnostic; `dome inspect diagnostics` doesn't show it." Fix orders DESC
+  // so the freshest diagnostics are visible first.
   it("queryDiagnostics returns rows in newest-first order (id DESC)", () => {
     insertDiagnostic(db, {
       effect: diagnosticEffect({

@@ -20,7 +20,7 @@ first_observed: 2026-05-26
 
 **Structural mitigation:** The **link-to-canonical-surface convention.** Phase A's spec rewrite established it: instead of writing `(5 CLI commands)`, write `the shipped command surface (canonical list: [[wiki/specs/cli]] §"Implementation note")`. The reader follows the link to the canonical inventory; the inline count vanishes. Phase B formalizes the convention as substrate.
 
-The deferred `dome.health.check-substrate-counts` view-phase or scheduled garden-phase processor (v1.x, in the deferred `dome.health` bundle) parses spec prose for inlined counts that cite a canonical surface (e.g., "12 invariants per `INVARIANTS`") and compares against the actual const, emitting a DiagnosticEffect on drift. Surface via `dome show diagnostics --code substrate-count-drift`. v0.5 ships the convention but not the check; v1.x may add it if substrate growth makes manual link-checking expensive.
+The deferred `dome.health.check-substrate-counts` view-phase or scheduled garden-phase processor (v1.x, in the deferred `dome.health` bundle) parses spec prose for inlined counts that cite a canonical surface (e.g., "12 invariants per `INVARIANTS`") and compares against the actual const, emitting a DiagnosticEffect on drift. Surface via `dome inspect diagnostics --code substrate-count-drift`. v0.5 ships the convention but not the check; v1.x may add it if substrate growth makes manual link-checking expensive.
 
 **Specific scenarios:**
 

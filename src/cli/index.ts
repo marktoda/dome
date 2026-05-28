@@ -2,7 +2,7 @@
 //
 // Dome CLI entry — v1 minimal surface.
 //
-// Commands shipped in v1.0: init, show, doctor (stub), status, serve, sync.
+// Commands shipped in v1.0: init, inspect, doctor (stub), status, serve, sync.
 // The full CLI surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships
 // the most-essential to prove the v1 stack works end-to-end. The
 // wrong-shape `dome submit` was retired in Phase 11a (the canonical
@@ -10,11 +10,11 @@
 // `dome sync` as the one-shot catch-up for users who don't want a
 // long-running daemon).
 //
-// CLI surface recut: `dome doctor --show <subject>` was split into
-// `dome show <subject>` (the v1.0 read surface) plus `dome doctor`
-// (reserved for the v1.x health-check verb). The `dome answer <id>`
-// surface is also reserved for v1.x. See [[wiki/specs/cli]] §"dome show"
-// / §"dome doctor" / §"dome answer".
+// CLI surface recut: the pre-recut `dome doctor --show <subject>` was
+// split into `dome inspect <subject>` (the v1.0 read surface) plus
+// `dome doctor` (reserved for the v1.x health-check verb). The
+// `dome answer <id>` surface is also reserved for v1.x. See
+// [[wiki/specs/cli]] §"dome inspect" / §"dome doctor" / §"dome answer".
 //
 // This file's two responsibilities:
 //
@@ -35,8 +35,8 @@
 import { parseArgs, type ParsedArgs } from "./args";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
+import { runInspect } from "./commands/inspect";
 import { runServe } from "./commands/serve";
-import { runShow } from "./commands/show";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
 
@@ -64,10 +64,10 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
       return runInit(args);
     case "doctor":
       return runDoctor(args);
+    case "inspect":
+      return runInspect(args);
     case "serve":
       return runServe(args);
-    case "show":
-      return runShow(args);
     case "status":
       return runStatus(args);
     case "sync":
@@ -93,7 +93,7 @@ function printUsage(): void {
       "",
       "Commands (v1.0):",
       "  init [path]                      Initialize a vault.",
-      "  show <subject> [--limit <n>] [--json]",
+      "  inspect <subject> [--limit <n>] [--json]",
       "                                   Read-only view over the operational substrate.",
       "                                   Subjects: runs, diagnostics, questions, outbox.",
       "  doctor [--repair]                (reserved for v1.x) Engine-substrate health checks.",

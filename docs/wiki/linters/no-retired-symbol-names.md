@@ -27,7 +27,7 @@ The check is a regex sweep over `docs/wiki/**/*.md` for the retired-name allowli
 - `vault.tools`, `vault.dispatchEvents` (from external/plugin code; engine-internal uses are invisible to docs).
 - `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/prompts/` (as committed-vault directories — replaced by `.dome/extensions/<bundle>/`).
 - `.dome/state/scheduled.json` (replaced by `projection.db.schedule_cursors`).
-- `.dome/state/last-reconciled-sha.txt` (replaced by `refs/dome/adopted/<branch>`; the `.dome/state/last-reconcile-mtime.txt` marker is preserved as the source for the v1.x `dome show drift-age` subject — the pre-recut `dome doctor --time-since-reconcile` flag name is retired).
+- `.dome/state/last-reconciled-sha.txt` (replaced by `refs/dome/adopted/<branch>`; the `.dome/state/last-reconcile-mtime.txt` marker is preserved as the source for the v1.x `dome inspect drift-age` subject — the pre-recut `dome doctor --time-since-reconcile` flag name is retired).
 - `SENSITIVE_GOES_TO_INBOX` (retired in the compiler-reframe pre-v1; carried forward to v1).
 
 **Retired invariant names** (these `.md` files no longer exist; `[[wiki/invariants/<name>]]` links to them are dead):

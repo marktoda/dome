@@ -20,7 +20,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 The narrow remaining cases:
 
-1. **Engine crash between writing the closure-commit blob objects and updating the adopted ref.** Atomic at the git-object level (git's content-addressed store survives crashes), but the ref-update is the structural boundary; if the process dies mid-update, the ref stays at the prior commit and the new commit becomes an unreachable object eligible for GC. **Recovery:** zero work — the next `dome sync` rebuilds the candidate from `adopted..HEAD` and resubmits. The orphan engine commit is eventually garbage-collected by `git gc` automatically; a future `dome.health` garden-phase processor surfaces accumulated orphans via DiagnosticEffect (visible at `dome show diagnostics`).
+1. **Engine crash between writing the closure-commit blob objects and updating the adopted ref.** Atomic at the git-object level (git's content-addressed store survives crashes), but the ref-update is the structural boundary; if the process dies mid-update, the ref stays at the prior commit and the new commit becomes an unreachable object eligible for GC. **Recovery:** zero work — the next `dome sync` rebuilds the candidate from `adopted..HEAD` and resubmits. The orphan engine commit is eventually garbage-collected by `git gc` automatically; a future `dome.health` garden-phase processor surfaces accumulated orphans via DiagnosticEffect (visible at `dome inspect diagnostics`).
 
 2. **User editing multiple files in the working tree, then crashing or interrupting before `dome submit`.** The working tree has half-edited files; adoption never started. **Recovery:** the user runs `dome status` to see the dirty-tree count, decides whether to commit-and-submit or `git restore` to undo.
 
@@ -44,7 +44,7 @@ The `commitWorkflow` call produces a single git commit object atomically (git's 
 
 - **User edits 7 files in vim; runs `dome submit`; the engine crashes mid-loop.** The candidate-tree work is lost (no harm — it was in-memory). The user's working-tree edits are preserved. The user re-runs `dome submit`; adoption restarts from scratch with the same Proposal.
 
-- **`dome.intake.extract-capture` (garden-phase) emits a 12-PatchEffect chain.** The engine constructs each into a sub-Proposal (per [[wiki/specs/proposals]] §"Garden-emitted Proposals") and adopts them sequentially. If the 7th sub-Proposal blocks, the first 6 already adopted; the 7th's blocking diagnostic surfaces in `dome show diagnostics`. The user resolves and the engine resumes from the failed sub-Proposal. This isn't "partial write" — each sub-Proposal is its own atomic adoption boundary; the failure is observable and recoverable.
+- **`dome.intake.extract-capture` (garden-phase) emits a 12-PatchEffect chain.** The engine constructs each into a sub-Proposal (per [[wiki/specs/proposals]] §"Garden-emitted Proposals") and adopts them sequentially. If the 7th sub-Proposal blocks, the first 6 already adopted; the 7th's blocking diagnostic surfaces in `dome inspect diagnostics`. The user resolves and the engine resumes from the failed sub-Proposal. This isn't "partial write" — each sub-Proposal is its own atomic adoption boundary; the failure is observable and recoverable.
 
 - **Invariant violation discovered mid-loop.** The 4th iteration's patches would violate a capability scope (per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]]). The broker rewrites the patch to `mode: "propose"` (downgrade) or denies it (depending on grant); the loop continues with the downgraded patch set. Adoption may still reach fixed point; capability-downgrade-surprise diagnostics surface for the user to review.
 
@@ -52,7 +52,7 @@ The `commitWorkflow` call produces a single git commit object atomically (git's 
 
 - The vault is git-backed: `git revert <closure-commit>` is the universal undo for a bad adoption. The Dome-* trailers on the closure commit name the responsible run.
 - Long-running garden flows that produce many sub-Proposals (e.g., a backfill processor migrating 50 pages) decompose into independent sub-Proposals automatically. There is no `commit_batch` API; each sub-Proposal is its own adoption boundary.
-- A future `dome.health` garden-phase processor (`health.detect-orphan-engine-commits`, deferred to v1.x) emits a DiagnosticEffect when engine commits exist that are unreachable from the adopted ref or any branch tip. These are typically GC'd by `git gc` automatically; manual cleanup via `git update-ref -d` on the named ref or `git gc --prune=now`. Surface via `dome show diagnostics --code orphan-engine-commits` once the processor ships.
+- A future `dome.health` garden-phase processor (`health.detect-orphan-engine-commits`, deferred to v1.x) emits a DiagnosticEffect when engine commits exist that are unreachable from the adopted ref or any branch tip. These are typically GC'd by `git gc` automatically; manual cleanup via `git update-ref -d` on the named ref or `git gc --prune=now`. Surface via `dome inspect diagnostics --code orphan-engine-commits` once the processor ships.
 
 **Related:**
 - [[wiki/specs/adoption]] §"The fixed-point adoption loop"

@@ -41,15 +41,15 @@ describe("parseArgs", () => {
   });
 
   test("parses --flag=value form", () => {
-    const a = parseArgs(["doctor", "--show=runs"]);
-    expect(a.command).toBe("doctor");
-    expect(a.flags["show"]).toBe("runs");
+    const a = parseArgs(["serve", "--poll-interval-ms=500"]);
+    expect(a.command).toBe("serve");
+    expect(a.flags["poll-interval-ms"]).toBe("500");
   });
 
   test("parses --flag value form (separate tokens)", () => {
-    const a = parseArgs(["doctor", "--show", "runs"]);
-    expect(a.command).toBe("doctor");
-    expect(a.flags["show"]).toBe("runs");
+    const a = parseArgs(["serve", "--poll-interval-ms", "500"]);
+    expect(a.command).toBe("serve");
+    expect(a.flags["poll-interval-ms"]).toBe("500");
   });
 
   test("treats --flag --other as two boolean flags", () => {
@@ -60,15 +60,14 @@ describe("parseArgs", () => {
 
   test("preserves mixed positional + flag order in flags", () => {
     const a = parseArgs([
-      "doctor",
-      "--show",
+      "inspect",
       "diagnostics",
       "--limit",
       "5",
       "--json",
     ]);
-    expect(a.command).toBe("doctor");
-    expect(a.flags["show"]).toBe("diagnostics");
+    expect(a.command).toBe("inspect");
+    expect(a.positionals).toEqual(["diagnostics"]);
     expect(a.flags["limit"]).toBe("5");
     expect(a.flags["json"]).toBe(true);
   });

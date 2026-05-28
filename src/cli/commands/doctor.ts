@@ -12,7 +12,7 @@
 //   - `dome doctor --repair` → exits 64 with the same pointer.
 //
 // Why this is a stub rather than the v0.5 surface: the previous
-// `dome doctor --show <subject>` shape was renamed to `dome show
+// `dome inspect <subject>` shape was renamed to `dome inspect
 // <subject>` in the v1.0 CLI surface recut (the read half lives there);
 // the `--repair` / `--outbox-replay` / `--reset-quarantined-processors`
 // flags are retired in favor of the engine-asks model (engine emits
@@ -25,7 +25,7 @@ import type { ParsedArgs } from "../args";
 
 const RESERVED_NOTICE =
   "dome doctor: no health checks ship in v1.0; reserved for v1.x. " +
-  "For the v1.0 read surface, use `dome show <subject>`. " +
+  "For the v1.0 read surface, use `dome inspect <subject>`. " +
   "See `docs/wiki/specs/cli.md` §`dome doctor` for the design.";
 
 /**

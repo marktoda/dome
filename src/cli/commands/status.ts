@@ -99,7 +99,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 
     // Pending = queued. The dispatcher should drain queued rows quickly;
     // a persistently non-zero count is a "stuck" indicator the operator
-    // surfaces via `dome doctor --show runs`.
+    // surfaces via `dome inspect runs`.
     const queued = queryRuns(runtime.ledgerDb, { status: "queued" });
     const pending_runs = queued.length;
 

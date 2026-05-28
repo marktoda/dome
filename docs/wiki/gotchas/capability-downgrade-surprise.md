@@ -29,7 +29,7 @@ sourceRefs: [<patched paths>]
 
 The diagnostic surfaces:
 - In `dome submit`'s output for the current Proposal (with severity warning, not blocking).
-- In `dome show diagnostics --code capability-downgrade-surprise`.
+- In `dome inspect diagnostics --code capability-downgrade-surprise`.
 - In the next `dome lint` report (the downgraded patch becomes a proposed finding the user reviews).
 
 The user resolves by either:

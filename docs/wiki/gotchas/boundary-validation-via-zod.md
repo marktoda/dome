@@ -35,7 +35,7 @@ For state-file corruption (`quarantined.json`, future state files), the validati
 
 **Specific scenarios:**
 
-- A user with a hand-edited `<vault>/.dome/config.yaml` carries a malformed `invariants:` block. The current behavior (without the schema) crashes during the spread merge in `openVault`; with the schema, it returns `Result.err({ kind: 'invalid-vault-config', path: 'invariants', expected: 'object', got: 'string' })` and `dome show diagnostics` surfaces the error as a DiagnosticEffect.
+- A user with a hand-edited `<vault>/.dome/config.yaml` carries a malformed `invariants:` block. The current behavior (without the schema) crashes during the spread merge in `openVault`; with the schema, it returns `Result.err({ kind: 'invalid-vault-config', path: 'invariants', expected: 'object', got: 'string' })` and `dome inspect diagnostics` surfaces the error as a DiagnosticEffect.
 - A third-party bundle author ships a `manifest.yaml` with a typo'd `processors[].triggers[].kind` field. Current behavior: an unhelpful "Cannot read property 'kind' of undefined" error during processor registration. Future behavior: `Result.err({ kind: 'bundle-load-failure', detail: 'processor-invalid', errors: [<Zod-issue-path>] })` per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy".
 - A v2 mobile shell wakes from background, finds `<vault>/.dome/state/quarantined.json` corrupted by a previous-version process. Current behavior: silent empty fallback (the quarantine state resets; the user sees no signal). v1 behavior: same fallback + `state-corruption-detected` diagnostic emitted via the engine.
 

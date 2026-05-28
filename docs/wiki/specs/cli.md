@@ -21,7 +21,7 @@ dome lint [--apply <id>] [--report-only]
                                 Run dome.lint; write report; optionally apply a finding.
 dome rebuild                    Wipe and rebuild projection store from adopted commit.
 dome stats                      Vault size / processor counts / ledger summary.
-dome show <subject> [--limit <n>] [--json]
+dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox.
 dome doctor [--repair]          (reserved for v1.x) Run engine-substrate
@@ -42,7 +42,7 @@ dome run-processor <id> [--args ...]
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
 - **Submit:** `dome sync` — the catch-up write path that triggers an adoption run.
-- **Recall:** `dome query`, `dome status`, `dome show` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome show` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
+- **Recall:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. `dome doctor` and `dome answer` are **reserved for v1.x** per §"dome doctor" and §"dome answer" below; only `dome rebuild` and `dome serve` ship in v1.0.
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
@@ -203,7 +203,7 @@ vault: /Users/mark/vaults/work
 
 The `<linked count>` is rendered from `src/types.ts` `INVARIANTS` at run time — not inlined as a literal.
 
-### `dome show <subject> [--limit <n>] [--json]`
+### `dome inspect <subject> [--limit <n>] [--json]`
 
 Read-only view over the operational substrate. The command opens the
 runtime (so the three databases are initialized) but does not submit a
@@ -251,7 +251,7 @@ scheduled processor** in the `dome.health` first-party bundle, fired
 on a periodic cron or on engine signals (e.g.,
 `engine.outbox.terminal-failure`). Probes emit DiagnosticEffects with
 `source: engine.health` that persist to `projection.db.diagnostics`
-and surface via `dome show diagnostics`.
+and surface via `dome inspect diagnostics`.
 
 `dome doctor` itself is a **view-phase command-triggered processor**
 (`dome.health.render-report`) that reads the persisted probe findings
@@ -275,7 +275,7 @@ checks (`--check-all`), and per-substrate mutations (`--outbox-replay`,
 `--reset-quarantined-processors`, `--repair`-as-bundle-recopy, etc.).
 The recut splits these along their real seams:
 
-- **Reads** → `dome show <subject>` (above).
+- **Reads** → `dome inspect <subject>` (above).
 - **Probes** → `dome doctor` (this section). The probes themselves are
   garden-phase processors; the verb is just the view-phase renderer.
 - **Per-substrate mutations needing human input** → engine-emitted
@@ -310,7 +310,7 @@ adopted ref), the natural pattern is:
    signal and emits a `QuestionEffect` with options (e.g., `["retry",
    "abandon", "wait"]`), `idempotencyKey` set to the underlying row id,
    and `sourceRefs` pointing at the substrate row.
-3. **User runs `dome show questions`** to see pending questions.
+3. **User runs `dome inspect questions`** to see pending questions.
 4. **User runs `dome answer <question-id> retry`** to resolve.
 5. **A second garden-phase processor in `dome.health`** subscribes to
    the `question.answered` signal, looks up the question's
@@ -323,7 +323,7 @@ a new operational mutation type is one new question-emitter + one
 new answer-handler in the bundle; no new CLI command.
 
 **Design (v1.x).** `<question-id>` is the question row's id (from
-`dome show questions`). `<value>` is one of the question's options
+`dome inspect questions`). `<value>` is one of the question's options
 (when `options` is set) or free-form text (when `options` is null).
 Without `<value>`, `dome answer <question-id>` prints the question
 and its options.

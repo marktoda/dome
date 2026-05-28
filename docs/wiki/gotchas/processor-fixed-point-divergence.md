@@ -30,7 +30,7 @@ The cap (default 100, configurable as `engine.max_iterations` in `.dome/config.y
 - The last 3 iterations' effect-emission history.
 - The candidate processors involved (those whose patches appeared in multiple iterations).
 
-The diagnostic surfaces via `dome submit` exit code, `dome show diagnostics --code fixed-point.divergence` (and the deferred `dome show recent-processor-divergence` v1.x subject), and the `engine.adoption.blocked` event.
+The diagnostic surfaces via `dome submit` exit code, `dome inspect diagnostics --code fixed-point.divergence` (and the deferred `dome inspect recent-processor-divergence` v1.x subject), and the `engine.adoption.blocked` event.
 
 ```text
 dome submit: blocked main: proposal prop_1748... (1 diagnostic)
@@ -42,7 +42,7 @@ dome submit: blocked main: proposal prop_1748... (1 diagnostic)
     Candidate processors: dome.markdown.validate-wikilinks, dome.intake.normalize-aliases
     Recommended actions:
       1. Disable one of the candidate processors temporarily (`.dome/config.yaml`) and re-submit.
-      2. Inspect the recent diagnostics via `dome show diagnostics --code fixed-point.divergence`.
+      2. Inspect the recent diagnostics via `dome inspect diagnostics --code fixed-point.divergence`.
       3. File an issue with the captured iteration history.
 ```
 

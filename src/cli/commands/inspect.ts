@@ -1,6 +1,6 @@
-// cli/commands/show: the `dome show <subject>` command.
+// cli/commands/inspect: the `dome inspect <subject>` command.
 //
-// Per [[wiki/specs/cli]] §"dome show <subject>", `dome show` is the
+// Per [[wiki/specs/cli]] §"dome inspect <subject>", `dome inspect` is the
 // read-only view over the operational substrate. It opens the runtime
 // (so the three databases are initialized) but does not submit a
 // Proposal, does not invoke any processor, and does not mutate state.
@@ -24,10 +24,10 @@
 //     applied post-fetch via array slicing.
 //   - `--json` emits structured rows.
 //
-// Renamed from `dome doctor --show <subject>` in the v1.0 CLI surface
-// recut (per cli.md §"dome show"). The previous `dome doctor` namespace
-// is reserved for the v1.x health-check verb; this surface is the read
-// half.
+// Renamed from the pre-recut `dome doctor --show <subject>` in the v1.0
+// CLI surface recut (per cli.md §"dome inspect"). The previous
+// `dome doctor` namespace is reserved for the v1.x health-check verb;
+// this surface is the read half.
 
 import { resolve } from "node:path";
 
@@ -52,26 +52,26 @@ const VALID_SUBJECTS = new Set<string>([
   "outbox",
 ]);
 
-// ----- runShow --------------------------------------------------------------
+// ----- runInspect --------------------------------------------------------------
 
 /**
- * Execute `dome show <subject>`. Returns the exit code.
+ * Execute `dome inspect <subject>`. Returns the exit code.
  *
  * Subject is the first positional argument (`args.positionals[0]`).
  * No flag-based subject is accepted; the previous `--show <subject>`
  * spelling is retired in the recut.
  */
-export async function runShow(args: ParsedArgs): Promise<number> {
+export async function runInspect(args: ParsedArgs): Promise<number> {
   const subject = args.positionals[0];
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome show: subject is required. Subjects: runs, diagnostics, questions, outbox.",
+      "dome inspect: subject is required. Subjects: runs, diagnostics, questions, outbox.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome show: unknown subject '${subject}'. Available: runs, diagnostics, questions, outbox.`,
+      `dome inspect: unknown subject '${subject}'. Available: runs, diagnostics, questions, outbox.`,
     );
     return 64;
   }
@@ -83,7 +83,7 @@ export async function runShow(args: ParsedArgs): Promise<number> {
 
   const limit = parseLimit(args.flags["limit"]);
   if (limit === null) {
-    console.error("dome show: --limit must be a positive integer.");
+    console.error("dome inspect: --limit must be a positive integer.");
     return 64;
   }
 
@@ -98,7 +98,7 @@ export async function runShow(args: ParsedArgs): Promise<number> {
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(
-      `dome show: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
+      `dome inspect: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
     );
     return 1;
   }
@@ -109,7 +109,7 @@ export async function runShow(args: ParsedArgs): Promise<number> {
     if (args.flags["json"] === true) {
       console.log(formatJson(rows));
     } else {
-      console.log(`dome show ${subject}:`);
+      console.log(`dome inspect ${subject}:`);
       console.log(formatTable(rows));
     }
     return 0;

@@ -13,7 +13,7 @@
 // Empty-input semantics:
 //   - `formatTable([])` returns the literal "(no rows)" — matches the
 //     "empty-table message on a fresh vault" assertion in the Phase 9
-//     `dome doctor` smoke test.
+//     `dome inspect` smoke test.
 
 // ----- formatTable ----------------------------------------------------------
 
@@ -33,7 +33,7 @@
  *   val   val   val
  *   ```
  *
- * Empty rows render as "(no rows)" so a fresh-vault `dome doctor` view
+ * Empty rows render as "(no rows)" so a fresh-vault `dome inspect` view
  * doesn't print a header-only table.
  */
 export function formatTable(

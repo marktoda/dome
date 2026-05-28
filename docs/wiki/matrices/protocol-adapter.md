@@ -19,10 +19,10 @@ Per-protocol map of how consumer surfaces (CLI, MCP, future HTTP / voice / web) 
 | **Resolve wikilink** | `surface.resolveWikilink(link)` | n/a (not a CLI surface) | `dome.resolve_wikilink` tool | `GET /wikilinks/<link>` | n/a |
 | **Run command processor** | `surface.commands.<name>.invoke(args)` | `dome <name>` (lint / stats / export-context / ...) | `dome.run_command` tool | `POST /commands/<name>` | Voice command → command processor (lint / query / etc.) |
 | **Read resource** | `surface.readResource(uri)` | n/a (CLI reads paths, not URIs) | MCP resources at `dome://<scheme>/<path>` | `GET /<uri>` | n/a |
-| **Get instructions** | `surface.instructions` | `dome show instructions` (v1.x subject) | MCP `serverInfo.instructions` | `GET /instructions` | Read at session start by voice client |
+| **Get instructions** | `surface.instructions` | `dome inspect instructions` (v1.x subject) | MCP `serverInfo.instructions` | `GET /instructions` | Read at session start by voice client |
 | **Get adoption status** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status` / `dome status --json` | `dome://status` resource | `GET /status` | n/a |
 | **Rebuild projection** | `vault.rebuild()` (engine) | `dome rebuild` | n/a (engine control, not exposed via MCP in v1) | `POST /rebuild` (auth-gated in hosted mode) | n/a |
-| **Engine control (sync, doctor, init, show, answer)** | (engine, not AbstractSurface) | `dome sync`, `dome doctor` (v1.x verb), `dome init`, `dome show <subject>`, `dome answer <id>` (v1.x) | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
+| **Engine control (sync, doctor, init, show, answer)** | (engine, not AbstractSurface) | `dome sync`, `dome doctor` (v1.x verb), `dome init`, `dome inspect <subject>`, `dome answer <id>` (v1.x) | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
 
 ## Architectural shape
 

@@ -197,7 +197,7 @@ Gitignored. Rebuildable. Three SQLite files plus markers:
 - `runs.db` — see [[wiki/specs/run-ledger]].
 - `outbox.db` — see [[wiki/specs/projection-store]] §"Outbox".
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
-- `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome show drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
+- `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 
 Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting any of `.dome/state/` files and running `dome rebuild` (for projection.db) or restarting the daemon (for runs.db and outbox.db) reconverges. The outbox is the exception — wiping `outbox.db` loses pending external actions; users should not delete it, only the projection.
 
