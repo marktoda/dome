@@ -55,16 +55,23 @@ The `ALLOWED` constant is derived from this matrix at module-load time (or from 
 
 ## Implementation status
 
-**As of Phase 3 (processor runtime landed; per-processor manifest validator forward-looking):**
+**As of Phase 4b (garden runner + sub-Proposal spawn + view runner shipping; scheduler + signal pub/sub + `answer` trigger kind in subsequent phases per [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]):**
 
 The phase × trigger matrix is **the canonical contract** that the manifest validator will enforce. The type-system fences at the `Trigger` and `ProcessorPhase` level are real today; the per-processor declaration check at bundle load ships with Phase 6.
 
 - Structurally true now:
-  - The closed `Trigger` discriminated union in `src/core/processor.ts:123-127` (with per-variant types at 105-121) enforces the four trigger kinds at the type system level.
-  - The closed `ProcessorPhase` literal-union at `src/core/processor.ts:75` enforces the three phases.
-  - `src/processors/triggers.ts:matchTriggers` (line 83) consumes only `signal` and `path` triggers (returning no match for `schedule`/`command`) — the adoption-phase runner thus naturally honors the adoption × {signal, path} subset of the matrix.
+  - The closed `Trigger` discriminated union in `src/core/processor.ts` enforces the four trigger kinds at the type system level. Phase 4d adds a fifth — `{ kind: "answer"; codePrefix: string }`.
+  - The closed `ProcessorPhase` literal-union enforces the three phases.
+  - `src/processors/triggers.ts:matchTriggers` consumes `signal` and `path` triggers; `schedule` and `command` triggers return no match (the clock-cursor and command-dispatch layers ship in Phase 4c and Phase 4b respectively).
+  - **Adoption-phase runner** (`adoptionRunner` in `src/processors/runtime.ts`) — operational since Phase 3.
+  - **Garden-phase runner** (`gardenRunner` in `src/processors/runtime.ts`) — operational as of Phase 4a. Fires garden-phase processors against post-adoption signals + paths. Schedule triggers still no-op (Phase 4c). Engine signal triggers (`signal: "engine.*"`) ship in Phase 4d.
+  - **Garden-emitted PatchEffect → sub-Proposal spawn** (`src/engine/garden.ts`) — operational as of Phase 4a'. Auto-mode PatchEffects from garden-phase processors go through broker enforcement, then spawn sub-Proposals routed through `adopt()` recursively. Cascade depth capped at `DEFAULT_MAX_CASCADE_DEPTH` (10); cap-hit emits `garden.cascade-cap` DiagnosticEffect via the sinks. Propose-mode patches log+drop in v1.0 pending the lint-review surface.
+  - **View-phase runner** (`viewRunner` in `src/processors/runtime.ts` + `runViewCommand` in `src/engine/commands.ts`) — operational as of Phase 4b. Command-triggered view-phase processors fire on `runViewCommand(name, args)` invocation; the runner finds the at-most-one matching processor (collisions rejected at bundle load per `cli-command-collision`), builds a read-only snapshot at the adopted commit, and routes emitted ViewEffects through `applyEffect({ phase: "view" })`. Non-View effect emissions surface as `phase-mismatch` diagnostics in the result's `brokerDiagnostics` field. Schedule-triggered view processors (cron-driven `dome.lint` weekly report etc.) still no-op — wired in Phase 4c.
 
-- Forward-looking (Phase 6+):
+- Forward-looking (subsequent Phase 4 phases):
+  - **View-phase runner** (Phase 4b) — `viewRunner` + `AbstractSurface.commands` registry; enables `command:` triggers to actually fire `dome lint`-style processors.
+  - **Scheduler** (Phase 4c) — `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table.
+  - **Engine signal pub/sub + `answer` trigger kind** (Phase 4d) — extends `Signal` to include `engine.<name>` namespace; adds the fifth trigger kind for symmetric question-answer handler patterns.
   - The `validateProcessorDeclaration` function shown above does not exist yet. `src/extensions/manifest-schema.ts` today validates only bundle-level fields (`name`, `version`, `deps`) for the Phase 0a bundle loader; the per-processor (phase, trigger) cross-field check that rejects incompatible declarations at registration time ships with the first-party `dome.*` bundle migrations (Phase 6).
   - `tests/integration/processor-phase-x-trigger-coverage.test.ts` is the lockstep that ships with the validator.
 

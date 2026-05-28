@@ -180,6 +180,21 @@ The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` copies t
 
 Every processor invocation, regardless of outcome, writes one `RunRecord` row to the run ledger ([[wiki/specs/run-ledger]]). The record captures `runId`, `processorId`, `processorVersion`, `phase`, `proposalId?`, `inputCommit`, `outputCommit?` (for adoption-phase processors that contributed to a closure commit), `status` (queued / running / succeeded / failed / skipped), `effectHashes`, `capabilityUses`, `cost?`, `error?`, `startedAt`, `finishedAt?`. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]].
 
+## Implementation status
+
+The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]) lands the three-phase model in stages:
+
+| Phase | What ships | Status |
+|---|---|---|
+| Adoption-phase runner | `adoptionRunner` (`src/processors/runtime.ts`) fires adoption-phase processors inside the fixed-point loop | **Shipped** (Phase 3) |
+| Garden-phase runner | `gardenRunner` fires post-adoption garden-phase processors against signal + path triggers; the engine constructs sub-Proposals from garden-emitted PatchEffects with a depth cap (`garden.cascade-cap` diagnostic on hit) | **Shipped** (Phases 4a + 4a') |
+| View-phase runner | `viewRunner` (`src/processors/runtime.ts`) + `runViewCommand` dispatcher (`src/engine/commands.ts`) — command-driven view processors fire; non-View effect emissions are phase-rejected | **Shipped** (Phase 4b) |
+| Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table | Phase 4c |
+| Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) + the `answer` trigger kind | Phase 4d |
+| JobEffect runtime | `scheduled_jobs` table + in-memory dispatcher firing due jobs as garden-phase work | Phase 4e |
+
+See the brainstorm doc for the full plan including dependencies, tests, and the question-answer surface.
+
 ## Related
 
 - [[wiki/specs/effects]] — what processors return
