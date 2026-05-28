@@ -38,9 +38,11 @@ import { z } from "zod";
 import { err, ok, type Result } from "../types";
 import {
   CapabilitySchema,
+  ExecutionPolicyRequestSchema,
   ProcessorPhaseSchema,
   TriggerSchema,
   type Capability,
+  type ExecutionPolicyRequest,
   type ProcessorPhase,
   type Trigger,
 } from "../core/processor";
@@ -70,6 +72,7 @@ export type ProcessorDeclaration = {
   readonly phase: ProcessorPhase;
   readonly triggers: ReadonlyArray<Trigger>;
   readonly capabilities: ReadonlyArray<Capability>;
+  readonly execution?: ExecutionPolicyRequest;
   readonly module: string;
 };
 
@@ -78,7 +81,10 @@ export type ProcessorDeclaration = {
  * the per-issue path + message list (from Zod) so the operator can fix
  * every drift in one pass; `phase-trigger-mismatch` carries the specific
  * (processorId, phase, triggerKind) tuple per
- * [[wiki/matrices/processor-phase-x-trigger]].
+ * [[wiki/matrices/processor-phase-x-trigger]]; `execution-policy-mismatch`
+ * carries the processor whose declared execution class is invalid for its
+ * phase; `capability-phase-mismatch` carries capabilities that cannot be
+ * granted in a declared phase.
  */
 export type ManifestError =
   | {
@@ -93,6 +99,18 @@ export type ManifestError =
       readonly processorId: string;
       readonly phase: ProcessorPhase;
       readonly trigger: TriggerKind;
+    }
+  | {
+      readonly kind: "execution-policy-mismatch";
+      readonly processorId: string;
+      readonly phase: ProcessorPhase;
+      readonly executionClass: string;
+    }
+  | {
+      readonly kind: "capability-phase-mismatch";
+      readonly processorId: string;
+      readonly phase: ProcessorPhase;
+      readonly capability: string;
     };
 
 /** Closed set of trigger discriminators — the surface the matrix gates on. */
@@ -110,6 +128,7 @@ export const ProcessorDeclarationSchema = z
     phase: ProcessorPhaseSchema,
     triggers: z.array(TriggerSchema).min(1),
     capabilities: z.array(CapabilitySchema),
+    execution: ExecutionPolicyRequestSchema.optional(),
     module: z.string().min(1),
   })
   .strict();
@@ -162,6 +181,55 @@ function checkPhaseTriggerMatrix(
   return ok(undefined);
 }
 
+/**
+ * Cross-field validation: adoption is the fixed-point merge gate and must
+ * stay deterministic. Longer-lived classes (`background`, `llm`, `batch`) are
+ * valid only outside adoption.
+ */
+function checkExecutionPolicyMatrix(
+  manifest: Manifest,
+): Result<void, ManifestError> {
+  for (const decl of manifest.processors) {
+    if (
+      decl.phase === "adoption" &&
+      decl.execution !== undefined &&
+      decl.execution.class !== "deterministic"
+    ) {
+      return err({
+        kind: "execution-policy-mismatch",
+        processorId: decl.id,
+        phase: decl.phase,
+        executionClass: decl.execution.class,
+      });
+    }
+  }
+  return ok(undefined);
+}
+
+/**
+ * Cross-field validation: adoption runs inside the deterministic merge gate.
+ * They cannot request model invocation, regardless of whether runtime policy
+ * would later omit `ctx.modelInvoke`.
+ */
+function checkCapabilityPhaseMatrix(
+  manifest: Manifest,
+): Result<void, ManifestError> {
+  for (const decl of manifest.processors) {
+    if (
+      decl.phase === "adoption" &&
+      decl.capabilities.some((capability) => capability.kind === "model.invoke")
+    ) {
+      return err({
+        kind: "capability-phase-mismatch",
+        processorId: decl.id,
+        phase: decl.phase,
+        capability: "model.invoke",
+      });
+    }
+  }
+  return ok(undefined);
+}
+
 // ----- parseManifest --------------------------------------------------------
 
 /**
@@ -174,6 +242,10 @@ function checkPhaseTriggerMatrix(
  *     dotted to a path string).
  *   - `phase-trigger-mismatch`: the shape parsed, but a processor's
  *     phase × trigger pair violates the matrix.
+ *   - `execution-policy-mismatch`: the shape parsed, but a processor's
+ *     execution metadata violates the phase policy.
+ *   - `capability-phase-mismatch`: the shape parsed, but a processor's
+ *     capability declaration violates the phase policy.
  *
  * Two passes (shape → matrix) on purpose: the operator should see the
  * structural-shape errors first (those block parsing entirely); only once
@@ -202,6 +274,12 @@ export function parseManifest(
 
   const matrixResult = checkPhaseTriggerMatrix(manifest);
   if (!matrixResult.ok) return err(matrixResult.error);
+
+  const executionMatrixResult = checkExecutionPolicyMatrix(manifest);
+  if (!executionMatrixResult.ok) return err(executionMatrixResult.error);
+
+  const capabilityMatrixResult = checkCapabilityPhaseMatrix(manifest);
+  if (!capabilityMatrixResult.ok) return err(capabilityMatrixResult.error);
 
   return ok(manifest);
 }

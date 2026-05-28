@@ -94,7 +94,7 @@ External capabilities are registered as handlers in the SDK (or in a plugin bund
 A bundle declares its processors' capabilities in `manifest.yaml`:
 
 ```yaml
-name: dome.intake
+id: dome.intake
 version: 1.0.0
 description: "Compile raw captures into wiki updates."
 
@@ -111,10 +111,6 @@ processors:
         paths: ["wiki/generated/intake/**", "inbox/processed/**"]
       - kind: graph.write
         namespaces: ["dome.tasks", "dome.people"]
-      - kind: question.ask
-        namespaces: ["dome.intake"]
-      - kind: job.enqueue
-        processors: ["dome.daily.*"]
       - kind: model.invoke
         maxDailyCostUsd: 5.00
 

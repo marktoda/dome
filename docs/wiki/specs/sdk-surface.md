@@ -179,7 +179,7 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 ### `manifest.yaml` schema
 
 ```yaml
-name: dome.intake
+id: dome.intake
 version: 1.0.0
 description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
@@ -203,18 +203,24 @@ processors:
         namespaces: ["dome.tasks", "dome.people"]
       - kind: model.invoke
         maxDailyCostUsd: 5.00
+    execution:
+      class: llm
+      timeoutMs: 600000
+      modelCallTimeoutMs: 180000
 ```
 
-The schema is validated by Zod at bundle load. Invalid manifests fail the load with a `bundle-load-failure` error (see §"Bundle-loader error taxonomy" below).
+The schema is validated by Zod at bundle load. Invalid manifests fail the load with a `bundle-load-failure` error (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.
 
 #### Bundle-loader error taxonomy
 
 | `detail:` discriminator | When it fires |
 |---|---|
-| `manifest-missing` | `<bundle>/manifest.yaml` does not exist. |
-| `manifest-invalid` | Zod validation fails (missing `name:`, malformed `version:`, etc.). |
-| `name-mismatch` | `<bundle>/manifest.yaml`'s `name:` does not equal the directory name. |
-| `processor-invalid` | A `<bundle>/processors/<name>.ts` fails to import, fails to default-export a `Processor`, or declares phase × capability combinations the broker rejects (e.g., adoption-phase processor requesting `model.invoke`). |
+| `root-not-found` | The configured bundles root does not exist or is not a directory. |
+| `manifest-read-failed` | A bundle has neither readable `manifest.yaml` nor `manifest.json`, or the manifest cannot be parsed. |
+| `manifest-invalid` | Zod validation fails (missing `id:`, malformed `version:`, etc.) or a phase × trigger / phase × execution / phase × capability matrix check rejects the declaration. |
+| `processor-module-load-failed` | A `<bundle>/processors/<name>.ts` fails to import, has identity drift against the manifest, or default-exports an object without a `run` function. |
+| `processor-missing-default-export` | A processor module imports but does not default-export an object. |
+| `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids or empty triggers. |
 | `page-type-collision` | Two bundles declare the same page-type name; or a bundle's page-type collides with a vault-local declaration. |
 | `capability-handler-collision` | Two bundles register handlers for the same external capability. |
 | `bundle-deps-unmet` | A `deps:` entry names a bundle not present in `.dome/extensions/`. |

@@ -128,7 +128,7 @@ The full mapping is at [[wiki/matrices/processor-phase-x-trigger]]. Summary:
 
 ## Capabilities
 
-A processor declares its capabilities in its bundle's `manifest.yaml` ([[wiki/specs/capabilities]] §"Manifest schema"). The runtime resolves the grant against the vault's `config.yaml` policy; the broker enforces at effect-emission time.
+A processor declares its triggers, capabilities, and optional execution policy in its bundle's `manifest.yaml` ([[wiki/specs/capabilities]] §"Manifest schema"). The loader binds that manifest-reviewed metadata onto the loaded processor; the runtime resolves the grant against the vault's `config.yaml` policy; the broker enforces at effect-emission time.
 
 Adoption-phase processors get a restricted capability set by default — no `model.invoke`, no `network`, narrow `patch.auto` paths. Garden-phase processors may be granted `model.invoke` and broader `patch.propose`. View-phase processors get only `read` (within declared paths) and `graph.read` (within declared namespaces). See [[wiki/specs/capabilities]] §"Capability tiers" for the full set.
 

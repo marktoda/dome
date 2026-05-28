@@ -108,6 +108,61 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     if (e === undefined) throw new Error("expected one effect");
     expect(e.kind).toBe("view");
   });
+
+  test("binds manifest execution metadata onto the loaded processor", async () => {
+    const root = makeTmpRoot("loader-execution-metadata-");
+    const bundleDir = join(root, "exec-bundle");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.exec",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.exec.proc",
+            version: "0.1.0",
+            phase: "garden",
+            triggers: [{ kind: "signal", name: "file.created" }],
+            capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+            execution: {
+              class: "llm",
+              timeoutMs: 600_000,
+              modelCallTimeoutMs: 180_000,
+            },
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(processorsDir, "proc.ts"),
+      `
+        export default {
+          id: "test.exec.proc",
+          version: "0.1.0",
+          phase: "garden",
+          triggers: [],
+          capabilities: [],
+          async run() {
+            return [];
+          },
+        };
+      `,
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const proc = result.value[0]?.processors[0];
+    if (proc === undefined) throw new Error("expected one processor");
+    expect(proc.execution?.class).toBe("llm");
+    expect(proc.execution?.modelCallTimeoutMs).toBe(180_000);
+    expect(proc.triggers.length).toBe(1);
+    expect(proc.capabilities.length).toBe(1);
+  });
 });
 
 // ----- Error variants ------------------------------------------------------

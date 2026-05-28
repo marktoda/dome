@@ -369,12 +369,11 @@ async function loadProcessorModule(
     });
   }
 
-  // Structural validation of the imported object's (id, version, phase)
-  // against the manifest declaration. The fuller `Processor` shape is
-  // already typed at the call site (the imported module's default export
-  // is `Processor<unknown>` by contract); we re-check only the three
-  // identity fields here because they're the load-bearing identifiers
-  // the engine routes on.
+  // Structural validation of the imported object's identity and executable
+  // body against the manifest declaration. The manifest remains the
+  // authoritative source for routing/security/execution metadata; the module
+  // supplies the `run` function and must agree on id/version/phase so stale
+  // bundles fail loudly instead of running under surprising names.
   const processor = defaultExport as Processor<unknown>;
   const mismatch = checkProcessorIdentity(decl, processor);
   if (mismatch !== null) {
@@ -385,8 +384,16 @@ async function loadProcessorModule(
       cause: mismatch,
     });
   }
+  if (typeof processor.run !== "function") {
+    return err({
+      kind: "processor-module-load-failed",
+      bundleId,
+      modulePath: decl.module,
+      cause: `manifest declared processor '${decl.id}'; module default export has no run function`,
+    });
+  }
 
-  return ok(processor);
+  return ok(bindProcessorDeclaration(decl, processor));
 }
 
 /**
@@ -408,6 +415,34 @@ function checkProcessorIdentity(
     return `manifest declared phase '${decl.phase}' for processor '${decl.id}'; module exported phase '${processor.phase}'`;
   }
   return null;
+}
+
+/**
+ * Bind manifest-reviewed metadata onto the executable processor. This keeps
+ * the manifest as the reviewable source of truth for triggers, capabilities,
+ * and execution policy, while preserving the module's `run` implementation.
+ */
+function bindProcessorDeclaration(
+  decl: ProcessorDeclaration,
+  processor: Processor<unknown>,
+): Processor<unknown> {
+  const base = {
+    id: decl.id,
+    version: decl.version,
+    phase: decl.phase,
+    triggers: Object.freeze([...decl.triggers]),
+    capabilities: Object.freeze([...decl.capabilities]),
+    run: processor.run,
+  } satisfies Omit<Processor<unknown>, "execution">;
+
+  if (decl.execution === undefined) {
+    return Object.freeze(base);
+  }
+
+  return Object.freeze({
+    ...base,
+    execution: Object.freeze({ ...decl.execution }),
+  });
 }
 
 /**
