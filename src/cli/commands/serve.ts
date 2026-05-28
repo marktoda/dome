@@ -13,30 +13,16 @@
 // 500ms latency is invisible to a user editing + committing markdown.
 // The interval is configurable via `--poll-interval-ms <n>`.
 //
-// Drift detection:
-//   - Resolve HEAD via `currentSha`. `null` (no commits yet) → no-op.
-//   - Resolve `refs/dome/adopted/<branch>` via `getAdoptedRef`. `null`
-//     (uninitialized) → treat base as HEAD (the empty-diff init that
-//     advances the adopted ref to HEAD without engine writes).
-//   - If `base === HEAD`, no drift; sleep + repeat.
-//   - Otherwise, build a manual Proposal `(base, HEAD)` and run `adopt()`.
-//
-// Single-threaded: each adoption cycle runs to completion before the
-// next poll fires. Concurrent commits stack up as drift; the next cycle
-// handles the latest HEAD value (a single `adopt()` over the full range
-// `(adopted, HEAD)`).
+// Drift detection + adoption-invocation live in `./sync-shared.ts`, so
+// `dome serve` (Phase 11b) and `dome sync` (Phase 11c) share the same
+// underlying per-tick body. The daemon wraps it in a poll loop with
+// cancellation, error tolerance (one bad commit shouldn't crash a
+// long-running poll), and a one-line operator-facing summary.
 //
 // Exit codes:
 //   - 0  on graceful shutdown (SIGINT / SIGTERM / external `AbortSignal`).
 //   - 1  on irrecoverable startup error (runtime open failure, detached
 //        HEAD at start, malformed flags).
-//
-// The `applyPatch` / `captureView` sinks are placeholders that **log a
-// warning + drop the effect** rather than throw. The first-party
-// processor v1.0 ships (`dome.markdown.validate-wikilinks`, Phase 11d)
-// is diagnostic-only, so neither sink fires in practice. Throwing here
-// would crash the daemon on a third-party bundle emitting a PatchEffect;
-// the candidate-tree mutator + view delivery wiring lands in v1.1.
 //
 // House-style notes (matches src/cli/commands/status.ts,
 // src/cli/commands/doctor.ts, src/cli/commands/init.ts):
@@ -48,15 +34,12 @@
 
 import { resolve } from "node:path";
 
-import { commitOid, type CommitOid } from "../../core/source-ref";
-import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
-import { adopt } from "../../engine/adopt";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
-import { buildSqliteSinks } from "../../projections/sinks";
-import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import { currentSha } from "../../git";
+import type { AdoptionResult } from "../../core/proposal";
+import { getCurrentBranch } from "../../adopted-ref";
 
-import type { ApplyEffectSinks } from "../../engine/apply-effect";
+import { detectDrift, runOneAdoption, type DriftInfo } from "./sync-shared";
+
 import type { ParsedArgs } from "../args";
 
 // ----- Constants ------------------------------------------------------------
@@ -130,9 +113,12 @@ export async function runServe(
   // ----- 2. Resolve initial branch ------------------------------------------
   // A detached HEAD has no branch name; the adopted-ref substrate requires
   // a branch to namespace under. Refuse to start so the operator sees a
-  // clear actionable error instead of a daemon that does nothing.
-  const branch = await getCurrentBranch(vaultPath);
-  if (branch === null) {
+  // clear actionable error instead of a daemon that does nothing. The
+  // shared `detectDrift` returns `detached-head` for this state; serve
+  // checks once at startup so the operator-facing error fires before the
+  // runtime is opened.
+  const startupDrift = await detectDrift(vaultPath);
+  if (startupDrift.kind === "detached-head") {
     console.error(
       `dome serve: HEAD is detached at ${vaultPath}. The adopted-ref substrate requires a branch. Check out a branch and retry.`,
     );
@@ -150,8 +136,18 @@ export async function runServe(
   const runtime = runtimeResult.value;
 
   // ----- 4. Print startup banner --------------------------------------------
+  // The branch label is derived from the startup drift result. `in-sync`
+  // / `drift` both carry the resolved branch; `no-commits` does not, so
+  // we re-resolve via `getCurrentBranch` (an unborn branch has a name —
+  // `main` after `git init` — even though `HEAD` resolves to null).
+  const startupBranch =
+    startupDrift.kind === "in-sync"
+      ? startupDrift.branch
+      : startupDrift.kind === "drift"
+        ? startupDrift.info.branch
+        : ((await getCurrentBranch(vaultPath)) ?? "(unknown)");
   console.log(
-    `dome serve: watching ${branch} at ${vaultPath} (poll ${pollIntervalMs}ms)`,
+    `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms)`,
   );
 
   // ----- 5. Register cancellation handlers ----------------------------------
@@ -178,7 +174,6 @@ export async function runServe(
     await pollLoop({
       runtime,
       vaultPath,
-      branch,
       pollIntervalMs,
       cancel: controller.signal,
     });
@@ -210,26 +205,41 @@ export async function runServe(
  * Each iteration runs to completion (adoption is not interrupted mid-run)
  * — `cancel` is only honored at the sleep boundary or the start of the
  * next iteration.
+ *
+ * Mid-run state changes (e.g., the user `git checkout`s a detached HEAD
+ * while the daemon is sleeping) surface as a non-`drift` `detectDrift`
+ * result the next iteration; the loop logs and skips rather than
+ * crashing.
  */
 async function pollLoop(input: {
   readonly runtime: VaultRuntime;
   readonly vaultPath: string;
-  readonly branch: string;
   readonly pollIntervalMs: number;
   readonly cancel: AbortSignal;
 }): Promise<void> {
-  const { runtime, vaultPath, branch, pollIntervalMs, cancel } = input;
+  const { runtime, vaultPath, pollIntervalMs, cancel } = input;
+
+  // `lastKind` suppresses repeated log lines when the daemon enters an
+  // unworkable state mid-run (detached HEAD, no-commits). The operator
+  // gets one notification on transition, not one per poll tick.
+  let lastKind: string | null = null;
 
   while (!cancel.aborted) {
-    const drift = await detectDrift(vaultPath, branch);
-    if (drift !== null) {
-      await runOneAdoption({
+    const drift = await detectDrift(vaultPath);
+    if (drift.kind === "drift") {
+      await runOneAdoptionWithErrorHandling({
         runtime,
-        vaultPath,
-        branch,
-        drift,
+        drift: drift.info,
       });
+    } else if (drift.kind === "detached-head" && lastKind !== "detached-head") {
+      // Operator detached HEAD mid-run. Log once on transition and keep
+      // polling — they can re-attach and the loop picks back up.
+      console.error(
+        "dome serve: HEAD became detached; pausing adoption until a branch is checked out again.",
+      );
     }
+    // `in-sync` and `no-commits` are quiet steady states; no log spam.
+    lastKind = drift.kind;
 
     if (cancel.aborted) break;
     await sleep(pollIntervalMs, cancel);
@@ -237,48 +247,23 @@ async function pollLoop(input: {
 }
 
 /**
- * One adoption cycle: build the Proposal, compose sinks against the
- * runtime's open DBs, call `adopt`, print a one-line summary.
+ * One adoption cycle wrapper: call the shared `runOneAdoption`, print
+ * the one-line summary, swallow throws.
  *
  * Errors from `adopt()` (an unhandled throw from the engine, processor
  * runtime, or projection sink) are caught here so a single bad commit
  * does not crash the daemon. The error surfaces on stderr; the loop
  * continues to the next iteration.
  */
-async function runOneAdoption(input: {
+async function runOneAdoptionWithErrorHandling(input: {
   readonly runtime: VaultRuntime;
-  readonly vaultPath: string;
-  readonly branch: string;
-  readonly drift: { readonly base: CommitOid; readonly head: CommitOid };
+  readonly drift: DriftInfo;
 }): Promise<void> {
-  const { runtime, vaultPath, branch, drift } = input;
-
-  const proposal = makeManualProposal({
-    base: drift.base,
-    head: drift.head,
-    branch,
-  });
-
-  const sinks = buildSqliteSinks({
-    projectionDb: runtime.projectionDb,
-    outboxDb: runtime.outboxDb,
-    adoptedCommit: drift.head,
-    applyPatch: applyPatchPlaceholder,
-    captureView: captureViewPlaceholder,
-  });
+  const { runtime, drift } = input;
 
   try {
-    const result = await adopt({
-      vault: {
-        path: vaultPath,
-        config: { git: { auto_commit_workflows: true } },
-      },
-      proposal,
-      runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
-      sinks,
-      ledger: runtime.ledgerDb,
-    });
-    printAdoptionLine(branch, result);
+    const result = await runOneAdoption({ runtime, drift });
+    printAdoptionLine(drift.branch, result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`dome serve: adoption threw: ${msg}`);
@@ -286,43 +271,11 @@ async function runOneAdoption(input: {
 }
 
 /**
- * Compare HEAD against `refs/dome/adopted/<branch>`. Returns the
- * `(base, head)` range when adoption needs to run, or `null` when:
- *   - HEAD is `null` (no commits yet — vault is empty).
- *   - The adopted ref is initialized AND already at HEAD (steady state).
- *
- * Uninitialized adopted ref → returns `(HEAD, HEAD)` so the adoption
- * loop runs an empty-diff iteration. `adopt()` converges on iter 1
- * with no engine writes, then advances `refs/dome/adopted/<branch>`
- * from `null` → HEAD via `setAdoptedRef`'s initialization path. The
- * next poll sees a now-initialized ref equal to HEAD and returns null.
- */
-async function detectDrift(
-  vaultPath: string,
-  branch: string,
-): Promise<{ base: CommitOid; head: CommitOid } | null> {
-  const head = await currentSha(vaultPath);
-  if (head === null) return null;
-  const adopted = await getAdoptedRef(vaultPath, branch);
-
-  if (adopted === null) {
-    // Uninitialized adopted ref. Run the empty-diff init so subsequent
-    // polls have a base to diff against.
-    return { base: commitOid(head), head: commitOid(head) };
-  }
-  if (adopted === head) {
-    // Steady state — already adopted.
-    return null;
-  }
-  return { base: commitOid(adopted), head: commitOid(head) };
-}
-
-/**
  * Render the adoption result as a single line on stdout. The format
  * mirrors the operator-facing summary the serve banner sets up:
  *
- *   ✓ adopted main: 41a98c2 (2 effects, 0 diagnostics, 1 iteration)
- *   ✗ blocked main: 3 diagnostics — first: <message>
+ *   dome serve: adopted main 41a98c2 (0 diagnostics, 1 iteration)
+ *   dome serve: blocked main: 3 diagnostics — first: <message>
  *
  * Diagnostics counts are total; the first blocking diagnostic's message
  * is appended for the blocked case so the operator sees what to fix
@@ -346,41 +299,6 @@ function printAdoptionLine(branch: string, result: AdoptionResult): void {
     `dome serve: blocked ${branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"}${blockerMsg}`,
   );
 }
-
-/**
- * `applyPatch` placeholder for v1.0. Logs + drops the effect; does NOT
- * throw. The first-party processor v1.0 ships is diagnostic-only, so
- * this path is dead under normal operation; a third-party bundle that
- * emits a PatchEffect lands here.
- *
- * The candidate-tree mutator (the real `applyPatch`) lands in v1.1
- * alongside garden-phase patch routing.
- */
-const applyPatchPlaceholder: ApplyEffectSinks["applyPatch"] = async ({
-  effect,
-  processorId,
-}) => {
-  console.warn(
-    `dome serve: PatchEffect from ${processorId} (mode: ${effect.mode}) dropped — ` +
-      `applyPatch not yet wired in v1.0. The candidate-tree mutator lands in v1.1.`,
-  );
-};
-
-/**
- * `captureView` placeholder for v1.0. Logs + drops the effect; does NOT
- * throw. View-phase processors don't run inside the adoption loop in
- * v1.0, so this path only fires if an adoption-phase processor mis-
- * declares a ViewEffect (the broker rejects it via phase-mismatch
- * before reaching the sink, in practice).
- */
-const captureViewPlaceholder: ApplyEffectSinks["captureView"] = async ({
-  processorId,
-}) => {
-  console.warn(
-    `dome serve: ViewEffect from ${processorId} dropped — captureView ` +
-      `not yet wired in v1.0. View-effect delivery to CLI/MCP lands in v1.1.`,
-  );
-};
 
 /**
  * Sleep for `ms` milliseconds, returning early when `signal` aborts.

@@ -173,24 +173,41 @@ Exit codes: 0 on adopted; 1 on blocked; 2 on engine error or vault open failure.
 
 ## `dome sync`
 
-`dome sync` is the explicit catch-up command. It constructs a Proposal from `adopted..HEAD` and runs it through the adoption loop. Use it when:
+`dome sync` is the explicit catch-up command. It constructs a Proposal from `adopted..HEAD` (or runs an empty-diff init when the adopted ref is uninitialized) and runs it through the adoption loop. Use it when:
 - The user accumulated working-tree commits manually and wants the engine to catch up.
 - The daemon (`dome serve`) was off and missed events; `dome sync` reconciles.
-- A scheduled processor's cron interval elapsed and the engine wasn't running.
+- A scheduled processor's cron interval elapsed and the engine wasn't running (v1.1).
 
 ```bash
 cd ~/vaults/work && dome sync
-cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD after manual confirmation
+cd ~/vaults/work && dome sync --json
+cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD (v1.1 — see below)
 ```
 
-`dome sync` is semantically `dome submit` with the working-tree HEAD as the head and source kind `"manual"`. It additionally triggers garden-phase processors whose schedule cursors are due (per [[wiki/specs/projection-store]] §"schedule_cursors").
+`dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands (`src/cli/commands/sync-shared.ts`).
 
-Output:
+The four outcomes:
+
+- **adopted** — adoption succeeded; the adopted ref advanced to HEAD. Exit 0.
+- **blocked** — adoption ran but block-severity diagnostics prevented the adopted ref from advancing. Exit 1; stderr lists the first five blockers.
+- **in-sync** — HEAD already equals the adopted ref; no work done. Exit 0.
+- **error** — detached HEAD or no commits; the adopted-ref substrate cannot operate. Exit 64 (EX_USAGE).
+
+Output (text mode):
+
 ```text
-dome sync: adopted main: 9c1e002..41a98c2 (proposal prop_1748..., 3 user commits, 2 engine commits, 1 scheduled processor fired)
+dome sync: adopted main: 9c1e002..41a98c2 (0 diagnostics, 1 iteration)
 ```
 
-When blocked, the output names the blocking diagnostics in the same shape as `dome submit`.
+Output (`--json`):
+
+```json
+{"status":"adopted","branch":"main","base":"9c1e002...","head":"41a98c2...","adoptedRef":"41a98c2...","iterations":1,"closureCommit":null,"diagnostics":[]}
+```
+
+Garden-phase scheduled-trigger processors are deferred to v1.1; `dome sync` in v1.0 runs the adoption-phase fixed-point loop only.
+
+The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place via `setAdoptedRef`, but the user-facing bypass lands with the adopted-ref-divergence recovery flow in v1.1. Until then, a divergent HEAD surfaces as a blocking diagnostic and the operator resolves manually (e.g., `git reset --hard <adopted-ref>` to realign).
 
 The CLI `dome reconcile` shipped in v0.5+phase1+phase3 as a deprecated alias for `dome sync`. **The alias is retired in v1.** Callers that still invoke `dome reconcile` see "unknown command" and a one-line pointer to `dome sync`.
 

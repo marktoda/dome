@@ -58,9 +58,34 @@ Creates a new Dome vault at `<path>` (defaults to `.`):
 
 Exit codes: 0 on success; 1 if directory exists with a vault (`config.yaml` present); 2 on usage error.
 
-### `dome sync [--force-advance]`
+### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [--force-advance]`
 
-See [[wiki/specs/adoption]] §"`dome sync`".
+The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome/adopted/<branch>`, construct a `manual`-source Proposal, run it through the engine's adoption loop, print the result, exit. This is the manual trigger for users who don't want a `dome serve` daemon running continuously.
+
+Composition (v1.0):
+
+1. Resolve `vaultPath` (default cwd) and `bundlesRoot` (default `<vaultPath>/.dome/extensions`).
+2. Inspect drift via the shared `detectDrift` helper (same code path `dome serve` polls in a loop).
+3. Branch on drift outcome:
+   - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
+   - **no commits** → exit 64 with a stderr message asking for an initial commit.
+   - **in-sync** → print `dome sync: already in sync (<head> on <branch>)`, exit 0.
+   - **drift** → open the runtime, run `runOneAdoption`, print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
+4. Close the runtime on the way out.
+
+`--json` emits a single JSON object on stdout suitable for cross-tool consumption:
+
+```json
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"diagnostics":[]}
+```
+
+`status` is one of `"adopted" | "blocked" | "in-sync" | "error"`. The `error` field is only present on the usage-error variant.
+
+The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD surfaces as a blocking diagnostic from `setAdoptedRef` and the operator resolves manually.
+
+Exit codes: 0 on adopted / in-sync; 1 on blocked or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits.
+
+See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
 ### `dome status [--json]`
 

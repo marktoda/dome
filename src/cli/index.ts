@@ -2,12 +2,12 @@
 //
 // Dome CLI entry — v1 minimal surface.
 //
-// Commands shipped in v1.0: init, doctor, status, serve. The full CLI
-// surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships the most-
-// essential to prove the v1 stack works end-to-end. The user-facing
-// `dome sync` (one-shot catch-up) lands in Phase 11c; the wrong-shape
+// Commands shipped in v1.0: init, doctor, status, serve, sync. The full
+// CLI surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships the
+// most-essential to prove the v1 stack works end-to-end. The wrong-shape
 // `dome submit` was retired in Phase 11a (the canonical write path is
-// `git commit` + the `dome serve` watcher daemon).
+// `git commit` + the `dome serve` watcher daemon, with `dome sync` as
+// the one-shot catch-up for users who don't want a long-running daemon).
 //
 // This file's two responsibilities:
 //
@@ -30,6 +30,7 @@ import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
+import { runSync } from "./commands/sync";
 
 // ----- runCli ---------------------------------------------------------------
 
@@ -59,6 +60,8 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
       return runServe(args);
     case "status":
       return runStatus(args);
+    case "sync":
+      return runSync(args);
     case "help":
     case "--help":
     case "-h":
@@ -84,6 +87,7 @@ function printUsage(): void {
       "         [--limit <n>] [--json]    Subjects: runs, diagnostics, questions, outbox.",
       "  serve [--poll-interval-ms <n>]   Run the commit-watcher daemon.",
       "  status [--json]                  Read-only adoption snapshot.",
+      "  sync [--json]                    One-shot catch-up: adopt working-tree HEAD.",
       "",
       "Common flags:",
       "  --vault <path>                   Override the vault path (default: cwd).",

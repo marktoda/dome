@@ -1,0 +1,322 @@
+// Phase 11c — end-to-end tests for `dome sync`.
+//
+// `dome sync` is the one-shot catch-up: detect drift between working-tree
+// HEAD and `refs/dome/adopted/<branch>`, run a single adoption cycle if
+// drift is present, print the result, exit. It reuses the shared drift
+// + adoption helpers in `src/cli/commands/sync-shared.ts` with `dome serve`.
+//
+// Four tests cover the four outcome shapes:
+//
+//   1. Empty-diff init: fresh vault with one commit, no adopted ref →
+//      first `dome sync` advances the adopted ref to HEAD (exit 0).
+//
+//   2. Already in sync: run sync twice → second invocation prints
+//      "already in sync" without growing the ledger (exit 0).
+//
+//   3. Drift adoption: make a second commit → sync → adopted ref
+//      advances to the new HEAD (exit 0).
+//
+//   4. Detached HEAD refusal: detach HEAD → sync refuses with exit 64
+//      (EX_USAGE) and a clear error message.
+//
+// Fixture pattern mirrors `tests/cli/serve.test.ts`: a tmpdir vault with
+// a seed commit and the shipped `dome.lint` bundle copied into
+// `.dome/extensions/`. No mocks; the real git boundary, the real engine,
+// the real sqlite handles.
+
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { copyFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { parseArgs } from "../../src/cli/args";
+import { runSync } from "../../src/cli/commands/sync";
+
+import { commit, currentSha, initRepo } from "../../src/git";
+import { getAdoptedRef } from "../../src/adopted-ref";
+import { openLedgerDb } from "../../src/ledger/db";
+import { queryRuns } from "../../src/ledger/runs";
+
+// ----- Paths ----------------------------------------------------------------
+
+const THIS_FILE = fileURLToPath(import.meta.url);
+const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
+const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+
+// ----- Console capture ------------------------------------------------------
+
+type Captured = { out: string[]; err: string[] };
+let captured: Captured = { out: [], err: [] };
+let origLog: typeof console.log = console.log;
+let origErr: typeof console.error = console.error;
+let origWarn: typeof console.warn = console.warn;
+let consoleSilenced = false;
+
+function silenceConsole(): void {
+  captured = { out: [], err: [] };
+  if (consoleSilenced) return;
+  origLog = console.log;
+  origErr = console.error;
+  origWarn = console.warn;
+  console.log = (...parts: unknown[]) => {
+    captured.out.push(parts.map((p) => String(p)).join(" "));
+  };
+  console.error = (...parts: unknown[]) => {
+    captured.err.push(parts.map((p) => String(p)).join(" "));
+  };
+  console.warn = (...parts: unknown[]) => {
+    captured.err.push(parts.map((p) => String(p)).join(" "));
+  };
+  consoleSilenced = true;
+}
+
+function restoreConsole(): void {
+  if (!consoleSilenced) return;
+  console.log = origLog;
+  console.error = origErr;
+  console.warn = origWarn;
+  consoleSilenced = false;
+}
+
+// ----- Fixture --------------------------------------------------------------
+
+type Fixture = {
+  vaultPath: string;
+  bundlesRoot: string;
+  initialSha: string;
+  cleanup: () => Promise<void>;
+};
+
+/**
+ * Build a fresh tmpdir vault: a real git repo with one seed commit + the
+ * shipped `dome.lint` bundle copied into `.dome/extensions/`.
+ */
+async function makeFixture(): Promise<Fixture> {
+  const vaultPath = mkdtempSync(join(tmpdir(), "sync-test-"));
+  await initRepo(vaultPath);
+  await mkdir(join(vaultPath, "wiki"), { recursive: true });
+
+  await writeFile(join(vaultPath, "wiki/seed.md"), "seed\n");
+  const initialSha = await commit({
+    path: vaultPath,
+    message: "init\n",
+    files: ["wiki/seed.md"],
+  });
+
+  await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
+  await mkdir(join(vaultPath, ".dome", "extensions"), { recursive: true });
+  await copyTree(
+    join(SHIPPED_BUNDLES_ROOT, "dome.lint"),
+    join(vaultPath, ".dome", "extensions", "dome.lint"),
+  );
+
+  return {
+    vaultPath,
+    bundlesRoot: SHIPPED_BUNDLES_ROOT,
+    initialSha,
+    cleanup: async () => {
+      await rm(vaultPath, { recursive: true, force: true });
+    },
+  };
+}
+
+async function copyTree(src: string, dst: string): Promise<void> {
+  const s = await stat(src);
+  if (!s.isDirectory()) {
+    await mkdir(dirname(dst), { recursive: true });
+    await copyFile(src, dst);
+    return;
+  }
+  await mkdir(dst, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcChild = join(src, entry.name);
+    const dstChild = join(dst, entry.name);
+    if (entry.isDirectory()) await copyTree(srcChild, dstChild);
+    else if (entry.isFile()) await copyFile(srcChild, dstChild);
+  }
+}
+
+const fixtures: Fixture[] = [];
+afterEach(async () => {
+  restoreConsole();
+  while (fixtures.length > 0) {
+    const f = fixtures.pop();
+    if (f !== undefined) await f.cleanup();
+  }
+});
+
+// ----- Test 1: empty-diff init ----------------------------------------------
+
+describe("runSync empty-diff init", () => {
+  test("fresh vault: first sync advances adopted ref to HEAD; exit 0", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    // Pre-condition: adopted ref is uninitialized.
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBeNull();
+
+    const args = parseArgs([
+      "sync",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+    ]);
+    const code = await runSync(args);
+    expect(code).toBe(0);
+
+    // Post-condition: adopted ref now equals the seed commit.
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    // Stdout should include "adopted" (the success line).
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("adopted");
+    expect(outBlob).toContain("main");
+  }, 10_000);
+});
+
+// ----- Test 2: already in sync ----------------------------------------------
+
+describe("runSync idempotent", () => {
+  test("second sync prints 'already in sync'; exit 0; ledger unchanged", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const args = parseArgs([
+      "sync",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+    ]);
+
+    // First sync: empty-diff init.
+    const code1 = await runSync(args);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    // Snapshot ledger row count after the first run.
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const ledger1 = await openLedgerDb({ path: ledgerPath });
+    if (!ledger1.ok) throw new Error(`could not open ledger: ${ledger1.error.kind}`);
+    const runsAfterFirst = queryRuns(ledger1.value.db, {}).length;
+    ledger1.value.db.close();
+
+    // Clear captured stdout for a clean assertion on the second call.
+    captured.out = [];
+    captured.err = [];
+
+    // Second sync: should be a no-op.
+    const code2 = await runSync(args);
+    expect(code2).toBe(0);
+
+    // Output asserts on "already in sync".
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("already in sync");
+
+    // Ledger count must not have grown (no new runs queued / executed).
+    const ledger2 = await openLedgerDb({ path: ledgerPath });
+    if (!ledger2.ok) throw new Error(`could not reopen ledger: ${ledger2.error.kind}`);
+    try {
+      const runsAfterSecond = queryRuns(ledger2.value.db, {}).length;
+      expect(runsAfterSecond).toBe(runsAfterFirst);
+    } finally {
+      ledger2.value.db.close();
+    }
+  }, 10_000);
+});
+
+// ----- Test 3: drift adoption -----------------------------------------------
+
+describe("runSync drift adoption", () => {
+  test("new commit: sync advances adopted ref to new HEAD; exit 0", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const args = parseArgs([
+      "sync",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+    ]);
+
+    // First sync: empty-diff init advances adopted to initial commit.
+    const code1 = await runSync(args);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    // Make a second commit. The adopted ref is now behind HEAD.
+    await writeFile(join(f.vaultPath, "wiki/new.md"), "new page\n");
+    const newSha = await commit({
+      path: f.vaultPath,
+      message: "add wiki/new.md\n",
+      files: ["wiki/new.md"],
+    });
+    expect(newSha).not.toBe(f.initialSha);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    captured.out = [];
+    captured.err = [];
+
+    // Second sync: should detect drift and advance the adopted ref.
+    const code2 = await runSync(args);
+    expect(code2).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(newSha);
+
+    // Output should include "adopted" + the new sha prefix.
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("adopted");
+    expect(outBlob).toContain(newSha.slice(0, 7));
+
+    // Ledger must be clean: no failed or running rows leftover.
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const ledger = await openLedgerDb({ path: ledgerPath });
+    if (!ledger.ok) throw new Error(`could not reopen ledger: ${ledger.error.kind}`);
+    try {
+      const failed = queryRuns(ledger.value.db, { status: "failed" });
+      expect(failed.length).toBe(0);
+      const running = queryRuns(ledger.value.db, { status: "running" });
+      expect(running.length).toBe(0);
+    } finally {
+      ledger.value.db.close();
+    }
+  }, 10_000);
+});
+
+// ----- Test 4: detached HEAD refusal ----------------------------------------
+
+describe("runSync detached HEAD", () => {
+  test("refuses with exit 64 (EX_USAGE) and a clear error message", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    // Detach HEAD by writing the seed OID directly into `.git/HEAD`
+    // (instead of `ref: refs/heads/main`). isomorphic-git treats raw-OID
+    // HEAD as detached; the git boundary's `currentBranch` returns null.
+    const sha = await currentSha(f.vaultPath);
+    if (sha === null) throw new Error("expected initial sha");
+    await writeFile(join(f.vaultPath, ".git", "HEAD"), `${sha}\n`);
+
+    const args = parseArgs([
+      "sync",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+    ]);
+    const code = await runSync(args);
+    expect(code).toBe(64);
+
+    // Stderr should explain the detached-HEAD condition.
+    const errBlob = captured.err.join("\n");
+    expect(errBlob).toContain("detached");
+  }, 5_000);
+});
