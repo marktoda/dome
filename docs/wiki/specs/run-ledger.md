@@ -91,7 +91,7 @@ failed      Processor.run() threw or returned an invalid Effect; the run was aba
 skipped    Idempotency dedup short-circuited the run (cached result reused per processor_versions_hash).
 ```
 
-The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to `succeeded` / `failed` at the end. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome doctor --orphan-runs` flags them; `dome doctor --orphan-runs --fail` transitions them to `failed`.
+The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to `succeeded` / `failed` at the end. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome show runs --status running` lists them. Recovery follows the engine-asks model (v1.x): the deferred `dome.health.detect-orphan-runs` scheduled garden-phase processor emits a `QuestionEffect` per orphan row; the user answers `fail` (transition to `failed`) or `keep` (waiting on a long-running operation) via `dome answer`; the answer-handler processor applies the mutation.
 
 ## Cost tracking
 
@@ -102,11 +102,12 @@ The cost surface drives `model.invoke.maxDailyCostUsd` enforcement (per [[wiki/s
 ## Query surface (CLI)
 
 ```text
-dome doctor --show runs               # recent runs across all processors
-dome doctor --show runs --processor dome.intake.extract-capture
-dome doctor --show runs --status failed --since 24h
-dome doctor --show cost               # per-processor spend, current day + last 7 days
-dome doctor --show orphan-runs        # runs stuck in "running" state (engine crash)
+dome show runs                        # recent runs across all processors
+dome show runs --processor dome.intake.extract-capture
+dome show runs --status failed --since 24h
+dome show cost                        # per-processor spend, current day + last 7 days (v1.x subject)
+dome show runs --status running       # runs stuck in "running" state (engine crash); the dedicated
+                                      # `orphan-runs` subject ships with the dome.health bundle (v1.x)
 ```
 
 The ledger is also queryable via the MCP server's `dome.runs.list` tool when MCP is mounted (per [[wiki/specs/mcp-surface]]).

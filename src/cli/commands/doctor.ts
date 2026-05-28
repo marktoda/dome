@@ -1,187 +1,49 @@
-// cli/commands/doctor: the `dome doctor --show <subject>` command.
+// cli/commands/doctor: the `dome doctor` command — reserved for v1.x.
 //
-// Per [[wiki/specs/cli]] §"dome doctor", the full surface has many
-// subjects (`runs`, `cost`, `outbox`, `diagnostics`, `questions`,
-// `orphan-runs`, `recent-activity`, `recent-processor-divergence`) plus
-// repair flags. Phase 9 ships the four read-only subjects backed by
-// existing v1 query surfaces:
+// Per [[wiki/specs/cli]] §"dome doctor [--repair]" (reserved for v1.x),
+// `dome doctor` is the engine-substrate health-check verb. v1.0 reserves
+// the command name and ships no checks; v1.x implements the surface as
+// a view-phase command-triggered processor (`dome.health.render-report`)
+// in the deferred `dome.health` first-party bundle, with `--repair`
+// applying the safe subset of mitigations via answer-handler processors.
 //
-//   - `--show runs`        → `queryRuns(ledger, { limit })`
-//   - `--show diagnostics` → `queryDiagnostics(projection)`
-//   - `--show questions`   → `queryQuestions(projection)`
-//   - `--show outbox`      → `queryOutbox(outbox)`
+// v1.0 placeholder behavior:
+//   - `dome doctor`        → prints a one-line notice and exits 0.
+//   - `dome doctor --repair` → exits 64 with the same pointer.
 //
-// Read-only: this command opens the runtime (so the three DBs are
-// initialized) but does not submit a Proposal. Exit codes:
-//   - 0 always on a clean read — including empty result sets.
-//   - 1 on runtime-open failure.
-//   - 64 on usage error (unknown subject, missing --show).
-//
-// House-style notes:
-//   - `--limit N` caps the row count. Default 20. Applied at the SQL
-//     layer for `runs`; for the projection / outbox surfaces (which
-//     don't take a `limit` arg in the current query API) the cap is
-//     applied post-fetch via array slicing.
-//   - `--json` emits structured rows.
-
-import { resolve } from "node:path";
-
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
-import { queryRuns } from "../../ledger/runs";
-import { queryDiagnostics } from "../../projections/diagnostics";
-import { queryQuestions } from "../../projections/questions";
-import { queryOutbox } from "../../outbox/dispatch";
-
-import { resolveShippedBundlesRoot } from "./sync-shared";
+// Why this is a stub rather than the v0.5 surface: the previous
+// `dome doctor --show <subject>` shape was renamed to `dome show
+// <subject>` in the v1.0 CLI surface recut (the read half lives there);
+// the `--repair` / `--outbox-replay` / `--reset-quarantined-processors`
+// flags are retired in favor of the engine-asks model (engine emits
+// QuestionEffects on substrate-stuck conditions; user answers via
+// `dome answer <question-id>`; the `dome.health` bundle's answer-handler
+// processors apply the mutation). See [[wiki/specs/cli]] for the full
+// design.
 
 import type { ParsedArgs } from "../args";
-import { formatJson, formatTable } from "../format";
 
-// ----- Constants ------------------------------------------------------------
-
-const DEFAULT_LIMIT = 20;
-const VALID_SUBJECTS = new Set<string>([
-  "runs",
-  "diagnostics",
-  "questions",
-  "outbox",
-]);
-
-// ----- runDoctor ------------------------------------------------------------
+const RESERVED_NOTICE =
+  "dome doctor: no health checks ship in v1.0; reserved for v1.x. " +
+  "For the v1.0 read surface, use `dome show <subject>`. " +
+  "See `docs/wiki/specs/cli.md` §`dome doctor` for the design.";
 
 /**
- * Execute `dome doctor --show <subject>`. Returns the exit code.
+ * Execute `dome doctor`. v1.0 stub.
+ *
+ * - Without flags: prints the reserved notice, exits 0.
+ * - With `--repair`: exits 64 (the repair surface is not implemented).
  */
 export async function runDoctor(args: ParsedArgs): Promise<number> {
-  const showFlag = args.flags["show"];
-  if (typeof showFlag !== "string") {
+  if (args.flags["repair"] === true) {
     console.error(
-      "dome doctor: --show <subject> is required. Subjects: runs, diagnostics, questions, outbox.",
+      "dome doctor --repair: not implemented in v1.0. " +
+        "The --repair surface is reserved for v1.x (engine-substrate " +
+        "mitigations via the dome.health bundle's answer-handler processors). " +
+        "See `docs/wiki/specs/cli.md` §`dome doctor`.",
     );
     return 64;
   }
-  if (!VALID_SUBJECTS.has(showFlag)) {
-    console.error(
-      `dome doctor: unknown subject '${showFlag}'. Available: runs, diagnostics, questions, outbox.`,
-    );
-    return 64;
-  }
-
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
-
-  const limit = parseLimit(args.flags["limit"]);
-  if (limit === null) {
-    console.error(
-      "dome doctor: --limit must be a positive integer.",
-    );
-    return 64;
-  }
-
-  // Default `bundlesRoot` is the SDK's shipped first-party bundles.
-  // Override via `--bundles-root <path>` for vault-local third-party
-  // bundles or testing.
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
-  if (!runtimeResult.ok) {
-    console.error(
-      `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
-    );
-    return 1;
-  }
-  const runtime = runtimeResult.value;
-
-  try {
-    const rows = collectRows(showFlag, runtime, limit);
-    if (args.flags["json"] === true) {
-      console.log(formatJson(rows));
-    } else {
-      console.log(`dome doctor --show ${showFlag}:`);
-      console.log(formatTable(rows));
-    }
-    return 0;
-  } finally {
-    await runtime.close();
-  }
-}
-
-// ----- internals ------------------------------------------------------------
-
-type Row = Record<string, unknown>;
-
-/**
- * Dispatch on the subject. Each branch queries the relevant surface and
- * projects to a flat `Record<string, unknown>` shape suitable for table
- * rendering (no nested objects in the displayed columns).
- *
- * The subject is already narrowed to one of the four valid strings.
- */
-function collectRows(
-  subject: string,
-  runtime: VaultRuntime,
-  limit: number,
-): ReadonlyArray<Row> {
-  switch (subject) {
-    case "runs": {
-      const runs = queryRuns(runtime.ledgerDb, { limit });
-      return runs.map((r) => ({
-        id: r.id,
-        processor: r.processorId,
-        phase: r.phase,
-        status: r.status,
-        started_at: r.startedAt,
-        duration_ms: r.durationMs,
-        proposal: r.proposalId,
-      }));
-    }
-    case "diagnostics": {
-      const all = queryDiagnostics(runtime.projectionDb);
-      return all.slice(0, limit).map((d) => ({
-        severity: d.severity,
-        code: d.code,
-        message: d.message,
-      }));
-    }
-    case "questions": {
-      const all = queryQuestions(runtime.projectionDb);
-      return all.slice(0, limit).map((q) => ({
-        idempotency_key: q.idempotencyKey,
-        question: q.question,
-        options: q.options ?? "-",
-      }));
-    }
-    case "outbox": {
-      const all = queryOutbox(runtime.outboxDb);
-      return all.slice(0, limit).map((o) => ({
-        id: o.id,
-        capability: o.capability,
-        status: o.status,
-        attempts: o.attempts,
-        enqueued_at: o.enqueuedAt,
-        last_error: o.lastError,
-      }));
-    }
-    default:
-      // Unreachable — VALID_SUBJECTS guard above enforces this.
-      return [];
-  }
-}
-
-/**
- * Parse the `--limit` flag. Returns the default when absent, the parsed
- * integer when valid, or `null` on a malformed value (caller treats as
- * usage error).
- */
-function parseLimit(raw: string | boolean | undefined): number | null {
-  if (raw === undefined || raw === true) return DEFAULT_LIMIT;
-  if (raw === false) return null;
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n <= 0) return null;
-  return n;
+  console.log(RESERVED_NOTICE);
+  return 0;
 }
