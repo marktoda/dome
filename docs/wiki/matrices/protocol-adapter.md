@@ -7,13 +7,12 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Protocol adapter matrix
 
-Per-protocol map of how consumer surfaces (CLI, MCP, future HTTP / voice / web) project from `AbstractSurface` (per [[wiki/specs/sdk-surface]] §"Consumer surfaces"). Each adapter consumes the same protocol-agnostic surface and renders its operations into a protocol-specific wire format.
+Per-protocol map of how consumer surfaces (CLI, MCP, future HTTP / voice / web) project from `AbstractSurface` (per [[wiki/specs/sdk-surface]] §"Consumer surfaces"). Read/query/view adapters consume the same protocol-agnostic surface; engine-control operations such as `sync` remain CLI-only in v1.
 
 ## The matrix
 
 | Operation | AbstractSurface API | CLI (v1, primary) | MCP (v1, additive) | HTTP (v2, designed-for) | Voice (v2, designed-for) |
 |---|---|---|---|---|---|
-| **Submit Proposal** | `surface.submit(input)` | `dome submit` / `dome sync` | `dome.submit` tool | `POST /proposals` | (n/a — voice clients route through processors, not direct Submit) |
 | **Query adopted state** | `surface.query(input)` | `dome query <text>` | `dome.query` tool | `GET /query?q=...` | Speech-to-text query, response rendered as audio |
 | **Read document** | `surface.read(path)` | `dome cat <path>` (deferred to v1.1; today: file read) | `dome.read_document` tool | `GET /documents/<path>` | "Read me my notes about X" routed through `dome.read_document` |
 | **Resolve wikilink** | `surface.resolveWikilink(link)` | n/a (not a CLI surface) | `dome.resolve_wikilink` tool | `GET /wikilinks/<link>` | n/a |
@@ -37,7 +36,7 @@ buildAbstractSurface(vault) → AbstractSurface
 @dome/sdk/voice (v2)  renderVoice(surface)          → voice handler
 ```
 
-Each renderer is a *thin* protocol adapter — typically 100–200 lines. It maps protocol-specific input shapes to AbstractSurface calls and translates AbstractSurface output to protocol-specific responses. The engine work happens once, at the AbstractSurface boundary; renderers don't re-implement query logic or Submit logic.
+Each renderer is a *thin* protocol adapter — typically 100–200 lines. It maps protocol-specific input shapes to AbstractSurface calls and translates AbstractSurface output to protocol-specific responses. The engine work happens once, at the AbstractSurface boundary; renderers don't re-implement query or command logic.
 
 ## Why the split
 
@@ -45,7 +44,7 @@ Three properties:
 
 1. **Adding a new protocol is one file.** A v2 GraphQL adapter ships as `renderGraphql(surface)` in `@dome/sdk/graphql` — no changes to the engine, no changes to existing renderers.
 2. **Engine has no transitive dependency on protocol packages.** Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — `@dome/sdk` core doesn't import `@modelcontextprotocol/sdk`; `@dome/sdk/mcp` does.
-3. **Multi-surface coherence is structural.** Mobile, desktop, voice clients all consume `AbstractSurface` via direct SDK import. They construct their own UX over the same submit / query / read / commands surface — without per-shell back-and-forth at the engine.
+3. **Multi-surface coherence is structural.** Mobile, desktop, voice clients all consume `AbstractSurface` via direct SDK import. They construct their own UX over the same query / read / commands surface, while write/adoption flows remain Git-native — without per-shell back-and-forth at the engine.
 
 ## CLI as the v1 primary
 

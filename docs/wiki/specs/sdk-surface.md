@@ -19,9 +19,9 @@ A Vault, once unwrapped:
 
 - Knows its `path` (absolute directory).
 - Loads `.dome/page-types.yaml` and `.dome/config.yaml`.
-- Mounts every extension bundle under `.dome/extensions/<bundle>/` and registers their processors.
+- Mounts the SDK-shipped first-party bundles plus any configured vault-local bundles and registers their processors.
 - Holds the engine, processor runtime, projection store, run ledger, and outbox.
-- Exposes the Recall API and the Submit API.
+- Exposes read/Recall APIs plus engine-control operations such as `sync`, `rebuild`, and adoption status.
 
 A Vault is opened, used, drained, and closed in one process lifetime.
 
@@ -33,9 +33,6 @@ interface Vault {
   readonly config: VaultConfig;
   readonly pageTypes: PageTypesConfig;
   readonly bundles: readonly ExtensionBundle[];
-
-  // Submit — the only write path
-  submitProposal(input?: SubmitInput): Promise<Result<AdoptionResult, ToolError>>;
 
   // Recall — read-only queries
   query(input: QueryInput): Promise<QueryResult>;
@@ -53,12 +50,9 @@ interface Vault {
 }
 ```
 
-The surface is **read or submit** — there is no `vault.tools.writeDocument(...)`. To change vault state, callers either:
+The public surface is **read or engine control** — there is no `vault.tools.writeDocument(...)`, `vault.write(...)`, or public `vault.submitProposal(...)`. To change vault state in v1.0, external callers write markdown and create normal git commits. The engine-internal daemon (`dome serve`) or one-shot catch-up command (`dome sync`) compares `refs/dome/adopted/<branch>` to `refs/heads/<branch>`, constructs the Proposal internally, and runs the adoption loop.
 
-1. Write directly to the working tree (vim, Obsidian, agent's `Write`) and then call `vault.submitProposal()` to trigger adoption, OR
-2. Call `vault.submitProposal({ patch: <UnifiedDiff> })` to submit a patch as the proposal head without touching the working tree.
-
-Both paths go through the same engine. This is the structural enforcement of [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
+Garden processors that emit PatchEffects also do not call a public write method. The engine converts the patch into an internal garden-source Proposal and routes it through the same adoption loop. This is the structural enforcement of [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 
 #### Vault lifecycle
 
@@ -66,7 +60,6 @@ Both paths go through the same engine. This is the structural enforcement of [[w
 openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
    │
    │   in-process use:
-   │     vault.submitProposal(...)   — write path
    │     vault.query(...)             — read path
    │     vault.sync(...)              — engine adoption loop
    │
@@ -77,7 +70,7 @@ openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
 
 `drainProcessors()` is idempotent — re-callable any number of times. It awaits both the engine's garden-phase processor queue and any in-flight outbox dispatch attempts.
 
-`close()` is one-shot. It calls `drainProcessors()`, then releases the SQLite handles for projection store / run ledger / outbox, then sets a `closed` flag so subsequent `submitProposal` / `query` / `sync` calls return `Result.err({ kind: "vault-closed" })`.
+`close()` is one-shot. It calls `drainProcessors()`, then releases the SQLite handles for projection store / run ledger / outbox, then sets a `closed` flag so subsequent `query` / `sync` / `rebuild` calls return `Result.err({ kind: "vault-closed" })`.
 
 #### Composable construction
 
@@ -104,21 +97,15 @@ A Processor is code that reads a vault snapshot and returns effects. The only be
 
 An Effect is what a processor returns. Seven kinds; closed taxonomy. See [[wiki/specs/effects]] for the full spec.
 
-## Submit API
+## Submission API
 
-The single write API on the SDK.
+There is no public submission API in v1.0. The Proposal type remains one of the four core concepts, but Proposal construction is engine-internal:
+
+- `dome serve` and `dome sync` synthesize manual-source Proposals from the git range `refs/dome/adopted/<branch>..refs/heads/<branch>`.
+- Garden-phase PatchEffects synthesize garden-source Proposals inside the engine.
+- Hosted-protected mode (v1.5) will synthesize Proposals from PR webhook payloads.
 
 ```ts
-interface SubmitInput {
-  readonly head?: CommitOid;
-  // ↑ optional — defaults to working-tree HEAD; supply to submit a specific commit
-  readonly patch?: UnifiedDiff;
-  // ↑ optional — supply to construct a Proposal from a patch without touching the working tree
-  readonly source?: ProposalSource;
-  // ↑ optional — defaults to inferred per environment ($DOME_HARNESS → "agent", else "manual")
-  readonly metadata?: ProposalMetadata;
-}
-
 interface AdoptionResult {
   readonly proposalId: string;
   readonly adopted: boolean;
@@ -129,7 +116,7 @@ interface AdoptionResult {
 }
 ```
 
-`submitProposal` constructs the Proposal, hands it to the engine, runs the fixed-point adoption loop, and returns the result. Blocked Proposals return `adopted: false` with the diagnostics; the user resolves and resubmits.
+The SDK does not export `SubmitInput`, Proposal constructors, or `submitProposal` from `src/index.ts`. External callers participate by writing/committing markdown and invoking `sync` when they need to block on adoption. See [[wiki/specs/proposals]] §"Submission API".
 
 ## Recall API
 
@@ -320,10 +307,10 @@ The shipped-defaults catalog has a single source of truth in the SDK: `src/shipp
 
 Every consumer shell that builds against Dome (the v1-shipped CLI and MCP server today; v2+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
 
-- **Submit access** — the `submitProposal` API for write paths.
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
 - **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
+- **Engine status/control where appropriate** — CLI-only operations such as `sync`, `rebuild`, `serve`, and `status` that are not generic protocol tools in v1.
 
 The aggregation is split across two layers — **`AbstractSurface`** (protocol-agnostic; lives in `@dome/sdk` core) and **per-protocol renderers** (one per consumer protocol; live in their respective entrypoints). This is the structural shape that makes multi-surface work cheap: a new protocol adapter ships as one render function, not as a parallel aggregation.
 
@@ -331,7 +318,6 @@ The aggregation is split across two layers — **`AbstractSurface`** (protocol-a
 
 ```ts
 interface AbstractSurface {
-  readonly submit: (input: SubmitInput) => Promise<Result<AdoptionResult, ToolError>>;
   readonly query: (input: QueryInput) => Promise<QueryResult>;
   readonly read: (path: string) => Promise<Result<Document, ToolError>>;
   readonly commands: ReadonlyArray<CommandDescriptor>;  // view-phase command processors
@@ -352,9 +338,9 @@ Each consumer protocol adapts `AbstractSurface` to its wire format:
 
 | Adapter | Entry point | Wire format |
 |---|---|---|
-| MCP | `renderMcp(surface): McpSurface` in `@dome/sdk/mcp` | MCP protocol — tools (`dome.submit`, `dome.query`), resources, prompts |
-| CLI | `runCli(surface, argv)` in `@dome/sdk/cli` | argv → command processor invocation |
-| HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Submit + Recall |
+| MCP | `renderMcp(surface): McpSurface` in `@dome/sdk/mcp` | MCP protocol — read/query tools, resources, prompts |
+| CLI | `runCli(surface, argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
+| HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Recall + future native-surface write controls |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
 
 The protocol renderers consume `AbstractSurface`, never `Vault` directly. This is what makes [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] structurally true — `@dome/sdk` core builds an `AbstractSurface` with no MCP / LLM transitive dependency; `@dome/sdk/mcp` lifts it into MCP shape; `@dome/sdk/cli` lifts it into a Commander program.
@@ -363,7 +349,7 @@ The protocol renderers consume `AbstractSurface`, never `Vault` directly. This i
 
 To keep the core small, the SDK explicitly does not ship:
 
-- **A direct-mutation API.** No `vault.tools.writeDocument(...)`, no `vault.write(path, content)`. All writes go through `submitProposal`. Pinned by [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
+- **A direct-mutation API.** No `vault.tools.writeDocument(...)`, no `vault.write(path, content)`, no public `vault.submitProposal(...)`. External writes are normal git commits adopted by `dome serve` / `dome sync`; garden writes are internal Proposals. Pinned by [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 - **A Hook concept.** Behavior that observes events is a processor with a `signal:` trigger.
 - **A Workflow concept.** Prompts + tool-binding loops are garden-phase processors with `model.invoke` capability.
 - **A Tool concept.** Mutation primitives are PatchEffects emitted by processors.

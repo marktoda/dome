@@ -13,7 +13,7 @@ The canonical map of "what an extension bundle contributes to a vault." Rows are
 
 | `Status` value | Location convention | Lockstep behavior |
 |---|---|---|
-| `shipped` | `assets/extensions/<bundle>/` (in the SDK package, copied into vaults at install time) | Iterate; assert each named filename exists. |
+| `shipped` | `assets/extensions/<bundle>/` in the SDK package (resolved at runtime; not copied into vaults) | Iterate; assert each named filename exists. |
 | `test-fixture` | `tests/fixtures/extensions/<bundle>/` (only in the SDK repo, never shipped or installed) | Iterate; assert each named filename exists. |
 | `anticipated` | n/a (documentation-of-intent for future-pressure bundles) | Skip — rows with this status are non-normative future pressure. |
 
@@ -39,14 +39,14 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 | **`dome.index`** *(first-party)* | `shipped` | — | — | `update-index.ts` | — | `read: wiki/**`; `owns.path: ["index.md"]`; `patch.auto: ["index.md"]` |
 | **`dome.log`** *(first-party)* | `shipped` | — | — | `append-log.ts` | — | `owns.path: ["log.md"]`; `patch.auto: ["log.md"]` |
 | **`dome.links`** *(first-party)* | `shipped` | — | `preamble.md` | `cross-reference.ts` | — | `read: wiki/**`; `patch.propose: ["wiki/**"]` |
-| **`dome.intake`** *(first-party)* | `shipped` | — | `preamble.md` | `extract-capture.ts`, `inbox-stale-check.ts` | — | `read: wiki/**, raw/**, inbox/**`; `patch.auto: ["wiki/generated/**", "inbox/processed/**"]`; `patch.propose: ["wiki/**"]`; `graph.write: ["dome.tasks", "dome.people"]`; `model.invoke: { maxDailyCostUsd: 5 }` |
-| **`dome.daily`** *(first-party)* | `shipped` | `daily`, `weekly` | `preamble.md` | `create-daily.ts`, `create-weekly.ts`, `carry-forward.ts`, `agenda-with.ts`, `week-review.ts`, `prep.ts`, `append-followup.ts` | — | `read: wiki/**`; `patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"]`; `model.invoke: { maxDailyCostUsd: 2 }` |
+| **`dome.intake`** *(first-party)* | `shipped` | — | `preamble.md` | `extract-capture.ts`, `inbox-stale-check.ts` | — | `read: wiki/**, raw/**, inbox/**`; `patch.auto: ["wiki/generated/**", "inbox/processed/**"]`; `patch.propose: ["wiki/**"]`; `graph.write: ["dome.tasks", "dome.people"]`; `question.ask: ["dome.intake"]`; `job.enqueue: ["dome.daily.*"]`; `model.invoke: { maxDailyCostUsd: 5 }` |
+| **`dome.daily`** *(first-party)* | `shipped` | `daily`, `weekly` | `preamble.md` | `create-daily.ts`, `create-weekly.ts`, `carry-forward.ts`, `agenda-with.ts`, `week-review.ts`, `prep.ts`, `append-followup.ts` | — | `read: wiki/**`; `patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"]`; `question.ask: ["dome.daily"]`; `model.invoke: { maxDailyCostUsd: 2 }` |
 | **`dome.lint`** *(first-party)* | `shipped` | — | — | `lint-report.ts`, `apply-finding.ts` | — | `read: ["**"]`; `patch.propose: ["**"]`; `model.invoke: { maxDailyCostUsd: 1 }` |
 | **`dome.search`** *(first-party)* | `shipped` | — | — | `index-text.ts`, `semantic-search.ts`, `export-context.ts` | — | `read: wiki/**`; `graph.write: ["dome.search"]`; `model.invoke: { maxDailyCostUsd: 1 }` |
 | **`dome.migrate`** *(first-party)* | `shipped` | — | — | `migrate-vault.ts` | — | `read: ["**"]`; `patch.auto: ["**"]` (migrations need broad reach by design) |
 | **`hello-world`** *(test fixture)* | `test-fixture` | `hello` | `preamble.md` | `say-hello.ts` | — | `read: wiki/**`; `patch.auto: ["wiki/hellos/**"]` |
 | **`acme.calendar-sync`** *(third-party — anticipated)* | `anticipated` | — | `preamble.md` | `sync-events.ts`, `event-to-task.ts` | `calendar.write.ts`, `calendar.read.ts` | `read: wiki/**`; `external: ["calendar.write", "calendar.read"]`; `patch.propose: ["wiki/dailies/**"]` |
-| **`community.spaced-repetition`** *(third-party — anticipated)* | `anticipated` | `flashcard` | `preamble.md` | `extract-cards.ts`, `schedule-review.ts` | — | `read: wiki/**`; `graph.write: ["community.spaced-repetition"]`; `patch.auto: ["wiki/flashcards/**"]` |
+| **`community.spaced-repetition`** *(third-party — anticipated)* | `anticipated` | `flashcard` | `preamble.md` | `extract-cards.ts`, `schedule-review.ts` | — | `read: wiki/**`; `graph.write: ["community.spaced-repetition"]`; `job.enqueue: ["community.spaced-repetition.*"]`; `patch.auto: ["wiki/flashcards/**"]` |
 
 ## Reading the matrix
 

@@ -119,6 +119,10 @@ Every processor must be idempotent: running it twice on the same `(snapshot, inp
 
 Non-idempotent processors are a design defect, not a runtime exception. The engine treats them as if they were idempotent; non-determinism produces undefined behavior in the fixed-point loop. See [[wiki/gotchas/processor-idempotency]].
 
+## Execution semantics
+
+Every invocation is wrapped by the runtime contract in [[wiki/specs/processor-execution]]: one RunRecord, a bounded phase-specific timeout, schema validation for returned effects, typed model-invoke failures, and explicit retry/quarantine behavior for garden runs. This page defines what a processor is allowed to declare and return; the execution spec defines how the engine calls it and records the outcome.
+
 ## Registration
 
 Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A bundle's `processors/` directory contains TypeScript files exporting Processor objects. The runtime loads them at `openVault` time.
@@ -167,7 +171,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 
 The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].
 
-The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` copies them into `<vault>/.dome/extensions/` so a fresh vault is fully functional. Users can disable a bundle by removing its directory or by `enabled: false` in `<vault>/.dome/config.yaml`.
+The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` does not copy first-party bundle code into the vault; it writes activations and grants in `<vault>/.dome/config.yaml`, and the runtime resolves shipped bundles from the SDK package. Users disable a first-party bundle with `enabled: false` in `<vault>/.dome/config.yaml`; `<vault>/.dome/extensions/` is reserved for vault-local third-party bundles or overrides.
 
 ## What a processor cannot do
 
@@ -198,6 +202,7 @@ See the brainstorm doc for the full plan including dependencies, tests, and the 
 ## Related
 
 - [[wiki/specs/effects]] — what processors return
+- [[wiki/specs/processor-execution]] — how processor invocations run, fail, retry, and drain
 - [[wiki/specs/adoption]] — when adoption-phase processors run
 - [[wiki/specs/capabilities]] — what limits a processor's effect reach
 - [[wiki/specs/projection-store]] — what view-phase processors read

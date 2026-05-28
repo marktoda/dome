@@ -150,8 +150,8 @@ extensions:
   dome.index:    { enabled: true,  grants: { owns.path: ["index.md"], patch.auto: ["index.md"] } }
   dome.log:      { enabled: true,  grants: { owns.path: ["log.md"], patch.auto: ["log.md"] } }
   dome.links:    { enabled: true,  grants: { patch.propose: ["wiki/**"] } }
-  dome.intake:   { enabled: true,  grants: { model.invoke: true, patch.auto: ["wiki/generated/**", "inbox/processed/**"] } }
-  dome.daily:    { enabled: true,  grants: { patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"] } }
+  dome.intake:   { enabled: true,  grants: { model.invoke: true, patch.auto: ["wiki/generated/**", "inbox/processed/**"], question.ask: ["dome.intake"], job.enqueue: ["dome.daily.*"] } }
+  dome.daily:    { enabled: true,  grants: { patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"], question.ask: ["dome.daily"] } }
   dome.lint:     { enabled: true,  grants: { patch.propose: ["**"] } }
   dome.search:   { enabled: true,  grants: { graph.write: ["dome.search"] } }
   dome.migrate:  { enabled: true,  grants: { patch.auto: ["**"] } }
@@ -199,7 +199,7 @@ Gitignored. Rebuildable. Three SQLite files plus markers:
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
 - `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 
-Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting any of `.dome/state/` files and running `dome rebuild` (for projection.db) or restarting the daemon (for runs.db and outbox.db) reconverges. The outbox is the exception — wiping `outbox.db` loses pending external actions; users should not delete it, only the projection.
+Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting `projection.db` and running `dome rebuild` reconverges the derived query cache. `runs.db` and `outbox.db` are persistent operational state, not rebuildable projections: wiping `runs.db` loses historical run audit, and wiping `outbox.db` loses pending external actions. Users should delete only `projection.db` unless they are intentionally discarding operational history.
 
 ## Git repository structure
 
@@ -241,7 +241,7 @@ Four properties make the layout self-defending:
 
 1. **Category by path.** Adding a new page type doesn't require schema work — create `wiki/<plural>/`, declare in `page-types.yaml extensions:`, write a processor that handles the type's signals.
 2. **`raw/` immutability is structural.** Pinned by RAW_IS_IMMUTABLE; broker refuses; dome.markdown emits blocking diagnostic.
-3. **`.dome/state/` is wipeable.** Anything Dome derives can be rebuilt from markdown + git. The user can `rm -rf .dome/state/` and the vault recovers.
+3. **`projection.db` is wipeable.** Derived query state can be rebuilt from markdown + git. Operational files in `.dome/state/` (`runs.db`, `outbox.db`) are persistent audit/retry state and should be preserved unless the user intentionally discards that history.
 4. **`notes/` asymmetry keeps the wiki clean.** User-authored prose stays in notes; the wiki ontology stays curated by processors.
 
 ## Related
@@ -251,7 +251,7 @@ Four properties make the layout self-defending:
 - [[wiki/specs/run-ledger]] — `runs.db` under `.dome/state/`
 - [[wiki/specs/page-schema]] — frontmatter contract per page type
 - [[wiki/specs/sdk-surface]] §"Extension bundles" — `.dome/extensions/<bundle>/` shape
-- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — derived state is rebuildable
+- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — markdown + git are canonical knowledge; `.dome/state/` is derived/operational
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — the vault root is a git repo
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox bucket files are expected to move
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw files cannot be patched

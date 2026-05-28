@@ -51,7 +51,7 @@ Everything else — first-party features, third-party plugins, integrations — 
 - **A compiler over a markdown vault.** A background daemon (`dome serve`) watches for changes, runs the adoption loop on each Proposal, fires garden processors after, surfaces diagnostics. The compiler is what makes the vault self-maintaining.
 - **A typed markdown vault.** Raw notes, sources, and clips on one side; a compiled wiki of entities, concepts, sources, and syntheses on the other. Bidirectional wikilinks. Index and log files as committed projections. Standard Obsidian-compatible markdown — open it in any editor and everything works.
 - **A small, portable SDK.** Four concepts in the core — **Vault, Proposal, Processor, Effect** — and nothing else. The same SDK powers the desktop CLI, embeds in a native mobile or web app, and drives headless processor runs. The compiler runs anywhere the SDK runs.
-- **A CLI for explicit operations.** `dome submit` proposes a change; `dome sync` runs the adoption loop; `dome query` reads from adopted state; `dome lint` walks the wiki and writes a report of findings; `dome rebuild` rebuilds the projection store from markdown. `dome stats`, `dome doctor`, `dome init`. Invokable from any shell.
+- **A CLI for explicit operations.** `dome sync` adopts committed draft state; `dome query` reads from adopted state; `dome lint` walks the wiki and writes a report of findings; `dome rebuild` rebuilds the projection store from markdown. `dome stats`, `dome doctor`, `dome init`. Invokable from any shell.
 - **A first-party extension catalog.** Every Dome behavior — markdown parsing, indexing, cross-referencing, intake compilation, daily notes, search — ships as a `dome.*` extension bundle. The same registration path third-party extensions use. There is no "core feature" / "plugin feature" asymmetry.
 
 ## Two surface patterns
@@ -74,7 +74,7 @@ Native surfaces optimize for friction (designed flows). Agentic harnesses optimi
 
 ## Principles
 
-**1. Markdown is the source of truth.** Anything Dome derives — the projection store, the run ledger, the outbox, the index, the log — can be rebuilt from markdown alone. No proprietary database, no vendor lock-in. If Dome disappears tomorrow, your vault is fully usable in any markdown editor.
+**1. Markdown + git are the knowledge source of truth.** The vault's committed markdown plus git history are the durable user-owned substrate. Projection data such as search indexes, extracted facts, diagnostics, and committed catalogues can be re-derived from adopted markdown and deterministic processors. Operational history such as failed runs and pending external actions lives in the run ledger and outbox; it is audit/recovery state, not canonical knowledge.
 
 **2. Every write is a Proposal; every Proposal goes through the engine.** There is no "trusted internal write" path. The same adoption loop runs against a human edit, an agent's write, a garden processor's auto-patch, an intake hook's compilation. One write contract; one adoption transaction; one set of diagnostics.
 
@@ -108,7 +108,7 @@ But the constraint that makes Dome work for them — *the compiler does the stru
 
 ## Shape over time
 
-**v1 — The engine model.** A TypeScript SDK on Bun, a CLI (`dome submit`, `dome sync`, `dome query`, `dome lint`, `dome rebuild`, `dome stats`, `dome doctor`, `dome init`, `dome migrate`), a first-party extension catalog (`dome.*` bundles for markdown, index, log, links, intake, daily, lint, search), an MCP server preserved as one Recall-protocol adapter, a Bun.sqlite projection store + run ledger + outbox. Claude Code is the first agentic harness; `AGENTS.md` is the orientation surface; Obsidian browses the vault; git is the history. The author of Dome is its first user.
+**v1 — The engine model.** A TypeScript SDK on Bun, a CLI (`dome sync`, `dome query`, `dome lint`, `dome rebuild`, `dome stats`, `dome doctor`, `dome init`, `dome migrate`), a first-party extension catalog (`dome.*` bundles for markdown, index, log, links, intake, daily, lint, search), an MCP server preserved as one Recall-protocol adapter, a Bun.sqlite projection store + run ledger + outbox. Claude Code is the first agentic harness; `AGENTS.md` is the orientation surface; Obsidian browses the vault; git is the history. The author of Dome is its first user.
 
 Notably, this repo's own `docs/` directory is itself a Dome vault — proof that the pattern generalizes beyond personal notes to systems-thinking substrate. Specs, invariants, behavior matrices, gotchas, syntheses about the project all live as Dome pages, maintained the same way a personal vault is.
 

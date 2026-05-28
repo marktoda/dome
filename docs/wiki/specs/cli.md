@@ -7,7 +7,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # CLI
 
-This spec is normative for Dome's command-line interface. The CLI is **one protocol adapter** over [[wiki/specs/sdk-surface]] §"AbstractSurface" — argv routes to Submit, Recall, or a view-phase command processor.
+This spec is normative for Dome's command-line interface. The CLI is **one protocol adapter** over [[wiki/specs/sdk-surface]] §"AbstractSurface" for reads and view commands, plus CLI-only engine-control verbs such as `sync`, `serve`, and `rebuild`.
 
 ## The CLI surface
 
@@ -41,7 +41,7 @@ dome run-processor <id> [--args ...]
 
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
-- **Submit:** `dome sync` — the catch-up write path that triggers an adoption run.
+- **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
 - **Recall:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. `dome doctor` and `dome answer` are **reserved for v1.x** per §"dome doctor" and §"dome answer" below; only `dome rebuild` and `dome serve` ship in v1.0.
@@ -113,7 +113,7 @@ The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome
 
 Composition (v1.0):
 
-1. Resolve `vaultPath` (default cwd) and `bundlesRoot` (default `<vaultPath>/.dome/extensions`).
+1. Resolve `vaultPath` (default cwd) and `bundlesRoot` (default SDK-shipped `assets/extensions/` via `resolveShippedBundlesRoot()`; optional override to `<vaultPath>/.dome/extensions` for vault-local bundles).
 2. Inspect drift via the shared `detectDrift` helper (same code path `dome serve` polls in a loop).
 3. Branch on drift outcome:
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
@@ -347,7 +347,7 @@ Runs the commit-watcher daemon — the canonical write path per [[v1]] §13.2 ("
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the three operational databases (`projection.db`, `outbox.db`, `runs.db`) and loads the extension bundles from `<vault>/.dome/extensions/`.
+1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the three operational databases (`projection.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved bundles root (SDK-shipped `assets/extensions/` by default; vault-local `.dome/extensions/` only when explicitly selected).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
@@ -390,14 +390,14 @@ The substrate scaffold catches missing pieces:
 
 ## Why the CLI surface is rich (not minimal)
 
-The CLI is the primary v1 surface for agentic harnesses. Every operation the harness might want to invoke explicitly — `submit`, `query`, `lint`, `stats`, `doctor` — is a named CLI command, not a generic dispatch path. The structural payoff: a harness's AGENTS.md teaches "here are the named operations; invoke `dome <name>`"; the agent reaches for them like it reaches for `git status` or `npm test`. Rich, named, well-documented CLI commands match the agentic-harness mental model better than a single generic dispatcher.
+The CLI is the primary v1 surface for agentic harnesses. Every operation the harness might want to invoke explicitly — `sync`, `query`, `lint`, `stats`, `doctor` — is a named CLI command, not a generic dispatch path. The structural payoff: a harness's AGENTS.md teaches "here are the named operations; invoke `dome <name>`"; the agent reaches for them like it reaches for `git status` or `npm test`. Rich, named, well-documented CLI commands match the agentic-harness mental model better than a single generic dispatcher.
 
-The MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed routing; the same operations are reachable through `dome.submit`, `dome.query`, `dome.run_command`. Either surface works; the CLI is the v1 default.
+The MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views are reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
 
 ## Related
 
 - [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
 - [[wiki/specs/harnesses]] — when the CLI vs MCP earns its keep.
-- [[wiki/specs/adoption]] — what `dome submit` / `dome sync` / `dome status` consult.
+- [[wiki/specs/adoption]] — what `dome sync` / `dome status` consult.
 - [[wiki/specs/processors]] — view-phase command processors.
 - [[wiki/matrices/protocol-adapter]] — CLI as one row in the adapter map.

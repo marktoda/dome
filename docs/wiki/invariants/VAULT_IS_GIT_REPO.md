@@ -28,13 +28,13 @@ tier: axiom
 
 **Operational notes:**
 
-- Engine commits land atomically per Proposal as closure commits with the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. User native edits remain uncommitted unless the user explicitly commits or `dome submit` runs (which constructs a Proposal from the working-tree state and adopts it).
+- Engine commits land atomically per Proposal as closure commits with the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. User native edits remain draft until the user commits them; `dome sync` / `dome serve` then construct internal Proposals from committed branch state and adopt them.
 - `.git/` is treated as `category: external` by the engine — never modified by Dome, never enumerated as part of vault content.
 - The `.gitignore` shipped by `dome init` excludes `<vault>/.dome/state/` from version control (the projection store, run ledger, outbox, and quarantine state are derived per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]). Everything else under the vault — including `<vault>/.dome/config.yaml`, `<vault>/.dome/page-types.yaml`, and `<vault>/.dome/extensions/` — is tracked.
 
 **Related:**
 - [[wiki/specs/vault-layout]] §"Git repository structure"
-- [[wiki/specs/cli]] §"dome init", §"dome submit", §"dome sync"
+- [[wiki/specs/cli]] §"dome init", §"dome sync"
 - [[wiki/specs/adoption]] — the fixed-point loop that consumes Proposals constructed from git state
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — engine commits and their provenance trailers
 - [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — native writes flow through adoption via the watcher

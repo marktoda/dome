@@ -50,7 +50,7 @@ CREATE TABLE runs (
   phase                TEXT NOT NULL,            -- "adoption" | "garden" | "view"
   input_commit         TEXT NOT NULL,            -- the snapshot OID the processor ran against
   output_commit        TEXT,                     -- nullable; set when run contributed to a closure commit
-  status               TEXT NOT NULL,            -- "queued" | "running" | "succeeded" | "failed" | "skipped"
+  status               TEXT NOT NULL,            -- "queued" | "running" | "succeeded" | "failed" | "skipped" | "timed_out" | "cancelled"
   effect_hashes_json   TEXT NOT NULL,            -- JSON-encoded string[] (sha256 of each emitted effect)
   cost_usd             REAL,                     -- nullable; populated by model.invoke usage
   duration_ms          INTEGER,                  -- nullable; null while running
@@ -86,12 +86,14 @@ Capability uses are written by the broker (per [[wiki/specs/capabilities]] §"En
 ```text
 queued      Engine enqueued the processor invocation; not yet running.
 running     Processor.run() is executing.
-succeeded   Processor.run() returned without throwing; effects were emitted (zero or more).
-failed      Processor.run() threw or returned an invalid Effect; the run was abandoned.
-skipped    Idempotency dedup short-circuited the run (cached result reused per processor_versions_hash).
+succeeded   Processor.run() returned without throwing and all emitted Effects validated.
+failed      Processor.run() threw or returned invalid output; the run was abandoned.
+skipped     Idempotency dedup short-circuited the run (cached result reused per processor_versions_hash).
+timed_out   The invocation exceeded its phase timeout; late effects were discarded.
+cancelled   The engine intentionally stopped the run during shutdown or operator intervention.
 ```
 
-The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to `succeeded` / `failed` at the end. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome inspect runs --status running` lists them. Recovery follows the engine-asks model (v1.x): the deferred `dome.health.detect-orphan-runs` scheduled garden-phase processor emits a `QuestionEffect` per orphan row; the user answers `fail` (transition to `failed`) or `keep` (waiting on a long-running operation) via `dome answer`; the answer-handler processor applies the mutation.
+The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to a terminal state at the end. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome inspect runs --status running` lists them. Recovery follows the engine-asks model (v1.x): the deferred `dome.health.detect-orphan-runs` scheduled garden-phase processor emits a `QuestionEffect` per orphan row; the user answers `fail` (transition to `failed`) or `keep` (waiting on a long-running operation) via `dome answer`; the answer-handler processor applies the mutation. See [[wiki/specs/processor-execution]] for timeout, cancellation, retry, and quarantine semantics.
 
 ## Cost tracking
 
@@ -133,6 +135,7 @@ The engine prunes rows older than the policy at the start of each `dome sync`. P
 ## Related
 
 - [[wiki/specs/processors]] — runs are processor invocations
+- [[wiki/specs/processor-execution]] — run lifecycle, timeouts, validation, retries, quarantine
 - [[wiki/specs/effects]] — effect hashes index effect provenance
 - [[wiki/specs/capabilities]] — capability uses join here
 - [[wiki/specs/adoption]] §"Engine commit trailers" — the git-side surface

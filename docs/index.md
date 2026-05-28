@@ -6,15 +6,16 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Specs
 
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); the Submit + Recall API; extension bundles; tiered feature model; consumer surfaces via `AbstractSurface`; dependency list.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); Recall + engine-control surfaces; extension bundles; tiered feature model; consumer surfaces via `AbstractSurface`; dependency list.
 - [[wiki/specs/proposals]] — The Proposal type; the only write path; local-eventual and hosted-protected construction.
 - [[wiki/specs/processors]] — The Processor type; three phases (adoption / garden / view); triggers; capabilities; first-party `dome.*` processors; idempotency.
+- [[wiki/specs/processor-execution]] — Processor invocation state machine; timeouts; output validation; model structured-output failures; retries; quarantine; drain/shutdown.
 - [[wiki/specs/effects]] — The seven-kind Effect taxonomy (Patch / Diagnostic / Fact / Question / Job / ExternalAction / View); SourceRef shape; exhaustive routing.
-- [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome submit` / `dome sync` / `dome status`.
-- [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); outbox; rebuild path.
+- [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
+- [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
 - [[wiki/specs/capabilities]] — Eight capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
-- [[wiki/specs/cli]] — The Dome CLI: submit / sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
+- [[wiki/specs/cli]] — The Dome CLI: sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
 - [[wiki/specs/mcp-surface]] — MCP server: one Recall/Submit protocol adapter over `AbstractSurface`; non-primary in v1.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + Submit).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
@@ -37,9 +38,9 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files must move/delete on processing; lingering files surface as diagnostics.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by `dome.log`'s append-only adoption processor.
-- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Derived state rebuildable from markdown; `.dome/state/` is explicitly derived.
+- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
-- [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every mutation routes through `submitProposal` and the adoption loop; no direct-write SDK API.
+- [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* PatchEffect refuses raw/.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
 
@@ -60,7 +61,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
 - [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Garden-LLM processors handle AI SDK v6 inference; revisit on next AI SDK major bump.
-- [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after a `submitProposal` may not see garden-phase follow-on; queries default to adopted, not HEAD.
+- [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after a git-native write may not see garden-phase follow-on; queries default to adopted, not HEAD.
 - [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries Zod-validate; corruption surfaces as state-corruption diagnostics.
 - [[wiki/gotchas/capability-downgrade-surprise]] — `patch.auto` exceeding grant downgrades to `patch.propose` with a diagnostic.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes; both produce Proposals; adoption loop sequences them.

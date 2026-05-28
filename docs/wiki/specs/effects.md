@@ -77,7 +77,7 @@ interface DiagnosticEffect {
 | `info` | Recorded in the run ledger; not surfaced to the user unless they ask. |
 | `warning` | Recorded; surfaced in `dome status` and `dome lint` output; non-blocking. |
 | `error` | Recorded; surfaced; non-blocking but visible. |
-| `block` | **Blocks adoption.** The engine emits `engine.adoption.blocked`, refuses to advance the adopted ref, and surfaces the diagnostic via `dome submit` exit code 1. The user resolves and re-submits. |
+| `block` | **Blocks adoption.** The engine emits `engine.adoption.blocked`, refuses to advance the adopted ref, and surfaces the diagnostic via `dome sync` exit code 1 or the `dome serve` run ledger. The user resolves, commits the fix, and syncs again. |
 
 In the garden phase, `block` is treated as `error` — garden processors cannot block adoption (they run *after* it). In the view phase, only `info` and `warning` are emitted.
 
@@ -109,7 +109,7 @@ type Literal =
   | { kind: "date";   value: string };  // ISO-8601
 ```
 
-**Routing:** the engine writes the fact to `projection_store.facts` under the processor's declared `graph.write` namespace (the part of `predicate` before the first dot, e.g., `dome.tasks.*` → namespace `dome.tasks`). If the namespace is not granted, the effect is rejected with a capability diagnostic. Pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
+**Routing:** the engine writes the fact to `projection.db.facts` under the processor's declared `graph.write` namespace (the part of `predicate` before the first dot, e.g., `dome.tasks.*` → namespace `dome.tasks`). If the namespace is not granted, the effect is rejected with a capability diagnostic. Pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
 **Mandatory sourceRefs:** facts without `sourceRefs.length > 0` are rejected at validation. The "no evidence, no durable claim" property ([[wiki/specs/proposals]] introduction) is structurally enforced here.
 
@@ -127,7 +127,7 @@ interface QuestionEffect {
 }
 ```
 
-**Routing:** written to `projection_store.questions`. The user surfaces them via `dome questions` (CLI) or the query API (`dome query --questions`). When the user answers, the answer is written back to the originating page (via a garden-emitted PatchEffect from `dome.intake`) and the question row is marked resolved.
+**Routing:** written to `projection.db.questions` when the processor holds `question.ask`. The user surfaces them via `dome inspect questions` (CLI) or the query API (`dome query --questions`). When the user answers, the answer is written back to the originating page (via a garden-emitted PatchEffect from `dome.intake`) or handled by the relevant answer-handler processor, and the question row is marked resolved.
 
 The `idempotencyKey` is what keeps the question table from filling with duplicates when a garden processor runs repeatedly on the same input.
 
@@ -146,7 +146,7 @@ interface JobEffect {
 }
 ```
 
-**Routing:** the engine enqueues the job in the runtime queue (an in-memory `p-queue` plus persistent `projection_store.scheduled_jobs` for survival across restarts). The job runs as a garden-phase invocation of the named processor; same effect-routing applies.
+**Routing:** the engine enqueues the job in the runtime queue (an in-memory `p-queue` plus persistent `projection.db.scheduled_jobs` for survival across restarts) when the processor holds `job.enqueue` for the target processor. The job runs as a garden-phase invocation of the named processor; same effect-routing applies.
 
 **Why a job vs a direct call:** a processor emits JobEffect when it wants follow-on work to happen *after* the current adoption loop completes, with its own RunRecord and capability scope. This is how `dome.intake` schedules `dome.daily.refresh-brief` without synchronously calling it.
 
@@ -164,7 +164,7 @@ interface ExternalActionEffect {
 }
 ```
 
-**Routing:** the engine inserts a row in `projection_store.outbox` with `status: "pending"`, then attempts the external call via the capability handler registered for `capability`. On success, the row updates to `status: "sent"` with the external system's id. On failure, retries per `maxAttempts` (default 3) with exponential backoff; terminal failure marks `status: "failed"`. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
+**Routing:** the engine inserts a row in `outbox.db` with `status: "pending"`, then attempts the external call via the capability handler registered for `capability`. On success, the row updates to `status: "sent"` with the external system's id. On failure, retries per `maxAttempts` (default 3) with exponential backoff; terminal failure marks `status: "failed"`. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
 
 **No fire-and-forget.** The engine never attempts an external call without an outbox row preceding it. This is what makes retries idempotent (the idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure follows the engine-asks model: the engine emits a `QuestionEffect` on `engine.outbox.terminal-failure`; the user answers via `dome answer <id> retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]] §"dome answer"); the deferred `dome.health` bundle's answer-handler processor applies the resulting mutation. v1.0 surfaces the failed rows via `dome inspect outbox`; the full answer-handler loop ships with `dome.health` in v1.x.
 
@@ -223,8 +223,8 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | PatchEffect (mode: "propose") | `patch.propose` for every path the patch touches |
 | DiagnosticEffect | (none — every processor may emit) |
 | FactEffect | `graph.write` for the namespace prefix of `predicate` |
-| QuestionEffect | `graph.write` for namespace `dome.questions` (the engine grants this to any processor that has any `graph.write`) |
-| JobEffect | `job.enqueue` (default: granted to all processors for processors in the same bundle) |
+| QuestionEffect | `question.ask` for the question namespace/channel |
+| JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
 | ViewEffect | (none — view emission is the phase's purpose; the broker enforces phase compatibility instead) |
 

@@ -39,7 +39,7 @@ Three properties fall out of routing every write through a Proposal:
 
 1. **One write path.** Humans, agents, garden processors, and intake hooks all produce Proposals. The engine doesn't need to distinguish "trusted internal write" from "untrusted external write" at the application boundary — every write goes through the same loop with the same diagnostic and capability checks.
 2. **Adoption is a transaction.** A Proposal either adopts cleanly (the loop reaches a fixed point and the adopted ref advances) or it blocks atomically (diagnostics surface; ref stays where it was). There is no partially-adopted state.
-3. **Provenance is structural.** Every adopted commit traces to a Proposal id and a Proposal source. `git log --grep="Dome-Proposal:"` yields the engine history; the run ledger ([[wiki/specs/run-ledger]]) joins on Proposal id for cross-source debugging.
+3. **Provenance is structural.** Every adopted commit traces to a Proposal id and a Proposal source. `git log --grep="^Dome-Run:"` yields the engine history; the run ledger ([[wiki/specs/run-ledger]]) joins RunRecords to Proposal ids for cross-source debugging.
 
 This is pinned by [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 

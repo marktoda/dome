@@ -7,7 +7,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # Adoption
 
-This spec is normative for Dome's adoption substrate — the `refs/dome/adopted/<branch>` ref, the **fixed-point adoption loop**, the Dome-* trailer convention on engine commits, and the CLI commands (`dome submit`, `dome sync`, `dome status`) that surface adoption to consumers.
+This spec is normative for Dome's adoption substrate — the `refs/dome/adopted/<branch>` ref, the **fixed-point adoption loop**, the Dome-* trailer convention on engine commits, and the CLI commands (`dome sync`, `dome status`) that surface adoption to consumers.
 
 Adoption is the heart of the engine model. Every write — human, agent, garden, scheduled — flows through it. The loop is what makes the vault self-coherent.
 
@@ -136,40 +136,11 @@ User out-of-band commits (vim, Obsidian, agent's `Write`) do **not** carry these
 
 Pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. The trailers and the run ledger are dual surfaces for the same provenance — see [[wiki/specs/run-ledger]] §"Why a separate ledger".
 
-## `dome submit`
+## User-facing adoption entrypoints
 
-The user-facing entrypoint for writing into the vault.
+In v1.0 the user-facing write contract is Git-native. Users and harnesses write markdown, create normal git commits on the source branch, then either let `dome serve` observe the branch ref or run `dome sync` to block on adoption. There is no public `dome submit` command and no public SDK `submitProposal` API in v1.0.
 
-```bash
-cd ~/vaults/work && dome submit                       # submit current working-tree state
-cd ~/vaults/work && dome submit --source-kind agent   # override source inference
-cd ~/vaults/work && dome submit --patch ./change.patch  # submit a patch without touching the working tree
-```
-
-Composition:
-
-1. If `--patch` is supplied, apply the patch to a fresh branch `refs/heads/dome/proposal/<rand>`; use that branch tip as the Proposal head.
-2. Otherwise, use the working tree's HEAD as the Proposal head (the user's commits or working-tree changes since last sync).
-3. Construct a `Proposal` with `base = refs/dome/adopted/<branch>`, `head = <Proposal head>`, `source = <inferred or overridden>`.
-4. Hand the Proposal to the engine's adoption loop.
-5. Print the `AdoptionResult` to stdout.
-
-Output on success:
-
-```text
-dome submit: adopted main: 9c1e002..41a98c2 (proposal prop_1748..., 2 iterations, 5 effects, 1 closure commit)
-```
-
-Output on block:
-
-```text
-dome submit: blocked main: proposal prop_1748... (3 diagnostics)
-  - [block] dome.markdown.wikilink-unresolved: [[wiki/entities/danny-tan]] not found (notes/2026-05-27.md:14)
-  - [block] dome.markdown.frontmatter-invalid: missing required field `type:` (wiki/concepts/cohesion.md:3)
-  - [block] dome.lint.duplicate-stable-id: task #task-1748 appears in two pages
-```
-
-Exit codes: 0 on adopted; 1 on blocked; 2 on engine error or vault open failure.
+The retired `dome submit` shape existed in earlier drafts as a direct Proposal-construction command, including patch submission. It was removed because it created a second external write vocabulary beside plain git. The engine still constructs Proposals internally; the public boundary is `git commit` plus `dome sync` / `dome serve`.
 
 ## `dome sync`
 
@@ -270,7 +241,7 @@ The local-eventual and hosted-protected modes are conceptually the same loop:
 |---|---|---|
 | Adopted cursor | `refs/dome/adopted/<branch>` | `refs/heads/main` |
 | Proposal head | working-tree HEAD | PR head commit |
-| Loop runs | locally in `dome submit` / `dome sync` | in CI on PR events |
+| Loop runs | locally in `dome sync` / `dome serve` | in CI on PR events |
 | Closure commits | land on user branch | land on PR branch |
 | Adoption | local ref advance | PR auto-merge |
 

@@ -18,7 +18,7 @@ enforced_at: src/engine/adopt.ts
 
 - **Crash recovery** is derivable from git alone. `git show-ref refs/dome/adopted/main` is authoritative; no `.dome/state/` cursor file's existence and freshness affect the answer.
 - **Divergence detection** is structural. A force-push, hard-reset, or rebase that rewrites HEAD's history is detectable by checking whether `adopted` is an ancestor of `HEAD`; a file-based cursor could not surface this without bespoke comparison logic.
-- **"What's queued for adoption"** is a single git query: `git log refs/dome/adopted/<branch>..HEAD`. The Proposal that `dome submit` constructs uses this range directly per [[wiki/specs/proposals]] §"Local-eventual mode".
+- **"What's queued for adoption"** is a single git query: `git log refs/dome/adopted/<branch>..HEAD`. The engine-internal Proposal that `dome sync` / `dome serve` constructs uses this range directly per [[wiki/specs/proposals]] §"Local-eventual mode".
 - **Hosted-protected mode** (v1.5, designed-for in [[wiki/specs/adoption]] §"Hosted-protected mode") layers cleanly: in hosted mode, `refs/heads/main` is the adopted trunk (PR merges replace the ref advance); the cursor shape is the same git ref pattern, only the cursor name differs.
 
 **Structural enforcement:** Off-matrix. The advance-ref step lives at the `setAdoptedRef` call inside `src/engine/adopt.ts` — the single chokepoint at the tail of the engine adoption loop (per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]). Fast-forward-only by default: refuses to advance if `sha` is not a descendant of the current ref value; the `forceAdvance: true` opt-out is explicit and surfaces through the `dome sync --force-advance` CLI flag. The `getAdoptedRef` reader is the symmetric companion; both are re-exported from `@dome/sdk` core for consumer use, but the write side (`setAdoptedRef`) is **not** re-exported — only the engine advances the ref.
@@ -27,9 +27,9 @@ enforced_at: src/engine/adopt.ts
 
 **Test guarantee:** `tests/invariants/adopted-ref-is-semantic-cursor.test.ts` is the AC3 lockstep file. Following the off-matrix delegating-stub convention (per [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention"), it imports `tests/integration/sync-advances-adopted-ref.test.ts` — the canonical enforcement test with three cases:
 
-1. **Fresh vault.** `dome submit` (or its catch-up form `dome sync`) initializes `refs/dome/adopted/main` at the Proposal's adopted head; subsequent `dome status` reports no pending and zero divergence.
-2. **Source-ahead vault.** User commits land on top of the existing adopted ref; `dome submit` constructs a Proposal `adopted..HEAD`, the adoption loop reaches fixed point, the engine fast-forwards the ref to the new head (possibly through a closure commit).
-3. **Divergent vault.** HEAD's ancestry no longer contains the prior adopted commit (simulated by `git reset --hard` to an earlier commit and then committing a different change); `dome submit` refuses to advance with an `engine.adoption.blocked` event; `dome submit --force-advance` accepts the new HEAD.
+1. **Fresh vault.** `dome sync` initializes `refs/dome/adopted/main` at the Proposal's adopted head; subsequent `dome status` reports no pending and zero divergence.
+2. **Source-ahead vault.** User commits land on top of the existing adopted ref; `dome sync` constructs a Proposal `adopted..HEAD`, the adoption loop reaches fixed point, the engine fast-forwards the ref to the new head (possibly through a closure commit).
+3. **Divergent vault.** HEAD's ancestry no longer contains the prior adopted commit (simulated by `git reset --hard` to an earlier commit and then committing a different change); `dome sync` refuses to advance with an `engine.adoption.blocked` event; the designed-for `dome sync --force-advance` flow accepts the new HEAD when it ships.
 
 **Related:**
 

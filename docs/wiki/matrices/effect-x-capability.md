@@ -19,8 +19,8 @@ Per-Effect-kind capability requirements enforced by the broker at the engine's `
 | **PatchEffect (touching owned path)** | `owns.path` for each modified path, OR the patch must touch only non-owned paths | per-path check against `owns.path` grants in vault config | Denied unless the emitting processor is the path's owner |
 | **DiagnosticEffect (any severity)** | (none — every processor may emit diagnostics) | — | (n/a — no denial path) |
 | **FactEffect** | `graph.write` matching the namespace prefix of `predicate` | predicate `<namespace>.<key>` → namespace must be in the grant list | Denied; diagnostic with `code: capability-deny-graph-write`; effect discarded |
-| **QuestionEffect** | implicit (granted to any processor with any `graph.write`) | n/a | Denied if the processor has no `graph.write` of any namespace |
-| **JobEffect** | implicit (granted to all processors for processors registered in the same bundle); explicit `job.enqueue` for cross-bundle invocation | the target processor id's bundle prefix | Denied if cross-bundle invocation without `job.enqueue` grant |
+| **QuestionEffect** | `question.ask` | question namespace / channel (defaults to emitting bundle namespace when omitted) | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
+| **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
 | **ViewEffect** | (none at capability layer — phase check rejects view effects from non-view processors) | — | (n/a at capability layer; phase mismatch at the routing layer per [[wiki/matrices/effect-router-targets]]) |
 
@@ -36,9 +36,9 @@ Downgrade is currently used for one case: PatchEffect `mode: "auto"` → `mode: 
 
 ## Cross-bundle invocations
 
-A processor in bundle A that emits a `JobEffect { processorId: "B:foo" }` invokes a processor in bundle B. The broker checks bundle A's capability set for `job.enqueue` — granted automatically for cross-bundle in v1 (the trust assumption is "user installed both bundles"; if they need narrower scoping, manifest-level dependencies handle it).
+A processor in bundle A that emits a `JobEffect { processorId: "B:foo" }` invokes a processor in bundle B. The broker checks bundle A's capability set for `job.enqueue` and requires the target processor id to match one of the granted `processors` entries.
 
-In v1.1+, cross-bundle invocation may grow a `job.enqueue: ["B:*"]` grant to scope which bundles A may invoke; v1 keeps it permissive.
+Same-bundle enqueue can be shipped as a default grant for first-party bundles, but it is still explicit in the effective capability set. Cross-bundle enqueue requires a grant such as `job.enqueue: ["B:*"]`.
 
 ## Capability lookup performance
 

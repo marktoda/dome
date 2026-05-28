@@ -17,7 +17,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Eight tiers cover every effect a processor can emit:
+Capabilities are about **effect power**, not arbitrary trust labels. Ten tiers cover every effect a processor can emit:
 
 ```ts
 type Capability =
@@ -26,7 +26,9 @@ type Capability =
   | { kind: "patch.auto";    paths: string[] }                  // allows PatchEffect mode:"auto"
   | { kind: "owns.region";   regionIds: string[] }              // exclusive ownership of marker regions
   | { kind: "owns.path";     paths: string[] }                  // exclusive ownership of paths (e.g., index.md)
-  | { kind: "graph.write";   namespaces: string[] }             // FactEffect / QuestionEffect namespaces
+  | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
+  | { kind: "question.ask";  namespaces?: string[] }            // QuestionEffect namespaces / channels
+  | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
   | { kind: "external";      capability: string };              // ExternalActionEffect capabilities (e.g., "calendar.write")
 ```
@@ -61,9 +63,17 @@ Path ownership replaces v0.5's `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` invariant �
 
 ### `graph.write`
 
-Permits writing to `facts`, `questions`, and `outbox` for the named namespaces. A namespace is the dotted prefix before the predicate (`dome.tasks.dueDate` → namespace `dome.tasks`).
+Permits writing FactEffects for the named namespaces. A namespace is the dotted prefix before the predicate (`dome.tasks.dueDate` → namespace `dome.tasks`).
 
 A processor with `graph.write: ["dome.tasks.*"]` can emit FactEffects with `predicate: "dome.tasks.dueDate"`, `predicate: "dome.tasks.priority"`, etc. — but not `predicate: "dome.people.attendee"`. Cross-namespace writes are isolation-by-construction.
+
+### `question.ask`
+
+Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. Optional `namespaces` scope which question families the processor may create (for example `dome.intake` content questions vs `dome.health` operational questions). When omitted, the grant applies to the processor's own bundle namespace only.
+
+### `job.enqueue`
+
+Permits emitting JobEffects. The `processors` list scopes which target processor ids can be scheduled; entries may be exact ids (`dome.daily.refresh-brief`) or bundle-level globs (`dome.daily.*`). Same-bundle enqueue can be granted by default in shipped first-party manifests, but it is still represented as a capability so scheduled follow-on work is explicit and ledgered.
 
 ### `model.invoke`
 
@@ -101,6 +111,10 @@ processors:
         paths: ["wiki/generated/intake/**", "inbox/processed/**"]
       - kind: graph.write
         namespaces: ["dome.tasks", "dome.people"]
+      - kind: question.ask
+        namespaces: ["dome.intake"]
+      - kind: job.enqueue
+        processors: ["dome.daily.*"]
       - kind: model.invoke
         maxDailyCostUsd: 5.00
 
@@ -173,13 +187,13 @@ Called from `src/engine/apply-effect.ts` exactly once per effect, before any rou
 
 Every effect that passes enforcement records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"). This is the audit surface for "what did this processor actually do" and the input to per-extension cost / quota tracking.
 
-## Why eight tiers, not more
+## Why ten tiers, not more
 
-The eight cover every effect kind. Three properties drive the closed set:
+The ten cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
 
-1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the eight would mean inventing effects without a routing target.
+1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the ten would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Eight cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Ten cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

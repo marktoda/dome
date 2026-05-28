@@ -7,9 +7,9 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # Projection store
 
-This spec is normative for Dome's derived-state layer. The **projection store** is a Bun.sqlite-backed cache of facts, search indexes, diagnostics, questions, scheduled jobs, and an outbox for external side effects. It is the answer to "where do view-phase processors read from."
+This spec is normative for Dome's derived-state layer. The **projection store** is a Bun.sqlite-backed cache of facts, search indexes, diagnostics, questions, scheduled jobs, and schedule cursors. The adjacent outbox database is operational retry/audit state for external side effects. Together they answer "where do view-phase processors read from" and "how does the engine recover operational work."
 
-The store is **derived**. Markdown + git history is the source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); the projection store can be deleted and rebuilt at any time. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+The projection store is **derived**. Markdown + git history is the knowledge source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); `projection.db` can be deleted and rebuilt at any time from adopted markdown plus deterministic processors. The adjacent `runs.db` and `outbox.db` are persistent operational state and are not covered by the projection-rebuild guarantee. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 
 ## Why SQLite (and why Bun.sqlite)
 
@@ -229,7 +229,7 @@ This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUG
 
 ## Rebuild path
 
-`dome rebuild` walks every adopted commit's tree and re-runs every adoption-phase processor that contributes to projections, then re-runs garden-phase processors that produce non-PatchEffect outputs (Facts, Diagnostics, Questions). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits) and does NOT re-fire external actions (the outbox is preserved).
+`dome rebuild` walks the current adopted commit's tree and re-runs every deterministic adoption-phase processor that contributes to projections, then re-runs deterministic garden-phase processors that produce projection outputs (Facts, Diagnostics, Questions). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits), does NOT re-fire external actions (the outbox is preserved), and does NOT make fresh model calls. LLM-derived durable claims must either be materialized into adopted markdown with SourceRefs or treated as cache entries that can be dropped and regenerated only by an explicit non-rebuild garden run.
 
 ```text
 dome rebuild
@@ -239,11 +239,11 @@ dome rebuild
     → for each file, synthesize the trigger payload and fire the relevant adoption-phase processors
     → write resulting FactEffect / DiagnosticEffect to facts / diagnostics
     → write fts_documents rows
-  → re-run garden-phase processors that emit Facts (e.g., dome.intake.extract-capture)
+  → re-run deterministic garden-phase fact/question emitters only
   → emit `engine.projection.rebuilt` event
 ```
 
-The rebuild is **idempotent** — running it twice in succession produces byte-equivalent `.db` files (modulo `written_at` timestamps).
+The rebuild is **idempotent** — running it twice in succession produces byte-equivalent `.db` files (modulo `written_at` timestamps). Any processor that depends on time, random values, network responses, or fresh LLM output is not eligible for automatic rebuild.
 
 Wall-clock cost scales with vault size + processor count. For a typical user vault (hundreds to low thousands of pages, a dozen processors), rebuild is seconds. For a 50k-page vault, rebuild is a couple of minutes. The user-facing UX is "you can always wipe and rebuild" — slow but correct.
 

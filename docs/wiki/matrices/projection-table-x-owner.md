@@ -7,7 +7,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Projection table × owner matrix
 
-Per-table map of which extension is authorized to write to each table in `<vault>/.dome/state/projection.db` (and the adjacent `runs.db` and `outbox.db`). Writes scoped by the broker's `graph.write` capability per [[wiki/specs/capabilities]] §"graph.write".
+Per-table map of which extension is authorized to write to each table in `<vault>/.dome/state/projection.db` (and the adjacent `runs.db` and `outbox.db`). Writes are scoped by effect-specific capabilities (`graph.write`, `question.ask`, `job.enqueue`, `external`, etc.) per [[wiki/specs/capabilities]].
 
 ## The matrix
 
@@ -16,8 +16,8 @@ Per-table map of which extension is authorized to write to each table in `<vault
 | `projection.db` | `facts` | `dome.intake` (namespaces: `dome.tasks`, `dome.people`); `dome.search` (namespace: `dome.search`); third-party bundles per their `graph.write` grants | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
 | `projection.db` | `fts_documents` | `dome.search` exclusively | [[wiki/specs/projection-store]] §"Tables — fts_documents" | Internal to `dome.search.index-text`; not directly grantable to other extensions |
 | `projection.db` | `diagnostics` | every processor that emits `DiagnosticEffect` | [[wiki/specs/projection-store]] §"Tables — diagnostics" | (none — every processor may emit) |
-| `projection.db` | `questions` | every processor that emits `QuestionEffect` (subject to having `graph.write` of any namespace) | [[wiki/specs/projection-store]] §"Tables — questions" | implicit; granted alongside any `graph.write` |
-| `projection.db` | `scheduled_jobs` | engine writes on `JobEffect` emission; processors do not write directly | [[wiki/specs/projection-store]] §"Tables — scheduled_jobs" | n/a (engine-internal) |
+| `projection.db` | `questions` | every processor that emits `QuestionEffect` subject to `question.ask` | [[wiki/specs/projection-store]] §"Tables — questions" | `question.ask:<namespace>` |
+| `projection.db` | `scheduled_jobs` | engine writes on authorized `JobEffect` emission; processors do not write directly | [[wiki/specs/projection-store]] §"Tables — scheduled_jobs" | `job.enqueue:<processor-id-or-glob>` |
 | `projection.db` | `schedule_cursors` | engine writes when a cron-driven processor fires | [[wiki/specs/projection-store]] §"Tables — schedule_cursors" | n/a (engine-internal) |
 | `projection.db` | `projection_meta` | engine writes on rebuild | [[wiki/specs/projection-store]] §"Cache key" | n/a (engine-internal) |
 | `runs.db` | `runs` | engine writes per processor invocation | [[wiki/specs/run-ledger]] §"Tables — runs" | n/a (engine-internal) |
@@ -26,7 +26,7 @@ Per-table map of which extension is authorized to write to each table in `<vault
 
 ## Reading the matrix
 
-- **Engine-internal tables** (`scheduled_jobs`, `schedule_cursors`, `projection_meta`, `runs`, `capability_uses`, `outbox`) are written by the engine on processor-effect emission. Processors do not write to these tables directly — they emit Effects; the engine routes the writes.
+- **Engine-internal tables** (`scheduled_jobs`, `schedule_cursors`, `projection_meta`, `runs`, `capability_uses`, `outbox`) are written by the engine on authorized processor-effect emission. Processors do not write to these tables directly — they emit Effects; the engine routes the writes.
 - **Processor-written tables** (`facts`, `diagnostics`, `questions`, `fts_documents`) are written by the engine on behalf of a processor that emitted the corresponding Effect, scoped by the processor's declared capabilities.
 - **No table is multi-writer without namespace scoping.** `facts` allows multiple extensions to write, but each is scoped to its `graph.write` namespace; two extensions cannot write rows under the same namespace. Cross-namespace contention is prevented by construction.
 

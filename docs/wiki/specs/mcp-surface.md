@@ -32,53 +32,22 @@ buildAbstractSurface(vault) → AbstractSurface
 renderMcp(surface) → McpSurface  ──── DomeMcpServer (MCP protocol)
 ```
 
-The MCP server is a thin protocol adapter. It does not embed Dome's Submit, Recall, or processor execution; it forwards to the AbstractSurface's `submit`, `query`, `read`, and `commands` callbacks.
+The MCP server is a thin protocol adapter. It does not embed Dome's Recall or processor execution; it forwards to the AbstractSurface's `query`, `read`, and `commands` callbacks. v1.0 does not expose Proposal submission over MCP; adoption catch-up is Git + CLI-native.
 
 Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the `@dome/sdk` core has no MCP dependency; `@dome/sdk/mcp` lives in a separate entrypoint) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
 
 ## MCP tools
 
-The MCP server exposes Dome's Submit and Recall surfaces as MCP tools under the `dome.*` prefix:
+The MCP server exposes Dome's Recall and view-command surfaces as MCP tools under the `dome.*` prefix:
 
 | MCP tool | Maps to | Purpose |
 |---|---|---|
-| `dome.submit` | `AbstractSurface.submit` | Construct and submit a Proposal. |
 | `dome.query` | `AbstractSurface.query` | Full-text + structured query against adopted state. |
 | `dome.read_document` | `AbstractSurface.read` | Read a single document at the adopted commit. |
 | `dome.resolve_wikilink` | `AbstractSurface.resolveWikilink` (via vault) | Resolve a `[[wikilink]]` to a document. |
 | `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`lint`, `stats`, `query`, etc.). |
 
 Tool names are derived from a single source (the canonical processor + Submit/Recall surface) — no parallel naming catalog. Adding a new view-phase command processor extends `dome.run_command`'s command list automatically.
-
-### `dome.submit`
-
-```yaml
-description: Submit a proposal to the engine. Returns AdoptionResult.
-inputSchema:
-  type: object
-  properties:
-    patch:        { type: string, description: "UnifiedDiff patch; if absent, working-tree HEAD is used" }
-    sourceKind:   { type: string, enum: ["client", "agent", "garden", "manual", "import"] }
-    metadata:
-      type: object
-      properties:
-        title:      { type: string }
-        authoredAt: { type: string, format: date-time }
-        reason:     { type: string }
-```
-
-Returns:
-
-```yaml
-{
-  proposalId: string,
-  adopted: boolean,
-  adoptedRef: string,
-  diagnostics: [{ severity, code, message, sourceRefs }, ...],
-  closureCommitOid: string | null,
-  iterations: number,
-}
-```
 
 ### `dome.query`
 
@@ -157,7 +126,7 @@ The MCP server is **single-vault per process**. Multi-vault MCP setups run multi
 
 To keep the surface minimal:
 
-- **No write tools beyond `dome.submit`.** No `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. All writes go through Proposals.
+- **No write tools.** No `dome.submit`, no `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. External writes are Git-native and adoption catch-up is CLI/daemon-driven in v1.0.
 - **No privileged operations.** No way to advance the adopted ref directly, no way to bypass capability checks, no way to write the projection store.
 - **No multi-vault routing.** One vault per server process.
 - **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome inspect runs` via CLI when needed).
@@ -168,7 +137,7 @@ These are intentional. The MCP server is a Recall + Submit adapter, not a privil
 
 - [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
 - [[wiki/specs/harnesses]] — when MCP earns its keep vs the CLI path.
-- [[wiki/specs/proposals]] — what `dome.submit` constructs.
+- [[wiki/specs/proposals]] — how the engine constructs Proposals internally.
 - [[wiki/specs/processors]] §"Phase × trigger matrix" — `dome.run_command` invokes command-triggered view-phase processors.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — core/MCP separation.
 - [[wiki/gotchas/transitive-llm-dependency]] — the dep-fence that catches MCP leak into core.
