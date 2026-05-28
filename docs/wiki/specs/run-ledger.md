@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -20,7 +20,7 @@ The ledger augments the trailers with data git cannot carry:
 | Data | Where it lives | Why |
 |---|---|---|
 | Commit provenance (run id, extension, base, source head) | git trailers | Reachable via `git log`; survives clone; readable without Dome |
-| Run status (queued / running / succeeded / failed / skipped) | ledger | git only records successful commits; failed runs leave no trace |
+| Run status (queued / running / succeeded / failed / skipped / timed_out / cancelled) | ledger | git only records successful commits; failed runs leave no trace |
 | Effect hashes | ledger | what the run produced, even when no commit was made |
 | Capability uses | ledger | audit surface for "this processor wrote to dome.tasks namespace" |
 | Cost (LLM tokens × pricing) | ledger | per-processor spend tracking |

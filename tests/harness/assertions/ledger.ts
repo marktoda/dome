@@ -66,9 +66,7 @@ export class LedgerMatcherImpl implements LedgerMatcher {
     return projectRow(only);
   }
 
-  async toAllHaveStatus(
-    status: "succeeded" | "failed" | "skipped",
-  ): Promise<void> {
+  async toAllHaveStatus(status: RunRow["status"]): Promise<void> {
     const rows = this.queryMatching();
     expect(
       rows.length > 0,
@@ -157,4 +155,3 @@ function projectRow(r: RunRow): LedgerRunRowProjection {
     error: r.error,
   };
 }
-

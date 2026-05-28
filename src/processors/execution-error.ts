@@ -2,8 +2,12 @@ import { diagnosticEffect, type DiagnosticEffect } from "../core/effect";
 import type { ProcessorExecutionError } from "../engine/runner-contract";
 
 export type {
+  ProcessorCancelledExecutionError,
   ProcessorExecutionError,
   ProcessorExecutionErrorCode,
+  ProcessorExecutionErrorForCode,
+  ProcessorFailedExecutionError,
+  ProcessorTimeoutExecutionError,
 } from "../engine/runner-contract";
 
 export function makeExecutionError(

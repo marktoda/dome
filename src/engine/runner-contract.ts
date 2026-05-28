@@ -64,6 +64,20 @@ export type ProcessorExecutionError = {
   readonly processorId: string;
 };
 
+export type ProcessorExecutionErrorForCode<
+  C extends ProcessorExecutionErrorCode,
+> = Omit<ProcessorExecutionError, "code"> & { readonly code: C };
+
+export type ProcessorFailedExecutionError = ProcessorExecutionErrorForCode<
+  "processor.threw" | "processor.invalid-output"
+>;
+
+export type ProcessorTimeoutExecutionError =
+  ProcessorExecutionErrorForCode<"processor.timeout">;
+
+export type ProcessorCancelledExecutionError =
+  ProcessorExecutionErrorForCode<"processor.cancelled">;
+
 // ----- AdoptionPhaseRunner --------------------------------------------------
 
 /**

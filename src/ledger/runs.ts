@@ -1,6 +1,6 @@
 // ledger-runs: the per-run lifecycle accessors for the `runs` table.
-// Owns the run id generator, the queued/running/succeeded/failed/skipped
-// state transitions, the read surface (`queryRuns`, `getRun`), and the
+// Owns the run id generator, the run-status state transitions, the read
+// surface (`queryRuns`, `getRun`), and the
 // orphan-detection helpers used by `dome inspect orphan-runs` /
 // `--orphan-runs --fail`.
 //
@@ -18,7 +18,7 @@
 //   - docs/wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED.md §"Structural
 //     enforcement" — the engine writes `insertQueued` synchronously before
 //     calling `processor.run()`, `markRunning` at the start of `run()`,
-//     `markSucceeded` / `markFailed` at the end. Crashes between
+//     one terminal mark at the end. Crashes between
 //     `markRunning` and the terminal mark leave rows visible to
 //     `orphanRuns(...)`.
 //
@@ -67,6 +67,8 @@
 //   - `./db` for the `LedgerDb` handle.
 //   - `../core/processor` for the `ProcessorPhase` type.
 //   - `../core/source-ref` for the `CommitOid` brand + `commitOid` helper.
+//   - `../engine/runner-contract` for the shared RunId and structured
+//     execution-error type contracts.
 //
 // House-style notes (mirrors src/outbox/dispatch.ts, src/projections/jobs.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -85,7 +87,9 @@ import { randomBytes } from "node:crypto";
 import type { ProcessorPhase } from "../core/processor";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import {
-  type ProcessorExecutionError,
+  type ProcessorCancelledExecutionError,
+  type ProcessorFailedExecutionError,
+  type ProcessorTimeoutExecutionError,
   type RunId,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "./db";
@@ -186,21 +190,21 @@ export type MarkSucceededOpts = {
 
 export type MarkFailedOpts = {
   readonly id: RunId;
-  readonly error: string | ProcessorExecutionError;
+  readonly error: string | ProcessorFailedExecutionError;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
 
 export type MarkTimedOutOpts = {
   readonly id: RunId;
-  readonly error: ProcessorExecutionError;
+  readonly error: ProcessorTimeoutExecutionError;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
 
 export type MarkCancelledOpts = {
   readonly id: RunId;
-  readonly error: ProcessorExecutionError;
+  readonly error: ProcessorCancelledExecutionError;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };

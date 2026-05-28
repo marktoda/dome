@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -201,7 +201,7 @@ The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` does not
 
 ## Run ledger
 
-Every processor invocation, regardless of outcome, writes one `RunRecord` row to the run ledger ([[wiki/specs/run-ledger]]). The record captures `runId`, `processorId`, `processorVersion`, `phase`, `proposalId?`, `inputCommit`, `outputCommit?` (for adoption-phase processors that contributed to a closure commit), `status` (queued / running / succeeded / failed / skipped), `effectHashes`, `capabilityUses`, `cost?`, `error?`, `startedAt`, `finishedAt?`. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]].
+Every processor invocation, regardless of outcome, writes one `RunRecord` row to the run ledger ([[wiki/specs/run-ledger]]). The record captures `runId`, `processorId`, `processorVersion`, `phase`, `proposalId?`, `inputCommit`, `outputCommit?` (for adoption-phase processors that contributed to a closure commit), `status` (queued / running / succeeded / failed / skipped / timed_out / cancelled), `effectHashes`, `capabilityUses`, `cost?`, `error?`, `startedAt`, `finishedAt?`. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]].
 
 ## Implementation status
 

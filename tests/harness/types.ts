@@ -314,7 +314,7 @@ export interface LedgerMatcher {
   /** Assert exactly one row matches; return it. */
   toHaveExactlyOne(): Promise<LedgerRunRowProjection>;
   /** Assert all matching rows have the given status. */
-  toAllHaveStatus(status: "succeeded" | "failed" | "skipped"): Promise<void>;
+  toAllHaveStatus(status: RunStatus): Promise<void>;
   /** Assert no orphan rows (running > 60s in test clock). */
   toHaveNoOrphans(): Promise<void>;
 }
