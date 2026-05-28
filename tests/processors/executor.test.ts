@@ -10,6 +10,10 @@ import type { Effect } from "../../src/core/effect";
 import type { ProcessorContext } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { RunId } from "../../src/engine/runner-contract";
+import {
+  modelInvokeForProcessor,
+  type ModelProvider,
+} from "../../src/engine/model-invoke";
 import { executeProcessor } from "../../src/processors/executor";
 
 const RUN_ID = "run_test_executor" as RunId;
@@ -63,7 +67,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.success",
       phase: "adoption",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "deterministic",
         timeoutMs: 100,
@@ -87,7 +91,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.nonarray",
       phase: "adoption",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "deterministic",
         timeoutMs: 100,
@@ -112,7 +116,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.malformed",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -149,7 +153,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.hostile-output",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -182,7 +186,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.hostile-container",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -217,7 +221,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.unhashable",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -243,7 +247,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.throw",
       phase: "adoption",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "deterministic",
         timeoutMs: 100,
@@ -273,7 +277,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.retryable-throw",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -297,7 +301,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.model-json",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "llm",
         timeoutMs: 100,
@@ -328,7 +332,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.hostile-throw",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -360,7 +364,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.too-many-effects",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 100,
@@ -388,7 +392,8 @@ describe("executeProcessor", () => {
       processorId: "test.executor.preaborted",
       phase: "adoption",
       runId: RUN_ID,
-      ctx: contextWithSignal(upstream.signal),
+      signal: upstream.signal,
+      makeContext: contextWithSignal,
       policy: {
         class: "deterministic",
         timeoutMs: 100,
@@ -426,7 +431,8 @@ describe("executeProcessor", () => {
       processorId: "test.executor.cancel",
       phase: "garden",
       runId: RUN_ID,
-      ctx: contextWithSignal(upstream.signal),
+      signal: upstream.signal,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 1_000,
@@ -469,7 +475,7 @@ describe("executeProcessor", () => {
       processorId: "test.executor.timeout",
       phase: "garden",
       runId: RUN_ID,
-      ctx,
+      makeContext: contextWithSignal,
       policy: {
         class: "background",
         timeoutMs: 5,
@@ -494,5 +500,64 @@ describe("executeProcessor", () => {
     await Promise.resolve();
     expect(observedSignalAborted).toBe(true);
     expect(released).toBe(true);
+  });
+
+  test("processor timeout aborts model provider request signal", async () => {
+    const cap = Object.freeze({ kind: "model.invoke" as const });
+    const policy = Object.freeze({
+      class: "llm" as const,
+      timeoutMs: 5,
+      retryBudgetMs: 0,
+      maxAttempts: 1,
+      lateEffectBehavior: "discard" as const,
+      modelCallTimeoutMs: 1_000,
+    });
+    let resolveProviderAborted: (() => void) | undefined;
+    const providerAborted = new Promise<void>((resolve) => {
+      resolveProviderAborted = resolve;
+    });
+    let providerSignalAborted = false;
+    const provider: ModelProvider = async (request) => {
+      await waitForAbort(request.signal);
+      providerSignalAborted = request.signal.aborted;
+      resolveProviderAborted?.();
+      return { text: "late" };
+    };
+
+    const result = await executeProcessor({
+      processorId: "test.executor.model-timeout",
+      phase: "garden",
+      runId: RUN_ID,
+      makeContext: (signal) => {
+        const modelInvoke = modelInvokeForProcessor({
+          phase: "garden",
+          processorId: "test.executor.model-timeout",
+          declared: [cap],
+          granted: [cap],
+          policy,
+          signal,
+          provider,
+        });
+        if (modelInvoke === undefined) {
+          throw new Error("expected modelInvoke");
+        }
+        return Object.freeze({
+          ...contextWithSignal(signal),
+          modelInvoke,
+        }) as ProcessorContext<unknown>;
+      },
+      policy,
+      run: async (runCtx) => {
+        await runCtx.modelInvoke?.({ prompt: "long model call" });
+        return [validEffect()];
+      },
+    });
+
+    expect(result.status).toBe("timed_out");
+    if (result.status !== "timed_out") return;
+    await providerAborted;
+    expect(providerSignalAborted).toBe(true);
+    expect(result.error.code).toBe("processor.timeout");
+    expect("effects" in result).toBe(false);
   });
 });

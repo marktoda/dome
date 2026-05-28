@@ -105,6 +105,13 @@ function buildRuntimeFor(
   });
 }
 
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 describe("runtime — ledger lifecycle (Phase 6)", () => {
   let root: string;
   let dbPath: string;
@@ -442,6 +449,64 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(row.costUsd).toBe(0.125);
     const parsed = JSON.parse(row.error ?? "{}");
     expect(parsed.code).toBe("model.output.invalid-json");
+  });
+
+  test("model provider timeout is retryable and can quarantine a garden trigger", async () => {
+    const ledger = await openLedger();
+    const cap: Capability = { kind: "model.invoke" };
+    let providerCalls = 0;
+    let providerAborts = 0;
+    const p = makeFixtureProcessor({
+      id: "test.ledger.model-timeout",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      execution: { class: "llm", timeoutMs: 50, modelCallTimeoutMs: 5 },
+      run: async (ctx) => {
+        if (ctx.modelInvoke === undefined) {
+          throw new Error("missing modelInvoke");
+        }
+        await ctx.modelInvoke({ prompt: "slow model" });
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger, {
+      resolveGrants: () => [cap],
+      modelProvider: async (request) => {
+        providerCalls += 1;
+        await waitForAbort(request.signal);
+        providerAborts += 1;
+        return { text: "late" };
+      },
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      await rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        proposal,
+      });
+    }
+
+    expect(providerCalls).toBe(3);
+    expect(providerAborts).toBe(3);
+    const rows = queryRuns(ledger, { processorId: "test.ledger.model-timeout" });
+    expect(rows.length).toBe(4);
+    const failedRows = rows.filter((row) => row.status === "failed");
+    expect(failedRows.length).toBe(3);
+    for (const row of failedRows) {
+      const parsed = JSON.parse(row.error ?? "{}");
+      expect(parsed.code).toBe("model.invoke.timeout");
+      expect(parsed.retryable).toBe(true);
+      expect(parsed.processorId).toBe("test.ledger.model-timeout");
+    }
+    const skipped = rows.find((row) => row.status === "skipped");
+    if (skipped === undefined) throw new Error("expected skipped row");
+    const parsedSkipped = JSON.parse(skipped.error ?? "{}");
+    expect(parsedSkipped.code).toBe("processor.quarantined");
+    expect(parsedSkipped.retryable).toBe(false);
   });
 
   test("no ledger wired (Phase 6 transitional) — runs proceed and no rows are written", async () => {

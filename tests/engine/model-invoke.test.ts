@@ -26,6 +26,7 @@ function buildInvoke(opts?: {
   readonly granted?: ReadonlyArray<Capability>;
   readonly provider?: ModelProvider;
   readonly onCost?: (costUsd: number) => void;
+  readonly signal?: AbortSignal;
 }) {
   return modelInvokeForProcessor({
     phase: "garden",
@@ -33,7 +34,7 @@ function buildInvoke(opts?: {
     declared: opts?.declared ?? [MODEL_CAP],
     granted: opts?.granted ?? [MODEL_CAP],
     policy: POLICY,
-    signal: new AbortController().signal,
+    signal: opts?.signal ?? new AbortController().signal,
     ...(opts?.provider !== undefined ? { provider: opts.provider } : {}),
     ...(opts?.onCost !== undefined ? { onCost: opts.onCost } : {}),
   });
@@ -174,5 +175,52 @@ describe("modelInvokeForProcessor", () => {
       code: "model.output.schema-mismatch",
       retryable: false,
     });
+  });
+
+  test("malformed provider responses throw stable provider-failed errors", async () => {
+    const cases: ReadonlyArray<{
+      readonly name: string;
+      readonly response: unknown;
+    }> = [
+      { name: "null", response: null },
+      { name: "non-object", response: "ok" },
+      { name: "missing text", response: {} },
+      { name: "non-string text", response: { text: 42 } },
+      { name: "invalid cost", response: { text: "ok", costUsd: Number.NaN } },
+      { name: "negative cost", response: { text: "ok", costUsd: -1 } },
+      { name: "non-string model", response: { text: "ok", model: 42 } },
+    ];
+
+    for (const c of cases) {
+      const invoke = buildInvoke({
+        provider: async () => c.response as never,
+      });
+      if (invoke === undefined) throw new Error(`expected invoke for ${c.name}`);
+
+      await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+        code: "model.invoke.provider-failed",
+        retryable: true,
+      });
+    }
+  });
+
+  test("pre-aborted processor signal prevents provider invocation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let called = false;
+    const invoke = buildInvoke({
+      signal: controller.signal,
+      provider: async () => {
+        called = true;
+        return { text: "late" };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.timeout",
+      retryable: true,
+    });
+    expect(called).toBe(false);
   });
 });

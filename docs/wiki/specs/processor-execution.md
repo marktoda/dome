@@ -15,13 +15,13 @@ The goal is boring execution semantics: a processor run has one state machine, o
 
 As of the processor-executor-boundary branch:
 
-- `src/processors/executor.ts` provides the executor boundary. It validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
+- `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
 - `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`.
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
-- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim enforces effective `model.invoke` grants and allowlists, per-call timeout, structured JSON parse/schema errors, and run-local cost capture.
+- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants and allowlists, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, and captures run-local cost.
 - Daily cost caps, provider adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented by this branch.
 
 ## Run state machine
@@ -84,6 +84,12 @@ Durable JobEffect retries may schedule a later attempt when the terminal
 failure is retryable, and repeated retryable timeouts can contribute to
 garden/scheduled quarantine.
 
+The executor-created invocation signal is the only signal a processor observes.
+`ctx.signal` and `ctx.modelInvoke` share that lifecycle: when the executor
+times out or cancels the run, in-flight provider calls receive an aborted
+request signal and late model responses cannot update the run after its terminal
+ledger row has been written.
+
 ## Output validation
 
 The processor boundary is:
@@ -112,6 +118,8 @@ The `ctx.modelInvoke` runtime boundary has these guarantees:
 - Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
 - Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.
+- Aborts provider calls when the processor invocation times out or is cancelled.
+- Validates provider responses before returning them to processors: `text` must be a string; optional `model` must be a string; optional `costUsd` must be a finite non-negative number.
 - Returns typed success or throws a structured `model.invoke.*` / `model.output.*` error that the executor preserves in the run ledger.
 
 Structured-output parse failures are not repaired by prompt-only retry loops unless the processor explicitly asks for one through `ctx.modelInvoke.structured({ retries: n, ... })`. After retries are exhausted, the run fails with `code: "model.output.invalid-json"` or `code: "model.output.schema-mismatch"`. The diagnostic includes the schema name and a short parse reason, not the full prompt or full model output.
@@ -167,8 +175,8 @@ The executor contract uses stable diagnostic codes:
 | `execution-policy.phase-class-denied` | Runtime refused to invoke a processor because its declared execution class is invalid for the phase; the run is marked `skipped`. |
 | `processor.quarantined` | A matching trigger is skipped because the processor is quarantined. |
 | `model.invoke.denied` | Missing model capability, model not allowlisted, or cost cap exceeded. |
-| `model.invoke.provider-failed` | The injected provider threw before producing a response. |
-| `model.invoke.timeout` | A model call exceeded its per-call timeout. |
+| `model.invoke.provider-failed` | The injected provider threw or returned a malformed response. |
+| `model.invoke.timeout` | A model call exceeded its per-call timeout or was aborted by the invocation boundary. |
 | `model.output.invalid-json` | Structured model output was not parseable JSON after retries. |
 | `model.output.schema-mismatch` | Structured model output parsed but failed the requested schema. |
 
@@ -182,12 +190,12 @@ The execution contract is pinned in stages.
 
 Already pinned in this branch:
 
-- Executor-boundary tests assert success, thrown errors, invalid output, timeout, cancellation, diagnostic severity, and discarded late effects at `executeProcessor`.
+- Executor-boundary tests assert success, thrown errors, invalid output, timeout, cancellation, diagnostic severity, discarded late effects, and model-provider abort propagation at `executeProcessor`.
 - Ledger tests assert `timed_out` / `cancelled` status persistence, structured error JSON, query filtering, and terminal transition filtering.
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, and garden timeout discards late output while recording `timed_out`.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
-- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, executor preservation of model error codes, and ledgered model cost on failed structured-output runs.
+- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
 
 Pending:
 

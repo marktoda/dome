@@ -66,14 +66,15 @@ export async function executeProcessor(opts: {
   readonly processorId: string;
   readonly phase: ProcessorPhase;
   readonly runId: RunId;
-  readonly ctx: ProcessorContext<unknown>;
+  readonly signal?: AbortSignal;
+  readonly makeContext: (signal: AbortSignal) => ProcessorContext<unknown>;
   readonly policy: ResolvedExecutionPolicy;
   readonly run: (ctx: ProcessorContext<unknown>) => Promise<unknown>;
 }): Promise<ProcessorExecutionResult> {
   const startedAt = performance.now();
   const durationMs = () => Math.max(0, performance.now() - startedAt);
 
-  if (opts.ctx.signal.aborted) {
+  if (opts.signal?.aborted === true) {
     return terminalResult({
       status: "cancelled",
       runId: opts.runId,
@@ -90,10 +91,6 @@ export async function executeProcessor(opts: {
   }
 
   const invocation = new AbortController();
-  const invocationCtx = Object.freeze({
-    ...opts.ctx,
-    signal: invocation.signal,
-  }) as ProcessorContext<unknown>;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
   let terminalOutcome:
@@ -114,7 +111,8 @@ export async function executeProcessor(opts: {
   };
 
   const runPromise: Promise<RunOutcome> = Promise.resolve()
-    .then(() => opts.run(invocationCtx))
+    .then(() => opts.makeContext(invocation.signal))
+    .then((invocationCtx) => opts.run(invocationCtx))
     .then(
       (value) => terminalOutcome ?? { kind: "returned", value },
       (error) => terminalOutcome ?? { kind: "threw", error },
@@ -127,13 +125,13 @@ export async function executeProcessor(opts: {
   });
   const abortPromise = new Promise<RunOutcome>((resolve) => {
     onAbort = () => resolve(settleTerminal({ kind: "cancelled" }));
-    opts.ctx.signal.addEventListener("abort", onAbort, { once: true });
+    opts.signal?.addEventListener("abort", onAbort, { once: true });
   });
 
   const outcome = await Promise.race([runPromise, timeoutPromise, abortPromise]);
   if (timeout !== undefined) clearTimeout(timeout);
-  if (onAbort !== undefined) {
-    opts.ctx.signal.removeEventListener("abort", onAbort);
+  if (onAbort !== undefined && opts.signal !== undefined) {
+    opts.signal.removeEventListener("abort", onAbort);
   }
 
   switch (outcome.kind) {

@@ -563,7 +563,7 @@ type DispatchFrame = {
 };
 
 type ExecutionContextBuildResult = {
-  readonly ctx: ProcessorContext<unknown>;
+  readonly makeContext: (signal: AbortSignal) => ProcessorContext<unknown>;
   readonly costUsd: () => number;
 };
 
@@ -586,7 +586,7 @@ export async function dispatchOneProcessor<TEnvelope>(
     processorId: frame.processor.id,
     phase: frame.phase,
     runId: frame.runId,
-    ctx: executionInput.ctx,
+    makeContext: executionInput.makeContext,
     policy: policyResult.value,
     run: frame.processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
   });
@@ -758,36 +758,40 @@ function buildExecutionContext<TEnvelope>(
   frame: DispatchFrame,
   policy: ResolvedExecutionPolicy,
 ): ExecutionContextBuildResult {
-  const controller = new AbortController();
   let costUsd = 0;
-  const modelInvoke = modelInvokeForProcessor({
-    phase: frame.phase,
-    processorId: frame.processor.id,
-    declared: frame.declared,
-    granted: frame.granted,
-    policy,
-    signal: controller.signal,
-    ...(opts.modelProvider !== undefined ? { provider: opts.modelProvider } : {}),
-    onCost: (cost) => {
-      costUsd += cost;
-    },
-  });
-
-  const ctxInput: ProcessorContextInput<TEnvelope> = {
-    snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
-    changedPaths: opts.changedPaths,
-    proposal: opts.proposal,
-    runId: frame.runId,
-    input: opts.envelope,
-    signal: controller.signal,
-    ...(frame.phase === "view" && opts.projection !== undefined
-      ? { projection: opts.projection }
-      : {}),
-    ...(modelInvoke !== undefined ? { modelInvoke } : {}),
-  };
 
   return Object.freeze({
-    ctx: makeProcessorContext(ctxInput) as ProcessorContext<unknown>,
+    makeContext: (signal: AbortSignal): ProcessorContext<unknown> => {
+      const modelInvoke = modelInvokeForProcessor({
+        phase: frame.phase,
+        processorId: frame.processor.id,
+        declared: frame.declared,
+        granted: frame.granted,
+        policy,
+        signal,
+        ...(opts.modelProvider !== undefined
+          ? { provider: opts.modelProvider }
+          : {}),
+        onCost: (cost) => {
+          costUsd += cost;
+        },
+      });
+
+      const ctxInput: ProcessorContextInput<TEnvelope> = {
+        snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
+        changedPaths: opts.changedPaths,
+        proposal: opts.proposal,
+        runId: frame.runId,
+        input: opts.envelope,
+        signal,
+        ...(frame.phase === "view" && opts.projection !== undefined
+          ? { projection: opts.projection }
+          : {}),
+        ...(modelInvoke !== undefined ? { modelInvoke } : {}),
+      };
+
+      return makeProcessorContext(ctxInput) as ProcessorContext<unknown>;
+    },
     costUsd: () => costUsd,
   });
 }

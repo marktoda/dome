@@ -152,9 +152,19 @@ async function callProviderWithTimeout(opts: {
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
 }): Promise<ModelProviderResponse> {
+  if (opts.signal.aborted) {
+    throw modelAbortError("model.invoke was aborted before provider call started.");
+  }
+
   const controller = new AbortController();
-  const abort = (): void => controller.abort();
-  opts.signal.addEventListener("abort", abort, { once: true });
+  let abort: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    abort = () => {
+      controller.abort();
+      reject(modelAbortError("model.invoke was aborted before provider returned."));
+    };
+    opts.signal.addEventListener("abort", abort, { once: true });
+  });
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -171,14 +181,15 @@ async function callProviderWithTimeout(opts: {
   });
 
   try {
-    const response = await Promise.race([
+    const response = await Promise.race<unknown>([
       opts.provider({
         ...opts.request,
         signal: controller.signal,
       }),
       timeoutPromise,
+      abortPromise,
     ]);
-    return response;
+    return validateProviderResponse(response);
   } catch (e) {
     if (isModelExecutionError(e)) throw e;
     throw modelError(
@@ -188,8 +199,65 @@ async function callProviderWithTimeout(opts: {
     );
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
-    opts.signal.removeEventListener("abort", abort);
+    if (abort !== undefined) {
+      opts.signal.removeEventListener("abort", abort);
+    }
   }
+}
+
+function validateProviderResponse(response: unknown): ModelProviderResponse {
+  if (typeof response !== "object" || response === null) {
+    throw invalidProviderResponse("expected an object response.");
+  }
+  const text = (response as { readonly text?: unknown }).text;
+  if (typeof text !== "string") {
+    throw invalidProviderResponse("expected response.text to be a string.");
+  }
+
+  const costUsd = (response as { readonly costUsd?: unknown }).costUsd;
+  if (costUsd !== undefined) {
+    if (typeof costUsd !== "number" || !Number.isFinite(costUsd) || costUsd < 0) {
+      throw invalidProviderResponse(
+        "expected response.costUsd to be a finite non-negative number.",
+      );
+    }
+  }
+
+  return Object.freeze({
+    text,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+    ...copyOptionalString(response, "model"),
+  });
+}
+
+function copyOptionalString(
+  response: object,
+  key: "model",
+): { readonly model?: string } {
+  const value = (response as { readonly model?: unknown })[key];
+  if (value === undefined) return Object.freeze({});
+  if (typeof value !== "string") {
+    throw invalidProviderResponse(`expected response.${key} to be a string.`);
+  }
+  return Object.freeze({ [key]: value });
+}
+
+function invalidProviderResponse(message: string): Error & {
+  readonly code: ProcessorExecutionErrorCode;
+  readonly retryable: boolean;
+} {
+  return modelError(
+    "model.invoke.provider-failed",
+    `model provider returned invalid response: ${message}`,
+    true,
+  );
+}
+
+function modelAbortError(message: string): Error & {
+  readonly code: ProcessorExecutionErrorCode;
+  readonly retryable: boolean;
+} {
+  return modelError("model.invoke.timeout", message, true);
 }
 
 async function invokeStructured<T>(
