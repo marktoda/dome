@@ -7,7 +7,7 @@
 // Normative references:
 //   - docs/wiki/specs/run-ledger.md §"Tables — runs" (column shape +
 //     status enum + run id format).
-//   - docs/wiki/specs/run-ledger.md §"Run lifecycle" (the five states +
+//   - docs/wiki/specs/run-ledger.md §"Run lifecycle" (the run states +
 //     the engine-side write points: queued at enqueue, running at start
 //     of Processor.run(), terminal at end; failed-run try/catch + orphan
 //     detection on crash between running and terminal).
@@ -38,6 +38,14 @@
 //   markFailed          → "running" → "failed". Terminal. Captures
 //                         error, duration_ms, finished_at. UPDATE filters
 //                         by status="running".
+//
+//   markTimedOut        → "running" → "timed_out". Terminal. Captures
+//                         structured error JSON, duration_ms, finished_at.
+//                         UPDATE filters by status="running".
+//
+//   markCancelled       → "running" → "cancelled". Terminal. Captures
+//                         structured error JSON, duration_ms, finished_at.
+//                         UPDATE filters by status="running".
 //
 //   markSkipped         → "queued" → "skipped". Terminal. Captures
 //                         finished_at. UPDATE filters by status="queued".
@@ -77,6 +85,7 @@ import { randomBytes } from "node:crypto";
 import type { ProcessorPhase } from "../core/processor";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { type RunId } from "../engine/runner-contract";
+import type { ProcessorExecutionError } from "../processors/execution-error";
 import type { LedgerDb } from "./db";
 
 // ----- Branded RunId --------------------------------------------------------
@@ -99,8 +108,17 @@ export type { RunId };
  * - `failed`    — processor.run() threw, or returned an invalid Effect, or
  *                 the orphan-recovery path transitioned a stuck-running row.
  * - `skipped`   — idempotency dedup short-circuited the run.
+ * - `timed_out` — processor execution exceeded its configured deadline.
+ * - `cancelled` — processor execution was cancelled by shutdown/re-drive.
  */
-export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "skipped";
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "timed_out"
+  | "cancelled";
 
 // ----- Trigger kind --------------------------------------------------------
 
@@ -166,7 +184,21 @@ export type MarkSucceededOpts = {
 
 export type MarkFailedOpts = {
   readonly id: RunId;
-  readonly error: string;
+  readonly error: string | ProcessorExecutionError;
+  readonly durationMs: number;
+  readonly finishedAt: Date;
+};
+
+export type MarkTimedOutOpts = {
+  readonly id: RunId;
+  readonly error: ProcessorExecutionError;
+  readonly durationMs: number;
+  readonly finishedAt: Date;
+};
+
+export type MarkCancelledOpts = {
+  readonly id: RunId;
+  readonly error: ProcessorExecutionError;
   readonly durationMs: number;
   readonly finishedAt: Date;
 };
@@ -257,6 +289,24 @@ WHERE id = ? AND status = 'running'
 const MARK_FAILED_SQL = `
 UPDATE runs
 SET status = 'failed',
+    error = ?,
+    duration_ms = ?,
+    finished_at = ?
+WHERE id = ? AND status = 'running'
+`.trim();
+
+const MARK_TIMED_OUT_SQL = `
+UPDATE runs
+SET status = 'timed_out',
+    error = ?,
+    duration_ms = ?,
+    finished_at = ?
+WHERE id = ? AND status = 'running'
+`.trim();
+
+const MARK_CANCELLED_SQL = `
+UPDATE runs
+SET status = 'cancelled',
     error = ?,
     duration_ms = ?,
     finished_at = ?
@@ -400,8 +450,28 @@ export function markSucceeded(db: LedgerDb, opts: MarkSucceededOpts): void {
  * `error: <message>`, before rethrowing."
  */
 export function markFailed(db: LedgerDb, opts: MarkFailedOpts): void {
+  const error =
+    typeof opts.error === "string" ? opts.error : JSON.stringify(opts.error);
   db.raw.query(MARK_FAILED_SQL).run(
-    opts.error,
+    error,
+    opts.durationMs,
+    opts.finishedAt.toISOString(),
+    opts.id,
+  );
+}
+
+export function markTimedOut(db: LedgerDb, opts: MarkTimedOutOpts): void {
+  db.raw.query(MARK_TIMED_OUT_SQL).run(
+    JSON.stringify(opts.error),
+    opts.durationMs,
+    opts.finishedAt.toISOString(),
+    opts.id,
+  );
+}
+
+export function markCancelled(db: LedgerDb, opts: MarkCancelledOpts): void {
+  db.raw.query(MARK_CANCELLED_SQL).run(
+    JSON.stringify(opts.error),
     opts.durationMs,
     opts.finishedAt.toISOString(),
     opts.id,
@@ -588,6 +658,8 @@ function narrowStatus(s: string): RunStatus {
     case "succeeded":
     case "failed":
     case "skipped":
+    case "timed_out":
+    case "cancelled":
       return s;
     default:
       throw new Error(`ledger.runs: unknown status '${s}'`);

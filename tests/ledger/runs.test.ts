@@ -23,10 +23,12 @@ import {
   failOrphanedRuns,
   getRun,
   insertQueued,
+  markCancelled,
   markFailed,
   markRunning,
   markSkipped,
   markSucceeded,
+  markTimedOut,
   newRunId,
   orphanRuns,
   queryRuns,
@@ -235,6 +237,63 @@ describe("runs lifecycle", () => {
     expect(done.finishedAt).toBe(finishedAt.toISOString());
     expect(done.outputCommit).toBeNull();
     expect(done.effectHashes).toEqual([]);
+  });
+
+  it("queued → running → timed_out captures structured error JSON", () => {
+    const id = freshId();
+    queue(id);
+    markRunning(db, id, new Date());
+
+    const finishedAt = new Date("2026-05-27T12:00:03.000Z");
+    markTimedOut(db, {
+      id,
+      error: {
+        code: "processor.timeout",
+        message: "processor exceeded timeout of 2000ms",
+        retryable: false,
+        phase: "adoption",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 2000,
+      finishedAt,
+    });
+
+    const done = getRun(db, id);
+    expect(done?.status).toBe("timed_out");
+    expect(done?.durationMs).toBe(2000);
+    expect(done?.finishedAt).toBe(finishedAt.toISOString());
+    expect(JSON.parse(done?.error ?? "{}")).toEqual({
+      code: "processor.timeout",
+      message: "processor exceeded timeout of 2000ms",
+      retryable: false,
+      phase: "adoption",
+      processorId: "dome.intake.extract",
+    });
+  });
+
+  it("queued → running → cancelled captures structured error JSON", () => {
+    const id = freshId();
+    queue(id);
+    markRunning(db, id, new Date());
+
+    const finishedAt = new Date("2026-05-27T12:00:04.000Z");
+    markCancelled(db, {
+      id,
+      error: {
+        code: "processor.cancelled",
+        message: "processor cancelled during shutdown",
+        retryable: false,
+        phase: "garden",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 100,
+      finishedAt,
+    });
+
+    const done = getRun(db, id);
+    expect(done?.status).toBe("cancelled");
+    expect(done?.durationMs).toBe(100);
+    expect(JSON.parse(done?.error ?? "{}").code).toBe("processor.cancelled");
   });
 
   it("queued → skipped transitions a dedup-cached run", () => {
