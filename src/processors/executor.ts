@@ -76,23 +76,44 @@ export async function executeProcessor(opts: {
     });
   }
 
+  const invocation = new AbortController();
+  const invocationCtx = Object.freeze({
+    ...opts.ctx,
+    signal: invocation.signal,
+  }) as ProcessorContext<unknown>;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  let terminalOutcome:
+    | { readonly kind: "timed_out" }
+    | { readonly kind: "cancelled" }
+    | undefined;
+
+  const settleTerminal = (
+    outcome:
+      | { readonly kind: "timed_out" }
+      | { readonly kind: "cancelled" },
+  ): { readonly kind: "timed_out" } | { readonly kind: "cancelled" } => {
+    if (terminalOutcome === undefined) {
+      terminalOutcome = outcome;
+      invocation.abort();
+    }
+    return terminalOutcome;
+  };
 
   const runPromise: Promise<RunOutcome> = Promise.resolve()
-    .then(() => opts.run(opts.ctx))
+    .then(() => opts.run(invocationCtx))
     .then(
-      (value) => ({ kind: "returned", value }),
-      (error) => ({ kind: "threw", error }),
+      (value) => terminalOutcome ?? { kind: "returned", value },
+      (error) => terminalOutcome ?? { kind: "threw", error },
     );
   const timeoutPromise = new Promise<RunOutcome>((resolve) => {
     timeout = setTimeout(
-      () => resolve({ kind: "timed_out" }),
+      () => resolve(settleTerminal({ kind: "timed_out" })),
       opts.policy.timeoutMs,
     );
   });
   const abortPromise = new Promise<RunOutcome>((resolve) => {
-    onAbort = () => resolve({ kind: "cancelled" });
+    onAbort = () => resolve(settleTerminal({ kind: "cancelled" }));
     opts.ctx.signal.addEventListener("abort", onAbort, { once: true });
   });
 
@@ -212,13 +233,33 @@ function outputResult(input: {
     effects.push(parsed.data as Effect);
   }
 
+  let effectHashes: Array<string>;
+  try {
+    effectHashes = effects.map(hashEffect);
+  } catch (e) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: `Processor returned output that could not be serialized to JSON for effect hashing: ${errorMessage(e)}`,
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+
   const frozenEffects = Object.freeze(effects.slice());
   return Object.freeze({
     status: "succeeded",
     runId: input.runId,
     processorId: input.processorId,
     effects: frozenEffects,
-    effectHashes: Object.freeze(frozenEffects.map(hashEffect)),
+    effectHashes: Object.freeze(effectHashes),
     durationMs: input.durationMs,
   });
 }

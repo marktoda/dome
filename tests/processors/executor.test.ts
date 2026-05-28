@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { diagnosticEffect, patchEffect } from "../../src/core/effect";
+import {
+  EffectSchema,
+  diagnosticEffect,
+  externalActionEffect,
+  patchEffect,
+} from "../../src/core/effect";
 import type { Effect } from "../../src/core/effect";
 import type { ProcessorContext } from "../../src/core/processor";
 import { commitOid } from "../../src/core/source-ref";
@@ -34,6 +39,20 @@ function validEffect(): Effect {
     code: "test.ok",
     message: "ok",
     sourceRefs: [],
+  });
+}
+
+function contextWithSignal(signal: AbortSignal): ProcessorContext<unknown> {
+  return Object.freeze({
+    ...ctx,
+    signal,
+  }) as ProcessorContext<unknown>;
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
   });
 }
 
@@ -118,6 +137,41 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.message).toContain("effect[1]");
   });
 
+  test("unhashable schema-valid effect fails invalid-output without routing effects", async () => {
+    const unhashableEffect = externalActionEffect({
+      capability: "test.external",
+      idempotencyKey: "test.external.bigint",
+      payload: 1n,
+      sourceRefs: [],
+    });
+
+    expect(EffectSchema.safeParse(unhashableEffect).success).toBe(true);
+
+    const result = await executeProcessor({
+      processorId: "test.executor.unhashable",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => [unhashableEffect],
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.invalid-output");
+    expect(result.error.message).toMatch(/hash|serial|JSON/i);
+    expect(result.diagnostic.severity).toBe("error");
+    expect(result.diagnostic.message).toMatch(/hash|serial|JSON/i);
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
   test("throw becomes structured processor.threw", async () => {
     const result = await executeProcessor({
       processorId: "test.executor.throw",
@@ -143,8 +197,90 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.severity).toBe("block");
   });
 
+  test("pre-aborted upstream signal cancels without invoking run", async () => {
+    const upstream = new AbortController();
+    upstream.abort();
+    let invoked = false;
+
+    const result = await executeProcessor({
+      processorId: "test.executor.preaborted",
+      phase: "adoption",
+      runId: RUN_ID,
+      ctx: contextWithSignal(upstream.signal),
+      policy: {
+        class: "deterministic",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => {
+        invoked = true;
+        return [validEffect()];
+      },
+    });
+
+    expect(invoked).toBe(false);
+    expect(result.status).toBe("cancelled");
+    if (result.status !== "cancelled") return;
+    expect(result.error.code).toBe("processor.cancelled");
+    expect(result.diagnostic.severity).toBe("block");
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
+  test("mid-flight upstream abort cancels and aborts processor signal", async () => {
+    const upstream = new AbortController();
+    let invoked = false;
+    let observedSignalAborted = false;
+    let processorSignal: AbortSignal | undefined;
+    let resolveStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+
+    const resultPromise = executeProcessor({
+      processorId: "test.executor.cancel",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx: contextWithSignal(upstream.signal),
+      policy: {
+        class: "background",
+        timeoutMs: 1_000,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async (runCtx) => {
+        invoked = true;
+        processorSignal = runCtx.signal;
+        resolveStarted?.();
+        await waitForAbort(runCtx.signal);
+        observedSignalAborted = runCtx.signal.aborted;
+        return [validEffect()];
+      },
+    });
+
+    await started;
+    expect(invoked).toBe(true);
+    expect(processorSignal).not.toBe(upstream.signal);
+    upstream.abort();
+
+    const result = await resultPromise;
+    await Promise.resolve();
+
+    expect(result.status).toBe("cancelled");
+    if (result.status !== "cancelled") return;
+    expect(result.error.code).toBe("processor.cancelled");
+    expect(result.diagnostic.severity).toBe("error");
+    expect(observedSignalAborted).toBe(true);
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
   test("timeout returns timed_out and discards late effects", async () => {
     let released = false;
+    let observedSignalAborted = false;
     const result = await executeProcessor({
       processorId: "test.executor.timeout",
       phase: "garden",
@@ -152,13 +288,14 @@ describe("executeProcessor", () => {
       ctx,
       policy: {
         class: "background",
-        timeoutMs: 1,
+        timeoutMs: 5,
         retryBudgetMs: 0,
         maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
-      run: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+      run: async (runCtx) => {
+        await waitForAbort(runCtx.signal);
+        observedSignalAborted = runCtx.signal.aborted;
         released = true;
         return [validEffect()];
       },
@@ -170,7 +307,8 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.severity).toBe("error");
     expect("effects" in result).toBe(false);
     expect("effectHashes" in result).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await Promise.resolve();
+    expect(observedSignalAborted).toBe(true);
     expect(released).toBe(true);
   });
 });
