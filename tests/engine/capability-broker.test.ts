@@ -22,7 +22,7 @@ const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
 const patchTouching = (path: string) =>
   patchEffect({
     mode: "auto",
-    patch: `--- a/${path}\n+++ b/${path}\n`,
+    changes: [{ kind: "write", path, content: "x\n" }],
     reason: "test",
     sourceRefs: [ref],
   });
@@ -30,7 +30,7 @@ const patchTouching = (path: string) =>
 const proposePatchTouching = (path: string) =>
   patchEffect({
     mode: "propose",
-    patch: `--- a/${path}\n+++ b/${path}\n`,
+    changes: [{ kind: "write", path, content: "x\n" }],
     reason: "test",
     sourceRefs: [ref],
   });

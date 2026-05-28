@@ -149,7 +149,9 @@ describe("adopt fixed-point loop", () => {
         effects: [
           patchEffect({
             mode: "auto",
-            patch: "--- a/wiki/seed.md\n+++ b/wiki/seed.md\n",
+            changes: [
+              { kind: "write", path: "wiki/seed.md", content: "diverge\n" },
+            ],
             reason: "diverge",
             sourceRefs: [],
           }),

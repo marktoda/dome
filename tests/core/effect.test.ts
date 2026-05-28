@@ -27,7 +27,9 @@ const minEffects = {
   patch: () =>
     patchEffect({
       mode: "auto",
-      patch: "--- a/wiki/x.md\n+++ b/wiki/x.md\n",
+      changes: [
+        { kind: "write", path: "wiki/x.md", content: "hello\n" },
+      ],
       reason: "fix",
       sourceRefs: refs,
     }),

@@ -24,6 +24,9 @@ const baseOpts = {
   declared: [] as ReadonlyArray<Capability>,
   granted: [] as ReadonlyArray<Capability>,
   sinks: noopSinks(),
+  candidate: commitOid(
+    "0000000000000000000000000000000000000001",
+  ),
 };
 
 describe("phase-mismatch rejections", () => {
@@ -87,7 +90,7 @@ describe("phase-mismatch rejections", () => {
       phase: "view",
       effect: patchEffect({
         mode: "auto",
-        patch: "--- a/wiki/x.md\n+++ b/wiki/x.md\n",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
         reason: "x",
         sourceRefs: [ref],
       }),
@@ -120,7 +123,7 @@ describe("successful routes (noopSinks)", () => {
       phase: "adoption",
       effect: patchEffect({
         mode: "auto",
-        patch: "--- a/wiki/x.md\n+++ b/wiki/x.md\n",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
         reason: "x",
         sourceRefs: [ref],
       }),
@@ -162,7 +165,7 @@ describe("capability denial flows through", () => {
       phase: "adoption",
       effect: patchEffect({
         mode: "auto",
-        patch: "--- a/wiki/x.md\n+++ b/wiki/x.md\n",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
         reason: "x",
         sourceRefs: [ref],
       }),

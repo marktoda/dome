@@ -107,7 +107,9 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         effects: [
           patchEffect({
             mode: "propose",
-            patch: "--- a/wiki/seed.md\n+++ b/wiki/seed.md\n",
+            changes: [
+              { kind: "write", path: "wiki/seed.md", content: "x\n" },
+            ],
             reason: "x",
             sourceRefs: [],
           }),
@@ -158,7 +160,9 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         effects: [
           patchEffect({
             mode: "auto",
-            patch: "--- a/wiki/seed.md\n+++ b/wiki/seed.md\n",
+            changes: [
+              { kind: "write", path: "wiki/seed.md", content: "y\n" },
+            ],
             reason: "y",
             sourceRefs: [],
           }),
@@ -208,7 +212,9 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         effects: [
           patchEffect({
             mode: "auto",
-            patch: "--- a/wiki/seed.md\n+++ b/wiki/seed.md\n",
+            changes: [
+              { kind: "write", path: "wiki/seed.md", content: "z\n" },
+            ],
             reason: "z",
             sourceRefs: [],
           }),
@@ -255,7 +261,9 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         effects: [
           patchEffect({
             mode: "propose",
-            patch: "--- a/wiki/seed.md\n+++ b/wiki/seed.md\n",
+            changes: [
+              { kind: "write", path: "wiki/seed.md", content: "no-ledger\n" },
+            ],
             reason: "no-ledger",
             sourceRefs: [],
           }),

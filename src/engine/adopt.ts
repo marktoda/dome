@@ -73,13 +73,18 @@ import type {
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import { currentBranch, currentSha } from "../git";
+// Note: `currentSha` was used Phase-2 to re-read HEAD after each iteration
+// to detect candidate progression by an out-of-band sink mutation. Phase
+// 12a removes that pattern — `applyPatch` returns the new candidate OID
+// via `ApplyEffectResult.newCandidate`, which `adopt` threads forward
+// directly. `currentSha` is still imported for the source-head snapshot
+// taken once at loop start (`sourceHeadSha`).
 import type { LedgerDb } from "../ledger/db";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import { updateOutputCommit } from "../ledger/runs";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
 import { compileRange } from "./compile-range";
-import { parsePatchPaths } from "./patch-parse";
 import type { AdoptionPhaseRunner, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -308,6 +313,15 @@ export async function adopt(opts: {
     // NOT count as an auto-patch for fixed-point purposes).
     const effectsThisIteration: Effect[] = [];
 
+    // Phase 12a: track the candidate OID across the per-effect loop. Each
+    // successful PatchEffect's sink returns the new candidate via
+    // `applied.newCandidate`; we thread it into the next effect's
+    // applyEffect call so subsequent patches in the same iteration stack on
+    // top of the latest candidate. After the for-each completes, the outer
+    // `candidate` variable is updated to this iteration-end value so the
+    // next iteration's compileRange + runner see the post-patch state.
+    let candidateAtIterationEnd: CommitOid = candidate;
+
     for (const { runId, processorId, declared, granted, effects } of runnerResults) {
       contributingRunIds.add(runId);
       emitEvent(onEvent, {
@@ -327,6 +341,7 @@ export async function adopt(opts: {
           declared,
           granted,
           sinks,
+          candidate: candidateAtIterationEnd,
         });
 
         // Ledger: capability-use rows per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
@@ -367,13 +382,30 @@ export async function adopt(opts: {
             allDiagnostics.push(applied.appliedEffect);
           }
           if (applied.appliedEffect.kind === "patch") {
-            for (const path of parsePatchPaths(applied.appliedEffect.patch)) {
-              touchedPaths.add(path);
+            for (const change of applied.appliedEffect.changes) {
+              touchedPaths.add(change.path);
             }
           }
         }
+
+        // Phase 12a: thread the new candidate OID forward when the sink
+        // advanced it. `applied.newCandidate` is populated only for
+        // successful PatchEffects whose sink returned a non-null OID
+        // (the candidate-tree mutator path); other effects + placeholder
+        // sinks leave it undefined and the candidate stays put.
+        if (applied.newCandidate !== undefined) {
+          candidateAtIterationEnd = applied.newCandidate;
+        }
       }
     }
+
+    // After the iteration's effects are routed, update the outer candidate
+    // variable. The next iteration's compileRange + runner observe the new
+    // candidate's tree; convergence is detected on the next iteration
+    // (or this one, if no auto-patches landed). Replaces the Phase-2
+    // pattern of re-reading HEAD via `currentSha` — the candidate OID
+    // is now the engine's source of truth, not a side-effect on HEAD.
+    candidate = candidateAtIterationEnd;
 
     // Severity check: any block-severity diagnostic — surfaced by the
     // broker (deny / phase-mismatch) or emitted by a processor directly —
@@ -406,16 +438,12 @@ export async function adopt(opts: {
     if (converged) {
       break;
     }
-
-    // Otherwise: a patch landed via `sinks.applyPatch`. The sink is
-    // responsible for mutating the candidate tree (Phase 4 wires the
-    // working-tree writer). We re-read HEAD to pick up the new candidate
-    // SHA; if HEAD didn't move (because the sink is a noop, as in
-    // Phase 2 standalone validation), the candidate stays at the same
-    // commit and the next iteration will see no new auto-patches and
-    // converge naturally.
-    const nextCandidate = await currentSha(vault.path);
-    if (nextCandidate !== null) candidate = commitOid(nextCandidate);
+    // Otherwise: at least one auto-patch landed this iteration. The
+    // candidate variable was advanced above via `applied.newCandidate`
+    // for each successful sink call; the next iteration's compileRange +
+    // runner read against the new tree. No HEAD re-read needed — Phase
+    // 12a made `applyPatch`'s return the engine's single source of truth
+    // for candidate-OID progression.
   }
 
   // Divergence check: if we exited the loop without breaking, we hit the
@@ -442,18 +470,29 @@ export async function adopt(opts: {
     });
   }
 
-  // Convergence reached. Close: if engine-driven patches landed during the
-  // loop, create the closure commit carrying the four Dome-* trailers.
-  // `makeClosureCommit` returns null when `touchedPaths` is empty (the
-  // loop reached fixed point on iteration 1 with no engine writes) or
-  // when `vault.config.git.auto_commit_workflows` is false.
-  const closureCommitOid = await makeClosureCommit({
-    vault,
-    base: adopted,
-    sourceHead,
-    touchedPaths: [...touchedPaths],
-    proposalId: proposal.id,
-  });
+  // Convergence reached. Close: in Phase 12a, the candidate-tree mutator
+  // (`applyPatch`) lands each PatchEffect as its own plumbing commit
+  // carrying the four `Dome-*` trailers, so the chain head (`candidate`)
+  // *is* the closure. We surface `candidate` as the closure-commit OID
+  // when it has moved from `proposal.head`; the run-ledger back-fill +
+  // adopted-ref advance both target the chain head.
+  //
+  // The legacy `makeClosureCommit` path (stages `touchedPaths` from the
+  // working tree, then `git commit`) only runs when no plumbing commits
+  // landed — i.e., when the candidate stayed put. This covers the v0.5
+  // legacy semantics where a processor mutated the working tree out-of-
+  // band; the Phase 12a sink leaves the working tree alone, so this
+  // branch is dormant under v1 first-party processors.
+  const candidateAdvanced = candidate !== proposal.head;
+  const closureCommitOid: CommitOid | null = candidateAdvanced
+    ? candidate
+    : await makeClosureCommit({
+        vault,
+        base: adopted,
+        sourceHead,
+        touchedPaths: [...touchedPaths],
+        proposalId: proposal.id,
+      });
 
   // Dual-surface join: when a closure commit landed AND a ledger is wired,
   // back-fill `runs.output_commit` on every contributing run. `markSucceeded`
