@@ -2,7 +2,7 @@
 
 This document captures the roadmap from "v1.0 shipped (engine + one diagnostic-only processor)" through to "Dome is materially useful as a daily second-brain tool." Each phase delivers a coherent user-facing improvement, not just infrastructure.
 
-**Status:** v1.0 + Phase 11 (commit-watcher daemon, init polish, `dome.markdown.validate-wikilinks`) + Phase 12 (applyPatch substrate + `dome.markdown.normalize-frontmatter`) are merged to `main`.
+**Status:** v1.0 + Phase 11 (commit-watcher daemon, init polish, `dome.markdown.validate-wikilinks`) + Phase 12 (applyPatch substrate + `dome.markdown.normalize-frontmatter`) + Phase 13a (TIER 0 pack: `dome.markdown.lint-frontmatter` + `dome.graph.links` + `dome.markdown.orphan-pages` + `dome run` CLI + `ctx.projection` query surface) are merged to `main`.
 
 ## Capability dependency graph
 
@@ -20,19 +20,32 @@ TIER 3 — needs scheduled-trigger dispatch (cron events)
 
 ## TIER 0 — Useful immediately (no new substrate)
 
-These emit diagnostics/facts/questions only. `dome doctor --show <subject>` surfaces what they found.
+These emit diagnostics/facts/questions only. `dome inspect <subject>` surfaces what they found.
+
+### Phase 13a (shipped) — diagnostic + fact + view processor pack
 
 | Processor | What it does | Why it's high-value |
 |---|---|---|
-| `dome.markdown.lint-frontmatter` | Validates frontmatter against the page-type schema declared in `.dome/page-types.yaml`. Surfaces missing `type:`, malformed YAML, dates in wrong format, unknown fields. | Cheapest path to "the vault stays well-formed." |
-| `dome.markdown.orphan-pages` | Walks the vault tree, computes incoming-link counts via wikilinks, emits a diagnostic for any page with zero incoming links AND not in a root index. | The "lost notes" problem — files you wrote and then forgot to link from anywhere. |
-| `dome.graph.entity-mentions` | Scans `wiki/sources/*.md` for `[[entity]]` references. Emits `FactEffect(subject: entity, predicate: "mentioned_in", object: source)` for each. | Foundation for "what sources mention X?" queries without re-parsing. |
-| `dome.graph.tag-index` | Parses frontmatter `tags: [...]` and inline `#tag` syntax. Emits `FactEffect(subject: page, predicate: "tagged", object: tag)`. | Same — foundation for tag-based recall. |
+| ✅ `dome.markdown.lint-frontmatter` | Validates the minimal core schema: presence of frontmatter, presence of `type:`, well-formed `created:` / `updated:` dates, well-formed `tags:`, parseable YAML. Five diagnostic codes. | Cheapest path to "the vault stays well-formed." Per-page-type schema validation (e.g., `type: task` requires `dueDate`) deferred to Phase 13c when the page-types substrate lands. |
+| ✅ `dome.graph.links` | Scans `*.md` for `[[wikilink]]` references. Emits `FactEffect(subject: page, predicate: "dome.graph.links_to", object: <target>)`. First fact-emitting processor; first `graph.write` capability declaration; namespace `dome.graph.*`. | Foundation for the link graph — incoming-link analysis, dead-link detection, reverse-link views. |
+| ✅ `dome.markdown.orphan-pages` | View-phase, command-triggered (`dome run orphan-pages`). Reads `links_to` facts, computes incoming-link counts, emits one `ViewEffect` listing every page with zero incoming AND not implicitly linked from a root-index page. | The "lost notes" problem — files you wrote and then forgot to link from anywhere. |
+
+Substrate added: `ctx.projection` query view on `ProcessorContext`; `dome run <name>` CLI command for command-triggered view-phase processors.
+
+### Phase 13b (planned) — remaining TIER 0 processors
+
+| Processor | What it does | Why it's high-value |
+|---|---|---|
+| `dome.graph.tag-index` | Parses frontmatter `tags: [...]` and inline `#tag` syntax. Emits `FactEffect(subject: page, predicate: "dome.graph.tagged", object: tag)`. | Foundation for tag-based recall. |
 | `dome.markdown.stale-dates` | Reads frontmatter `updated:` and compares to the file's commit date. If they disagree by more than N days, emit a diagnostic. | Catches the "I forgot to bump the date" hygiene issue. |
-| `dome.markdown.duplicate-detection` | Compares page titles + first paragraphs across the vault. Flags suspected duplicates with `QuestionEffect`. | Detects accidental fragmenting of an entity into two pages. |
+| `dome.markdown.duplicate-detection` | Compares page titles + first paragraphs across the vault. Flags suspected duplicates with `QuestionEffect`. First Question-emitting processor. | Detects accidental fragmenting of an entity into two pages. |
 | `dome.markdown.broken-images` | Scans for `![](path)` references; emits diagnostic when the image isn't in the vault. | Sibling of the wikilink validator; same shape. |
 
-**Estimated effort:** each is ~150-300 LOC + tests. ~1 day per processor. Six processors = ~1 week.
+### Phase 13c (planned) — per-page-type schemas
+
+Restores a v0.5-era concept retired in Phase 7b: `.dome/page-types.yaml` (or successor substrate) declaring per-type schemas, then `dome.markdown.lint-frontmatter` extends to validate against the declared schema for each page's declared `type:`. Requires page-types substrate to land first.
+
+**Estimated effort:** each remaining processor is ~150-300 LOC + tests. ~1 day per processor.
 
 ## TIER 1 — Needs `applyPatch` (✅ substrate landed in Phase 12)
 
@@ -78,13 +91,25 @@ Each phase delivers a coherent user-facing improvement.
 
 **Fix:** in `adopt.ts`'s closure step, when `candidate !== proposal.head` (a closure landed), advance `main` to `candidate` before advancing `refs/dome/adopted/main`. Single-client mode makes this safe — no concurrent writer.
 
-### Phase 13 — TIER 0 processor pack *(~1 week)*
+### Phase 13a (shipped) — TIER 0 starter: lint + graph + orphan-pages *(~1 week)*
 
-Ship 4-5 diagnostic-only processors from the TIER 0 list. Easy wins. No new substrate.
+Three processors shipped:
+- `dome.markdown.lint-frontmatter` (adoption-phase, diagnostic-only)
+- `dome.graph.links` (adoption-phase, FactEffect-emitting; first `graph.write` capability)
+- `dome.markdown.orphan-pages` (view-phase, command-triggered via `dome run orphan-pages`)
 
-Update `dome doctor` to render per-processor subjects (`dome doctor --show orphan-pages`, `--show stale-dates`).
+Substrate added:
+- `ProcessorContext.projection` — read-only `ProjectionQueryView` (facts / diagnostics / questions). Adoption-phase contexts get an undefined slot; view-phase contexts get a live handle.
+- `dome run <name>` CLI command — the dispatch path for command-triggered view-phase processors. Each new `dome run <name>` is realized by adding a view-phase processor whose command trigger declares `name`.
+- `Harness.runCli(args)` test helper — in-process CLI invocation for scenario tests.
 
-**Outcome:** `dome doctor` becomes a real "vault health" command.
+### Phase 13b (planned) — remaining TIER 0 *(~1 week)*
+
+`dome.graph.tag-index`, `dome.markdown.stale-dates`, `dome.markdown.duplicate-detection`, `dome.markdown.broken-images`.
+
+### Phase 13c (planned) — per-page-type schemas *(~1 week)*
+
+`.dome/page-types.yaml` substrate (or successor) + `dome.markdown.lint-frontmatter` extension to validate per-type fields. Requires the page-types substrate to land first.
 
 ### Phase 14 — Diagnostic auto-resolve + processor versioning + `dome rebuild` *(~1 week)*
 

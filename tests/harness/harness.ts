@@ -37,6 +37,7 @@ import { dirname, join } from "node:path";
 import git from "isomorphic-git";
 
 import { adoptedRefName, getAdoptedRef } from "../../src/adopted-ref";
+import { runCli as runCliDispatch } from "../../src/cli/index";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   detectDrift,
@@ -445,6 +446,69 @@ export class HarnessImpl implements Harness {
     return new CommitMatcherImpl(this, commitRef);
   }
 
+  // ----- CLI invocation ---------------------------------------------------
+
+  async runCli(args: ReadonlyArray<string>): Promise<{
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+  }> {
+    await this.snapshot();
+    // Close the harness's runtime before invoking the CLI command — the
+    // command opens its own VaultRuntime against the same SQLite files,
+    // and two open handles racing on the same DB file is the kind of
+    // subtle corruption we'd rather not debug. SQLite's
+    // `sqlite3_close_v2` is idempotent so a double-close on cleanup is
+    // safe.
+    await this.runtime.close();
+
+    // Capture console output. `runCli` writes via `console.log` /
+    // `console.error`; the overrides collect each call into arrays and
+    // join with newlines at the end. Bun's console is synchronous, so
+    // there's no race between the command writing and our test
+    // restoring the original handlers.
+    const captured = { out: [] as string[], err: [] as string[] };
+    const origLog = console.log;
+    const origErr = console.error;
+    console.log = (...parts: unknown[]) =>
+      captured.out.push(parts.map((p) => stringifyForCapture(p)).join(" "));
+    console.error = (...parts: unknown[]) =>
+      captured.err.push(parts.map((p) => stringifyForCapture(p)).join(" "));
+
+    let exitCode: number;
+    try {
+      // Append `--vault <path>` + `--bundles-root <vault>/.dome/extensions`
+      // so the CLI command targets this harness's vault. The
+      // bundles-root override matches how `tick()` / `install()` wire
+      // the symlinked bundles into the runtime — without it the CLI
+      // would load the SDK's shipped bundles which differ from the
+      // scenario's installed set.
+      const fullArgs: string[] = [
+        ...args,
+        "--vault",
+        this.vaultPath,
+        "--bundles-root",
+        join(this.vaultPath, ".dome", "extensions"),
+      ];
+      exitCode = await runCliDispatch(fullArgs);
+    } finally {
+      console.log = origLog;
+      console.error = origErr;
+      // Reopen the harness's runtime so subsequent matchers see the
+      // post-command state. The command may have written rows to the
+      // projection / ledger; reopening picks up the new SQLite state.
+      this.runtime = await openRuntime(this.vaultPath);
+    }
+
+    await runAllAlwaysTrue(this, `runCli([${args.join(" ")}])`);
+
+    return {
+      exitCode,
+      stdout: captured.out.join("\n"),
+      stderr: captured.err.join("\n"),
+    };
+  }
+
   // ----- Always-true runner -----------------------------------------------
 
   async assertAlwaysTrue(): Promise<void> {
@@ -555,4 +619,14 @@ function makeGitView(h: HarnessImpl): GitView {
 function extractSubject(message: string): string {
   const idx = message.indexOf("\n");
   return idx === -1 ? message : message.slice(0, idx);
+}
+
+/**
+ * Stringify a `console.log` / `console.error` argument for the
+ * `runCli` capture buffer. Strings pass through; everything else goes
+ * through `String(...)` which mirrors `console`'s default formatting.
+ */
+function stringifyForCapture(value: unknown): string {
+  if (typeof value === "string") return value;
+  return String(value);
 }

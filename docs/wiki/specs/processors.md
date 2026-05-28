@@ -33,7 +33,26 @@ interface ProcessorContext<TInput = unknown> {
   readonly input: TInput;                 // trigger-specific payload (e.g., Signal, ClockTick, CommandArgs)
   readonly capabilities: CapabilityToken; // opaque token; the broker resolves on effect emission
   readonly modelInvoke?: ModelInvokeFn;   // present iff capability `model.invoke` granted
+  readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it)
   readonly sourceRef(path: string, range?: TextRange): SourceRef;  // helper for SourceRef construction
+}
+
+// The read surface view-phase processors consume to query the projection store.
+// Adoption-phase processors typically read from `ctx.snapshot` (markdown
+// content at the candidate commit) and the field stays undefined; view-phase
+// processors require the field — they answer queries by joining facts,
+// diagnostics, and committed markdown content.
+interface ProjectionQueryView {
+  facts(filter?: {
+    predicate?: string;
+    subjectKind?: "page" | "task" | "entity";
+    subjectId?: string;
+  }): ReadonlyArray<FactEffect>;
+  diagnostics(filter?: {
+    severity?: "info" | "warning" | "error" | "block";
+    processorId?: string;
+  }): ReadonlyArray<DiagnosticEffect>;
+  questions(filter?: { resolved?: boolean }): ReadonlyArray<QuestionEffect>;
 }
 ```
 

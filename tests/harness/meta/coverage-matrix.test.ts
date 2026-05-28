@@ -52,6 +52,9 @@ import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
 import "../scenarios/effect-kinds/multiple-processors-same-commit.scenario.test";
 import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test";
+import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
+import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
+import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
 import "../scenarios/triggers/document-changed-fires.scenario.test";
 import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
@@ -88,11 +91,14 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
   // H2 additions ----------------------------------------------------------
 
   test("every shipped processor's phase has at least one scenario", () => {
-    // The currently-shipped first-party bundle (dome.markdown) carries two
-    // processors, both in the `adoption` phase. As more phases ship
-    // (capture, retrieval, learning, ...) we extend this list; H3 will
-    // wire it to the processor registry so it stays automatically in sync.
-    const shippedPhases: ReadonlyArray<string> = ["adoption"];
+    // The currently-shipped first-party bundles (dome.markdown +
+    // dome.graph) carry processors in two phases: `adoption` (the
+    // adoption-phase markdown + graph processors) and `view` (the
+    // Phase 13a `dome.markdown.orphan-pages` view processor).
+    // As more phases ship (capture, retrieval, learning, ...) we
+    // extend this list; H3+ will wire it to the processor registry so
+    // it stays automatically in sync.
+    const shippedPhases: ReadonlyArray<string> = ["adoption", "view"];
     const registry = getRegistry();
     for (const phase of shippedPhases) {
       const covered = registry.some((entry) =>
@@ -186,31 +192,30 @@ const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [
 // exercises the value. ADDING an entry requires a comment justification.
 
 const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
-  "fact",      // Phase 13 — dome.graph.entity-mentions (first FactEffect-emitting processor)
+  // Phase 13a unblocked: fact (dome.graph.links), view (dome.markdown.orphan-pages).
   "question",  // Phase 14+ — duplicate-detection and intake processors emit Questions
   "job",       // Phase 18 — scheduled processors enqueue deferred Jobs
   "external",  // Phase 16+ — outbox-targeted external actions (calendar.write, etc.)
-  "view",      // Phase 13 — first real view-phase processor (current dome.lint.markdown-format is a stub)
 ]);
 
 const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
+  // Phase 13a unblocked: command (`dome run orphan-pages`).
   "path",      // No shipped processor uses path triggers (signal triggers cover today's needs)
   "schedule",  // Phase 18 — scheduled-trigger dispatch + dome.scheduled processors
-  "command",   // Phase 13 — `dome lint` CLI command + the command-triggered processor
 ]);
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
+  // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
-  "graph.write",   // Phase 13 — graph-write namespaces for FactEffect-emitting processors
   "model.invoke",  // Phase 16 — model-invoking garden-phase processors
   "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);
 
 const DEFERRED_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([
+  // Phase 13a unblocked: view (dome.markdown.orphan-pages, end-to-end via `dome run`).
   "garden",  // Phase 17 — first garden-phase processor (async, possibly LLM-backed)
-  "view",    // Phase 13 — first real view-phase processor with end-to-end scenario coverage
 ]);
 
 describe("coverage matrix (Phase H3 enforcement)", () => {

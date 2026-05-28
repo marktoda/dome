@@ -416,6 +416,27 @@ export interface Harness {
    *  internally; tests can also invoke it explicitly. */
   assertAlwaysTrue(): Promise<void>;
 
+  // ----- CLI invocation -----
+  /**
+   * Invoke a Dome CLI command in-process (not via subprocess). Closes the
+   * harness's open runtime before invocation (the CLI command opens its
+   * own runtime against the same vault path; SQLite handles must not
+   * overlap), captures stdout + stderr by overriding `console.log` /
+   * `console.error`, dispatches via the same `runCli` the `bin/dome` shim
+   * uses, then reopens the harness's runtime so subsequent matchers see
+   * any state the command landed.
+   *
+   * The `args` array follows shell-style positionals + flags
+   * (e.g., `["run", "orphan-pages", "--json"]`). The harness prepends
+   * `--vault <vaultPath>` automatically so the CLI targets the
+   * scenario's vault.
+   */
+  runCli(args: ReadonlyArray<string>): Promise<{
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+  }>;
+
   // ----- Cleanup -----
   cleanup(): Promise<void>;
 }

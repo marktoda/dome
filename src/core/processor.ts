@@ -34,7 +34,12 @@
 //     bundle-manifest loader.
 
 import { z } from "zod";
-import type { Effect } from "./effect";
+import type {
+  DiagnosticEffect,
+  Effect,
+  FactEffect,
+  QuestionEffect,
+} from "./effect";
 import type { Proposal } from "./proposal";
 import type { CommitOid, SourceRef, TextRange } from "./source-ref";
 
@@ -224,6 +229,56 @@ export type ModelInvokeFn = (input: {
   readonly temperature?: number;
 }) => Promise<string>;
 
+// ----- ProjectionQueryView --------------------------------------------------
+
+/**
+ * The read-only query surface a view-phase processor uses to read from
+ * the projection store (facts, diagnostics, questions). Per
+ * docs/wiki/matrices/projection-table-x-owner.md §"Read access via the
+ * query API", processors do NOT touch the SQLite handle directly —
+ * they consume this typed surface.
+ *
+ * Adoption-phase processors typically read state from `ctx.snapshot`
+ * (markdown content at the candidate commit) and the field stays
+ * undefined on their context. View-phase processors require the
+ * projection field — they answer queries by joining facts, diagnostics,
+ * and committed markdown content.
+ *
+ * v1.0 scope is minimal — three accessors with light filters. Richer
+ * shapes (FTS search, aggregate queries) land in later phases as
+ * view-phase processors demand them.
+ */
+export type ProjectionQueryView = {
+  /**
+   * Read facts from the projection's `facts` table, filtered by any
+   * combination of (predicate, subject). When all filter fields are
+   * absent, every fact is returned (call sites are expected to bound
+   * the result set themselves; v1 has no LIMIT clause).
+   */
+  readonly facts: (filter?: {
+    readonly predicate?: string;
+    readonly subjectKind?: "page" | "task" | "entity";
+    readonly subjectId?: string;
+  }) => ReadonlyArray<FactEffect>;
+
+  /**
+   * Read unresolved diagnostics, optionally filtered by severity or
+   * processor id. Returns the full DiagnosticEffect shape — the
+   * `sourceRefs` array is parsed back from JSON.
+   */
+  readonly diagnostics: (filter?: {
+    readonly severity?: "info" | "warning" | "error" | "block";
+    readonly processorId?: string;
+  }) => ReadonlyArray<DiagnosticEffect>;
+
+  /**
+   * Read questions, optionally filtered by resolution status.
+   */
+  readonly questions: (filter?: {
+    readonly resolved?: boolean;
+  }) => ReadonlyArray<QuestionEffect>;
+};
+
 // ----- ProcessorContext -----------------------------------------------------
 
 /**
@@ -232,7 +287,9 @@ export type ModelInvokeFn = (input: {
  * (present for adoption + garden-PatchEffect-derived runs), the trigger
  * input (typed by the processor's `TInput` parameter), the opaque
  * capability token, the optional model-invoke handle (present iff
- * `model.invoke` capability granted), and the `sourceRef` helper.
+ * `model.invoke` capability granted), the optional projection query view
+ * (present iff the runtime wired one — view-phase processors require it;
+ * adoption-phase processors typically don't), and the `sourceRef` helper.
  *
  * `sourceRef` is modeled as a method (the spec uses method shorthand). In
  * `type X = { ... }` aliases the equivalent shape is a readonly function-
@@ -246,6 +303,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly input: TInput;
   readonly capabilities: CapabilityToken;
   readonly modelInvoke?: ModelInvokeFn;
+  readonly projection?: ProjectionQueryView;
   readonly sourceRef: (path: string, range?: TextRange) => SourceRef;
 };
 
