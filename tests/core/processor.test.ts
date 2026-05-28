@@ -51,7 +51,6 @@ describe("defineProcessor", () => {
       execution: {
         class: "llm",
         timeoutMs: 600_000,
-        maxAttempts: 1,
         modelCallTimeoutMs: 180_000,
       },
       run: async () => [],
@@ -161,8 +160,6 @@ describe("ExecutionPolicyRequestSchema", () => {
     const parsed = ExecutionPolicyRequestSchema.parse({
       class: "llm",
       timeoutMs: 600_000,
-      retryBudgetMs: 0,
-      maxAttempts: 1,
       modelCallTimeoutMs: 180_000,
     });
 
@@ -182,6 +179,21 @@ describe("ExecutionPolicyRequestSchema", () => {
         class: "background",
         timeoutMs: 120_000,
         extra: true,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects processor-level retry metadata", () => {
+    expect(() =>
+      ExecutionPolicyRequestSchema.parse({
+        class: "background",
+        maxAttempts: 2,
+      }),
+    ).toThrow();
+    expect(() =>
+      ExecutionPolicyRequestSchema.parse({
+        class: "background",
+        retryBudgetMs: 1_000,
       }),
     ).toThrow();
   });

@@ -104,8 +104,6 @@ export type ExecutionClass =
 export type ExecutionPolicyRequest = {
   readonly class: ExecutionClass;
   readonly timeoutMs?: number;
-  readonly retryBudgetMs?: number;
-  readonly maxAttempts?: number;
   readonly modelCallTimeoutMs?: number;
 };
 
@@ -399,8 +397,6 @@ export const ExecutionPolicyRequestSchema = z
   .object({
     class: ExecutionClassSchema,
     timeoutMs: z.number().int().positive().optional(),
-    retryBudgetMs: z.number().int().nonnegative().optional(),
-    maxAttempts: z.number().int().positive().optional(),
     modelCallTimeoutMs: z.number().int().positive().optional(),
   })
   .strict();

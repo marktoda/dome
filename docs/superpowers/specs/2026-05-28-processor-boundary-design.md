@@ -170,8 +170,6 @@ Timeouts are resolved per invocation, not just per phase:
 ```ts
 type ProcessorExecutionPolicy = {
   readonly timeoutMs: number;
-  readonly retryBudgetMs: number;
-  readonly maxAttempts: number;
   readonly lateEffectBehavior: "discard";
   readonly modelCallTimeoutMs?: number;
 };
@@ -194,8 +192,8 @@ routed.
 Execution policy is separate from capability policy.
 
 Capability answers: may this processor call a model or emit a powerful Effect?
-Execution policy answers: how long may this invocation run, how many attempts
-may it use, and what deadline applies to model calls?
+Execution policy answers: how long may this invocation run and what deadline
+applies to model calls?
 
 Resolution order:
 
@@ -215,14 +213,14 @@ Default classes:
 | `interactive` | view commands and user waits | 30s |
 | `background` | normal garden work | 120s |
 | `llm` | garden model work | 10m |
-| `batch` | scheduled or resumable jobs | job-policy defined |
+| `batch` | scheduled or larger background work | 10m |
 
 Rules:
 
 - adoption hard-caps at the deterministic timeout;
 - adoption cannot receive `ctx.modelInvoke`;
 - `model.invoke` requires both capability grant and execution policy;
-- retries and model backoff must fit within the remaining run deadline;
+- model calls must fit within the remaining run deadline;
 - static policy violations fail registration;
 - dynamic policy denials create a `skipped` run with a clear diagnostic before
   processor code starts.
@@ -233,7 +231,6 @@ Example manifest request:
 execution:
   class: llm
   timeoutMs: 600000
-  maxAttempts: 1
   modelCallTimeoutMs: 180000
 ```
 
@@ -250,7 +247,6 @@ extensions:
       execution:
         timeoutMs: 600000
         modelCallTimeoutMs: 180000
-        maxAttempts: 2
 ```
 
 ## Routing and Ledger Semantics

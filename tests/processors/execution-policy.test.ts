@@ -25,7 +25,6 @@ describe("resolveExecutionPolicy", () => {
     const request: ExecutionPolicyRequest = {
       class: "llm",
       timeoutMs: 600_000,
-      maxAttempts: 1,
       modelCallTimeoutMs: 180_000,
     };
 
@@ -34,7 +33,6 @@ describe("resolveExecutionPolicy", () => {
       request,
       vaultCap: {
         timeoutMs: 600_000,
-        maxAttempts: 2,
         modelCallTimeoutMs: 180_000,
       },
     });
@@ -43,21 +41,19 @@ describe("resolveExecutionPolicy", () => {
     if (!result.ok) return;
     expect(result.value.class).toBe("llm");
     expect(result.value.timeoutMs).toBe(600_000);
-    expect(result.value.maxAttempts).toBe(1);
     expect(result.value.modelCallTimeoutMs).toBe(180_000);
   });
 
   test("vault cap wins over manifest timeout request", () => {
     const result = resolveExecutionPolicy({
       phase: "garden",
-      request: { class: "llm", timeoutMs: 900_000, maxAttempts: 3 },
-      vaultCap: { timeoutMs: 300_000, maxAttempts: 2 },
+      request: { class: "llm", timeoutMs: 900_000 },
+      vaultCap: { timeoutMs: 300_000 },
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.timeoutMs).toBe(300_000);
-    expect(result.value.maxAttempts).toBe(2);
   });
 
   test("adoption rejects llm execution class", () => {

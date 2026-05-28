@@ -15,8 +15,6 @@ const MODEL_CAP: Capability = Object.freeze({
 const POLICY: ResolvedExecutionPolicy = Object.freeze({
   class: "llm",
   timeoutMs: 1_000,
-  retryBudgetMs: 0,
-  maxAttempts: 1,
   lateEffectBehavior: "discard",
   modelCallTimeoutMs: 500,
 });

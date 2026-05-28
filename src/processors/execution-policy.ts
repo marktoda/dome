@@ -9,16 +9,12 @@ export type { ExecutionPolicyRequest } from "../core/processor";
 
 export type ExecutionPolicyCap = {
   readonly timeoutMs?: number;
-  readonly retryBudgetMs?: number;
-  readonly maxAttempts?: number;
   readonly modelCallTimeoutMs?: number;
 };
 
 export type ResolvedExecutionPolicy = {
   readonly class: ExecutionClass;
   readonly timeoutMs: number;
-  readonly retryBudgetMs: number;
-  readonly maxAttempts: number;
   readonly lateEffectBehavior: "discard";
   readonly modelCallTimeoutMs?: number;
 };
@@ -36,37 +32,27 @@ export const DEFAULT_EXECUTION_POLICY_BY_CLASS: Readonly<
   deterministic: Object.freeze({
     class: "deterministic",
     timeoutMs: 2_000,
-    retryBudgetMs: 0,
-    maxAttempts: 1,
     lateEffectBehavior: "discard",
   }),
   interactive: Object.freeze({
     class: "interactive",
     timeoutMs: 30_000,
-    retryBudgetMs: 0,
-    maxAttempts: 1,
     lateEffectBehavior: "discard",
   }),
   background: Object.freeze({
     class: "background",
     timeoutMs: 120_000,
-    retryBudgetMs: 0,
-    maxAttempts: 1,
     lateEffectBehavior: "discard",
   }),
   llm: Object.freeze({
     class: "llm",
     timeoutMs: 600_000,
-    retryBudgetMs: 0,
-    maxAttempts: 1,
     lateEffectBehavior: "discard",
     modelCallTimeoutMs: 180_000,
   }),
   batch: Object.freeze({
     class: "batch",
     timeoutMs: 600_000,
-    retryBudgetMs: 0,
-    maxAttempts: 1,
     lateEffectBehavior: "discard",
   }),
 });
@@ -104,8 +90,6 @@ export function resolveExecutionPolicy(opts: {
   const requested = {
     class: executionClass,
     timeoutMs: opts.request?.timeoutMs ?? defaults.timeoutMs,
-    retryBudgetMs: opts.request?.retryBudgetMs ?? defaults.retryBudgetMs,
-    maxAttempts: opts.request?.maxAttempts ?? defaults.maxAttempts,
     lateEffectBehavior: defaults.lateEffectBehavior,
     modelCallTimeoutMs: opts.request?.modelCallTimeoutMs ?? defaults.modelCallTimeoutMs,
   };
@@ -123,14 +107,6 @@ export function resolveExecutionPolicy(opts: {
       opts.vaultCap?.timeoutMs,
       phaseTimeoutCap,
     ),
-    retryBudgetMs:
-      opts.vaultCap?.retryBudgetMs !== undefined
-        ? Math.min(requested.retryBudgetMs, opts.vaultCap.retryBudgetMs)
-        : requested.retryBudgetMs,
-    maxAttempts:
-      opts.vaultCap?.maxAttempts !== undefined
-        ? Math.min(requested.maxAttempts, opts.vaultCap.maxAttempts)
-        : requested.maxAttempts,
     lateEffectBehavior: requested.lateEffectBehavior,
   };
 

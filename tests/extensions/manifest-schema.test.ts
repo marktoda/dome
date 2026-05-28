@@ -22,7 +22,6 @@ describe("parseManifest — execution metadata", () => {
           execution: {
             class: "llm",
             timeoutMs: 600_000,
-            maxAttempts: 1,
             modelCallTimeoutMs: 180_000,
           },
         },
@@ -54,6 +53,26 @@ describe("parseManifest — execution metadata", () => {
     expect(result.error.processorId).toBe("test.proc");
     expect(result.error.phase).toBe("adoption");
     expect(result.error.executionClass).toBe("llm");
+  });
+
+  test("rejects processor-level retry metadata", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          execution: {
+            class: "background",
+            maxAttempts: 2,
+          },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("invalid-shape");
   });
 
   test("rejects adoption model.invoke capability", () => {

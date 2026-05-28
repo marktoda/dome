@@ -4,6 +4,13 @@
 
 **Goal:** Replace the alpha processor invocation path with a strict `ProcessorExecutor` boundary that validates output, enforces deadlines, records structured failures, and blocks unsafe adoption advancement.
 
+**Supersession note:** the implemented processor executor is intentionally
+single-attempt. The early snippets in this plan that mention
+`retryBudgetMs` or processor-level `maxAttempts` are historical scaffolding,
+not the current execution-policy surface. Durable retry policy lives on
+`JobEffect` / outbox rows, and JSON repair retries remain local to
+`ctx.modelInvoke.structured`.
+
 **Architecture:** Add a dedicated executor between `ProcessorRuntime` and `applyEffect`. The executor owns invocation, timeout, cancellation signal, output validation, execution-error classification, and effect hashing; runtime owns trigger matching, context construction, run ids, and ledger writes; `applyEffect` remains the routing/capability chokepoint.
 
 **Tech Stack:** TypeScript on Bun, `bun:test`, Zod schemas from `src/core/effect.ts`, Bun.sqlite ledger accessors, existing processor registry/runtime patterns.

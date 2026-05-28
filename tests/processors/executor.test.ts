@@ -71,8 +71,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "deterministic",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => [validEffect()],
@@ -95,8 +93,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "deterministic",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => "not an array" as never,
@@ -120,8 +116,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => [
@@ -157,8 +151,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => [hostileEffect],
@@ -190,8 +182,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => hostileOutput,
@@ -225,8 +215,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => [unhashableEffect],
@@ -251,8 +239,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "deterministic",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => {
@@ -281,8 +267,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => {
@@ -305,8 +289,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "llm",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => {
@@ -336,8 +318,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => {
@@ -368,8 +348,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => hostileOutput,
@@ -397,8 +375,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "deterministic",
         timeoutMs: 100,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async () => {
@@ -436,8 +412,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 1_000,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async (runCtx) => {
@@ -479,8 +453,6 @@ describe("executeProcessor", () => {
       policy: {
         class: "background",
         timeoutMs: 5,
-        retryBudgetMs: 0,
-        maxAttempts: 1,
         lateEffectBehavior: "discard",
       },
       run: async (runCtx) => {
@@ -507,8 +479,6 @@ describe("executeProcessor", () => {
     const policy = Object.freeze({
       class: "llm" as const,
       timeoutMs: 5,
-      retryBudgetMs: 0,
-      maxAttempts: 1,
       lateEffectBehavior: "discard" as const,
       modelCallTimeoutMs: 1_000,
     });
