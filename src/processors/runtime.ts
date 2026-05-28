@@ -83,18 +83,26 @@ import { readBlob, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
   GardenPhaseRunner,
+  ProcessorSkippedExecutionError,
   RunnerResult,
   ViewPhaseRunner,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "../ledger/db";
-import { executeProcessor } from "./executor";
+import {
+  executeProcessor,
+  type ProcessorExecutionResult,
+} from "./executor";
 import {
   buildProcessorExecutionState,
   processorExecutionKey,
   type ProcessorExecutionState,
   type ProcessorExecutionKey,
 } from "./execution-state";
-import { resolveExecutionPolicy } from "./execution-policy";
+import {
+  resolveExecutionPolicy,
+  type ExecutionPolicyError,
+  type ResolvedExecutionPolicy,
+} from "./execution-policy";
 import {
   insertQueued,
   markCancelled,
@@ -495,7 +503,8 @@ export async function makeSnapshot(
 }
 
 /**
- * Per-processor dispatch — shared between adoption and garden runners.
+ * Per-processor dispatch — shared by adoption, garden, view, scheduler, and
+ * job dispatch.
  * Handles run-id allocation, ledger lifecycle (queued → skipped for
  * not-invoked policy denial, or queued → running → succeeded/failed/
  * timed_out/cancelled), context construction, executor invocation, and
@@ -505,13 +514,13 @@ export async function makeSnapshot(
  * The only per-phase variation in this lifecycle is the `phase` value
  * stored in the ledger row and the `envelope` shape passed as
  * `ctx.input`. Both are parameters here; the body is identical
- * otherwise. Centralizing the dispatch keeps the two runners' bodies
- * focused on phase-specific filtering + snapshot-commit choice; the
+ * otherwise. Centralizing the dispatch keeps callers focused on
+ * phase-specific filtering, snapshot choice, and envelope construction; the
  * audit lifecycle (the load-bearing
  * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] contract) is
  * structurally identical across phases.
  */
-export async function dispatchOneProcessor<TEnvelope>(opts: {
+export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly processor: Processor<unknown>;
   readonly phase: "adoption" | "garden" | "view";
   readonly envelope: TEnvelope;
@@ -537,273 +546,310 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
    * view-phase contexts.
    */
   readonly projection?: ProjectionQueryView;
-}): Promise<RunnerResult> {
-  const {
-    processor,
-    phase,
-    envelope,
-    snapshot,
-    changedPaths,
-    proposal,
-    inputCommit,
-    matches,
-    resolveGrants,
-    extensionIdFor,
-    ledger,
-    executionState,
-    modelProvider,
-    projection,
-  } = opts;
+};
 
-  const declared = processor.capabilities;
-  const granted = resolveGrants(processor.id);
-  const extensionId = extensionIdFor(processor.id);
+type DispatchFrame = {
+  readonly processor: Processor<unknown>;
+  readonly phase: "adoption" | "garden" | "view";
+  readonly runId: RunId;
+  readonly declared: ReadonlyArray<Capability>;
+  readonly granted: ReadonlyArray<Capability>;
+  readonly startedAt: Date;
+  readonly ledger?: LedgerDb;
+};
 
-  // Allocate the run id. When a ledger is wired we use the ledger's
-  // `newRunId` so the id is the same one stored in the row; when no
-  // ledger is wired we fall back to the `makeRunContext`-synthesized
-  // form (identical shape).
-  //
-  // For view-phase runs (proposal === null), the fallback uses the
-  // input commit for both base and sourceHead — view runs aren't
-  // proposal-anchored and the makeRunContext fields just feed the
-  // RunId synthesis (the trailer values aren't emitted for view
-  // phase since views don't produce engine commits).
-  const startedAt = new Date();
-  const runId: RunId =
-    ledger !== undefined
-      ? newRunId(startedAt)
-      : (makeRunContext({
-          extensionId,
-          base: proposal?.base ?? inputCommit,
-          sourceHead: proposal?.head ?? inputCommit,
-        }).runId as RunId);
+type ExecutionContextBuildResult = {
+  readonly ctx: ProcessorContext<unknown>;
+  readonly costUsd: () => number;
+};
 
-  // Ledger lifecycle starts in queued before policy resolution. A denied
-  // policy never reaches `running`; it is marked `skipped` with a structured
-  // not-invoked reason so the audit row explains why processor.run() was not
-  // called.
-  if (ledger !== undefined) {
-    insertQueued(ledger, {
-      id: runId,
-      proposalId: proposal?.id ?? null,
-      processorId: processor.id,
-      processorVersion: processor.version,
-      phase,
-      inputCommit,
-      triggerKind: triggerKindOf(matches),
-      triggerPayload: triggerPayloadOf(matches),
-      startedAt,
-    });
-  }
-
-  const policyResult = resolveExecutionPolicy({
-    phase,
-    request: processor.execution,
-    vaultCap: undefined,
-  });
+export async function dispatchOneProcessor<TEnvelope>(
+  opts: DispatchOneProcessorOptions<TEnvelope>,
+): Promise<RunnerResult> {
+  const frame = beginDispatch(opts);
+  const policyResult = resolveDispatchPolicy(frame);
   if (!policyResult.ok) {
-    const finishedAt = new Date();
-    const error = {
-      code: policyResult.error.code,
-      message: policyResult.error.message,
-      retryable: false as const,
-      phase,
-      processorId: processor.id,
-      class: policyResult.error.class,
-    };
-    if (ledger !== undefined) {
-      markSkipped(ledger, {
-        id: runId,
-        finishedAt,
-        error: JSON.stringify(error),
-      });
-    }
-    return Object.freeze({
-      runId,
-      processorId: processor.id,
-      executionStatus: "skipped",
-      executionError: error,
-      declared,
-      granted,
-      effects: Object.freeze([
-        diagnosticEffect({
-          severity: phase === "adoption" ? "block" : "error",
-          code: policyResult.error.code,
-          message: `${processor.id}: ${policyResult.error.message}`,
-          sourceRefs: [],
-        }),
-      ]),
-    });
+    return skipForPolicyDenial(frame, policyResult.error);
   }
 
-  const quarantineKey =
-    executionState === undefined || !quarantineEligible(phase, matches)
-      ? null
-      : processorExecutionKey({
-          phase,
-          processorId: processor.id,
-          processorVersion: processor.version,
-          matches,
-        });
-  if (executionState !== undefined && quarantineKey !== null) {
-    const quarantine = executionState.quarantineFor(quarantineKey);
-    if (quarantine !== null) {
-      const finishedAt = new Date();
-      const error = {
-        code: "processor.quarantined" as const,
-        message:
-          `Processor is quarantined for this trigger after ` +
-          `${quarantine.consecutiveRetryableFailures} consecutive ` +
-          `retryable failures: ${quarantine.reason}`,
-        retryable: false as const,
-        phase,
-        processorId: processor.id,
-      };
-      if (ledger !== undefined) {
-        markSkipped(ledger, {
-          id: runId,
-          finishedAt,
-          error: JSON.stringify(error),
-        });
-      }
-      return Object.freeze({
-        runId,
-        processorId: processor.id,
-        executionStatus: "skipped",
-        executionError: error,
-        declared,
-        granted,
-        effects: Object.freeze([
-          diagnosticEffect({
-            severity: "error",
-            code: "processor.quarantined",
-            message: `${processor.id}: ${error.message}`,
-            sourceRefs: [],
-          }),
-        ]),
-      });
-    }
-  }
+  const quarantineKey = dispatchQuarantineKey(opts);
+  const quarantineSkip = skipForQuarantine(frame, opts, quarantineKey);
+  if (quarantineSkip !== null) return quarantineSkip;
 
-  if (ledger !== undefined) {
-    markRunning(ledger, runId, startedAt);
-  }
-
-  const controller = new AbortController();
-  let costUsd = 0;
-  const modelInvoke = modelInvokeForProcessor({
-    phase,
-    processorId: processor.id,
-    declared,
-    granted,
-    policy: policyResult.value,
-    signal: controller.signal,
-    ...(modelProvider !== undefined ? { provider: modelProvider } : {}),
-    onCost: (cost) => {
-      costUsd += cost;
-    },
-  });
-  const ctxInput: ProcessorContextInput<TEnvelope> = {
-    snapshot,
-    changedPaths,
-    proposal,
-    runId,
-    input: envelope,
-    signal: controller.signal,
-    // `modelInvoke` is conditionally set below. Adoption never receives a
-    // model handle; garden/view processors receive one only when they both
-    // declare and are granted model.invoke and a provider-neutral model
-    // boundary can enforce model policy for the run.
-    //
-    // `projection` is conditionally set below — only on view-phase
-    // dispatch — so adoption + garden contexts see
-    // `ctx.projection === undefined` per the v1 contract (those
-    // processors read from `ctx.snapshot`, not the projection store).
-    ...(phase === "view" && projection !== undefined
-      ? { projection }
-      : {}),
-    ...(modelInvoke !== undefined ? { modelInvoke } : {}),
-  };
-  const ctx = makeProcessorContext(ctxInput);
-
+  markDispatchRunning(frame);
+  const executionInput = buildExecutionContext(opts, frame, policyResult.value);
   const execution = await executeProcessor({
-    processorId: processor.id,
-    phase,
-    runId,
-    ctx: ctx as ProcessorContext<unknown>,
+    processorId: frame.processor.id,
+    phase: frame.phase,
+    runId: frame.runId,
+    ctx: executionInput.ctx,
     policy: policyResult.value,
-    run: processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
+    run: frame.processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
   });
 
-  // Ledger lifecycle: terminal mark. Succeeded runs persist executor-provided
-  // effect hashes; failure, timeout, and cancellation persist structured
-  // executor errors. Timed-out/cancelled late effects are not routed and leave
-  // `effect_hashes_json` at the queued default.
-  if (ledger !== undefined) {
-    const finishedAt = new Date();
-    if (execution.status === "succeeded") {
-      markSucceeded(ledger, {
-        id: runId,
-        effectHashes: execution.effectHashes,
-        costUsd: costUsdOrNull(costUsd),
-        durationMs: execution.durationMs,
-        outputCommit: null,
-        finishedAt,
-      });
-    } else if (execution.status === "timed_out") {
-      markTimedOut(ledger, {
-        id: runId,
-        error: execution.error,
-        costUsd: costUsdOrNull(costUsd),
-        durationMs: execution.durationMs,
-        finishedAt,
-      });
-    } else if (execution.status === "cancelled") {
-      markCancelled(ledger, {
-        id: runId,
-        error: execution.error,
-        costUsd: costUsdOrNull(costUsd),
-        durationMs: execution.durationMs,
-        finishedAt,
-      });
-    } else {
-      markFailed(ledger, {
-        id: runId,
-        error: execution.error,
-        costUsd: costUsdOrNull(costUsd),
-        durationMs: execution.durationMs,
-        finishedAt,
-      });
-    }
-  }
-
-  if (executionState !== undefined && quarantineKey !== null) {
+  markDispatchTerminal(frame, execution, executionInput.costUsd());
+  if (opts.executionState !== undefined && quarantineKey !== null) {
     updateExecutionStateAfterRun({
-      state: executionState,
+      state: opts.executionState,
       key: quarantineKey,
       execution,
     });
   }
 
-  const executionError =
-    execution.status === "succeeded" ? undefined : execution.error;
+  return runnerResultForExecution(frame, execution);
+}
 
-  return Object.freeze({
+// ----- internals ------------------------------------------------------------
+
+function beginDispatch<TEnvelope>(
+  opts: DispatchOneProcessorOptions<TEnvelope>,
+): DispatchFrame {
+  const declared = opts.processor.capabilities;
+  const granted = opts.resolveGrants(opts.processor.id);
+  const extensionId = opts.extensionIdFor(opts.processor.id);
+  const startedAt = new Date();
+  const runId: RunId =
+    opts.ledger !== undefined
+      ? newRunId(startedAt)
+      : (makeRunContext({
+          extensionId,
+          base: opts.proposal?.base ?? opts.inputCommit,
+          sourceHead: opts.proposal?.head ?? opts.inputCommit,
+        }).runId as RunId);
+
+  if (opts.ledger !== undefined) {
+    insertQueued(opts.ledger, {
+      id: runId,
+      proposalId: opts.proposal?.id ?? null,
+      processorId: opts.processor.id,
+      processorVersion: opts.processor.version,
+      phase: opts.phase,
+      inputCommit: opts.inputCommit,
+      triggerKind: triggerKindOf(opts.matches),
+      triggerPayload: triggerPayloadOf(opts.matches),
+      startedAt,
+    });
+  }
+
+  const frame = {
+    processor: opts.processor,
+    phase: opts.phase,
     runId,
-    processorId: processor.id,
-    executionStatus: execution.status,
-    ...(executionError !== undefined ? { executionError } : {}),
     declared,
     granted,
+    startedAt,
+    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+  };
+  return Object.freeze(frame);
+}
+
+function resolveDispatchPolicy(frame: DispatchFrame): ReturnType<
+  typeof resolveExecutionPolicy
+> {
+  return resolveExecutionPolicy({
+    phase: frame.phase,
+    request: frame.processor.execution,
+    vaultCap: undefined,
+  });
+}
+
+function skipForPolicyDenial(
+  frame: DispatchFrame,
+  policyError: ExecutionPolicyError,
+): RunnerResult {
+  return returnSkippedRun({
+    frame,
+    error: Object.freeze({
+      code: policyError.code,
+      message: policyError.message,
+      retryable: false as const,
+      phase: frame.phase,
+      processorId: frame.processor.id,
+      class: policyError.class,
+    }),
+    severity: frame.phase === "adoption" ? "block" : "error",
+  });
+}
+
+function dispatchQuarantineKey<TEnvelope>(
+  opts: DispatchOneProcessorOptions<TEnvelope>,
+): ProcessorExecutionKey | null {
+  if (
+    opts.executionState === undefined ||
+    !quarantineEligible(opts.phase, opts.matches)
+  ) {
+    return null;
+  }
+  return processorExecutionKey({
+    phase: opts.phase,
+    processorId: opts.processor.id,
+    processorVersion: opts.processor.version,
+    matches: opts.matches,
+  });
+}
+
+function skipForQuarantine<TEnvelope>(
+  frame: DispatchFrame,
+  opts: DispatchOneProcessorOptions<TEnvelope>,
+  key: ProcessorExecutionKey | null,
+): RunnerResult | null {
+  if (opts.executionState === undefined || key === null) return null;
+  const quarantine = opts.executionState.quarantineFor(key);
+  if (quarantine === null) return null;
+
+  return returnSkippedRun({
+    frame,
+    error: Object.freeze({
+      code: "processor.quarantined" as const,
+      message:
+        `Processor is quarantined for this trigger after ` +
+        `${quarantine.consecutiveRetryableFailures} consecutive ` +
+        `retryable failures: ${quarantine.reason}`,
+      retryable: false as const,
+      phase: frame.phase,
+      processorId: frame.processor.id,
+    }),
+    severity: "error",
+  });
+}
+
+function returnSkippedRun(opts: {
+  readonly frame: DispatchFrame;
+  readonly error: ProcessorSkippedExecutionError;
+  readonly severity: "block" | "error";
+}): RunnerResult {
+  if (opts.frame.ledger !== undefined) {
+    markSkipped(opts.frame.ledger, {
+      id: opts.frame.runId,
+      finishedAt: new Date(),
+      error: JSON.stringify(opts.error),
+    });
+  }
+  return Object.freeze({
+    runId: opts.frame.runId,
+    processorId: opts.frame.processor.id,
+    executionStatus: "skipped",
+    executionError: opts.error,
+    declared: opts.frame.declared,
+    granted: opts.frame.granted,
+    effects: Object.freeze([
+      diagnosticEffect({
+        severity: opts.severity,
+        code: opts.error.code,
+        message: `${opts.frame.processor.id}: ${opts.error.message}`,
+        sourceRefs: [],
+      }),
+    ]),
+  });
+}
+
+function markDispatchRunning(frame: DispatchFrame): void {
+  if (frame.ledger !== undefined) {
+    markRunning(frame.ledger, frame.runId, frame.startedAt);
+  }
+}
+
+function buildExecutionContext<TEnvelope>(
+  opts: DispatchOneProcessorOptions<TEnvelope>,
+  frame: DispatchFrame,
+  policy: ResolvedExecutionPolicy,
+): ExecutionContextBuildResult {
+  const controller = new AbortController();
+  let costUsd = 0;
+  const modelInvoke = modelInvokeForProcessor({
+    phase: frame.phase,
+    processorId: frame.processor.id,
+    declared: frame.declared,
+    granted: frame.granted,
+    policy,
+    signal: controller.signal,
+    ...(opts.modelProvider !== undefined ? { provider: opts.modelProvider } : {}),
+    onCost: (cost) => {
+      costUsd += cost;
+    },
+  });
+
+  const ctxInput: ProcessorContextInput<TEnvelope> = {
+    snapshot: opts.snapshot,
+    changedPaths: opts.changedPaths,
+    proposal: opts.proposal,
+    runId: frame.runId,
+    input: opts.envelope,
+    signal: controller.signal,
+    ...(frame.phase === "view" && opts.projection !== undefined
+      ? { projection: opts.projection }
+      : {}),
+    ...(modelInvoke !== undefined ? { modelInvoke } : {}),
+  };
+
+  return Object.freeze({
+    ctx: makeProcessorContext(ctxInput) as ProcessorContext<unknown>,
+    costUsd: () => costUsd,
+  });
+}
+
+function markDispatchTerminal(
+  frame: DispatchFrame,
+  execution: ProcessorExecutionResult,
+  costUsd: number,
+): void {
+  if (frame.ledger === undefined) return;
+  const finishedAt = new Date();
+  if (execution.status === "succeeded") {
+    markSucceeded(frame.ledger, {
+      id: frame.runId,
+      effectHashes: execution.effectHashes,
+      costUsd: costUsdOrNull(costUsd),
+      durationMs: execution.durationMs,
+      outputCommit: null,
+      finishedAt,
+    });
+  } else if (execution.status === "timed_out") {
+    markTimedOut(frame.ledger, {
+      id: frame.runId,
+      error: execution.error,
+      costUsd: costUsdOrNull(costUsd),
+      durationMs: execution.durationMs,
+      finishedAt,
+    });
+  } else if (execution.status === "cancelled") {
+    markCancelled(frame.ledger, {
+      id: frame.runId,
+      error: execution.error,
+      costUsd: costUsdOrNull(costUsd),
+      durationMs: execution.durationMs,
+      finishedAt,
+    });
+  } else {
+    markFailed(frame.ledger, {
+      id: frame.runId,
+      error: execution.error,
+      costUsd: costUsdOrNull(costUsd),
+      durationMs: execution.durationMs,
+      finishedAt,
+    });
+  }
+}
+
+function runnerResultForExecution(
+  frame: DispatchFrame,
+  execution: ProcessorExecutionResult,
+): RunnerResult {
+  const executionError =
+    execution.status === "succeeded" ? undefined : execution.error;
+  return Object.freeze({
+    runId: frame.runId,
+    processorId: frame.processor.id,
+    executionStatus: execution.status,
+    ...(executionError !== undefined ? { executionError } : {}),
+    declared: frame.declared,
+    granted: frame.granted,
     effects:
       execution.status === "succeeded"
         ? execution.effects
         : Object.freeze([execution.diagnostic]),
   });
 }
-
-// ----- internals ------------------------------------------------------------
 
 /**
  * Extract the `trigger_kind` column value from the matched-triggers list.
