@@ -26,7 +26,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseArgs } from "../../src/cli/args";
 import { runServe } from "../../src/cli/commands/serve";
 
 import { externalActionEffect } from "../../src/core/effect";
@@ -158,18 +157,14 @@ describe("runServe smoke", () => {
     silenceConsole();
 
     const controller = new AbortController();
-    const args = parseArgs([
-      "serve",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-      "--poll-interval-ms",
-      "20",
-    ]);
+    const options = {
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      pollIntervalMs: 20,
+    };
 
     // Start the daemon. Don't await — it loops until the abort fires.
-    const servePromise = runServe(args, {
+    const servePromise = runServe(options, {
       signal: controller.signal,
       operationalIntervalMs: 20,
     });
@@ -230,19 +225,17 @@ describe("runServe smoke", () => {
     silenceConsole();
 
     const controller = new AbortController();
-    const args = parseArgs([
-      "serve",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-      "--poll-interval-ms",
-      "20",
-    ]);
-    const servePromise = runServe(args, {
-      signal: controller.signal,
-      operationalIntervalMs: 20,
-    });
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
 
     await waitFor(
       async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
@@ -303,16 +296,11 @@ describe("runServe detached HEAD", () => {
     if (sha === null) throw new Error("expected initial sha");
     await writeFile(join(f.vaultPath, ".git", "HEAD"), `${sha}\n`);
 
-    const args = parseArgs([
-      "serve",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
-
     const controller = new AbortController();
-    const code = await runServe(args, { signal: controller.signal });
+    const code = await runServe(
+      { vault: f.vaultPath, bundlesRoot: f.bundlesRoot },
+      { signal: controller.signal },
+    );
     expect(code).toBe(1);
 
     // Stderr should explain the detached-HEAD condition. The exact

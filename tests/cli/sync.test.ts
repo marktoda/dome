@@ -31,7 +31,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseArgs } from "../../src/cli/args";
 import { runSync } from "../../src/cli/commands/sync";
 
 import { externalActionEffect } from "../../src/core/effect";
@@ -163,14 +162,8 @@ describe("runSync empty-diff init", () => {
     // Pre-condition: adopted ref is uninitialized.
     expect(await getAdoptedRef(f.vaultPath, "main")).toBeNull();
 
-    const args = parseArgs([
-      "sync",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
-    const code = await runSync(args);
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
+    const code = await runSync(options);
     expect(code).toBe(0);
 
     // Post-condition: adopted ref now equals the seed commit.
@@ -191,16 +184,10 @@ describe("runSync idempotent", () => {
     fixtures.push(f);
     silenceConsole();
 
-    const args = parseArgs([
-      "sync",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
 
     // First sync: empty-diff init.
-    const code1 = await runSync(args);
+    const code1 = await runSync(options);
     expect(code1).toBe(0);
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
 
@@ -216,7 +203,7 @@ describe("runSync idempotent", () => {
     captured.err = [];
 
     // Second sync: should be a no-op.
-    const code2 = await runSync(args);
+    const code2 = await runSync(options);
     expect(code2).toBe(0);
 
     // Output asserts on "already in sync".
@@ -239,15 +226,9 @@ describe("runSync idempotent", () => {
     fixtures.push(f);
     silenceConsole();
 
-    const args = parseArgs([
-      "sync",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
 
-    const code1 = await runSync(args);
+    const code1 = await runSync(options);
     expect(code1).toBe(0);
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
 
@@ -277,7 +258,7 @@ describe("runSync idempotent", () => {
     captured.out = [];
     captured.err = [];
 
-    const code2 = await runSync(args);
+    const code2 = await runSync(options);
     expect(code2).toBe(0);
     expect(captured.out.join("\n")).toContain("already in sync");
 
@@ -302,16 +283,10 @@ describe("runSync drift adoption", () => {
     fixtures.push(f);
     silenceConsole();
 
-    const args = parseArgs([
-      "sync",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
 
     // First sync: empty-diff init advances adopted to initial commit.
-    const code1 = await runSync(args);
+    const code1 = await runSync(options);
     expect(code1).toBe(0);
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
 
@@ -329,7 +304,7 @@ describe("runSync drift adoption", () => {
     captured.err = [];
 
     // Second sync: should detect drift and advance the adopted ref.
-    const code2 = await runSync(args);
+    const code2 = await runSync(options);
     expect(code2).toBe(0);
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(newSha);
 
@@ -368,14 +343,10 @@ describe("runSync detached HEAD", () => {
     if (sha === null) throw new Error("expected initial sha");
     await writeFile(join(f.vaultPath, ".git", "HEAD"), `${sha}\n`);
 
-    const args = parseArgs([
-      "sync",
-      "--vault",
-      f.vaultPath,
-      "--bundles-root",
-      f.bundlesRoot,
-    ]);
-    const code = await runSync(args);
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
     expect(code).toBe(64);
 
     // Stderr should explain the detached-HEAD condition.

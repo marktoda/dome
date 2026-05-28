@@ -57,10 +57,17 @@ import { resolveShippedBundlesRoot } from "./sync-shared";
 import { formatJson } from "../format";
 
 import type { ApplyEffectSinks } from "../../engine/apply-effect";
-import type { ParsedArgs } from "../args";
 import type { ViewEffect } from "../../core/effect";
 
 // ----- runRun ---------------------------------------------------------------
+
+export type RunCommandOptions = {
+  readonly name?: string | undefined;
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly json?: boolean | undefined;
+  readonly commandFlags?: Readonly<Record<string, string | boolean>> | undefined;
+};
 
 /**
  * Execute `dome run <name>`. Returns the exit code.
@@ -80,9 +87,11 @@ import type { ViewEffect } from "../../core/effect";
  *                                   `ctx.input.commandArgs` as
  *                                   `{ flags: { ... } }`.
  */
-export async function runRun(args: ParsedArgs): Promise<number> {
+export async function runRun(
+  options: RunCommandOptions = {},
+): Promise<number> {
   // ----- 1. Parse positional + flags --------------------------------------
-  const commandName = args.positionals[0];
+  const commandName = options.name;
   if (commandName === undefined || commandName.length === 0) {
     console.error(
       "dome run: missing command name. Usage: dome run <name> [--vault <path>] [--json]",
@@ -90,16 +99,9 @@ export async function runRun(args: ParsedArgs): Promise<number> {
     return 64;
   }
 
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
+  const vaultPath = resolve(options.vault ?? process.cwd());
 
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
+  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
 
   // ----- 2. Resolve the snapshot commit -----------------------------------
   // View-phase processors read the *adopted* snapshot, not HEAD. The
@@ -138,12 +140,9 @@ export async function runRun(args: ParsedArgs): Promise<number> {
     // View-phase processors that care about CLI flags inspect
     // `ctx.input.commandArgs.flags`. The envelope shape is opaque to
     // the engine — `runViewCommand` passes it through verbatim.
-    const flags: Record<string, string | boolean> = {};
-    for (const [k, v] of Object.entries(args.flags)) {
-      // Skip CLI-meta flags that aren't processor input.
-      if (k === "vault" || k === "bundles-root" || k === "json") continue;
-      flags[k] = v;
-    }
+    const flags: Record<string, string | boolean> = {
+      ...(options.commandFlags ?? {}),
+    };
     const commandArgs = Object.freeze({
       flags: Object.freeze(flags),
     });

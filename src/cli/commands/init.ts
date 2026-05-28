@@ -64,9 +64,11 @@ import { join, resolve } from "node:path";
 
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 
-import type { ParsedArgs } from "../args";
-
 // ----- Internal types -------------------------------------------------------
+
+export type RunInitOptions = {
+  readonly path?: string | undefined;
+};
 
 /**
  * One-line audit trail of what `runInit` did (or skipped) for each step.
@@ -93,9 +95,9 @@ type InitSummary = {
  * surfaces the underlying message on stderr and returns 1; happy paths
  * (including idempotent re-runs) return 0.
  */
-export async function runInit(args: ParsedArgs): Promise<number> {
+export async function runInit(options: RunInitOptions = {}): Promise<number> {
   // 1. Resolve the target vault path.
-  const target = args.positionals[0] ?? ".";
+  const target = options.path ?? ".";
   const vaultPath = resolve(target);
 
   try {

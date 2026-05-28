@@ -48,6 +48,23 @@ The CLI is the user-facing primary surface in v1. Every command above maps to on
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
+## CLI implementation
+
+The CLI parser and help surface are owned by Commander.js in
+`src/cli/index.ts`. Dome does not maintain a hand-rolled argv parser:
+Commander owns subcommand routing, `-h` / `--help`, unknown-option
+errors, argument arity, and usage text. Command modules expose typed
+option-object handlers (`runStatus({ vault, json })`, etc.) so tests and
+future adapters can invoke behavior directly without constructing
+Commander objects.
+
+The one deliberate exception is `dome run <name> -- <processor flags>` /
+`dome run <name> --flag value`: view processors may define extension-
+specific command arguments that the core CLI cannot know ahead of time.
+The Commander binding for `dome run` allows unknown options and passes
+those opaque flags through to `ctx.input.commandArgs.flags`; all shipped
+first-party commands should prefer explicit Commander options.
+
 ## Per-command specs
 
 ### `dome init [path]`
@@ -411,13 +428,13 @@ The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding
 
 1. **The processor file** at `assets/extensions/<bundle>/processors/<command-name>.ts` exporting a Processor with `phase: "view"` and `triggers: [{ kind: "command", name: "<command-name>" }]`.
 2. **The manifest entry** in the bundle's `manifest.yaml` declaring the processor.
-3. **A Commander binding** in `src/cli/cli.ts` (`program.command("<name>")...action(...)`) that routes to `AbstractSurface.commands[<name>].invoke(args)`.
+3. **A Commander binding** in `src/cli/index.ts` (`program.command("<name>")...action(...)`) that routes to a typed command handler or to `AbstractSurface.commands[<name>].invoke(args)`.
 4. **An end-to-end test** at `tests/integration/cli-<command>.test.ts` exercising the CLI invocation against a fixture vault.
 
-The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run-processor <bundle>:<id>` or `dome run-command <name>` (MCP) or the AbstractSurface API directly.
+The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly.
 
 The substrate scaffold catches missing pieces:
-- `tests/integration/cli-shell-shape.test.ts` enumerates command-triggered processors in `assets/extensions/dome.*/processors/` and asserts each has either a Commander binding in `cli.ts` or a documented `dome run-processor` invocation in `cli.md`.
+- `tests/integration/cli-shell-shape.test.ts` enumerates command-triggered processors in `assets/extensions/dome.*/processors/` and asserts each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.
 
 ## Why the CLI surface is rich (not minimal)
 

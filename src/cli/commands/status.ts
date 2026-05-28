@@ -49,7 +49,6 @@ import { queryQuestions } from "../../projections/questions";
 
 import { resolveShippedBundlesRoot } from "./sync-shared";
 
-import type { ParsedArgs } from "../args";
 import { formatJson } from "../format";
 import { collectVaultAnalytics } from "../vault-analytics";
 
@@ -83,16 +82,21 @@ type StatusSnapshot = {
   readonly quarantined: number;
 };
 
+export type RunStatusOptions = {
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly json?: boolean | undefined;
+};
+
 // ----- runStatus ------------------------------------------------------------
 
 /**
  * Execute `dome status`. Returns the exit code.
  */
-export async function runStatus(args: ParsedArgs): Promise<number> {
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
+export async function runStatus(
+  options: RunStatusOptions = {},
+): Promise<number> {
+  const vaultPath = resolve(options.vault ?? process.cwd());
 
   // Read the git-side state first. These accessors return null on missing
   // / detached HEAD / uninitialized adopted ref — all valid states.
@@ -107,11 +111,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
   // Default `bundlesRoot` is the SDK's shipped first-party bundles
   // (`resolveShippedBundlesRoot`). The vault-local `.dome/extensions/`
   // is no longer the default; `--bundles-root <path>` overrides.
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
+  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(
@@ -179,7 +179,7 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
       quarantined,
     };
 
-    if (args.flags["json"] === true) {
+    if (options.json === true) {
       console.log(formatJson(snapshot));
     } else {
       printStatusText(snapshot);

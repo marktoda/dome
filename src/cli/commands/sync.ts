@@ -48,8 +48,6 @@ import {
 } from "./sync-shared";
 import { formatJson } from "../format";
 
-import type { ParsedArgs } from "../args";
-
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -83,6 +81,13 @@ type SyncJsonResult = {
   readonly error?: string;
 };
 
+export type RunSyncOptions = {
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly json?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
+};
+
 // ----- runSync --------------------------------------------------------------
 
 /**
@@ -93,24 +98,16 @@ type SyncJsonResult = {
  *   - `--bundles-root <path>`  override extensions root.
  *   - `--json`                 emit a single JSON object on stdout.
  */
-export async function runSync(args: ParsedArgs): Promise<number> {
+export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
+  const vaultPath = resolve(options.vault ?? process.cwd());
 
   // Default to the SDK's shipped first-party bundles. See serve.ts /
   // sync-shared.ts `resolveShippedBundlesRoot` for the rationale.
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
+  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
 
-  const jsonMode = args.flags["json"] === true;
-  const verbose =
-    args.flags["verbose"] === true || args.flags["v"] === true;
+  const jsonMode = options.json === true;
+  const verbose = options.verbose === true;
 
   // ----- 2. Detect drift ----------------------------------------------------
   // The shared helper short-circuits the unworkable states (detached

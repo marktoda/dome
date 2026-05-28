@@ -48,8 +48,6 @@ import {
   type DriftInfo,
 } from "./sync-shared";
 
-import type { ParsedArgs } from "../args";
-
 // ----- Constants ------------------------------------------------------------
 
 /**
@@ -65,11 +63,17 @@ const DEFAULT_OPERATIONAL_INTERVAL_MS = 1000;
 // ----- Public types ---------------------------------------------------------
 
 /**
- * Optional knobs for `runServe`. The CLI dispatcher invokes `runServe`
- * with just `(args)`, but tests pass a `signal` so they can stop the
- * loop without depending on real OS-signal delivery.
+ * Optional CLI knobs for `runServe`. Runtime-only controls, such as test
+ * cancellation, live in `RunServeRuntimeOptions`.
  */
-export type RunServeOpts = {
+export type RunServeOptions = {
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly pollIntervalMs?: string | number | boolean | undefined;
+  readonly verbose?: boolean | undefined;
+};
+
+export type RunServeRuntimeOptions = {
   /**
    * External cancellation source. When the signal aborts, the daemon
    * exits its poll loop cleanly (just like SIGINT). Tests use this to
@@ -96,32 +100,24 @@ export type RunServeOpts = {
  * HEAD, detached-HEAD startup all surface as exit-1 with an explanatory
  * stderr message.
  *
- * @param args   parsed CLI args (consults `--vault`, `--bundles-root`,
- *               `--poll-interval-ms`).
- * @param opts   optional cancellation hook for tests.
+ * @param options CLI options from Commander or direct tests.
+ * @param opts    optional cancellation hook for tests.
  */
 export async function runServe(
-  args: ParsedArgs,
-  opts: RunServeOpts = {},
+  options: RunServeOptions = {},
+  opts: RunServeRuntimeOptions = {},
 ): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
+  const vaultPath = resolve(options.vault ?? process.cwd());
 
   // Default to the SDK's shipped first-party bundles. The vault-local
   // `.dome/extensions/` is no longer the default: per docs/v1.md §"Vault"
   // + §10.1, shipped bundles live with the SDK, not in every user's
   // vault. `--bundles-root <path>` overrides for vault-local third-party
   // installs or testing.
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
+  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
 
-  const pollIntervalMs = parsePollInterval(args.flags["poll-interval-ms"]);
+  const pollIntervalMs = parsePollInterval(options.pollIntervalMs);
   if (pollIntervalMs === null) {
     console.error(
       "dome serve: --poll-interval-ms must be a positive integer.",
@@ -133,8 +129,7 @@ export async function runServe(
   // the shared `formatAdoptEvent` formatter. Default mode keeps the
   // one-line-per-commit summary; verbose adds 1-3 indented lines per
   // adoption cycle (iteration-start, processor-result(s), iteration-end).
-  const verbose =
-    args.flags["verbose"] === true || args.flags["v"] === true;
+  const verbose = options.verbose === true;
 
   // ----- 2. Resolve initial branch ------------------------------------------
   // A detached HEAD has no branch name; the adopted-ref substrate requires
@@ -421,9 +416,12 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  * `false` is not a value any parser emits but is treated as malformed
  * for symmetry with `doctor`'s `parseLimit`.
  */
-function parsePollInterval(raw: string | boolean | undefined): number | null {
+function parsePollInterval(
+  raw: string | number | boolean | undefined,
+): number | null {
   if (raw === undefined || raw === true) return DEFAULT_POLL_INTERVAL_MS;
   if (raw === false) return null;
+  if (typeof raw === "number") return raw > 0 ? raw : null;
   const n = Number.parseInt(raw, 10);
   if (Number.isNaN(n) || n <= 0) return null;
   return n;

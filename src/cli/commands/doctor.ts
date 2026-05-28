@@ -21,12 +21,14 @@
 // processors apply the mutation). See [[wiki/specs/cli]] for the full
 // design.
 
-import type { ParsedArgs } from "../args";
-
 const RESERVED_NOTICE =
   "dome doctor: no health checks ship in v1.0; reserved for v1.x. " +
   "For the v1.0 read surface, use `dome inspect <subject>`. " +
   "See `docs/wiki/specs/cli.md` §`dome doctor` for the design.";
+
+export type RunDoctorOptions = {
+  readonly repair?: boolean | undefined;
+};
 
 /**
  * Execute `dome doctor`. v1.0 stub.
@@ -34,8 +36,10 @@ const RESERVED_NOTICE =
  * - Without flags: prints the reserved notice, exits 0.
  * - With `--repair`: exits 64 (the repair surface is not implemented).
  */
-export async function runDoctor(args: ParsedArgs): Promise<number> {
-  if (args.flags["repair"] === true) {
+export async function runDoctor(
+  options: RunDoctorOptions = {},
+): Promise<number> {
+  if (options.repair === true) {
     console.error(
       "dome doctor --repair: not implemented in v1.0. " +
         "The --repair surface is reserved for v1.x (engine-substrate " +

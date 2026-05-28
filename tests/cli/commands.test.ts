@@ -1,9 +1,8 @@
 // Phase 9 — end-to-end tests for the four CLI commands.
 //
 // Each describe block sets up a fresh tmpdir vault (a real git repo
-// with two commits), invokes the relevant `run<Command>` function with
-// parsed args, and asserts on the returned exit code + the side effects
-// on disk / DBs.
+// with two commits), invokes the relevant `run<Command>` function, and
+// asserts on the returned exit code + the side effects on disk / DBs.
 //
 // Phase 11f: the CLI commands default `--bundles-root` to the SDK's
 // shipped `assets/extensions/`. Tests no longer need to copy bundles
@@ -25,7 +24,6 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parseArgs } from "../../src/cli/args";
 import { runInit } from "../../src/cli/commands/init";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runInspect } from "../../src/cli/commands/inspect";
@@ -159,8 +157,7 @@ describe("runInit", () => {
     // Fresh tmpdir — no git repo, no .dome/, no AGENTS.md / CLAUDE.md.
     const target = mkdtempSync(join(tmpdir(), "cli-init-"));
     try {
-      const args = parseArgs(["init", target]);
-      const code = await runInit(args);
+      const code = await runInit({ path: target });
       expect(code).toBe(0);
 
       // Scaffold dirs. `.dome/extensions/` is NOT created — the shipped
@@ -235,8 +232,7 @@ describe("runInit", () => {
   test("is idempotent — re-run leaves orientation files byte-identical + no errors", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-idem-"));
     try {
-      const args = parseArgs(["init", target]);
-      expect(await runInit(args)).toBe(0);
+      expect(await runInit({ path: target })).toBe(0);
 
       const agentsPath = join(target, "AGENTS.md");
       const claudePath = join(target, "CLAUDE.md");
@@ -256,7 +252,7 @@ describe("runInit", () => {
       await writeFile(agentsPath, mutatedAgents, "utf8");
       await writeFile(claudePath, mutatedClaude, "utf8");
 
-      expect(await runInit(args)).toBe(0);
+      expect(await runInit({ path: target })).toBe(0);
 
       const secondAgents = await readFile(agentsPath, "utf8");
       const secondClaude = await readFile(claudePath, "utf8");
@@ -283,7 +279,7 @@ describe("runInit", () => {
         //         initial commit on `main` (HEAD resolves; the adopted
         //         ref is still uninitialized — first `dome sync`
         //         empty-diff-initializes it).
-        expect(await runInit(parseArgs(["init", target]))).toBe(0);
+        expect(await runInit({ path: target })).toBe(0);
 
         // Phase 11f: `dome sync` defaults `--bundles-root` to the SDK's
         // shipped `assets/extensions/` directory via
@@ -298,7 +294,7 @@ describe("runInit", () => {
         //         no-effect iteration and advances the ref so the next
         //         sync can compute a real diff.
         expect(
-          await runSync(parseArgs(["sync", "--vault", target])),
+          await runSync({ vault: target }),
         ).toBe(0);
 
         // Step 3: user writes a markdown file with a broken wikilink.
@@ -316,7 +312,7 @@ describe("runInit", () => {
         //         `document.changed` for wiki/foo.md, and
         //         dome.markdown.validate-wikilinks fires.
         expect(
-          await runSync(parseArgs(["sync", "--vault", target])),
+          await runSync({ vault: target }),
         ).toBe(0);
 
         // Step 6: the broken-wikilink diagnostic lands in the projection.
@@ -358,7 +354,7 @@ describe("runInit", () => {
         captured.out = [];
         captured.err = [];
         const inspectCode = await runInspect(
-          parseArgs(["inspect", "diagnostics", "--vault", target]),
+          { subject: "diagnostics", vault: target },
         );
         expect(inspectCode).toBe(0);
         const inspectOut = captured.out.join("\n");
@@ -388,8 +384,7 @@ describe("runInspect", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["inspect", "runs", "--vault", f.vaultPath]);
-    const code = await runInspect(args);
+    const code = await runInspect({ subject: "runs", vault: f.vaultPath });
     expect(code).toBe(0);
     expect(captured.out.join("\n")).toContain("(no rows)");
   });
@@ -398,8 +393,9 @@ describe("runInspect", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["inspect", "diagnostics", "--vault", f.vaultPath]);
-    expect(await runInspect(args)).toBe(0);
+    expect(
+      await runInspect({ subject: "diagnostics", vault: f.vaultPath }),
+    ).toBe(0);
   });
 
   test("subjects 'questions' and 'outbox' both return 0", async () => {
@@ -408,12 +404,12 @@ describe("runInspect", () => {
 
     expect(
       await runInspect(
-        parseArgs(["inspect", "questions", "--vault", f.vaultPath]),
+        { subject: "questions", vault: f.vaultPath },
       ),
     ).toBe(0);
     expect(
       await runInspect(
-        parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
+        { subject: "outbox", vault: f.vaultPath },
       ),
     ).toBe(0);
   });
@@ -424,7 +420,7 @@ describe("runInspect", () => {
 
     expect(
       await runInspect(
-        parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
+        { subject: "outbox", vault: f.vaultPath },
       ),
     ).toBe(0);
     const db = new Database(join(f.vaultPath, ".dome", "state", "outbox.db"));
@@ -449,7 +445,7 @@ describe("runInspect", () => {
     }
 
     const code = await runInspect(
-      parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
+      { subject: "outbox", vault: f.vaultPath },
     );
     expect(code).toBe(1);
     expect(captured.err.join("\n")).toContain("state read failed");
@@ -462,16 +458,16 @@ describe("runInspect", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["inspect", "--vault", f.vaultPath]);
-    expect(await runInspect(args)).toBe(64);
+    expect(await runInspect({ vault: f.vaultPath })).toBe(64);
   });
 
   test("unknown subject returns 64", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["inspect", "garbage", "--vault", f.vaultPath]);
-    expect(await runInspect(args)).toBe(64);
+    expect(
+      await runInspect({ subject: "garbage", vault: f.vaultPath }),
+    ).toBe(64);
   });
 });
 
@@ -483,13 +479,13 @@ describe("runInspect", () => {
 
 describe("runDoctor (v1.0 stub)", () => {
   test("without flags: exits 0 with the reserved-for-v1.x notice", async () => {
-    const code = await runDoctor(parseArgs(["doctor"]));
+    const code = await runDoctor();
     expect(code).toBe(0);
     expect(captured.out.join("\n")).toContain("reserved for v1.x");
   });
 
   test("with --repair: exits 64 (not implemented in v1.0)", async () => {
-    const code = await runDoctor(parseArgs(["doctor", "--repair"]));
+    const code = await runDoctor({ repair: true });
     expect(code).toBe(64);
     expect(captured.err.join("\n")).toContain("not implemented in v1.0");
   });
@@ -502,8 +498,7 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["status", "--vault", f.vaultPath]);
-    const code = await runStatus(args);
+    const code = await runStatus({ vault: f.vaultPath });
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
@@ -522,8 +517,7 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
-    expect(await runStatus(args)).toBe(0);
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
 
     const blob = captured.out.find((l) => l.includes("\"vault\""));
     expect(blob).toBeDefined();
@@ -569,8 +563,7 @@ describe("runStatus", () => {
     await writeFile(join(f.vaultPath, "inbox/todo.md"), "- [ ] inbox\n", "utf8");
     await writeFile(join(f.vaultPath, "raw/capture.txt"), "raw", "utf8");
 
-    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
-    expect(await runStatus(args)).toBe(0);
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
 
     const blob = captured.out.find((l) => l.includes("\"vault\""));
     expect(blob).toBeDefined();
@@ -705,8 +698,7 @@ describe("runStatus", () => {
     quarantine.value.recordRetryableTerminalFailure(key, "first");
     quarantine.value.recordRetryableTerminalFailure(key, "second");
 
-    const args = parseArgs(["status", "--vault", f.vaultPath, "--json"]);
-    expect(await runStatus(args)).toBe(0);
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
 
     const blob = captured.out.find((l) => l.includes("\"vault\""));
     expect(blob).toBeDefined();

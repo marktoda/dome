@@ -39,7 +39,6 @@ import { queryOutbox } from "../../outbox/dispatch";
 
 import { resolveShippedBundlesRoot } from "./sync-shared";
 
-import type { ParsedArgs } from "../args";
 import { formatJson, formatTable } from "../format";
 
 // ----- Constants ------------------------------------------------------------
@@ -52,17 +51,27 @@ const VALID_SUBJECTS = new Set<string>([
   "outbox",
 ]);
 
+export type RunInspectOptions = {
+  readonly subject?: string | undefined;
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly limit?: string | number | boolean | undefined;
+  readonly json?: boolean | undefined;
+};
+
 // ----- runInspect --------------------------------------------------------------
 
 /**
  * Execute `dome inspect <subject>`. Returns the exit code.
  *
- * Subject is the first positional argument (`args.positionals[0]`).
- * No flag-based subject is accepted; the previous `--show <subject>`
- * spelling is retired in the recut.
+ * Subject comes from Commander's required positional argument. No flag-based
+ * subject is accepted; the previous `--show <subject>` spelling is retired
+ * in the recut.
  */
-export async function runInspect(args: ParsedArgs): Promise<number> {
-  const subject = args.positionals[0];
+export async function runInspect(
+  options: RunInspectOptions = {},
+): Promise<number> {
+  const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
       "dome inspect: subject is required. Subjects: runs, diagnostics, questions, outbox.",
@@ -76,12 +85,9 @@ export async function runInspect(args: ParsedArgs): Promise<number> {
     return 64;
   }
 
-  const vaultFlag = args.flags["vault"];
-  const vaultPath = resolve(
-    typeof vaultFlag === "string" ? vaultFlag : process.cwd(),
-  );
+  const vaultPath = resolve(options.vault ?? process.cwd());
 
-  const limit = parseLimit(args.flags["limit"]);
+  const limit = parseLimit(options.limit);
   if (limit === null) {
     console.error("dome inspect: --limit must be a positive integer.");
     return 64;
@@ -90,11 +96,7 @@ export async function runInspect(args: ParsedArgs): Promise<number> {
   // Default `bundlesRoot` is the SDK's shipped first-party bundles.
   // Override via `--bundles-root <path>` for vault-local third-party
   // bundles or testing.
-  const bundlesRootFlag = args.flags["bundles-root"];
-  const bundlesRoot =
-    typeof bundlesRootFlag === "string"
-      ? bundlesRootFlag
-      : resolveShippedBundlesRoot();
+  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(
@@ -115,7 +117,7 @@ export async function runInspect(args: ParsedArgs): Promise<number> {
       );
       return 1;
     }
-    if (args.flags["json"] === true) {
+    if (options.json === true) {
       console.log(formatJson(rows));
     } else {
       console.log(`dome inspect ${subject}:`);
@@ -195,9 +197,12 @@ function collectRows(
  * integer when valid, or `null` on a malformed value (caller treats as
  * usage error).
  */
-function parseLimit(raw: string | boolean | undefined): number | null {
+function parseLimit(
+  raw: string | number | boolean | undefined,
+): number | null {
   if (raw === undefined || raw === true) return DEFAULT_LIMIT;
   if (raw === false) return null;
+  if (typeof raw === "number") return raw > 0 ? raw : null;
   const n = Number.parseInt(raw, 10);
   if (Number.isNaN(n) || n <= 0) return null;
   return n;
