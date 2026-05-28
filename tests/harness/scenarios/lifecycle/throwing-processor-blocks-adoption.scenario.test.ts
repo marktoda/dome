@@ -1,10 +1,10 @@
 // scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test.ts
 //
-// A processor that throws unconditionally: the runtime synthesizes a
-// `processor-threw` DiagnosticEffect, marks the ledger row failed, and
-// the daemon DOES NOT crash. Adoption still completes (the throw is
-// non-blocking by design — one misbehaving processor must not refuse
-// every other processor's effects).
+// A processor that throws unconditionally: the executor synthesizes a
+// `processor.threw` DiagnosticEffect with severity `block`, marks the
+// ledger row failed with structured error JSON, and the daemon DOES NOT
+// crash. Adoption does not advance because adoption-phase execution
+// failures are blocking diagnostics.
 //
 // No shipped processor throws, so this scenario writes a synthetic test
 // bundle inline: a single adoption-phase processor whose `run` throws
@@ -14,10 +14,9 @@
 //
 // Post-conditions:
 //   - The synthetic processor has exactly one failed ledger row with
-//     `error` populated.
-//   - Adoption completed: `tick.adopted === true`.
-//   - A synthesized `processor-threw` diagnostic landed (severity error,
-//     non-blocking).
+//     structured `processor.threw` error populated.
+//   - Adoption did not advance: `tick.adopted === false`.
+//   - A synthesized `processor.threw` diagnostic landed (severity block).
 //   - No exception escaped the tick boundary.
 
 import { expect } from "bun:test";
@@ -29,7 +28,7 @@ import type { Harness } from "../../types";
 
 scenario(
   {
-    name: "lifecycle: a throwing processor fails its ledger row, synthesizes a diagnostic, does not crash adoption",
+    name: "lifecycle: a throwing adoption processor fails its ledger row and blocks adoption",
     tags: [
       { kind: "group", group: "lifecycle" },
       { kind: "effect", effect: "diagnostic" },
@@ -58,11 +57,12 @@ scenario(
       message: "trigger throwing processor",
     });
 
-    // Step 3: tick. Adoption MUST complete (the runtime's per-processor
-    // try/catch turns the throw into a diagnostic + failed ledger row);
-    // no exception should escape.
+    // Step 3: tick. Adoption MUST NOT complete: the executor turns the
+    // throw into a block diagnostic + failed ledger row. No exception
+    // should escape.
     const result = await h.tick();
-    expect(result.adopted).toBe(true);
+    expect(result.adopted).toBe(false);
+    expect(result.diagnosticCount).toBeGreaterThan(0);
 
     // Step 4: the synthetic processor has exactly one ledger row, with
     // status `failed` and `error` populated.
@@ -72,18 +72,23 @@ scenario(
     expect(row.status).toBe("failed");
     expect(row.error).not.toBeNull();
     if (row.error !== null) {
-      expect(row.error).toContain("intentional test failure");
+      const parsed = JSON.parse(row.error);
+      expect(parsed.code).toBe("processor.threw");
+      expect(parsed.message).toContain("intentional test failure");
+      expect(parsed.processorId).toBe("test.throwing.always");
     }
 
-    // Step 5: the synthesized `processor-threw` diagnostic landed. The
-    // runtime emits a severity=error diagnostic per
-    // [[wiki/specs/processors]] §"Throwing processors"; the broker's
-    // capability check still admits diagnostics (they don't require a
-    // capability declaration).
+    // Step 5: the synthesized `processor.threw` block diagnostic landed.
+    // Diagnostics don't require a capability declaration, so the broker
+    // still admits the diagnostic and adoption refuses to advance.
     await h
       .expectProjection()
-      .diagnostics({ code: "processor-threw" })
+      .diagnostics({ code: "processor.threw", severity: "block" })
       .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "processor.threw", severity: "block" })
+      .toContainMessage("intentional test failure");
   },
 );
 

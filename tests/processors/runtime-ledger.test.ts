@@ -14,15 +14,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  buildRuntime,
-  type AdoptionRunInput,
-} from "../../src/processors/runtime";
+import { buildRuntime } from "../../src/processors/runtime";
 import { buildRegistry } from "../../src/processors/registry";
 import {
   defineProcessor,
   treeOid,
   type Capability,
+  type ExecutionPolicyRequest,
   type Processor,
   type ProcessorContext,
   type ProcessorPhase,
@@ -66,8 +64,9 @@ function makeFixtureProcessor(opts: {
   phase: ProcessorPhase;
   triggers: ReadonlyArray<Trigger>;
   capabilities?: ReadonlyArray<Capability>;
+  execution?: ExecutionPolicyRequest;
   emitsEffects?: ReadonlyArray<Effect>;
-  run?: (ctx: ProcessorContext<AdoptionRunInput>) => Promise<ReadonlyArray<Effect>>;
+  run?: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>;
 }): Processor {
   return defineProcessor({
     id: opts.id,
@@ -75,9 +74,10 @@ function makeFixtureProcessor(opts: {
     phase: opts.phase,
     triggers: opts.triggers,
     capabilities: opts.capabilities ?? [],
+    ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
     run:
       opts.run !== undefined
-        ? (opts.run as (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>)
+        ? opts.run
         : async () => opts.emitsEffects ?? [],
   });
 }
@@ -233,6 +233,98 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(parsed.code).toBe("processor.threw");
     expect(parsed.message).toContain("boom from test");
     expect(parsed.processorId).toBe("test.ledger.thrower");
+    expect(row.finishedAt).not.toBeNull();
+    expect(row.durationMs).not.toBeNull();
+  });
+
+  test("adoption processor with denied execution policy is skipped and not invoked", async () => {
+    const ledger = await openLedger();
+    let invoked = false;
+    const p = makeFixtureProcessor({
+      id: "test.ledger.policy-denied",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      execution: { class: "llm", timeoutMs: 600_000 },
+      run: async () => {
+        invoked = true;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    const results = await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    expect(invoked).toBe(false);
+    expect(results.length).toBe(1);
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("execution-policy.phase-class-denied");
+    expect(effect.severity).toBe("block");
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.policy-denied" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+
+    expect(row.status).toBe("skipped");
+    expect(row.error).toBeNull();
+    expect(row.durationMs).toBeNull();
+    expect(row.finishedAt).not.toBeNull();
+  });
+
+  test("garden processor timeout lands timed_out row with structured error", async () => {
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.timeout",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      execution: { class: "background", timeoutMs: 5 },
+      run: async (ctx) => {
+        await new Promise<void>((resolve) => {
+          if (ctx.signal.aborted) {
+            resolve();
+            return;
+          }
+          ctx.signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(results.length).toBe(1);
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("processor.timeout");
+    expect(effect.severity).toBe("error");
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.timeout" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+
+    expect(row.status).toBe("timed_out");
+    const parsed = JSON.parse(row.error ?? "{}");
+    expect(parsed.code).toBe("processor.timeout");
+    expect(parsed.processorId).toBe("test.ledger.timeout");
+    expect(parsed.phase).toBe("garden");
     expect(row.finishedAt).not.toBeNull();
     expect(row.durationMs).not.toBeNull();
   });

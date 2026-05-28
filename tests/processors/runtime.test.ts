@@ -13,6 +13,7 @@ import {
   defineProcessor,
   treeOid,
   type Capability,
+  type ExecutionPolicyRequest,
   type Processor,
   type ProcessorContext,
   type ProcessorPhase,
@@ -51,8 +52,9 @@ function makeFixtureProcessor(opts: {
   phase: ProcessorPhase;
   triggers: ReadonlyArray<Trigger>;
   capabilities?: ReadonlyArray<Capability>;
+  execution?: ExecutionPolicyRequest;
   emitsEffects?: ReadonlyArray<Effect>;
-  run?: (ctx: ProcessorContext<AdoptionRunInput>) => Promise<ReadonlyArray<Effect>>;
+  run?: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>;
 }): Processor {
   return defineProcessor({
     id: opts.id,
@@ -60,9 +62,10 @@ function makeFixtureProcessor(opts: {
     phase: opts.phase,
     triggers: opts.triggers,
     capabilities: opts.capabilities ?? [],
+    ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
     run:
       opts.run !== undefined
-        ? (opts.run as (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>)
+        ? opts.run
         : async () => opts.emitsEffects ?? [],
   });
 }
@@ -244,7 +247,15 @@ describe("adoptionRunner — processor exception synthesis", () => {
       id: "test.invalid-output",
       phase: "adoption",
       triggers: [{ kind: "signal", name: "file.created" }],
-      run: async () => [{ kind: "patch", mode: "auto", changes: [], reason: "bad", sourceRefs: [] } as never],
+      run: async () => [
+        {
+          kind: "patch",
+          mode: "auto",
+          changes: [],
+          reason: "bad",
+          sourceRefs: [],
+        } as never,
+      ],
     });
     const rt = buildRuntimeFor([p]);
 
@@ -263,6 +274,37 @@ describe("adoptionRunner — processor exception synthesis", () => {
     if (effect?.kind !== "diagnostic") return;
     expect(effect.code).toBe("processor.invalid-output");
     expect(effect.severity).toBe("block");
+  });
+});
+
+describe("gardenRunner — executor diagnostics", () => {
+  test("garden processor that throws → processor.threw error diagnostic", async () => {
+    const p = makeFixtureProcessor({
+      id: "test.garden.thrower",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        throw new Error("garden boom");
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(results.length).toBe(1);
+    const effect = results[0]?.effects[0];
+    expect(effect?.kind).toBe("diagnostic");
+    if (effect?.kind !== "diagnostic") return;
+    expect(effect.code).toBe("processor.threw");
+    expect(effect.severity).toBe("error");
+    expect(effect.message).toContain("test.garden.thrower");
+    expect(effect.message).toContain("garden boom");
   });
 });
 
@@ -336,7 +378,7 @@ describe("adoptionRunner — context wiring", () => {
       phase: "adoption",
       triggers: [{ kind: "signal", name: "file.created" }],
       run: async (ctx) => {
-        observedInput = ctx.input;
+        observedInput = ctx.input as AdoptionRunInput;
         return [];
       },
     });
