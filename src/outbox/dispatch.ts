@@ -85,6 +85,8 @@ import type { OutboxDb } from "./db";
  * default ever changes.
  */
 const DEFAULT_MAX_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 60_000;
 
 // ----- Public types ---------------------------------------------------------
 
@@ -92,6 +94,7 @@ export type OutboxInsertOpts = {
   readonly effect: ExternalActionEffect;
   /** The RunRecord id that emitted this effect. Stored on the row for audit. */
   readonly runId: string;
+  readonly now?: Date;
 };
 
 /**
@@ -116,6 +119,7 @@ export type OutboxRow = {
   readonly attempts: number;
   readonly maxAttempts: number;
   readonly enqueuedAt: string;
+  readonly nextAttemptAt: string;
   readonly sentAt: string | null;
   readonly lastError: string | null;
   readonly runId: string;
@@ -130,6 +134,11 @@ export type OutboxQueryFilter = {
    * created by the same scheduler/job pump.
    */
   readonly enqueuedBefore?: Date;
+  /**
+   * Match only rows whose retry cursor is due at or before this timestamp.
+   * The outbox dispatcher uses this to enforce retry backoff.
+   */
+  readonly nextAttemptAtOrBefore?: Date;
   /**
    * Match only rows whose `enqueued_at` is older than `now - hours`. Used
    * by `dome inspect outbox --age 24h+` to surface stuck rows.
@@ -186,6 +195,7 @@ export type ExternalDispatchResult =
       readonly attempts: number;
       readonly maxAttempts: number;
       readonly lastError: string;
+      readonly nextAttemptAt: string;
     }
   | {
       readonly kind: "failed";
@@ -193,6 +203,7 @@ export type ExternalDispatchResult =
       readonly attempts: number;
       readonly maxAttempts: number;
       readonly lastError: string;
+      readonly nextAttemptAt: string;
     }
   | {
       readonly kind: "skipped";
@@ -205,8 +216,8 @@ export type ExternalDispatchResult =
 const INSERT_PENDING_SQL = `
 INSERT OR IGNORE INTO outbox (
   capability, idempotency_key, payload_json, source_refs,
-  status, attempts, max_attempts, enqueued_at, run_id
-) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+  status, attempts, max_attempts, enqueued_at, next_attempt_at, run_id
+) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
 `.trim();
 
 const MARK_SENT_SQL = `
@@ -223,7 +234,7 @@ WHERE idempotency_key = ? AND status = 'pending'
 
 const INCREMENT_ATTEMPTS_SQL = `
 UPDATE outbox
-SET attempts = attempts + 1, last_error = ?
+SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?
 WHERE idempotency_key = ? AND status = 'pending'
 `.trim();
 
@@ -235,14 +246,14 @@ WHERE idempotency_key = ? AND status = 'failed'
 
 const REPLAY_FAILED_SQL = `
 UPDATE outbox
-SET status = 'pending', attempts = 0, last_error = NULL
+SET status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = ?
 WHERE idempotency_key = ? AND status = 'failed'
 `.trim();
 
 const SELECT_OUTBOX_BASE_SQL = `
 SELECT id, capability, idempotency_key, payload_json, source_refs,
        status, external_id, attempts, max_attempts, enqueued_at,
-       sent_at, last_error, run_id
+       next_attempt_at, sent_at, last_error, run_id
 FROM outbox
 `.trim();
 
@@ -261,6 +272,7 @@ type OutboxRawRow = {
   readonly attempts: number;
   readonly max_attempts: number;
   readonly enqueued_at: string;
+  readonly next_attempt_at: string;
   readonly sent_at: string | null;
   readonly last_error: string | null;
   readonly run_id: string;
@@ -285,13 +297,16 @@ type OutboxRawRow = {
  */
 export function insertPending(db: OutboxDb, opts: OutboxInsertOpts): void {
   const e = opts.effect;
+  const now = opts.now ?? new Date();
+  const nowIso = now.toISOString();
   db.raw.query(INSERT_PENDING_SQL).run(
     e.capability,
     e.idempotencyKey,
     JSON.stringify(e.payload),
     JSON.stringify(e.sourceRefs),
     DEFAULT_MAX_ATTEMPTS,
-    new Date().toISOString(),
+    nowIso,
+    nowIso,
     opts.runId,
   );
 }
@@ -313,9 +328,11 @@ export async function dispatchExternalEffect(
     readonly effect: ExternalActionEffect;
     readonly runId: string;
     readonly handlers: ExternalHandlerRegistry;
+    readonly now?: Date;
   },
 ): Promise<ExternalDispatchResult> {
-  insertPending(db, { effect: opts.effect, runId: opts.runId });
+  const now = opts.now ?? new Date();
+  insertPending(db, { effect: opts.effect, runId: opts.runId, now });
   const row = getOutboxByIdempotencyKey(db, opts.effect.idempotencyKey);
   if (row === null) {
     const msg =
@@ -323,7 +340,7 @@ export async function dispatchExternalEffect(
       "was not readable after insert.";
     throw new Error(msg);
   }
-  return dispatchOutboxRow(db, row, opts.handlers);
+  return dispatchOutboxRow(db, row, opts.handlers, now);
 }
 
 /**
@@ -337,10 +354,13 @@ export async function dispatchPendingOutbox(
     readonly handlers: ExternalHandlerRegistry;
     readonly limit?: number;
     readonly enqueuedBefore?: Date;
+    readonly now?: Date;
   },
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
+  const now = opts.now ?? new Date();
   const pending = queryOutbox(db, {
     status: "pending",
+    nextAttemptAtOrBefore: now,
     ...(opts.enqueuedBefore !== undefined
       ? { enqueuedBefore: opts.enqueuedBefore }
       : {}),
@@ -349,7 +369,7 @@ export async function dispatchPendingOutbox(
     opts.limit === undefined ? pending : pending.slice(0, opts.limit);
   const results: ExternalDispatchResult[] = [];
   for (const row of bounded) {
-    results.push(await dispatchOutboxRow(db, row, opts.handlers));
+    results.push(await dispatchOutboxRow(db, row, opts.handlers, now));
   }
   return Object.freeze(results);
 }
@@ -412,8 +432,11 @@ export function incrementAttempts(
   db: OutboxDb,
   idempotencyKey: string,
   lastError: string,
+  nextAttemptAt: Date = new Date(),
 ): void {
-  db.raw.query(INCREMENT_ATTEMPTS_SQL).run(lastError, idempotencyKey);
+  db.raw
+    .query(INCREMENT_ATTEMPTS_SQL)
+    .run(lastError, nextAttemptAt.toISOString(), idempotencyKey);
 }
 
 /**
@@ -452,8 +475,12 @@ export function markAbandoned(db: OutboxDb, idempotencyKey: string): void {
  * Phase 4); abandoned is the loudest terminal state and resurrecting
  * it silently would defeat the user's intent.
  */
-export function replayFailed(db: OutboxDb, idempotencyKey: string): void {
-  db.raw.query(REPLAY_FAILED_SQL).run(idempotencyKey);
+export function replayFailed(
+  db: OutboxDb,
+  idempotencyKey: string,
+  now: Date = new Date(),
+): void {
+  db.raw.query(REPLAY_FAILED_SQL).run(now.toISOString(), idempotencyKey);
 }
 
 /**
@@ -484,6 +511,10 @@ export function queryOutbox(
   if (filter?.enqueuedBefore !== undefined) {
     clauses.push("enqueued_at < ?");
     params.push(filter.enqueuedBefore.toISOString());
+  }
+  if (filter?.nextAttemptAtOrBefore !== undefined) {
+    clauses.push("next_attempt_at <= ?");
+    params.push(filter.nextAttemptAtOrBefore.toISOString());
   }
   if (filter?.olderThanHours !== undefined) {
     const cutoff = new Date(
@@ -516,6 +547,7 @@ async function dispatchOutboxRow(
   db: OutboxDb,
   row: OutboxRow,
   handlers: ExternalHandlerRegistry,
+  now: Date,
 ): Promise<ExternalDispatchResult> {
   if (row.status === "sent") {
     return Object.freeze({
@@ -531,11 +563,21 @@ async function dispatchOutboxRow(
       status: row.status,
     });
   }
+  if (Date.parse(row.nextAttemptAt) > now.getTime()) {
+    return Object.freeze({
+      kind: "pending",
+      idempotencyKey: row.idempotencyKey,
+      attempts: row.attempts,
+      maxAttempts: row.maxAttempts,
+      lastError: row.lastError ?? `Retry not due until ${row.nextAttemptAt}.`,
+      nextAttemptAt: row.nextAttemptAt,
+    });
+  }
 
   const handler = lookupHandler(handlers, row.capability);
   if (handler === undefined) {
     const msg = `No external handler registered for capability '${row.capability}'.`;
-    return recordFailedAttempt(db, row, msg, { terminal: true });
+    return recordFailedAttempt(db, row, msg, { terminal: true, now });
   }
 
   try {
@@ -558,7 +600,10 @@ async function dispatchOutboxRow(
       recovered: result.recovered ?? false,
     });
   } catch (e) {
-    return recordFailedAttempt(db, row, errorMessage(e), { terminal: false });
+    return recordFailedAttempt(db, row, errorMessage(e), {
+      terminal: false,
+      now,
+    });
   }
 }
 
@@ -566,11 +611,14 @@ function recordFailedAttempt(
   db: OutboxDb,
   row: OutboxRow,
   lastError: string,
-  opts: { readonly terminal: boolean },
+  opts: { readonly terminal: boolean; readonly now: Date },
 ): ExternalDispatchResult {
   const attempts = row.attempts + 1;
-  incrementAttempts(db, row.idempotencyKey, lastError);
   const terminal = opts.terminal || attempts >= row.maxAttempts;
+  const nextAttemptAt = terminal
+    ? opts.now
+    : computeNextAttemptAt(opts.now, attempts);
+  incrementAttempts(db, row.idempotencyKey, lastError, nextAttemptAt);
   if (terminal) {
     markFailed(db, row.idempotencyKey, lastError);
     return Object.freeze({
@@ -579,6 +627,7 @@ function recordFailedAttempt(
       attempts,
       maxAttempts: row.maxAttempts,
       lastError,
+      nextAttemptAt: nextAttemptAt.toISOString(),
     });
   }
   return Object.freeze({
@@ -587,7 +636,17 @@ function recordFailedAttempt(
     attempts,
     maxAttempts: row.maxAttempts,
     lastError,
+    nextAttemptAt: nextAttemptAt.toISOString(),
   });
+}
+
+function computeNextAttemptAt(now: Date, failedAttemptCount: number): Date {
+  const exponent = Math.max(0, failedAttemptCount - 1);
+  const delay = Math.min(
+    BASE_RETRY_DELAY_MS * 2 ** exponent,
+    MAX_RETRY_DELAY_MS,
+  );
+  return new Date(now.getTime() + delay);
 }
 
 function lookupHandler(
@@ -628,6 +687,7 @@ function rowToOutboxRow(row: OutboxRawRow): OutboxRow {
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
     enqueuedAt: row.enqueued_at,
+    nextAttemptAt: row.next_attempt_at,
     sentAt: row.sent_at,
     lastError: row.last_error,
     runId: row.run_id,

@@ -216,19 +216,21 @@ CREATE TABLE outbox (
   attempts        INTEGER NOT NULL DEFAULT 0,
   max_attempts    INTEGER NOT NULL DEFAULT 3,
   enqueued_at     TEXT NOT NULL,
+  next_attempt_at TEXT NOT NULL,        -- retry cursor; due when <= now
   sent_at         TEXT,
   last_error      TEXT,                 -- nullable; most recent failure message
   run_id          TEXT NOT NULL         -- the RunRecord row that emitted this
 );
 CREATE INDEX outbox_by_status ON outbox(status, enqueued_at);
+CREATE INDEX outbox_by_due ON outbox(status, next_attempt_at, enqueued_at);
 ```
 
 **Lifecycle:**
 
 1. Processor emits `ExternalActionEffect`.
-2. Engine inserts row with `status: "pending"`, then calls the registered capability handler.
+2. Engine inserts row with `status: "pending"`, `attempts = 0`, and `next_attempt_at = enqueued_at`, then calls the registered capability handler.
 3. On success, handler returns `externalId`; engine updates row to `status: "sent"`, `external_id: <id>`.
-4. On failure (`attempts < maxAttempts`), engine schedules a retry with exponential backoff; row stays `pending`.
+4. On failure (`attempts < maxAttempts`), engine increments `attempts`, sets `next_attempt_at = now + bounded exponential backoff`, and leaves the row `pending`. Outbox drains select only rows whose `next_attempt_at <= now`.
 5. On terminal failure (`attempts >= maxAttempts`), engine marks `status: "failed"`. Recovery follows the engine-asks model: the engine emits `engine.outbox.terminal-failure`; the deferred `dome.health` bundle's question-emitter processor raises a `QuestionEffect` with options `["retry", "abandon"]`; the user answers via `dome answer <question-id>`; the answer-handler processor applies the mutation. See [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]]. v1.0 surfaces failed rows via `dome inspect outbox`; the answer-handler loop ships with `dome.health` in v1.x.
 
 This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] and [[wiki/gotchas/outbox-stuck]].

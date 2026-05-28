@@ -164,7 +164,7 @@ interface ExternalActionEffect {
 }
 ```
 
-**Routing:** the engine inserts a row in `outbox.db` with `status: "pending"`, then attempts the external call via the capability handler registered for `capability`. On success, the row updates to `status: "sent"` with the external system's id. On failure, retries per `maxAttempts` (default 3) with exponential backoff; terminal failure marks `status: "failed"`. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
+**Routing:** the engine inserts a row in `outbox.db` with `status: "pending"` and `next_attempt_at = enqueued_at`, then attempts the external call via the capability handler registered for `capability`. On success, the row updates to `status: "sent"` with the external system's id. On failure, retries per `maxAttempts` (default 3) with bounded exponential backoff by advancing `next_attempt_at`; terminal failure marks `status: "failed"`. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
 
 **No fire-and-forget.** The engine never attempts an external call without an outbox row preceding it. This is what makes retries idempotent (the idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure follows the engine-asks model: the engine emits a `QuestionEffect` on `engine.outbox.terminal-failure`; the user answers via `dome answer <id> retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]] §"dome answer"); the deferred `dome.health` bundle's answer-handler processor applies the resulting mutation. v1.0 surfaces the failed rows via `dome inspect outbox`; the full answer-handler loop ships with `dome.health` in v1.x.
 

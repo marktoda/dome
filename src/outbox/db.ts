@@ -27,7 +27,7 @@
 //     "outbox is never silently discarded" rule in the gotcha file.
 //
 // ============================================================================
-// WARNING — schema-mismatch wipe is a known data-loss event.
+// WARNING — unknown schema-mismatch wipe is a known data-loss event.
 // ============================================================================
 //
 // Unlike `projection.db` (which is rebuildable from markdown + processors
@@ -37,13 +37,10 @@
 // Sent rows are also lost, taking the audit history of "what did Dome
 // call out to" with them.
 //
-// Phase 4 v1 still wipes on schema-hash mismatch because:
-//   - The outbox schema is small and closed-set; the v1.x roadmap of
-//     anticipated schema changes is minimal.
-//   - A real schema-migration system (add-column, backfill, etc.) is
-//     deferred to a post-v1 version with more substrate around it.
-//   - The wipe is loud: the migration result `"schema-changed"` surfaces
-//     to the caller so the engine can warn the user before continuing.
+// Phase 4 v1 supports a small allowlist of additive migrations for columns
+// that are safe to backfill. Unknown schema-hash mismatches still wipe,
+// loudly: the migration result `"schema-changed"` surfaces to the caller
+// so the engine can warn the user before continuing.
 //
 // If you find yourself adding a column to the outbox schema below, audit
 // whether the wipe-on-mismatch behavior is acceptable for the change.
@@ -52,10 +49,10 @@
 // ============================================================================
 //
 // v1 Phase 4 scope:
-//   - Schema migrations are the wipe (above). This file does not implement
-//     incremental column-add migrations; it wipes and recreates on
-//     schema-hash change. The DDL uses `CREATE ... IF NOT EXISTS` so a
-//     fresh open on a missing file is safe.
+//   - Schema migrations are intentionally small and explicit. Known
+//     additive changes are allowlisted below; unknown schema changes still
+//     wipe. The DDL uses `CREATE ... IF NOT EXISTS` so a fresh open on a
+//     missing file is safe.
 //
 // Imports (tight by design — outbox is the SQLite boundary):
 //   - `bun:sqlite` for the `Database` handle (the only I/O dependency).
@@ -84,6 +81,10 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
+
+const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
+  "82000d3d8dd8578f9c34d23fcca621c085aaf78d5d228ee62df824b739f19a68";
+const OUTBOX_EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -126,6 +127,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "attempts INTEGER NOT NULL DEFAULT 0,"
     + "max_attempts INTEGER NOT NULL DEFAULT 3,"
     + "enqueued_at TEXT NOT NULL,"
+    + `next_attempt_at TEXT NOT NULL DEFAULT '${OUTBOX_EPOCH_ISO}',`
     + "sent_at TEXT,"
     + "last_error TEXT,"
     + "run_id TEXT NOT NULL"
@@ -136,12 +138,14 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   //    Compound (status, enqueued_at) so age-filtered queries can leverage
   //    the index ordering.
   "CREATE INDEX IF NOT EXISTS outbox_by_status ON outbox(status, enqueued_at)",
+  "CREATE INDEX IF NOT EXISTS outbox_by_due ON outbox(status, next_attempt_at, enqueued_at)",
 ]);
 
 // Drop order: reverse-creation. `outbox_meta` is dropped last so the
 // schema-version row remains queryable as long as possible during a wipe
 // (defense in depth).
 const DROP_DDL: ReadonlyArray<string> = Object.freeze([
+  "DROP INDEX IF EXISTS outbox_by_due",
   "DROP INDEX IF EXISTS outbox_by_status",
   "DROP TABLE IF EXISTS outbox",
   "DROP TABLE IF EXISTS outbox_meta",
@@ -191,11 +195,14 @@ export type OpenOutboxDbOpts = {
  *                         current schema_hash.
  * - `"ok"`              — schema hash matches the stored value. No action
  *                         needed; pending+failed rows survive.
- * - `"schema-changed"`  — schema hash differs from the stored value.
+ * - `"migrated"`        — schema hash differed, but a known additive
+ *                         migration preserved existing rows.
+ * - `"schema-changed"`  — schema hash differs from the stored value and
+ *                         no additive migration matched.
  *                         Tables wiped and recreated; meta row reset.
  *                         **This is a data-loss event** (see file banner).
  */
-export type OutboxMigration = "fresh" | "ok" | "schema-changed";
+export type OutboxMigration = "fresh" | "ok" | "migrated" | "schema-changed";
 
 export type OpenOutboxDbResult = {
   readonly db: OutboxDb;
@@ -281,13 +288,20 @@ export async function openOutboxDb(
   const isSchemaChanged =
     storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash;
 
-  // 4. If schema changed, wipe everything (data-loss event — see banner);
-  //    if fresh, just apply DDL; if matched, apply DDL idempotently
-  //    (`CREATE ... IF NOT EXISTS` is safe and defensive against a partial
-  //    schema left by a prior crash).
+  // 4. If schema changed, run a known additive migration when possible;
+  //    otherwise wipe everything (data-loss event — see banner). If fresh,
+  //    just apply DDL; if matched, apply DDL idempotently (`CREATE ... IF
+  //    NOT EXISTS` is safe and defensive against a partial schema left by a
+  //    prior crash).
+  let additiveMigrationApplied = false;
   try {
     if (isSchemaChanged) {
-      applyDropAll(raw);
+      if (storedSchemaHash === OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT) {
+        applyNextAttemptAtMigration(raw);
+        additiveMigrationApplied = true;
+      } else {
+        applyDropAll(raw);
+      }
     }
     applyDdl(raw);
   } catch (e) {
@@ -311,6 +325,8 @@ export async function openOutboxDb(
   let migration: OutboxMigration;
   if (isFresh) {
     migration = "fresh";
+  } else if (additiveMigrationApplied) {
+    migration = "migrated";
   } else if (isSchemaChanged) {
     migration = "schema-changed";
   } else {
@@ -375,6 +391,34 @@ function applyDropAll(db: Database): void {
   }
 }
 
+function applyNextAttemptAtMigration(db: Database): void {
+  db.run("BEGIN");
+  try {
+    if (!outboxColumnExists(db, "next_attempt_at")) {
+      db.run(
+        `ALTER TABLE outbox ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '${OUTBOX_EPOCH_ISO}'`,
+      );
+    }
+    db.run(
+      `UPDATE outbox SET next_attempt_at = enqueued_at WHERE next_attempt_at = '${OUTBOX_EPOCH_ISO}'`,
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS outbox_by_due ON outbox(status, next_attempt_at, enqueued_at)",
+    );
+    db.run("COMMIT");
+  } catch (e) {
+    db.run("ROLLBACK");
+    throw e;
+  }
+}
+
+function outboxColumnExists(db: Database, columnName: string): boolean {
+  const rows = db
+    .query<{ name: string }, []>("PRAGMA table_info(outbox)")
+    .all();
+  return rows.some((row) => row.name === columnName);
+}
+
 /**
  * Detect whether `outbox_meta` exists and, if so, return the stored
  * schema_hash. Returns `null` on either:
@@ -404,15 +448,22 @@ function readStoredSchemaHash(db: Database): string | null {
 }
 
 /**
- * Insert (or replace) the single `outbox_meta` row with the given
- * schema_hash and the current timestamp. `INSERT OR REPLACE` because the
- * PRIMARY KEY is `schema_hash` — if a row with this hash already exists
- * (the "ok" path), we overwrite the `built_at` timestamp (cheap, makes
- * "when was the schema last verified" observable) rather than fail.
+ * Replace the single `outbox_meta` row with the given schema_hash and the
+ * current timestamp. The table's primary key is `schema_hash`, so a simple
+ * INSERT OR REPLACE would leave old schema-hash rows behind after an
+ * additive migration. Delete first to preserve the one-row contract.
  */
 function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {
-  db.run(
-    "INSERT OR REPLACE INTO outbox_meta (schema_hash, built_at) VALUES (?, ?)",
-    [schemaHash, new Date().toISOString()],
-  );
+  db.run("BEGIN");
+  try {
+    db.run("DELETE FROM outbox_meta");
+    db.run(
+      "INSERT INTO outbox_meta (schema_hash, built_at) VALUES (?, ?)",
+      [schemaHash, new Date().toISOString()],
+    );
+    db.run("COMMIT");
+  } catch (e) {
+    db.run("ROLLBACK");
+    throw e;
+  }
 }

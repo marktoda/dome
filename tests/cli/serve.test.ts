@@ -29,10 +29,14 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "../../src/cli/args";
 import { runServe } from "../../src/cli/commands/serve";
 
+import { externalActionEffect } from "../../src/core/effect";
+import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
+import { openOutboxDb } from "../../src/outbox/db";
+import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 
 // ----- Paths ----------------------------------------------------------------
 
@@ -165,7 +169,10 @@ describe("runServe smoke", () => {
     ]);
 
     // Start the daemon. Don't await — it loops until the abort fires.
-    const servePromise = runServe(args, { signal: controller.signal });
+    const servePromise = runServe(args, {
+      signal: controller.signal,
+      operationalIntervalMs: 20,
+    });
 
     // Give the daemon a few polls to:
     //   (a) advance the adopted ref from null → initialSha (empty-diff init);
@@ -215,6 +222,68 @@ describe("runServe smoke", () => {
     } finally {
       ledger.value.db.close();
     }
+  }, 10_000);
+
+  test("drains due operational work while HEAD is already in sync", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const controller = new AbortController();
+    const args = parseArgs([
+      "serve",
+      "--vault",
+      f.vaultPath,
+      "--bundles-root",
+      f.bundlesRoot,
+      "--poll-interval-ms",
+      "20",
+    ]);
+    const servePromise = runServe(args, {
+      signal: controller.signal,
+      operationalIntervalMs: 20,
+    });
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+      2000,
+    );
+
+    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
+    const outbox = await openOutboxDb({ path: outboxPath });
+    if (!outbox.ok) throw new Error(`could not open outbox: ${outbox.error.kind}`);
+    try {
+      insertPending(outbox.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "serve-in-sync-drain",
+          payload: { event: "x" },
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        runId: "run-test",
+      });
+    } finally {
+      outbox.value.db.close();
+    }
+
+    await waitFor(async () => {
+      const check = await openOutboxDb({ path: outboxPath });
+      if (!check.ok) return false;
+      try {
+        return queryOutbox(check.value.db)[0]?.status === "failed";
+      } finally {
+        check.value.db.close();
+      }
+    }, 2000);
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
   }, 10_000);
 });
 

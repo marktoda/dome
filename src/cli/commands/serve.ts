@@ -36,6 +36,7 @@ import { resolve } from "node:path";
 
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
+import type { CommitOid } from "../../core/source-ref";
 import { getCurrentBranch } from "../../adopted-ref";
 
 import {
@@ -43,6 +44,7 @@ import {
   formatAdoptEvent,
   resolveShippedBundlesRoot,
   runOneAdoption,
+  runOperationalWorkForAdopted,
   type DriftInfo,
 } from "./sync-shared";
 
@@ -58,6 +60,7 @@ import type { ParsedArgs } from "../args";
  * the daemon feel laggy.
  */
 const DEFAULT_POLL_INTERVAL_MS = 500;
+const DEFAULT_OPERATIONAL_INTERVAL_MS = 1000;
 
 // ----- Public types ---------------------------------------------------------
 
@@ -75,6 +78,11 @@ export type RunServeOpts = {
    * handlers registered inside `runServe`.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Internal/test knob for due scheduler/job/outbox work while HEAD is
+   * already adopted. Production uses DEFAULT_OPERATIONAL_INTERVAL_MS.
+   */
+  readonly operationalIntervalMs?: number;
 };
 
 // ----- runServe -------------------------------------------------------------
@@ -193,6 +201,8 @@ export async function runServe(
       runtime,
       vaultPath,
       pollIntervalMs,
+      operationalIntervalMs:
+        opts.operationalIntervalMs ?? DEFAULT_OPERATIONAL_INTERVAL_MS,
       cancel: controller.signal,
       verbose,
     });
@@ -219,7 +229,8 @@ export async function runServe(
  * The poll loop. Runs until `cancel` aborts. Each iteration:
  *   1. Detect drift between HEAD and the adopted ref.
  *   2. If drift, build a manual Proposal and run `adopt()`.
- *   3. Sleep for `pollIntervalMs` (cancellable).
+ *   3. If in-sync and the operational cadence is due, drain scheduler/jobs/outbox.
+ *   4. Sleep for `pollIntervalMs` (cancellable).
  *
  * Each iteration runs to completion (adoption is not interrupted mid-run)
  * — `cancel` is only honored at the sleep boundary or the start of the
@@ -234,15 +245,24 @@ async function pollLoop(input: {
   readonly runtime: VaultRuntime;
   readonly vaultPath: string;
   readonly pollIntervalMs: number;
+  readonly operationalIntervalMs: number;
   readonly cancel: AbortSignal;
   readonly verbose: boolean;
 }): Promise<void> {
-  const { runtime, vaultPath, pollIntervalMs, cancel, verbose } = input;
+  const {
+    runtime,
+    vaultPath,
+    pollIntervalMs,
+    operationalIntervalMs,
+    cancel,
+    verbose,
+  } = input;
 
   // `lastKind` suppresses repeated log lines when the daemon enters an
   // unworkable state mid-run (detached HEAD, no-commits). The operator
   // gets one notification on transition, not one per poll tick.
   let lastKind: string | null = null;
+  let nextOperationalAtMs = 0;
 
   while (!cancel.aborted) {
     const drift = await detectDrift(vaultPath);
@@ -257,6 +277,17 @@ async function pollLoop(input: {
         drift: drift.info,
         verbose,
       });
+      nextOperationalAtMs = Date.now() + operationalIntervalMs;
+    } else if (drift.kind === "in-sync") {
+      const nowMs = Date.now();
+      if (nowMs >= nextOperationalAtMs) {
+        await runOperationalWorkWithErrorHandling({
+          runtime,
+          adopted: drift.head,
+          verbose,
+        });
+        nextOperationalAtMs = nowMs + operationalIntervalMs;
+      }
     } else if (drift.kind === "detached-head" && lastKind !== "detached-head") {
       // Operator detached HEAD mid-run. Log once on transition and keep
       // polling — they can re-attach and the loop picks back up.
@@ -269,6 +300,34 @@ async function pollLoop(input: {
 
     if (cancel.aborted) break;
     await sleep(pollIntervalMs, cancel);
+  }
+}
+
+async function runOperationalWorkWithErrorHandling(input: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly verbose: boolean;
+}): Promise<void> {
+  const { runtime, adopted, verbose } = input;
+  try {
+    const result = await runOperationalWorkForAdopted({
+      runtime,
+      adopted,
+    });
+    if (verbose) {
+      const scheduled = result.scheduler.fired.length;
+      const jobs = result.jobs.drained.length;
+      const outbox = result.outbox.length;
+      const diagnostics = result.diagnostics.length;
+      if (scheduled + jobs + outbox + diagnostics > 0) {
+        console.log(
+          `dome serve: operational work (${scheduled} scheduled, ${jobs} jobs, ${outbox} outbox, ${diagnostics} diagnostics)`,
+        );
+      }
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`dome serve: operational work threw: ${msg}`);
   }
 }
 

@@ -180,6 +180,7 @@ function collectRows(
         status: o.status,
         attempts: o.attempts,
         enqueued_at: o.enqueuedAt,
+        next_attempt_at: o.nextAttemptAt,
         last_error: o.lastError,
       }));
     }

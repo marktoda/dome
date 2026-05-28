@@ -61,6 +61,7 @@ export async function runOperationalWork(opts: {
   ) => Promise<CommitOid | null>;
 }): Promise<OperationalWorkResult> {
   const outboxDrainCutoff = new Date();
+  const outboxNow = opts.now();
 
   const scheduler = await runScheduler({
     vault: opts.vault,
@@ -115,6 +116,7 @@ export async function runOperationalWork(opts: {
   const outbox = await dispatchPendingOutbox(opts.outbox, {
     handlers: opts.externalHandlers,
     enqueuedBefore: outboxDrainCutoff,
+    now: outboxNow,
   });
 
   return Object.freeze({

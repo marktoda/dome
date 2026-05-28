@@ -381,8 +381,9 @@ describe("runInspect", () => {
     ).toBe(0);
     const db = new Database(join(f.vaultPath, ".dome", "state", "outbox.db"));
     try {
+      const now = new Date().toISOString();
       db.query(
-        "INSERT INTO outbox (capability, idempotency_key, payload_json, source_refs, status, attempts, max_attempts, enqueued_at, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO outbox (capability, idempotency_key, payload_json, source_refs, status, attempts, max_attempts, enqueued_at, next_attempt_at, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       ).run(
         "calendar.write",
         "bad-json",
@@ -391,7 +392,8 @@ describe("runInspect", () => {
         "pending",
         0,
         3,
-        new Date().toISOString(),
+        now,
+        now,
         "run_bad_json",
       );
     } finally {

@@ -352,10 +352,10 @@ Composition (v1.0):
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
-   - If HEAD equals the adopted ref: no-op (steady state).
+   - If HEAD equals the adopted ref: no adoption work; quiet in-sync ticks may still run due operational work on the daemon's internal cadence.
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
 4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
-5. After a successful adoption, the daemon runs one operational-work pump against the new adopted commit: due schedule triggers, durable jobs, and outbox rows already pending before the pump started. In-sync ticks remain quiet steady-state ticks.
+5. The daemon also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 6. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
