@@ -103,13 +103,13 @@ Files in `inbox/<bucket>/` (except `inbox/review/`) trigger the bucket's intake 
 
 `log.md` is a markdown projection of the run ledger ([[wiki/specs/run-ledger]]) — the human-readable view of "what did Dome do." Maintained by the `dome.log` adoption-phase processor with `owns.path: ["log.md"]` capability ([[wiki/specs/capabilities]] §"owns.path").
 
-Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is supported via `dome doctor --repair`.
+Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is supported via the reserved-for-v1.x `dome doctor --repair` verb (per [[wiki/specs/cli]] §"dome doctor"); v1.0 callers may invoke the underlying processor directly via `dome run-processor dome.log:rebuild`.
 
 ## `index.md` — wiki catalogue
 
 `index.md` is a markdown catalogue of every wiki page, partitioned by section. Maintained by the `dome.index` adoption-phase processor with `owns.path: ["index.md"]` capability.
 
-Rebuilt by `dome rebuild` or `dome doctor --rebuild-index` when stale.
+Rebuilt by `dome rebuild` when stale. (The pre-recut `dome doctor --rebuild-index` flag is retired in favor of the unified `dome rebuild` scope plus, in v1.x, `dome rebuild --target index` if a scoped rebuild is needed.)
 
 ## `.dome/` — configuration + derived state
 
@@ -197,7 +197,7 @@ Gitignored. Rebuildable. Three SQLite files plus markers:
 - `runs.db` — see [[wiki/specs/run-ledger]].
 - `outbox.db` — see [[wiki/specs/projection-store]] §"Outbox".
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
-- `last-reconcile-mtime.txt` — mtime-only marker for `dome doctor --time-since-reconcile`.
+- `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 
 Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting any of `.dome/state/` files and running `dome rebuild` (for projection.db) or restarting the daemon (for runs.db and outbox.db) reconverges. The outbox is the exception — wiping `outbox.db` loses pending external actions; users should not delete it, only the projection.
 

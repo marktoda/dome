@@ -61,7 +61,7 @@ This is intentional — running hooks against an unmerged tree could update wiki
 
 - A vault in mid-merge state is a temporary condition. The user resolves and commits, then resumes Dome normally.
 - For `git stash` users: stashing creates a clean working tree from Dome's perspective. No special handling needed.
-- For users with long-running merges: `dome doctor` reports the dirty state and suggests resolution.
+- For users with long-running merges: `dome status` reports the dirty state at startup; the engine-emitted `dome.git.dirty-state` DiagnosticEffect (visible via `dome inspect diagnostics`) carries the resolution hint.
 
 **Counter-example (the bad case before mitigation):** A user is mid-merge. `dome sync` runs blindly. It sees `wiki/entities/danny.md` is in conflict (contains `<<<<<<< HEAD` markers). It fires `document.written.wiki.entity`. The `auto-update-index` hook reads the conflict-marker-laden content as the entity description. The index gets garbage. The user notices and reverts — but the noise is in the log.
 

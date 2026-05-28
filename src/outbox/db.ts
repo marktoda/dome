@@ -22,7 +22,7 @@
 //
 // Mitigated gotchas:
 //   - docs/wiki/gotchas/outbox-stuck.md — terminally-failed rows are NOT
-//     auto-pruned; the schema preserves them so `dome doctor --show outbox`
+//     auto-pruned; the schema preserves them so `dome inspect outbox`
 //     can list them and the user can replay or abandon. Pinned by the
 //     "outbox is never silently discarded" rule in the gotcha file.
 //
@@ -131,7 +131,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "run_id TEXT NOT NULL"
     + ")",
 
-  // 3. outbox_by_status — supports `dome doctor --show outbox` queries
+  // 3. outbox_by_status — supports `dome inspect outbox` queries
   //    filtered by status (e.g., "all failed", "all pending older than 24h").
   //    Compound (status, enqueued_at) so age-filtered queries can leverage
   //    the index ordering.

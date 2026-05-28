@@ -22,7 +22,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 - **Watcher (primary, real-time when `dome serve` is running).** `VaultWatcher` (chokidar) observes `wiki/`, `inbox/`, `raw/`, and `notes/`. On any filesystem change, it debounces, then calls `vault.submitProposal()` per [[wiki/specs/proposals]] §"Local-eventual mode". The Proposal source kind is `"manual"` for unknown originators, `"agent"` when `$DOME_HARNESS` is set, `"client"` for known native shells.
 - **Sync (secondary, fills the daemon-off gap).** `dome sync` constructs a Proposal from the working-tree state plus accumulated commits `refs/dome/adopted/<branch>..HEAD` and routes it through the same adoption loop. Native writes the watcher missed (daemon was off, OS event coalescing under load) get caught up. Idempotent by design (per [[wiki/specs/processors]] §"Idempotency" — adoption-phase processors emit the same effects on re-run against the same input).
-- **Doctor (auditing, ad-hoc).** `dome doctor --show diagnostics` reads `projection.db.diagnostics` directly and reports findings from the most recent adoption pass. The user fixes invariant violations the native write introduced and re-submits.
+- **Show (auditing, ad-hoc).** `dome inspect diagnostics` reads `projection.db.diagnostics` directly and reports findings from the most recent adoption pass — engine-emitted structural diagnostics and processor-emitted content diagnostics together. The user fixes invariant violations the native write introduced and re-submits.
 
 See [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] for the formal correctness story this pipeline realizes.
 
@@ -37,7 +37,7 @@ See [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] for the formal correc
 **User-facing expectations:**
 
 - "I edited a page in Obsidian and want Dome to catch up" → `dome serve` running keeps the watcher active; no action needed. Without the daemon: `dome sync` at next startup catches up.
-- "I edited a page and the next sync is blocked" → run `dome doctor --show diagnostics`; it lists the findings; fix the issue and resubmit.
+- "I edited a page and the next sync is blocked" → run `dome inspect diagnostics`; it lists the findings; fix the issue and resubmit.
 - "I want Dome to track every edit including manual ones" → `dome serve` keeps the watcher running; every native write becomes a Proposal whose RunRecord lands in `runs.db` and projection into `log.md`.
 - "I want Dome to refuse native edits" → not supported. The vault is yours. Use git pre-commit hooks if you want enforcement at edit time, separate from Dome.
 

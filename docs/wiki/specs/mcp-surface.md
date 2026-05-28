@@ -160,7 +160,7 @@ To keep the surface minimal:
 - **No write tools beyond `dome.submit`.** No `dome.write_document`, no `dome.move_document`, no `dome.delete_document`. All writes go through Proposals.
 - **No privileged operations.** No way to advance the adopted ref directly, no way to bypass capability checks, no way to write the projection store.
 - **No multi-vault routing.** One vault per server process.
-- **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome doctor --show runs` via CLI when needed).
+- **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome inspect runs` via CLI when needed).
 
 These are intentional. The MCP server is a Recall + Submit adapter, not a privileged escape hatch.
 

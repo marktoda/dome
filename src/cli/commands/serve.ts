@@ -310,7 +310,7 @@ async function runOneAdoptionWithErrorHandling(input: {
  *
  * Diagnostics counts are total; the first blocking diagnostic's message
  * is appended for the blocked case so the operator sees what to fix
- * without reaching for `dome doctor`.
+ * without reaching for `dome inspect diagnostics`.
  */
 function printAdoptionLine(branch: string, result: AdoptionResult): void {
   const diagCount = result.diagnostics.length;

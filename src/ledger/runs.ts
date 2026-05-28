@@ -1,7 +1,7 @@
 // ledger-runs: the per-run lifecycle accessors for the `runs` table.
 // Owns the run id generator, the queued/running/succeeded/failed/skipped
 // state transitions, the read surface (`queryRuns`, `getRun`), and the
-// orphan-detection helpers used by `dome doctor --show orphan-runs` /
+// orphan-detection helpers used by `dome inspect orphan-runs` /
 // `--orphan-runs --fail`.
 //
 // Normative references:
@@ -12,7 +12,7 @@
 //     of Processor.run(), terminal at end; failed-run try/catch + orphan
 //     detection on crash between running and terminal).
 //   - docs/wiki/specs/run-ledger.md §"Query surface (CLI)" — the shape
-//     of `dome doctor --show runs ...` queries.
+//     of `dome inspect runs ...` queries.
 //
 // Structural fences this file upholds:
 //   - docs/wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED.md §"Structural
@@ -47,8 +47,12 @@
 //
 // `failOrphanedRuns` is the recovery path for engine crashes between
 // `markRunning` and a terminal mark — it transitions stuck-running rows
-// to `failed` so the audit history reaches a terminal state. Wired to
-// `dome doctor --orphan-runs --fail`.
+// to `failed` so the audit history reaches a terminal state. v1.0
+// surfaces orphans via `dome inspect runs --status running`; v1.x wires
+// the recovery via the engine-asks model — the deferred
+// `dome.health.detect-orphan-runs` garden-phase processor emits a
+// QuestionEffect per orphan row, and the user answers `fail` / `keep`
+// via `dome answer` (the answer-handler invokes `failOrphanedRuns`).
 //
 // Imports (tight by design — the ledger is the SQLite boundary):
 //   - `node:crypto` for the random suffix in `newRunId`.
@@ -453,7 +457,7 @@ export function updateOutputCommit(
 
 /**
  * Read every run matching the optional filter, ordered by `started_at`
- * descending (newest first — matches the `dome doctor --show runs`
+ * descending (newest first — matches the `dome inspect runs`
  * expectation). Returns a frozen array.
  *
  * `limit`, if provided, caps the row count (the underlying SQL appends
@@ -507,7 +511,7 @@ export function getRun(db: LedgerDb, id: RunId): RunRow | null {
  * candidates for the orphan-recovery path — they likely indicate an
  * engine crash between `markRunning` and a terminal mark.
  *
- * Wired to `dome doctor --show orphan-runs` (per spec §"Query surface
+ * Wired to `dome inspect orphan-runs` (per spec §"Query surface
  * (CLI)" + §"Run lifecycle"). The returned array is frozen.
  */
 export function orphanRuns(
@@ -522,12 +526,14 @@ export function orphanRuns(
 
 /**
  * Transition every orphaned-`running` row (per `orphanRuns(...)`) to
- * `status: 'failed'`. Returns the count of rows transitioned. Wired to
- * `dome doctor --orphan-runs --fail` — the loud, explicit, user-
- * confirmed recovery path for engine crashes.
+ * `status: 'failed'`. Returns the count of rows transitioned. The
+ * recovery path is the engine-asks flow per [[wiki/specs/cli]] §"dome
+ * answer" — the deferred `dome.health.detect-orphan-runs` garden-phase
+ * processor emits a `QuestionEffect` per orphan row; the user answers
+ * `fail` via `dome answer <id>`; the answer-handler invokes this.
  *
  * The synthetic error message identifies the recovery source so a future
- * `dome doctor` view can distinguish "real failure" from "engine crash
+ * `dome inspect` view can distinguish "real failure" from "engine crash
  * recovery." `finished_at` is set to `now` — the spec doesn't require
  * a per-row crash-time estimate.
  */

@@ -11,13 +11,13 @@ first_observed: 2026-05-26
 
 # AGENTS.md delimiter shape
 
-**Symptom:** A contributor edits `docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md` to change the user-prose section delimiters (e.g., renames `<!-- BEGIN user-prose -->` to `<!-- AGENT BEGIN -->`) for readability or clarity, without updating `src/agents-md.ts`. The next time anyone runs `dome doctor --repair` in a vault, the AGENTS.md merge logic at `mergeAgentsMd` falls into the no-delimiter branch — it cannot find the delimiters it expects in the existing file — and re-skeletons the file from the templated-sections-only shape, **destroying every user-authored line between the original delimiters**.
+**Symptom:** A contributor edits `docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md` to change the user-prose section delimiters (e.g., renames `<!-- BEGIN user-prose -->` to `<!-- AGENT BEGIN -->`) for readability or clarity, without updating `src/agents-md.ts`. The next time the AGENTS.md merge logic at `mergeAgentsMd` runs against a real vault — today via `dome init` re-runs against a vault whose AGENTS.md already exists, and in v1.x via the reserved `dome doctor --repair` verb plus the planned `dome.health.agents-md-template-drift` garden-phase processor — it falls into the no-delimiter branch (cannot find the delimiters it expects in the existing file) and re-skeletons the file from the templated-sections-only shape, **destroying every user-authored line between the original delimiters**.
 
 **Root cause:** The delimiter strings are shared between three surfaces:
 
 - **The runtime parser:** `src/agents-md.ts:9-10` exports `USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->"` and `USER_PROSE_END = "<!-- END user-prose -->"` as the load-bearing constants the merge logic reads.
 - **The invariant doc:** [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] documents the delimiters as part of the user-prose contract.
-- **The CLI spec:** [[wiki/specs/cli]] §"`dome doctor`" describes `--repair`'s merge semantics, naming the delimiters as the substrate convention.
+- **The CLI spec:** [[wiki/specs/cli]] §"`dome doctor`" (the reserved-for-v1.x section) describes the `--repair` flow that will run the merge, naming the delimiters as the substrate convention. The same merge runs today on `dome init` re-runs.
 
 The delimiters appear as **literal strings** in all three places. There is no compile-time link between them — the parser reads its constants; the docs cite the same strings; a change in one drifts the others silently. The drift is detectable only by running `--repair` against a real vault and seeing user prose disappear.
 
@@ -36,6 +36,6 @@ The invariant doc carries this rule in its body: **the delimiter strings are loa
 **Related:**
 
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — the invariant the delimiters serve
-- [[wiki/specs/cli]] §"`dome doctor`" — the `--repair` flow that runs the merge
+- [[wiki/specs/cli]] §"`dome doctor`" — the v1.x `--repair` flow that will run the merge (today the merge also runs on `dome init` re-runs)
 - `src/agents-md.ts` — the runtime parser carrying the constants
 - [[wiki/gotchas/substrate-count-drift]] — the sibling pattern (substrate-vs-code drift)

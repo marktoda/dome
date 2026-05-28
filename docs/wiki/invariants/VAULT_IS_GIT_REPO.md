@@ -20,7 +20,7 @@ tier: axiom
 - **Native write handling** is structurally clean — native writes show up as `git status` modifications and (when the user commits) as new commits. The watcher constructs Proposals from these per [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]].
 - **Multi-device sync (v1.5+)** is `git push` / `git pull` against a remote (in local mode) or hosted-protected PR flow (per [[wiki/specs/adoption]] §"Hosted-protected mode"); the same adoption loop runs against the synced changes.
 
-**Structural enforcement:** `openVault(path)` walks up from `path` looking for both `<vault>/.dome/config.yaml` AND `<vault>/.git/`. If `.dome/` exists but `.git/` doesn't, open fails with `kind: 'vault-not-git-repo'` and instructs the user to run `cd <vault> && git init && dome doctor`. `dome init` creates the directory tree, writes `.gitignore`, runs `git init`, and produces the initial commit (which the engine then adopts to initialize the adopted ref) before returning.
+**Structural enforcement:** `openVault(path)` walks up from `path` looking for both `<vault>/.dome/config.yaml` AND `<vault>/.git/`. If `.dome/` exists but `.git/` doesn't, open fails with `kind: 'vault-not-git-repo'` and instructs the user to run `cd <vault> && git init && dome sync`. `dome init` creates the directory tree, writes `.gitignore`, runs `git init`, and produces the initial commit (which the engine then adopts to initialize the adopted ref) before returning.
 
 **Counter-example:** A user tries to use Dome over a Dropbox sync folder that isn't a git repo. `openVault` refuses. The fix: `cd ~/Dropbox/my-brain && git init && dome init .` (or `dome migrate .` if there's existing content). Dropbox can sync the git repo; we just need git semantics underneath.
 

@@ -2,7 +2,7 @@
 // `outbox` table. Owns the SQL for the four state transitions
 // (pending → sent / failed / abandoned), attempt-counter bookkeeping,
 // the user-triggered replay path, and the read surface for
-// `dome doctor --show outbox`.
+// `dome inspect outbox`.
 //
 // Normative references:
 //   - docs/wiki/specs/projection-store.md §"Outbox (separate database:
@@ -21,11 +21,13 @@
 //     same effect on retry produces one row, one external call.
 //
 // Mitigated gotchas:
-//   - docs/wiki/gotchas/outbox-stuck.md — `replayFailed` is the
-//     `dome doctor --outbox-replay <key>` implementation; `markAbandoned`
-//     is `--outbox-abandon <key>`; `queryOutbox` is the data source for
-//     `--show outbox`. Failed rows are never auto-pruned (per the gotcha
-//     file: "dropped external actions are a serious failure mode").
+//   - docs/wiki/gotchas/outbox-stuck.md — per the engine-asks recovery
+//     model in cli.md §"dome answer", `replayFailed` and `markAbandoned`
+//     are the answer-handler implementations invoked when the user
+//     answers a Question raised on `engine.outbox.terminal-failure`.
+//     `queryOutbox` is the data source for `dome inspect outbox`. Failed
+//     rows are never auto-pruned (per the gotcha file: "dropped external
+//     actions are a serious failure mode").
 //
 // Lifecycle invariants (the state machine this file encodes):
 //
@@ -133,7 +135,7 @@ export type OutboxQueryFilter = {
   readonly capability?: string;
   /**
    * Match only rows whose `enqueued_at` is older than `now - hours`. Used
-   * by `dome doctor --show outbox --age 24h+` to surface stuck rows.
+   * by `dome inspect outbox --age 24h+` to surface stuck rows.
    * Computed against the current wall clock at query time.
    */
   readonly olderThanHours?: number;
@@ -296,12 +298,14 @@ export function incrementAttempts(
 }
 
 /**
- * Mark a row abandoned. Used by `dome doctor --outbox-abandon <key>`
- * for entries the user has decided are no longer relevant (the meeting
- * already happened; the notification window passed). Per
- * [[wiki/gotchas/outbox-stuck]], abandoned rows "stop attracting
- * attention" — they remain in the table for audit but are filtered out
- * of default `dome doctor` views.
+ * Mark a row abandoned. Invoked by the deferred `dome.health` bundle's
+ * outbox-answer-handler processor when the user answers `abandon` on
+ * the Question raised for `engine.outbox.terminal-failure` (per
+ * [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]]).
+ * Useful for entries that have become irrelevant (the meeting already
+ * happened; the notification window passed). Abandoned rows "stop
+ * attracting attention" — they remain in the table for audit but are
+ * filtered out of default `dome inspect outbox` views.
  *
  * UPDATE filters by `status = 'failed'`. Per the spec lifecycle: only
  * already-failed rows can be abandoned; abandoning a pending row would
@@ -314,12 +318,14 @@ export function markAbandoned(db: OutboxDb, idempotencyKey: string): void {
 }
 
 /**
- * Re-queue a previously-failed row. Used by
- * `dome doctor --outbox-replay <key>` after the user has fixed the
- * underlying cause (rotated credentials, remote service came back up,
- * etc.). Resets `attempts` to 0 and clears `last_error`; the row
- * returns to `status: "pending"` for the dispatcher to pick up on the
- * next pass.
+ * Re-queue a previously-failed row. Invoked by the deferred
+ * `dome.health` bundle's outbox-answer-handler processor when the user
+ * answers `retry` on the Question raised for
+ * `engine.outbox.terminal-failure` (per [[wiki/specs/cli]] §"dome
+ * answer") — typically after the underlying cause has been fixed
+ * (rotated credentials, remote service came back up, etc.). Resets
+ * `attempts` to 0 and clears `last_error`; the row returns to
+ * `status: "pending"` for the dispatcher to pick up on the next pass.
  *
  * UPDATE filters by `status = 'failed'` — replaying a `pending`,
  * `sent`, or `abandoned` row is a no-op. Replaying an abandoned row
@@ -333,7 +339,7 @@ export function replayFailed(db: OutboxDb, idempotencyKey: string): void {
 
 /**
  * Read outbox rows, optionally filtered. The query surface for
- * `dome doctor --show outbox`. Returns a frozen array; ordering is
+ * `dome inspect outbox`. Returns a frozen array; ordering is
  * insertion order (`ORDER BY id`).
  *
  * Filters compose with AND. `olderThanHours` is computed against the

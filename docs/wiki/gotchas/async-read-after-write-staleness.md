@@ -20,7 +20,7 @@ This is by design. Adoption-phase processors must be bounded and deterministic; 
 
 **Structural mitigation:** **`drainProcessors()` opt-in for callers that need garden completion before read.**
 
-The Vault API exposes `vault.drainProcessors(): Promise<void>` (per [[wiki/specs/sdk-surface]] §"Vault surface") — idempotent; awaits both the garden-phase queue and any in-flight outbox dispatch. CLI surface: `dome doctor --drain-processors`.
+The Vault API exposes `vault.drainProcessors(): Promise<void>` (per [[wiki/specs/sdk-surface]] §"Vault surface") — idempotent; awaits both the garden-phase queue and any in-flight outbox dispatch. CLI surface: deferred to v1.x; the candidate verb is `dome wait` (or `dome status --wait-quiet`). Drain is a *synchronization* primitive, not a mutation; it doesn't fit the engine-asks model and gets its own thin verb. Tests and harness scripts call `vault.drainProcessors()` directly in v1.0.
 
 Reserved use cases:
 
@@ -32,12 +32,12 @@ Reserved use cases:
 
 - **User submits a Proposal; immediately calls `vault.query()`.** The query reads adopted state — *not* HEAD — so it sees the post-adopt projections (index, fact-extractor output from adoption-phase processors). Garden-phase additions (cross-references, capture compilations) may not yet be reflected. If the user expected those, they can re-query a few seconds later or call `drainProcessors()` first.
 - **User submits a raw capture (`echo "..." > inbox/raw/today.md`); immediately queries about it.** The watcher constructs a Proposal; adoption runs; `dome.intake.extract-capture` is a *garden-phase* processor (per [[wiki/matrices/built-in-extensions-x-phase]]) and runs async. The query sees the raw file landed in `inbox/raw/`; it doesn't yet see the wiki updates the LLM is producing. The Proposal that adds wiki updates is *another* Proposal the engine constructs from the garden-emitted PatchEffect, and it goes through its own adoption loop.
-- **User submits a Proposal; runs `dome doctor`.** `dome doctor`'s checks read the adopted snapshot directly; they see the post-adopt state regardless of garden completion. (Garden-phase diagnostics get added to `projection.db.diagnostics` as garden processors complete; `dome doctor --show diagnostics` updates over time.)
+- **User submits a Proposal; runs `dome inspect diagnostics`.** The read reflects the adopted snapshot directly; the user sees the post-adopt state regardless of garden completion. (Garden-phase diagnostics get added to `projection.db.diagnostics` as garden processors complete; `dome inspect diagnostics` updates over time.)
 
 **Operational notes:**
 
-- The garden-phase queue size is observable via `dome doctor --show runs --status running`. If garden processors pile up faster than they drain, the runtime may emit a `engine.queue-backpressure` event (configurable threshold). In v1's typical single-user scope, this is rare.
-- Garden processors that fail leave failed `RunRecord` rows; the failure doesn't affect adoption (which has already completed). `dome doctor --show runs --status failed` surfaces them.
+- The garden-phase queue size is observable via `dome inspect runs --status running`. If garden processors pile up faster than they drain, the runtime may emit a `engine.queue-backpressure` event (configurable threshold). In v1's typical single-user scope, this is rare.
+- Garden processors that fail leave failed `RunRecord` rows; the failure doesn't affect adoption (which has already completed). `dome inspect runs --status failed` surfaces them.
 
 **Don't try to make everything synchronous.** That's a tempting fix but it pessimizes every Proposal on the slowest garden processor's latency (often LLM-backed). The async-by-default pattern is correct; `drainProcessors()` is the right escape hatch for the rare case that needs ordering.
 

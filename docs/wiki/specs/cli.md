@@ -21,8 +21,15 @@ dome lint [--apply <id>] [--report-only]
                                 Run dome.lint; write report; optionally apply a finding.
 dome rebuild                    Wipe and rebuild projection store from adopted commit.
 dome stats                      Vault size / processor counts / ledger summary.
-dome doctor [--repair] [--show <subject>] [--<flag>]
-                                Diagnostic and maintenance command.
+dome inspect <subject> [--limit <n>] [--json]
+                                Read-only view over the operational substrate.
+                                Subjects: runs, diagnostics, questions, outbox.
+dome doctor [--repair]          (reserved for v1.x) Run engine-substrate
+                                health checks; emit Diagnostics; --repair
+                                applies safe mitigations.
+dome answer <question-id> [<value>]
+                                (reserved for v1.x) Resolve an engine-raised
+                                QuestionEffect from the user-decision channel.
 dome serve [--vault <path>] [--poll-interval-ms <n>]
                                 Run the commit-watcher daemon. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
@@ -35,9 +42,9 @@ dome run-processor <id> [--args ...]
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
 - **Submit:** `dome sync` — the catch-up write path that triggers an adoption run.
-- **Recall:** `dome query`, `dome status` — read paths through `AbstractSurface.query` / `getAdoptionStatus`.
+- **Recall:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` / `dome status` route through `AbstractSurface.query` / `getAdoptionStatus`; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome serve` — engine + diagnostic operations exposed only on the CLI surface.
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. `dome doctor` and `dome answer` are **reserved for v1.x** per §"dome doctor" and §"dome answer" below; only `dome rebuild` and `dome serve` ship in v1.0.
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the engine's watcher daemon (`dome serve`). For a one-shot catch-up (the daemon isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
@@ -196,30 +203,143 @@ vault: /Users/mark/vaults/work
 
 The `<linked count>` is rendered from `src/types.ts` `INVARIANTS` at run time — not inlined as a literal.
 
-### `dome doctor [--repair] [--show <subject>] [--flag ...]`
+### `dome inspect <subject> [--limit <n>] [--json]`
 
-Diagnostic and maintenance command. Subjects under `--show`:
+Read-only view over the operational substrate. The command opens the
+runtime (so the three databases are initialized) but does not submit a
+Proposal, does not invoke any processor, and does not mutate state.
 
-- `runs` — recent processor runs.
-- `cost` — per-processor LLM spend.
-- `outbox` — pending / failed external actions.
-- `diagnostics` — current blocking and warning diagnostics.
-- `questions` — open user questions.
-- `orphan-runs` — runs stuck in "running" state.
-- `recent-activity` — log.md tail.
-- `recent-hook-cycles` (retired in v1; `recent-processor-divergence` replaces it).
-- `recent-processor-divergence` — recent fixed-point cap-hits.
+Subjects (v1.0):
 
-Flags:
+- `runs` — recent processor runs from `runs.db`.
+- `diagnostics` — current unresolved diagnostics from `projection.db.diagnostics`.
+- `questions` — open questions from `projection.db.questions`.
+- `outbox` — pending / failed external actions from `outbox.db`.
 
-- `--repair` — regenerate AGENTS.md templated sections; re-copy first-party bundles from SDK; rebuild log.md from ledger.
-- `--rebuild-index` — equivalent to `dome rebuild` for index.md only.
-- `--drain-processors` — wait for the garden-phase queue to settle.
-- `--reset-quarantined-processors` — clear `.dome/state/quarantined.json` after debugging a quarantined processor.
-- `--outbox-replay <key>` — re-attempt a failed outbox entry by idempotency key.
-- `--outbox-abandon <key>` — mark a failed outbox entry as abandoned (won't retry).
-- `--time-since-reconcile` — read `.dome/state/last-reconcile-mtime.txt`; report drift age.
-- `--check-all` — run every validation check; aggregate violations.
+`--limit <n>` caps the row count (default 20). `--json` emits structured
+rows for cross-tool consumption.
+
+Exit codes: 0 on a clean read (including empty result sets); 1 on
+runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed
+`--limit`.
+
+**Two producers, one table.** The `diagnostics` subject surfaces rows
+from both engine-emitted DiagnosticEffects (structural failures like
+`adoption.detached-head`, `capability-downgrade-surprise`, `fixed-point.divergence`)
+and processor-emitted DiagnosticEffects (content findings like
+`dome.markdown.broken-wikilink`). Both ride the same channel per the
+closed Effect taxonomy at [[wiki/specs/effects]] §"DiagnosticEffect";
+the `processor_id` column today carries either a synthetic engine
+producer id or a real processor id. A future `source` column proposal
+makes this distinction queryable — see [[wiki/specs/projection-store]]
+§"Tables — diagnostics".
+
+Future subjects (v1.x): `cost`, `orphan-runs`, `recent-activity`,
+`recent-processor-divergence`. Adding a subject is one new query
+function + one case in the dispatcher; no new CLI surface per subject.
+
+### `dome doctor [--repair]` *(reserved for v1.x)*
+
+Engine-substrate **health check** verb. v1.0 reserves the name and
+ships no checks; v1.x implements the surface.
+
+**Design (v1.x).** `dome doctor` (no flags) runs a closed set of
+health-check probes against the engine substrate — orphan runs,
+stuck-outbox rows, dirty git state, drift age, schema skew, AGENTS.md
+template drift, bundle load failures. Each probe is a **garden-phase
+scheduled processor** in the `dome.health` first-party bundle, fired
+on a periodic cron or on engine signals (e.g.,
+`engine.outbox.terminal-failure`). Probes emit DiagnosticEffects with
+`source: engine.health` that persist to `projection.db.diagnostics`
+and surface via `dome inspect diagnostics`.
+
+`dome doctor` itself is a **view-phase command-triggered processor**
+(`dome.health.render-report`) that reads the persisted probe findings
+plus does on-demand ad-hoc readings, returning a ViewEffect with the
+assembled report. The verb-form invocation is the user-facing "is my
+vault healthy?" surface; the persisted findings are the durable
+audit trail.
+
+`--repair` applies the safe subset of mitigations — running answer-handler
+processors for any pending `dome.health.*` questions and triggering
+garden-phase repair processors (e.g., AGENTS.md template re-merge).
+
+**v1.0 placeholder behavior.** `dome doctor` prints a one-line notice
+("`dome doctor`: no health checks ship in v1.0; reserved for v1.x —
+see `wiki/specs/cli.md` §`dome doctor`") and exits 0. `--repair` exits
+64 with the same pointer.
+
+**Why this isn't a kitchen-sink admin command.** Pre-recut, the spec
+described `dome doctor` as a single verb covering reads (`--show`),
+checks (`--check-all`), and per-substrate mutations (`--outbox-replay`,
+`--reset-quarantined-processors`, `--repair`-as-bundle-recopy, etc.).
+The recut splits these along their real seams:
+
+- **Reads** → `dome inspect <subject>` (above).
+- **Probes** → `dome doctor` (this section). The probes themselves are
+  garden-phase processors; the verb is just the view-phase renderer.
+- **Per-substrate mutations needing human input** → engine-emitted
+  QuestionEffect → user runs `dome answer <id>` (below) → answer-handler
+  processor in the `dome.health` bundle applies the mutation. No
+  per-substrate verb-noun commands.
+- **Auto-mitigations** (AGENTS.md template drift, schema-mismatch
+  rebuild, orphan-commit GC) → handled inline by garden-phase
+  processors with no CLI surface; the engine just does them.
+- **Synchronization** (`--drain-processors`) → `dome wait` or absorbed
+  into `dome status --wait-quiet`. Doesn't fit the engine-asks model
+  because there's no decision; it's a "block until quiet" verb.
+
+This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
+three named surfaces (`show`, `doctor`, `answer`) plus the existing
+processor substrate.
+
+### `dome answer <question-id> [<value>]` *(reserved for v1.x)*
+
+The universal **user-decision channel** for QuestionEffects the engine
+has raised but cannot resolve autonomously.
+
+**Why a single answer surface (not per-substrate verbs).** The engine
+already has a primitive for "I need a human decision" — `QuestionEffect`
+in the closed taxonomy at [[wiki/specs/effects]] §"QuestionEffect".
+When operational substrate gets stuck (outbox row terminally failed,
+processor quarantined, force-advance needed across a divergent
+adopted ref), the natural pattern is:
+
+1. **Engine publishes a signal** (e.g., `engine.outbox.terminal-failure`).
+2. **A garden-phase processor in `dome.health`** subscribes to the
+   signal and emits a `QuestionEffect` with options (e.g., `["retry",
+   "abandon", "wait"]`), `idempotencyKey` set to the underlying row id,
+   and `sourceRefs` pointing at the substrate row.
+3. **User runs `dome inspect questions`** to see pending questions.
+4. **User runs `dome answer <question-id> retry`** to resolve.
+5. **A second garden-phase processor in `dome.health`** subscribes to
+   the `question.answered` signal, looks up the question's
+   `idempotencyKey` → outbox-id, and emits the appropriate effect to
+   mutate the outbox row.
+
+The CLI surface is one verb (`dome answer`); the per-substrate logic
+lives in the `dome.health` bundle's answer-handler processors. Adding
+a new operational mutation type is one new question-emitter + one
+new answer-handler in the bundle; no new CLI command.
+
+**Design (v1.x).** `<question-id>` is the question row's id (from
+`dome inspect questions`). `<value>` is one of the question's options
+(when `options` is set) or free-form text (when `options` is null).
+Without `<value>`, `dome answer <question-id>` prints the question
+and its options.
+
+Answering writes to `projection.db.questions` (sets `answered_at` +
+`answer`) and emits an `engine.question.answered` signal. The
+relevant garden-phase answer-handler processor catches the signal
+and applies the mutation.
+
+**v1.0 placeholder behavior.** `dome answer` exits 64 with a pointer
+to this section. Since `dome.health` doesn't ship in v1.0, no
+processor in the v1.0 substrate emits operational QuestionEffects;
+the only Questions on the table today are content-questions written
+back to the originating page via `dome.intake` per
+[[wiki/specs/effects]] §"QuestionEffect" (also pending the `dome.intake`
+shipping date).
 
 ### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 

@@ -2,12 +2,19 @@
 //
 // Dome CLI entry — v1 minimal surface.
 //
-// Commands shipped in v1.0: init, doctor, status, serve, sync. The full
-// CLI surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships the
-// most-essential to prove the v1 stack works end-to-end. The wrong-shape
-// `dome submit` was retired in Phase 11a (the canonical write path is
-// `git commit` + the `dome serve` watcher daemon, with `dome sync` as
-// the one-shot catch-up for users who don't want a long-running daemon).
+// Commands shipped in v1.0: init, inspect, doctor (stub), status, serve, sync.
+// The full CLI surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships
+// the most-essential to prove the v1 stack works end-to-end. The
+// wrong-shape `dome submit` was retired in Phase 11a (the canonical
+// write path is `git commit` + the `dome serve` watcher daemon, with
+// `dome sync` as the one-shot catch-up for users who don't want a
+// long-running daemon).
+//
+// CLI surface recut: the pre-recut `dome doctor --show <subject>` was
+// split into `dome inspect <subject>` (the v1.0 read surface) plus
+// `dome doctor` (reserved for the v1.x health-check verb). The
+// `dome answer <id>` surface is also reserved for v1.x. See
+// [[wiki/specs/cli]] §"dome inspect" / §"dome doctor" / §"dome answer".
 //
 // This file's two responsibilities:
 //
@@ -28,6 +35,7 @@
 import { parseArgs, type ParsedArgs } from "./args";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
+import { runInspect } from "./commands/inspect";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
@@ -56,6 +64,8 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
       return runInit(args);
     case "doctor":
       return runDoctor(args);
+    case "inspect":
+      return runInspect(args);
     case "serve":
       return runServe(args);
     case "status":
@@ -83,8 +93,10 @@ function printUsage(): void {
       "",
       "Commands (v1.0):",
       "  init [path]                      Initialize a vault.",
-      "  doctor --show <subject>          Read-only diagnostic view.",
-      "         [--limit <n>] [--json]    Subjects: runs, diagnostics, questions, outbox.",
+      "  inspect <subject> [--limit <n>] [--json]",
+      "                                   Read-only view over the operational substrate.",
+      "                                   Subjects: runs, diagnostics, questions, outbox.",
+      "  doctor [--repair]                (reserved for v1.x) Engine-substrate health checks.",
       "  serve [--poll-interval-ms <n>]   Run the commit-watcher daemon.",
       "  status [--json]                  Read-only adoption snapshot.",
       "  sync [--json]                    One-shot catch-up: adopt working-tree HEAD.",

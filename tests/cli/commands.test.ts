@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { parseArgs } from "../../src/cli/args";
 import { runInit } from "../../src/cli/commands/init";
 import { runDoctor } from "../../src/cli/commands/doctor";
+import { runInspect } from "../../src/cli/commands/inspect";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
@@ -301,18 +302,18 @@ describe("runInit", () => {
         // Step 7: the broken-wikilink must also appear in the user-facing
         // CLI output. Regression: before queryDiagnostics ordered DESC, a
         // user with N>20 accumulated diagnostics couldn't see freshly-
-        // emitted ones in `dome doctor --show diagnostics`'s default view.
-        // The DB had the row; the CLI didn't surface it. This step is the
+        // emitted ones in `dome inspect diagnostics`'s default view. The
+        // DB had the row; the CLI didn't surface it. This step is the
         // structural fence against that class of UX bug: we assert the
         // freshest diagnostic appears in the CLI's default-limit output.
         captured.out = [];
         captured.err = [];
-        const doctorCode = await runDoctor(
-          parseArgs(["doctor", "--vault", target, "--show", "diagnostics"]),
+        const inspectCode = await runInspect(
+          parseArgs(["inspect", "diagnostics", "--vault", target]),
         );
-        expect(doctorCode).toBe(0);
-        const doctorOut = captured.out.join("\n");
-        expect(doctorOut).toContain("[[broken]]");
+        expect(inspectCode).toBe(0);
+        const inspectOut = captured.out.join("\n");
+        expect(inspectOut).toContain("[[broken]]");
       } finally {
         await rm(target, { recursive: true, force: true });
       }
@@ -325,75 +326,83 @@ describe("runInit", () => {
   );
 });
 
-// ----- runDoctor ------------------------------------------------------------
+// ----- runInspect -----------------------------------------------------------
+//
+// `dome inspect <subject>` is the v1.0 read surface for the operational
+// substrate (renamed from the pre-recut `dome doctor --show <subject>`
+// shape per [[wiki/specs/cli]] §"dome inspect"). Subject is positional,
+// not a flag; v1.0 ships four subjects (runs, diagnostics, questions,
+// outbox), each backed by an existing query function.
 
-describe("runDoctor", () => {
-  test("--show runs returns 0 on a fresh vault with an empty-table message", async () => {
+describe("runInspect", () => {
+  test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs([
-      "doctor",
-      "--vault",
-      f.vaultPath,
-      "--show",
-      "runs",
-    ]);
-    const code = await runDoctor(args);
+    const args = parseArgs(["inspect", "runs", "--vault", f.vaultPath]);
+    const code = await runInspect(args);
     expect(code).toBe(0);
     expect(captured.out.join("\n")).toContain("(no rows)");
   });
 
-  test("--show diagnostics returns 0 on a fresh vault", async () => {
+  test("subject 'diagnostics' returns 0 on a fresh vault", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs([
-      "doctor",
-      "--vault",
-      f.vaultPath,
-      "--show",
-      "diagnostics",
-    ]);
-    expect(await runDoctor(args)).toBe(0);
+    const args = parseArgs(["inspect", "diagnostics", "--vault", f.vaultPath]);
+    expect(await runInspect(args)).toBe(0);
   });
 
-  test("--show questions and outbox both return 0", async () => {
+  test("subjects 'questions' and 'outbox' both return 0", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
     expect(
-      await runDoctor(
-        parseArgs(["doctor", "--vault", f.vaultPath, "--show", "questions"]),
+      await runInspect(
+        parseArgs(["inspect", "questions", "--vault", f.vaultPath]),
       ),
     ).toBe(0);
     expect(
-      await runDoctor(
-        parseArgs(["doctor", "--vault", f.vaultPath, "--show", "outbox"]),
+      await runInspect(
+        parseArgs(["inspect", "outbox", "--vault", f.vaultPath]),
       ),
     ).toBe(0);
   });
 
-  test("missing --show returns 64 (EX_USAGE)", async () => {
+  test("missing positional subject returns 64 (EX_USAGE)", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs(["doctor", "--vault", f.vaultPath]);
-    expect(await runDoctor(args)).toBe(64);
+    const args = parseArgs(["inspect", "--vault", f.vaultPath]);
+    expect(await runInspect(args)).toBe(64);
   });
 
   test("unknown subject returns 64", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const args = parseArgs([
-      "doctor",
-      "--vault",
-      f.vaultPath,
-      "--show",
-      "garbage",
-    ]);
-    expect(await runDoctor(args)).toBe(64);
+    const args = parseArgs(["inspect", "garbage", "--vault", f.vaultPath]);
+    expect(await runInspect(args)).toBe(64);
+  });
+});
+
+// ----- runDoctor (v1.0 stub) ------------------------------------------------
+//
+// `dome doctor` is reserved for the v1.x health-check verb per
+// [[wiki/specs/cli]] §"dome doctor". v1.0 ships a stub that prints the
+// reserved-for-v1.x notice; `--repair` exits 64 (not implemented).
+
+describe("runDoctor (v1.0 stub)", () => {
+  test("without flags: exits 0 with the reserved-for-v1.x notice", async () => {
+    const code = await runDoctor(parseArgs(["doctor"]));
+    expect(code).toBe(0);
+    expect(captured.out.join("\n")).toContain("reserved for v1.x");
+  });
+
+  test("with --repair: exits 64 (not implemented in v1.0)", async () => {
+    const code = await runDoctor(parseArgs(["doctor", "--repair"]));
+    expect(code).toBe(64);
+    expect(captured.err.join("\n")).toContain("not implemented in v1.0");
   });
 });
 

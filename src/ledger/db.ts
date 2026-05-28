@@ -54,7 +54,7 @@
 //     deferred to a post-v1 version with more substrate around it.
 //   - The wipe is loud: the migration result `"schema-changed"` surfaces
 //     to the caller so the engine can warn the user before continuing
-//     (`dome doctor --show runs` going from N rows to zero is the
+//     (`dome inspect runs` going from N rows to zero is the
 //     loudest possible failure mode).
 //
 // If you find yourself adding a column to the ledger schema below, audit
@@ -153,7 +153,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + ")",
 
   // 3. runs_by_proposal — supports "every run that contributed to proposal X"
-  //    queries (the CLI's `dome doctor --show runs --proposal <id>`).
+  //    queries (the CLI's `dome inspect runs --proposal <id>`).
   //    Compound (proposal_id, started_at) so age-ordered queries within a
   //    proposal leverage the index ordering.
   "CREATE INDEX IF NOT EXISTS runs_by_proposal ON runs(proposal_id, started_at)",
@@ -162,7 +162,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   //    surface's "sum cost_usd grouped by processor since today" query.
   "CREATE INDEX IF NOT EXISTS runs_by_processor ON runs(processor_id, started_at)",
 
-  // 5. runs_by_status — supports `dome doctor --show runs --status failed`,
+  // 5. runs_by_status — supports `dome inspect runs --status failed`,
   //    `--status running` (orphan detection), `--show orphan-runs`, etc.
   "CREATE INDEX IF NOT EXISTS runs_by_status ON runs(status, started_at)",
 

@@ -211,7 +211,7 @@ CREATE INDEX outbox_by_status ON outbox(status, enqueued_at);
 2. Engine inserts row with `status: "pending"`, then calls the registered capability handler.
 3. On success, handler returns `externalId`; engine updates row to `status: "sent"`, `external_id: <id>`.
 4. On failure (`attempts < maxAttempts`), engine schedules a retry with exponential backoff; row stays `pending`.
-5. On terminal failure (`attempts >= maxAttempts`), engine marks `status: "failed"`. Manual intervention via `dome doctor --outbox-replay <key>` or `--outbox-abandon <key>`.
+5. On terminal failure (`attempts >= maxAttempts`), engine marks `status: "failed"`. Recovery follows the engine-asks model: the engine emits `engine.outbox.terminal-failure`; the deferred `dome.health` bundle's question-emitter processor raises a `QuestionEffect` with options `["retry", "abandon"]`; the user answers via `dome answer <question-id>`; the answer-handler processor applies the mutation. See [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]]. v1.0 surfaces failed rows via `dome inspect outbox`; the answer-handler loop ships with `dome.health` in v1.x.
 
 This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] and [[wiki/gotchas/outbox-stuck]].
 

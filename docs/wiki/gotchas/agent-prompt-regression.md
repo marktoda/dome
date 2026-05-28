@@ -34,7 +34,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 **Mitigation outside the eval suite:**
 
-- Recent ledger entries are scannable: `dome doctor --show runs --since 24h` surfaces "the last N runs by processor and target." A user noticing weird recent activity can spot regression.
+- Recent ledger entries are scannable: `dome inspect runs --since 24h` surfaces "the last N runs by processor and target." A user noticing weird recent activity can spot regression.
 - The vault is git-backed: `git revert <closure-commit>` is the universal undo. The Dome-* trailers on the engine commit name the responsible processor and run.
 - For garden processors that produce review-worthy artifacts (`dome lint`, `dome export-context`), the output lands as a ViewEffect (or in `inbox/review/` for `dome lint`) — the user reviews and selectively applies via `dome lint --apply <id>` rather than the processor mutating the vault directly. The review buffer IS `inbox/review/`; no in-engine dry-run mode exists.
 

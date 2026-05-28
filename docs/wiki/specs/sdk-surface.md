@@ -231,11 +231,11 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 
 ### Bundle load lifecycle
 
-`openVault` loads bundles in this order: (1) the SDK-shipped first-party bundles from `assets/extensions/dome.*/` (copied into `<vault>/.dome/extensions/` by `dome init` and re-copied by `dome doctor --repair`); (2) vault-local bundles. Within each tier, alphabetical by directory name. Each bundle:
+`openVault` loads bundles in this order: (1) the SDK-shipped first-party bundles from `assets/extensions/dome.*/` (resolved at runtime via `resolveShippedBundlesRoot()` per the Phase 11f hotfix — bundles are no longer copied into the vault); (2) vault-local third-party bundles from `<vault>/.dome/extensions/` when `--bundles-root` is set there. Within each tier, alphabetical by directory name. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are appended to the vault's `PageTypesConfig.extensions` list.
-3. **Preamble fragment** is captured for `AGENTS.md`'s `## Extension conventions` section (refreshed by `dome doctor --repair`).
+3. **Preamble fragment** is captured for `AGENTS.md`'s `## Extension conventions` section (refreshed via the templated-section merge mechanism — today on `dome init` re-runs, v1.x via the reserved `dome doctor --repair` verb plus the planned `dome.health.agents-md-template-drift` garden-phase processor).
 4. **Processors register** into the engine's processor registry under id `<bundle>:<processor-id>`.
 5. **Capabilities register** with the broker.
 6. **External-handlers register** into the engine's outbox dispatcher.
@@ -260,7 +260,7 @@ The SDK ships nine `dome.*` bundles under `assets/extensions/`:
 
 The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].
 
-`dome init` copies the bundles into `<vault>/.dome/extensions/`. `dome doctor --repair` re-copies them (overwriting modified copies — first-party bundles are not user-edited).
+Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles into the vault — they live with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()` (the default `--bundles-root` for every CLI command). A vault that wants to override a first-party bundle does so by enabling/disabling activations in `<vault>/.dome/config.yaml`, not by editing copied files.
 
 ## Adding a processor
 
