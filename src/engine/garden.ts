@@ -563,29 +563,12 @@ function capabilityForPatch(effect: PatchEffect): string {
 }
 
 /**
- * Extract the first patched path from a PatchEffect's unified diff for
- * the capability_use `resource` column. The broker's per-path enforcement
- * checks every patched path; for the audit trail we record the first
- * (most representative). A more complete audit could record all paths
- * but `resource` is scalar in v1.0.
- *
- * Implementation note: line-scan rather than regex-with-trailing-newline.
- * The earlier regex `\+\+\+ b\/(.+?)\n` required a trailing newline and
- * silently returned null for patches that ended at the header line —
- * a real footgun for short patches or patches without final EOL. The
- * line-scan is straightforwardly robust.
+ * First patched path from a PatchEffect for the `capability_use.resource`
+ * audit column. The broker enforces per-path against every change; the
+ * scalar `resource` records the first one as the representative.
  */
 function firstPatchedPath(effect: PatchEffect): string | null {
-  // The patch text starts with `--- a/<path>` / `+++ b/<path>` headers.
-  // Extract the first `+++ b/<path>` (the destination — `--- a/<path>`
-  // may be `/dev/null` for file creation).
-  for (const line of effect.patch.split("\n")) {
-    if (line.startsWith("+++ b/")) {
-      const path = line.slice("+++ b/".length).trim();
-      return path.length > 0 ? path : null;
-    }
-  }
-  return null;
+  return effect.changes[0]?.path ?? null;
 }
 
 // `deriveExtensionId` lives in `src/extensions/id-helpers.ts` (Phase 4a'
