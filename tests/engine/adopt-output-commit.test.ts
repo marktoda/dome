@@ -24,7 +24,7 @@ import type {
 import { noopSinks } from "../../src/engine/apply-effect";
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
-import { manualProposal } from "../../src/core/proposal";
+import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
@@ -88,7 +88,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_oc_1",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -120,7 +120,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_oc_2",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -178,7 +178,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_oc_3",
       base: commitOid(sha),
       head: commitOid(sha),

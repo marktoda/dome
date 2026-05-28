@@ -198,8 +198,8 @@ export async function adopt(opts: {
   // base is `proposal.base` (the adopted ref at construction time); if the
   // user accumulated commits behind `adopted..head`, the range spans them.
   // No explicit `merge(adopted, head)` here — the proposal-construction
-  // layer (Phase 5+ `submitProposal`) is responsible for surfacing a head
-  // that descends from `adopted`. Phase 2 trusts the proposal contract.
+  // layer (the daemon) is responsible for surfacing a head that descends
+  // from `adopted`. `adopt()` trusts the proposal contract.
   let candidate: CommitOid = proposal.head;
   const adopted: CommitOid = proposal.base;
 

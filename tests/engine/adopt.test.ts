@@ -17,7 +17,7 @@ import type {
 import { noopSinks } from "../../src/engine/apply-effect";
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
-import { manualProposal } from "../../src/core/proposal";
+import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
 
@@ -66,7 +66,7 @@ describe("adopt fixed-point loop", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_1_aaaaaa",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -90,7 +90,7 @@ describe("adopt fixed-point loop", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_1_aaaaaa",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -130,7 +130,7 @@ describe("adopt fixed-point loop", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_1_aaaaaa",
       base: commitOid(sha),
       head: commitOid(sha),

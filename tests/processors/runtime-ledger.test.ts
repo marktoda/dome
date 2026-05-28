@@ -33,7 +33,7 @@ import {
   diagnosticEffect,
   type Effect,
 } from "../../src/core/effect";
-import { manualProposal } from "../../src/core/proposal";
+import { makeManualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/compile-range";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
@@ -49,7 +49,7 @@ const BASE = commitOid("base000000000000000000000000000000000000");
 const CANDIDATE = commitOid("cand000000000000000000000000000000000000");
 const TREE = treeOid("tree000000000000000000000000000000000000");
 
-const proposal = manualProposal({
+const proposal = makeManualProposal({
   id: "prop_1_aaaaaa",
   base: BASE,
   head: CANDIDATE,

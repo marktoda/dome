@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 //
-// Dome CLI entry — v1 minimal surface (Phase 9).
+// Dome CLI entry — v1 minimal surface.
 //
-// Commands shipped in Phase 9: init, submit, doctor, status. The full
-// CLI surface per [[wiki/specs/cli]] has 14 commands; Phase 9 ships the
-// four most-essential to prove the v1 stack works end-to-end. The
-// remaining commands (sync, query, lint, rebuild, stats,
-// doctor --repair, serve, export-context, migrate, run-processor) land
-// in Phase 10+.
+// Commands shipped in v1.0: init, doctor, status. The full CLI surface
+// per [[wiki/specs/cli]] has 14 commands; v1.0 ships the most-essential to
+// prove the v1 stack works end-to-end. The watcher daemon (`dome serve`)
+// and the user-facing `dome sync` land in Phase 11b/c; the wrong-shape
+// `dome submit` was retired in Phase 11a (the canonical write path is
+// `git commit` + daemon).
 //
 // This file's two responsibilities:
 //
@@ -22,12 +22,11 @@
 //
 // Exit codes (POSIX):
 //   - 0 on success.
-//   - 1 on runtime error (adoption blocked, I/O failure, etc.).
+//   - 1 on runtime error (I/O failure, etc.).
 //   - 64 EX_USAGE on malformed command line.
 
 import { parseArgs, type ParsedArgs } from "./args";
 import { runInit } from "./commands/init";
-import { runSubmit } from "./commands/submit";
 import { runDoctor } from "./commands/doctor";
 import { runStatus } from "./commands/status";
 
@@ -53,8 +52,6 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
   switch (args.command) {
     case "init":
       return runInit(args);
-    case "submit":
-      return runSubmit(args);
     case "doctor":
       return runDoctor(args);
     case "status":
@@ -78,12 +75,8 @@ function printUsage(): void {
     [
       "Usage: dome <command> [options]",
       "",
-      "Commands (Phase 9):",
+      "Commands (v1.0):",
       "  init [path]                      Initialize a vault.",
-      "  submit [--branch <name>]         Submit current branch HEAD as a Proposal.",
-      "         [--metadata-title <s>]    Optional metadata.",
-      "         [--metadata-reason <s>]",
-      "         [--json]",
       "  doctor --show <subject>          Read-only diagnostic view.",
       "         [--limit <n>] [--json]    Subjects: runs, diagnostics, questions, outbox.",
       "  status [--json]                  Read-only adoption snapshot.",

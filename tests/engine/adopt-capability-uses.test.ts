@@ -22,7 +22,7 @@ import type { AdoptionPhaseRunner } from "../../src/engine/runner-contract";
 import { noopSinks } from "../../src/engine/apply-effect";
 import { patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
-import { manualProposal } from "../../src/core/proposal";
+import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
 import type { Capability } from "../../src/core/processor";
@@ -86,7 +86,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_capuse_1",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -141,7 +141,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_capuse_2",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -192,7 +192,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_capuse_3",
       base: commitOid(sha),
       head: commitOid(sha),
@@ -238,7 +238,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_capuse_4",
       base: commitOid(sha),
       head: commitOid(sha),

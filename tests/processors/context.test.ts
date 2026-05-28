@@ -7,7 +7,7 @@ import { makeProcessorContext } from "../../src/processors/context";
 import type { ProcessorContextInput } from "../../src/processors/context";
 import { commitOid } from "../../src/core/source-ref";
 import { treeOid, type ModelInvokeFn, type Snapshot } from "../../src/core/processor";
-import { manualProposal } from "../../src/core/proposal";
+import { makeManualProposal } from "../../src/core/proposal";
 
 const COMMIT = commitOid("abc123");
 const TREE = treeOid("def456");
@@ -88,7 +88,7 @@ describe("makeProcessorContext — proposal pass-through", () => {
   });
 
   test("ctx.proposal is preserved when non-null", () => {
-    const proposal = manualProposal({
+    const proposal = makeManualProposal({
       id: "prop_1_aaaaaa",
       base: COMMIT,
       head: COMMIT,

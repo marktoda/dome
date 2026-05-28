@@ -16,13 +16,6 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "ok",
   "err",
 
-  // Proposal constructors.
-  "clientProposal",
-  "agentProposal",
-  "gardenProposal",
-  "manualProposal",
-  "importProposal",
-
   // Effect constructors.
   "patchEffect",
   "diagnosticEffect",
@@ -38,10 +31,6 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
 
   // Source-ref brand helpers.
   "commitOid",
-
-  // Engine entry.
-  "submitProposal",
-  "openVaultRuntime",
 
   // Extension bundle loader.
   "loadBundles",

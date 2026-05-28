@@ -1,20 +1,29 @@
-// Public API surface — @dome/sdk v1.
+// Public API surface — @dome/sdk v1.0.
 //
-// Phase 7b retired the v0.5 Tools-surface (writeDocument, patchRegion, etc.),
-// the hooks dispatcher, the workflow runner, the MCP server, the CLI, the
-// prompts surface, the eval harness, and the bundle loader. What remains is
-// the v1 substrate: the proposal-construction layer, the engine entry point
-// (`submitProposal` + `openVaultRuntime`), the projection / outbox / ledger
-// query surface, the adopted-ref read accessors, and the engine commit-
-// trailer chokepoint.
+// The canonical write path is git: clients commit markdown to `main`, and
+// the engine watches the branch (via `dome serve`) and runs adoption when
+// it sees new commits. There is NO public submit-style API — Proposals are
+// constructed internally by the daemon. Per docs/v1.md §13.2: "Claude Code
+// does not need bespoke write tools."
 //
-// Per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]], every write
-// into trusted vault state flows through `submitProposal`. The five
-// constructor functions (`clientProposal`, `agentProposal`, `gardenProposal`,
-// `manualProposal`, `importProposal`) are the only paths to a valid Proposal.
+// What this surface exposes:
+//   - The four-concept core types (Vault / Proposal / Processor / Effect).
+//   - Effect constructors (for processor authors).
+//   - Processor authoring helpers (`defineProcessor`).
+//   - The three DB-open functions (for harnesses that want to query the
+//     projection / outbox / ledger directly).
+//   - The adopted-ref read accessors.
+//   - The commit-trailer chokepoint (for advanced commit construction).
+//   - The bundle loader (for the daemon and for tests).
 //
-// Per [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this entrypoint
-// does NOT depend on any LLM SDK, MCP transport, or HTTP framework.
+// What this surface does NOT expose:
+//   - submitProposal — internal to the daemon.
+//   - The Proposal constructors — internal; the daemon synthesizes from
+//     working-tree drift.
+//   - openVaultRuntime — internal to the daemon.
+//
+// Per [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this
+// entrypoint depends on no LLM SDK, MCP transport, or HTTP framework.
 
 // ----- Core types: Result + ToolError ---------------------------------------
 
@@ -26,20 +35,7 @@ export { ok, err } from "./types";
 export type {
   Proposal,
   ProposalSource,
-  ClientSource,
-  AgentSource,
-  GardenSource,
-  ManualSource,
-  ImportSource,
   AdoptionResult,
-  SubmitInput,
-} from "./core/proposal";
-export {
-  clientProposal,
-  agentProposal,
-  gardenProposal,
-  manualProposal,
-  importProposal,
 } from "./core/proposal";
 
 export type {
@@ -75,17 +71,14 @@ export { defineProcessor, treeOid } from "./core/processor";
 export type { CommitOid } from "./core/source-ref";
 export { commitOid } from "./core/source-ref";
 
-// ----- Engine entry point ---------------------------------------------------
+// ----- Engine-internal types kept on the public type surface ---------------
+//
+// `EngineVault` is the minimal structural type `adopt()` consumes (per
+// [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] §"engine reads vault by
+// shape, not by class"). The type is re-exported so consumers constructing
+// an EngineVault outside the daemon (advanced harnesses, integration tests)
+// can name the shape; the constructor / submission paths are not exposed.
 
-export { submitProposal, type SubmitProposalOpts } from "./engine/submit-proposal";
-export {
-  openVaultRuntime,
-  type VaultRuntime,
-  type OpenVaultRuntimeOpts,
-  type OpenVaultRuntimeWithRegistryOpts,
-  type OpenVaultRuntimeWithBundlesOpts,
-  type OpenVaultRuntimeError,
-} from "./engine/vault-runtime";
 export type { EngineVault } from "./engine/vault-shape";
 
 // ----- Extension bundle loader ---------------------------------------------
@@ -132,7 +125,7 @@ export {
 // write side (`setAdoptedRef`) is INTERNAL to the engine's adoption loop and
 // intentionally NOT re-exported. Consumers reach the adopted ref via the
 // read accessors (`getAdoptedRef`, `getCurrentBranch`, `adoptedRefName`) and
-// advance it only as a side effect of `submitProposal`.
+// advance it only as a side effect of the daemon's adoption runs.
 
 export { getAdoptedRef, getCurrentBranch, adoptedRefName } from "./adopted-ref";
 
@@ -140,7 +133,7 @@ export { getAdoptedRef, getCurrentBranch, adoptedRefName } from "./adopted-ref";
 //
 // The three DBs are the v1 read surface for diagnostics, facts, questions,
 // jobs, capability-use audit history, and the unprocessed-event outbox.
-// `openVaultRuntime` is the open-side; these query functions accept the
+// The daemon (Phase 11b) is the open-side; these query functions accept the
 // opened handles directly.
 
 export type { ProjectionDb } from "./projections/db";

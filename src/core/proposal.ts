@@ -4,12 +4,22 @@
 // makes local-eventual and hosted-protected mode the same loop with different
 // cursors.
 //
-// See docs/wiki/specs/proposals.md for the normative contract (the Proposal
-// type, source variants, construction paths, submission API, lifecycle, and
-// the structural fences it underwrites — PROPOSALS_ARE_THE_ONLY_WRITE_PATH
-// and ENGINE_IS_THE_ONLY_APPLIER).
+// **Internal type.** Per docs/v1.md §13.2, the canonical client-to-engine
+// write path is git: clients commit markdown to a branch and the engine's
+// watcher daemon (Phase 11b, `dome serve`) sees the new commit and constructs
+// a Proposal from the working-tree drift between `refs/heads/<branch>` and
+// `refs/dome/adopted/<branch>`. There is no public submit-style API; the
+// Proposal type is consumed by engine-internal modules (adopt, vault-runtime,
+// daemon) and is not re-exported from `src/index.ts` as a write-side entry.
 //
-// Pure types + Zod schemas + per-source helpers + id generator; no fs/git/sqlite, node:crypto only for randomBytes in makeProposalId.
+// See docs/wiki/specs/proposals.md for the normative contract (the Proposal
+// type, the two internal source variants, construction by the daemon, the
+// lifecycle, and the structural fences it underwrites —
+// PROPOSALS_ARE_THE_ONLY_WRITE_PATH and ENGINE_IS_THE_ONLY_APPLIER).
+//
+// Pure types + Zod schemas + the daemon's manual-construction helper + id
+// generator; no fs/git/sqlite, node:crypto only for randomBytes in
+// makeProposalId.
 //
 // House-style notes (matches src/core/source-ref.ts and src/core/effect.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -28,34 +38,31 @@ import type { CommitOid } from "./source-ref";
 import {
   DiagnosticEffectSchema,
   type DiagnosticEffect,
-  type UnifiedDiff,
 } from "./effect";
 
 // ----- ProposalSource -------------------------------------------------------
 
 /**
- * The discriminated origin of a Proposal. The engine uses `kind` as input to
- * capability enforcement — the broker may grant different effect powers to
- * `client` vs `garden` vs `manual` Proposals per the vault's policy.
+ * The discriminated origin of a Proposal. Both variants are internal to the
+ * engine; the daemon is the only thing that constructs Proposals in v1.0.
  *
- *   - `client`  — mobile, desktop, voice, native shell.
- *   - `agent`   — claude-code, cursor, future agent harnesses.
- *   - `garden`  — a garden-phase processor emitted a PatchEffect.
- *   - `manual`  — user pushed a branch directly.
- *   - `import`  — bulk import / migration tool.
+ *   - `manual`  — daemon-derived from working-tree drift between
+ *                 `refs/heads/<branch>` and `refs/dome/adopted/<branch>`.
+ *                 The watcher (Phase 11b) sees a new commit on the branch
+ *                 and synthesizes a Proposal with this source.
+ *   - `garden`  — a garden-phase processor emitted a `PatchEffect`. The
+ *                 engine applies the patch to a fresh internal branch and
+ *                 constructs a new Proposal with this source, then routes
+ *                 it through the same adoption loop (per
+ *                 [[wiki/specs/proposals]] §"Garden-emitted Proposals").
+ *
+ * The engine reads `source.kind` as input to capability enforcement — the
+ * broker may grant different effect powers to `manual` vs `garden`
+ * Proposals per the vault's policy.
  */
-export type ClientSource = { readonly kind: "client"; readonly clientId: string };
-export type AgentSource = { readonly kind: "agent"; readonly harness: string; readonly sessionId?: string };
-export type GardenSource = { readonly kind: "garden"; readonly processorId: string; readonly runId: string };
-export type ManualSource = { readonly kind: "manual"; readonly branch: string };
-export type ImportSource = { readonly kind: "import"; readonly importerId: string };
-
 export type ProposalSource =
-  | ClientSource
-  | AgentSource
-  | GardenSource
-  | ManualSource
-  | ImportSource;
+  | { readonly kind: "manual"; readonly branch: string }
+  | { readonly kind: "garden"; readonly processorId: string; readonly runId: string };
 
 // ----- ProposalMetadata -----------------------------------------------------
 
@@ -106,11 +113,11 @@ export type ProposalState =
 // ----- AdoptionResult -------------------------------------------------------
 
 /**
- * The return shape of `submitProposal`. `adopted` is `true` only when the
- * adopted ref advanced; on `blocked`/`failed`, `adoptedRef` holds the
- * previous (unchanged) adopted commit. `closureCommitOid` is `null` when
- * the loop reached a fixed point without engine writes (no closure commit
- * was created). `diagnostics` carries the surfaced findings (always
+ * The return shape of the engine's `adopt()` call. `adopted` is `true` only
+ * when the adopted ref advanced; on `blocked`/`failed`, `adoptedRef` holds
+ * the previous (unchanged) adopted commit. `closureCommitOid` is `null`
+ * when the loop reached a fixed point without engine writes (no closure
+ * commit was created). `diagnostics` carries the surfaced findings (always
  * present on `blocked`; possibly present otherwise).
  */
 export type AdoptionResult = {
@@ -120,22 +127,6 @@ export type AdoptionResult = {
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
   readonly closureCommitOid: CommitOid | null;
   readonly iterations: number;
-};
-
-// ----- SubmitInput ----------------------------------------------------------
-
-/**
- * The input shape for `submitProposal`. Every field is optional: `head`
- * defaults to current HEAD; `source` defaults to the inferred kind per
- * proposals.md §"Local-eventual mode"; `patch`, when supplied, drives
- * construction of the Proposal from a patch rather than from HEAD;
- * `metadata` is forwarded onto the Proposal.
- */
-export type SubmitInput = {
-  readonly head?: CommitOid;
-  readonly patch?: UnifiedDiff;
-  readonly source?: ProposalSource;
-  readonly metadata?: ProposalMetadata;
 };
 
 // ----- Zod schemas ----------------------------------------------------------
@@ -148,15 +139,8 @@ export type SubmitInput = {
 export const ProposalSourceSchema = z.discriminatedUnion("kind", [
   z
     .object({
-      kind: z.literal("client"),
-      clientId: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("agent"),
-      harness: z.string().min(1),
-      sessionId: z.string().min(1).optional(),
+      kind: z.literal("manual"),
+      branch: z.string().min(1),
     })
     .strict(),
   z
@@ -164,18 +148,6 @@ export const ProposalSourceSchema = z.discriminatedUnion("kind", [
       kind: z.literal("garden"),
       processorId: z.string().min(1),
       runId: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("manual"),
-      branch: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("import"),
-      importerId: z.string().min(1),
     })
     .strict(),
 ]);
@@ -218,15 +190,6 @@ export const AdoptionResultSchema = z
   })
   .strict();
 
-export const SubmitInputSchema = z
-  .object({
-    head: z.string().min(1).optional(),
-    patch: z.string().optional(),
-    source: ProposalSourceSchema.optional(),
-    metadata: ProposalMetadataSchema.optional(),
-  })
-  .strict();
-
 // ----- Id generator ---------------------------------------------------------
 
 /**
@@ -236,6 +199,9 @@ export const SubmitInputSchema = z
  * hex characters of entropy is sufficient for collision-resistance at a
  * single-user single-machine submission rate. Hosted mode uses the PR
  * number instead and does not call this function.
+ *
+ * Internal to the engine — the daemon (Phase 11b) calls this when it
+ * synthesizes a Proposal from working-tree drift.
  */
 export function makeProposalId(): string {
   const ts = Date.now();
@@ -243,97 +209,43 @@ export function makeProposalId(): string {
   return `prop_${ts}_${rand}`;
 }
 
-// ----- Constructor helpers --------------------------------------------------
-// One per source kind: takes the source-discriminated input shape, builds
-// the `source` discriminator inline, and delegates to `buildProposal` for
-// the shared shell work. Following the source-ref.ts and effect.ts pattern —
-// no validation here; the type system enforces the shape at the call site,
-// and Zod is for untrusted boundaries.
+// ----- makeManualProposal ---------------------------------------------------
+//
+// The daemon's manual-construction helper. Used by the Phase 11b watcher
+// to synthesize a Proposal when it sees drift between `refs/heads/<branch>`
+// and `refs/dome/adopted/<branch>`. `id` defaults to a fresh
+// `makeProposalId()` call; callers (tests, the daemon) may supply an
+// explicit id for stable assertions.
 //
 // Optional `metadata` is only assigned when defined, so the returned
 // object is `exactOptionalPropertyTypes`-clean (no `metadata: undefined`
-// keys).
-//
-// Object.freeze chosen over `as const` so misbehaving processors fail loudly
-// at runtime rather than silently corrupting facts.
+// key). `Object.freeze` chosen over `as const` so misbehaving callers fail
+// loudly at runtime rather than silently corrupting facts.
 
-function buildProposal(
-  input: {
-    readonly id: string;
-    readonly base: CommitOid;
-    readonly head: CommitOid;
-    readonly metadata?: ProposalMetadata;
-  },
-  source: ProposalSource,
-): Proposal {
-  const built: { -readonly [K in keyof Proposal]: Proposal[K] } = {
-    id: input.id,
-    base: input.base,
-    head: input.head,
-    source: Object.freeze(source),
-  };
-  if (input.metadata !== undefined) built.metadata = input.metadata;
-  return Object.freeze(built);
-}
-
-export function clientProposal(input: {
-  readonly id: string;
-  readonly base: CommitOid;
-  readonly head: CommitOid;
-  readonly clientId: string;
-  readonly metadata?: ProposalMetadata;
-}): Proposal {
-  return buildProposal(input, { kind: "client", clientId: input.clientId });
-}
-
-export function agentProposal(input: {
-  readonly id: string;
-  readonly base: CommitOid;
-  readonly head: CommitOid;
-  readonly harness: string;
-  readonly sessionId?: string;
-  readonly metadata?: ProposalMetadata;
-}): Proposal {
-  const source: AgentSource =
-    input.sessionId !== undefined
-      ? { kind: "agent", harness: input.harness, sessionId: input.sessionId }
-      : { kind: "agent", harness: input.harness };
-  return buildProposal(input, source);
-}
-
-export function gardenProposal(input: {
-  readonly id: string;
-  readonly base: CommitOid;
-  readonly head: CommitOid;
-  readonly processorId: string;
-  readonly runId: string;
-  readonly metadata?: ProposalMetadata;
-}): Proposal {
-  return buildProposal(input, {
-    kind: "garden",
-    processorId: input.processorId,
-    runId: input.runId,
-  });
-}
-
-export function manualProposal(input: {
-  readonly id: string;
+/**
+ * Build a `Proposal` with `source.kind: "manual"`. Internal helper — the
+ * daemon (Phase 11b) calls this to wrap working-tree drift into a Proposal
+ * the adoption loop can consume.
+ */
+export function makeManualProposal(opts: {
+  readonly id?: string;
   readonly base: CommitOid;
   readonly head: CommitOid;
   readonly branch: string;
   readonly metadata?: ProposalMetadata;
 }): Proposal {
-  return buildProposal(input, { kind: "manual", branch: input.branch });
-}
-
-export function importProposal(input: {
-  readonly id: string;
-  readonly base: CommitOid;
-  readonly head: CommitOid;
-  readonly importerId: string;
-  readonly metadata?: ProposalMetadata;
-}): Proposal {
-  return buildProposal(input, { kind: "import", importerId: input.importerId });
+  const source: ProposalSource = Object.freeze({
+    kind: "manual" as const,
+    branch: opts.branch,
+  });
+  const built: { -readonly [K in keyof Proposal]: Proposal[K] } = {
+    id: opts.id ?? makeProposalId(),
+    base: opts.base,
+    head: opts.head,
+    source,
+  };
+  if (opts.metadata !== undefined) built.metadata = opts.metadata;
+  return Object.freeze(built);
 }
 
 // ----- ProposalMetadata constructor helper ----------------------------------

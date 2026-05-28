@@ -21,11 +21,8 @@ interface Proposal {
 }
 
 type ProposalSource =
-  | { kind: "client";    clientId: string }                  // mobile, desktop, voice, native shell
-  | { kind: "agent";     harness: string; sessionId?: string }  // claude-code, cursor, future agents
-  | { kind: "garden";    processorId: string; runId: string }   // a garden-phase processor emitted a PatchEffect
-  | { kind: "manual";    branch: string }                       // user pushed a branch directly
-  | { kind: "import";    importerId: string };                  // bulk import / migration tool
+  | { kind: "manual";  branch: string }                       // daemon-derived from working-tree drift
+  | { kind: "garden";  processorId: string; runId: string };  // a garden-phase processor emitted a PatchEffect
 
 interface ProposalMetadata {
   readonly title?: string;       // human-readable; the originating commit subject when single-commit
@@ -52,20 +49,18 @@ This is pinned by [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 
 The vault is a single-user single-machine git repo. Writes land in the working tree (vim, Obsidian, Claude Code's native `Write`, the dailies CLI, etc.) and accumulate as commits on the source branch ahead of `refs/dome/adopted/<branch>`.
 
-`dome submit` (the user-facing entrypoint) constructs a Proposal:
+In v1.0 the engine-internal watcher daemon (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes the new commits and constructs a Proposal:
 
 ```text
 proposal = {
   id: "prop_<unix-ms>_<rand>",
   base: refs/dome/adopted/<branch>,
-  head: HEAD,
-  source: { kind: <inferred from environment>, ... },
+  head: refs/heads/<branch>,
+  source: { kind: "manual", branch: <branch> },
 }
 ```
 
-Source inference: if `$DOME_HARNESS` is set, source kind is `"agent"`. If `dome submit` is invoked from a known native-shell harness (mobile sync push, voice client push), source kind is `"client"`. Otherwise, source kind is `"manual"`. The CLI accepts `--source-kind=<k>` to override.
-
-The Proposal then enters the engine's adoption loop ([[wiki/specs/adoption]]).
+Per docs/v1.md §13.2 ("Claude Code does not need bespoke write tools"), every client — voice clients, Obsidian, Claude Code, mobile, etc. — writes markdown and commits via plain git. The daemon is the only thing that constructs Proposals in v1.0; there is no public submit-style API the client must call. The Proposal then enters the engine's adoption loop ([[wiki/specs/adoption]]).
 
 ### Garden-emitted Proposals
 
@@ -94,7 +89,7 @@ proposal = {
   id: <PR number>,
   base: refs/heads/main (the adopted trunk in hosted mode),
   head: PR's head commit,
-  source: { kind: "client" | "agent", ... resolved from PR author identity },
+  source: { kind: "manual", branch: <PR head branch> },
 }
 ```
 
@@ -102,19 +97,27 @@ The engine's adoption loop runs in CI; engine commits land on the PR branch; the
 
 ## Submission API
 
-The single SDK entry point for constructing and submitting a Proposal:
+In v1.0 there is no public submission API. Proposals are constructed exclusively by engine-internal code:
+
+- **The watcher daemon** (`dome serve`, per [[wiki/specs/cli]] §"dome serve") observes a new commit on `refs/heads/<branch>`, sees it diverges from `refs/dome/adopted/<branch>`, and synthesizes a `manual`-source Proposal via the internal `makeManualProposal` helper in `src/core/proposal.ts`.
+- **The engine itself** synthesizes a `garden`-source Proposal when a garden-phase processor emits a `PatchEffect` (per §"Garden-emitted Proposals" above).
+
+The internal helper signature:
 
 ```ts
-// from "@dome/sdk"
-function submitProposal(
-  vault: Vault,
-  input?: {
-    head?: CommitOid;          // defaults to current HEAD
-    source?: ProposalSource;   // defaults to inferred per §"Local-eventual mode"
-    metadata?: ProposalMetadata;
-  }
-): Promise<Result<AdoptionResult, ToolError>>;
+// src/core/proposal.ts (NOT re-exported from src/index.ts)
+function makeManualProposal(opts: {
+  readonly id?: string;          // defaults to a fresh makeProposalId()
+  readonly base: CommitOid;
+  readonly head: CommitOid;
+  readonly branch: string;
+  readonly metadata?: ProposalMetadata;
+}): Proposal;
+```
 
+The engine's `adopt()` call returns:
+
+```ts
 interface AdoptionResult {
   readonly proposalId: string;
   readonly adopted: boolean;
@@ -125,7 +128,7 @@ interface AdoptionResult {
 }
 ```
 
-`submitProposal` is the only way for SDK-embedding code to write. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@dome/sdk`.
+Per docs/v1.md §13.2, "Claude Code does not need bespoke write tools." A client that can write markdown and commit via plain git can participate; the daemon handles the rest. There is no `vault.tools.writeDocument(...)`, no `vault.dispatchEvents(...)` from outside the engine, no privileged-writer escape hatch. Internal core code (the engine itself, projection rebuilder, init scaffolder) reaches direct git/sqlite primitives through engine-internal modules that are not re-exported from `@dome/sdk`.
 
 This is the structural fence behind [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]].
 
@@ -135,7 +138,7 @@ When the engine receives a Proposal, it reads:
 
 - The commit range `base..head` to compute changed paths and synthesize signals (per [[wiki/specs/processors]] §"Triggers and signals").
 - The tree at `head` as the candidate snapshot the adoption-phase processors operate on.
-- The `source.kind` as input to capability enforcement — the broker may grant different effect powers to `client` vs `garden` vs `manual` Proposals per the vault's policy.
+- The `source.kind` as input to capability enforcement — the broker may grant different effect powers to `manual` vs `garden` Proposals per the vault's policy.
 
 ## Why the local-eventual Proposal id is synthesized (not the commit OID)
 

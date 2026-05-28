@@ -13,8 +13,6 @@ This spec is normative for Dome's command-line interface. The CLI is **one proto
 
 ```text
 dome init [path]                Initialize a new vault.
-dome submit [--patch <file>] [--source-kind <k>]
-                                Construct and submit a Proposal.
 dome sync [--force-advance]     Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Read-only adoption snapshot.
 dome query <text> [--filter ...] [--require-evidence]
@@ -34,13 +32,13 @@ dome run-processor <id> [--args ...]
 
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
-- **Submit:** `dome submit`, `dome sync` — write paths through `AbstractSurface.submit`.
+- **Submit:** `dome sync` — the catch-up write path that triggers an adoption run.
 - **Recall:** `dome query`, `dome status` — read paths through `AbstractSurface.query` / `getAdoptionStatus`.
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome serve` — engine + diagnostic operations exposed only on the CLI surface.
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
-The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
+The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the engine's watcher daemon (`dome serve`). For a one-shot catch-up (the daemon isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
 ## Per-command specs
 
@@ -57,10 +55,6 @@ Creates a new Dome vault at `<path>` (defaults to `.`):
 7. Runs an initial `dome sync` to adopt the initial commit and produce `refs/dome/adopted/main`.
 
 Exit codes: 0 on success; 1 if directory exists with a vault (`config.yaml` present); 2 on usage error.
-
-### `dome submit [--patch <file>] [--source-kind <k>] [--metadata-title <s>] [--metadata-reason <s>]`
-
-See [[wiki/specs/adoption]] §"`dome submit`".
 
 ### `dome sync [--force-advance]`
 
@@ -165,7 +159,7 @@ Runs the compiler daemon. Composition:
 1. `openVault(path)` constructs the Vault.
 2. Starts the working-tree watcher (chokidar over `<vault>/wiki/`, `raw/`, `notes/`, `inbox/`).
 3. Starts the scheduled-trigger dispatcher (consults `projection_store.schedule_cursors`).
-4. On each watcher event, constructs a Proposal and routes to `vault.submitProposal()`. Adoption runs; effects route per `apply-effect.ts`.
+4. On each watcher event, constructs a `manual`-source Proposal via `makeManualProposal` and routes it through the engine's `adopt()`. Adoption runs; effects route per `apply-effect.ts`.
 5. On each scheduled cron tick, fires the matching garden-phase processors.
 6. If `--mcp` is passed, also starts the MCP server (per [[wiki/specs/mcp-surface]]).
 

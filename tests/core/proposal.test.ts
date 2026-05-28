@@ -1,16 +1,18 @@
-// Smoke tests for src/core/proposal.ts: id shape + entropy, per-source
-// constructors, optional `sessionId` cleanliness, ProposalSchema round-trip /
+// Smoke tests for src/core/proposal.ts: id shape + entropy, the
+// `makeManualProposal` daemon helper, ProposalSchema round-trip /
 // rejection, and the metadata helper freeze + optional-key cleanliness.
+//
+// Phase 11a collapsed the 5-way `ProposalSource` (client/agent/garden/
+// manual/import) to the 2-way internal union (manual + garden). The five
+// public source-constructors are gone — Proposals are internal types
+// constructed by the daemon. The remaining surface this file exercises:
+// the `makeManualProposal` helper + the Zod schemas + the metadata helper.
 
 import { describe, test, expect } from "bun:test";
 import {
   ProposalSchema,
-  agentProposal,
-  clientProposal,
-  gardenProposal,
-  importProposal,
+  makeManualProposal,
   makeProposalId,
-  manualProposal,
   proposalMetadata,
 } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
@@ -33,94 +35,86 @@ describe("makeProposalId", () => {
   });
 });
 
-describe("per-source constructors stamp the right source.kind", () => {
-  test("clientProposal", () => {
-    const p = clientProposal({
-      id: "prop_1_aaaaaa",
-      base,
-      head,
-      clientId: "mobile",
-    });
-    expect(p.source.kind).toBe("client");
-  });
-
-  test("agentProposal", () => {
-    const p = agentProposal({
-      id: "prop_1_aaaaaa",
-      base,
-      head,
-      harness: "claude-code",
-    });
-    expect(p.source.kind).toBe("agent");
-  });
-
-  test("gardenProposal", () => {
-    const p = gardenProposal({
-      id: "prop_1_aaaaaa",
-      base,
-      head,
-      processorId: "dome.markdown",
-      runId: "run-1",
-    });
-    expect(p.source.kind).toBe("garden");
-  });
-
-  test("manualProposal", () => {
-    const p = manualProposal({
+describe("makeManualProposal", () => {
+  test("stamps source.kind = 'manual' with the supplied branch", () => {
+    const p = makeManualProposal({
       id: "prop_1_aaaaaa",
       base,
       head,
       branch: "main",
     });
     expect(p.source.kind).toBe("manual");
+    if (p.source.kind !== "manual") throw new Error("expected manual source");
+    expect(p.source.branch).toBe("main");
   });
 
-  test("importProposal", () => {
-    const p = importProposal({
+  test("freezes the returned proposal (mutation throws in strict mode)", () => {
+    const p = makeManualProposal({
       id: "prop_1_aaaaaa",
       base,
       head,
-      importerId: "obsidian-import",
+      branch: "main",
     });
-    expect(p.source.kind).toBe("import");
+    expect(Object.isFrozen(p)).toBe(true);
+    expect(Object.isFrozen(p.source)).toBe(true);
   });
-});
 
-describe("agentProposal sessionId optional handling", () => {
-  test("absent sessionId produces a valid Proposal without leaking the key", () => {
-    const p = agentProposal({
+  test("defaults id to a fresh makeProposalId() when omitted", () => {
+    const p = makeManualProposal({ base, head, branch: "main" });
+    expect(p.id).toMatch(/^prop_\d+_[0-9a-f]{6}$/);
+  });
+
+  test("only sets metadata when defined (no `metadata: undefined` key)", () => {
+    const p = makeManualProposal({
       id: "prop_1_aaaaaa",
       base,
       head,
-      harness: "claude-code",
+      branch: "main",
     });
-    if (p.source.kind !== "agent") throw new Error("expected agent source");
-    expect("sessionId" in p.source).toBe(false);
-  });
+    expect("metadata" in p).toBe(false);
 
-  test("present sessionId is set on the source", () => {
-    const p = agentProposal({
+    const pWithMeta = makeManualProposal({
       id: "prop_1_aaaaaa",
       base,
       head,
-      harness: "claude-code",
-      sessionId: "sess-42",
+      branch: "main",
+      metadata: proposalMetadata({ title: "x" }),
     });
-    if (p.source.kind !== "agent") throw new Error("expected agent source");
-    expect(p.source.sessionId).toBe("sess-42");
+    expect(pWithMeta.metadata?.title).toBe("x");
   });
 });
 
 describe("ProposalSchema round-trip and rejection", () => {
-  test("parses a constructed proposal", () => {
-    const p = clientProposal({
+  test("parses a constructed manual proposal", () => {
+    const p = makeManualProposal({
       id: "prop_1_aaaaaa",
       base,
       head,
-      clientId: "mobile",
+      branch: "main",
     });
     const parsed = ProposalSchema.parse(p);
     expect(parsed.id).toBe("prop_1_aaaaaa");
+  });
+
+  test("parses a garden-source proposal shape", () => {
+    const parsed = ProposalSchema.parse({
+      id: "prop_1_aaaaaa",
+      base: "base",
+      head: "head",
+      source: { kind: "garden", processorId: "dome.markdown", runId: "run-1" },
+    });
+    expect(parsed.source.kind).toBe("garden");
+  });
+
+  test("rejects the retired `client` source kind", () => {
+    expect(() =>
+      ProposalSchema.parse({
+        id: "prop_1_aaaaaa",
+        base: "base",
+        head: "head",
+        source: { kind: "client", clientId: "mobile" },
+      }),
+    ).toThrow();
   });
 
   test("rejects empty `base`", () => {

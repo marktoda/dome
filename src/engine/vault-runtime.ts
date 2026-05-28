@@ -3,47 +3,44 @@
 // One `VaultRuntime` opens the three operational databases — projection,
 // outbox, and run-ledger — and builds the `ProcessorRuntime` against
 // either a caller-supplied `ProcessorRegistry` or a bundle-loader-derived
-// registry built by walking `bundlesRoot/`. The handle is consumed by
-// `submitProposal` (in `./submit-proposal.ts`); a single VaultRuntime can
-// serve many `submitProposal` calls without re-opening sqlite per call.
+// registry built by walking `bundlesRoot/`. The handle is consumed by the
+// engine-internal daemon (Phase 11b's `dome serve`); a single VaultRuntime
+// can serve many adoption runs without re-opening sqlite per run.
 //
-// Phase 8 added the auto-load construction shape: `openVaultRuntime` now
-// accepts either the pre-built-registry opts (used by tests and advanced
-// consumers) or the `bundlesRoot:` opts (the canonical entry shape for v1
-// vaults — `<vault>/.dome/extensions/` or `assets/extensions/`).
+// `openVaultRuntime` accepts either the pre-built-registry opts (used by
+// tests and advanced consumers that hand-compose their processor set) or
+// the `bundlesRoot:` opts (the canonical entry shape for v1 vaults —
+// `<vault>/.dome/extensions/` or `assets/extensions/`).
 //
-// This file replaces — for v1-engine consumers — the v0.5 `src/vault.ts`'s
-// `openVault()`. The old `openVault` stays in place for Phase 7a (existing
-// Tools-surface consumers continue to use it); Phase 7b retires the old
-// path once the projection / outbox / ledger seams are the only writers.
+// This module is not re-exported from `src/index.ts`. The daemon is the
+// only consumer; harnesses that want to query the projection / outbox /
+// ledger reach the three DBs via the dedicated `open<*>Db` functions on
+// the public surface.
 //
-// Phase 7a scope (intentional deferrals, documented inline):
+// v1.0 scope (intentional deferrals, documented inline):
 //
 //   - `resolveGrants`: granted := declared (every declared capability is
-//     granted). Matches the v1 "trust the bundle manifest" default. Phase 8+
-//     wires real per-extension grant lookups from `.dome/config.yaml` via
-//     the capability-policy resolver.
+//     granted). Matches the v1 "trust the bundle manifest" default. A
+//     follow-up phase wires real per-extension grant lookups from
+//     `.dome/config.yaml` via the capability-policy resolver.
 //   - `extensionIdFor`: identity (`processorId === extensionId`). The
 //     registry already keys by bundle-prefixed processor id per
 //     [[wiki/specs/sdk-surface]] §"Bundle load lifecycle"; the bundle id
-//     is the processor id verbatim for v1. Phase 7b refines this once the
-//     bundle loader threads a per-processor → bundle map through.
+//     is the processor id verbatim for v1. A follow-up phase refines this
+//     once the bundle loader threads a per-processor → bundle map through.
 //   - `resolveTree`: a thin wrapper over `../git`'s `readTree`. The
 //     runtime calls `resolveTree(candidate)` once per adoption iteration
 //     whenever the registry has any adoption-phase processors — even
 //     before any processor fires (`src/processors/runtime.ts`'s
 //     `adoptionRunner`). A throwing placeholder would block every
-//     submission with a non-empty registry, so the resolver is wired
-//     against the live git boundary in Phase 7a. The Phase 7a smoke
-//     test surface exercises only diagnostic / fact / question effects,
-//     but the snapshot's `tree` OID must still resolve so the
-//     `ProcessorContext.snapshot` is well-formed.
+//     adoption run with a non-empty registry, so the resolver is wired
+//     against the live git boundary.
 //
 // Normative references:
 //   - docs/wiki/specs/vault-layout.md §"Derived operational state under
 //     `.dome/`" — the canonical paths for the three databases.
-//   - docs/wiki/specs/proposals.md §"Submission API" — the user-facing
-//     entry point this runtime backs.
+//   - docs/wiki/specs/proposals.md — the engine-internal contract this
+//     runtime backs.
 //
 // House-style notes (matches src/engine/adopt.ts, src/projections/sinks.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -87,9 +84,9 @@ import {
  * vault path the engine reads git state from.
  *
  * Lifetime: opened once via `openVaultRuntime`, consumed by zero or more
- * `submitProposal` calls, released via `close()`. The DB handles inside
- * are shared across calls — the engine's adoption loop reuses them
- * iteration-to-iteration.
+ * adoption runs (the daemon's per-commit `adopt()` calls), released via
+ * `close()`. The DB handles inside are shared across runs — the engine's
+ * adoption loop reuses them iteration-to-iteration.
  *
  * `close()` is idempotent at the SQLite layer (Bun's `sqlite3_close_v2`
  * semantics); calling twice is safe.
@@ -199,7 +196,7 @@ export type OpenVaultRuntimeError =
 /**
  * Open the three operational databases under `<vaultPath>/.dome/state/`
  * and build a `ProcessorRuntime` against the resolved registry. Returns a
- * `VaultRuntime` handle the caller passes to `submitProposal`.
+ * `VaultRuntime` handle the daemon passes to `adopt()` per commit.
  *
  * Two construction shapes are supported (see `OpenVaultRuntimeOpts`):
  *
@@ -216,8 +213,8 @@ export type OpenVaultRuntimeError =
  * opened DB is closed before the error is returned — no leaked handles on
  * the error path.
  *
- * Phase 7a placeholders (documented in the file banner; this comment
- * lists the wired seams the function injects):
+ * v1.0 defaults (documented in the file banner; this comment lists the
+ * wired seams the function injects):
  *   - `resolveGrants` := identity-on-declared (grant set = declared set).
  *   - `extensionIdFor` := identity (`processorId` is treated as the
  *     extension id).
@@ -274,8 +271,8 @@ export async function openVaultRuntime(
   }
   const ledgerDb = ledgerResult.value.db;
 
-  // 5. Build the ProcessorRuntime. The three injections cover the
-  //    Phase 7a seams — see file banner. `resolveTree` is wired against
+  // 5. Build the ProcessorRuntime. The three injections cover the v1.0
+  //    runtime seams — see file banner. `resolveTree` is wired against
   //    the live git boundary so the runtime's per-iteration
   //    `Snapshot` construction doesn't trip on a throw placeholder.
   const processorRuntime = buildRuntime({
@@ -391,16 +388,16 @@ function deriveProcessorVersionList(
   return processors.map((p) => ({ id: p.id, version: p.version }));
 }
 
-// ----- Phase 7a placeholder injections --------------------------------------
+// ----- v1.0 default seam injections -----------------------------------------
 
 /**
- * Phase 7a default: grant = declared. Every capability a processor
- * declares in its bundle manifest is granted at adoption time. This
- * matches the v1 "trust the bundle manifest" default — third-party
- * extensions installed into the vault are assumed vetted at install time.
+ * v1.0 default: grant = declared. Every capability a processor declares
+ * in its bundle manifest is granted at adoption time. This matches the
+ * v1 "trust the bundle manifest" default — third-party extensions
+ * installed into the vault are assumed vetted at install time.
  *
- * Phase 8+ replaces this with a real per-extension grant lookup driven
- * by `.dome/config.yaml`'s capability-policy section (per
+ * A follow-up phase replaces this with a real per-extension grant lookup
+ * driven by `.dome/config.yaml`'s capability-policy section (per
  * [[wiki/specs/capabilities]] §"Vault policy"). The seam is the
  * `resolveGrants` callback of `buildRuntime`; this function is the v1
  * stand-in.
@@ -429,15 +426,15 @@ function defaultResolveGrants(
 }
 
 /**
- * Phase 7a default: extension id := processor id. The bundle loader
- * prefixes each processor id with its bundle id (per
+ * v1.0 default: extension id := processor id. The bundle loader prefixes
+ * each processor id with its bundle id (per
  * [[wiki/specs/sdk-surface]] §"Bundle load lifecycle" step 4), so the
  * processor id itself is a reasonable extension-id surrogate for the
  * `Dome-Extension` trailer.
  *
- * Phase 7b refines this once the bundle loader threads a per-processor
- * → bundle map through to `openVaultRuntime`; the seam is the
- * `extensionIdFor` callback of `buildRuntime`.
+ * A follow-up phase refines this once the bundle loader threads a
+ * per-processor → bundle map through to `openVaultRuntime`; the seam is
+ * the `extensionIdFor` callback of `buildRuntime`.
  */
 function defaultExtensionIdFor(processorId: string): string {
   return processorId;
@@ -459,8 +456,8 @@ function defaultExtensionIdFor(processorId: string): string {
  * per-candidate memoization. The runtime invokes the resolver once per
  * iteration; a vault with bounded loop iteration counts (the
  * `MAX_ITER` cap per [[wiki/specs/adoption]] §"MAX_ITER and
- * divergence") makes the cumulative call count small. Phase 8+ may
- * add memoization once the model-invoke / view-phase surfaces drive
+ * divergence") makes the cumulative call count small. A follow-up phase
+ * may add memoization once the model-invoke / view-phase surfaces drive
  * more frequent resolves.
  */
 function makeResolveTree(

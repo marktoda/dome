@@ -22,7 +22,6 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs } from "../../src/cli/args";
 import { runInit } from "../../src/cli/commands/init";
-import { runSubmit } from "../../src/cli/commands/submit";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runStatus } from "../../src/cli/commands/status";
 
@@ -193,52 +192,6 @@ describe("runInit", () => {
   });
 });
 
-// ----- runSubmit ------------------------------------------------------------
-
-describe("runSubmit", () => {
-  test("submits the current HEAD as a clientProposal and returns 0 on adoption", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    const args = parseArgs(["submit", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot]);
-    const code = await runSubmit(args);
-    expect(code).toBe(0);
-  });
-
-  test("rejects --patch with a non-zero exit and a clear message", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    const args = parseArgs([
-      "submit",
-      "--vault",
-      f.vaultPath,
-      "--patch",
-      "/tmp/some.patch",
-    ]);
-    const code = await runSubmit(args);
-    expect(code).not.toBe(0);
-    // The error message mentions --patch so a user knows what failed.
-    expect(captured.err.join("\n")).toContain("--patch");
-  });
-
-  test("--json mode emits a parseable JSON payload", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    const args = parseArgs(["submit", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot, "--json"]);
-    const code = await runSubmit(args);
-    expect(code).toBe(0);
-
-    // Find the JSON payload — it's the longest single line of stdout.
-    const blob = captured.out.find((line) => line.includes("\"proposalId\""));
-    expect(blob).toBeDefined();
-    if (blob === undefined) return;
-    const parsed = JSON.parse(blob) as Record<string, unknown>;
-    expect(parsed["adopted"]).toBe(true);
-  });
-});
-
 // ----- runDoctor ------------------------------------------------------------
 
 describe("runDoctor", () => {
@@ -347,32 +300,8 @@ describe("runStatus", () => {
     expect(parsed["pending_runs"]).toBe(0);
   });
 
-  test("status after a submit reports the advanced adopted ref", async () => {
-    const f = await makeFixture();
-    fixtures.push(f);
-
-    // First submit so the adopted ref advances to head.
-    const submitCode = await runSubmit(
-      parseArgs(["submit", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot]),
-    );
-    expect(submitCode).toBe(0);
-
-    captured.out = [];
-
-    // Now status. dome.lint is view-phase only — no adoption-phase runs
-    // fired, so `last_sync` stays null. But the adopted ref now points
-    // at head, so the snapshot's `adopted` field carries the head OID
-    // (not "(uninitialized)"). The load-bearing assertion is the exit
-    // code (read-only command); the adopted-ref check is a smoke test.
-    const code = await runStatus(
-      parseArgs(["status", "--vault", f.vaultPath, "--bundles-root", f.bundlesRoot, "--json"]),
-    );
-    expect(code).toBe(0);
-
-    const blob = captured.out.find((l) => l.includes("\"adopted\""));
-    expect(blob).toBeDefined();
-    if (blob === undefined) return;
-    const parsed = JSON.parse(blob) as Record<string, unknown>;
-    expect(parsed["adopted"]).toBe(f.headSha);
-  });
+  // The "status after a submit reports the advanced adopted ref" test
+  // was retired in Phase 11a along with `runSubmit`; the corresponding
+  // assertion against an advanced adopted ref will land in the Phase 11b
+  // daemon integration tests, which drive adoption via the watcher.
 });
