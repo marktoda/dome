@@ -107,6 +107,12 @@ import {
 } from "./context";
 import { makeRunContext } from "../run-context";
 
+// Transitional seam for Task 1: processor contexts expose a signal before the
+// executor owns cancellation. Task 2 should replace this with an invocation-
+// owned AbortSignal supplied by the executor boundary.
+const TRANSITIONAL_NON_CANCELLING_PROCESSOR_SIGNAL =
+  new AbortController().signal;
+
 // ----- AdoptionRunInput -----------------------------------------------------
 
 /**
@@ -567,7 +573,7 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     proposal,
     runId,
     input: envelope,
-    signal: new AbortController().signal,
+    signal: TRANSITIONAL_NON_CANCELLING_PROCESSOR_SIGNAL,
     // `modelInvoke` intentionally unset for both phases in Phase 4a.
     // Adoption never receives a model handle (processors.md §"Adoption
     // phase"). Garden MAY receive one when the `model.invoke` capability

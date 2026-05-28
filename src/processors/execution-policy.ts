@@ -86,8 +86,8 @@ export function defaultExecutionClassForPhase(
 
 export function resolveExecutionPolicy(opts: {
   readonly phase: ProcessorPhase;
-  readonly request?: ExecutionPolicyRequest | undefined;
-  readonly vaultCap?: ExecutionPolicyCap | undefined;
+  readonly request: ExecutionPolicyRequest | undefined;
+  readonly vaultCap: ExecutionPolicyCap | undefined;
 }): Result<ResolvedExecutionPolicy, ExecutionPolicyError> {
   const executionClass =
     opts.request?.class ?? defaultExecutionClassForPhase(opts.phase);
@@ -109,15 +109,20 @@ export function resolveExecutionPolicy(opts: {
     lateEffectBehavior: defaults.lateEffectBehavior,
     modelCallTimeoutMs: opts.request?.modelCallTimeoutMs ?? defaults.modelCallTimeoutMs,
   };
+  const phaseTimeoutCap =
+    opts.phase === "adoption"
+      ? DEFAULT_EXECUTION_POLICY_BY_CLASS.deterministic.timeoutMs
+      : undefined;
 
   const resolved: {
     -readonly [K in keyof ResolvedExecutionPolicy]: ResolvedExecutionPolicy[K];
   } = {
     class: requested.class,
-    timeoutMs:
-      opts.vaultCap?.timeoutMs !== undefined
-        ? Math.min(requested.timeoutMs, opts.vaultCap.timeoutMs)
-        : requested.timeoutMs,
+    timeoutMs: minDefined(
+      requested.timeoutMs,
+      opts.vaultCap?.timeoutMs,
+      phaseTimeoutCap,
+    ),
     retryBudgetMs:
       opts.vaultCap?.retryBudgetMs !== undefined
         ? Math.min(requested.retryBudgetMs, opts.vaultCap.retryBudgetMs)
@@ -135,8 +140,19 @@ export function resolveExecutionPolicy(opts: {
       ? Math.min(requested.modelCallTimeoutMs, opts.vaultCap.modelCallTimeoutMs)
       : requested.modelCallTimeoutMs;
   if (requestedModelCallTimeoutMs !== undefined) {
-    resolved.modelCallTimeoutMs = requestedModelCallTimeoutMs;
+    resolved.modelCallTimeoutMs = Math.min(
+      requestedModelCallTimeoutMs,
+      resolved.timeoutMs,
+    );
   }
 
   return ok(Object.freeze(resolved));
+}
+
+function minDefined(value: number, ...caps: ReadonlyArray<number | undefined>): number {
+  let result = value;
+  for (const cap of caps) {
+    if (cap !== undefined) result = Math.min(result, cap);
+  }
+  return result;
 }

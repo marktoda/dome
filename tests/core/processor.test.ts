@@ -5,6 +5,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   CapabilitySchema,
+  ExecutionPolicyRequestSchema,
   ProcessorPhaseSchema,
   SignalSchema,
   TriggerSchema,
@@ -140,5 +141,36 @@ describe("ProcessorPhaseSchema + SignalSchema", () => {
 
   test("SignalSchema rejects an unknown signal name", () => {
     expect(() => SignalSchema.parse("file.exploded")).toThrow();
+  });
+});
+
+describe("ExecutionPolicyRequestSchema", () => {
+  test("parses valid execution metadata", () => {
+    const parsed = ExecutionPolicyRequestSchema.parse({
+      class: "llm",
+      timeoutMs: 600_000,
+      retryBudgetMs: 0,
+      maxAttempts: 1,
+      modelCallTimeoutMs: 180_000,
+    });
+
+    expect(parsed.class).toBe("llm");
+    expect(parsed.timeoutMs).toBe(600_000);
+  });
+
+  test("rejects unknown keys and invalid numeric values", () => {
+    expect(() =>
+      ExecutionPolicyRequestSchema.parse({
+        class: "background",
+        timeoutMs: 0,
+      }),
+    ).toThrow();
+    expect(() =>
+      ExecutionPolicyRequestSchema.parse({
+        class: "background",
+        timeoutMs: 120_000,
+        extra: true,
+      }),
+    ).toThrow();
   });
 });
