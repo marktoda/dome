@@ -167,6 +167,41 @@ describe("executeProcessor", () => {
     expect("effectHashes" in result).toBe(false);
   });
 
+  test("throwing output array element access fails invalid-output", async () => {
+    const hostileOutput = new Proxy([validEffect()] as Array<unknown>, {
+      get(target, prop, receiver) {
+        if (prop === "0") {
+          throw new Error("output container index 0 access exploded");
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const result = await executeProcessor({
+      processorId: "test.executor.hostile-container",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => hostileOutput,
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.invalid-output");
+    expect(result.error.message).toMatch(
+      /output|container|effect\[0\]|access|validation/i,
+    );
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
   test("unhashable schema-valid effect fails invalid-output without routing effects", async () => {
     const unhashableEffect = externalActionEffect({
       capability: "test.external",

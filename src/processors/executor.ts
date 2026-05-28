@@ -194,7 +194,27 @@ function outputResult(input: {
   readonly phase: ProcessorPhase;
   readonly durationMs: number;
 }): ProcessorExecutionResult {
-  if (!Array.isArray(input.value)) {
+  let outputIsArray: boolean;
+  try {
+    outputIsArray = Array.isArray(input.value);
+  } catch (e) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: `Processor returned invalid output: output container array check threw: ${errorMessage(e)}`,
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+
+  if (!outputIsArray) {
     const error = makeExecutionError({
       code: "processor.invalid-output",
       message: "Processor returned invalid output: expected an array of effects.",
@@ -211,15 +231,60 @@ function outputResult(input: {
     });
   }
 
+  const output = input.value as {
+    readonly length: unknown;
+    readonly [index: number]: unknown;
+  };
+  let effectCount: unknown;
+  try {
+    effectCount = output.length;
+  } catch (e) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: `Processor returned invalid output: output container length access threw: ${errorMessage(e)}`,
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+  if (
+    typeof effectCount !== "number" ||
+    !Number.isSafeInteger(effectCount) ||
+    effectCount < 0
+  ) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: "Processor returned invalid output: array length was invalid.",
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+
   const effects: Array<Effect> = [];
-  for (const [index, effect] of input.value.entries()) {
+  for (let index = 0; index < effectCount; index++) {
     let parsed: ReturnType<typeof EffectSchema.safeParse>;
     try {
+      const effect = output[index];
       parsed = EffectSchema.safeParse(effect);
     } catch (e) {
       const error = makeExecutionError({
         code: "processor.invalid-output",
-        message: `Processor returned invalid output at effect[${index}]: schema validation threw while accessing effect output: ${errorMessage(e)}`,
+        message: `Processor returned invalid output at effect[${index}]: output access or schema validation threw: ${errorMessage(e)}`,
         retryable: false,
         phase: input.phase,
         processorId: input.processorId,
