@@ -57,6 +57,7 @@ import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
+import "../scenarios/capabilities/model-invoke-scheduled.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
 import "../scenarios/triggers/document-changed-fires.scenario.test";
 import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
@@ -127,6 +128,7 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
       "convergence",
       "effect-kinds",
       "triggers",
+      "capabilities",
       "lifecycle",
       "garden-cascade",
       "regression",
@@ -206,18 +208,18 @@ const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
 
 const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
   // Phase 13a unblocked: command (`dome run orphan-pages`).
+  // Harness operational-work coverage unblocked: schedule.
   "path",      // No shipped processor uses path triggers (signal triggers cover today's needs)
-  "schedule",  // Phase 18 — scheduled-trigger dispatch + dome.scheduled processors
 ]);
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
   // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
   // Effect-routing fixture coverage unblocked: job.enqueue.
+  // Harness operational-work coverage unblocked: model.invoke.
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
   "question.ask",  // Phase 14+ — duplicate-detection and intake processors emit Questions
-  "model.invoke",  // Phase 16 — model-invoking garden-phase processors
   "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);
 

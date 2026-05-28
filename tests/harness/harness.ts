@@ -18,9 +18,9 @@
 //     processor registry is picked up. We symlink (not copy) so the
 //     processor module's relative imports continue to resolve against
 //     the SDK's source tree post-canonicalization.
-//   - The clock is owned by the harness but NOT yet wired into the daemon
-//     (Phase H1 limitation; schedule triggers don't exist in the system).
-//     The always-true invariants do consume it for orphan thresholds.
+//   - The clock is owned by the harness and threaded into operational work
+//     drains, so schedule-triggered processors are deterministic in scenarios.
+//     The always-true invariants also consume it for orphan thresholds.
 
 import fs from "node:fs";
 import {
@@ -41,6 +41,7 @@ import { runCli as runCliDispatch } from "../../src/cli/index";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   detectDrift,
+  runOperationalWorkForAdopted,
   resolveShippedBundlesRoot,
   runOneAdoption,
 } from "../../src/cli/commands/sync-shared";
@@ -85,6 +86,8 @@ import type {
 import type { LedgerDb } from "../../src/ledger/db";
 import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
+import type { ModelProvider } from "../../src/engine/model-invoke";
+import type { OperationalWorkResult } from "../../src/engine/operational-work";
 
 const DEFAULT_BRANCH = "main";
 const DEFAULT_AUTHOR = {
@@ -101,6 +104,7 @@ export class HarnessImpl implements Harness {
 
   private runtime: VaultRuntime;
   private readonly installedBundles: Set<string>;
+  private readonly modelProvider: ModelProvider | undefined;
   private snapshotRefs: { head: string | null; adopted: string | null };
   readonly refs: RefsView;
   readonly git: GitView;
@@ -111,12 +115,14 @@ export class HarnessImpl implements Harness {
     clock: TestClock;
     runtime: VaultRuntime;
     installedBundles: Set<string>;
+    modelProvider?: ModelProvider;
   }) {
     this.vaultPath = args.vaultPath;
     this.branch = args.branch;
     this.clock = args.clock;
     this.runtime = args.runtime;
     this.installedBundles = args.installedBundles;
+    this.modelProvider = args.modelProvider;
     this.snapshotRefs = { head: null, adopted: null };
     this.refs = makeRefsView(this);
     this.git = makeGitView(this);
@@ -193,7 +199,7 @@ export class HarnessImpl implements Harness {
     }
 
     // Open the runtime against the (possibly-empty) bundles root.
-    const runtime = await openRuntime(vaultPath);
+    const runtime = await openRuntime(vaultPath, opts.modelProvider);
 
     const harness = new HarnessImpl({
       vaultPath,
@@ -201,6 +207,9 @@ export class HarnessImpl implements Harness {
       clock,
       runtime,
       installedBundles,
+      ...(opts.modelProvider !== undefined
+        ? { modelProvider: opts.modelProvider }
+        : {}),
     });
     await harness.snapshot();
     return harness;
@@ -294,7 +303,12 @@ export class HarnessImpl implements Harness {
       throw new Error(`harness.tick: unworkable state '${drift.kind}'`);
     }
     if (drift.kind === "in-sync") {
-      await runAllAlwaysTrue(this, "tick (in-sync no-op)");
+      await runOperationalWorkForAdopted({
+        runtime: this.runtime,
+        adopted: drift.head,
+        now: () => this.clock.now(),
+      });
+      await runAllAlwaysTrue(this, "tick (in-sync operational drain)");
       return {
         hadDrift: false,
         diagnosticCount: 0,
@@ -337,6 +351,21 @@ export class HarnessImpl implements Harness {
     await runAllAlwaysTrue(this, `advance(${ms}ms)`);
   }
 
+  async drainOperationalWork(): Promise<OperationalWorkResult> {
+    await this.snapshot();
+    const adopted = await getAdoptedRef(this.vaultPath, this.branch);
+    if (adopted === null) {
+      throw new Error("harness.drainOperationalWork: adopted ref is not initialized");
+    }
+    const result = await runOperationalWorkForAdopted({
+      runtime: this.runtime,
+      adopted: commitOid(adopted),
+      now: () => this.clock.now(),
+    });
+    await runAllAlwaysTrue(this, "drainOperationalWork");
+    return result;
+  }
+
   async forceSync(): Promise<TickResult> {
     // H1: `--force-advance` is surfaced by `dome sync` but the underlying
     // `runOneAdoption` doesn't take a flag in v1.0 — the force-advance
@@ -350,14 +379,14 @@ export class HarnessImpl implements Harness {
   async crashAndRestart(): Promise<void> {
     await this.snapshot();
     await this.runtime.close();
-    this.runtime = await openRuntime(this.vaultPath);
+    this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     await runAllAlwaysTrue(this, "crashAndRestart");
   }
 
   async reopenRuntime(): Promise<void> {
     await this.snapshot();
     await this.runtime.close();
-    this.runtime = await openRuntime(this.vaultPath);
+    this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     await runAllAlwaysTrue(this, "reopenRuntime");
   }
 
@@ -376,7 +405,7 @@ export class HarnessImpl implements Harness {
     }
     if (newlyInstalled.length > 0) {
       await this.runtime.close();
-      this.runtime = await openRuntime(this.vaultPath);
+      this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     }
     await runAllAlwaysTrue(this, `install([${newlyInstalled.join(", ")}])`);
   }
@@ -394,7 +423,7 @@ export class HarnessImpl implements Harness {
       }
       this.installedBundles.delete(bundleId);
       await this.runtime.close();
-      this.runtime = await openRuntime(this.vaultPath);
+      this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     }
     await runAllAlwaysTrue(this, `uninstall(${bundleId})`);
   }
@@ -509,7 +538,7 @@ export class HarnessImpl implements Harness {
       // Reopen the harness's runtime so subsequent matchers see the
       // post-command state. The command may have written rows to the
       // projection / ledger; reopening picks up the new SQLite state.
-      this.runtime = await openRuntime(this.vaultPath);
+      this.runtime = await openRuntime(this.vaultPath, this.modelProvider);
     }
 
     await runAllAlwaysTrue(this, `runCli([${args.join(" ")}])`);
@@ -530,9 +559,16 @@ export class HarnessImpl implements Harness {
 
 // ----- Helpers -------------------------------------------------------------
 
-async function openRuntime(vaultPath: string): Promise<VaultRuntime> {
+async function openRuntime(
+  vaultPath: string,
+  modelProvider?: ModelProvider,
+): Promise<VaultRuntime> {
   const bundlesRoot = join(vaultPath, ".dome", "extensions");
-  const result = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const result = await openVaultRuntime({
+    vaultPath,
+    bundlesRoot,
+    ...(modelProvider !== undefined ? { modelProvider } : {}),
+  });
   if (!result.ok) {
     throw new Error(
       `harness: openVaultRuntime failed: ${JSON.stringify(result.error)}`,

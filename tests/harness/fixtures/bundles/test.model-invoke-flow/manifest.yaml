@@ -1,0 +1,17 @@
+id: test.model-invoke-flow
+version: 0.1.0
+processors:
+  - id: test.model-invoke-flow.scheduled
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "* * * * *"
+    capabilities:
+      - kind: model.invoke
+        modelAllowlist: ["test-model"]
+    execution:
+      class: llm
+      timeoutMs: 1000
+      modelCallTimeoutMs: 500
+    module: processors/scheduled.ts

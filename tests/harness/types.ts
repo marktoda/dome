@@ -29,6 +29,8 @@ import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { Capability, ProcessorPhase, Trigger } from "../../src/core/processor";
 import type { Effect } from "../../src/core/effect";
+import type { ModelProvider } from "../../src/engine/model-invoke";
+import type { OperationalWorkResult } from "../../src/engine/operational-work";
 
 // ============================================================================
 // ----- Harness setup --------------------------------------------------------
@@ -95,6 +97,12 @@ export type HarnessOpts = {
    * pass a custom clock.
    */
   readonly clock?: TestClockHandle;
+
+  /**
+   * Optional provider injected into the live VaultRuntime. Scenarios use this
+   * to exercise model.invoke behavior end-to-end without importing a vendor SDK.
+   */
+  readonly modelProvider?: ModelProvider;
 
   /**
    * Seed for deterministic randomness (for run-id generation, etc.).
@@ -421,8 +429,10 @@ export interface Harness {
   // ----- Daemon / engine moves -----
   /** One drift-detect + adopt cycle. Equivalent to `dome sync` once. */
   tick(): Promise<TickResult>;
-  /** Move simulated time forward. Future: also fires schedule triggers. */
+  /** Move simulated time forward; call tick/drainOperationalWork to fire due work. */
   advance(ms: number): Promise<void>;
+  /** Drain due schedule, queued job, and outbox work against the adopted state. */
+  drainOperationalWork(): Promise<OperationalWorkResult>;
   /** Force `dome sync --force-advance` semantics. */
   forceSync(): Promise<TickResult>;
   /** Close the runtime, then re-open. Simulates daemon restart. */

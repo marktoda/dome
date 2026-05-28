@@ -103,6 +103,8 @@ Dome runs garden-phase and view-phase processors in a headless context:
 
 Garden-phase processors that hold the `model.invoke` capability call through the engine's provider-neutral model-invoke shim. Core records provider-reported cost in the run ledger and enforces the effective model allowlist; concrete adapters such as an Anthropic or Vercel AI SDK provider are outside the `@dome/sdk` root import graph. Daily `maxDailyCostUsd` enforcement is planned on top of the existing cost ledger. The headless context is the engine running outside an interactive harness — it loads bundles, runs the processor, ledgers the run, returns.
 
+The end-to-end harness can inject a test `ModelProvider` through `HarnessOpts.modelProvider`, and its `tick()` path now mirrors `dome sync`: after adoption, and even when HEAD is already in sync, it drains due schedule, queued-job, and outbox work against the adopted state. Scenarios can call `drainOperationalWork()` directly when they need to isolate that operational pump from drift detection.
+
 ### Other MCP-capable harnesses (Cursor, OpenCode, Codex CLI, future)
 
 Any harness that supports `AGENTS.md` (or an equivalent orientation file) and a shell-execution tool can interact with Dome via the compiler-boundary contract above — no MCP mount required. Per-harness setup notes (where to put `AGENTS.md` if the harness's auto-load path differs from Claude Code's `CLAUDE.md` shim convention, how the harness exposes shell-execution to the agent, MCP-mounting examples for harnesses that benefit) land at `docs/wiki/sources/<harness>-setup.md` as each harness is added — see [[wiki/entities/claude-code]] for the reference example.
