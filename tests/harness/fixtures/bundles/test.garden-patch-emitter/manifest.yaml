@@ -1,0 +1,16 @@
+id: test.garden-patch-emitter
+version: 0.1.0
+processors:
+  - id: test.garden-patch-emitter.emit-on-seed
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/seed.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/emit-patch.ts

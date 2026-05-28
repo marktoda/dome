@@ -33,6 +33,21 @@ export class CommitMatcherImpl implements CommitMatcher {
     ).toBe(0);
   }
 
+  async toHaveTrailerValues(expected: Record<string, string>): Promise<void> {
+    const c = await this.readCommit();
+    const mismatches: string[] = [];
+    for (const [key, want] of Object.entries(expected)) {
+      const got = c.trailers[key];
+      if (got !== want) {
+        mismatches.push(`  ${key}: expected="${want}" actual="${got ?? "(missing)"}"`);
+      }
+    }
+    expect(
+      mismatches.length,
+      `commit ${c.oid.slice(0, 7)} "${c.subject}" trailer mismatches:\n${mismatches.join("\n")}`,
+    ).toBe(0);
+  }
+
   async toHaveSubjectMatching(pattern: RegExp): Promise<void> {
     const c = await this.readCommit();
     expect(

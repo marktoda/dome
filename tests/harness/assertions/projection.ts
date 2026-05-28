@@ -19,6 +19,7 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
   diagnostics(filter?: DiagFilter): {
     toHaveCount(n: number): Promise<void>;
     toContainMessage(substring: string): Promise<void>;
+    toAllHaveAdoptedCommit(expected: string): Promise<void>;
   } {
     const h = this.h;
     const f = filter ?? {};
@@ -38,6 +39,24 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
           `expected a diagnostic message containing ${JSON.stringify(substring)}; ` +
             `searched ${rows.length} row(s) matching ${describeDiagFilter(f)}`,
         ).toBe(true);
+      },
+      /**
+       * Assert every matching row's `adopted_commit` column equals
+       * `expected`. Designed for the sub-Proposal frame-correctness
+       * scenarios (Phase 4a' fix-up): diagnostics emitted during a
+       * sub-adoption should be tagged with the sub-Proposal's head, not
+       * the parent's. Catches the closure-reuse bug class.
+       */
+      async toAllHaveAdoptedCommit(expected: string): Promise<void> {
+        const rows = queryDiagnostics(h, f);
+        const mismatches = rows.filter((r) => r.adoptedCommit !== expected);
+        expect(
+          mismatches.length,
+          `expected all ${rows.length} diagnostic row(s) to have ` +
+            `adopted_commit=${expected.slice(0, 7)}; ` +
+            `${mismatches.length} mismatched (first: ` +
+            `code=${mismatches[0]?.code} adopted=${mismatches[0]?.adoptedCommit.slice(0, 7)})`,
+        ).toBe(0);
       },
     };
   }
@@ -74,7 +93,21 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
 
 // ----- queries --------------------------------------------------------------
 
-type DiagRow = { id: number; severity: string; code: string; message: string };
+type DiagRow = {
+  id: number;
+  severity: string;
+  code: string;
+  message: string;
+  adoptedCommit: string;
+};
+
+type DiagRowSql = {
+  id: number;
+  severity: string;
+  code: string;
+  message: string;
+  adopted_commit: string;
+};
 
 function queryDiagnostics(h: Harness, f: DiagFilter): ReadonlyArray<DiagRow> {
   const clauses: string[] = [];
@@ -88,11 +121,18 @@ function queryDiagnostics(h: Harness, f: DiagFilter): ReadonlyArray<DiagRow> {
     params.push(f.code);
   }
   const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
-  return h.projection.raw
-    .query<DiagRow, string[]>(
-      `SELECT id, severity, code, message FROM diagnostics${where}`,
+  const rows = h.projection.raw
+    .query<DiagRowSql, string[]>(
+      `SELECT id, severity, code, message, adopted_commit FROM diagnostics${where}`,
     )
     .all(...params);
+  return rows.map((r) => ({
+    id: r.id,
+    severity: r.severity,
+    code: r.code,
+    message: r.message,
+    adoptedCommit: r.adopted_commit,
+  }));
 }
 
 type FactRow = { id: number };
