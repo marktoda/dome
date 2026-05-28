@@ -2,7 +2,7 @@
 //
 // Diagnostic dedup: re-running the same processor against the same content
 // (same source_refs) must not insert a duplicate row. The diagnostics
-// table's `UNIQUE (processor_id, code, proposal_id, source_refs_hash)`
+// table's `UNIQUE (processor_id, code, proposal_id, subject_hash)`
 // constraint enforces this at the SQL boundary; this scenario verifies the
 // behavior end-to-end.
 

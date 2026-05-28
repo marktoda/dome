@@ -138,17 +138,29 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + ")",
 
   // 4. diagnostics — DiagnosticEffect rows. UNIQUE (processor_id, code,
-  //    proposal_id, source_refs_hash) dedups when a processor re-emits
-  //    the same diagnostic at the same source location across retries —
-  //    but lets a single processor invocation surface many distinct
+  //    proposal_id, subject_hash) dedups when a processor re-emits the
+  //    same diagnostic at the same source location across retries — but
+  //    lets a single processor invocation surface many distinct
   //    diagnostics (e.g., validate-wikilinks finding N broken links
-  //    across different files). `source_refs_hash` is a sha256-hex of
-  //    the canonical JSON-stringified sourceRefs array.
+  //    across different files).
   //
-  //    Prior to the source_refs_hash discriminator, `UNIQUE (processor_id,
-  //    code, proposal_id)` collapsed all distinct diagnostics from one
-  //    processor in one proposal into a single row — masking real defects
-  //    in the user's vault.
+  //    `subject_hash` is content-based identity (path + range + stableId,
+  //    excluding commit + blob) so the dedup constraint correctly
+  //    collapses re-emissions across loop iterations against changing
+  //    candidate trees. Provenance-based identity (hashing the full
+  //    SourceRef including `commit` + `blob`) would change every
+  //    iteration when the patch loop advances the candidate, causing
+  //    the same diagnostic to insert twice — once anchored to the
+  //    user's commit, once to the closure commit — masking the
+  //    behavior the dedup constraint exists to enforce.
+  //
+  //    Prior shape `UNIQUE (processor_id, code, proposal_id)` (no hash)
+  //    collapsed all distinct diagnostics from one processor in one
+  //    proposal into a single row — masking real defects in the user's
+  //    vault. The intermediate `source_refs_hash` shape (hashing the
+  //    raw JSON of all SourceRef fields including commit) over-
+  //    distinguished across loop iterations; the current `subject_hash`
+  //    is the right granularity.
   //
   //    `proposal_id` is nullable for diagnostics not tied to a proposal
   //    (adoption-phase diagnostics emitted against the adopted ref).
@@ -158,13 +170,13 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "code TEXT NOT NULL,"
     + "message TEXT NOT NULL,"
     + "source_refs TEXT NOT NULL,"
-    + "source_refs_hash TEXT NOT NULL,"
+    + "subject_hash TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
     + "proposal_id TEXT,"
     + "adopted_commit TEXT NOT NULL,"
     + "written_at TEXT NOT NULL,"
     + "resolved_at TEXT,"
-    + "UNIQUE (processor_id, code, proposal_id, source_refs_hash)"
+    + "UNIQUE (processor_id, code, proposal_id, subject_hash)"
     + ")",
 
   // 5. questions — QuestionEffect rows. `idempotency_key` UNIQUE dedups

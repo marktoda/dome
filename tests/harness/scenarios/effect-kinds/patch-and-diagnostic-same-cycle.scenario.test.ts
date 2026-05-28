@@ -47,25 +47,30 @@ scenario(
     expect(closureCommits.length).toBe(1);
     await h.expectRef("refs/heads/main").toHaveAdvanced();
 
-    // Step 4: at least one diagnostic row from validate-wikilinks.
+    // Step 4: exactly one diagnostic row from validate-wikilinks.
     //
-    // Note: the adoption loop iterates twice in this scenario — once with
-    // the user's commit as the candidate (validate-wikilinks emits a
-    // diagnostic anchored to that commit), then again with the closure
-    // commit as the new candidate after normalize-frontmatter's patch
-    // landed (validate-wikilinks runs again and emits a second diagnostic
-    // anchored to the closure commit). The diagnostic-dedup constraint
-    // (UNIQUE on processor_id, code, proposal_id, source_refs_hash)
-    // distinguishes the two because the source ref's `commit` field
-    // differs between iterations — so two rows land, not one. The
-    // single-broken-link case in B2 produces exactly one row because
-    // there's no patch to extend the loop.
+    // The adoption loop iterates twice here — once with the user's commit
+    // as the candidate (validate-wikilinks emits a diagnostic), then
+    // again with the closure commit as the new candidate after
+    // normalize-frontmatter's patch landed (validate-wikilinks re-emits
+    // an equivalent diagnostic anchored to the new candidate).
+    //
+    // After H3, the diagnostic-dedup constraint (UNIQUE on processor_id,
+    // code, proposal_id, subject_hash) collapses cross-iteration
+    // re-emissions: subject_hash projects each SourceRef to
+    // {path, range, stableId} — dropping `commit` and `blob` — so the
+    // two emissions hash identically and the second is a silent no-op
+    // via INSERT OR IGNORE. Exactly one row lands.
+    //
+    // Pre-H3 (when subject_hash hashed the full SourceRef including
+    // commit), this assertion was relaxed to `>= 1` because the source
+    // ref's `commit` field varied per iteration and two rows landed.
     const diagRows = h.projection.raw
       .query<{ n: number }, []>(
         "SELECT COUNT(*) AS n FROM diagnostics WHERE code = 'dome.markdown.broken-wikilink'",
       )
       .all();
-    expect(diagRows[0]?.n).toBeGreaterThanOrEqual(1);
+    expect(diagRows[0]?.n).toBe(1);
 
     // Step 5: both processors have succeeded ledger rows.
     await h

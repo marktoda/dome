@@ -6,22 +6,33 @@
 // Normative references:
 //   - docs/wiki/specs/projection-store.md §"Tables — diagnostics"
 //     (column shape + UNIQUE (processor_id, code, proposal_id,
-//     source_refs_hash))
+//     subject_hash))
 //   - docs/wiki/specs/projection-store.md §"Query API" (read surface)
 //
 // House-style notes (matches src/projections/db.ts, src/projections/facts.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - JSON column `source_refs` serialized via `JSON.stringify`; symmetric
 //     `JSON.parse` on read.
-//   - `source_refs_hash` is sha256-hex of the canonical JSON-stringified
-//     sourceRefs array. Two diagnostics with identical sourceRefs hash to
-//     the same value — that's the dedup discriminator. Two diagnostics
-//     with distinct sourceRefs hash to different values and both insert.
+//   - `subject_hash` is sha256-hex of the CONTENT identity of the sourceRefs
+//     array: `{ path, range, stableId }` per ref, with `commit` and `blob`
+//     deliberately dropped. Two diagnostics anchored to the same vault span
+//     hash to the same value regardless of which candidate commit they
+//     were emitted against — that's the dedup discriminator.
+//
+//     Why content-based rather than provenance-based: the adoption loop
+//     re-runs processors against successive candidate commits. A
+//     `validate-wikilinks` diagnostic anchored at `wiki/foo.md` line 3
+//     should land exactly once even when the broker fires twice — once on
+//     the user's commit, again on the closure commit after a sibling
+//     `normalize-frontmatter` patch advanced the candidate. Hashing the
+//     full SourceRef (commit + blob included) over-distinguished those
+//     two emissions and let duplicate rows accumulate; hashing only the
+//     content shape collapses them.
 //   - Row → DiagnosticEffect deserialization goes through `diagnosticEffect`.
 //   - Returned arrays are `Object.freeze`'d.
 //   - INSERT uses `INSERT OR IGNORE` to honor the UNIQUE constraint: a
 //     re-emission of the same (processor_id, code, proposal_id,
-//     source_refs_hash) quadruple is a no-op.
+//     subject_hash) quadruple is a no-op.
 
 import { createHash } from "node:crypto";
 
@@ -54,7 +65,7 @@ export type ResolveDiagnosticOpts = {
 
 const INSERT_DIAGNOSTIC_SQL = `
 INSERT OR IGNORE INTO diagnostics (
-  severity, code, message, source_refs, source_refs_hash, processor_id,
+  severity, code, message, source_refs, subject_hash, processor_id,
   proposal_id, adopted_commit, written_at, resolved_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 `.trim();
@@ -106,11 +117,15 @@ type DiagnosticRow = {
 
 /**
  * Insert a DiagnosticEffect row. The table's `UNIQUE (processor_id, code,
- * proposal_id, source_refs_hash)` constraint means re-emission of the
- * same diagnostic at the same source location is silently deduped via
+ * proposal_id, subject_hash)` constraint means re-emission of the same
+ * diagnostic at the same source location is silently deduped via
  * `INSERT OR IGNORE` — but a single processor invocation that surfaces
  * many distinct diagnostics (e.g., validate-wikilinks finding N broken
  * links across N files) inserts all N rows.
+ *
+ * `subject_hash` excludes `commit` and `blob` so a diagnostic re-emitted
+ * against a successor candidate (the adoption loop's normal behavior when
+ * a sibling patch advances the tree) dedupes against the prior emission.
  *
  * Throws on SQLite-level failure (disk full).
  */
@@ -120,18 +135,41 @@ export function insertDiagnostic(
 ): void {
   const { effect, processorId, proposalId, adoptedCommit } = opts;
   const sourceRefsJson = JSON.stringify(effect.sourceRefs);
-  const sourceRefsHash = createHash("sha256").update(sourceRefsJson).digest("hex");
+  const subjectHash = computeSubjectHash(effect.sourceRefs);
   db.raw.query(INSERT_DIAGNOSTIC_SQL).run(
     effect.severity,
     effect.code,
     effect.message,
     sourceRefsJson,
-    sourceRefsHash,
+    subjectHash,
     processorId,
     proposalId,
     adoptedCommit,
     new Date().toISOString(),
   );
+}
+
+/**
+ * Compute the content-identity hash used as the dedup discriminator in
+ * `UNIQUE (processor_id, code, proposal_id, subject_hash)`. Projects each
+ * SourceRef to the content subset (`path`, `range`, `stableId`) and drops
+ * `commit` + `blob`. Two SourceRefs that anchor to the same vault location
+ * across different candidate commits hash to the same value.
+ *
+ * Range and stableId default to `null` (not `undefined`) so a ref with
+ * `range: undefined` and a ref that explicitly omits `range` hash to the
+ * same value — JSON.stringify drops `undefined` keys, but normalizing to
+ * `null` makes the projection self-documenting at the call site.
+ */
+function computeSubjectHash(
+  sourceRefs: ReadonlyArray<SourceRef>,
+): string {
+  const content = sourceRefs.map((r) => ({
+    path: r.path,
+    range: r.range ?? null,
+    stableId: r.stableId ?? null,
+  }));
+  return createHash("sha256").update(JSON.stringify(content)).digest("hex");
 }
 
 /**
