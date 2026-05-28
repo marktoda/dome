@@ -71,24 +71,22 @@ scenario(
     );
     expect(workingTree).toBe(userContent);
 
-    // Step 6: at least one normalize-frontmatter run is succeeded with
+    // Step 6: exactly one normalize-frontmatter run has a non-null
     // output_commit equal to HEAD (the closure commit). The adoption loop
     // produces two rows for this processor: one for the patch-emitting
     // iteration (its output_commit is back-filled to the closure OID) and
     // one for the convergence iteration that emitted no effects (its
-    // output_commit stays NULL). We only need the contributing-run row.
+    // output_commit stays NULL). The `withOutputCommit: true` filter
+    // narrows to the contributing-run row.
     await h
       .expectLedger({ processorId: "dome.markdown.normalize-frontmatter" })
       .toAllHaveStatus("succeeded");
-    const rows = h.ledger.raw
-      .query<
-        { output_commit: string | null },
-        [string]
-      >(
-        "SELECT output_commit FROM runs WHERE processor_id = ? AND output_commit IS NOT NULL",
-      )
-      .all("dome.markdown.normalize-frontmatter");
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]?.output_commit).toBe(refs.head);
+    const contributingRun = await h
+      .expectLedger({
+        processorId: "dome.markdown.normalize-frontmatter",
+        withOutputCommit: true,
+      })
+      .toHaveExactlyOne();
+    expect(contributingRun.outputCommit).toBe(refs.head);
   },
 );

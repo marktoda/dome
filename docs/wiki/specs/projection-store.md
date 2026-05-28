@@ -117,17 +117,29 @@ CREATE TABLE diagnostics (
   code              TEXT NOT NULL,        -- e.g., "wikilink.unresolved"
   message           TEXT NOT NULL,
   source_refs       TEXT NOT NULL,        -- JSON-encoded SourceRef[]
-  source_refs_hash  TEXT NOT NULL,        -- sha256-hex of source_refs JSON; dedup discriminator
+  subject_hash      TEXT NOT NULL,        -- sha256-hex of {path,range,stableId} per ref; dedup discriminator
   processor_id      TEXT NOT NULL,
   proposal_id       TEXT,                 -- nullable; null for diagnostics not tied to a proposal
   adopted_commit    TEXT NOT NULL,
   written_at        TEXT NOT NULL,
   resolved_at       TEXT,                 -- nullable; set when the diagnostic no longer applies
-  UNIQUE (processor_id, code, proposal_id, source_refs_hash)
+  UNIQUE (processor_id, code, proposal_id, subject_hash)
 );
 ```
 
-The `UNIQUE` constraint dedups when a processor re-emits the same diagnostic at the same source location across retries — but does NOT collapse multiple distinct diagnostics from one processor invocation (e.g., `validate-wikilinks` finding many broken links across many files all get their own rows because their `sourceRefs` differ). Prior to the `source_refs_hash` discriminator, the constraint was `UNIQUE (processor_id, code, proposal_id)` which silently merged all distinct diagnostics from one processor in one proposal into a single row.
+`subject_hash` is **content-based identity**, not provenance-based: each SourceRef projects to `{ path, range, stableId }` before hashing, dropping `commit` and `blob`. The discriminator's purpose is "is this the same finding on the same vault span?" — a question the candidate commit is independent of. Two diagnostics anchored to `wiki/foo.md` line 3 hash to the same `subject_hash` whether they were emitted against the user's commit or against a closure commit that advanced the candidate; the `UNIQUE` constraint then collapses the re-emission via `INSERT OR IGNORE`.
+
+The `UNIQUE` constraint therefore dedups two distinct cases under one rule:
+1. **Retry within one iteration** — a processor surfaces the same finding twice in one invocation (programmer bug or transient).
+2. **Re-emission across loop iterations** — the adoption fixed-point loop re-runs the processor against a successor candidate after a sibling PatchEffect advanced the tree; the same finding should land once, not once per iteration.
+
+It does NOT collapse multiple distinct diagnostics from one processor invocation: `validate-wikilinks` finding many broken links across many files gets one row per finding because their `(path, range)` differ.
+
+Two prior shapes have been retired:
+- `UNIQUE (processor_id, code, proposal_id)` (no hash) collapsed all distinct diagnostics from one processor in one proposal into a single row, masking real defects in the user's vault.
+- `UNIQUE (..., source_refs_hash)` where `source_refs_hash` hashed the full SourceRef including `commit` over-distinguished re-emissions across loop iterations: the same finding landed twice (once per candidate commit) instead of once.
+
+The structural fence is the [[wiki/scenarios/effect-kinds]] `patch-and-diagnostic-same-cycle` scenario, which asserts exactly one row when a sibling patch causes a re-iteration.
 
 ### `questions`
 

@@ -323,7 +323,21 @@ export async function adopt(opts: {
     let candidateAtIterationEnd: CommitOid = candidate;
 
     for (const { runId, processorId, declared, granted, effects } of runnerResults) {
-      contributingRunIds.add(runId);
+      // A run "contributes" to the closure commit iff at least one of its
+      // effects is a PatchEffect — those are what land via `applyPatch`
+      // and become part of the closure's content. Diagnostic-only runs
+      // and the post-patch convergence iteration (which emits 0 effects)
+      // don't contribute: their ledger row's `output_commit` stays NULL.
+      //
+      // Pre-H3 this set was populated unconditionally, so the closure
+      // back-fill landed `output_commit` on every iteration's run —
+      // including the convergence iter that didn't emit anything. That
+      // produced N+1 contributing-marked rows for an N-iteration patch
+      // loop, surfaced by `multiple-processors-same-commit.scenario` and
+      // `patch-effect-applies.scenario` failing with "got 2".
+      if (effects.some((e) => e.kind === "patch")) {
+        contributingRunIds.add(runId);
+      }
       emitEvent(onEvent, {
         kind: "processor-result",
         iteration,

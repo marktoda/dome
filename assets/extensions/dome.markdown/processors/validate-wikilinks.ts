@@ -116,9 +116,10 @@ const validateWikilinks: Processor = defineProcessor({
         // exact span where the wikilink appears in `changedPath`. The
         // character offsets are load-bearing: they disambiguate multiple
         // wikilinks on the same line (the diagnostic dedup key is
-        // (processor_id, code, proposal_id, source_refs_hash); without
-        // distinct char offsets, two broken wikilinks on one line would
-        // dedupe to a single row).
+        // (processor_id, code, proposal_id, subject_hash) where
+        // subject_hash projects each SourceRef to {path, range, stableId};
+        // without distinct char offsets, two broken wikilinks on one line
+        // would share a subject_hash and dedupe to a single row).
         diagnostics.push(
           diagnosticEffect({
             severity: "warning",

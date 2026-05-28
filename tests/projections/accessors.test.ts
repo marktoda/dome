@@ -228,7 +228,7 @@ describe("diagnostics accessor", () => {
     });
 
     // INSERT OR IGNORE on the UNIQUE (processor_id, code, proposal_id,
-    // source_refs_hash) means a re-emission of the same diagnostic at the
+    // subject_hash) means a re-emission of the same diagnostic at the
     // same source location is a silent no-op.
     const got = queryDiagnostics(db);
     expect(got.length).toBe(1);
@@ -271,6 +271,53 @@ describe("diagnostics accessor", () => {
     });
 
     expect(queryDiagnostics(db).length).toBe(2);
+  });
+
+  // Regression: subject_hash drops `commit` and `blob` from the dedup
+  // discriminator. Two diagnostics emitted against the same vault span
+  // (same path + range + stableId) but anchored to different candidate
+  // commits — the adoption loop's normal behavior when a sibling
+  // PatchEffect advances the tree mid-loop — must dedupe to one row.
+  // Pre-H3, the prior shape `source_refs_hash` (hashing the full
+  // SourceRef including commit) over-distinguished, leaving two rows.
+  it("diagnostics with same path+range but different SourceRef.commit dedup", () => {
+    const otherCommit = commitOid("fedcba0000000000000000000000000000000000");
+    const refAdopted = sourceRef({
+      commit: ADOPTED,
+      path: "wiki/x.md",
+      range: { startLine: 3, endLine: 3, startChar: 0, endChar: 12 },
+    });
+    const refOther = sourceRef({
+      commit: otherCommit,
+      path: "wiki/x.md",
+      range: { startLine: 3, endLine: 3, startChar: 0, endChar: 12 },
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "broken-link",
+        message: "broken link in x.md (iteration 1)",
+        sourceRefs: [refAdopted],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "broken-link",
+        message: "broken link in x.md (iteration 2)",
+        sourceRefs: [refOther],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+
+    // Same content identity → one row, regardless of which candidate
+    // commit anchored the emission.
+    expect(queryDiagnostics(db).length).toBe(1);
   });
 
   it("queryDiagnostics({severity: 'warning'}) filters by severity", () => {

@@ -150,6 +150,26 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
     },
 
     {
+      name: "LEDGER_ROW_OUTPUT_COMMITS_ARE_REACHABLE",
+      description:
+        "Every non-null output_commit on a ledger row exists in git",
+      check: async (h: Harness): Promise<void> => {
+        const rows = queryRuns(h.ledger);
+        for (const r of rows) {
+          if (r.outputCommit === null) continue;
+          const exists = await h.git.commitExists(r.outputCommit);
+          expect(
+            exists,
+            `LEDGER_ROW_OUTPUT_COMMITS_ARE_REACHABLE violated:\n` +
+              `  ledger row ${r.id} references output_commit ${r.outputCommit.slice(0, 7)} but git doesn't have it.\n` +
+              `  => The engine wrote an output_commit OID that doesn't resolve to a real object.\n` +
+              `    See src/engine/closure-commit.ts and docs/wiki/gotchas/run-succeeded-before-closure.md.`,
+          ).toBe(true);
+        }
+      },
+    },
+
+    {
       name: "CAPABILITY_USE_ROWS_REFERENCE_VALID_RUNS",
       description: "Every capability_uses.run_id matches a runs.id",
       check: async (h: Harness): Promise<void> => {

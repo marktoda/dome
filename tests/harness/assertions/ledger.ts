@@ -1,15 +1,22 @@
 // tests/harness/assertions/ledger.ts — LedgerMatcher implementation.
 //
-// Filters the runs table by an optional `{ processorId }` and exposes the
-// shape `LedgerMatcher` declares. Run rows are projected to the
-// `LedgerRunRowProjection` shape declared in `../types` so the matcher
-// stays decoupled from `RunRow` internals.
+// Filters the runs table by an optional `LedgerFilter` (processorId,
+// status, and/or `withOutputCommit` for NULL vs NOT NULL on
+// `output_commit`) and exposes the shape `LedgerMatcher` declares. Run
+// rows are projected to the `LedgerRunRowProjection` shape declared in
+// `../types` so the matcher stays decoupled from `RunRow` internals.
+//
+// `processorId` + `status` are forwarded to `queryRuns`; the
+// `withOutputCommit` predicate is applied in-process because `queryRuns`
+// does not expose an output-commit filter (the column is engine-write-
+// time metadata, not a query axis the ledger surface owns).
 
 import { expect } from "bun:test";
 
 import { orphanRuns, queryRuns, type RunRow } from "../../../src/ledger/runs";
 import type {
   Harness,
+  LedgerFilter,
   LedgerMatcher,
   LedgerRunRowProjection,
 } from "../types";
@@ -19,7 +26,7 @@ const ORPHAN_THRESHOLD_MS = 60_000;
 export class LedgerMatcherImpl implements LedgerMatcher {
   constructor(
     private readonly h: Harness,
-    private readonly filter: { processorId?: string },
+    private readonly filter: LedgerFilter,
   ) {}
 
   async toHaveCount(n: number): Promise<void> {
@@ -91,19 +98,40 @@ export class LedgerMatcherImpl implements LedgerMatcher {
   // ----- internals --------------------------------------------------------
 
   private queryMatching(): ReadonlyArray<RunRow> {
+    // Build the queryRuns filter from the subset of fields it understands.
+    // `withOutputCommit` is a post-filter (queryRuns doesn't expose it).
+    const baseFilter: { processorId?: string; status?: RunRow["status"] } = {};
     if (this.filter.processorId !== undefined) {
-      return queryRuns(this.h.ledger, {
-        processorId: this.filter.processorId,
-      });
+      baseFilter.processorId = this.filter.processorId;
     }
-    return queryRuns(this.h.ledger);
+    if (this.filter.status !== undefined) {
+      baseFilter.status = this.filter.status;
+    }
+    const rows =
+      Object.keys(baseFilter).length === 0
+        ? queryRuns(this.h.ledger)
+        : queryRuns(this.h.ledger, baseFilter);
+
+    if (this.filter.withOutputCommit === undefined) return rows;
+    const want = this.filter.withOutputCommit;
+    return rows.filter((r) =>
+      want ? r.outputCommit !== null : r.outputCommit === null,
+    );
   }
 
   private describeFilter(): string {
+    const parts: string[] = [];
     if (this.filter.processorId !== undefined) {
-      return `{ processorId: ${JSON.stringify(this.filter.processorId)} }`;
+      parts.push(`processorId: ${JSON.stringify(this.filter.processorId)}`);
     }
-    return "(no filter)";
+    if (this.filter.status !== undefined) {
+      parts.push(`status: ${JSON.stringify(this.filter.status)}`);
+    }
+    if (this.filter.withOutputCommit !== undefined) {
+      parts.push(`withOutputCommit: ${this.filter.withOutputCommit}`);
+    }
+    if (parts.length === 0) return "(no filter)";
+    return `{ ${parts.join(", ")} }`;
   }
 
   private dump(rows: ReadonlyArray<RunRow>): string {

@@ -70,6 +70,7 @@ import type {
   GitView,
   Harness,
   HarnessOpts,
+  LedgerFilter,
   LedgerMatcher,
   OutboxMatcher,
   ProjectionMatcher,
@@ -292,6 +293,7 @@ export class HarnessImpl implements Harness {
         diagnosticCount: 0,
         iterations: 0,
         adopted: true,
+        closureCommitOid: null,
       };
     }
     // drift.kind === "drift"
@@ -312,6 +314,7 @@ export class HarnessImpl implements Harness {
       diagnosticCount: result.diagnostics.length,
       iterations: result.iterations,
       adopted: result.adopted,
+      closureCommitOid: result.closureCommitOid,
     };
   }
 
@@ -426,7 +429,7 @@ export class HarnessImpl implements Harness {
     return new FileMatcherImpl(this, path, opts?.atCommit ?? null);
   }
 
-  expectLedger(filter?: { processorId?: string }): LedgerMatcher {
+  expectLedger(filter?: LedgerFilter): LedgerMatcher {
     return new LedgerMatcherImpl(this, filter ?? {});
   }
 

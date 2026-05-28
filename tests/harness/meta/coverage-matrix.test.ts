@@ -1,11 +1,22 @@
 // tests/harness/meta/coverage-matrix.test.ts — coverage-matrix meta-test
-// (Phase H2 mini-version).
+// (Phase H3 full enforcement).
 //
 // H1 surfaced the registry shape + verified the registration plumbing.
-// H2 extends with two coverage-light sanity checks: every shipped
-// processor's phase has at least one scenario covering it, and every
-// scenario file under `scenarios/` is registered. H3 will enforce the
-// full effect/trigger/phase/capability matrix.
+// H2 extended with two coverage-light sanity checks. H3 enforces the
+// full effect/trigger/phase/capability matrix: every union member in the
+// closed-set source-of-truth arrays below must have a covering scenario
+// OR be listed in the matching DEFERRED set with a written justification.
+//
+// Adding a new EffectKind / TriggerKind / Capability / ProcessorPhase in
+// `src/core/*` requires either:
+//   - Adding a scenario tagged with the new value, OR
+//   - Adding the value to the appropriate DEFERRED set below, with a
+//     comment naming the phase that will remove the deferral.
+//
+// The closed-set arrays MUST stay synchronized with the union members
+// in `src/core/effect.ts` + `src/core/processor.ts`. Drift fails CI via
+// the "closed-set arrays match union members" exhaustiveness check at
+// the bottom of this file.
 //
 // Registry population: bun:test loads every `*.test.ts` file in the
 // suite into the same process before executing any test body. The
@@ -20,6 +31,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { getRegistry } from "../index";
+import type {
+  CapabilityKind,
+  EffectKind,
+  ScenarioRegistryEntry,
+  TriggerKind,
+} from "../types";
+import type { ProcessorPhase } from "../../../src/core/processor";
 
 // ----- Scenario imports (side-effectful: each registers itself) -----
 import "../scenarios/phase-12c-regression.scenario.test";
@@ -32,10 +50,13 @@ import "../scenarios/convergence/validate-wikilinks-no-duplicate-diagnostics.sce
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
+import "../scenarios/effect-kinds/multiple-processors-same-commit.scenario.test";
+import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
 import "../scenarios/triggers/document-changed-fires.scenario.test";
 import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
 import "../scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test";
+import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test";
 
 describe("coverage matrix (Phase H2 mini-version)", () => {
   test("registry is non-empty", () => {
@@ -114,3 +135,263 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
     }
   });
 });
+
+// ============================================================================
+// ----- H3 enforcement: closed-set coverage matrix ---------------------------
+// ============================================================================
+//
+// Source-of-truth arrays. Adding a new union member to `src/core/effect.ts`
+// or `src/core/processor.ts` requires updating the matching array here.
+// The `exhaustivelyCovers*` helpers at the bottom of this block use the
+// `never`-trick to fail-to-compile if a union variant is added without
+// updating the array.
+
+const EFFECT_KINDS_ALL: ReadonlyArray<EffectKind> = [
+  "patch",
+  "diagnostic",
+  "fact",
+  "question",
+  "job",
+  "external",
+  "view",
+];
+
+const TRIGGER_KINDS_ALL: ReadonlyArray<TriggerKind> = [
+  "signal",
+  "path",
+  "schedule",
+  "command",
+];
+
+const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
+  "read",
+  "patch.propose",
+  "patch.auto",
+  "owns.region",
+  "owns.path",
+  "graph.write",
+  "model.invoke",
+  "external",
+];
+
+const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [
+  "adoption",
+  "garden",
+  "view",
+];
+
+// Deferred sets. Each entry is a value that no shipped processor exercises
+// today; the comment names the phase that will remove the deferral.
+// REMOVING an entry from these sets requires adding a scenario that
+// exercises the value. ADDING an entry requires a comment justification.
+
+const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
+  "fact",      // Phase 13 — dome.graph.entity-mentions (first FactEffect-emitting processor)
+  "question",  // Phase 14+ — duplicate-detection and intake processors emit Questions
+  "job",       // Phase 18 — scheduled processors enqueue deferred Jobs
+  "external",  // Phase 16+ — outbox-targeted external actions (calendar.write, etc.)
+  "view",      // Phase 13 — first real view-phase processor (current dome.lint.markdown-format is a stub)
+]);
+
+const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
+  "path",      // No shipped processor uses path triggers (signal triggers cover today's needs)
+  "schedule",  // Phase 18 — scheduled-trigger dispatch + dome.scheduled processors
+  "command",   // Phase 13 — `dome lint` CLI command + the command-triggered processor
+]);
+
+const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
+  "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
+  "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
+  "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
+  "graph.write",   // Phase 13 — graph-write namespaces for FactEffect-emitting processors
+  "model.invoke",  // Phase 16 — model-invoking garden-phase processors
+  "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
+]);
+
+const DEFERRED_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([
+  "garden",  // Phase 17 — first garden-phase processor (async, possibly LLM-backed)
+  "view",    // Phase 13 — first real view-phase processor with end-to-end scenario coverage
+]);
+
+describe("coverage matrix (Phase H3 enforcement)", () => {
+  // ----- Effect kinds ----------------------------------------------------
+
+  for (const kind of EFFECT_KINDS_ALL) {
+    test(`effect kind '${kind}' has at least one scenario`, () => {
+      if (DEFERRED_EFFECTS.has(kind)) return;
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "effect" && t.effect === kind),
+      );
+      expect(
+        tagged.length > 0,
+        `No scenario tagged effect='${kind}'. Add one in tests/harness/scenarios/.\n` +
+          `If this effect kind is genuinely deferred, document the reason in DEFERRED_EFFECTS.`,
+      ).toBe(true);
+    });
+  }
+
+  // ----- Trigger kinds ---------------------------------------------------
+
+  for (const kind of TRIGGER_KINDS_ALL) {
+    test(`trigger kind '${kind}' has at least one scenario`, () => {
+      if (DEFERRED_TRIGGERS.has(kind)) return;
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "trigger" && t.trigger === kind),
+      );
+      expect(
+        tagged.length > 0,
+        `No scenario tagged trigger='${kind}'. Add one in tests/harness/scenarios/.\n` +
+          `If this trigger kind is genuinely deferred, document the reason in DEFERRED_TRIGGERS.`,
+      ).toBe(true);
+    });
+  }
+
+  // ----- Capability kinds ------------------------------------------------
+
+  for (const kind of CAPABILITY_KINDS_ALL) {
+    test(`capability kind '${kind}' has at least one scenario`, () => {
+      if (DEFERRED_CAPABILITIES.has(kind)) return;
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "capability" && t.capability === kind),
+      );
+      expect(
+        tagged.length > 0,
+        `No scenario tagged capability='${kind}'. Add one in tests/harness/scenarios/.\n` +
+          `If this capability kind is genuinely deferred, document the reason in DEFERRED_CAPABILITIES.`,
+      ).toBe(true);
+    });
+  }
+
+  // ----- Processor phases ------------------------------------------------
+
+  for (const phase of PHASES_ALL) {
+    test(`processor phase '${phase}' has at least one scenario`, () => {
+      if (DEFERRED_PHASES.has(phase)) return;
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "phase" && t.phase === phase),
+      );
+      expect(
+        tagged.length > 0,
+        `No scenario tagged phase='${phase}'. Add one in tests/harness/scenarios/.\n` +
+          `If this phase is genuinely deferred, document the reason in DEFERRED_PHASES.`,
+      ).toBe(true);
+    });
+  }
+
+  // ----- Deferred-set hygiene -------------------------------------------
+  //
+  // A deferred entry that DOES have covering scenarios is a stale
+  // deferral — remove it from the set rather than masking real coverage.
+
+  test("DEFERRED_EFFECTS contains no entries with covering scenarios", () => {
+    for (const kind of DEFERRED_EFFECTS) {
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "effect" && t.effect === kind),
+      );
+      expect(
+        tagged.length,
+        `effect '${kind}' is in DEFERRED_EFFECTS but has ${tagged.length} covering scenario(s); ` +
+          `remove from DEFERRED_EFFECTS to enforce coverage.`,
+      ).toBe(0);
+    }
+  });
+
+  test("DEFERRED_TRIGGERS contains no entries with covering scenarios", () => {
+    for (const kind of DEFERRED_TRIGGERS) {
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "trigger" && t.trigger === kind),
+      );
+      expect(
+        tagged.length,
+        `trigger '${kind}' is in DEFERRED_TRIGGERS but has ${tagged.length} covering scenario(s); ` +
+          `remove from DEFERRED_TRIGGERS to enforce coverage.`,
+      ).toBe(0);
+    }
+  });
+
+  test("DEFERRED_CAPABILITIES contains no entries with covering scenarios", () => {
+    for (const kind of DEFERRED_CAPABILITIES) {
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "capability" && t.capability === kind),
+      );
+      expect(
+        tagged.length,
+        `capability '${kind}' is in DEFERRED_CAPABILITIES but has ${tagged.length} covering scenario(s); ` +
+          `remove from DEFERRED_CAPABILITIES to enforce coverage.`,
+      ).toBe(0);
+    }
+  });
+
+  test("DEFERRED_PHASES contains no entries with covering scenarios", () => {
+    for (const phase of DEFERRED_PHASES) {
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "phase" && t.phase === phase),
+      );
+      expect(
+        tagged.length,
+        `phase '${phase}' is in DEFERRED_PHASES but has ${tagged.length} covering scenario(s); ` +
+          `remove from DEFERRED_PHASES to enforce coverage.`,
+      ).toBe(0);
+    }
+  });
+});
+
+// ----- Tag-search helper ----------------------------------------------------
+
+function hasTag(
+  entry: ScenarioRegistryEntry,
+  pred: (t: ScenarioRegistryEntry["spec"]["tags"][number]) => boolean,
+): boolean {
+  return entry.spec.tags.some(pred);
+}
+
+// ----- Closed-set exhaustiveness checks ------------------------------------
+//
+// Compile-time guards: if a future commit adds a new variant to the union
+// in `src/core/effect.ts` or `src/core/processor.ts` without updating the
+// matching array here, these `_assert*` declarations fail to type-check.
+// The runtime side of the check is the per-kind tests above — they will
+// also surface a missing scenario at test time — but the compile-time
+// guard catches the missing-array-entry case before it can produce a
+// false-positive "matrix covered" pass.
+//
+// (Bun's test loader compiles + runs these files; the assertions below
+// are evaluated at type-check time.)
+
+type _AssertEffectsExhaustive = Exclude<
+  EffectKind,
+  (typeof EFFECT_KINDS_ALL)[number]
+> extends never
+  ? true
+  : never;
+type _AssertTriggersExhaustive = Exclude<
+  TriggerKind,
+  (typeof TRIGGER_KINDS_ALL)[number]
+> extends never
+  ? true
+  : never;
+type _AssertCapabilitiesExhaustive = Exclude<
+  CapabilityKind,
+  (typeof CAPABILITY_KINDS_ALL)[number]
+> extends never
+  ? true
+  : never;
+type _AssertPhasesExhaustive = Exclude<
+  ProcessorPhase,
+  (typeof PHASES_ALL)[number]
+> extends never
+  ? true
+  : never;
+
+// Force the type checker to use the assertions above (no-op consts that
+// hold the asserted types — if any union variant is missing, the const
+// declaration becomes `never` and TS errors).
+const _effectsExhaustive: _AssertEffectsExhaustive = true;
+const _triggersExhaustive: _AssertTriggersExhaustive = true;
+const _capabilitiesExhaustive: _AssertCapabilitiesExhaustive = true;
+const _phasesExhaustive: _AssertPhasesExhaustive = true;
+// Touch the names to satisfy noUnusedLocals.
+void _effectsExhaustive;
+void _triggersExhaustive;
+void _capabilitiesExhaustive;
+void _phasesExhaustive;

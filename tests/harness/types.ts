@@ -24,6 +24,7 @@
 
 import type { CommitOid } from "../../src/core/source-ref";
 import type { LedgerDb } from "../../src/ledger/db";
+import type { RunStatus } from "../../src/ledger/runs";
 import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { Capability, ProcessorPhase, Trigger } from "../../src/core/processor";
@@ -211,6 +212,14 @@ export type TickResult = {
   readonly iterations: number;
   /** Whether the adoption result reported `adopted: true`. */
   readonly adopted: boolean;
+  /**
+   * The closure commit OID this tick landed, or null when the loop
+   * reached a fixed point without engine writes. Mirrors
+   * `AdoptionResult.closureCommitOid`. Tests asserting "exactly one
+   * closure commit landed" can read this directly instead of scanning
+   * git history for `engine(`/`adopt:` subjects.
+   */
+  readonly closureCommitOid: CommitOid | null;
 };
 
 // ============================================================================
@@ -253,10 +262,23 @@ export type LedgerRunRowProjection = {
   readonly id: string;
   readonly processorId: string;
   readonly phase: ProcessorPhase;
-  readonly status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  readonly status: RunStatus;
   readonly inputCommit: CommitOid;
   readonly outputCommit: CommitOid | null;
   readonly error: string | null;
+};
+
+/**
+ * Filter shape for `Harness.expectLedger(...)`. All fields are optional;
+ * undefined means "no constraint on that axis". `withOutputCommit`
+ * filters by NULL vs NOT NULL on the `output_commit` column (true → only
+ * rows whose run produced a closure commit; false → only rows whose run
+ * did not). Composes with AND.
+ */
+export type LedgerFilter = {
+  readonly processorId?: string;
+  readonly status?: RunStatus;
+  readonly withOutputCommit?: boolean;
 };
 
 export interface LedgerMatcher {
@@ -383,7 +405,7 @@ export interface Harness {
   // ----- Assertions / matchers -----
   expectRef(name: string): RefMatcher;
   expectFile(path: string, opts?: { atCommit?: string }): FileMatcher;
-  expectLedger(filter?: { processorId?: string }): LedgerMatcher;
+  expectLedger(filter?: LedgerFilter): LedgerMatcher;
   expectProjection(): ProjectionMatcher;
   expectOutbox(): OutboxMatcher;
   expectCommit(commitRef: string): CommitMatcher;
