@@ -296,6 +296,118 @@ describe("runs lifecycle", () => {
     expect(JSON.parse(done?.error ?? "{}").code).toBe("processor.cancelled");
   });
 
+  it("new terminal statuses are queryable", () => {
+    const timedOut = newRunId(new Date(), () => "tooooo");
+    const cancelled = newRunId(new Date(Date.now() + 1), () => "canccl");
+    const succeeded = newRunId(new Date(Date.now() + 2), () => "okokok");
+    queue(timedOut);
+    queue(cancelled);
+    queue(succeeded);
+
+    markRunning(db, timedOut, new Date());
+    markTimedOut(db, {
+      id: timedOut,
+      error: {
+        code: "processor.timeout",
+        message: "processor exceeded timeout of 2000ms",
+        retryable: false,
+        phase: "adoption",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 2000,
+      finishedAt: new Date(),
+    });
+
+    markRunning(db, cancelled, new Date());
+    markCancelled(db, {
+      id: cancelled,
+      error: {
+        code: "processor.cancelled",
+        message: "processor cancelled during shutdown",
+        retryable: false,
+        phase: "garden",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 100,
+      finishedAt: new Date(),
+    });
+
+    markRunning(db, succeeded, new Date());
+    markSucceeded(db, {
+      id: succeeded,
+      effectHashes: [],
+      costUsd: null,
+      durationMs: 50,
+      outputCommit: null,
+      finishedAt: new Date(),
+    });
+
+    const timedOutRows = queryRuns(db, { status: "timed_out" });
+    expect(timedOutRows.length).toBe(1);
+    expect(timedOutRows[0]?.id).toBe(timedOut);
+
+    const cancelledRows = queryRuns(db, { status: "cancelled" });
+    expect(cancelledRows.length).toBe(1);
+    expect(cancelledRows[0]?.id).toBe(cancelled);
+  });
+
+  it("new terminal transitions only apply from running", () => {
+    const queued = newRunId(new Date(), () => "queued");
+    const timedOut = newRunId(new Date(Date.now() + 1), () => "timout");
+    queue(queued);
+    queue(timedOut);
+
+    markTimedOut(db, {
+      id: queued,
+      error: {
+        code: "processor.timeout",
+        message: "processor exceeded timeout of 2000ms",
+        retryable: false,
+        phase: "adoption",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 2000,
+      finishedAt: new Date(),
+    });
+
+    const stillQueued = getRun(db, queued);
+    expect(stillQueued?.status).toBe("queued");
+    expect(stillQueued?.error).toBeNull();
+    expect(stillQueued?.durationMs).toBeNull();
+    expect(stillQueued?.finishedAt).toBeNull();
+
+    markRunning(db, timedOut, new Date());
+    markTimedOut(db, {
+      id: timedOut,
+      error: {
+        code: "processor.timeout",
+        message: "processor exceeded timeout of 2000ms",
+        retryable: false,
+        phase: "adoption",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 2000,
+      finishedAt: new Date("2026-05-27T12:00:03.000Z"),
+    });
+    markCancelled(db, {
+      id: timedOut,
+      error: {
+        code: "processor.cancelled",
+        message: "processor cancelled during shutdown",
+        retryable: false,
+        phase: "garden",
+        processorId: "dome.intake.extract",
+      },
+      durationMs: 100,
+      finishedAt: new Date("2026-05-27T12:00:04.000Z"),
+    });
+
+    const terminal = getRun(db, timedOut);
+    expect(terminal?.status).toBe("timed_out");
+    expect(terminal?.durationMs).toBe(2000);
+    expect(JSON.parse(terminal?.error ?? "{}").code).toBe("processor.timeout");
+  });
+
   it("queued → skipped transitions a dedup-cached run", () => {
     const id = freshId();
     queue(id);

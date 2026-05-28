@@ -1,19 +1,10 @@
 import { diagnosticEffect, type DiagnosticEffect } from "../core/effect";
-import type { ProcessorPhase } from "../core/processor";
+import type { ProcessorExecutionError } from "../engine/runner-contract";
 
-export type ProcessorExecutionErrorCode =
-  | "processor.threw"
-  | "processor.invalid-output"
-  | "processor.timeout"
-  | "processor.cancelled";
-
-export type ProcessorExecutionError = {
-  readonly code: ProcessorExecutionErrorCode;
-  readonly message: string;
-  readonly retryable: boolean;
-  readonly phase: ProcessorPhase;
-  readonly processorId: string;
-};
+export type {
+  ProcessorExecutionError,
+  ProcessorExecutionErrorCode,
+} from "../engine/runner-contract";
 
 export function makeExecutionError(
   input: ProcessorExecutionError,

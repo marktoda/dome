@@ -84,8 +84,10 @@ import { randomBytes } from "node:crypto";
 
 import type { ProcessorPhase } from "../core/processor";
 import { commitOid, type CommitOid } from "../core/source-ref";
-import { type RunId } from "../engine/runner-contract";
-import type { ProcessorExecutionError } from "../processors/execution-error";
+import {
+  type ProcessorExecutionError,
+  type RunId,
+} from "../engine/runner-contract";
 import type { LedgerDb } from "./db";
 
 // ----- Branded RunId --------------------------------------------------------

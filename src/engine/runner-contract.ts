@@ -24,7 +24,7 @@
 //     `./compile-range`, plus the `EngineVault` type from `./vault-shape`.
 
 import type { Effect } from "../core/effect";
-import type { Capability } from "../core/processor";
+import type { Capability, ProcessorPhase } from "../core/processor";
 import type { Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import type { SignalEvent } from "./compile-range";
@@ -47,6 +47,22 @@ import type { EngineVault } from "./vault-shape";
 
 /** A ledger run id, formatted `run_<unix-ms>_<6-char-rand>` per spec. */
 export type RunId = string & { readonly __brand: "RunId" };
+
+// ----- ProcessorExecutionError ---------------------------------------------
+
+export type ProcessorExecutionErrorCode =
+  | "processor.threw"
+  | "processor.invalid-output"
+  | "processor.timeout"
+  | "processor.cancelled";
+
+export type ProcessorExecutionError = {
+  readonly code: ProcessorExecutionErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly phase: ProcessorPhase;
+  readonly processorId: string;
+};
 
 // ----- AdoptionPhaseRunner --------------------------------------------------
 
