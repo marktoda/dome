@@ -30,7 +30,6 @@
 
 import type {
   DiagnosticEffect,
-  Effect,
   ViewEffect,
 } from "../core/effect";
 import type { CommitOid } from "../core/source-ref";
@@ -181,7 +180,3 @@ export async function runViewCommand(opts: {
   });
 }
 
-// Type marker — silences unused-import warning until a follow-up makes
-// `Effect` referenced by the file body (e.g., for streaming/structured
-// content handling). Phase 4b's contract is ViewEffect-only.
-type _EffectIsUsedInDocs = Effect;

@@ -68,15 +68,42 @@ A garden-phase processor that emits a `PatchEffect` (per [[wiki/specs/effects]] 
 
 ```text
 engine routes PatchEffect{patch, reason, sourceRefs}
-  → applies patch to a fresh branch refs/heads/dome/garden/<processorId>/<runId>
+  → broker enforces capability (via enforceCapability in src/engine/capability-broker.ts)
+  → if allowed: applies patch to the adopted tree via applyPatchToCandidate
+                producing a new commit object (no ref yet)
   → constructs Proposal{
       id: "prop_<unix-ms>_<rand>",
       base: refs/dome/adopted/<branch>,
-      head: <new branch tip>,
+      head: <new commit OID>,
       source: { kind: "garden", processorId, runId },
     }
   → routes Proposal through the same adoption loop
 ```
+
+**Implementation note (v1.0 — Phase 4a').** The new commit object created
+from the patch is an *orphan* — no ref points at it initially. When the
+sub-Proposal's adoption succeeds, the adopted ref + the branch ref
+(`refs/heads/<branch>`) advance to include the commit in their history,
+at which point it's no longer orphan. When the sub-Proposal's adoption
+*blocks*, the commit stays unreachable until `git gc` collects it.
+
+This differs from the original spec sketch (which proposed
+`refs/heads/dome/garden/<processorId>/<runId>` as a visibility ref
+before adoption). The orphan-commit approach is operationally simpler
+(no ref-lifecycle management, no stale-branch cleanup) and the
+post-adoption visibility through the regular branch history is
+sufficient for v1.0. A v1.x polish may reintroduce the dedicated garden
+refs if pre-adoption visibility ("what garden work is pending right
+now") becomes operationally important — see
+[[cohesive/brainstorms/2026-05-27-v1-engine-completion]] for the
+relevant phase-tracking.
+
+**Cascade.** Garden-emitted sub-Proposals fire their own garden phase
+when adopted, which may emit more PatchEffects, which spawn more sub-
+Proposals. A `DEFAULT_MAX_CASCADE_DEPTH` cap (default 10, in
+`src/engine/garden.ts`) prevents pathological recursion; cap-hit emits
+a `garden.cascade-cap` DiagnosticEffect (see
+[[wiki/gotchas/garden-cascade-cap]]).
 
 A garden processor cannot bypass adoption. The engine is the only entity that constructs a Proposal from a garden effect, and the engine always routes it through the loop. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 

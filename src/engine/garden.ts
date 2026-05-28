@@ -55,6 +55,7 @@ import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { applyPatchToCandidate } from "./apply-patch";
 import { enforceCapability } from "./capability-broker";
 import type { SignalEvent } from "./compile-range";
+import { deriveExtensionId } from "../extensions/id-helpers";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import type { GardenPhaseRunner, RunId } from "./runner-contract";
@@ -128,11 +129,15 @@ export type GardenRunSummary = {
   readonly processorId: string;
   readonly effectCount: number;
   /**
-   * Count of PatchEffects this processor emitted that spawned a
-   * sub-Proposal. May be less than the total PatchEffects emitted if
-   * some were broker-denied or hit the cascade cap.
+   * Count of PatchEffects this processor emitted that the broker
+   * authorized for sub-Proposal spawn (neither denied nor downgraded).
+   * This counts the **authorized intake**, not the actual spawned count
+   * — patches authorized but skipped because the cap was hit or no
+   * `adoptSubProposal` callback was wired are still counted here. The
+   * aggregate `subProposalCount` field on `GardenPhaseResult` carries
+   * the actual spawned count.
    */
-  readonly subProposalCount: number;
+  readonly authorizedPatchCount: number;
 };
 
 // ----- AdoptSubProposalFn ---------------------------------------------------
@@ -184,8 +189,16 @@ export type AdoptSubProposalFn = (
  * a sub-Proposal blocking) do NOT undo adoption. By the time this is
  * called, the adopted ref has already advanced.
  *
- * Returns the aggregated `GardenPhaseResult`; never throws. Caller is
- * expected to thread the result into its own telemetry / event stream.
+ * Returns the aggregated `GardenPhaseResult`. **Never throws** —
+ * substrate-level failures (sink throws, applyPatchToCandidate throws,
+ * sub-adoption throws) are caught and synthesized into a
+ * `garden.crashed` DiagnosticEffect added to the result's `diagnostics`
+ * array. Adoption has already completed by the time garden runs, so a
+ * crash here doesn't roll back vault state — but the operator should
+ * see the crash, hence the synthesis + an stderr line. The crash
+ * diagnostic is in-memory only (not written to `projection.db`) since
+ * there's no concrete `processorId` + `runId` to anchor a row to; a
+ * v1.x polish may attach it to a synthetic `engine.garden` run.
  */
 export async function runGardenPhase(opts: {
   readonly vault: EngineVault;
@@ -209,6 +222,55 @@ export async function runGardenPhase(opts: {
   /** Current cascade depth. Top-level call passes 0 (or omits). */
   readonly cascadeDepth?: number;
   /** Cap on cascade recursion. Defaults to `DEFAULT_MAX_CASCADE_DEPTH`. */
+  readonly maxCascadeDepth?: number;
+}): Promise<GardenPhaseResult> {
+  const cascadeDepth = opts.cascadeDepth ?? 0;
+  try {
+    return await runGardenPhaseInner(opts);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const crashDiag = diagnosticEffect({
+      severity: "error",
+      code: "garden.crashed",
+      message:
+        `Garden orchestrator crashed during runGardenPhase at ` +
+        `depth=${cascadeDepth}: ${msg}`,
+      sourceRefs: [],
+    });
+    // Operator visibility — adoption has already advanced; without this
+    // log the crash is invisible at the CLI surface.
+    console.warn(
+      `dome: garden phase crashed (proposal=${opts.proposal.id}, ` +
+        `depth=${cascadeDepth}): ${msg}`,
+    );
+    return frozenResult({
+      proposalId: opts.proposal.id,
+      runs: [],
+      subProposalCount: 0,
+      rejectedPatchCount: 0,
+      diagnostics: [crashDiag],
+      cascadeDepth,
+    });
+  }
+}
+
+/**
+ * The orchestrator body, unwrapped from the try/catch. Splitting the
+ * crash-handling from the happy path keeps the inner function focused
+ * on the routing logic without throw-aware bookkeeping at every
+ * await.
+ */
+async function runGardenPhaseInner(opts: {
+  readonly vault: EngineVault;
+  readonly proposal: Proposal;
+  readonly adopted: CommitOid;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly signals: ReadonlyArray<SignalEvent>;
+  readonly runGardenProcessors: GardenPhaseRunner;
+  readonly sinks: ApplyEffectSinks;
+  readonly ledger?: LedgerDb;
+  readonly adoptSubProposal?: AdoptSubProposalFn;
+  readonly cascadeDepth?: number;
   readonly maxCascadeDepth?: number;
 }): Promise<GardenPhaseResult> {
   const {
@@ -382,7 +444,7 @@ export async function runGardenPhase(opts: {
         runId: result.runId,
         processorId: result.processorId,
         effectCount: result.effects.length,
-        subProposalCount: spawnCountByProcessor.get(result.processorId) ?? 0,
+        authorizedPatchCount: spawnCountByProcessor.get(result.processorId) ?? 0,
       }),
     );
   }
@@ -506,24 +568,26 @@ function capabilityForPatch(effect: PatchEffect): string {
  * checks every patched path; for the audit trail we record the first
  * (most representative). A more complete audit could record all paths
  * but `resource` is scalar in v1.0.
+ *
+ * Implementation note: line-scan rather than regex-with-trailing-newline.
+ * The earlier regex `\+\+\+ b\/(.+?)\n` required a trailing newline and
+ * silently returned null for patches that ended at the header line —
+ * a real footgun for short patches or patches without final EOL. The
+ * line-scan is straightforwardly robust.
  */
 function firstPatchedPath(effect: PatchEffect): string | null {
   // The patch text starts with `--- a/<path>` / `+++ b/<path>` headers.
   // Extract the first `+++ b/<path>` (the destination — `--- a/<path>`
   // may be `/dev/null` for file creation).
-  const match = /\+\+\+ b\/(.+?)\n/.exec(effect.patch);
-  return match?.[1] ?? null;
+  for (const line of effect.patch.split("\n")) {
+    if (line.startsWith("+++ b/")) {
+      const path = line.slice("+++ b/".length).trim();
+      return path.length > 0 ? path : null;
+    }
+  }
+  return null;
 }
 
-/**
- * Convention: first two dotted segments of a processor id name the bundle
- * (e.g., `dome.intake.extract-capture` → bundle `dome.intake`). Mirror of
- * the same helper in `sync-shared.ts`; duplicated here so this module
- * doesn't import from `cli/`.
- */
-function deriveExtensionId(processorId: string): string {
-  const segments = processorId.split(".");
-  if (segments.length === 0) return processorId;
-  if (segments.length === 1) return processorId;
-  return `${segments[0]}.${segments[1]}`;
-}
+// `deriveExtensionId` lives in `src/extensions/id-helpers.ts` (Phase 4a'
+// fix-up) so the convention has one source of truth shared by this
+// orchestrator and `src/cli/commands/sync-shared.ts`'s `realApplyPatch`.
