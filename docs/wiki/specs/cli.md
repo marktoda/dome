@@ -23,7 +23,9 @@ dome rebuild                    Wipe and rebuild projection store from adopted c
 dome stats                      Vault size / processor counts / ledger summary.
 dome doctor [--repair] [--show <subject>] [--<flag>]
                                 Diagnostic and maintenance command.
-dome serve [--vault <path>]     Run the compiler daemon (watcher + scheduled processors).
+dome serve [--vault <path>] [--poll-interval-ms <n>]
+                                Run the commit-watcher daemon. Polls refs/heads/<branch>
+                                every 500ms; constructs a manual Proposal and adopts on drift.
 dome export-context <topic>     Render a portable context packet for cross-AI handoff.
 dome migrate                    Upgrade vault for newer SDK schema.
 dome run-processor <id> [--args ...]
@@ -152,18 +154,26 @@ Flags:
 - `--time-since-reconcile` — read `.dome/state/last-reconcile-mtime.txt`; report drift age.
 - `--check-all` — run every validation check; aggregate violations.
 
-### `dome serve [--vault <path>] [--port <n>] [--mcp]`
+### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 
-Runs the compiler daemon. Composition:
+Runs the commit-watcher daemon — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the daemon catches up by adopting the new HEAD.
 
-1. `openVault(path)` constructs the Vault.
-2. Starts the working-tree watcher (chokidar over `<vault>/wiki/`, `raw/`, `notes/`, `inbox/`).
-3. Starts the scheduled-trigger dispatcher (consults `projection_store.schedule_cursors`).
-4. On each watcher event, constructs a `manual`-source Proposal via `makeManualProposal` and routes it through the engine's `adopt()`. Adoption runs; effects route per `apply-effect.ts`.
-5. On each scheduled cron tick, fires the matching garden-phase processors.
-6. If `--mcp` is passed, also starts the MCP server (per [[wiki/specs/mcp-surface]]).
+Composition (v1.0):
 
-Stays running until SIGINT / SIGTERM; on shutdown, `vault.close()` drains processors and releases handles.
+1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the three operational databases (`projection.db`, `outbox.db`, `runs.db`) and loads the extension bundles from `<vault>/.dome/extensions/`.
+2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
+3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
+   - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
+   - If HEAD equals the adopted ref: no-op (steady state).
+   - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
+4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's `applyPatch` / `captureView` placeholder sinks (which log + drop in v1.0 — the candidate-tree mutator + view delivery wiring lands in v1.1).
+5. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
+
+The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
+
+The scheduled-trigger dispatcher (garden-phase cron processors) and the `--mcp` toggle are deferred to v1.1.
+
+Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 
 ### `dome export-context <topic>`
 

@@ -2,12 +2,12 @@
 //
 // Dome CLI entry — v1 minimal surface.
 //
-// Commands shipped in v1.0: init, doctor, status. The full CLI surface
-// per [[wiki/specs/cli]] has 14 commands; v1.0 ships the most-essential to
-// prove the v1 stack works end-to-end. The watcher daemon (`dome serve`)
-// and the user-facing `dome sync` land in Phase 11b/c; the wrong-shape
+// Commands shipped in v1.0: init, doctor, status, serve. The full CLI
+// surface per [[wiki/specs/cli]] has 14 commands; v1.0 ships the most-
+// essential to prove the v1 stack works end-to-end. The user-facing
+// `dome sync` (one-shot catch-up) lands in Phase 11c; the wrong-shape
 // `dome submit` was retired in Phase 11a (the canonical write path is
-// `git commit` + daemon).
+// `git commit` + the `dome serve` watcher daemon).
 //
 // This file's two responsibilities:
 //
@@ -28,6 +28,7 @@
 import { parseArgs, type ParsedArgs } from "./args";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
+import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 
 // ----- runCli ---------------------------------------------------------------
@@ -54,6 +55,8 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
       return runInit(args);
     case "doctor":
       return runDoctor(args);
+    case "serve":
+      return runServe(args);
     case "status":
       return runStatus(args);
     case "help":
@@ -79,6 +82,7 @@ function printUsage(): void {
       "  init [path]                      Initialize a vault.",
       "  doctor --show <subject>          Read-only diagnostic view.",
       "         [--limit <n>] [--json]    Subjects: runs, diagnostics, questions, outbox.",
+      "  serve [--poll-interval-ms <n>]   Run the commit-watcher daemon.",
       "  status [--json]                  Read-only adoption snapshot.",
       "",
       "Common flags:",
