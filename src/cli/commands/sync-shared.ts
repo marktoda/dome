@@ -41,6 +41,7 @@ import {
   type AdoptSubProposalFn,
 } from "../../engine/garden";
 import type { VaultRuntime } from "../../engine/vault-runtime";
+import { deriveExtensionId } from "../../extensions/id-helpers";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { currentSha } from "../../git";
@@ -237,81 +238,81 @@ export async function runOneAdoption(opts: {
     branch: drift.branch,
   });
 
-  // Phase 12a: real `applyPatch` wiring. The candidate-tree mutator
-  // applies each PatchEffect's unified diff to the candidate tree via
-  // git plumbing (no working-tree touch) and returns the new candidate
-  // OID. The adoption loop threads the OID through subsequent iterations
-  // via `ApplyEffectResult.newCandidate`. See
-  // docs/wiki/specs/adoption.md §"The fixed-point adoption loop" and
-  // `src/engine/apply-patch.ts`.
-  const realApplyPatch: ApplyEffectSinks["applyPatch"] = async ({
-    effect,
-    processorId,
-    runId,
-    candidate,
-  }) => {
-    // Only `mode: "auto"` patches mutate the candidate tree in the
-    // adoption phase. Per docs/wiki/specs/effects.md §"PatchEffect" routing,
-    // `mode: "propose"` patches are surfaced as diagnostics for human
-    // review (`dome lint --apply`) rather than landed inline. Surfacing
-    // the propose-diagnostic is a separate seam (Phase 12b); here we just
-    // drop the propose branch so the candidate doesn't advance.
-    if (effect.mode !== "auto") return null;
-
-    const result = await applyPatchToCandidate({
-      vaultPath: runtime.path,
-      candidate,
-      patch: effect,
-      runContext: {
-        runId,
-        processorId,
-        // Derive the originating bundle id from the processor id's first
-        // dotted segment (e.g., `dome.markdown.normalize` → `dome.markdown`).
-        // For ids without a dot, the whole id is the extension id.
-        extensionId: deriveExtensionId(processorId),
-        base: drift.base,
-        sourceHead: drift.head,
-      },
-    });
-
-    if (result === null) {
-      // Soft failure surface: the patch didn't apply against the
-      // candidate (malformed diff, drifted content, no recognizable
-      // header). Log a warning here so operators see the dropped
-      // patch; the loop continues with the candidate unchanged. The
-      // adoption fixed-point check will treat this iteration as
-      // having an auto-patch in `effectsThisIteration` (which keeps
-      // the loop going) until either MAX_ITER hits or the processor
-      // emits something the sink can apply.
-      console.warn(
-        `dome: applyPatch dropped — patch from ${processorId} did not apply ` +
-          `against candidate ${candidate.slice(0, 12)}`,
-      );
-    }
-
-    return result;
+  const vault = {
+    path: runtime.path,
+    config: { git: { auto_commit_workflows: true } },
   };
 
-  const sinks = buildSqliteSinks({
-    projectionDb: runtime.projectionDb,
-    outboxDb: runtime.outboxDb,
-    adoptedCommit: drift.head,
-    applyPatch: realApplyPatch,
-    captureView: captureViewPlaceholder,
-  });
+  // Phase 4a' fix-up: sinks and the `applyPatch` closure are
+  // frame-aware — each carries the `(base, head)` of the specific
+  // Proposal being adopted. Building them per-Proposal (rather than
+  // once at runOneAdoption entry and reusing for sub-Proposals)
+  // ensures the engine commits stamped during sub-Proposal adoption
+  // carry the *sub*-Proposal's base/sourceHead in their Dome-* trailers
+  // (per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]) and
+  // projection rows emitted during sub-adoption are keyed to the
+  // sub-Proposal's adopted commit (per [[wiki/specs/projection-store]]
+  // §"Cache key"). The pre-fix-up shape captured `drift.base`/
+  // `drift.head` once and reused them recursively — incorrect.
+  const sinksFor = (frame: { base: CommitOid; head: CommitOid }): ApplyEffectSinks => {
+    const realApplyPatch: ApplyEffectSinks["applyPatch"] = async ({
+      effect,
+      processorId,
+      runId,
+      candidate,
+    }) => {
+      // Only `mode: "auto"` patches mutate the candidate tree in the
+      // adoption phase. Per docs/wiki/specs/effects.md §"PatchEffect"
+      // routing, `mode: "propose"` patches are surfaced as diagnostics
+      // for human review (`dome lint --apply`) rather than landed inline.
+      // Surfacing the propose-diagnostic is a separate seam (Phase 12b);
+      // here we just drop the propose branch so the candidate doesn't
+      // advance.
+      if (effect.mode !== "auto") return null;
+
+      const result = await applyPatchToCandidate({
+        vaultPath: runtime.path,
+        candidate,
+        patch: effect,
+        runContext: {
+          runId,
+          processorId,
+          extensionId: deriveExtensionId(processorId),
+          base: frame.base,
+          sourceHead: frame.head,
+        },
+      });
+
+      if (result === null) {
+        console.warn(
+          `dome: applyPatch dropped — patch from ${processorId} did not apply ` +
+            `against candidate ${candidate.slice(0, 12)}`,
+        );
+      }
+
+      return result;
+    };
+
+    return buildSqliteSinks({
+      projectionDb: runtime.projectionDb,
+      outboxDb: runtime.outboxDb,
+      adoptedCommit: frame.head,
+      applyPatch: realApplyPatch,
+      captureView: captureViewPlaceholder,
+    });
+  };
+
+  const sinks = sinksFor({ base: proposal.base, head: proposal.head });
 
   const adoptOpts: {
-    vault: { path: string; config: { git: { auto_commit_workflows: boolean } } };
+    vault: typeof vault;
     proposal: typeof proposal;
     runAdoptionProcessors: typeof runtime.processorRuntime.adoptionRunner;
-    sinks: typeof sinks;
+    sinks: ApplyEffectSinks;
     ledger: typeof runtime.ledgerDb;
     onEvent?: (event: AdoptEvent) => void;
   } = {
-    vault: {
-      path: runtime.path,
-      config: { git: { auto_commit_workflows: true } },
-    },
+    vault,
     proposal,
     runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
     sinks,
@@ -335,6 +336,11 @@ export async function runOneAdoption(opts: {
   // `cascadeDepth + 1`; the cap is enforced at the orchestrator level
   // (per `DEFAULT_MAX_CASCADE_DEPTH`).
   //
+  // Sub-Proposal sinks are built fresh per sub-Proposal frame via
+  // `sinksFor(...)` so the projection-row `adopted_commit` column and
+  // the engine-commit `Dome-Base` / `Dome-Source-Head` trailers are
+  // correctly scoped to each sub-Proposal (Phase 4a' fix-up).
+  //
   // See [[wiki/specs/processors]] §"Garden phase" and Phases 4a + 4a'
   // in [[cohesive/brainstorms/2026-05-27-v1-engine-completion]].
   if (adoptionResult.adopted) {
@@ -346,9 +352,14 @@ export async function runOneAdoption(opts: {
       subProposal,
       cascadeDepth,
     ) => {
+      const subSinks = sinksFor({
+        base: subProposal.base,
+        head: subProposal.head,
+      });
       const subAdoptOpts: typeof adoptOpts = {
         ...adoptOpts,
         proposal: subProposal,
+        sinks: subSinks,
       };
       const subResult = await adopt(subAdoptOpts);
       if (subResult.adopted) {
@@ -364,7 +375,7 @@ export async function runOneAdoption(opts: {
           changedPaths: subCompiled.changedPaths,
           signals: subCompiled.signals,
           runGardenProcessors: runtime.processorRuntime.gardenRunner,
-          sinks,
+          sinks: subSinks,
           ledger: runtime.ledgerDb,
           adoptSubProposal,
           cascadeDepth,
@@ -395,27 +406,10 @@ export async function runOneAdoption(opts: {
   return adoptionResult;
 }
 
-// ----- deriveExtensionId ---------------------------------------------------
-
-/**
- * Derive the originating bundle id from a fully-qualified processor id.
- * The convention (per docs/wiki/specs/processors.md) is that processor ids
- * are dotted names whose first two segments name the bundle (e.g.,
- * `dome.markdown.normalize-frontmatter` → bundle `dome.markdown`). For
- * less-canonical ids, return the first segment; for ids without a dot,
- * return the whole id unchanged.
- *
- * Used to stamp the `Dome-Extension` trailer on engine commits the
- * Phase 12a `applyPatch` sink writes — that trailer is the bundle id, not
- * the processor id, per the trailer spec.
- */
-function deriveExtensionId(processorId: string): string {
-  const segments = processorId.split(".");
-  if (segments.length === 0) return processorId;
-  if (segments.length === 1) return processorId;
-  // Convention: first two dotted segments are the bundle id.
-  return `${segments[0]}.${segments[1]}`;
-}
+// `deriveExtensionId` moved to `src/extensions/id-helpers.ts` (Phase 4a'
+// fix-up) so both this module and `src/engine/garden.ts` can share one
+// source of truth for the convention. See the imported function for
+// the full doc.
 
 // ----- Placeholder sinks (v1.0) ---------------------------------------------
 

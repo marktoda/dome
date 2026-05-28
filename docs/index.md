@@ -67,6 +67,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-last-sync.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` refuses to run during mid-merge / mid-rebase.
 - [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declare the same page-type / processor / capability handler; `openVault` rejects with `bundle-load-failure`.
+- [[wiki/gotchas/garden-cascade-cap]] — Garden-emitted PatchEffects can recursively spawn sub-Proposals; depth cap (default 10) emits `garden.cascade-cap` diagnostic on hit.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page Proposals that adopt only some pages on block — atomic adoption mitigates.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); watcher catches them and constructs Proposals.
 - [[wiki/gotchas/outbox-stuck]] — External-action retries exhausted; manual replay / abandon via `dome doctor`.
