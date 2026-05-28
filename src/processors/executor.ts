@@ -213,7 +213,25 @@ function outputResult(input: {
 
   const effects: Array<Effect> = [];
   for (const [index, effect] of input.value.entries()) {
-    const parsed = EffectSchema.safeParse(effect);
+    let parsed: ReturnType<typeof EffectSchema.safeParse>;
+    try {
+      parsed = EffectSchema.safeParse(effect);
+    } catch (e) {
+      const error = makeExecutionError({
+        code: "processor.invalid-output",
+        message: `Processor returned invalid output at effect[${index}]: schema validation threw while accessing effect output: ${errorMessage(e)}`,
+        retryable: false,
+        phase: input.phase,
+        processorId: input.processorId,
+      });
+      return terminalResult({
+        status: "failed",
+        runId: input.runId,
+        processorId: input.processorId,
+        durationMs: input.durationMs,
+        error,
+      });
+    }
     if (!parsed.success) {
       const error = makeExecutionError({
         code: "processor.invalid-output",

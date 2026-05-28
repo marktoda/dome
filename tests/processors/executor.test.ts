@@ -137,6 +137,36 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.message).toContain("effect[1]");
   });
 
+  test("throwing property access during schema validation fails invalid-output", async () => {
+    const hostileEffect = {
+      get kind(): string {
+        throw new Error("kind access exploded during schema validation");
+      },
+    };
+
+    const result = await executeProcessor({
+      processorId: "test.executor.hostile-output",
+      phase: "garden",
+      runId: RUN_ID,
+      ctx,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        retryBudgetMs: 0,
+        maxAttempts: 1,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => [hostileEffect],
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.invalid-output");
+    expect(result.error.message).toMatch(/validation|schema|access|throw/i);
+    expect("effects" in result).toBe(false);
+    expect("effectHashes" in result).toBe(false);
+  });
+
   test("unhashable schema-valid effect fails invalid-output without routing effects", async () => {
     const unhashableEffect = externalActionEffect({
       capability: "test.external",
