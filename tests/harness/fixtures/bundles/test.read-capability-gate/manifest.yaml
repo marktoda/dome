@@ -1,0 +1,13 @@
+id: test.read-capability-gate
+version: 0.1.0
+processors:
+  - id: test.read-capability-gate.probe
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+    module: processors/probe.ts

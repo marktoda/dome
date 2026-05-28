@@ -20,8 +20,8 @@
 //   - `noUncheckedIndexedAccess` discipline: SQLite `.all()` returns arrays
 //     of typed row shapes; mapping is functional (no index access).
 
-import type { FactEffect, NodeRef, Literal } from "../core/effect";
-import { factEffect } from "../core/effect";
+import type { FactEffect, NodeRef, NodeRefInput, Literal } from "../core/effect";
+import { factEffect, nodeRef } from "../core/effect";
 import type { CommitOid, SourceRef } from "../core/source-ref";
 import type { ProjectionDb } from "./db";
 
@@ -103,11 +103,12 @@ export function insertFact(db: ProjectionDb, opts: FactInsertOpts): void {
  */
 export function factsBySubject(
   db: ProjectionDb,
-  subject: NodeRef,
+  subject: NodeRefInput,
 ): ReadonlyArray<FactEffect> {
+  const normalized = nodeRef(subject);
   const rows = db.raw
     .query<FactRow, [string, string]>(FACTS_BY_SUBJECT_SQL)
-    .all(subject.kind, subjectId(subject));
+    .all(normalized.kind, subjectId(normalized));
   return Object.freeze(rows.map(rowToFact));
 }
 
@@ -163,7 +164,7 @@ function predicateNamespace(predicate: string): string {
 function rebuildSubject(kind: string, id: string): NodeRef {
   switch (kind) {
     case "page":
-      return { kind: "page", path: id };
+      return nodeRef({ kind: "page", path: id });
     case "task":
       return { kind: "task", stableId: id };
     case "entity":

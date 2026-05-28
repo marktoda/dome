@@ -66,10 +66,11 @@ export function treeOid(s: string): TreeOid {
  * filesystem — the engine resolves reads against `tree`.
  *
  * `readFile` returns the blob's content as UTF-8 text, or `null` when the
- * path doesn't resolve to a blob inside the tree. `listMarkdownFiles`
- * returns every `.md` path in the tree (recursively); the runtime resolves
- * both against the git boundary in `../git`, so processors never touch the
- * filesystem directly.
+ * path doesn't resolve to a blob inside the tree, or when the path is outside
+ * the processor's effective `read` capability. `listMarkdownFiles` returns the
+ * readable `.md` paths in the tree (recursively), filtered by the same
+ * effective `read` capability. The runtime resolves both against the git
+ * boundary in `../git`, so processors never touch the filesystem directly.
  *
  * The read methods are function-valued (rather than data fields) so the
  * runtime can close over `(vaultPath, commit, tree)` and the processor's

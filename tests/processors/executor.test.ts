@@ -8,7 +8,7 @@ import {
 } from "../../src/core/effect";
 import type { Effect } from "../../src/core/effect";
 import type { ProcessorContext } from "../../src/core/processor";
-import { commitOid } from "../../src/core/source-ref";
+import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { RunId } from "../../src/engine/runner-contract";
 import { executeProcessor } from "../../src/processors/executor";
 
@@ -27,10 +27,11 @@ const ctx = Object.freeze({
   input: null,
   signal: new AbortController().signal,
   capabilities: Object.freeze({ __brand: "CapabilityToken" as const }) as never,
-  sourceRef: (path: string) => ({
-    commit: commitOid("abc0000000000000000000000000000000000000"),
-    path,
-  }),
+  sourceRef: (path: string) =>
+    sourceRef({
+      commit: commitOid("abc0000000000000000000000000000000000000"),
+      path,
+    }),
 }) as ProcessorContext<unknown>;
 
 function validEffect(): Effect {

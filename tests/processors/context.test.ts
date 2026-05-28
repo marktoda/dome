@@ -44,7 +44,7 @@ describe("makeProcessorContext — shape and freezing", () => {
     const ctx = makeProcessorContext(baseInput({ input: null }));
     const ref = ctx.sourceRef("wiki/x.md");
     expect(ref.commit).toBe(COMMIT);
-    expect(ref.path).toBe("wiki/x.md");
+    expect(ref.path as string).toBe("wiki/x.md");
     expect(ref.range).toBeUndefined();
   });
 
@@ -52,7 +52,7 @@ describe("makeProcessorContext — shape and freezing", () => {
     const ctx = makeProcessorContext(baseInput({ input: null }));
     const ref = ctx.sourceRef("wiki/x.md", { startLine: 1, endLine: 5 });
     expect(ref.commit).toBe(COMMIT);
-    expect(ref.path).toBe("wiki/x.md");
+    expect(ref.path as string).toBe("wiki/x.md");
     expect(ref.range).toEqual({ startLine: 1, endLine: 5 });
   });
 });

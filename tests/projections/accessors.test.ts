@@ -101,7 +101,9 @@ describe("facts accessor", () => {
     const got = factsBySubject(db, { kind: "page", path: "wiki/alice.md" });
     expect(got.length).toBe(1);
     expect(got[0]?.predicate).toBe("dome.tasks.dueDate");
-    expect(got[0]?.subject).toEqual({ kind: "page", path: "wiki/alice.md" });
+    expect(got[0]?.subject.kind).toBe("page");
+    if (got[0]?.subject.kind !== "page") return;
+    expect(got[0].subject.path as string).toBe("wiki/alice.md");
   });
 
   it("round-trips an insertFact + factsBySubject for a 'task' NodeRef", () => {

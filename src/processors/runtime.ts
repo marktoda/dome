@@ -126,6 +126,10 @@ import {
   modelInvokeForProcessor,
   type ModelProvider,
 } from "../engine/model-invoke";
+import {
+  filterReadablePaths,
+  readablePath,
+} from "../engine/path-capabilities";
 
 // ----- AdoptionRunInput -----------------------------------------------------
 
@@ -770,7 +774,7 @@ function buildExecutionContext<TEnvelope>(
   });
 
   const ctxInput: ProcessorContextInput<TEnvelope> = {
-    snapshot: opts.snapshot,
+    snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
     changedPaths: opts.changedPaths,
     proposal: opts.proposal,
     runId: frame.runId,
@@ -785,6 +789,25 @@ function buildExecutionContext<TEnvelope>(
   return Object.freeze({
     ctx: makeProcessorContext(ctxInput) as ProcessorContext<unknown>,
     costUsd: () => costUsd,
+  });
+}
+
+function scopeSnapshotForProcessor(
+  snapshot: Snapshot,
+  frame: DispatchFrame,
+): Snapshot {
+  return Object.freeze({
+    commit: snapshot.commit,
+    tree: snapshot.tree,
+    readFile: async (path: string): Promise<string | null> => {
+      const readable = readablePath(path, frame.declared, frame.granted);
+      if (readable === null) return null;
+      return snapshot.readFile(readable);
+    },
+    listMarkdownFiles: async (): Promise<ReadonlyArray<string>> => {
+      const paths = await snapshot.listMarkdownFiles();
+      return filterReadablePaths(paths, frame.declared, frame.granted);
+    },
   });
 }
 

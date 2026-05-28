@@ -55,6 +55,7 @@ import "../scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scen
 import "../scenarios/effect-kinds/lint-frontmatter-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
+import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
 import "../scenarios/triggers/document-changed-fires.scenario.test";
 import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";

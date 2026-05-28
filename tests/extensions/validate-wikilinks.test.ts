@@ -201,7 +201,7 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.sourceRefs.length).toBe(1);
     const ref = diag.sourceRefs[0];
     if (ref === undefined) throw new Error("expected one source ref");
-    expect(ref.path).toBe("wiki/a.md");
+    expect(ref.path as string).toBe("wiki/a.md");
     expect(ref.commit).toBe(f.commit);
     expect(ref.range?.startLine).toBe(1);
   });

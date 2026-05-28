@@ -35,7 +35,7 @@
 import {
   patchEffect,
   type Effect,
-  type FileChange,
+  type FileChangeInput,
 } from "../../../../../../src/core/effect";
 import {
   defineProcessor,
@@ -76,7 +76,7 @@ const EMITTED_BODY =
 // string. The engine's applier overlays each change onto the candidate
 // tree without parsing diff text. See [[wiki/specs/effects]] §"PatchEffect"
 // §"Why whole-content instead of a unified diff?" for the rationale.
-const CREATE_CHANGE: FileChange = {
+const CREATE_CHANGE: FileChangeInput = {
   kind: "write",
   path: EMITTED_PATH,
   content: EMITTED_BODY,

@@ -39,13 +39,18 @@ export type {
 export type {
   Effect,
   PatchEffect,
+  PatchEffectInput,
   FileChange,
+  FileChangeInput,
+  NodeRef,
   DiagnosticEffect,
   FactEffect,
+  FactEffectInput,
   QuestionEffect,
   ViewEffect,
   JobEffect,
   ExternalActionEffect,
+  NodeRefInput,
 } from "./core/effect";
 export {
   patchEffect,
@@ -70,8 +75,9 @@ export type {
 } from "./core/processor";
 export { defineProcessor, treeOid } from "./core/processor";
 
-export type { CommitOid } from "./core/source-ref";
+export type { CommitOid, SourceRef, SourceRefInput } from "./core/source-ref";
 export { commitOid } from "./core/source-ref";
+export type { VaultPath } from "./core/vault-path";
 
 // ----- Engine-internal types kept on the public type surface ---------------
 //

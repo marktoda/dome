@@ -23,6 +23,11 @@
 
 import { z } from "zod";
 import { SourceRefSchema, type SourceRef } from "./source-ref";
+import {
+  requireVaultPath,
+  VaultPathSchema,
+  type VaultPath,
+} from "./vault-path";
 
 // ----- FileChange (PatchEffect payload) -------------------------------------
 
@@ -43,8 +48,20 @@ import { SourceRefSchema, type SourceRef } from "./source-ref";
  *   - `kind: "delete"` — remove `path` from the tree.
  */
 export type FileChange =
-  | { readonly kind: "write"; readonly path: string; readonly content: string }
-  | { readonly kind: "delete"; readonly path: string };
+  | {
+      readonly kind: "write";
+      readonly path: VaultPath;
+      readonly content: string;
+    }
+  | { readonly kind: "delete"; readonly path: VaultPath };
+
+export type FileChangeInput =
+  | {
+      readonly kind: "write";
+      readonly path: string | VaultPath;
+      readonly content: string;
+    }
+  | { readonly kind: "delete"; readonly path: string | VaultPath };
 
 // ----- NodeRef / Literal (FactEffect operands) ------------------------------
 
@@ -54,7 +71,12 @@ export type FileChange =
  * a wiki/entity by canonical name.
  */
 export type NodeRef =
-  | { readonly kind: "page"; readonly path: string }
+  | { readonly kind: "page"; readonly path: VaultPath }
+  | { readonly kind: "task"; readonly stableId: string }
+  | { readonly kind: "entity"; readonly name: string };
+
+export type NodeRefInput =
+  | { readonly kind: "page"; readonly path: string | VaultPath }
   | { readonly kind: "task"; readonly stableId: string }
   | { readonly kind: "entity"; readonly name: string };
 
@@ -101,6 +123,10 @@ export type PatchEffect = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
+export type PatchEffectInput = Omit<PatchEffect, "kind" | "changes"> & {
+  readonly changes: ReadonlyArray<FileChangeInput>;
+};
+
 /**
  * A finding the user (or another processor) should see. `severity: "block"`
  * in the adoption phase refuses to advance the adopted ref; `error` and
@@ -130,6 +156,14 @@ export type FactEffect = {
   readonly assertion: "explicit" | "extracted" | "inferred" | "generated";
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly confidence?: number;
+};
+
+export type FactEffectInput = Omit<
+  FactEffect,
+  "kind" | "subject" | "object"
+> & {
+  readonly subject: NodeRefInput;
+  readonly object: NodeRefInput | Literal;
 };
 
 /**
@@ -207,7 +241,7 @@ export type Effect =
 // back from sqlite. `.strict()` rejects unknown keys.
 
 export const NodeRefSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("page"), path: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("page"), path: VaultPathSchema }).strict(),
   z.object({ kind: z.literal("task"), stableId: z.string().min(1) }).strict(),
   z.object({ kind: z.literal("entity"), name: z.string().min(1) }).strict(),
 ]);
@@ -246,14 +280,14 @@ export const FileChangeSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("write"),
-      path: z.string().min(1),
+      path: VaultPathSchema,
       content: z.string(),
     })
     .strict(),
   z
     .object({
       kind: z.literal("delete"),
-      path: z.string().min(1),
+      path: VaultPathSchema,
     })
     .strict(),
 ]);
@@ -406,9 +440,9 @@ export const EffectSchema = z
 
 // ----- Constructor helpers --------------------------------------------------
 // One per effect kind: takes the kind-less input shape, sets `kind` to the
-// literal, and freezes the result. Following the source-ref.ts pattern —
-// no validation here; the type system enforces the shape at the call site,
-// and Zod is for untrusted boundaries.
+// literal, canonicalizes path-bearing fields, and freezes the result. Full
+// structural validation still lives in the Zod schemas; the constructors only
+// enforce the cheap invariants needed to keep engine-internal paths canonical.
 //
 // Optional fields are only assigned when defined, so the returned object
 // is `exactOptionalPropertyTypes`-clean (no `field: undefined` keys).
@@ -416,11 +450,11 @@ export const EffectSchema = z
 // Object.freeze chosen over `as const` so misbehaving processors fail loudly
 // at runtime rather than silently corrupting facts.
 
-export function patchEffect(input: Omit<PatchEffect, "kind">): PatchEffect {
+export function patchEffect(input: PatchEffectInput): PatchEffect {
   const e: { -readonly [K in keyof PatchEffect]: PatchEffect[K] } = {
     kind: "patch",
     mode: input.mode,
-    changes: input.changes,
+    changes: Object.freeze(input.changes.map(fileChange)),
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };
@@ -440,12 +474,12 @@ export function diagnosticEffect(
   return Object.freeze(e);
 }
 
-export function factEffect(input: Omit<FactEffect, "kind">): FactEffect {
+export function factEffect(input: FactEffectInput): FactEffect {
   const e: { -readonly [K in keyof FactEffect]: FactEffect[K] } = {
     kind: "fact",
-    subject: input.subject,
+    subject: nodeRef(input.subject),
     predicate: input.predicate,
-    object: input.object,
+    object: nodeRefOrLiteral(input.object),
     assertion: input.assertion,
     sourceRefs: input.sourceRefs,
   };
@@ -501,4 +535,45 @@ export function viewEffect(input: Omit<ViewEffect, "kind">): ViewEffect {
     scope: input.scope,
   };
   return Object.freeze(e);
+}
+
+export function fileChange(input: FileChangeInput): FileChange {
+  if (input.kind === "write") {
+    return Object.freeze({
+      kind: "write",
+      path: requireVaultPath(input.path, "FileChange.path"),
+      content: input.content,
+    });
+  }
+  return Object.freeze({
+    kind: "delete",
+    path: requireVaultPath(input.path, "FileChange.path"),
+  });
+}
+
+export function nodeRef(input: NodeRefInput): NodeRef {
+  switch (input.kind) {
+    case "page":
+      return Object.freeze({
+        kind: "page",
+        path: requireVaultPath(input.path, "NodeRef.path"),
+      });
+    case "task":
+      return Object.freeze({ kind: "task", stableId: input.stableId });
+    case "entity":
+      return Object.freeze({ kind: "entity", name: input.name });
+  }
+}
+
+function nodeRefOrLiteral(input: NodeRefInput | Literal): NodeRef | Literal {
+  switch (input.kind) {
+    case "page":
+    case "task":
+    case "entity":
+      return nodeRef(input);
+    case "string":
+    case "number":
+    case "date":
+      return input;
+  }
 }

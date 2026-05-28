@@ -6,6 +6,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   buildRuntime,
+  dispatchOneProcessor,
   type AdoptionRunInput,
 } from "../../src/processors/runtime";
 import { buildRegistry } from "../../src/processors/registry";
@@ -17,6 +18,7 @@ import {
   type Processor,
   type ProcessorContext,
   type ProcessorPhase,
+  type Snapshot,
   type Trigger,
 } from "../../src/core/processor";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
@@ -569,5 +571,66 @@ describe("adoptionRunner — context wiring", () => {
     expect(observedInput?.kind).toBe("adoption");
     expect(observedInput?.matchedTriggers.length).toBe(1);
     expect(observedInput?.matchedTriggers[0]?.trigger.kind).toBe("signal");
+  });
+});
+
+describe("dispatchOneProcessor — scoped snapshot reads", () => {
+  test("readFile returns null and listMarkdownFiles filters outside effective read grants", async () => {
+    const readCap: Capability = { kind: "read", paths: ["wiki/**"] };
+    const observed: {
+      allowed: string | null;
+      denied: string | null;
+      invalid: string | null;
+      listed: ReadonlyArray<string>;
+    } = {
+      allowed: null,
+      denied: null,
+      invalid: null,
+      listed: [],
+    };
+    const snapshot: Snapshot = Object.freeze({
+      commit: CANDIDATE,
+      tree: TREE,
+      readFile: async (path: string): Promise<string | null> => {
+        if (path === "wiki/allowed.md") return "allowed";
+        if (path === "secret/denied.md") return "denied";
+        return null;
+      },
+      listMarkdownFiles: async (): Promise<ReadonlyArray<string>> =>
+        Object.freeze(["wiki/allowed.md", "secret/denied.md"]),
+    });
+    const p = makeFixtureProcessor({
+      id: "test.scoped-snapshot",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [readCap],
+      run: async (ctx) => {
+        observed.allowed = await ctx.snapshot.readFile("wiki/allowed.md");
+        observed.denied = await ctx.snapshot.readFile("secret/denied.md");
+        observed.invalid = await ctx.snapshot.readFile("../secret.md");
+        observed.listed = await ctx.snapshot.listMarkdownFiles();
+        return [];
+      },
+    });
+
+    const result = await dispatchOneProcessor({
+      processor: p,
+      phase: "adoption",
+      envelope: { kind: "adoption", matchedTriggers: [] },
+      snapshot,
+      changedPaths: [],
+      proposal,
+      inputCommit: CANDIDATE,
+      matches: [],
+      resolveGrants: () => [readCap],
+      extensionIdFor: (id) => id,
+      ledger: undefined,
+    });
+
+    expect(result.executionStatus).toBe("succeeded");
+    expect(observed.allowed).toBe("allowed");
+    expect(observed.denied).toBeNull();
+    expect(observed.invalid).toBeNull();
+    expect(observed.listed).toEqual(["wiki/allowed.md"]);
   });
 });

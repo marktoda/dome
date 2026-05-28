@@ -58,6 +58,10 @@ import type {
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
+import {
+  pathCapabilityEffectiveFor,
+  pathIsOwnedByThirdParty,
+} from "./path-capabilities";
 import { globMatch } from "./glob-cache";
 
 // ----- EnforcementResult ----------------------------------------------------
@@ -205,13 +209,22 @@ function enforcePatch(
   }
 
   if (effect.mode === "auto") {
-    if (paths.every((path) => pathEffectiveFor("patch.auto", path, declared, granted))) {
+    if (
+      paths.every((path) =>
+        pathCapabilityEffectiveFor("patch.auto", path, declared, granted)
+      )
+    ) {
       return allow();
     }
     const missingAutoPath = paths.find(
-      (path) => !pathEffectiveFor("patch.auto", path, declared, granted),
+      (path) =>
+        !pathCapabilityEffectiveFor("patch.auto", path, declared, granted),
     );
-    if (paths.every((path) => pathEffectiveFor("patch.propose", path, declared, granted))) {
+    if (
+      paths.every((path) =>
+        pathCapabilityEffectiveFor("patch.propose", path, declared, granted)
+      )
+    ) {
       const rewritten: PatchEffect = patchEffect({
         mode: "propose",
         changes: effect.changes,
@@ -230,8 +243,8 @@ function enforcePatch(
     }
     const missingPatchPath = paths.find(
       (path) =>
-        !pathEffectiveFor("patch.auto", path, declared, granted) &&
-        !pathEffectiveFor("patch.propose", path, declared, granted),
+        !pathCapabilityEffectiveFor("patch.auto", path, declared, granted) &&
+        !pathCapabilityEffectiveFor("patch.propose", path, declared, granted),
     );
     return deny(
       diagnosticEffect({
@@ -244,11 +257,16 @@ function enforcePatch(
   }
 
   // mode === "propose"
-  if (paths.every((path) => pathEffectiveFor("patch.propose", path, declared, granted))) {
+  if (
+    paths.every((path) =>
+      pathCapabilityEffectiveFor("patch.propose", path, declared, granted)
+    )
+  ) {
     return allow();
   }
   const missingProposePath = paths.find(
-    (path) => !pathEffectiveFor("patch.propose", path, declared, granted),
+    (path) =>
+      !pathCapabilityEffectiveFor("patch.propose", path, declared, granted),
   );
   return deny(
     diagnosticEffect({
@@ -381,79 +399,6 @@ function enforceExternal(
     }),
   );
 }
-
-// ----- Path / glob helpers -------------------------------------------------
-
-/**
- * A path is *effective* for a path-bearing capability kind iff at least one
- * declared capability of that kind has a pattern matching the path AND at
- * least one granted capability of the same kind has a pattern matching the
- * path. This is the per-path intersection of declared and granted.
- */
-function pathEffectiveFor(
-  kind: "patch.auto" | "patch.propose" | "owns.path" | "read",
-  path: string,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): boolean {
-  return (
-    anyPathCapabilityMatches(kind, path, declared) &&
-    anyPathCapabilityMatches(kind, path, granted)
-  );
-}
-
-function anyPathCapabilityMatches(
-  kind: "patch.auto" | "patch.propose" | "owns.path" | "read",
-  path: string,
-  caps: ReadonlyArray<Capability>,
-): boolean {
-  for (const cap of caps) {
-    // The four path-bearing capability kinds all share the same `paths`
-    // field shape; narrow on each kind individually so TS picks up the
-    // discriminator. (A loose `cap.kind !== kind` against a non-singleton
-    // `kind` parameter does not narrow the union.)
-    if (
-      cap.kind === "patch.auto" ||
-      cap.kind === "patch.propose" ||
-      cap.kind === "owns.path" ||
-      cap.kind === "read"
-    ) {
-      if (cap.kind !== kind) continue;
-      for (const pattern of cap.paths) {
-        if (globMatch(pattern, path)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/**
- * `owns.path` third-party detection: the path is owned by another processor
- * if some *granted* `owns.path` capability matches the path while the
- * emitting processor's *declared* capabilities include no `owns.path`
- * covering this path. The granted set encodes the policy ("dome.index owns
- * index.md"); declared encodes what this processor claims to own. A
- * processor patching `index.md` without declaring `owns.path: ["index.md"]`
- * is reaching into another processor's territory.
- */
-function pathIsOwnedByThirdParty(
-  path: string,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): boolean {
-  const ownedByPolicy = anyPathCapabilityMatches("owns.path", path, granted);
-  if (!ownedByPolicy) return false;
-  const declaredOwn = anyPathCapabilityMatches("owns.path", path, declared);
-  return !declaredOwn;
-}
-
-// Path-glob matching uses the shared `globMatch` helper imported from
-// `./glob-cache` — see that file for the cache and the empty-pattern /
-// exact-string fast-path semantics. Per
-// docs/wiki/matrices/effect-x-capability.md §"Capability lookup
-// performance" the SDK uses `new Bun.Glob(pattern).match(path)`; the cache
-// is bounded by the loaded bundle set (~tens to low hundreds of patterns
-// in practice).
 
 // ----- Processor-id / glob helpers -----------------------------------------
 

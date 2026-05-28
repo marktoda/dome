@@ -16,19 +16,38 @@ describe("SourceRefSchema", () => {
   test("parses a valid SourceRef and round-trips identity", () => {
     const input = {
       commit: "abc123",
-      path: "wiki/entities/danny.md",
+      path: "wiki//entities/danny.md",
       blob: "deadbeef",
       range: { startLine: 1, endLine: 5 },
       stableId: "task-42",
     };
     const parsed = SourceRefSchema.parse(input);
-    expect(parsed).toEqual(input);
+    expect({ ...parsed, path: parsed.path as string }).toEqual({
+      ...input,
+      path: "wiki/entities/danny.md",
+    });
   });
 
   test("rejects an empty commit string", () => {
     expect(() =>
       SourceRefSchema.parse({ commit: "", path: "wiki/x.md" }),
     ).toThrow();
+  });
+
+  test("rejects non-canonical vault paths", () => {
+    expect(() =>
+      SourceRefSchema.parse({ commit: "abc", path: "../secret.md" }),
+    ).toThrow(/vault-relative/);
+  });
+
+  test("rejects backwards text ranges", () => {
+    expect(() =>
+      SourceRefSchema.parse({
+        commit: "abc",
+        path: "wiki/x.md",
+        range: { startLine: 5, endLine: 1 },
+      }),
+    ).toThrow(/endLine/);
   });
 
   test("rejects unknown keys (strict object shape)", () => {
@@ -46,9 +65,16 @@ describe("sourceRef constructor", () => {
   test("returns a frozen object", () => {
     const ref = sourceRef({
       commit: commitOid("abc"),
-      path: "wiki/x.md",
+      path: "wiki//x.md",
     });
     expect(Object.isFrozen(ref)).toBe(true);
+    expect(ref.path as string).toBe("wiki/x.md");
+  });
+
+  test("rejects invalid paths", () => {
+    expect(() =>
+      sourceRef({ commit: commitOid("abc"), path: "../x.md" }),
+    ).toThrow(/SourceRef\.path/);
   });
 
   test("only sets optional fields when defined (no `key: undefined`)", () => {

@@ -9,6 +9,11 @@
 // constructor helper; no filesystem, git, or sqlite dependencies.
 
 import { z } from "zod";
+import {
+  requireVaultPath,
+  VaultPathSchema,
+  type VaultPath,
+} from "./vault-path";
 
 // ----- Branded OID aliases --------------------------------------------------
 //
@@ -48,10 +53,14 @@ export type TextRange = {
  */
 export type SourceRef = {
   readonly commit: CommitOid;
-  readonly path: string;
+  readonly path: VaultPath;
   readonly blob?: BlobOid;
   readonly range?: TextRange;
   readonly stableId?: string;
+};
+
+export type SourceRefInput = Omit<SourceRef, "path"> & {
+  readonly path: string | VaultPath;
 };
 
 // ----- Zod schemas ----------------------------------------------------------
@@ -70,12 +79,34 @@ export const TextRangeSchema = z
     startChar: z.number().int().nonnegative().optional(),
     endChar: z.number().int().nonnegative().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.endLine < value.startLine) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "TextRange.endLine must be greater than or equal to startLine",
+        path: ["endLine"],
+      });
+    }
+    if (
+      value.endLine === value.startLine &&
+      value.startChar !== undefined &&
+      value.endChar !== undefined &&
+      value.endChar < value.startChar
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "TextRange.endChar must be greater than or equal to startChar on one-line ranges",
+        path: ["endChar"],
+      });
+    }
+  });
 
 export const SourceRefSchema = z
   .object({
     commit: z.string().min(1), // commit OIDs are non-empty 40-char hex; loose v1 check
-    path: z.string().min(1),   // vault-relative paths are non-empty
+    path: VaultPathSchema,
     blob: z.string().min(1).optional(),
     range: TextRangeSchema.optional(),
     stableId: z.string().min(1).optional(),
@@ -85,9 +116,9 @@ export const SourceRefSchema = z
 // ----- Constructor helper ---------------------------------------------------
 
 /**
- * Build a frozen SourceRef from a typed input. No validation — the type
- * system already enforces the shape at the call site; Zod schemas are for
- * untrusted boundaries (config files, protocol payloads, sqlite reads).
+ * Build a frozen SourceRef from a typed input. The path is canonicalized here
+ * so provenance emitted by processors uses the same VaultPath representation
+ * as schema-validated protocol payloads and sqlite reads.
  *
  * Optional fields are only set on the returned object when defined, so the
  * result is `exactOptionalPropertyTypes`-clean (no `field: undefined` keys).
@@ -95,10 +126,10 @@ export const SourceRefSchema = z
  * Object.freeze chosen over `as const` so misbehaving processors fail loudly
  * at runtime rather than silently corrupting facts.
  */
-export function sourceRef(input: SourceRef): SourceRef {
+export function sourceRef(input: SourceRefInput): SourceRef {
   const ref: { -readonly [K in keyof SourceRef]: SourceRef[K] } = {
     commit: input.commit,
-    path: input.path,
+    path: requireVaultPath(input.path, "SourceRef.path"),
   };
   if (input.blob !== undefined) ref.blob = input.blob;
   if (input.range !== undefined) ref.range = input.range;

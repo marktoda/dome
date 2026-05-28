@@ -297,7 +297,9 @@ describe("runScheduler — executor-result telemetry", () => {
         resolveGrants: () => [patchCap],
         applyGardenPatchToCandidate: async ({ candidate, patch }) => {
           expect(candidate).toBe(ADOPTED);
-          expect(patch.changes[0]?.path).toBe("wiki/scheduled.md");
+          expect(patch.changes[0]?.path as string | undefined).toBe(
+            "wiki/scheduled.md",
+          );
           return newHead;
         },
         adoptSubProposal: async (proposal, cascadeDepth) => {

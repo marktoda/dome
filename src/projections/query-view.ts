@@ -18,8 +18,8 @@
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - `Object.freeze` on the returned handle so misbehaving callers cannot
 //     swap a function out post-construction.
-//   - No imports from `src/engine/` or `src/core/effect`'s constructor
-//     helpers — the per-table accessors handle effect (re)construction.
+//   - No imports from `src/engine/`; the only constructor helper used here is
+//     `nodeRef(...)` to preserve the canonical VaultPath boundary.
 //   - Pure: same `(db, filter)` → same array (the underlying SQL is
 //     read-only).
 
@@ -29,6 +29,7 @@ import type {
   NodeRef,
   QuestionEffect,
 } from "../core/effect";
+import { nodeRef } from "../core/effect";
 import type { ProjectionQueryView } from "../core/processor";
 
 import type { ProjectionDb } from "./db";
@@ -131,7 +132,7 @@ function buildSubject(
 ): NodeRef {
   switch (kind) {
     case "page":
-      return { kind: "page", path: id };
+      return nodeRef({ kind: "page", path: id });
     case "task":
       return { kind: "task", stableId: id };
     case "entity":

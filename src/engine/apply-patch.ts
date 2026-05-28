@@ -52,6 +52,7 @@ import git from "isomorphic-git";
 
 import type { PatchEffect } from "../core/effect";
 import { commitOid, type CommitOid } from "../core/source-ref";
+import { requireVaultPath } from "../core/vault-path";
 import { findGitRoot } from "../git";
 import { composeCommitMessage } from "../workflow-commit";
 
@@ -122,7 +123,8 @@ export async function applyPatchToCandidate(
   const deletes = new Set<string>();
 
   for (const change of opts.patch.changes) {
-    const fullPath = joinPrefix(prefix, change.path);
+    const vaultPath = requireVaultPath(change.path, "PatchEffect.change.path");
+    const fullPath = joinPrefix(prefix, vaultPath);
     if (change.kind === "write") {
       const blobOid = await git.writeBlob({
         fs,

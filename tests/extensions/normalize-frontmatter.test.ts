@@ -290,7 +290,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
     expect(patch.sourceRefs.length).toBe(1);
     const ref = patch.sourceRefs[0];
     if (ref === undefined) throw new Error("expected one source ref");
-    expect(ref.path).toBe("wiki/danny.md");
+    expect(ref.path as string).toBe("wiki/danny.md");
     expect(ref.commit).toBe(f.commit);
   });
 

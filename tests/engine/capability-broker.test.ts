@@ -13,6 +13,7 @@ import {
   patchEffect,
   questionEffect,
   viewEffect,
+  type PatchEffect,
 } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -107,6 +108,24 @@ describe("PatchEffect (mode: auto)", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.message).toContain("owned/y.md");
+  });
+
+  test("denies forged non-vault-relative paths before glob matching", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["**"] };
+    const forged = {
+      kind: "patch",
+      mode: "auto",
+      changes: [{ kind: "write", path: "../secret.md", content: "x\n" }],
+      reason: "test",
+      sourceRefs: [ref],
+    } as unknown as PatchEffect;
+
+    const r = enforceCapability(forged, [auto], [auto]);
+
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-patch");
+    expect(r.diagnostic.message).toContain("../secret.md");
   });
 });
 

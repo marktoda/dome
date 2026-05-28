@@ -23,7 +23,7 @@ import { applyPatchToCandidate } from "../../src/engine/apply-patch";
 import {
   PatchEffectSchema,
   patchEffect,
-  type FileChange,
+  type FileChangeInput,
 } from "../../src/core/effect";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { commit, initRepo } from "../../src/git";
@@ -265,7 +265,7 @@ describe("applyPatchToCandidate", () => {
     });
     fixtures.push(f);
 
-    const changes: ReadonlyArray<FileChange> = [
+    const changes: ReadonlyArray<FileChangeInput> = [
       { kind: "write", path: "wiki/mod.md", content: "after\n" },
       { kind: "delete", path: "wiki/old.md" },
       { kind: "write", path: "wiki/created.md", content: "fresh\n" },
