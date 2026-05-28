@@ -69,8 +69,10 @@ export function treeOid(s: string): TreeOid {
  * path doesn't resolve to a blob inside the tree, or when the path is outside
  * the processor's effective `read` capability. `listMarkdownFiles` returns the
  * readable `.md` paths in the tree (recursively), filtered by the same
- * effective `read` capability. The runtime resolves both against the git
- * boundary in `../git`, so processors never touch the filesystem directly.
+ * effective `read` capability. `getFileInfo` returns git-derived metadata
+ * about a readable path at this same commit. The runtime resolves these
+ * methods against the git boundary in `../git`, so processors never touch the
+ * filesystem directly.
  *
  * The read methods are function-valued (rather than data fields) so the
  * runtime can close over `(vaultPath, commit, tree)` and the processor's
@@ -81,6 +83,12 @@ export type Snapshot = {
   readonly tree: TreeOid;
   readonly readFile: (path: string) => Promise<string | null>;
   readonly listMarkdownFiles: () => Promise<ReadonlyArray<string>>;
+  readonly getFileInfo: (path: string) => Promise<SnapshotFileInfo | null>;
+};
+
+export type SnapshotFileInfo = {
+  readonly lastChangedCommit: CommitOid;
+  readonly lastChangedAt: string;
 };
 
 // ----- ProcessorPhase -------------------------------------------------------

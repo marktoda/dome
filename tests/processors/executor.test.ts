@@ -25,6 +25,7 @@ const ctx = Object.freeze({
     tree: "tree000000000000000000000000000000000000" as never,
     readFile: async () => null,
     listMarkdownFiles: async () => [],
+    getFileInfo: async () => null,
   }),
   changedPaths: Object.freeze([]),
   proposal: null,

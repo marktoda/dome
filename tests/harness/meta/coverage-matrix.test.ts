@@ -57,6 +57,7 @@ import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
+import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";

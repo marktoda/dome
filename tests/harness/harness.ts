@@ -248,11 +248,13 @@ export class HarnessImpl implements Harness {
       await writeFile(full, content, "utf8");
     }
     const author = input.author ?? DEFAULT_AUTHOR;
+    const committer = input.committer ?? author;
     const sha = await gitCommit({
       path: this.vaultPath,
       message: input.message,
       files: Object.keys(input.files),
-      author: { name: author.name, email: author.email },
+      author,
+      committer,
     });
     await runAllAlwaysTrue(this, `userCommit("${input.message}")`);
     return commitOid(sha);

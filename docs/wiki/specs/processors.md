@@ -37,6 +37,19 @@ interface ProcessorContext<TInput = unknown> {
   readonly sourceRef(path: string, range?: TextRange): SourceRef;  // helper for SourceRef construction
 }
 
+interface Snapshot {
+  readonly commit: CommitOid;
+  readonly tree: TreeOid;
+  readFile(path: string): Promise<string | null>;
+  listMarkdownFiles(): Promise<ReadonlyArray<string>>;
+  getFileInfo(path: string): Promise<SnapshotFileInfo | null>;
+}
+
+interface SnapshotFileInfo {
+  readonly lastChangedCommit: CommitOid;
+  readonly lastChangedAt: string; // ISO timestamp from the git commit that last changed the path
+}
+
 // The read surface view-phase processors consume to query the projection store.
 // Adoption-phase processors typically read from `ctx.snapshot` (markdown
 // content at the candidate commit) and the field stays undefined; view-phase
@@ -56,7 +69,7 @@ interface ProjectionQueryView {
 }
 ```
 
-A `Processor` returns `Effect[]`. It does not call writers, git, sqlite, or any other mutation surface. The engine routes the returned effects through capability enforcement, then applies them. This is the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
+A `Processor` returns `Effect[]`. It does not call writers, git, sqlite, or any other mutation surface. Commit-bound content and git-derived path metadata are exposed only through `ctx.snapshot`, and the runtime scopes both by the processor's effective `read` grant. The engine routes the returned effects through capability enforcement, then applies them. This is the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
 
 ## The three phases
 
@@ -179,7 +192,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 
 | Bundle | Phase × processors | What it does |
 |---|---|---|
-| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
+| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, stale `updated:` dates, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
 | `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns the `index.md` path. |
 | `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns the `log.md` path. |
 | `dome.links` | garden: cross-reference | On entity-page creation, finds mentions in other wiki pages and emits PatchEffect to add backlinks. |

@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { commit, initRepo, readBlob, readTree } from "../../src/git";
+import { commit, fileInfoAtCommit, initRepo, readBlob, readTree } from "../../src/git";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   treeOid,
@@ -102,6 +102,14 @@ async function makeVaultWithFiles(
     readFile: (p: string) =>
       readBlob({ path: vaultPath, commit: commitSha, filepath: p }),
     listMarkdownFiles: () => listAllMarkdown(vaultPath, commitSha),
+    getFileInfo: async (p: string) => {
+      const info = await fileInfoAtCommit({ path: vaultPath, commit: commitSha, filepath: p });
+      if (info === null) return null;
+      return {
+        lastChangedCommit: commitOid(info.lastChangedCommit),
+        lastChangedAt: info.lastChangedAt,
+      };
+    },
   });
 
   const cleanup = async (): Promise<void> => {

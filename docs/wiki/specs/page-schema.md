@@ -37,7 +37,7 @@ Type validation against the declared page types is the `dome.markdown.type-known
 
 ### Created / updated
 
-`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is set on every committed change. The `dome.markdown` adoption-phase processor updates `updated:` automatically when a patch touches the body or other frontmatter — the user does not maintain it.
+`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is expected to match the date of the page's most recent committed content change. In v1's diagnostic-only substrate, `dome.markdown.stale-dates` warns when `updated:` trails the path's git `lastChangedAt` date by more than one day; automatic date-bumping remains a later patching policy decision.
 
 ### Sources
 

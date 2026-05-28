@@ -110,10 +110,17 @@ export async function add(path: string, filepath: string): Promise<void> {
   await git.add({ fs, dir: root, filepath: fullpath });
 }
 
+export type CommitIdentity = {
+  readonly name: string;
+  readonly email: string;
+  readonly timestamp?: number;
+};
+
 export async function commit(opts: {
   path: string;
   message: string;
-  author?: { name: string; email: string };
+  author?: CommitIdentity;
+  committer?: CommitIdentity;
   files?: ReadonlyArray<string>;
 }): Promise<string> {
   const { path, message, files } = opts;
@@ -130,7 +137,13 @@ export async function commit(opts: {
       }
     }
   }
-  return git.commit({ fs, dir: root, message, author });
+  return git.commit({
+    fs,
+    dir: root,
+    message,
+    author,
+    ...(opts.committer !== undefined ? { committer: opts.committer } : {}),
+  });
 }
 
 export async function readTree(opts: { path: string; oid: string }): Promise<Awaited<ReturnType<typeof git.readTree>>> {
@@ -197,6 +210,53 @@ export async function log(opts: {
     ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
     ...(opts.ref !== undefined ? { ref: opts.ref } : {}),
   });
+}
+
+export type FileInfoAtCommit = {
+  readonly lastChangedCommit: string;
+  readonly lastChangedAt: string;
+};
+
+/**
+ * Return git-backed metadata for a vault-relative file at `commit`.
+ *
+ * This is intentionally narrower than exposing `git.log` to processors:
+ * callers get the single fact a snapshot can answer deterministically
+ * ("which commit last changed this readable path, and when was that commit
+ * made?") without learning about refs, branches, or repository layout.
+ */
+export async function fileInfoAtCommit(opts: {
+  path: string;
+  commit: string;
+  filepath: string;
+}): Promise<FileInfoAtCommit | null> {
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  try {
+    const commits = await git.log({
+      fs,
+      dir: root,
+      ref: opts.commit,
+      filepath: fullpath,
+      depth: 1,
+      force: true,
+    });
+    const latest = commits[0];
+    if (latest === undefined) return null;
+    return {
+      lastChangedCommit: latest.oid,
+      lastChangedAt: new Date(latest.commit.committer.timestamp * 1000).toISOString(),
+    };
+  } catch (e) {
+    if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
+      return null;
+    }
+    if (typeof e === "object" && e !== null && "code" in e) {
+      const code = (e as { code: unknown }).code;
+      if (code === "NotFoundError") return null;
+    }
+    throw e;
+  }
 }
 
 /**

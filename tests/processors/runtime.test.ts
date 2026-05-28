@@ -597,6 +597,13 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
       },
       listMarkdownFiles: async (): Promise<ReadonlyArray<string>> =>
         Object.freeze(["wiki/allowed.md", "secret/denied.md"]),
+      getFileInfo: async (path: string) => ({
+        lastChangedCommit: CANDIDATE,
+        lastChangedAt:
+          path === "wiki/allowed.md"
+            ? "2026-05-28T00:00:00.000Z"
+            : "2026-05-27T00:00:00.000Z",
+      }),
     });
     const p = makeFixtureProcessor({
       id: "test.scoped-snapshot",
@@ -608,6 +615,8 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
         observed.denied = await ctx.snapshot.readFile("secret/denied.md");
         observed.invalid = await ctx.snapshot.readFile("../secret.md");
         observed.listed = await ctx.snapshot.listMarkdownFiles();
+        const info = await ctx.snapshot.getFileInfo("secret/denied.md");
+        expect(info).toBeNull();
         return [];
       },
     });

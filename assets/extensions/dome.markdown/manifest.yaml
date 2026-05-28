@@ -69,6 +69,19 @@ processors:
       - kind: question.ask
     module: processors/duplicate-detection.ts
 
+  - id: dome.markdown.stale-dates
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/stale-dates.ts
+
   - id: dome.markdown.orphan-pages
     version: 0.1.0
     phase: view

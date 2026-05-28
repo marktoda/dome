@@ -19,6 +19,7 @@ const snapshot: Snapshot = Object.freeze({
   // runtime tests cover the live wiring against the git boundary.
   readFile: async (_path: string): Promise<string | null> => null,
   listMarkdownFiles: async (): Promise<ReadonlyArray<string>> => [],
+  getFileInfo: async () => null,
 });
 
 function baseInput<TInput>(overrides: Partial<ProcessorContextInput<TInput>> & {

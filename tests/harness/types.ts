@@ -225,7 +225,17 @@ export type UserCommitInput = {
   /** Commit message. */
   readonly message: string;
   /** Author override. Defaults to `dome-test <test@local>`. */
-  readonly author?: { readonly name: string; readonly email: string };
+  readonly author?: {
+    readonly name: string;
+    readonly email: string;
+    readonly timestamp?: number;
+  };
+  /** Committer override. Defaults to the author identity. */
+  readonly committer?: {
+    readonly name: string;
+    readonly email: string;
+    readonly timestamp?: number;
+  };
 };
 
 export type UserEditInput = {

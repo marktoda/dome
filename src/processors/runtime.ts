@@ -60,8 +60,8 @@
 //     (executeProcessor), `./execution-policy` (resolveExecutionPolicy),
 //     `../run-context` (makeRunContext — the no-ledger fallback for
 //     runner-result runId). The `../git` import
-//     surfaces `readBlob` / `readTree` for the Snapshot's read closures
-//     (`readFile`, `listMarkdownFiles`); the closures are lazy — invoked
+//     surfaces `readBlob` / `readTree` / `fileInfoAtCommit` for the Snapshot's read closures
+//     (`readFile`, `listMarkdownFiles`, `getFileInfo`); the closures are lazy — invoked
 //     only when an adoption-phase processor reads from `ctx.snapshot` —
 //     so runtimes whose processors don't touch the snapshot incur no git
 //     I/O. The ledger handle's SQLite I/O is owned by `src/ledger/`.
@@ -78,8 +78,8 @@ import type {
   TreeOid,
 } from "../core/processor";
 import type { Proposal } from "../core/proposal";
-import type { CommitOid } from "../core/source-ref";
-import { readBlob, readTree } from "../git";
+import { commitOid, type CommitOid } from "../core/source-ref";
+import { fileInfoAtCommit, readBlob, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
   GardenPhaseRunner,
@@ -503,6 +503,14 @@ export async function makeSnapshot(
     readFile: (path: string) =>
       readBlob({ path: vaultPath, commit, filepath: path }),
     listMarkdownFiles: () => listMarkdownPathsInTree(vaultPath, commit),
+    getFileInfo: async (path: string) => {
+      const info = await fileInfoAtCommit({ path: vaultPath, commit, filepath: path });
+      if (info === null) return null;
+      return {
+        lastChangedCommit: commitOid(info.lastChangedCommit),
+        lastChangedAt: info.lastChangedAt,
+      };
+    },
   });
 }
 
@@ -811,6 +819,11 @@ function scopeSnapshotForProcessor(
     listMarkdownFiles: async (): Promise<ReadonlyArray<string>> => {
       const paths = await snapshot.listMarkdownFiles();
       return filterReadablePaths(paths, frame.declared, frame.granted);
+    },
+    getFileInfo: async (path: string) => {
+      const readable = readablePath(path, frame.declared, frame.granted);
+      if (readable === null) return null;
+      return snapshot.getFileInfo(readable);
     },
   });
 }

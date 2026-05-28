@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -21,7 +21,7 @@ Capabilities are about **effect power**, not arbitrary trust labels. Ten tiers c
 
 ```ts
 type Capability =
-  | { kind: "read";          paths: string[] }                  // glob patterns; allows reading via ctx.snapshot
+  | { kind: "read";          paths: string[] }                  // glob patterns; allows content/metadata reads via ctx.snapshot
   | { kind: "patch.propose"; paths: string[] }                  // allows PatchEffect mode:"propose"
   | { kind: "patch.auto";    paths: string[] }                  // allows PatchEffect mode:"auto"
   | { kind: "owns.region";   regionIds: string[] }              // exclusive ownership of marker regions
@@ -35,7 +35,7 @@ type Capability =
 
 ### `read`
 
-Permits the processor to read paths matching the listed glob patterns via `ctx.snapshot`. Paths outside the granted set return `null` from snapshot reads — the processor cannot accidentally observe data it has no business reading.
+Permits the processor to read paths matching the listed glob patterns via `ctx.snapshot`. This covers both content reads (`readFile`, `listMarkdownFiles`) and path metadata reads (`getFileInfo`). Paths outside the granted set return `null` from snapshot reads — the processor cannot accidentally observe data it has no business reading.
 
 Default for adoption-phase processors: the paths their triggers match (read what you react to). Garden-phase processors typically request broader read (whole `wiki/` to cross-reference).
 
