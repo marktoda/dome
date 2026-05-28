@@ -138,21 +138,33 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + ")",
 
   // 4. diagnostics — DiagnosticEffect rows. UNIQUE (processor_id, code,
-  //    proposal_id) dedups when a processor re-emits the same diagnostic
-  //    on retry. `proposal_id` is nullable for diagnostics not tied to a
-  //    proposal (adoption-phase diagnostics emitted against the adopted ref).
+  //    proposal_id, source_refs_hash) dedups when a processor re-emits
+  //    the same diagnostic at the same source location across retries —
+  //    but lets a single processor invocation surface many distinct
+  //    diagnostics (e.g., validate-wikilinks finding N broken links
+  //    across different files). `source_refs_hash` is a sha256-hex of
+  //    the canonical JSON-stringified sourceRefs array.
+  //
+  //    Prior to the source_refs_hash discriminator, `UNIQUE (processor_id,
+  //    code, proposal_id)` collapsed all distinct diagnostics from one
+  //    processor in one proposal into a single row — masking real defects
+  //    in the user's vault.
+  //
+  //    `proposal_id` is nullable for diagnostics not tied to a proposal
+  //    (adoption-phase diagnostics emitted against the adopted ref).
   "CREATE TABLE IF NOT EXISTS diagnostics ("
     + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     + "severity TEXT NOT NULL,"
     + "code TEXT NOT NULL,"
     + "message TEXT NOT NULL,"
     + "source_refs TEXT NOT NULL,"
+    + "source_refs_hash TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
     + "proposal_id TEXT,"
     + "adopted_commit TEXT NOT NULL,"
     + "written_at TEXT NOT NULL,"
     + "resolved_at TEXT,"
-    + "UNIQUE (processor_id, code, proposal_id)"
+    + "UNIQUE (processor_id, code, proposal_id, source_refs_hash)"
     + ")",
 
   // 5. questions — QuestionEffect rows. `idempotency_key` UNIQUE dedups

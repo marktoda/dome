@@ -160,7 +160,7 @@ describe("facts accessor", () => {
 // ----- diagnostics ---------------------------------------------------------
 
 describe("diagnostics accessor", () => {
-  it("insertDiagnostic is idempotent on (processorId, code, proposalId)", () => {
+  it("insertDiagnostic is idempotent on (processorId, code, proposalId, sourceRefs)", () => {
     const effect = diagnosticEffect({
       severity: "warning",
       code: "stale-link",
@@ -180,10 +180,50 @@ describe("diagnostics accessor", () => {
       adoptedCommit: ADOPTED,
     });
 
-    // INSERT OR IGNORE on the UNIQUE (processor_id, code, proposal_id) means
-    // exactly one row survives the second insert.
+    // INSERT OR IGNORE on the UNIQUE (processor_id, code, proposal_id,
+    // source_refs_hash) means a re-emission of the same diagnostic at the
+    // same source location is a silent no-op.
     const got = queryDiagnostics(db);
     expect(got.length).toBe(1);
+  });
+
+  it("insertDiagnostic inserts distinct rows when sourceRefs differ", () => {
+    // Two diagnostics with the same (processorId, code, proposalId) but
+    // different sourceRefs — e.g., validate-wikilinks finding two broken
+    // links in two different files. Pre-fix, the UNIQUE constraint
+    // collapsed these into one row, masking real defects.
+    const ref1 = sourceRef({
+      commit: ADOPTED,
+      path: "wiki/a.md",
+    });
+    const ref2 = sourceRef({
+      commit: ADOPTED,
+      path: "wiki/b.md",
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "broken-link",
+        message: "broken link in a.md",
+        sourceRefs: [ref1],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "broken-link",
+        message: "broken link in b.md",
+        sourceRefs: [ref2],
+      }),
+      processorId: "p1",
+      proposalId: "prop_1",
+      adoptedCommit: ADOPTED,
+    });
+
+    expect(queryDiagnostics(db).length).toBe(2);
   });
 
   it("queryDiagnostics({severity: 'warning'}) filters by severity", () => {

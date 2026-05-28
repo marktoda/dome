@@ -5,18 +5,25 @@
 //
 // Normative references:
 //   - docs/wiki/specs/projection-store.md §"Tables — diagnostics"
-//     (column shape + UNIQUE (processor_id, code, proposal_id))
+//     (column shape + UNIQUE (processor_id, code, proposal_id,
+//     source_refs_hash))
 //   - docs/wiki/specs/projection-store.md §"Query API" (read surface)
 //
 // House-style notes (matches src/projections/db.ts, src/projections/facts.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - JSON column `source_refs` serialized via `JSON.stringify`; symmetric
 //     `JSON.parse` on read.
+//   - `source_refs_hash` is sha256-hex of the canonical JSON-stringified
+//     sourceRefs array. Two diagnostics with identical sourceRefs hash to
+//     the same value — that's the dedup discriminator. Two diagnostics
+//     with distinct sourceRefs hash to different values and both insert.
 //   - Row → DiagnosticEffect deserialization goes through `diagnosticEffect`.
 //   - Returned arrays are `Object.freeze`'d.
 //   - INSERT uses `INSERT OR IGNORE` to honor the UNIQUE constraint: a
-//     re-emission of the same (processor_id, code, proposal_id) triple is a
-//     no-op (per spec §"Tables — diagnostics" — dedup on retry).
+//     re-emission of the same (processor_id, code, proposal_id,
+//     source_refs_hash) quadruple is a no-op.
+
+import { createHash } from "node:crypto";
 
 import type { DiagnosticEffect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
@@ -47,9 +54,9 @@ export type ResolveDiagnosticOpts = {
 
 const INSERT_DIAGNOSTIC_SQL = `
 INSERT OR IGNORE INTO diagnostics (
-  severity, code, message, source_refs, processor_id,
+  severity, code, message, source_refs, source_refs_hash, processor_id,
   proposal_id, adopted_commit, written_at, resolved_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 `.trim();
 
 const QUERY_ALL_SQL = `
@@ -99,9 +106,11 @@ type DiagnosticRow = {
 
 /**
  * Insert a DiagnosticEffect row. The table's `UNIQUE (processor_id, code,
- * proposal_id)` constraint means re-emission of the same triple is silently
- * deduped via `INSERT OR IGNORE` — the spec's "dedups when a processor re-
- * emits the same diagnostic on retry" semantic.
+ * proposal_id, source_refs_hash)` constraint means re-emission of the
+ * same diagnostic at the same source location is silently deduped via
+ * `INSERT OR IGNORE` — but a single processor invocation that surfaces
+ * many distinct diagnostics (e.g., validate-wikilinks finding N broken
+ * links across N files) inserts all N rows.
  *
  * Throws on SQLite-level failure (disk full).
  */
@@ -110,11 +119,14 @@ export function insertDiagnostic(
   opts: DiagnosticInsertOpts,
 ): void {
   const { effect, processorId, proposalId, adoptedCommit } = opts;
+  const sourceRefsJson = JSON.stringify(effect.sourceRefs);
+  const sourceRefsHash = createHash("sha256").update(sourceRefsJson).digest("hex");
   db.raw.query(INSERT_DIAGNOSTIC_SQL).run(
     effect.severity,
     effect.code,
     effect.message,
-    JSON.stringify(effect.sourceRefs),
+    sourceRefsJson,
+    sourceRefsHash,
     processorId,
     proposalId,
     adoptedCommit,

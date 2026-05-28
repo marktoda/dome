@@ -112,21 +112,22 @@ Stores `DiagnosticEffect` rows.
 
 ```sql
 CREATE TABLE diagnostics (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  severity        TEXT NOT NULL,        -- "info" | "warning" | "error" | "block"
-  code            TEXT NOT NULL,        -- e.g., "wikilink.unresolved"
-  message         TEXT NOT NULL,
-  source_refs     TEXT NOT NULL,        -- JSON-encoded SourceRef[]
-  processor_id    TEXT NOT NULL,
-  proposal_id     TEXT,                 -- nullable; null for diagnostics not tied to a proposal
-  adopted_commit  TEXT NOT NULL,
-  written_at      TEXT NOT NULL,
-  resolved_at     TEXT,                 -- nullable; set when the diagnostic no longer applies
-  UNIQUE (processor_id, code, proposal_id)
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  severity          TEXT NOT NULL,        -- "info" | "warning" | "error" | "block"
+  code              TEXT NOT NULL,        -- e.g., "wikilink.unresolved"
+  message           TEXT NOT NULL,
+  source_refs       TEXT NOT NULL,        -- JSON-encoded SourceRef[]
+  source_refs_hash  TEXT NOT NULL,        -- sha256-hex of source_refs JSON; dedup discriminator
+  processor_id      TEXT NOT NULL,
+  proposal_id       TEXT,                 -- nullable; null for diagnostics not tied to a proposal
+  adopted_commit    TEXT NOT NULL,
+  written_at        TEXT NOT NULL,
+  resolved_at       TEXT,                 -- nullable; set when the diagnostic no longer applies
+  UNIQUE (processor_id, code, proposal_id, source_refs_hash)
 );
 ```
 
-The `UNIQUE` constraint dedups when a processor re-emits the same diagnostic on retry.
+The `UNIQUE` constraint dedups when a processor re-emits the same diagnostic at the same source location across retries — but does NOT collapse multiple distinct diagnostics from one processor invocation (e.g., `validate-wikilinks` finding many broken links across many files all get their own rows because their `sourceRefs` differ). Prior to the `source_refs_hash` discriminator, the constraint was `UNIQUE (processor_id, code, proposal_id)` which silently merged all distinct diagnostics from one processor in one proposal into a single row.
 
 ### `questions`
 
