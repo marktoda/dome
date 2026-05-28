@@ -408,7 +408,7 @@ describe("runs lifecycle", () => {
     expect(JSON.parse(terminal?.error ?? "{}").code).toBe("processor.timeout");
   });
 
-  it("queued → skipped transitions a dedup-cached run", () => {
+  it("queued → skipped transitions an idempotency-dedup run without error", () => {
     const id = freshId();
     queue(id);
 
@@ -424,6 +424,35 @@ describe("runs lifecycle", () => {
     expect(done.durationMs).toBeNull();
     expect(done.error).toBeNull();
     expect(done.effectHashes).toEqual([]);
+  });
+
+  it("queued → skipped can capture a not-invoked reason", () => {
+    const id = freshId();
+    queue(id);
+
+    const finishedAt = new Date("2026-05-27T12:00:01.000Z");
+    markSkipped(db, {
+      id,
+      finishedAt,
+      error: JSON.stringify({
+        code: "execution-policy.phase-class-denied",
+        message: "Adoption processors must use deterministic execution.",
+        phase: "adoption",
+        processorId: "dome.intake.extract",
+      }),
+    });
+
+    const done = getRun(db, id);
+    expect(done).not.toBeNull();
+    if (done === null) return;
+    expect(done.status).toBe("skipped");
+    expect(done.finishedAt).toBe(finishedAt.toISOString());
+    expect(done.durationMs).toBeNull();
+    expect(done.effectHashes).toEqual([]);
+    const parsed = JSON.parse(done.error ?? "{}");
+    expect(parsed.code).toBe("execution-policy.phase-class-denied");
+    expect(parsed.phase).toBe("adoption");
+    expect(parsed.processorId).toBe("dome.intake.extract");
   });
 
   it("markRunning on an already-running row is a no-op (status unchanged)", () => {

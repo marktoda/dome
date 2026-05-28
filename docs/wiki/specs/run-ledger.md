@@ -25,7 +25,7 @@ The ledger augments the trailers with data git cannot carry:
 | Capability uses | ledger | audit surface for "this processor wrote to dome.tasks namespace" |
 | Cost (LLM tokens × pricing) | ledger | per-processor spend tracking |
 | Wall-clock duration | ledger | performance debugging |
-| Error message | ledger | failed-run forensics |
+| Error message / not-invoked reason | ledger | failed-run and skipped-run forensics |
 
 Successful adoption-phase runs that contribute to a closure commit appear in **both** surfaces. The `Dome-Run` trailer is the join key — the ledger row's `id` matches the trailer's value. This is the dual-surface enforcement of [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]].
 
@@ -54,7 +54,7 @@ CREATE TABLE runs (
   effect_hashes_json   TEXT NOT NULL,            -- JSON-encoded string[] (sha256 of each emitted effect)
   cost_usd             REAL,                     -- nullable; populated by model.invoke usage
   duration_ms          INTEGER,                  -- nullable; null while running
-  error                TEXT,                     -- nullable; failure detail
+  error                TEXT,                     -- nullable; failure detail or not-invoked reason JSON
   trigger_kind         TEXT NOT NULL,            -- "signal" | "path" | "schedule" | "command"
   trigger_payload_json TEXT NOT NULL,            -- the input that fired the trigger
   started_at           TEXT NOT NULL,
@@ -88,12 +88,12 @@ queued      Engine enqueued the processor invocation; not yet running.
 running     Processor.run() is executing.
 succeeded   Processor.run() returned without throwing and all emitted Effects validated.
 failed      Processor.run() threw or returned invalid output; the run was abandoned.
-skipped     Idempotency dedup short-circuited the run (cached result reused per processor_versions_hash).
+skipped     The run was not invoked. Idempotency dedup leaves error null; policy denial / quarantine records structured reason JSON.
 timed_out   The invocation exceeded its phase timeout; late effects were discarded.
 cancelled   The engine intentionally stopped the run during shutdown or operator intervention.
 ```
 
-The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to a terminal state at the end. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome inspect runs --status running` lists them. Recovery follows the engine-asks model (v1.x): the deferred `dome.health.detect-orphan-runs` scheduled garden-phase processor emits a `QuestionEffect` per orphan row; the user answers `fail` (transition to `failed`) or `keep` (waiting on a long-running operation) via `dome answer`; the answer-handler processor applies the mutation. See [[wiki/specs/processor-execution]] for timeout, cancellation, retry, and quarantine semantics.
+The engine writes `queued` rows synchronously when enqueueing; updates to `running` at the start of `Processor.run()`; updates to a terminal state at the end. A row may move directly from `queued` to `skipped` when the runtime decides not to invoke the processor. Idempotency skips preserve the historical `error = NULL` shape; policy-denial and future quarantine skips write structured reason JSON into `error` so the audit row explains why no processor code ran. Crashes between `running` and the terminal state leave orphaned `running` rows — `dome inspect runs --status running` lists them. Recovery follows the engine-asks model (v1.x): the deferred `dome.health.detect-orphan-runs` scheduled garden-phase processor emits a `QuestionEffect` per orphan row; the user answers `fail` (transition to `failed`) or `keep` (waiting on a long-running operation) via `dome answer`; the answer-handler processor applies the mutation. See [[wiki/specs/processor-execution]] for timeout, cancellation, retry, and quarantine semantics.
 
 ## Cost tracking
 

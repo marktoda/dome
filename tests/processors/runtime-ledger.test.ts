@@ -275,13 +275,25 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     if (row === undefined) throw new Error("expected row");
 
     expect(row.status).toBe("skipped");
-    expect(row.error).toBeNull();
+    const parsed = JSON.parse(row.error ?? "{}");
+    expect(parsed.code).toBe("execution-policy.phase-class-denied");
+    expect(parsed.message).toContain(
+      "Adoption processors must use deterministic execution",
+    );
+    expect(parsed.phase).toBe("adoption");
+    expect(parsed.processorId).toBe("test.ledger.policy-denied");
     expect(row.durationMs).toBeNull();
     expect(row.finishedAt).not.toBeNull();
   });
 
   test("garden processor timeout lands timed_out row with structured error", async () => {
     const ledger = await openLedger();
+    const lateEffect = diagnosticEffect({
+      severity: "info",
+      code: "test.late-after-timeout",
+      message: "late output should be discarded",
+      sourceRefs: [],
+    });
     const p = makeFixtureProcessor({
       id: "test.ledger.timeout",
       phase: "garden",
@@ -295,7 +307,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
           }
           ctx.signal.addEventListener("abort", () => resolve(), { once: true });
         });
-        return [];
+        return [lateEffect];
       },
     });
     const rt = buildRuntimeFor([p], ledger);
@@ -309,7 +321,10 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     });
 
     expect(results.length).toBe(1);
-    const effect = results[0]?.effects[0];
+    const effects = results[0]?.effects ?? [];
+    expect(effects.length).toBe(1);
+    expect(effects).not.toContainEqual(lateEffect);
+    const effect = effects[0];
     expect(effect?.kind).toBe("diagnostic");
     if (effect?.kind !== "diagnostic") return;
     expect(effect.code).toBe("processor.timeout");
@@ -321,6 +336,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     if (row === undefined) throw new Error("expected row");
 
     expect(row.status).toBe("timed_out");
+    expect(row.effectHashes).toEqual([]);
     const parsed = JSON.parse(row.error ?? "{}");
     expect(parsed.code).toBe("processor.timeout");
     expect(parsed.processorId).toBe("test.ledger.timeout");

@@ -1,9 +1,8 @@
-// ProcessorRuntime: the adapter that satisfies the engine's
-// `AdoptionPhaseRunner` callback contract by walking the loaded
-// `ProcessorRegistry`, matching each adoption-phase processor's triggers
-// against the per-iteration signals, packaging a `ProcessorContext` via
-// `makeProcessorContext`, invoking `processor.run`, and collecting one
-// `RunnerResult` per firing processor.
+// ProcessorRuntime: the adapter that satisfies the engine's adoption,
+// garden, and view runner contracts by walking the loaded
+// `ProcessorRegistry`, matching triggers, packaging a `ProcessorContext`
+// via `makeProcessorContext`, invoking processors through the executor
+// boundary, and collecting one `RunnerResult` per firing processor.
 //
 // See docs/wiki/specs/processors.md §"The three phases" + §"Triggers and
 // signals" + §"Run ledger" for the operational contract this runtime
@@ -11,17 +10,14 @@
 // loop" for the call site (`src/engine/adopt.ts`'s `runAdoptionProcessors`
 // injection point).
 //
-// v1 Phase 3 scope (intentional simplifications, documented per the phase
+// v1 runtime scope (intentional simplifications, documented per the phase
 // plan):
 //
-//   - Only the adoption-phase runner is exposed. Garden + view runners are
-//     Phase 4+ work; the `ProcessorRuntime` type carries the slot so adding
-//     them is additive, not a rename.
-//   - The processor input is a uniform envelope: every adoption-phase
-//     processor sees `ctx.input = { kind: "adoption", matchedTriggers }`
-//     listing which of its declared triggers fired and which signal events
-//     matched each. Per-processor `TInput` specialization is a Phase 4+
-//     refinement.
+//   - Adoption, garden, and view runners ship. Adoption/garden use matched
+//     signal/path trigger envelopes; view uses command envelopes.
+//   - The processor input is a uniform phase envelope (for adoption/garden,
+//     `{ kind, matchedTriggers }`). Per-processor `TInput` specialization is
+//     a future refinement.
 //   - Tree-OID resolution is injected at `buildRuntime` time via the
 //     `resolveTree` callback (kept injected for testability + symmetry with
 //     the per-iteration resolve site). Phase 11d adds direct `../git`
@@ -36,7 +32,10 @@
 //     handle). The factory's `modelInvoke` slot is left unset.
 //   - Processor execution is delegated through `executeProcessor`, which
 //     validates output, enforces execution policy, and turns terminal
-//     failures into diagnostics without crashing the loop.
+//     failures into diagnostics without crashing the loop. Successful runs
+//     persist effect hashes; failed / timed_out / cancelled runs persist
+//     structured errors; pre-run policy denial is recorded as skipped with
+//     a structured not-invoked reason.
 //
 // House-style notes (matches src/processors/registry.ts,
 // src/processors/triggers.ts, src/processors/context.ts):
@@ -51,9 +50,10 @@
 //     (CommitOid), `../engine/runner-contract` (AdoptionPhaseRunner +
 //     RunnerResult — the neutral home for the engine's outbound runner
 //     contract that this runtime implements), `../ledger/db` (LedgerDb
-//     handle type — the Phase 6 ledger-lifecycle seam), `../ledger/runs`
-//     (insertQueued / markRunning / markSucceeded / markFailed / newRunId
-//     + RunId & TriggerKind types — the per-run ledger writes pinned by
+//     handle type), `../ledger/runs` (insertQueued / markRunning /
+//     markSucceeded / markFailed / markTimedOut / markCancelled /
+//     markSkipped / newRunId + RunId & TriggerKind types — the per-run
+//     ledger writes pinned by
 //     EVERY_PROCESSOR_RUN_IS_LEDGERED), `./registry` (ProcessorRegistry),
 //     `./triggers` (matchTriggers + TriggerMatch), `./context`
 //     (makeProcessorContext + ProcessorContextInput), `./executor`
@@ -211,9 +211,10 @@ export type BuildRuntimeOptions = {
   /**
    * Optional run-ledger handle. When present, every dispatched processor
    * lands one row in `runs` per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
-   * §"Structural enforcement": `insertQueued` + `markRunning` before
-   * `processor.run()`; `markSucceeded` (with effect hashes) or `markFailed`
-   * (with the thrown error message) after.
+   * §"Structural enforcement": `insertQueued` before policy resolution,
+   * `markSkipped` for pre-run policy denial, `markRunning` before executor
+   * invocation, and exactly one terminal mark (`succeeded`, `failed`,
+   * `timed_out`, or `cancelled`) after executor completion.
    *
    * Optional during the Phase 6 transition: existing call sites
    * (`tests/processors/runtime.test.ts`, the to-be-wired `src/vault.ts`)
@@ -468,9 +469,11 @@ export async function makeSnapshot(
 
 /**
  * Per-processor dispatch — shared between adoption and garden runners.
- * Handles run-id allocation, ledger lifecycle (queued → running →
- * succeeded/failed), context construction, exception synthesis, and
- * RunnerResult assembly.
+ * Handles run-id allocation, ledger lifecycle (queued → skipped for
+ * not-invoked policy denial, or queued → running → succeeded/failed/
+ * timed_out/cancelled), context construction, executor invocation, and
+ * RunnerResult assembly. Executor terminal failures return diagnostics to
+ * the engine while structured errors land in the run ledger.
  *
  * The only per-phase variation in this lifecycle is the `phase` value
  * stored in the ledger row and the `envelope` shape passed as
@@ -545,9 +548,10 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
           sourceHead: proposal?.head ?? inputCommit,
         }).runId as RunId);
 
-  // Ledger lifecycle: queued + running, both synchronously before the
-  // processor runs. Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
-  // §"Structural enforcement" §1.
+  // Ledger lifecycle starts in queued before policy resolution. A denied
+  // policy never reaches `running`; it is marked `skipped` with a structured
+  // not-invoked reason so the audit row explains why processor.run() was not
+  // called.
   if (ledger !== undefined) {
     insertQueued(ledger, {
       id: runId,
@@ -569,8 +573,18 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
   });
   if (!policyResult.ok) {
     const finishedAt = new Date();
+    const error = {
+      code: policyResult.error.code,
+      message: policyResult.error.message,
+      phase,
+      processorId: processor.id,
+    };
     if (ledger !== undefined) {
-      markSkipped(ledger, { id: runId, finishedAt });
+      markSkipped(ledger, {
+        id: runId,
+        finishedAt,
+        error: JSON.stringify(error),
+      });
     }
     return Object.freeze({
       runId,
@@ -627,7 +641,10 @@ export async function dispatchOneProcessor<TEnvelope>(opts: {
     run: processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
   });
 
-  // Ledger lifecycle: terminal mark.
+  // Ledger lifecycle: terminal mark. Succeeded runs persist executor-provided
+  // effect hashes; failure, timeout, and cancellation persist structured
+  // executor errors. Timed-out/cancelled late effects are not routed and leave
+  // `effect_hashes_json` at the queued default.
   if (ledger !== undefined) {
     const finishedAt = new Date();
     if (execution.status === "succeeded") {

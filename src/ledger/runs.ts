@@ -48,10 +48,10 @@
 //                         UPDATE filters by status="running".
 //
 //   markSkipped         → "queued" → "skipped". Terminal. Captures
-//                         finished_at. UPDATE filters by status="queued".
-//                         Used when idempotency dedup short-circuits a
-//                         run (cached result reused per
-//                         processor_versions_hash, per spec §"Run lifecycle").
+//                         finished_at and optionally error/reason JSON.
+//                         UPDATE filters by status="queued". Used for
+//                         any not-invoked run, including idempotency
+//                         dedup and pre-run policy denial.
 //
 // `failOrphanedRuns` is the recovery path for engine crashes between
 // `markRunning` and a terminal mark — it transitions stuck-running rows
@@ -113,7 +113,7 @@ export type { RunId };
  * - `succeeded` — processor.run() returned without throwing.
  * - `failed`    — processor.run() threw, or returned an invalid Effect, or
  *                 the orphan-recovery path transitioned a stuck-running row.
- * - `skipped`   — idempotency dedup short-circuited the run.
+ * - `skipped`   — the run was not invoked (idempotency dedup, policy denial, etc.).
  * - `timed_out` — processor execution exceeded its configured deadline.
  * - `cancelled` — processor execution was cancelled by shutdown/re-drive.
  */
@@ -212,6 +212,11 @@ export type MarkCancelledOpts = {
 export type MarkSkippedOpts = {
   readonly id: RunId;
   readonly finishedAt: Date;
+  /**
+   * Optional not-invoked reason. Idempotency skips usually leave this null;
+   * policy denials and quarantine skips should write structured JSON.
+   */
+  readonly error?: string;
 };
 
 /**
@@ -322,6 +327,7 @@ WHERE id = ? AND status = 'running'
 const MARK_SKIPPED_SQL = `
 UPDATE runs
 SET status = 'skipped',
+    error = ?,
     finished_at = ?
 WHERE id = ? AND status = 'queued'
 `.trim();
@@ -485,16 +491,25 @@ export function markCancelled(db: LedgerDb, opts: MarkCancelledOpts): void {
 }
 
 /**
- * Transition a `queued` row to `skipped`. Used when idempotency dedup
- * short-circuits a run before `processor.run()` is dispatched. Captures
- * `finished_at` only; `duration_ms`, `error`, `effect_hashes_json` remain
- * at their queued-state defaults (null / null / "[]").
+ * Transition a `queued` row to `skipped`. Used when a run is not invoked:
+ * idempotency dedup may short-circuit a run before dispatch, execution
+ * policy can deny a run before `markRunning`, and future quarantine can
+ * suppress a matching trigger. Captures `finished_at` and, when supplied,
+ * an `error`/reason string. Idempotency skips should continue omitting
+ * `error`, preserving the historical NULL column value.
+ *
+ * `duration_ms` and `effect_hashes_json` remain at their queued-state
+ * defaults (null / "[]") because processor code never ran.
  *
  * UPDATE filters by `status = 'queued'` so a call against an already-
  * transitioned row is a no-op.
  */
 export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
-  db.raw.query(MARK_SKIPPED_SQL).run(opts.finishedAt.toISOString(), opts.id);
+  db.raw.query(MARK_SKIPPED_SQL).run(
+    opts.error ?? null,
+    opts.finishedAt.toISOString(),
+    opts.id,
+  );
 }
 
 /**

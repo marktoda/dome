@@ -80,7 +80,10 @@ scenario(
 
     // Step 5: the synthesized `processor.threw` block diagnostic landed.
     // Diagnostics don't require a capability declaration, so the broker
-    // still admits the diagnostic and adoption refuses to advance.
+    // admits the diagnostic before adoption refuses to advance. The adopted
+    // ref stays unchanged, but projection persistence still records the
+    // failed proposal's diagnostic so the user can inspect why adoption
+    // blocked.
     await h
       .expectProjection()
       .diagnostics({ code: "processor.threw", severity: "block" })
