@@ -59,10 +59,22 @@ export function treeOid(s: string): TreeOid {
  * being read (garden / view phases); `tree` is the git tree OID at that
  * commit. Processors read blobs through `ctx.snapshot` rather than via
  * filesystem — the engine resolves reads against `tree`.
+ *
+ * `readFile` returns the blob's content as UTF-8 text, or `null` when the
+ * path doesn't resolve to a blob inside the tree. `listMarkdownFiles`
+ * returns every `.md` path in the tree (recursively); the runtime resolves
+ * both against the git boundary in `../git`, so processors never touch the
+ * filesystem directly.
+ *
+ * The read methods are function-valued (rather than data fields) so the
+ * runtime can close over `(vaultPath, commit, tree)` and the processor's
+ * call site stays a clean `await ctx.snapshot.readFile("wiki/x.md")`.
  */
 export type Snapshot = {
   readonly commit: CommitOid;
   readonly tree: TreeOid;
+  readonly readFile: (path: string) => Promise<string | null>;
+  readonly listMarkdownFiles: () => Promise<ReadonlyArray<string>>;
 };
 
 // ----- ProcessorPhase -------------------------------------------------------
@@ -387,12 +399,18 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   ExternalCapabilitySchema,
 ]);
 
+// SnapshotSchema validates only the data fields (commit, tree); the read
+// methods (`readFile`, `listMarkdownFiles`) are function-valued and aren't
+// Zod-validatable. `.strict()` is intentionally relaxed here (`.passthrough`)
+// because runtime-constructed Snapshots carry the function fields the schema
+// can't describe — consumers that want a typed Snapshot should use the
+// `Snapshot` type alias, not `z.infer<typeof SnapshotSchema>`.
 export const SnapshotSchema = z
   .object({
     commit: z.string().min(1), // CommitOid; loose v1 check (40-char hex enforced upstream)
     tree: z.string().min(1), // TreeOid; loose v1 check (40-char hex enforced upstream)
   })
-  .strict();
+  .passthrough();
 
 // ----- defineProcessor ------------------------------------------------------
 

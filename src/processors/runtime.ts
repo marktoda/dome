@@ -23,10 +23,13 @@
 //     matched each. Per-processor `TInput` specialization is a Phase 4+
 //     refinement.
 //   - Tree-OID resolution is injected at `buildRuntime` time via the
-//     `resolveTree` callback. Keeping this file pure of git imports lets
-//     the consumer (`src/vault.ts` or a future `src/processors/index.ts`)
-//     wire the resolver against the live git boundary while this runtime
-//     stays I/O-free at the type layer.
+//     `resolveTree` callback (kept injected for testability + symmetry with
+//     the per-iteration resolve site). Phase 11d adds direct `../git`
+//     imports (`readBlob` / `readTree`) wired through the Snapshot's read
+//     closures — adoption-phase processors need to read blob content +
+//     enumerate the candidate tree to do their work, and the runtime is
+//     where that boundary is constructed. The git imports are only
+//     exercised lazily via the closure call sites.
 //   - `model.invoke` is never wired on adoption-phase contexts (per
 //     processors.md §"Adoption phase — bounded, deterministic,
 //     merge-blocking" — adoption-phase processors never receive a model
@@ -57,11 +60,15 @@
 //     `./triggers` (matchTriggers + TriggerMatch), `./context`
 //     (makeProcessorContext + ProcessorContextInput), `../run-context`
 //     (makeRunContext — the no-ledger fallback for runner-result runId).
-//     `node:crypto` for the `hashEffect` content hash. No filesystem
-//     imports — the `resolveTree` injection point bridges to git; the
-//     ledger handle's SQLite I/O is owned by `src/ledger/`.
+//     `node:crypto` for the `hashEffect` content hash. The `../git` import
+//     surfaces `readBlob` / `readTree` for the Snapshot's read closures
+//     (`readFile`, `listMarkdownFiles`); the closures are lazy — invoked
+//     only when an adoption-phase processor reads from `ctx.snapshot` —
+//     so runtimes whose processors don't touch the snapshot incur no git
+//     I/O. The ledger handle's SQLite I/O is owned by `src/ledger/`.
 
 import { createHash } from "node:crypto";
+import { posix } from "node:path";
 
 import type { DiagnosticEffect, Effect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
@@ -72,6 +79,7 @@ import type {
   TreeOid,
 } from "../core/processor";
 import type { CommitOid } from "../core/source-ref";
+import { readBlob, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
   RunnerResult,
@@ -202,11 +210,20 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     }
 
     // Resolve the candidate tree OID once per iteration — every firing
-    // processor sees the same Snapshot for the same candidate.
+    // processor sees the same Snapshot for the same candidate. The read
+    // closures (`readFile`, `listMarkdownFiles`) are bound to the vault path
+    // + candidate commit so processors stay filesystem-free; the underlying
+    // git boundary is `../git`'s readBlob / readTree.
     const tree = await resolveTree(input.candidate);
+    const vaultPath = input.vault.path;
+    const candidateCommit = input.candidate;
     const snapshot: Snapshot = Object.freeze({
-      commit: input.candidate,
+      commit: candidateCommit,
       tree,
+      readFile: (path: string) =>
+        readBlob({ path: vaultPath, commit: candidateCommit, filepath: path }),
+      listMarkdownFiles: () =>
+        listMarkdownPathsInTree(vaultPath, candidateCommit),
     });
 
     const results: RunnerResult[] = [];
@@ -458,4 +475,42 @@ function triggerPayloadOf(
     trigger: m.trigger,
     matchedSignals: m.matchedSignals,
   }));
+}
+
+/**
+ * Walk the tree at `commit` and return every blob path ending in `.md`,
+ * sorted lexicographically for determinism. Used to back the
+ * `Snapshot.listMarkdownFiles` closure — adoption-phase processors that
+ * resolve wikilink targets need the full markdown file set for the
+ * candidate snapshot.
+ *
+ * Path strings are POSIX-joined (matches the convention in
+ * `src/engine/compile-range.ts`'s walker). Non-blob entries (subtrees) are
+ * recursed into; the recursion is bounded by the tree's natural depth.
+ */
+async function listMarkdownPathsInTree(
+  vaultPath: string,
+  commit: CommitOid,
+): Promise<ReadonlyArray<string>> {
+  const out: string[] = [];
+  await walkTreeForMarkdown(vaultPath, commit, "", out);
+  out.sort();
+  return Object.freeze(out);
+}
+
+async function walkTreeForMarkdown(
+  vaultPath: string,
+  oid: string,
+  prefix: string,
+  out: string[],
+): Promise<void> {
+  const tree = await readTree({ path: vaultPath, oid });
+  for (const entry of tree.tree) {
+    const path = prefix === "" ? entry.path : posix.join(prefix, entry.path);
+    if (entry.type === "tree") {
+      await walkTreeForMarkdown(vaultPath, entry.oid, path, out);
+    } else if (entry.type === "blob" && path.endsWith(".md")) {
+      out.push(path);
+    }
+  }
 }

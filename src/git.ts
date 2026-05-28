@@ -138,6 +138,48 @@ export async function readTree(opts: { path: string; oid: string }): Promise<Awa
   return git.readTree({ fs, dir: root, oid: opts.oid });
 }
 
+/**
+ * Read a blob's content as a UTF-8 string, given the commit OID and the
+ * vault-relative path. Returns null when the path doesn't resolve to a blob
+ * inside the commit's tree (missing file, directory, or symlink — the latter
+ * surfaces as null because we don't follow links).
+ *
+ * Dogfood-mode safe: the `filepath` arg to isomorphic-git is relative to the
+ * git root, so we POSIX-join the vault subdir prefix before delegating. Vault
+ * callers see a vault-relative path; the helper handles the translation.
+ *
+ * Errors that aren't "not found" (e.g., a corrupt object, an I/O failure)
+ * propagate — the caller can decide whether to treat as missing or fail.
+ */
+export async function readBlob(opts: {
+  path: string;
+  commit: string;
+  filepath: string;
+}): Promise<string | null> {
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  try {
+    const result = await git.readBlob({
+      fs,
+      dir: root,
+      oid: opts.commit,
+      filepath: fullpath,
+    });
+    return Buffer.from(result.blob).toString("utf8");
+  } catch (e) {
+    // isomorphic-git throws NotFoundError when the path doesn't exist in the
+    // tree; treat that as "no such file" (null). Any other error propagates.
+    if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
+      return null;
+    }
+    if (typeof e === "object" && e !== null && "code" in e) {
+      const code = (e as { code: unknown }).code;
+      if (code === "NotFoundError") return null;
+    }
+    throw e;
+  }
+}
+
 export async function resolveRef(opts: { path: string; ref?: string }): Promise<string> {
   const { root } = await resolveGitContext(opts.path);
   return git.resolveRef({ fs, dir: root, ref: opts.ref ?? "HEAD" });

@@ -15,6 +15,10 @@ const TREE = treeOid("def456");
 const snapshot: Snapshot = Object.freeze({
   commit: COMMIT,
   tree: TREE,
+  // Stub read closures — the context factory tests don't exercise them; the
+  // runtime tests cover the live wiring against the git boundary.
+  readFile: async (_path: string): Promise<string | null> => null,
+  listMarkdownFiles: async (): Promise<ReadonlyArray<string>> => [],
 });
 
 function baseInput<TInput>(overrides: Partial<ProcessorContextInput<TInput>> & {
