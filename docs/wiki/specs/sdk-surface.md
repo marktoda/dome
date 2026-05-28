@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -245,6 +245,7 @@ The SDK ships nine `dome.*` bundles under `assets/extensions/`:
 | Bundle | Phase × processors | Purpose |
 |---|---|---|
 | `dome.markdown` | adoption: parse, validate-wikilinks | Parses markdown; emits diagnostics on broken wikilinks and frontmatter schema violations. |
+| `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns `index.md`. |
 | `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns `log.md`. |
 | `dome.links` | garden: cross-reference | On entity-page creation, finds mentions and emits PatchEffect to add backlinks. |

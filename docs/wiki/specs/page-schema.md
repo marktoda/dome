@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -19,6 +19,7 @@ type: <singular page-type name>   # required; matches the directory under wiki/
 created: <ISO-8601 date>          # required; the page's creation timestamp
 updated: <ISO-8601 date>          # required; updated on every committed change
 sources: [<wikilink>, ...]        # optional; explicit provenance citations
+tags: [<tag>, ...]                # optional; indexed by dome.graph.tag-index
 ---
 ```
 
@@ -41,6 +42,10 @@ Type validation against the declared page types is the `dome.markdown.type-known
 ### Sources
 
 `sources:` is optional but recommended. Carries a list of wikilinks pointing to evidence — typically raw captures (`[[raw/voice/2026-05-27-danny.md]]`) or other wiki pages. `dome.markdown.broken-sources` emits a warning on unresolvable sources at adoption.
+
+### Tags
+
+`tags:` is an optional universal list of short labels. The `dome.graph.tag-index` adoption processor indexes both frontmatter tags and inline `#tag` syntax as `dome.graph.tagged` facts for tag-based recall.
 
 ## Default page types
 

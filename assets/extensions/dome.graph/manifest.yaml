@@ -15,3 +15,18 @@ processors:
       - kind: graph.write
         namespaces: ["dome.graph.*"]
     module: processors/links.ts
+
+  - id: dome.graph.tag-index
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.graph.*"]
+    module: processors/tag-index.ts

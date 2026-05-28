@@ -11,7 +11,7 @@ import { expect } from "bun:test";
 import type { Harness, ProjectionMatcher } from "../types";
 
 type DiagFilter = { severity?: string; code?: string };
-type FactsFilter = { predicate?: string; subjectId?: string };
+type FactsFilter = { predicate?: string; subjectId?: string; objectString?: string };
 
 export class ProjectionMatcherImpl implements ProjectionMatcher {
   constructor(private readonly h: Harness) {}
@@ -135,7 +135,7 @@ function queryDiagnostics(h: Harness, f: DiagFilter): ReadonlyArray<DiagRow> {
   }));
 }
 
-type FactRow = { id: number };
+type FactRow = { id: number; object_json: string };
 
 function queryFacts(h: Harness, f: FactsFilter): ReadonlyArray<FactRow> {
   const clauses: string[] = [];
@@ -149,9 +149,11 @@ function queryFacts(h: Harness, f: FactsFilter): ReadonlyArray<FactRow> {
     params.push(f.subjectId);
   }
   const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
-  return h.projection.raw
-    .query<FactRow, string[]>(`SELECT id FROM facts${where}`)
+  const rows = h.projection.raw
+    .query<FactRow, string[]>(`SELECT id, object_json FROM facts${where}`)
     .all(...params);
+  if (f.objectString === undefined) return rows;
+  return rows.filter((row) => factObjectString(row.object_json) === f.objectString);
 }
 
 function describeDiagFilter(f: DiagFilter): string {
@@ -165,5 +167,13 @@ function describeFactsFilter(f: FactsFilter): string {
   const parts: string[] = [];
   if (f.predicate !== undefined) parts.push(`predicate=${f.predicate}`);
   if (f.subjectId !== undefined) parts.push(`subjectId=${f.subjectId}`);
+  if (f.objectString !== undefined) parts.push(`objectString=${f.objectString}`);
   return parts.length === 0 ? "(no filter)" : `{ ${parts.join(", ")} }`;
+}
+
+function factObjectString(objectJson: string): string | null {
+  const object = JSON.parse(objectJson) as { kind?: unknown; value?: unknown };
+  return object.kind === "string" && typeof object.value === "string"
+    ? object.value
+    : null;
 }

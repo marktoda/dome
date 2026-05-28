@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -13,7 +13,7 @@ Per-table map of which extension is authorized to write to each table in `<vault
 
 | Database | Table | Writers (extensions) | Schema authority | Capability gate |
 |---|---|---|---|---|
-| `projection.db` | `facts` | `dome.intake` (namespaces: `dome.tasks`, `dome.people`); `dome.search` (namespace: `dome.search`); third-party bundles per their `graph.write` grants | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
+| `projection.db` | `facts` | `dome.graph` (namespace: `dome.graph`); `dome.intake` (namespaces: `dome.tasks`, `dome.people`); `dome.search` (namespace: `dome.search`); third-party bundles per their `graph.write` grants | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
 | `projection.db` | `fts_documents` | `dome.search` exclusively | [[wiki/specs/projection-store]] §"Tables — fts_documents" | Internal to `dome.search.index-text`; not directly grantable to other extensions |
 | `projection.db` | `diagnostics` | every processor that emits `DiagnosticEffect` | [[wiki/specs/projection-store]] §"Tables — diagnostics" | (none — every processor may emit) |
 | `projection.db` | `questions` | every processor that emits `QuestionEffect` subject to `question.ask` | [[wiki/specs/projection-store]] §"Tables — questions" | `question.ask:<namespace>` |

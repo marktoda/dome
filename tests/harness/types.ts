@@ -341,7 +341,7 @@ export interface ProjectionMatcher {
     toAllHaveAdoptedCommit(expected: string): Promise<void>;
   };
   /** Assert N rows in the facts table match the filter. */
-  facts(filter?: { predicate?: string; subjectId?: string }): {
+  facts(filter?: { predicate?: string; subjectId?: string; objectString?: string }): {
     toHaveCount(n: number): Promise<void>;
   };
   /** Assert N rows in the questions table match the filter. */
