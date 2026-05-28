@@ -86,6 +86,7 @@ import type {
   AdoptionPhaseRunner,
   GardenPhaseRunner,
   RunnerResult,
+  ViewPhaseRunner,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "../ledger/db";
 import {
@@ -147,18 +148,39 @@ export type GardenRunInput = {
   readonly matchedTriggers: ReadonlyArray<TriggerMatch>;
 };
 
+// ----- ViewRunInput ---------------------------------------------------------
+
+/**
+ * The envelope every view-phase processor sees as `ctx.input` during a
+ * command-driven dispatch. Carries the command name (so a processor that
+ * declares multiple `command:` triggers can branch on which one fired)
+ * and the caller-supplied args (passed through verbatim from
+ * `runViewCommand`'s caller — typically the CLI dispatcher or MCP
+ * `dome.run_command` tool).
+ *
+ * View phase is command-driven (and, in Phase 4c, schedule-driven);
+ * unlike adoption and garden, there is no signal stream, so
+ * `matchedTriggers` is omitted — the command name uniquely identifies
+ * the trigger that fired.
+ */
+export type ViewRunInput = {
+  readonly kind: "view";
+  readonly commandName: string;
+  readonly commandArgs: unknown;
+};
+
 // ----- ProcessorRuntime -----------------------------------------------------
 
 /**
  * The handle returned by `buildRuntime`. Carries the per-phase runner
  * callbacks the engine's adoption / garden / view entry points consume.
  *
- * Phase 4a ships `adoptionRunner` + `gardenRunner`. The view runner is
- * Phase 4b work; the type slot will land there.
+ * Shipped as of Phase 4b: all three runners (adoption + garden + view).
  */
 export type ProcessorRuntime = {
   readonly adoptionRunner: AdoptionPhaseRunner;
   readonly gardenRunner: GardenPhaseRunner;
+  readonly viewRunner: ViewPhaseRunner;
 };
 
 // ----- BuildRuntimeOptions --------------------------------------------------
@@ -315,7 +337,79 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     return Object.freeze(results);
   };
 
-  return Object.freeze({ adoptionRunner, gardenRunner });
+  const viewRunner: ViewPhaseRunner = async (input) => {
+    const viewProcessors = registry.byPhase("view");
+    if (viewProcessors.length === 0) {
+      return null;
+    }
+
+    // Find the view-phase processor whose triggers include
+    // `{ kind: "command", name: input.commandName }`. Per
+    // [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy"
+    // §`cli-command-collision`, only one view-phase processor per
+    // command name is allowed; the bundle loader rejects collisions at
+    // load time. So `find` (not `filter`) is correct — at most one
+    // match exists.
+    const processor = viewProcessors.find((p) =>
+      p.triggers.some(
+        (t) => t.kind === "command" && t.name === input.commandName,
+      ),
+    );
+    if (processor === undefined) {
+      return null;
+    }
+    const matchedTrigger = processor.triggers.find(
+      (t) => t.kind === "command" && t.name === input.commandName,
+    );
+    if (matchedTrigger === undefined) {
+      // Defensive: the outer `find` already guarantees this, but
+      // `noUncheckedIndexedAccess` wants the explicit guard.
+      return null;
+    }
+
+    const snapshot = await makeSnapshot(
+      input.vault.path,
+      input.adopted,
+      resolveTree,
+    );
+
+    // Synthesize a one-element TriggerMatch list for the dispatcher.
+    // View commands have no signal events; `matchedSignals` is empty.
+    const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
+      Object.freeze({
+        trigger: matchedTrigger,
+        matchedSignals: Object.freeze([]) as ReadonlyArray<never>,
+      }),
+    ] as unknown as TriggerMatch[]);
+
+    return dispatchOneProcessor({
+      processor,
+      phase: "view",
+      envelope: Object.freeze({
+        kind: "view" as const,
+        commandName: input.commandName,
+        commandArgs: input.commandArgs,
+      }),
+      snapshot,
+      // View runs don't have a base..head delta the way adoption /
+      // garden do. `changedPaths` is empty; processors that need to
+      // walk the adopted snapshot use `ctx.snapshot.listMarkdownFiles`.
+      changedPaths: Object.freeze([]),
+      // View runs are not proposal-anchored. The ledger row's
+      // proposal_id is NULL.
+      proposal: null,
+      // The adopted commit is the "input" for ledger purposes (the
+      // snapshot the processor read from). This is what
+      // `runs.input_commit` records for view-phase rows.
+      inputCommit: input.adopted,
+      matches,
+      resolveGrants,
+      extensionIdFor,
+      ledger,
+    });
+  };
+
+  return Object.freeze({ adoptionRunner, gardenRunner, viewRunner });
 }
 
 // ----- shared dispatch helpers ----------------------------------------------
@@ -362,11 +456,11 @@ async function makeSnapshot(
  */
 async function dispatchOneProcessor<TEnvelope>(opts: {
   readonly processor: Processor<unknown>;
-  readonly phase: "adoption" | "garden";
+  readonly phase: "adoption" | "garden" | "view";
   readonly envelope: TEnvelope;
   readonly snapshot: Snapshot;
   readonly changedPaths: ReadonlyArray<string>;
-  readonly proposal: Proposal;
+  readonly proposal: Proposal | null;
   readonly inputCommit: CommitOid;
   readonly matches: ReadonlyArray<TriggerMatch>;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
@@ -395,14 +489,20 @@ async function dispatchOneProcessor<TEnvelope>(opts: {
   // `newRunId` so the id is the same one stored in the row; when no
   // ledger is wired we fall back to the `makeRunContext`-synthesized
   // form (identical shape).
+  //
+  // For view-phase runs (proposal === null), the fallback uses the
+  // input commit for both base and sourceHead — view runs aren't
+  // proposal-anchored and the makeRunContext fields just feed the
+  // RunId synthesis (the trailer values aren't emitted for view
+  // phase since views don't produce engine commits).
   const startedAt = new Date();
   const runId: RunId =
     ledger !== undefined
       ? newRunId(startedAt)
       : (makeRunContext({
           extensionId,
-          base: proposal.base,
-          sourceHead: proposal.head,
+          base: proposal?.base ?? inputCommit,
+          sourceHead: proposal?.head ?? inputCommit,
         }).runId as RunId);
 
   // Ledger lifecycle: queued + running, both synchronously before the
@@ -411,7 +511,7 @@ async function dispatchOneProcessor<TEnvelope>(opts: {
   if (ledger !== undefined) {
     insertQueued(ledger, {
       id: runId,
-      proposalId: proposal.id,
+      proposalId: proposal?.id ?? null,
       processorId: processor.id,
       processorVersion: processor.version,
       phase,
@@ -519,7 +619,7 @@ async function runOneProcessor<TEnvelope>(
   run: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>,
   ctx: ProcessorContext<TEnvelope>,
   processorId: string,
-  phase: "adoption" | "garden",
+  phase: "adoption" | "garden" | "view",
 ): Promise<RunOutcome> {
   try {
     const effects = await run(ctx as ProcessorContext<unknown>);
