@@ -35,6 +35,8 @@ import { commitOid, type CommitOid } from "../../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
 import { adopt, type AdoptEvent } from "../../engine/adopt";
 import { applyPatchToCandidate } from "../../engine/apply-patch";
+import { compileRange } from "../../engine/compile-range";
+import { runGardenPhase } from "../../engine/garden";
 import type { VaultRuntime } from "../../engine/vault-runtime";
 import { buildSqliteSinks } from "../../projections/sinks";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
@@ -313,7 +315,42 @@ export async function runOneAdoption(opts: {
     ledger: runtime.ledgerDb,
   };
   if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
-  return adopt(adoptOpts);
+  const adoptionResult = await adopt(adoptOpts);
+
+  // Phase 4a: invoke garden-phase processors after a successful adoption.
+  // Garden runs against the post-adoption signals computed from
+  // `(proposal.base, adoptedRef)` — the full delta of what was just
+  // adopted. Garden failures never undo adoption; outputs flow through
+  // the normal sinks (projection.db / outbox.db / runs.db) and are
+  // visible via `dome inspect` after the fact.
+  //
+  // For now, garden outcomes are intentionally not surfaced through
+  // `AdoptionResult` — they're observable via the run ledger and
+  // projection tables. A future polish may extend AdoptEvent with
+  // garden-phase markers for verbose-mode rendering.
+  //
+  // See [[wiki/specs/processors]] §"Garden phase" and Phase 4a in
+  // [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]. Phase 4a'
+  // will wire sub-Proposal spawn for garden-emitted PatchEffects.
+  if (adoptionResult.adopted) {
+    const gardenCompiled = await compileRange({
+      vaultPath: runtime.path,
+      base: drift.base,
+      head: adoptionResult.adoptedRef,
+    });
+    await runGardenPhase({
+      vault: adoptOpts.vault,
+      proposal,
+      adopted: adoptionResult.adoptedRef,
+      changedPaths: gardenCompiled.changedPaths,
+      signals: gardenCompiled.signals,
+      runGardenProcessors: runtime.processorRuntime.gardenRunner,
+      sinks,
+      ledger: runtime.ledgerDb,
+    });
+  }
+
+  return adoptionResult;
 }
 
 // ----- deriveExtensionId ---------------------------------------------------

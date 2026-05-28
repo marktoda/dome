@@ -75,6 +75,46 @@ export type AdoptionPhaseRunner = (input: {
   readonly proposal: Proposal;
 }) => Promise<ReadonlyArray<RunnerResult>>;
 
+// ----- GardenPhaseRunner ----------------------------------------------------
+
+/**
+ * The injected processor-runtime callback for garden-phase processing.
+ * Garden runs **after** adoption completes successfully; the runner is
+ * called once per adoption with the just-adopted commit, the signals
+ * the adoption computed from `base..adopted`, and the original
+ * proposal id (for ledger linkage). It returns one `RunnerResult` per
+ * garden-phase processor that fired.
+ *
+ * Per [[wiki/specs/processors]] §"Garden phase" and the v1 engine
+ * completion plan (Phase 4a in
+ * [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]), garden
+ * processors:
+ *
+ *   - See the just-adopted snapshot (the new trusted state) — NOT a
+ *     candidate snapshot, because garden runs after adoption finalized.
+ *   - Match against the same `SignalEvent` set the adoption loop saw
+ *     (computed from `base..adopted` via `compileRange`); the orchestrator
+ *     passes them through.
+ *   - May emit any Effect kind except ViewEffect (see
+ *     [[wiki/matrices/effect-router-targets]] — view rows are rejected
+ *     for garden phase). PatchEffect emissions from garden become
+ *     **sub-Proposals**: the orchestrator constructs a new Proposal and
+ *     routes it through `adopt()` recursively. Sub-Proposal recursion is
+ *     bounded by a cascade-depth cap (see Phase 4a's planning notes).
+ *
+ * Schedule triggers do not fire here (Phase 4c wires the scheduler);
+ * `signal:` and `path:` triggers are the entry points for v1 garden
+ * processors. The runtime's trigger matcher returns no candidates for
+ * schedule/command triggers in garden phase until Phase 4c.
+ */
+export type GardenPhaseRunner = (input: {
+  readonly vault: EngineVault;
+  readonly adopted: CommitOid;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly signals: ReadonlyArray<SignalEvent>;
+  readonly proposal: Proposal;
+}) => Promise<ReadonlyArray<RunnerResult>>;
+
 /**
  * One per-processor record returned by the `AdoptionPhaseRunner` for an
  * iteration. The loop iterates `effects` and routes each through

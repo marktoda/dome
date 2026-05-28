@@ -74,14 +74,17 @@ import type { DiagnosticEffect, Effect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
+  Processor,
   ProcessorContext,
   Snapshot,
   TreeOid,
 } from "../core/processor";
+import type { Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import { readBlob, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
+  GardenPhaseRunner,
   RunnerResult,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "../ledger/db";
@@ -121,17 +124,41 @@ export type AdoptionRunInput = {
   readonly matchedTriggers: ReadonlyArray<TriggerMatch>;
 };
 
+// ----- GardenRunInput -------------------------------------------------------
+
+/**
+ * The uniform envelope every garden-phase processor sees as `ctx.input`
+ * during a Phase 4a runtime dispatch. `matchedTriggers` lists the (non-empty)
+ * subset of the processor's declared triggers that fired against the
+ * post-adoption signal stream, each annotated with the SignalEvents that
+ * caused the match.
+ *
+ * Symmetric with `AdoptionRunInput` — the `kind` field is the only
+ * structural difference, letting downstream processors branch on phase if
+ * they handle both adoption and garden invocations (rare; most processors
+ * declare a single phase).
+ *
+ * The orchestrator at `src/engine/garden.ts` constructs the envelope from
+ * the gardenRunner's matched-triggers output; processors that care about
+ * which trigger fired inspect `ctx.input.matchedTriggers`.
+ */
+export type GardenRunInput = {
+  readonly kind: "garden";
+  readonly matchedTriggers: ReadonlyArray<TriggerMatch>;
+};
+
 // ----- ProcessorRuntime -----------------------------------------------------
 
 /**
  * The handle returned by `buildRuntime`. Carries the per-phase runner
  * callbacks the engine's adoption / garden / view entry points consume.
  *
- * v1 ships only `adoptionRunner`. The garden + view runners are Phase 4+
- * work; the type slot exists so adding them is additive, not a rename.
+ * Phase 4a ships `adoptionRunner` + `gardenRunner`. The view runner is
+ * Phase 4b work; the type slot will land there.
  */
 export type ProcessorRuntime = {
   readonly adoptionRunner: AdoptionPhaseRunner;
+  readonly gardenRunner: GardenPhaseRunner;
 };
 
 // ----- BuildRuntimeOptions --------------------------------------------------
@@ -209,147 +236,251 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       return Object.freeze([]);
     }
 
-    // Resolve the candidate tree OID once per iteration — every firing
-    // processor sees the same Snapshot for the same candidate. The read
-    // closures (`readFile`, `listMarkdownFiles`) are bound to the vault path
-    // + candidate commit so processors stay filesystem-free; the underlying
-    // git boundary is `../git`'s readBlob / readTree.
-    const tree = await resolveTree(input.candidate);
-    const vaultPath = input.vault.path;
-    const candidateCommit = input.candidate;
-    const snapshot: Snapshot = Object.freeze({
-      commit: candidateCommit,
-      tree,
-      readFile: (path: string) =>
-        readBlob({ path: vaultPath, commit: candidateCommit, filepath: path }),
-      listMarkdownFiles: () =>
-        listMarkdownPathsInTree(vaultPath, candidateCommit),
-    });
+    const snapshot = await makeSnapshot(
+      input.vault.path,
+      input.candidate,
+      resolveTree,
+    );
 
     const results: RunnerResult[] = [];
     for (const processor of adoptionProcessors) {
       const matches = matchTriggers(processor.triggers, input.signals);
       if (matches.length === 0) continue;
 
-      const declared = processor.capabilities;
-      const granted = resolveGrants(processor.id);
-      const extensionId = extensionIdFor(processor.id);
-
-      // Allocate the run id. When a ledger is wired we use the ledger's
-      // `newRunId` so the id is the same one stored in the row; when no
-      // ledger is wired we fall back to the `makeRunContext`-synthesized
-      // form (identical shape — both produce `run_<unix-ms>_<6-char-rand>`).
-      // Either way, downstream `applyEffect` calls see a populated runId.
-      //
-      // The fallback path's `makeRunContext().runId` is a plain `string`
-      // (the engine-trailer primitive predates the ledger brand). Branding
-      // it via `as RunId` at this single seam keeps every downstream slot —
-      // RunnerResult, ApplyEffectSinks, recordCapabilityUse — strongly typed.
-      const startedAt = new Date();
-      const runId: RunId =
-        ledger !== undefined
-          ? newRunId(startedAt)
-          : (makeRunContext({
-              extensionId,
-              base: input.proposal.base,
-              sourceHead: input.proposal.head,
-            }).runId as RunId);
-
-      // Ledger lifecycle: queued + running, both synchronously before the
-      // processor runs. Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
-      // §"Structural enforcement" §1. The first matched trigger drives the
-      // `trigger_kind` + `trigger_payload_json` columns — capturing every
-      // matched trigger in the payload preserves the audit detail (a future
-      // schema can promote multiple triggers to a structured column).
-      if (ledger !== undefined) {
-        insertQueued(ledger, {
-          id: runId,
-          proposalId: input.proposal.id,
-          processorId: processor.id,
-          processorVersion: processor.version,
-          phase: "adoption",
-          inputCommit: input.candidate,
-          triggerKind: triggerKindOf(matches),
-          triggerPayload: triggerPayloadOf(matches),
-          startedAt,
-        });
-        markRunning(ledger, runId, startedAt);
-      }
-
-      const ctxInput: ProcessorContextInput<AdoptionRunInput> = {
-        snapshot,
-        changedPaths: input.changedPaths,
-        proposal: input.proposal,
-        runId,
-        input: Object.freeze({
+      const result = await dispatchOneProcessor({
+        processor,
+        phase: "adoption",
+        envelope: Object.freeze({
           kind: "adoption" as const,
           matchedTriggers: matches,
         }),
-        // `modelInvoke` intentionally unset — adoption-phase processors
-        // never receive a model handle (processors.md §"Adoption phase").
-      };
-      const ctx = makeProcessorContext(ctxInput);
-
-      const runOutcome = await runOneProcessor(
-        processor.run,
-        ctx,
-        processor.id,
-      );
-
-      // Ledger lifecycle: terminal mark. `markSucceeded` / `markFailed`
-      // both filter by `status = 'running'` (per `src/ledger/runs.ts`) so
-      // an aborted-elsewhere row is a no-op. The `effect_hashes_json`
-      // column carries the sha256 of every emitted effect, even the
-      // synthesized `processor-threw` diagnostic — the audit trail
-      // captures what the engine actually saw.
-      if (ledger !== undefined) {
-        const finishedAt = new Date();
-        const durationMs = finishedAt.getTime() - startedAt.getTime();
-        if (runOutcome.error === null) {
-          markSucceeded(ledger, {
-            id: runId,
-            effectHashes: runOutcome.effects.map(hashEffect),
-            // Phase 6 does not wire `modelInvoke` cost tracking; the
-            // `cost_usd` column stays null until a future phase plumbs the
-            // model-invocation accounting through `ProcessorContext`.
-            costUsd: null,
-            durationMs,
-            // `output_commit` is the closure-commit OID, computed *after*
-            // every adoption-iteration's effects have been routed (see
-            // `src/engine/adopt.ts`'s `makeClosureCommit` + the
-            // `updateOutputCommit` call). `markSucceeded` writes NULL here;
-            // the engine later UPDATEs the column once the closure commit
-            // OID is known. See
-            // [[wiki/gotchas/run-succeeded-before-closure]] for why these
-            // are two separate writes.
-            outputCommit: null,
-            finishedAt,
-          });
-        } else {
-          markFailed(ledger, {
-            id: runId,
-            error: runOutcome.error,
-            durationMs,
-            finishedAt,
-          });
-        }
-      }
-
-      results.push(
-        Object.freeze({
-          runId,
-          processorId: processor.id,
-          declared,
-          granted,
-          effects: runOutcome.effects,
-        }),
-      );
+        snapshot,
+        changedPaths: input.changedPaths,
+        proposal: input.proposal,
+        inputCommit: input.candidate,
+        matches,
+        resolveGrants,
+        extensionIdFor,
+        ledger,
+      });
+      results.push(result);
     }
 
     return Object.freeze(results);
   };
 
-  return Object.freeze({ adoptionRunner });
+  const gardenRunner: GardenPhaseRunner = async (input) => {
+    const gardenProcessors = registry.byPhase("garden");
+    if (gardenProcessors.length === 0) {
+      return Object.freeze([]);
+    }
+
+    // Garden's Snapshot is built against the **adopted** commit — the
+    // new trusted state — not a candidate. Same closures, different
+    // commit. Processors read from this snapshot via `ctx.snapshot`.
+    const snapshot = await makeSnapshot(
+      input.vault.path,
+      input.adopted,
+      resolveTree,
+    );
+
+    const results: RunnerResult[] = [];
+    for (const processor of gardenProcessors) {
+      const matches = matchTriggers(processor.triggers, input.signals);
+      if (matches.length === 0) continue;
+
+      const result = await dispatchOneProcessor({
+        processor,
+        phase: "garden",
+        envelope: Object.freeze({
+          kind: "garden" as const,
+          matchedTriggers: matches,
+        }),
+        snapshot,
+        changedPaths: input.changedPaths,
+        proposal: input.proposal,
+        // `inputCommit` for garden is the adopted commit — the snapshot
+        // the processor read from. This is what lands in
+        // `runs.input_commit` for the audit trail; it joins to the
+        // closure commit of the adoption that just completed.
+        inputCommit: input.adopted,
+        matches,
+        resolveGrants,
+        extensionIdFor,
+        ledger,
+      });
+      results.push(result);
+    }
+
+    return Object.freeze(results);
+  };
+
+  return Object.freeze({ adoptionRunner, gardenRunner });
+}
+
+// ----- shared dispatch helpers ----------------------------------------------
+
+/**
+ * Build the per-iteration Snapshot. Resolves the tree OID once per
+ * (vaultPath, commit) pair; the read closures (`readFile`,
+ * `listMarkdownFiles`) bind lazily so processors that don't touch the
+ * snapshot incur no git I/O.
+ *
+ * Used by both `adoptionRunner` (commit = candidate) and `gardenRunner`
+ * (commit = adopted). Identical shape; the only variation is which commit
+ * the closures resolve against.
+ */
+async function makeSnapshot(
+  vaultPath: string,
+  commit: CommitOid,
+  resolveTree: (commit: CommitOid) => Promise<TreeOid>,
+): Promise<Snapshot> {
+  const tree = await resolveTree(commit);
+  return Object.freeze({
+    commit,
+    tree,
+    readFile: (path: string) =>
+      readBlob({ path: vaultPath, commit, filepath: path }),
+    listMarkdownFiles: () => listMarkdownPathsInTree(vaultPath, commit),
+  });
+}
+
+/**
+ * Per-processor dispatch — shared between adoption and garden runners.
+ * Handles run-id allocation, ledger lifecycle (queued → running →
+ * succeeded/failed), context construction, exception synthesis, and
+ * RunnerResult assembly.
+ *
+ * The only per-phase variation in this lifecycle is the `phase` value
+ * stored in the ledger row and the `envelope` shape passed as
+ * `ctx.input`. Both are parameters here; the body is identical
+ * otherwise. Centralizing the dispatch keeps the two runners' bodies
+ * focused on phase-specific filtering + snapshot-commit choice; the
+ * audit lifecycle (the load-bearing
+ * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] contract) is
+ * structurally identical across phases.
+ */
+async function dispatchOneProcessor<TEnvelope>(opts: {
+  readonly processor: Processor<unknown>;
+  readonly phase: "adoption" | "garden";
+  readonly envelope: TEnvelope;
+  readonly snapshot: Snapshot;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly proposal: Proposal;
+  readonly inputCommit: CommitOid;
+  readonly matches: ReadonlyArray<TriggerMatch>;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly extensionIdFor: (processorId: string) => string;
+  readonly ledger: LedgerDb | undefined;
+}): Promise<RunnerResult> {
+  const {
+    processor,
+    phase,
+    envelope,
+    snapshot,
+    changedPaths,
+    proposal,
+    inputCommit,
+    matches,
+    resolveGrants,
+    extensionIdFor,
+    ledger,
+  } = opts;
+
+  const declared = processor.capabilities;
+  const granted = resolveGrants(processor.id);
+  const extensionId = extensionIdFor(processor.id);
+
+  // Allocate the run id. When a ledger is wired we use the ledger's
+  // `newRunId` so the id is the same one stored in the row; when no
+  // ledger is wired we fall back to the `makeRunContext`-synthesized
+  // form (identical shape).
+  const startedAt = new Date();
+  const runId: RunId =
+    ledger !== undefined
+      ? newRunId(startedAt)
+      : (makeRunContext({
+          extensionId,
+          base: proposal.base,
+          sourceHead: proposal.head,
+        }).runId as RunId);
+
+  // Ledger lifecycle: queued + running, both synchronously before the
+  // processor runs. Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
+  // §"Structural enforcement" §1.
+  if (ledger !== undefined) {
+    insertQueued(ledger, {
+      id: runId,
+      proposalId: proposal.id,
+      processorId: processor.id,
+      processorVersion: processor.version,
+      phase,
+      inputCommit,
+      triggerKind: triggerKindOf(matches),
+      triggerPayload: triggerPayloadOf(matches),
+      startedAt,
+    });
+    markRunning(ledger, runId, startedAt);
+  }
+
+  const ctxInput: ProcessorContextInput<TEnvelope> = {
+    snapshot,
+    changedPaths,
+    proposal,
+    runId,
+    input: envelope,
+    // `modelInvoke` intentionally unset for both phases in Phase 4a.
+    // Adoption never receives a model handle (processors.md §"Adoption
+    // phase"). Garden MAY receive one when the `model.invoke` capability
+    // wiring lands in a later phase (Phase 4d-adjacent), but Phase 4a
+    // does not enable it — garden processors that require LLMs are
+    // deferred bundles (dome.intake), and their wiring lands when
+    // model.invoke is plumbed through ProcessorContext.
+  };
+  const ctx = makeProcessorContext(ctxInput);
+
+  const runOutcome = await runOneProcessor(
+    processor.run,
+    ctx,
+    processor.id,
+    phase,
+  );
+
+  // Ledger lifecycle: terminal mark.
+  if (ledger !== undefined) {
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    if (runOutcome.error === null) {
+      markSucceeded(ledger, {
+        id: runId,
+        effectHashes: runOutcome.effects.map(hashEffect),
+        costUsd: null,
+        durationMs,
+        // `output_commit` is the closure-commit OID for adoption-phase
+        // runs (back-filled by the engine's `updateOutputCommit` after
+        // closure). Garden-phase runs land NULL here; garden's audit
+        // trail is the parent adoption's closure commit (recoverable
+        // via `proposal_id` joining back through the ledger).
+        outputCommit: null,
+        finishedAt,
+      });
+    } else {
+      markFailed(ledger, {
+        id: runId,
+        error: runOutcome.error,
+        durationMs,
+        finishedAt,
+      });
+    }
+  }
+
+  return Object.freeze({
+    runId,
+    processorId: processor.id,
+    declared,
+    granted,
+    effects: runOutcome.effects,
+  });
 }
 
 // ----- internals ------------------------------------------------------------
@@ -384,10 +515,11 @@ type RunOutcome = {
  * type, and `AdoptionRunInput` is assignable to it; the cast is needed
  * because `ProcessorContext` is invariant in `TInput`.
  */
-async function runOneProcessor(
+async function runOneProcessor<TEnvelope>(
   run: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>,
-  ctx: ProcessorContext<AdoptionRunInput>,
+  ctx: ProcessorContext<TEnvelope>,
   processorId: string,
+  phase: "adoption" | "garden",
 ): Promise<RunOutcome> {
   try {
     const effects = await run(ctx as ProcessorContext<unknown>);
@@ -397,7 +529,7 @@ async function runOneProcessor(
     const synthesized: DiagnosticEffect = diagnosticEffect({
       severity: "error",
       code: "processor-threw",
-      message: `Processor ${processorId} threw during adoption-phase run: ${message}`,
+      message: `Processor ${processorId} threw during ${phase}-phase run: ${message}`,
       sourceRefs: [],
     });
     return { effects: Object.freeze([synthesized]), error: message };
