@@ -60,6 +60,7 @@ import "../scenarios/triggers/document-changed-fires.scenario.test";
 import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
 import "../scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test";
 import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test";
+import "../scenarios/garden-cascade/sub-proposal-frame-correctness.scenario.test";
 
 describe("coverage matrix (Phase H2 mini-version)", () => {
   test("registry is non-empty", () => {
@@ -125,6 +126,7 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
       "effect-kinds",
       "triggers",
       "lifecycle",
+      "garden-cascade",
       "regression",
     ];
     const registry = getRegistry();
@@ -219,7 +221,6 @@ const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKin
 
 const DEFERRED_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([
   // Phase 13a unblocked: view (dome.markdown.orphan-pages, end-to-end via `dome run`).
-  "garden",  // Phase 17 — first garden-phase processor (async, possibly LLM-backed)
 ]);
 
 describe("coverage matrix (Phase H3 enforcement)", () => {

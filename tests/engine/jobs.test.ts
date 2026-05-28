@@ -72,7 +72,7 @@ describe("runQueuedJobs", () => {
     });
   });
 
-  test("reschedules failed jobs until maxAttempts is exhausted", async () => {
+  test("reschedules retryable failed jobs until maxAttempts is exhausted", async () => {
     const processor = defineProcessor({
       id: "test.jobs.thrower",
       version: "0.0.1",
@@ -80,7 +80,9 @@ describe("runQueuedJobs", () => {
       triggers: [{ kind: "signal", name: "document.changed" }],
       capabilities: [],
       run: async () => {
-        throw new Error("job boom");
+        throw Object.assign(new Error("temporary job boom"), {
+          retryable: true,
+        });
       },
     });
     const fixture = await makeFixture();
@@ -102,6 +104,30 @@ describe("runQueuedJobs", () => {
     });
   });
 
+  test("non-retryable job failures fail without burning remaining attempts", async () => {
+    const processor = defineProcessor({
+      id: "test.jobs.deterministic-failure",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [],
+      run: async () => {
+        throw new Error("deterministic job boom");
+      },
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-1", processor.id, null, 3);
+
+    const result = await runWithProcessors(fixture, [processor]);
+
+    expect(result.drained[0]?.status).toBe("failed");
+    expect(jobRow(fixture.projection, "job-1")).toMatchObject({
+      status: "failed",
+      attempts: 1,
+    });
+  });
+
   test("missing target processors fail the job and emit a diagnostic", async () => {
     const fixture = await makeFixture();
     fixtures.push(fixture);
@@ -114,6 +140,49 @@ describe("runQueuedJobs", () => {
     expect(jobRow(fixture.projection, "job-1")).toMatchObject({
       status: "failed",
       attempts: 1,
+    });
+  });
+
+  test("dispatch crashes after claim reschedule or fail without leaving running rows", async () => {
+    const processor = defineProcessor({
+      id: "test.jobs.dispatch-crash",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-1", processor.id, null, 2);
+    let now = NOW;
+    const crashingResolveTree = async () => {
+      throw new Error("tree unavailable");
+    };
+
+    const first = await runWithProcessors(
+      fixture,
+      [processor],
+      () => now,
+      {},
+      { resolveTree: crashingResolveTree },
+    );
+    const afterFirst = jobRow(fixture.projection, "job-1");
+    now = new Date(afterFirst.run_after);
+    const second = await runWithProcessors(
+      fixture,
+      [processor],
+      () => now,
+      {},
+      { resolveTree: crashingResolveTree },
+    );
+
+    expect(first.drained[0]?.status).toBe("rescheduled");
+    expect(first.diagnostics[0]?.code).toBe("job.dispatch-crashed");
+    expect(second.drained[0]?.status).toBe("failed");
+    expect(jobRow(fixture.projection, "job-1")).toMatchObject({
+      status: "failed",
+      attempts: 2,
     });
   });
 
@@ -194,6 +263,9 @@ async function runWithProcessors(
   processors: ReadonlyArray<Processor>,
   now: () => Date = () => NOW,
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
+  runnerOverrides: {
+    readonly resolveTree?: () => Promise<typeof TREE>;
+  } = {},
 ) {
   const registryResult = buildRegistry(processors);
   if (!registryResult.ok) {
@@ -205,7 +277,7 @@ async function runWithProcessors(
     registry: registryResult.value,
     projection: fixture.projection,
     sinks: { ...noopSinks(), ...sinkOverrides },
-    resolveTree: async () => TREE,
+    resolveTree: runnerOverrides.resolveTree ?? (async () => TREE),
     now,
     resolveGrants: (processorId: string): ReadonlyArray<Capability> =>
       registryResult.value.get(processorId)?.capabilities ?? [],

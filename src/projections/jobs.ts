@@ -1,6 +1,7 @@
 // projection-jobs: per-table accessor for JobEffect rows. Owns the JobEffect
-// → `scheduled_jobs` row serialization, the next-eligible-job query, and the
-// status-transition helpers used by the engine's job runner.
+// → `scheduled_jobs` row serialization, the next-eligible-job query, the
+// atomic claim operation, and the status-transition helpers used by the
+// engine's job runner.
 //
 // Normative references:
 //   - docs/wiki/specs/projection-store.md §"Tables — scheduled_jobs"
@@ -17,6 +18,10 @@
 //   - `nextEligibleJob` exposes the typed row (not a JobEffect) because the
 //     caller (engine runner) needs the `id`, `attempts`, `status`, etc.
 //     fields that aren't part of the JobEffect shape.
+//   - `claimNextEligibleJob` is the runner-facing boundary: it atomically
+//     transitions one due row from pending → running and returns the claimed
+//     post-transition row. The engine should not treat a selected row as
+//     runnable until that claim succeeds.
 //   - Status transitions are explicit one-liners (`markJobRunning` /
 //     `markJobPending` / `markJobSucceeded` / `markJobFailed`) rather than
 //     a generic `setStatus` — keeps the call sites in the engine runner self-
@@ -78,6 +83,20 @@ const MARK_RUNNING_SQL = `
 UPDATE scheduled_jobs
 SET status = 'running', attempts = attempts + 1
 WHERE id = ? AND status = 'pending'
+`.trim();
+
+const CLAIM_NEXT_ELIGIBLE_JOB_SQL = `
+UPDATE scheduled_jobs
+SET status = 'running', attempts = attempts + 1
+WHERE id = (
+  SELECT id
+  FROM scheduled_jobs
+  WHERE status = 'pending' AND run_after <= ?
+  ORDER BY run_after, id
+  LIMIT 1
+)
+RETURNING id, processor_id, input_json, run_after, idempotency_key,
+          max_attempts, attempts, status, enqueued_at, completed_at
 `.trim();
 
 const MARK_PENDING_SQL = `
@@ -167,6 +186,25 @@ export function nextEligibleJob(
   const r = rows[0];
   if (r === undefined) return null;
   return rowToScheduledJob(r);
+}
+
+/**
+ * Atomically claim the next due pending job. The returned row is already in
+ * `status: "running"` and has `attempts` incremented for the attempt the
+ * caller is about to execute. Returns `null` when no pending due job exists.
+ *
+ * This is the engine runner's preferred boundary. `nextEligibleJob` remains a
+ * read-only query helper for inspection/tests; production drains should claim
+ * before invoking target processor code.
+ */
+export function claimNextEligibleJob(
+  db: ProjectionDb,
+  now: Date,
+): ScheduledJobRow | null {
+  const row = db.raw
+    .query<JobRow, [string]>(CLAIM_NEXT_ELIGIBLE_JOB_SQL)
+    .get(now.toISOString());
+  return row === null ? null : rowToScheduledJob(row);
 }
 
 /**

@@ -17,11 +17,10 @@ import type { Capability, Processor, TreeOid } from "../core/processor";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import type { LedgerDb } from "../ledger/db";
 import {
+  claimNextEligibleJob,
   markJobFailed,
   markJobPending,
-  markJobRunning,
   markJobSucceeded,
-  nextEligibleJob,
   type ScheduledJobRow,
 } from "../projections/jobs";
 import type { ProjectionDb } from "../projections/db";
@@ -89,12 +88,11 @@ export async function runQueuedJobs(opts: {
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
   for (let i = 0; i < maxJobs; i += 1) {
-    const job = nextEligibleJob(opts.projection, opts.now());
+    const job = claimNextEligibleJob(opts.projection, opts.now());
     if (job === null) break;
 
     const processor = opts.registry.get(job.processorId);
     if (processor === undefined || processor.phase !== "garden") {
-      markJobRunning(opts.projection, job.id);
       markJobFailed(opts.projection, job.id, opts.now());
       diagnostics.push(
         diagnosticEffect({
@@ -115,14 +113,26 @@ export async function runQueuedJobs(opts: {
       continue;
     }
 
-    const result = await runOneJob({
-      ...opts,
-      job,
-      processor,
-      diagnostics,
-      applyGardenPatch,
-    });
-    drained.push(result);
+    try {
+      const result = await runOneJob({
+        ...opts,
+        job,
+        processor,
+        diagnostics,
+        applyGardenPatch,
+      });
+      drained.push(result);
+    } catch (e) {
+      drained.push(
+        recoverCrashedClaimedJob({
+          projection: opts.projection,
+          job,
+          now: opts.now,
+          diagnostics,
+          message: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    }
   }
 
   return Object.freeze({
@@ -149,7 +159,6 @@ async function runOneJob(opts: {
   readonly diagnostics: DiagnosticEffect[];
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
 }): Promise<JobDrainSummary> {
-  markJobRunning(opts.projection, opts.job.id);
   const snapshot = await makeSnapshot(opts.vault.path, opts.adopted, opts.resolveTree);
   const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
     Object.freeze({
@@ -248,7 +257,17 @@ async function runOneJob(opts: {
     });
   }
 
-  const attemptsAfterRun = opts.job.attempts + 1;
+  if (result.executionError?.retryable !== true) {
+    markJobFailed(opts.projection, opts.job.id, opts.now());
+    return Object.freeze({
+      jobId: opts.job.id,
+      processorId: opts.job.processorId,
+      status: "failed" as const,
+      runId: result.runId,
+    });
+  }
+
+  const attemptsAfterRun = opts.job.attempts;
   if (attemptsAfterRun >= opts.job.maxAttempts) {
     markJobFailed(opts.projection, opts.job.id, opts.now());
     return Object.freeze({
@@ -269,6 +288,45 @@ async function runOneJob(opts: {
     processorId: opts.job.processorId,
     status: "rescheduled" as const,
     runId: result.runId,
+  });
+}
+
+function recoverCrashedClaimedJob(opts: {
+  readonly projection: ProjectionDb;
+  readonly job: ScheduledJobRow;
+  readonly now: () => Date;
+  readonly diagnostics: DiagnosticEffect[];
+  readonly message: string;
+}): JobDrainSummary {
+  const retry = opts.job.attempts < opts.job.maxAttempts;
+  opts.diagnostics.push(
+    diagnosticEffect({
+      severity: "error",
+      code: "job.dispatch-crashed",
+      message: `Job ${opts.job.id} dispatch crashed before completion: ${opts.message}`,
+      sourceRefs: [],
+    }),
+  );
+  if (retry) {
+    markJobPending(
+      opts.projection,
+      opts.job.id,
+      new Date(opts.now().getTime() + retryDelayMs(opts.job.attempts)),
+    );
+    return Object.freeze({
+      jobId: opts.job.id,
+      processorId: opts.job.processorId,
+      status: "rescheduled" as const,
+      runId: null,
+    });
+  }
+
+  markJobFailed(opts.projection, opts.job.id, opts.now());
+  return Object.freeze({
+    jobId: opts.job.id,
+    processorId: opts.job.processorId,
+    status: "failed" as const,
+    runId: null,
   });
 }
 

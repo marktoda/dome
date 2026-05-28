@@ -79,8 +79,9 @@ returns `status: "timed_out"`, and no returned Effects from that invocation
 are routed. The runtime records the timed-out row through `markTimedOut`; late
 effects leave `effect_hashes_json` empty because the invocation did not
 succeed. Timeouts are not retried inside the same processor invocation.
-Durable JobEffect retries may schedule a later attempt, and repeated retryable
-timeouts can contribute to garden/scheduled quarantine.
+Durable JobEffect retries may schedule a later attempt when the terminal
+failure is retryable, and repeated retryable timeouts can contribute to
+garden/scheduled quarantine.
 
 ## Output validation
 

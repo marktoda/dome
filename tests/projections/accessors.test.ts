@@ -2,8 +2,8 @@
 //   - facts.ts        — insertFact / factsBySubject / factsByPredicate
 //   - diagnostics.ts  — insertDiagnostic / queryDiagnostics / resolveDiagnostic
 //   - questions.ts    — insertQuestion / queryQuestions / answerQuestion
-//   - jobs.ts         — enqueueJob / nextEligibleJob / markJob{Running,
-//                       Succeeded,Failed}
+//   - jobs.ts         — enqueueJob / nextEligibleJob / claimNextEligibleJob /
+//                       markJob{Running,Succeeded,Failed}
 //   - schedule-cursors.ts — upsertCursor / getCursor / allCursors
 //
 // Each test gets a fresh tmpdir + a fresh projection.db so cross-test
@@ -39,6 +39,7 @@ import {
   queryQuestions,
 } from "../../src/projections/questions";
 import {
+  claimNextEligibleJob,
   enqueueJob,
   markJobFailed,
   markJobRunning,
@@ -494,6 +495,50 @@ describe("jobs accessor", () => {
     expect(row).toBeDefined();
     expect(row?.status).toBe("running");
     expect(row?.attempts).toBe(1);
+  });
+
+  it("claimNextEligibleJob atomically claims the next due job", () => {
+    const effect = jobEffect({
+      processorId: "p",
+      input: { x: 1 },
+      idempotencyKey: "j-claim",
+    });
+    enqueueJob(db, { effect, processorId: "p" });
+
+    const claimed = claimNextEligibleJob(db, new Date());
+    expect(claimed).not.toBeNull();
+    if (claimed === null) return;
+    expect(claimed.idempotencyKey).toBe("j-claim");
+    expect(claimed.status).toBe("running");
+    expect(claimed.attempts).toBe(1);
+    expect(claimNextEligibleJob(db, new Date())).toBeNull();
+    expect(nextEligibleJob(db, new Date())).toBeNull();
+  });
+
+  it("claimNextEligibleJob skips future and non-pending rows", () => {
+    const future = new Date(Date.now() + 60_000);
+    enqueueJob(db, {
+      processorId: "p",
+      effect: jobEffect({
+        processorId: "p.future",
+        input: null,
+        idempotencyKey: "j-future",
+        runAfter: future.toISOString(),
+      }),
+    });
+    enqueueJob(db, {
+      processorId: "p",
+      effect: jobEffect({
+        processorId: "p.running",
+        input: null,
+        idempotencyKey: "j-running",
+      }),
+    });
+    const running = nextEligibleJob(db, new Date());
+    if (running === null) throw new Error("expected immediate job");
+    markJobRunning(db, running.id);
+
+    expect(claimNextEligibleJob(db, new Date())).toBeNull();
   });
 
   it("markJobSucceeded transitions running→succeeded with completed_at", () => {

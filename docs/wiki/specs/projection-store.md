@@ -164,7 +164,11 @@ CREATE TABLE questions (
 
 Stores `JobEffect` rows for deferred garden-phase work. `runAfter` defaults
 to enqueue time when absent, so immediate jobs and delayed jobs share the same
-durable queue.
+durable queue. The engine atomically claims one due `pending` row by moving it
+to `running` and incrementing `attempts` before invoking target processor code.
+Retryable target-processor failures return the row to `pending` with bounded
+backoff until `max_attempts` is exhausted; non-retryable failures move directly
+to `failed`.
 
 ```sql
 CREATE TABLE scheduled_jobs (
