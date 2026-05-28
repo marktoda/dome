@@ -27,7 +27,7 @@ first_observed: 2026-05-26 (closed at v0.5+phase1+phase3; pin maintained in v1)
    - `@dome/sdk/mcp` — MCP server surface (`DomeMcpServer`, `renderMcp(surface)`, `McpSurface`, adapters, `@modelcontextprotocol/sdk` dep)
    - `@dome/sdk/cli` — CLI shell (the `dome*` command functions; consumes `commander`)
 
-   `Vault` itself exposes only Submit (`submitProposal`) + Recall (`query`, `readDocument`, `resolveWikilink`) + engine control (`sync`, `rebuild`, `getAdoptionStatus`) + lifecycle (`drainProcessors`, `close`). The LLM-flavored surfaces live in `@dome/sdk/workflows`; consumers reach them explicitly.
+   `Vault` itself exposes only Submit (`submitProposal`) + Recall (`query`, `readDocument`, `resolveWikilink`) + engine control (`sync`, `rebuild`, `getAdoptionStatus`) + lifecycle (`close`). The planned v1.x lifecycle drain surface is `drainProcessors`; it remains part of the core lifecycle contract because it is a synchronization primitive, not an LLM surface. The LLM-flavored surfaces live in `@dome/sdk/workflows`; consumers reach them explicitly.
 
 **Specific scenarios:**
 
