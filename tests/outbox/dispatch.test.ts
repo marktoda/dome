@@ -43,6 +43,13 @@ function makeEffect(idempotencyKey: string) {
   });
 }
 
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 describe("openOutboxDb", () => {
   let root: string;
   let dbPath: string;
@@ -420,6 +427,77 @@ describe("outbox lifecycle", () => {
     expect(row?.status).toBe("failed");
     expect(row?.attempts).toBe(3);
     expect(row?.lastError).toBe("remote 503");
+  });
+
+  it("handler timeout aborts the attempt signal and records a retryable failure", async () => {
+    let handlerSignal: AbortSignal | undefined;
+    let aborts = 0;
+
+    const result = await dispatchExternalEffect(db, {
+      effect: makeEffect("key-timeout"),
+      runId: RUN_ID,
+      handlers: {
+        "calendar.write": async ({ signal }) => {
+          handlerSignal = signal;
+          await waitForAbort(signal);
+          aborts += 1;
+          return { externalId: "late-external-id" };
+        },
+      },
+      now: T0,
+      handlerTimeoutMs: 5,
+    });
+
+    expect(result.kind).toBe("pending");
+    if (result.kind !== "pending") throw new Error("expected pending");
+    expect(result.attempts).toBe(1);
+    expect(result.lastError).toContain("External handler exceeded timeout");
+    expect(handlerSignal?.aborted).toBe(true);
+    expect(aborts).toBe(1);
+
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("pending");
+    expect(row?.attempts).toBe(1);
+    expect(row?.lastError).toContain("External handler exceeded timeout");
+  });
+
+  it("dispatch cancellation aborts the handler without burning an attempt", async () => {
+    const controller = new AbortController();
+    let handlerSignal: AbortSignal | undefined;
+    let started: (() => void) | undefined;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    const run = dispatchExternalEffect(db, {
+      effect: makeEffect("key-cancelled"),
+      runId: RUN_ID,
+      handlers: {
+        "calendar.write": async ({ signal }) => {
+          handlerSignal = signal;
+          started?.();
+          await waitForAbort(signal);
+          return { externalId: "should-not-mark-sent" };
+        },
+      },
+      signal: controller.signal,
+    });
+
+    await startedPromise;
+    expect(handlerSignal?.aborted).toBe(false);
+    controller.abort();
+    const result = await run;
+
+    expect(result.kind).toBe("cancelled");
+    if (result.kind !== "cancelled") throw new Error("expected cancelled");
+    expect(result.attempts).toBe(0);
+    expect(result.lastError).toContain("cancelled");
+    expect(handlerSignal?.aborted).toBe(true);
+
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("pending");
+    expect(row?.attempts).toBe(0);
+    expect(row?.lastError).toBeNull();
   });
 
   it("missing handler marks the row failed instead of leaving it pending forever", async () => {

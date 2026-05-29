@@ -275,9 +275,9 @@ CREATE INDEX outbox_by_due ON outbox(status, next_attempt_at, enqueued_at);
 **Lifecycle:**
 
 1. Processor emits `ExternalActionEffect`.
-2. Engine inserts row with `status: "pending"`, `attempts = 0`, and `next_attempt_at = enqueued_at`, then calls the registered capability handler.
+2. Engine inserts row with `status: "pending"`, `attempts = 0`, and `next_attempt_at = enqueued_at`, then calls the registered capability handler with an engine-owned `AbortSignal`.
 3. On success, handler returns `externalId`; engine updates row to `status: "sent"`, `external_id: <id>`.
-4. On failure (`attempts < maxAttempts`), engine increments `attempts`, sets `next_attempt_at = now + bounded exponential backoff`, and leaves the row `pending`. Outbox drains select only rows whose `next_attempt_at <= now`.
+4. On handler failure or timeout (`attempts < maxAttempts`), engine increments `attempts`, records `last_error`, sets `next_attempt_at = now + bounded exponential backoff`, and leaves the row `pending`. Outbox drains select only rows whose `next_attempt_at <= now`. On explicit dispatch cancellation, the signal is aborted and the row remains `pending` without consuming an attempt.
 5. On terminal failure (`attempts >= maxAttempts`), engine marks `status: "failed"`. Recovery follows the engine-asks model: failed rows surface through health/inspect; `dome.health.outbox-recovery-questions` raises a `QuestionEffect` with options `["retry", "abandon"]`; the user answers via `dome answer <question-id>`; `dome.health.outbox-recovery-answer` emits an `OutboxRecoveryEffect`; the engine-owned outbox sink applies the mutation. See [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]].
 
 This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] and [[wiki/gotchas/outbox-stuck]].

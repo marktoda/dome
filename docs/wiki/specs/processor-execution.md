@@ -25,9 +25,10 @@ Shipped in the current v1 runtime:
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
 - `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, retries one runtime-classified provider failure, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
-- Vendor SDK adapters, outbox-handler cancellation, and a public
-  `drainProcessors()` SDK method are target surfaces described here for the
-  completed architecture; they are not fully implemented yet.
+- Vendor SDK adapters, wiring runtime-close cancellation through in-flight
+  outbox dispatch, and a public `drainProcessors()` SDK method are target
+  surfaces described here for the completed architecture; they are not fully
+  implemented yet.
 
 ## Run state machine
 
@@ -201,9 +202,10 @@ or is cancelled by an explicit caller-supplied signal under the normal adoption
 loop contract before close proceeds.
 
 The still-planned public `drainProcessors()` surface will make the same
-lifecycle operation addressable before full runtime close, and will also cover
-outbox-handler cancellation once external handlers accept an engine-owned
-signal.
+lifecycle operation addressable before full runtime close, and will also wire
+that runtime lifecycle signal through in-flight outbox dispatch attempts. The
+outbox dispatcher already gives each handler attempt an engine-owned signal and
+timeout; the remaining work is connecting that to runtime shutdown.
 
 `drainProcessors()` waits for queued and running garden/view work to settle up to the configured drain timeout. It does not start new schedule-triggered work while draining. On graceful shutdown:
 
@@ -259,8 +261,8 @@ Already pinned:
 Pending:
 
 - Public `drainProcessors()` and closed-Vault typed error tests.
-- Outbox-handler cancellation/timeout tests once external handlers accept an
-  engine-owned signal.
+- Runtime-close tests for in-flight outbox dispatch once operational drain
+  accepts the runtime lifecycle signal.
 
 ## Related
 

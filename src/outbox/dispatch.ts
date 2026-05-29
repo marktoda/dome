@@ -88,6 +88,7 @@ import type { OutboxDb } from "./db";
 const DEFAULT_MAX_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 60_000;
+const DEFAULT_EXTERNAL_HANDLER_TIMEOUT_MS = 30_000;
 
 // ----- Public types ---------------------------------------------------------
 
@@ -159,6 +160,12 @@ export type ExternalHandlerInput = {
    * Previous failed attempts are already recorded on the outbox row.
    */
   readonly attempt: number;
+  /**
+   * Engine-owned cancellation signal for this single external attempt.
+   * Handlers should pass it to HTTP/SDK calls where possible and stop work
+   * promptly when aborted.
+   */
+  readonly signal: AbortSignal;
 };
 
 export type ExternalHandlerResult = {
@@ -210,7 +217,19 @@ export type ExternalDispatchResult =
       readonly kind: "skipped";
       readonly idempotencyKey: string;
       readonly status: "failed" | "abandoned";
+    }
+  | {
+      readonly kind: "cancelled";
+      readonly idempotencyKey: string;
+      readonly attempts: number;
+      readonly maxAttempts: number;
+      readonly lastError: string;
     };
+
+type OutboxDispatchControls = {
+  readonly handlerTimeoutMs?: number;
+  readonly signal?: AbortSignal;
+};
 
 // ----- SQL ------------------------------------------------------------------
 
@@ -330,7 +349,7 @@ export async function dispatchExternalEffect(
     readonly runId: string;
     readonly handlers: ExternalHandlerRegistry;
     readonly now?: Date;
-  },
+  } & OutboxDispatchControls,
 ): Promise<ExternalDispatchResult> {
   const now = opts.now ?? new Date();
   insertPending(db, { effect: opts.effect, runId: opts.runId, now });
@@ -341,7 +360,7 @@ export async function dispatchExternalEffect(
       "was not readable after insert.";
     throw new Error(msg);
   }
-  return dispatchOutboxRow(db, row, opts.handlers, now);
+  return dispatchOutboxRow(db, row, opts.handlers, now, opts);
 }
 
 /**
@@ -356,7 +375,7 @@ export async function dispatchPendingOutbox(
     readonly limit?: number;
     readonly enqueuedBefore?: Date;
     readonly now?: Date;
-  },
+  } & OutboxDispatchControls,
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
   const now = opts.now ?? new Date();
   const pending = queryOutbox(db, {
@@ -370,7 +389,7 @@ export async function dispatchPendingOutbox(
     opts.limit === undefined ? pending : pending.slice(0, opts.limit);
   const results: ExternalDispatchResult[] = [];
   for (const row of bounded) {
-    results.push(await dispatchOutboxRow(db, row, opts.handlers, now));
+    results.push(await dispatchOutboxRow(db, row, opts.handlers, now, opts));
   }
   return Object.freeze(results);
 }
@@ -547,6 +566,7 @@ async function dispatchOutboxRow(
   row: OutboxRow,
   handlers: ExternalHandlerRegistry,
   now: Date,
+  controls: OutboxDispatchControls,
 ): Promise<ExternalDispatchResult> {
   if (row.status === "sent") {
     return Object.freeze({
@@ -578,15 +598,24 @@ async function dispatchOutboxRow(
     const msg = `No external handler registered for capability '${row.capability}'.`;
     return recordFailedAttempt(db, row, msg, { terminal: true, now });
   }
+  if (controls.signal?.aborted === true) {
+    return cancelledDispatchResult(row, "External handler dispatch was cancelled.");
+  }
 
   try {
-    const result = await handler({
-      capability: row.capability,
-      idempotencyKey: row.idempotencyKey,
-      payload: row.payload,
-      sourceRefs: row.sourceRefs,
-      runId: row.runId,
-      attempt: row.attempts + 1,
+    const result = await runExternalHandler({
+      handler,
+      input: {
+        capability: row.capability,
+        idempotencyKey: row.idempotencyKey,
+        payload: row.payload,
+        sourceRefs: row.sourceRefs,
+        runId: row.runId,
+        attempt: row.attempts + 1,
+      },
+      timeoutMs:
+        controls.handlerTimeoutMs ?? DEFAULT_EXTERNAL_HANDLER_TIMEOUT_MS,
+      ...(controls.signal !== undefined ? { signal: controls.signal } : {}),
     });
     if (typeof result.externalId !== "string" || result.externalId.length === 0) {
       throw new Error("External handler returned an empty externalId.");
@@ -599,11 +628,79 @@ async function dispatchOutboxRow(
       recovered: result.recovered ?? false,
     });
   } catch (e) {
+    if (isOutboxDispatchCancelled(e)) {
+      return cancelledDispatchResult(row, errorMessage(e));
+    }
     return recordFailedAttempt(db, row, errorMessage(e), {
       terminal: false,
       now,
     });
   }
+}
+
+async function runExternalHandler(opts: {
+  readonly handler: ExternalHandler;
+  readonly input: Omit<ExternalHandlerInput, "signal">;
+  readonly timeoutMs: number;
+  readonly signal?: AbortSignal;
+}): Promise<ExternalHandlerResult> {
+  if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs <= 0) {
+    throw new Error("External handler timeout must be a positive number.");
+  }
+  if (opts.signal?.aborted === true) {
+    throw outboxDispatchCancelled("External handler dispatch was cancelled.");
+  }
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(
+        new Error(
+          `External handler exceeded timeout of ${opts.timeoutMs}ms.`,
+        ),
+      );
+    }, opts.timeoutMs);
+  });
+  const abortPromise = new Promise<never>((_, reject) => {
+    abort = () => {
+      controller.abort();
+      reject(outboxDispatchCancelled("External handler dispatch was cancelled."));
+    };
+    opts.signal?.addEventListener("abort", abort, { once: true });
+  });
+
+  try {
+    return await Promise.race([
+      opts.handler({
+        ...opts.input,
+        signal: controller.signal,
+      }),
+      timeoutPromise,
+      abortPromise,
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (abort !== undefined && opts.signal !== undefined) {
+      opts.signal.removeEventListener("abort", abort);
+    }
+  }
+}
+
+function cancelledDispatchResult(
+  row: OutboxRow,
+  lastError: string,
+): ExternalDispatchResult {
+  return Object.freeze({
+    kind: "cancelled",
+    idempotencyKey: row.idempotencyKey,
+    attempts: row.attempts,
+    maxAttempts: row.maxAttempts,
+    lastError,
+  });
 }
 
 function recordFailedAttempt(
@@ -666,6 +763,22 @@ function isReadonlyMap(
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+const OUTBOX_DISPATCH_CANCELLED = new WeakSet<object>();
+
+function outboxDispatchCancelled(message: string): Error {
+  const error = new Error(message);
+  OUTBOX_DISPATCH_CANCELLED.add(error);
+  return error;
+}
+
+function isOutboxDispatchCancelled(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    OUTBOX_DISPATCH_CANCELLED.has(error)
+  );
 }
 
 /**
