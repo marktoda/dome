@@ -11,6 +11,7 @@ import { Command, CommanderError } from "commander";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
+import { runRebuild } from "./commands/rebuild";
 import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
@@ -121,6 +122,22 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("rebuild")
+    .description("Rebuild projection.db from the adopted commit.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: RebuildCliOptions) => {
+      setExitCode(
+        await runRebuild({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("serve")
     .description("Run the local compiler host.")
     .option("--poll-interval-ms <n>", "Polling interval in milliseconds.")
@@ -187,6 +204,12 @@ type DoctorCliOptions = {
 };
 
 type RunCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type RebuildCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

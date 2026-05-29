@@ -48,6 +48,7 @@ import "../scenarios/basic-adoption/multi-file-commit.scenario.test";
 import "../scenarios/convergence/normalize-frontmatter-idempotency.scenario.test";
 import "../scenarios/convergence/validate-wikilinks-no-duplicate-diagnostics.scenario.test";
 import "../scenarios/convergence/diagnostics-auto-resolve.scenario.test";
+import "../scenarios/cli-surface/rebuild-projection.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";

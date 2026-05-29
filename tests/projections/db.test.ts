@@ -15,10 +15,13 @@ import {
   computeExtensionSetHash,
   computeProcessorVersionsHash,
   computeSchemaHash,
+  markProjectionBuilt,
   openProjectionDb,
+  resetProjectionDb,
   type OpenProjectionDbResult,
   type ProjectionDb,
 } from "../../src/projections/db";
+import { commitOid } from "../../src/core/source-ref";
 
 const EMPTY_EXT: ReadonlyArray<{ readonly name: string; readonly version: string }> =
   [];
@@ -80,17 +83,12 @@ describe("openProjectionDb", () => {
     handles.push(firstResult.db);
     expect(firstResult.migration).toBe("fresh");
 
-    // Simulate the rebuild pass writing the cache-key columns. This is what
-    // the eventual `dome rebuild` would do after openProjectionDb returns
-    // migration: "fresh".
-    firstResult.db.raw.run(
-      "UPDATE projection_meta SET extension_set_hash = ?, processor_versions_hash = ?, built_at = ?",
-      [
-        computeExtensionSetHash(exts),
-        computeProcessorVersionsHash(procs),
-        new Date().toISOString(),
-      ],
-    );
+    markProjectionBuilt(firstResult.db, {
+      adoptedCommit: commitOid("abc1230000000000000000000000000000000000"),
+      extensionSet: exts,
+      processorVersions: procs,
+      builtAt: new Date("2026-05-28T00:00:00.000Z"),
+    });
     firstResult.db.close();
     handles.pop();
 
@@ -146,6 +144,65 @@ describe("openProjectionDb", () => {
     expect(row.extension_set_hash).toBeNull();
     expect(row.processor_versions_hash).toBeNull();
     expect(row.built_at).toBeNull();
+  });
+
+  it("resetProjectionDb wipes projection tables and markProjectionBuilt stamps cache keys", async () => {
+    const exts = [{ name: "ext.a", version: "1.0.0" }];
+    const procs = [{ id: "proc.a", version: "1.0.0" }];
+    const adopted = commitOid("def4560000000000000000000000000000000000");
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: exts,
+      processorVersions: procs,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+
+    r.value.db.raw.run(
+      "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
+        + "object_json, assertion, source_refs, processor_id, adopted_commit, "
+        + "written_at) VALUES ('dome.test', 'page', 'wiki/x.md', "
+        + "'dome.test.p', '{\"kind\":\"string\",\"value\":\"x\"}', "
+        + "'explicit', '[]', 'p1', ?, ?)",
+      [adopted, new Date().toISOString()],
+    );
+    expect(
+      r.value.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM facts").get()
+        ?.count,
+    ).toBe(1);
+
+    resetProjectionDb(r.value.db);
+    expect(
+      r.value.db.raw.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM facts").get()
+        ?.count,
+    ).toBe(0);
+
+    markProjectionBuilt(r.value.db, {
+      adoptedCommit: adopted,
+      extensionSet: exts,
+      processorVersions: procs,
+      builtAt: new Date("2026-05-28T00:00:00.000Z"),
+    });
+    const meta = r.value.db.raw
+      .query<
+        {
+          adopted_commit: string | null;
+          extension_set_hash: string | null;
+          processor_versions_hash: string | null;
+          built_at: string | null;
+        },
+        []
+      >(
+        "SELECT adopted_commit, extension_set_hash, processor_versions_hash, built_at FROM projection_meta",
+      )
+      .get();
+    expect(meta?.adopted_commit).toBe(adopted);
+    expect(meta?.extension_set_hash).toBe(computeExtensionSetHash(exts));
+    expect(meta?.processor_versions_hash).toBe(
+      computeProcessorVersionsHash(procs),
+    );
+    expect(meta?.built_at).toBe("2026-05-28T00:00:00.000Z");
   });
 
   it("close() releases the handle", async () => {

@@ -111,15 +111,15 @@ Shipped `dome.graph.tag-index`, `dome.markdown.broken-images`, `dome.markdown.du
 
 `.dome/page-types.yaml` + bundle-root `page-types.yaml` substrate and `dome.markdown.lint-frontmatter` extension to validate per-type fields.
 
-### Phase 14 — Diagnostic auto-resolve + processor versioning + `dome rebuild` *(~1 week)*
+### Phase 14 — Diagnostic auto-resolve + processor versioning + `dome rebuild` *(in progress)*
 
 Three loosely-coupled UX improvements:
 
-1. **Diagnostic auto-resolve.** When a processor re-runs against the same proposal and *doesn't* re-emit a diagnostic, mark prior matching rows resolved. Currently diagnostics accumulate forever even after the underlying issue is fixed.
+1. **Diagnostic auto-resolve.** ✅ When a processor re-runs against a changed path and *doesn't* re-emit a prior diagnostic, mark the stale row resolved.
 
 2. **Processor-version invalidation.** Wire the existing `cache-keys-changed` signal: bumping a processor's version → its rows clear → next sync re-emits them. Today the signal fires but nothing acts on it.
 
-3. **`dome rebuild` command.** Force-re-emit all processor work against the current adopted state. Replaces the `git update-ref refs/dome/adopted/main HEAD~10` workaround.
+3. **`dome rebuild` command.** ✅ Force-re-emit projection work against the current adopted state. Replaces the `git update-ref refs/dome/adopted/main HEAD~10` workaround for projection recovery.
 
 **Outcome:** `dome doctor --show diagnostics` shows only current issues. Bumping a processor's behavior is a clean operation.
 

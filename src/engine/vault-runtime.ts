@@ -109,6 +109,14 @@ export type VaultRuntime = {
   readonly projectionDb: ProjectionDb;
   readonly outboxDb: OutboxDb;
   readonly ledgerDb: LedgerDb;
+  readonly extensions: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
   readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
@@ -374,6 +382,8 @@ export async function openVaultRuntime(
     projectionDb,
     outboxDb,
     ledgerDb,
+    extensions,
+    processorVersions,
     registry,
     processorRuntime,
     resolveGrants,

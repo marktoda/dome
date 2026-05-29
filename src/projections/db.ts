@@ -282,6 +282,19 @@ export type ProjectionDb = {
   readonly close: () => void;
 };
 
+export type MarkProjectionBuiltOpts = {
+  readonly adoptedCommit: CommitOid;
+  readonly extensionSet: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
+  readonly builtAt?: Date;
+};
+
 export type OpenProjectionDbOpts = {
   /**
    * Absolute filesystem path to the projection.db file. Caller computes
@@ -562,6 +575,40 @@ export async function openProjectionDb(
   });
 
   return ok(Object.freeze({ db, migration }));
+}
+
+/**
+ * Wipe and recreate every projection table on an already-open database
+ * handle. The run ledger and outbox live in separate databases, so this is
+ * scoped to rebuildable projection state only.
+ */
+export function resetProjectionDb(db: ProjectionDb): void {
+  applyDropAll(db.raw);
+  applyDdl(db.raw);
+  insertFreshMetaRow(db.raw, computeSchemaHash());
+}
+
+/**
+ * Stamp the cache-key triple after a successful rebuild pass. This is the
+ * durable marker `openProjectionDb` compares on the next open to decide
+ * whether projection rows are current for the loaded bundle set.
+ */
+export function markProjectionBuilt(
+  db: ProjectionDb,
+  opts: MarkProjectionBuiltOpts,
+): void {
+  db.raw
+    .query(
+      "UPDATE projection_meta SET adopted_commit = ?, extension_set_hash = ?, "
+        + "processor_versions_hash = ?, built_at = ? WHERE schema_hash = ?",
+    )
+    .run(
+      opts.adoptedCommit,
+      computeExtensionSetHash(opts.extensionSet),
+      computeProcessorVersionsHash(opts.processorVersions),
+      (opts.builtAt ?? new Date()).toISOString(),
+      computeSchemaHash(),
+    );
 }
 
 // ----- internals ------------------------------------------------------------
