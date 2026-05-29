@@ -35,6 +35,13 @@ type Fixture = {
 
 const fixtures: Fixture[] = [];
 
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 afterEach(() => {
   while (fixtures.length > 0) {
     const fixture = fixtures.pop();
@@ -49,6 +56,43 @@ afterEach(() => {
 });
 
 describe("runScheduler — executor-result telemetry", () => {
+  test("cancelled scheduled work does not advance the schedule cursor", async () => {
+    let started: (() => void) | undefined;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const controller = new AbortController();
+    const processor = defineProcessor({
+      id: "test.scheduler.cancelled",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async (ctx) => {
+        started?.();
+        await waitForAbort(ctx.signal);
+        return [];
+      },
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+
+    const run = runWithProcessor(fixture, processor, {}, {
+      signal: controller.signal,
+    });
+    await startedPromise;
+    controller.abort();
+
+    const result = await run;
+
+    expect(result.fired).toEqual([]);
+    expect(result.skipped).toContainEqual({
+      processorId: "test.scheduler.cancelled",
+      reason: "cancelled",
+    });
+    expect(getCursor(fixture.projection, processor.id)).toBeNull();
+  });
+
   test("processor execution failure diagnostic marks scheduled fire unsuccessful", async () => {
     const processor = defineProcessor({
       id: "test.scheduler.thrower",
@@ -461,6 +505,7 @@ async function runWithProcessor(
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
   schedulerOverrides: {
     readonly resolveGrants?: () => ReadonlyArray<Capability>;
+    readonly signal?: AbortSignal;
     readonly adoptSubProposal?: (
       proposal: Proposal,
       cascadeDepth: number,
@@ -484,6 +529,9 @@ async function runWithProcessor(
     now: () => NOW,
     resolveGrants: schedulerOverrides.resolveGrants ?? (() => []),
     extensionIdFor: (id: string) => id,
+    ...(schedulerOverrides.signal !== undefined
+      ? { signal: schedulerOverrides.signal }
+      : {}),
     ...(schedulerOverrides.adoptSubProposal !== undefined
       ? { adoptSubProposal: schedulerOverrides.adoptSubProposal }
       : {}),

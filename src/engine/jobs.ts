@@ -23,6 +23,7 @@ import {
   markJobFailed,
   markJobPending,
   markJobSucceeded,
+  releaseClaimedJob,
   type ScheduledJobRow,
 } from "../projections/jobs";
 import type { ProjectionDb } from "../projections/db";
@@ -85,6 +86,7 @@ export async function runQueuedJobs(opts: {
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
+  readonly signal?: AbortSignal;
   readonly maxJobs?: number;
 }): Promise<JobDrainResult> {
   const maxJobs = opts.maxJobs ?? DEFAULT_MAX_JOBS_PER_DRAIN;
@@ -94,6 +96,8 @@ export async function runQueuedJobs(opts: {
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
   for (let i = 0; i < maxJobs; i += 1) {
+    if (opts.signal?.aborted === true) break;
+
     const job = claimNextEligibleJob(opts.projection, opts.now());
     if (job === null) break;
 
@@ -169,6 +173,7 @@ async function runOneJob(opts: {
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
+  readonly signal?: AbortSignal;
   readonly job: ScheduledJobRow;
   readonly processor: Processor<unknown>;
   readonly diagnostics: DiagnosticEffect[];
@@ -202,6 +207,7 @@ async function runOneJob(opts: {
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
     ledger: opts.ledger,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
       : {}),
@@ -246,6 +252,20 @@ async function runOneJob(opts: {
       jobId: opts.job.id,
       processorId: opts.job.processorId,
       status: "succeeded" as const,
+      runId: result.runId,
+    });
+  }
+
+  if (result.executionStatus === "cancelled") {
+    releaseClaimedJob(
+      opts.projection,
+      opts.job.id,
+      new Date(opts.job.runAfter),
+    );
+    return Object.freeze({
+      jobId: opts.job.id,
+      processorId: opts.job.processorId,
+      status: "rescheduled" as const,
       runId: result.runId,
     });
   }

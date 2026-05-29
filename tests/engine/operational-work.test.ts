@@ -6,11 +6,12 @@ import { join } from "node:path";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { treeOid } from "../../src/core/processor";
+import { defineProcessor, treeOid } from "../../src/core/processor";
 import { runOperationalWork } from "../../src/engine/operational-work";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
+import { getCursor } from "../../src/projections/schedule-cursors";
 import { buildRegistry } from "../../src/processors/registry";
 
 const tmpRoots: string[] = [];
@@ -30,6 +31,96 @@ afterEach(async () => {
 });
 
 describe("runOperationalWork", () => {
+  test("threads cancellation into scheduled processor dispatch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operational-work-"));
+    tmpRoots.push(root);
+
+    const projection = await openProjectionDb({
+      path: join(root, "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    if (!projection.ok) {
+      throw new Error(`projection open failed: ${projection.error.kind}`);
+    }
+
+    const outbox = await openOutboxDb({ path: join(root, "outbox.db") });
+    if (!outbox.ok) {
+      projection.value.db.close();
+      throw new Error(`outbox open failed: ${outbox.error.kind}`);
+    }
+
+    try {
+      let started: (() => void) | undefined;
+      const startedPromise = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const controller = new AbortController();
+      const processor = defineProcessor({
+        id: "test.operational.cancelled-schedule",
+        version: "0.0.1",
+        phase: "garden",
+        triggers: [{ kind: "schedule", cron: "* * * * *" }],
+        capabilities: [],
+        run: async (ctx) => {
+          started?.();
+          await waitForAbort(ctx.signal);
+          return [];
+        },
+      });
+      const registry = buildRegistry([processor]);
+      if (!registry.ok) {
+        throw new Error(`registry build failed: ${registry.error.kind}`);
+      }
+
+      const logicalNow = new Date("2026-01-01T00:00:00.000Z");
+      const run = runOperationalWork({
+        vault: {
+          path: root,
+          config: { git: { auto_commit_workflows: true } },
+        },
+        adopted: commitOid("b".repeat(40)),
+        registry: registry.value,
+        projection: projection.value.db,
+        outbox: outbox.value.db,
+        sinks: {
+          applyPatch: async () => null,
+          captureView: async () => {},
+          recordDiagnostic: async () => {},
+          recordFact: async () => {},
+          recordSearchDocument: async () => {},
+          recordQuestion: async () => {},
+          enqueueJob: async () => {},
+          dispatchExternal: async () => {},
+          recoverOutbox: async () => {},
+          recoverQuarantine: async () => {},
+          recoverRun: async () => true,
+        },
+        resolveTree: async () => treeOid("c".repeat(40)),
+        now: () => logicalNow,
+        resolveGrants: () => [],
+        extensionIdFor: (processorId) => processorId,
+        externalHandlers: {},
+        signal: controller.signal,
+      });
+
+      await startedPromise;
+      controller.abort();
+      const result = await run;
+
+      expect(result.scheduler.fired).toEqual([]);
+      expect(result.scheduler.skipped).toContainEqual({
+        processorId: processor.id,
+        reason: "cancelled",
+      });
+      expect(getCursor(projection.value.db, processor.id)).toBeNull();
+    } finally {
+      outbox.value.db.close();
+      projection.value.db.close();
+    }
+  });
+
   test("uses the injected clock for the outbox drain cutoff", async () => {
     const root = mkdtempSync(join(tmpdir(), "operational-work-"));
     tmpRoots.push(root);

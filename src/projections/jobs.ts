@@ -105,6 +105,15 @@ SET status = 'pending', run_after = ?, completed_at = NULL
 WHERE id = ? AND status = 'running'
 `.trim();
 
+const RELEASE_CLAIMED_SQL = `
+UPDATE scheduled_jobs
+SET status = 'pending',
+    attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+    run_after = ?,
+    completed_at = NULL
+WHERE id = ? AND status = 'running'
+`.trim();
+
 const MARK_SUCCEEDED_SQL = `
 UPDATE scheduled_jobs
 SET status = 'succeeded', completed_at = ?
@@ -226,6 +235,19 @@ export function markJobPending(
   runAfter: Date,
 ): void {
   db.raw.query(MARK_PENDING_SQL).run(runAfter.toISOString(), id);
+}
+
+/**
+ * Return a claimed `running` row to `pending` without consuming retry budget.
+ * Used when host shutdown cancels an in-flight job dispatch: the claim itself
+ * bumped attempts, but no durable attempt should be charged for cancelled work.
+ */
+export function releaseClaimedJob(
+  db: ProjectionDb,
+  id: number,
+  runAfter: Date,
+): void {
+  db.raw.query(RELEASE_CLAIMED_SQL).run(runAfter.toISOString(), id);
 }
 
 /**

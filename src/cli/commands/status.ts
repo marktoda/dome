@@ -29,8 +29,11 @@
 //   - raw_bytes:        byte count under raw/.
 //   - last_sync:        `started_at` of the most recent succeeded run
 //                       (max startedAt across queryRuns status=succeeded).
-//   - pending_runs:     count of ledger rows in `status='queued'`.
-//   - failed_runs:      count of ledger rows in `status='failed'`.
+//   - pending_runs:     count of ledger rows still in progress
+//                       (`queued` or `running`).
+//   - failed_runs:      count of processors whose latest ledger row is a
+//                       terminal problem (`failed`, `timed_out`, or
+//                       `cancelled`).
 //   - recent_processor_runs:
 //                       bounded per-processor summary from the recent run ledger.
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
@@ -64,6 +67,7 @@ import {
   type ServeHeartbeatStatus,
 } from "../../engine/compiler-host-heartbeat";
 import { openVaultRuntime } from "../../engine/vault-runtime";
+import type { LedgerDb } from "../../ledger/db";
 import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
@@ -88,6 +92,10 @@ const PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "failed",
   "timed_out",
   "cancelled",
+]);
+const PENDING_RUN_STATUSES: ReadonlyArray<RunStatus> = Object.freeze([
+  "queued",
+  "running",
 ]);
 
 // ----- Public types ---------------------------------------------------------
@@ -205,14 +213,11 @@ export async function runStatus(
     });
     const last_sync = recent[0]?.startedAt ?? null;
 
-    // Pending = queued. The dispatcher should drain queued rows quickly;
-    // a persistently non-zero count is a "stuck" indicator the operator
-    // surfaces via `dome inspect runs`.
-    const queued = queryRuns(runtime.ledgerDb, { status: "queued" });
-    const pending_runs = queued.length;
-    const failed_runs = queryRuns(runtime.ledgerDb, {
-      status: "failed",
-    }).length;
+    const pending_runs = countRunsByStatus(
+      runtime.ledgerDb,
+      PENDING_RUN_STATUSES,
+    );
+    const failed_runs = countLatestProblemRuns(runtime.ledgerDb);
     const recent_processor_runs = summarizeRecentProcessorRuns(
       queryRuns(runtime.ledgerDb, {
         limit: RECENT_PROCESSOR_RUN_LIMIT,
@@ -484,3 +489,25 @@ function summarizeRecentProcessorRuns(
 type MutableProcessorRunSummary = {
   -readonly [K in keyof ProcessorRunSummary]: ProcessorRunSummary[K];
 };
+
+function countRunsByStatus(
+  ledger: LedgerDb,
+  statuses: Iterable<RunStatus>,
+): number {
+  let total = 0;
+  for (const status of statuses) {
+    total += queryRuns(ledger, { status }).length;
+  }
+  return total;
+}
+
+function countLatestProblemRuns(ledger: LedgerDb): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const row of queryRuns(ledger)) {
+    if (seen.has(row.processorId)) continue;
+    seen.add(row.processorId);
+    if (PROBLEM_RUN_STATUSES.has(row.status)) total++;
+  }
+  return total;
+}

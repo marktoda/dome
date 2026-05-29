@@ -152,6 +152,7 @@ export async function runScheduler(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
+  readonly signal?: AbortSignal;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -211,6 +212,7 @@ async function runSchedulerInner(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
+  readonly signal?: AbortSignal;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -232,6 +234,7 @@ async function runSchedulerInner(opts: {
     extensionIdFor,
     adoptSubProposal,
     currentAdopted,
+    signal,
   } = opts;
   const applyGardenPatch =
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
@@ -260,6 +263,11 @@ async function runSchedulerInner(opts: {
   }
 
   for (const { processor, phase, cron } of candidates) {
+    if (signal?.aborted === true) {
+      skipped.push({ processorId: processor.id, reason: "cancelled" });
+      break;
+    }
+
     let parsed: ParsedCron;
     try {
       parsed = parseCron(cron);
@@ -353,6 +361,7 @@ async function runSchedulerInner(opts: {
         resolveGrants,
         extensionIdFor,
         ledger,
+        ...(signal !== undefined ? { signal } : {}),
         ...(executionState !== undefined ? { executionState } : {}),
         ...(executionCap !== undefined ? { executionCap } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
@@ -391,6 +400,10 @@ async function runSchedulerInner(opts: {
       // Per-effect denials by the broker don't count as run failure — they're
       // reported via `applied.diagnostics`.
       success = result.executionStatus === "succeeded";
+      if (result.executionStatus === "cancelled") {
+        skipped.push({ processorId: processor.id, reason: "cancelled" });
+        break;
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const dispatchDiag = diagnosticEffect({

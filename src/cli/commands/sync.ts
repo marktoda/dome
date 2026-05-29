@@ -36,7 +36,7 @@
 
 import { resolve } from "node:path";
 
-import { openVaultRuntime } from "../../engine/vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
 import {
   runCompilerHostTick,
@@ -50,6 +50,9 @@ import {
   printHostFollowupLines,
 } from "./sync-shared";
 import { formatJson } from "../format";
+import { queryRuns, type RunStatus } from "../../ledger/runs";
+import { queryOutbox } from "../../outbox/dispatch";
+import { queryQuestions } from "../../projections/questions";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -80,6 +83,7 @@ type SyncJsonResult = {
   readonly closureCommit: string | null;
   readonly garden: SyncGardenSummary;
   readonly operational: SyncOperationalSummary;
+  readonly health: SyncHealthSummary;
   readonly attention_required: boolean;
   readonly attention: ReadonlyArray<string>;
   readonly diagnostics: ReadonlyArray<{
@@ -102,6 +106,21 @@ type SyncOperationalSummary = {
   readonly outboxCount: number;
   readonly diagnosticCount: number;
 };
+
+type SyncHealthSummary = {
+  readonly pendingRuns: number;
+  readonly failedRuns: number;
+  readonly questions: number;
+  readonly outboxPending: number;
+  readonly outboxFailed: number;
+  readonly quarantined: number;
+};
+
+const SYNC_PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
+  "failed",
+  "timed_out",
+  "cancelled",
+]);
 
 export type RunSyncOptions = {
   readonly vault?: string | undefined;
@@ -171,7 +190,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
         : {}),
     });
     if (jsonMode) {
-      console.log(formatJson(tickResultJson(tick)));
+      console.log(formatJson(tickResultJson(tick, collectSyncHealth(runtime))));
     } else {
       printTickLines(tick, { quiet });
     }
@@ -279,7 +298,10 @@ function exitCodeForTick(tick: CompilerHostTickResult): number {
  * the rest of the DiagnosticEffect (sourceRefs are tied to internal
  * commit/blob OIDs that aren't useful to a CLI consumer in v1.0).
  */
-function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
+function tickResultJson(
+  tick: CompilerHostTickResult,
+  health: SyncHealthSummary,
+): SyncJsonResult {
   if (tick.kind === "detached-head") {
     return errorPayload({ branch: null, error: "detached-head" });
   }
@@ -297,6 +319,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       garden: emptyGardenSummary(),
       operational: emptyOperationalSummary(),
+      health,
       attention_required: true,
       attention: ["compiler_host_busy"],
       diagnostics: [],
@@ -314,6 +337,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       garden: emptyGardenSummary(),
       operational: emptyOperationalSummary(),
+      health,
       attention_required: true,
       attention: ["adopted_ref_diverged"],
       diagnostics: [
@@ -334,6 +358,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       status: "in-sync",
       garden: emptyGardenSummary(),
       operational,
+      health,
     });
     return {
       status: "in-sync",
@@ -345,6 +370,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       garden: emptyGardenSummary(),
       operational,
+      health,
       attention_required: attention.length > 0,
       attention,
       diagnostics: diagnosticsJson(tick.operational?.diagnostics ?? []),
@@ -357,6 +383,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
     status: result.adopted ? "adopted" : "blocked",
     garden,
     operational,
+    health,
   });
   return {
     status: result.adopted ? "adopted" : "blocked",
@@ -368,6 +395,7 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
     closureCommit: result.closureCommitOid,
     garden,
     operational,
+    health,
     attention_required: attention.length > 0,
     attention,
     diagnostics: diagnosticsJson([
@@ -382,6 +410,7 @@ function syncAttention(input: {
   readonly status: SyncJsonResult["status"];
   readonly garden: SyncGardenSummary;
   readonly operational: SyncOperationalSummary;
+  readonly health: SyncHealthSummary;
 }): ReadonlyArray<string> {
   const out: string[] = [];
   if (input.status === "blocked") out.push("adoption_blocked");
@@ -390,6 +419,12 @@ function syncAttention(input: {
   if (input.operational.diagnosticCount > 0) {
     out.push("operational_diagnostics");
   }
+  if (input.health.pendingRuns > 0) out.push("pending_runs");
+  if (input.health.failedRuns > 0) out.push("failed_runs");
+  if (input.health.questions > 0) out.push("questions");
+  if (input.health.outboxPending > 0) out.push("outbox_pending");
+  if (input.health.outboxFailed > 0) out.push("outbox_failed");
+  if (input.health.quarantined > 0) out.push("quarantined");
   return Object.freeze(out);
 }
 
@@ -417,6 +452,7 @@ function errorPayload(input: {
     closureCommit: null,
     garden: emptyGardenSummary(),
     operational: emptyOperationalSummary(),
+    health: emptyHealthSummary(),
     attention_required: true,
     attention: [input.error.replace(/-/g, "_")],
     diagnostics: [],
@@ -464,6 +500,50 @@ function emptyOperationalSummary(): SyncOperationalSummary {
   });
 }
 
+function emptyHealthSummary(): SyncHealthSummary {
+  return Object.freeze({
+    pendingRuns: 0,
+    failedRuns: 0,
+    questions: 0,
+    outboxPending: 0,
+    outboxFailed: 0,
+    quarantined: 0,
+  });
+}
+
+function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
+  return Object.freeze({
+    pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
+    failedRuns: countLatestProblemRuns(runtime),
+    questions: queryQuestions(runtime.projectionDb, { resolved: false }).length,
+    outboxPending: queryOutbox(runtime.outboxDb, { status: "pending" }).length,
+    outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,
+    quarantined: runtime.processorRuntime.executionState.quarantines().length,
+  });
+}
+
+function countLatestProblemRuns(runtime: VaultRuntime): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const row of queryRuns(runtime.ledgerDb)) {
+    if (seen.has(row.processorId)) continue;
+    seen.add(row.processorId);
+    if (SYNC_PROBLEM_RUN_STATUSES.has(row.status)) total++;
+  }
+  return total;
+}
+
+function countRunsByStatus(
+  runtime: VaultRuntime,
+  statuses: ReadonlyArray<RunStatus>,
+): number {
+  let total = 0;
+  for (const status of statuses) {
+    total += queryRuns(runtime.ledgerDb, { status }).length;
+  }
+  return total;
+}
+
 /**
  * Emit a one-line `--json` error payload for the usage-error / runtime-
  * open-failure paths. The structure mirrors `SyncJsonResult` so a
@@ -484,6 +564,7 @@ function emitErrorJson(input: {
     closureCommit: null,
     garden: emptyGardenSummary(),
     operational: emptyOperationalSummary(),
+    health: emptyHealthSummary(),
     attention_required: true,
     attention: [input.error.replace(/-/g, "_")],
     diagnostics: [],

@@ -51,7 +51,11 @@ import {
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
-import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
+import {
+  insertPending,
+  markFailed as markOutboxFailed,
+  queryOutbox,
+} from "../../src/outbox/dispatch";
 
 // ----- Paths ----------------------------------------------------------------
 
@@ -70,6 +74,7 @@ const SYNC_JSON_KEYS = Object.freeze([
   "closureCommit",
   "garden",
   "operational",
+  "health",
   "attention_required",
   "attention",
   "diagnostics",
@@ -85,6 +90,14 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
   jobCount: 0,
   outboxCount: 0,
   diagnosticCount: 0,
+});
+const EMPTY_HEALTH_SUMMARY = Object.freeze({
+  pendingRuns: 0,
+  failedRuns: 0,
+  questions: 0,
+  outboxPending: 0,
+  outboxFailed: 0,
+  quarantined: 0,
 });
 
 // ----- Console capture ------------------------------------------------------
@@ -237,6 +250,7 @@ describe("runSync empty-diff init", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
@@ -403,9 +417,69 @@ describe("runSync idempotent", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
+  }, 10_000);
+
+  test("--json reports durable health attention after the operational drain", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    const outbox = await openOutboxDb({
+      path: join(f.vaultPath, ".dome", "state", "outbox.db"),
+    });
+    if (!outbox.ok) {
+      throw new Error(`outbox open failed: ${outbox.error.kind}`);
+    }
+    try {
+      insertPending(outbox.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "sync-health-failed",
+          payload: { event: "failed" },
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        runId: "run_sync_health",
+      });
+      markOutboxFailed(
+        outbox.value.db,
+        "sync-health-failed",
+        "terminal failure",
+      );
+    } finally {
+      outbox.value.db.close();
+    }
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(parsed["status"]).toBe("in-sync");
+    expect(parsed["health"]).toEqual({
+      ...EMPTY_HEALTH_SUMMARY,
+      outboxFailed: 1,
+    });
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(["outbox_failed"]);
   }, 10_000);
 
   test("garden follow-up summaries surface sub-Proposals in text and JSON", async () => {
@@ -481,6 +555,7 @@ extensions:
       diagnosticCount: 0,
     });
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
@@ -664,6 +739,7 @@ extensions:
     expect(parsed["branch"]).toBe("main");
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(["compiler_host_busy"]);
     expect(parsed["error"]).toBe("compiler-host-busy");
@@ -918,6 +994,7 @@ describe("runSync detached HEAD", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(["detached_head"]);
     expect(parsed["diagnostics"]).toEqual([]);

@@ -37,6 +37,13 @@ type Fixture = {
 
 const fixtures: Fixture[] = [];
 
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 afterEach(() => {
   while (fixtures.length > 0) {
     const fixture = fixtures.pop();
@@ -51,6 +58,53 @@ afterEach(() => {
 });
 
 describe("runQueuedJobs", () => {
+  test("cancelled job dispatch returns the claimed row to pending without consuming attempts", async () => {
+    let started: (() => void) | undefined;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const controller = new AbortController();
+    const processor = defineProcessor({
+      id: "test.jobs.cancelled",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [],
+      run: async (ctx) => {
+        started?.();
+        await waitForAbort(ctx.signal);
+        return [];
+      },
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-cancel", processor.id, { x: 1 });
+
+    const run = runWithProcessors(
+      fixture,
+      [processor],
+      () => NOW,
+      {},
+      { signal: controller.signal },
+    );
+    await startedPromise;
+    controller.abort();
+
+    const result = await run;
+
+    expect(result.drained).toEqual([
+      expect.objectContaining({
+        processorId: processor.id,
+        status: "rescheduled",
+      }),
+    ]);
+    expect(jobRow(fixture.projection, "job-cancel")).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      run_after: NOW.toISOString(),
+    });
+  });
+
   test("runs due jobs as garden-phase target processor invocations", async () => {
     const seenInputs: unknown[] = [];
     const processor = defineProcessor({
@@ -414,6 +468,7 @@ async function runWithProcessors(
   now: () => Date = () => NOW,
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
   runnerOverrides: {
+    readonly signal?: AbortSignal;
     readonly resolveTree?: () => Promise<typeof TREE>;
     readonly adoptSubProposal?: (
       proposal: Proposal,
@@ -439,6 +494,9 @@ async function runWithProcessors(
     resolveGrants: (processorId: string): ReadonlyArray<Capability> =>
       registryResult.value.get(processorId)?.capabilities ?? [],
     extensionIdFor: (id: string) => id,
+    ...(runnerOverrides.signal !== undefined
+      ? { signal: runnerOverrides.signal }
+      : {}),
     ...(runnerOverrides.adoptSubProposal !== undefined
       ? { adoptSubProposal: runnerOverrides.adoptSubProposal }
       : {}),

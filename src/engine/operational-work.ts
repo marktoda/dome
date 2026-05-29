@@ -99,6 +99,7 @@ export async function runOperationalWork(opts: {
     ...(opts.currentAdopted !== undefined
       ? { currentAdopted: opts.currentAdopted }
       : {}),
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
       : {}),
@@ -131,6 +132,7 @@ export async function runOperationalWork(opts: {
     ...(opts.currentAdopted !== undefined
       ? { currentAdopted: opts.currentAdopted }
       : {}),
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
       : {}),

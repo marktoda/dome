@@ -55,6 +55,7 @@ import {
   markFailed as markRunFailed,
   markRunning,
   markSucceeded,
+  markTimedOut,
   newRunId,
 } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
@@ -1808,7 +1809,10 @@ describe("runStatus", () => {
     }
     try {
       const runId = newRunId(new Date(0), () => "status");
+      const timedOutRunId = newRunId(new Date(5), () => "statto");
+      const runningRunId = newRunId(new Date(8), () => "statrn");
       const succeededRunId = newRunId(new Date(10), () => "statok");
+      const latestProblemRunId = newRunId(new Date(15), () => "statpr");
       insertQueued(ledger.value.db, {
         id: runId,
         proposalId: null,
@@ -1828,6 +1832,42 @@ describe("runStatus", () => {
         finishedAt: new Date(2),
       });
       insertQueued(ledger.value.db, {
+        id: timedOutRunId,
+        proposalId: null,
+        processorId: "test.status",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "timeout" },
+        startedAt: new Date(5),
+      });
+      markRunning(ledger.value.db, timedOutRunId, new Date(6));
+      markTimedOut(ledger.value.db, {
+        id: timedOutRunId,
+        error: {
+          code: "processor.timeout",
+          message: "timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "test.status",
+        },
+        durationMs: 1,
+        finishedAt: new Date(7),
+      });
+      insertQueued(ledger.value.db, {
+        id: runningRunId,
+        proposalId: null,
+        processorId: "test.status",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "running" },
+        startedAt: new Date(8),
+      });
+      markRunning(ledger.value.db, runningRunId, new Date(9));
+      insertQueued(ledger.value.db, {
         id: succeededRunId,
         proposalId: null,
         processorId: "test.status",
@@ -1846,6 +1886,30 @@ describe("runStatus", () => {
         durationMs: 2,
         outputCommit: null,
         finishedAt: new Date(12),
+      });
+      insertQueued(ledger.value.db, {
+        id: latestProblemRunId,
+        proposalId: null,
+        processorId: "test.status.problem",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "latest-problem" },
+        startedAt: new Date(15),
+      });
+      markRunning(ledger.value.db, latestProblemRunId, new Date(16));
+      markTimedOut(ledger.value.db, {
+        id: latestProblemRunId,
+        error: {
+          code: "processor.timeout",
+          message: "still timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "test.status.problem",
+        },
+        durationMs: 1,
+        finishedAt: new Date(17),
       });
     } finally {
       ledger.value.db.close();
@@ -1891,11 +1955,13 @@ describe("runStatus", () => {
     expect(parsed["questions"]).toBe(1);
     expect(parsed["outbox_pending"]).toBe(1);
     expect(parsed["outbox_failed"]).toBe(1);
+    expect(parsed["pending_runs"]).toBe(1);
     expect(parsed["failed_runs"]).toBe(1);
     expect(parsed["quarantined"]).toBe(1);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual([
       "sync_needed",
+      "pending_runs",
       "failed_runs",
       "diagnostics",
       "questions",
@@ -1905,6 +1971,18 @@ describe("runStatus", () => {
     ]);
     expect(parsed["recent_processor_runs"]).toEqual([
       {
+        processor_id: "test.status.problem",
+        processor_version: "0.0.1",
+        phase: "garden",
+        latest_run_id: "run_15_statpr",
+        latest_status: "timed_out",
+        latest_started_at: new Date(15).toISOString(),
+        latest_finished_at: new Date(17).toISOString(),
+        latest_duration_ms: 1,
+        recent_runs: 1,
+        recent_problem_runs: 1,
+      },
+      {
         processor_id: "test.status",
         processor_version: "0.0.1",
         phase: "garden",
@@ -1913,8 +1991,8 @@ describe("runStatus", () => {
         latest_started_at: new Date(10).toISOString(),
         latest_finished_at: new Date(12).toISOString(),
         latest_duration_ms: 2,
-        recent_runs: 2,
-        recent_problem_runs: 1,
+        recent_runs: 4,
+        recent_problem_runs: 2,
       },
     ]);
   });

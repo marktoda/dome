@@ -705,6 +705,11 @@ Work:
       the host boundary with a structural test, so future CLI, HTTP, MCP, and
       embedded hosts own rendering while engine code returns structured
       diagnostics/results.
+- [x] Thread foreground-host cancellation through scheduler and queued-job
+      operational drains, keeping cancelled scheduled fires from advancing
+      cursors and returning claimed jobs to pending without consuming retry
+      budget; extend `status --json` and `sync --json` attention to reflect
+      durable pending/problem run and outbox health after a tick.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
