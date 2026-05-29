@@ -14,6 +14,11 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
+import {
+  LOW_CONFIDENCE_QUESTION_OPTIONS,
+  lowConfidenceQuestionKey,
+  type CaptureLowConfidenceKind,
+} from "./low-confidence-shared";
 
 type CaptureExtraction = {
   readonly title: string;
@@ -284,7 +289,11 @@ function lowConfidenceQuestions(input: {
   readonly sourceRef: SourceRef;
   readonly extraction: CaptureExtraction;
 }): ReadonlyArray<Effect> {
-  const groups = [
+  const groups: ReadonlyArray<{
+    readonly kind: CaptureLowConfidenceKind;
+    readonly items: ReadonlyArray<ExtractedItem>;
+    readonly question: (text: string) => string;
+  }> = [
     {
       kind: "task",
       items: input.extraction.tasks,
@@ -338,16 +347,20 @@ function lowConfidenceItems(
 function lowConfidenceQuestion(input: {
   readonly path: string;
   readonly sourceRef: SourceRef;
-  readonly kind: string;
+  readonly kind: CaptureLowConfidenceKind;
   readonly text: string;
   readonly question: string;
 }): Effect {
   return questionEffect({
     question: input.question,
-    options: ["track", "ignore"],
+    options: LOW_CONFIDENCE_QUESTION_OPTIONS,
     sourceRefs: [input.sourceRef],
-    idempotencyKey:
-      `dome.intake.low-confidence:${sha256(`${input.path}:${input.kind}:${input.text}`)}`,
+    idempotencyKey: lowConfidenceQuestionKey({
+      version: 1,
+      path: input.path,
+      kind: input.kind,
+      text: input.text,
+    }),
   });
 }
 
@@ -386,8 +399,4 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-}
-
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
 }

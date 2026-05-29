@@ -4,6 +4,9 @@ import { expect } from "bun:test";
 
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import type { RunId } from "../../../../src/engine/runner-contract";
+import {
+  targetFromLowConfidenceQuestionKey,
+} from "../../../../assets/extensions/dome.intake/processors/low-confidence-shared";
 import { scenario } from "../../index";
 
 const CAPTURE_PATH = "inbox/raw/day.md";
@@ -316,6 +319,22 @@ scenario(
       .expectProjection()
       .questions()
       .toContainQuestion("Project Phoenix");
+
+    const questionRows = h.projection.raw
+      .query<{ idempotency_key: string }, []>(
+        "SELECT idempotency_key FROM questions ORDER BY id",
+      )
+      .all();
+    const targets = questionRows.map((row) =>
+      targetFromLowConfidenceQuestionKey(row.idempotency_key),
+    );
+    expect(targets).toContainEqual({
+      version: 1,
+      path: CAPTURE_PATH,
+      kind: "task",
+      text: "Ask Chris about launch staffing",
+    });
+    expect(targets).not.toContain(null);
   },
 );
 
