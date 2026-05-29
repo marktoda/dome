@@ -9,6 +9,7 @@
 //   - adopted:          `refs/dome/adopted/<branch>` value, or "(uninitialized)".
 //   - sync_needed:      true when HEAD and adopted differ.
 //   - pending_commits:  commit count from adopted..HEAD, or null when unknown.
+//   - adopted_diverged: true when adopted is initialized but not an ancestor of HEAD.
 //   - dirty_modified:   working-tree paths modified/deleted/staged.
 //   - dirty_untracked:  working-tree paths not present at HEAD.
 //   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
@@ -43,7 +44,7 @@
 
 import { resolve } from "node:path";
 
-import { countCommitsSince, currentSha } from "../../git";
+import { countCommitsSince, currentSha, isAncestor } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
@@ -89,6 +90,7 @@ type StatusSnapshot = {
   readonly adopted: string | null;
   readonly sync_needed: boolean;
   readonly pending_commits: number | null;
+  readonly adopted_diverged: boolean;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
   readonly content_pages: number;
@@ -131,6 +133,11 @@ export async function runStatus(
   const head = await currentSha(vaultPath);
   const adopted = branch === null ? null : await getAdoptedRef(vaultPath, branch);
   const pendingCommits = await countPendingCommits({
+    vaultPath,
+    head,
+    adopted,
+  });
+  const adoptedDiverged = await isAdoptedDiverged({
     vaultPath,
     head,
     adopted,
@@ -200,6 +207,7 @@ export async function runStatus(
       adopted,
       sync_needed: syncNeeded,
       pending_commits: pendingCommits,
+      adopted_diverged: adoptedDiverged,
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
       content_pages: analytics.content_pages,
@@ -241,8 +249,13 @@ export async function runStatus(
 function printStatusText(s: StatusSnapshot): void {
   console.log("DOME status");
   console.log(`vault     ${s.vault}`);
+  const syncState = s.adopted_diverged
+    ? "diverged"
+    : s.sync_needed
+      ? "needed"
+      : "ok";
   console.log(
-    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")} | sync ${s.sync_needed ? "needed" : "ok"} | pending ${formatPendingCommits(s.pending_commits)}`,
+    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")} | sync ${syncState} | pending ${formatPendingCommits(s.pending_commits)}`,
   );
   console.log(
     `draft     ${s.dirty_modified} modified | ${s.dirty_untracked} untracked`,
@@ -283,6 +296,20 @@ async function countPendingCommits(opts: {
     ancestor: opts.adopted,
     descendant: opts.head,
   });
+}
+
+async function isAdoptedDiverged(opts: {
+  readonly vaultPath: string;
+  readonly head: string | null;
+  readonly adopted: string | null;
+}): Promise<boolean> {
+  if (opts.head === null || opts.adopted === null) return false;
+  if (opts.head === opts.adopted) return false;
+  return !(await isAncestor({
+    path: opts.vaultPath,
+    ancestor: opts.adopted,
+    descendant: opts.head,
+  }));
 }
 
 function formatPendingCommits(count: number | null): string {

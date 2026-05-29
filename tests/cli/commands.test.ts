@@ -73,6 +73,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "adopted",
   "sync_needed",
   "pending_commits",
+  "adopted_diverged",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -1003,6 +1004,7 @@ describe("runStatus", () => {
     expect(parsed["branch"]).toBeDefined();
     expect(parsed["sync_needed"]).toBe(true);
     expect(parsed["pending_commits"]).toBeNull();
+    expect(parsed["adopted_diverged"]).toBe(false);
     expect(parsed["dirty_modified"]).toBe(0);
     expect(parsed["dirty_untracked"]).toBe(0);
     expect(parsed["content_pages"]).toBe(2);
@@ -1048,6 +1050,7 @@ describe("runStatus", () => {
     expect(parsed["adopted"]).toBe(adopted);
     expect(parsed["sync_needed"]).toBe(true);
     expect(parsed["pending_commits"]).toBe(1);
+    expect(parsed["adopted_diverged"]).toBe(false);
   });
 
   test("--json mode reports vault content analytics", async () => {

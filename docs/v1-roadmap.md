@@ -200,6 +200,9 @@ Work:
 - [x] Ensure only one compiler-host tick runs per branch at a time.
 - [x] Refresh drift inside the branch lock so one-shot sync cannot adopt a
       stale observed HEAD while newer committed work is already present.
+- [x] Refuse adopted-ref divergence at the shared drift boundary before
+      constructing a Proposal, so rewritten branch histories cannot enter the
+      adoption or branch-materialization path.
 - [x] Materialize engine-created branch commits into the checked-out working
       tree for changed paths, while blocking before adoption if that would
       overwrite uncommitted local edits.

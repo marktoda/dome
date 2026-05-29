@@ -15,6 +15,7 @@ const STATUS_KEYS = Object.freeze([
   "adopted",
   "sync_needed",
   "pending_commits",
+  "adopted_diverged",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -127,6 +128,7 @@ scenario(
     expect(status["branch"]).toBe("main");
     expect(status["sync_needed"]).toBe(false);
     expect(status["pending_commits"]).toBe(0);
+    expect(status["adopted_diverged"]).toBe(false);
     expect(status["content_pages"]).toBe(1);
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);
 

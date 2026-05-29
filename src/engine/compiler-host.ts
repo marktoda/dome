@@ -67,7 +67,7 @@ import {
 import { buildSqliteSinks } from "../projections/sinks";
 import type { QuestionRecord } from "../projections/questions";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
-import { currentSha } from "../git";
+import { currentSha, isAncestor } from "../git";
 import type { ApplyEffectSinks } from "./apply-effect";
 import { failRunIfCurrent } from "../ledger/runs";
 import { buildOperationalQueryView } from "./operational-query-view";
@@ -97,13 +97,17 @@ export type DriftInfo = {
 };
 
 /**
- * The discriminated outcome of `detectDrift`. Four variants:
+ * The discriminated outcome of `detectDrift`. Five variants:
  *
  *   - `drift`         — HEAD differs from the adopted ref (or the adopted
  *                       ref is uninitialized and the empty-diff init is
  *                       pending). Caller passes `info` to `runOneAdoption`.
  *   - `in-sync`       — adopted ref is initialized and equals HEAD; no
  *                       work to do.
+ *   - `diverged`      — adopted is initialized but is not an ancestor of
+ *                       HEAD; adoption refuses before constructing a
+ *                       Proposal so engine branch writes cannot compound
+ *                       a rewritten history.
  *   - `detached-head` — `.git/HEAD` is a raw OID, not a symbolic ref;
  *                       the adopted-ref substrate requires a branch.
  *   - `no-commits`    — repo exists but has zero commits yet (HEAD is
@@ -115,6 +119,12 @@ export type DriftResult =
       readonly kind: "in-sync";
       readonly head: CommitOid;
       readonly branch: string;
+    }
+  | {
+      readonly kind: "diverged";
+      readonly branch: string;
+      readonly adopted: CommitOid;
+      readonly head: CommitOid;
     }
   | { readonly kind: "detached-head" }
   | { readonly kind: "no-commits" };
@@ -132,6 +142,12 @@ export type CompilerHostAdoptionCycleResult = {
 export type CompilerHostTickResult =
   | { readonly kind: "detached-head" }
   | { readonly kind: "no-commits" }
+  | {
+      readonly kind: "diverged";
+      readonly branch: string;
+      readonly adopted: CommitOid;
+      readonly head: CommitOid;
+    }
   | CompilerHostLockBusy
   | {
       readonly kind: "in-sync";
@@ -201,6 +217,19 @@ export async function detectDrift(vaultPath: string): Promise<DriftResult> {
   if (adopted === head) {
     return { kind: "in-sync", head: commitOid(head), branch };
   }
+  const fastForward = await isAncestor({
+    path: vaultPath,
+    ancestor: adopted,
+    descendant: head,
+  });
+  if (!fastForward) {
+    return {
+      kind: "diverged",
+      branch,
+      adopted: commitOid(adopted),
+      head: commitOid(head),
+    };
+  }
   return {
     kind: "drift",
     info: {
@@ -240,9 +269,10 @@ async function runCompilerHostTickForObservedDrift(
 ): Promise<CompilerHostTickResult> {
   if (
     opts.observedDrift.kind === "detached-head" ||
-    opts.observedDrift.kind === "no-commits"
+    opts.observedDrift.kind === "no-commits" ||
+    opts.observedDrift.kind === "diverged"
   ) {
-    return Object.freeze({ kind: opts.observedDrift.kind });
+    return Object.freeze({ ...opts.observedDrift });
   }
 
   const branch = driftBranch(opts.observedDrift);
@@ -257,7 +287,11 @@ async function runCompilerHostTickForObservedDrift(
       // before another commit landed; the locked tick must process the
       // current branch state, not the stale observation.
       const drift = await detectDrift(opts.runtime.path);
-      if (drift.kind !== "detached-head" && drift.kind !== "no-commits") {
+      if (
+        drift.kind !== "detached-head" &&
+        drift.kind !== "no-commits" &&
+        drift.kind !== "diverged"
+      ) {
         const freshBranch = driftBranch(drift);
         if (freshBranch !== branch && opts.relockAttempts < 1) {
           return Object.freeze({
@@ -289,8 +323,12 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
   const now = opts.now ?? ((): Date => new Date());
   const { drift } = opts;
 
-  if (drift.kind === "detached-head" || drift.kind === "no-commits") {
-    return Object.freeze({ kind: drift.kind });
+  if (
+    drift.kind === "detached-head" ||
+    drift.kind === "no-commits" ||
+    drift.kind === "diverged"
+  ) {
+    return Object.freeze({ ...drift });
   }
 
   if (drift.kind === "in-sync") {
@@ -337,9 +375,13 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
 }
 
 function driftBranch(
-  drift: Extract<DriftResult, { readonly kind: "drift" | "in-sync" }>,
+  drift: Extract<
+    DriftResult,
+    { readonly kind: "drift" | "in-sync" | "diverged" }
+  >,
 ): string {
-  return drift.kind === "in-sync" ? drift.branch : drift.info.branch;
+  if (drift.kind === "drift") return drift.info.branch;
+  return drift.branch;
 }
 
 function commonTickOptions(

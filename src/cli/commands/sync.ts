@@ -64,8 +64,8 @@ import { formatJson } from "../format";
  *                     work ran. Due operational queues may still drain.
  *   - `busy`        — another Dome compiler host already holds the branch
  *                     lock; retry after that host finishes.
- *   - `error`       — detached HEAD or no commits; the substrate cannot
- *                     operate. `branch` is null in this case.
+ *   - `error`       — detached HEAD, no commits, or adopted-ref divergence;
+ *                     the substrate cannot operate.
  */
 type SyncJsonResult = {
   readonly status: "adopted" | "blocked" | "in-sync" | "busy" | "error";
@@ -190,6 +190,15 @@ function printTickLines(
     );
     return;
   }
+  if (tick.kind === "diverged") {
+    console.error(
+      `dome sync: refused ${tick.branch}: adopted ref ${tick.adopted.slice(0, 7)} is not an ancestor of HEAD ${tick.head.slice(0, 7)}.`,
+    );
+    console.error(
+      "  Inspect git history before syncing; this usually means the branch was rebased, reset, or force-updated.",
+    );
+    return;
+  }
   if (tick.kind === "detached-head") {
     console.error(
       "dome sync: HEAD is detached. The adopted-ref substrate requires a branch. Check out a branch and retry.",
@@ -237,6 +246,7 @@ function printTickLines(
 function exitCodeForTick(tick: CompilerHostTickResult): number {
   if (tick.kind === "detached-head" || tick.kind === "no-commits") return 64;
   if (tick.kind === "busy") return 75;
+  if (tick.kind === "diverged") return 1;
   return tick.kind === "blocked" ? 1 : 0;
 }
 
@@ -265,6 +275,27 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       diagnostics: [],
       error: "compiler-host-busy",
+    };
+  }
+  if (tick.kind === "diverged") {
+    return {
+      status: "error",
+      branch: tick.branch,
+      base: tick.adopted,
+      head: tick.head,
+      adoptedRef: tick.adopted,
+      iterations: 0,
+      closureCommit: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "adopted-ref.diverged",
+          message:
+            `Adopted ref for ${tick.branch} (${tick.adopted.slice(0, 7)}) is not an ` +
+            `ancestor of HEAD (${tick.head.slice(0, 7)}).`,
+        },
+      ],
+      error: "adopted-ref-diverged",
     };
   }
   if (tick.kind === "in-sync") {

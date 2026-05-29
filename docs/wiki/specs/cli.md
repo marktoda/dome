@@ -173,6 +173,7 @@ Composition (v1.0):
 3. Branch on drift outcome:
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
+   - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
    - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, exit 0.
    - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
@@ -184,7 +185,7 @@ Composition (v1.0):
 {"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"diagnostics":[]}
 ```
 
-`status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and the usage-error variant.
+`status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
 For `"in-sync"`, `diagnostics` contains diagnostics produced by the operational-work pump, if any; no adoption diagnostics are synthesized because no adoption ran.
 
 `--quiet` suppresses non-error human-readable text for adopted / in-sync
@@ -197,9 +198,9 @@ mutually exclusive.
 per-processor result lines such as `dome.markdown.*`; iteration scaffolding is
 suppressed so filtered logs stay focused.
 
-The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD surfaces as a blocking diagnostic from `setAdoptedRef` and the operator resolves manually.
+The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD is detected by the shared compiler-host drift boundary before any Proposal is constructed, and the operator resolves manually.
 
-Exit codes: 0 on adopted / in-sync; 1 on blocked or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits; 75 (EX_TEMPFAIL) when another compiler host holds the branch lock.
+Exit codes: 0 on adopted / in-sync; 1 on blocked, adopted-ref divergence, or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits; 75 (EX_TEMPFAIL) when another compiler host holds the branch lock.
 
 See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
@@ -224,7 +225,7 @@ health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
@@ -235,9 +236,9 @@ remains the full audit surface.
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
 occurrences in those markdown files; raw file count and bytes under
-`raw/`; sync drift and pending commit count for adopted..HEAD when the
-adopted ref is initialized and ancestral to HEAD; and dirty working-tree
-counts excluding rebuildable
+`raw/`; sync drift, adopted-ref divergence, and pending commit count for
+adopted..HEAD when the adopted ref is initialized and ancestral to HEAD; and
+dirty working-tree counts excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
 reports. Use `dome inspect diagnostics`, `dome inspect questions`,
 `dome inspect outbox`, or `dome inspect runs` for details. See

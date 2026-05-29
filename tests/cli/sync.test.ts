@@ -16,7 +16,10 @@
 //   3. Drift adoption: make a second commit → sync → adopted ref
 //      advances to the new HEAD (exit 0).
 //
-//   4. Detached HEAD refusal: detach HEAD → sync refuses with exit 64
+//   4. Adopted-ref divergence refusal: rewrite HEAD away from the adopted
+//      history → sync refuses before adoption runs (exit 1).
+//
+//   5. Detached HEAD refusal: detach HEAD → sync refuses with exit 64
 //      (EX_USAGE) and a clear error message.
 //
 // Fixture pattern mirrors `tests/cli/serve.test.ts`: a tmpdir vault with
@@ -34,7 +37,7 @@ import { runSync } from "../../src/cli/commands/sync";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { commit, currentSha, initRepo } from "../../src/git";
+import { commit, currentSha, initRepo, writeRef } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
 import { openVaultRuntime } from "../../src/engine/vault-runtime";
 import {
@@ -537,6 +540,73 @@ describe("runSync drift adoption", () => {
       expect(running.length).toBe(0);
     } finally {
       ledger.value.db.close();
+    }
+  }, 10_000);
+
+  test("diverged adopted ref refuses before adoption runs", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
+
+    const code1 = await runSync(options);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    await writeFile(join(f.vaultPath, "wiki/adopted.md"), VALID_CONCEPT_PAGE);
+    const adoptedSha = await commit({
+      path: f.vaultPath,
+      message: "add adopted page\n",
+      files: ["wiki/adopted.md"],
+    });
+    const code2 = await runSync(options);
+    expect(code2).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(adoptedSha);
+
+    const ledgerResult = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledgerResult.ok) {
+      throw new Error(`could not open ledger: ${ledgerResult.error.kind}`);
+    }
+    const runCountBefore = queryRuns(ledgerResult.value.db).length;
+    ledgerResult.value.db.close();
+
+    await writeRef({
+      path: f.vaultPath,
+      ref: "refs/heads/main",
+      value: f.initialSha,
+    });
+    await writeFile(join(f.vaultPath, "wiki/rewritten.md"), VALID_CONCEPT_PAGE);
+    const rewrittenSha = await commit({
+      path: f.vaultPath,
+      message: "rewrite branch with sibling page\n",
+      files: ["wiki/rewritten.md"],
+    });
+
+    const drift = await detectDrift(f.vaultPath);
+    expect(drift.kind).toBe("diverged");
+    if (drift.kind !== "diverged") return;
+    expect(String(drift.adopted)).toBe(adoptedSha);
+    expect(String(drift.head)).toBe(rewrittenSha);
+
+    const code3 = await runSync(options);
+    expect(code3).toBe(1);
+    expect(captured.err.join("\n")).toContain("adopted ref");
+    expect(captured.err.join("\n")).toContain("is not an ancestor of HEAD");
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(adoptedSha);
+
+    const ledgerAfter = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledgerAfter.ok) {
+      throw new Error(`could not reopen ledger: ${ledgerAfter.error.kind}`);
+    }
+    try {
+      expect(queryRuns(ledgerAfter.value.db).length).toBe(runCountBefore);
+    } finally {
+      ledgerAfter.value.db.close();
     }
   }, 10_000);
 

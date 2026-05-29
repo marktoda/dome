@@ -152,7 +152,7 @@ The retired `dome submit` shape existed in earlier drafts as a direct Proposal-c
 
 ## `dome sync`
 
-`dome sync` is the explicit catch-up command. It constructs a Proposal from `adopted..HEAD` (or runs an empty-diff init when the adopted ref is uninitialized) and runs it through the adoption loop. Use it when:
+`dome sync` is the explicit catch-up command. It first verifies that an initialized adopted ref is an ancestor of HEAD, then constructs a Proposal from `adopted..HEAD` (or runs an empty-diff init when the adopted ref is uninitialized) and runs it through the adoption loop. Use it when:
 - The user accumulated working-tree commits manually and wants the engine to catch up.
 - The daemon (`dome serve`) was off and missed events; `dome sync` reconciles.
 - A scheduled processor's cron interval elapsed and the engine wasn't running (v1.1).
@@ -165,11 +165,12 @@ cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD (v1.1 —
 
 `dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/compiler-host.ts`). The shared tick acquires a branch-level compiler-host lock before adoption or operational patch work, so `sync`, `serve`, and future host surfaces do not run the same branch concurrently.
 
-The four outcomes:
+The five outcomes:
 
 - **adopted** — adoption succeeded; the adopted ref advanced to HEAD. Exit 0.
 - **blocked** — adoption ran but block-severity diagnostics prevented the adopted ref from advancing. Exit 1; stderr lists the first five blockers.
 - **in-sync** — HEAD already equals the adopted ref; no work done. Exit 0.
+- **diverged** — the adopted ref is not an ancestor of HEAD. No Proposal is constructed and no processor runs. Exit 1; stderr points to the git-history recovery path.
 - **busy** — another compiler host holds the branch lock. Exit 75 (EX_TEMPFAIL); retry after that host finishes.
 - **error** — detached HEAD or no commits; the adopted-ref substrate cannot operate. Exit 64 (EX_USAGE).
 
@@ -187,7 +188,7 @@ Output (`--json`):
 
 Garden-phase scheduled-trigger processors run after a successful top-level adoption attempt. Scheduled garden PatchEffects must re-enter adoption as garden sub-Proposals; they do not mutate the adopted candidate directly. View processors are command-driven in v1.
 
-The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place via `setAdoptedRef`, but the user-facing bypass lands with the adopted-ref-divergence recovery flow in v1.1. Until then, a divergent HEAD surfaces as a blocking diagnostic and the operator resolves manually (e.g., `git reset --hard <adopted-ref>` to realign).
+The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place both at drift detection and at `setAdoptedRef`, but the user-facing bypass lands with the adopted-ref-divergence recovery flow in v1.1. Until then, a divergent HEAD surfaces as an early compiler-host refusal and the operator resolves manually (e.g., `git reset --hard <adopted-ref>` to realign).
 
 The CLI `dome reconcile` shipped in v0.5+phase1+phase3 as a deprecated alias for `dome sync`. **The alias is retired in v1.** Callers that still invoke `dome reconcile` see "unknown command" and a one-line pointer to `dome sync`.
 

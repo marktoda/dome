@@ -162,8 +162,8 @@ export async function runServe(
   const runtime = runtimeResult.value;
 
   // ----- 4. Print startup banner --------------------------------------------
-  // The branch label is derived from the startup drift result. `in-sync`
-  // / `drift` both carry the resolved branch; `no-commits` does not, so
+  // The branch label is derived from the startup drift result. `in-sync`,
+  // `drift`, and `diverged` carry the resolved branch; `no-commits` does not, so
   // we re-resolve via `getCurrentBranch` (an unborn branch has a name —
   // `main` after `git init` — even though `HEAD` resolves to null).
   const startupBranch =
@@ -171,6 +171,8 @@ export async function runServe(
       ? startupDrift.branch
       : startupDrift.kind === "drift"
         ? startupDrift.info.branch
+        : startupDrift.kind === "diverged"
+          ? startupDrift.branch
         : ((await getCurrentBranch(vaultPath)) ?? "(unknown)");
   if (!quiet) {
     console.log(
@@ -311,6 +313,10 @@ async function pollLoop(input: {
       console.error(
         "dome serve: HEAD became detached; pausing adoption until a branch is checked out again.",
       );
+    } else if (drift.kind === "diverged" && lastKind !== "diverged") {
+      console.error(
+        `dome serve: adopted ref for ${drift.branch} (${drift.adopted.slice(0, 7)}) is not an ancestor of HEAD ${drift.head.slice(0, 7)}; pausing adoption until git history is repaired.`,
+      );
     }
     // `in-sync` and `no-commits` are quiet steady states; no log spam.
     if (drift.kind !== "drift" && drift.kind !== "in-sync") {
@@ -405,6 +411,13 @@ function printTickLine(
     if (opts.verbose && !opts.quiet && tick.operational !== null) {
       printOperationalLine(tick.operational);
     }
+    return;
+  }
+  if (tick.kind === "diverged") {
+    if (opts.quiet) return;
+    console.error(
+      `dome serve: refused ${tick.branch}: adopted ref ${tick.adopted.slice(0, 7)} is not an ancestor of HEAD ${tick.head.slice(0, 7)}.`,
+    );
     return;
   }
   if (tick.kind === "detached-head" || tick.kind === "no-commits") return;

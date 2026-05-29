@@ -10,9 +10,9 @@ enforced_at: src/adopted-ref.ts
 
 # adopted-ref-divergence
 
-**Symptom:** After a force-push, hard-reset, or rebase that rewrites the current branch's history, `refs/dome/adopted/<branch>` points at a commit no longer in HEAD's ancestry. `dome sync` refuses to advance with the error "adopted ref is not an ancestor of HEAD"; `dome status` surfaces the divergence with "adopted: `<sha7>` (DIVERGED — not an ancestor of HEAD)".
+**Symptom:** After a force-push, hard-reset, or rebase that rewrites the current branch's history, `refs/dome/adopted/<branch>` points at a commit no longer in HEAD's ancestry. `dome sync` refuses to advance with the error "adopted ref is not an ancestor of HEAD"; `dome status` surfaces the divergence with `sync diverged` and `adopted_diverged: true` in JSON.
 
-**Severity:** Medium. The vault is not corrupted — every markdown file is still readable, every git commit is still in place, every wikilink still resolves — but Dome's "what is the latest trusted state" cursor is now unreliable for queries until the user resolves the divergence. Until resolution, Dome behaves as if the source branch were uninitialized: `dome status` reports divergence, `dome sync` refuses, downstream tooling that queries the adopted ref sees stale data.
+**Severity:** Medium. The vault is not corrupted — every markdown file is still readable, every git commit is still in place, every wikilink still resolves — but Dome's "what is the latest trusted state" cursor is now unreliable for queries until the user resolves the divergence. Until resolution, `dome status` reports divergence, `dome sync` refuses before constructing a Proposal, `dome serve` pauses adoption, and downstream tooling that queries the adopted ref sees stale data.
 
 **When you'll hit this:**
 
@@ -47,7 +47,7 @@ enforced_at: src/adopted-ref.ts
    ```
    This recovers from an unintentional rewrite. The adopted ref is once again an ancestor of HEAD, and the divergence diagnostic clears.
 
-**Why the structural fence:** Without the fast-forward check, a force-push could silently move adopted to a commit that no longer carries the engine-closure work the prior adopted commit had. Future `dome sync` runs would re-do work that was already done. Idempotency saves deterministic processors in practice, but the diagnostic saves the user from confusion and from running expensive model-backed processors redundantly. The structural fence is `setAdoptedRef`'s fast-forward check in `src/adopted-ref.ts`; the internal `forceAdvance: true` opt-out is explicit and named.
+**Why the structural fence:** Without the fast-forward check, a force-push could silently move adopted to a commit that no longer carries the engine-closure work the prior adopted commit had. Future `dome sync` runs would re-do work that was already done. Idempotency saves deterministic processors in practice, but the diagnostic saves the user from confusion and from running expensive model-backed processors redundantly. The structural fence exists twice: `detectDrift` refuses divergent histories before adoption/branch materialization can start, and `setAdoptedRef` keeps the write side fast-forward-only. The internal `forceAdvance: true` opt-out is explicit and named.
 
 **Why NOT silently force-advance:** A silent force-advance is wrong for the unintentional-rewrite case — the user wanted to keep their prior history, the force-advance would lose it. The opt-in flag makes the user assert "I know the rewrite was intentional; advance anyway." The default-refuse posture is safer.
 

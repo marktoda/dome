@@ -302,7 +302,11 @@ export class HarnessImpl implements Harness {
   async tick(): Promise<TickResult> {
     await this.snapshot();
     const drift = await detectDrift(this.vaultPath);
-    if (drift.kind === "detached-head" || drift.kind === "no-commits") {
+    if (
+      drift.kind === "detached-head" ||
+      drift.kind === "no-commits" ||
+      drift.kind === "diverged"
+    ) {
       throw new Error(`harness.tick: unworkable state '${drift.kind}'`);
     }
     const tick = await runCompilerHostTick({
@@ -310,7 +314,11 @@ export class HarnessImpl implements Harness {
       drift,
       now: () => this.clock.now(),
     });
-    if (tick.kind === "detached-head" || tick.kind === "no-commits") {
+    if (
+      tick.kind === "detached-head" ||
+      tick.kind === "no-commits" ||
+      tick.kind === "diverged"
+    ) {
       throw new Error(`harness.tick: unworkable state '${tick.kind}'`);
     }
     if (tick.kind === "busy") {
