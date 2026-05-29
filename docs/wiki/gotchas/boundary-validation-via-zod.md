@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 severity: medium
 coverage: off-matrix
@@ -22,14 +22,14 @@ The v1 persistence boundaries that need Zod schemas:
 - **`src/extensions/loader.ts`** — parses bundle `manifest.yaml`; consumes `BundleManifestSchema` defining processors[], page-types, capability declarations.
 - **`src/vault.ts`** (or `src/vault-config.ts`) — reads `<vault>/.dome/config.yaml`; consumes `VaultConfigSchema` defining invariants enable/disable, extension grants, engine knobs.
 - **`src/vault.ts`** (page-types loader) — reads `<vault>/.dome/page-types.yaml`; consumes `PageTypesConfigSchema`.
-- **`src/quarantine-store.ts`** — reads `<vault>/.dome/state/quarantined.json`; consumes `QuarantineSchema`.
+- **`src/engine/quarantine-store.ts`** — reads `<vault>/.dome/state/quarantined.json`; consumes colocated Zod schemas for the store file and entries, then maps `quarantinedAt` into `Date`.
 - **`src/projections/db.ts`** — reads SQLite rows; column-type validation happens through Bun.sqlite's typed bindings (no Zod needed at this layer), but schema-hash mismatches trigger the auto-rebuild per [[wiki/gotchas/projection-schema-skew]].
 
 **Structural mitigation:** Every loader at a YAML or JSON persistence boundary defines a Zod schema and consumes `schema.safeParse(parsed)` rather than casting. The loader returns `Result<T, ValidationError>` consistent with the engine's error-handling surface.
 
 The schemas live colocated with their loader (e.g., `BundleManifestSchema` in `src/extensions/manifest-schema.ts` adjacent to `loader.ts`) so a future contributor reading the loader sees the schema first. The cross-cutting `src/core/effect.ts` Effect schemas stay centralized because Effects are consumed from many call sites; per-boundary schemas are read by one loader and don't need the indirection.
 
-For state-file corruption (`quarantined.json`, future state files), the validation failure path returns the empty-state fallback AND emits a `state-corruption-detected` DiagnosticEffect (via the engine when reachable from inside the load path; otherwise a direct write to `log.md` projection through the `dome.log` adoption-phase processor) — silent fallback was the pre-v1 behavior; observable fallback is the v1 behavior. The user sees the corruption in their log; the system continues without crashing.
+For state-file corruption (`quarantined.json`, future state files), the validation failure path returns a structured boundary error rather than silently falling back to empty state. Future recovery polish can decide whether a given state file is safe to reset and emit a `state-corruption-detected` DiagnosticEffect or repair question; the loader boundary itself must stay typed and observable.
 
 **Convention until the lockstep ships:** v1 lands Zod schemas at every named boundary; new persistence boundaries added in v1.x ship with their schemas. Reviewer attention is the enforcement seam until a `tests/integration/boundary-validation-coverage.test.ts` lockstep walks every YAML/JSON read site in `src/` and asserts each consumes a Zod schema.
 
@@ -37,7 +37,7 @@ For state-file corruption (`quarantined.json`, future state files), the validati
 
 - A user with a hand-edited `<vault>/.dome/config.yaml` carries a malformed `invariants:` block. The current behavior (without the schema) crashes during the spread merge in `openVault`; with the schema, it returns `Result.err({ kind: 'invalid-vault-config', path: 'invariants', expected: 'object', got: 'string' })` and `dome inspect diagnostics` surfaces the error as a DiagnosticEffect.
 - A third-party bundle author ships a `manifest.yaml` with a typo'd `processors[].triggers[].kind` field. Current behavior: an unhelpful "Cannot read property 'kind' of undefined" error during processor registration. Future behavior: `Result.err({ kind: 'bundle-load-failure', detail: 'processor-invalid', errors: [<Zod-issue-path>] })` per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy".
-- A v2 mobile shell wakes from background, finds `<vault>/.dome/state/quarantined.json` corrupted by a previous-version process. Current behavior: silent empty fallback (the quarantine state resets; the user sees no signal). v1 behavior: same fallback + `state-corruption-detected` diagnostic emitted via the engine.
+- A v2 mobile shell wakes from background, finds `<vault>/.dome/state/quarantined.json` corrupted by a previous-version process. Pre-v1 behavior silently reset quarantine state. V1 behavior returns `quarantine-store-parse-failed` with the offending schema path, so the host can surface or repair the corruption deliberately.
 
 **Related:**
 

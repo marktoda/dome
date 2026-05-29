@@ -6,9 +6,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { z } from "zod";
 
 import { err, ok, type Result } from "../types";
-import type { ProcessorPhase } from "../core/processor";
+import { ProcessorPhaseSchema } from "../core/processor";
 import {
   buildProcessorExecutionState,
   type ProcessorExecutionState,
@@ -26,7 +27,7 @@ type QuarantineStoreFile = {
 };
 
 type QuarantineStoreEntry = {
-  readonly phase: ProcessorPhase;
+  readonly phase: z.infer<typeof ProcessorPhaseSchema>;
   readonly processorId: string;
   readonly processorVersion: string;
   readonly triggerHash: string;
@@ -35,6 +36,22 @@ type QuarantineStoreEntry = {
   readonly quarantinedAt?: string;
   readonly reason?: string;
 };
+
+const QuarantineStoreEntrySchema = z.object({
+  phase: ProcessorPhaseSchema,
+  processorId: z.string().min(1),
+  processorVersion: z.string().min(1),
+  triggerHash: z.string().min(1),
+  consecutiveRetryableFailures: z.number().int().nonnegative(),
+  quarantineId: z.string().min(1).optional(),
+  quarantinedAt: z.string().datetime().optional(),
+  reason: z.string().optional(),
+}).strict();
+
+const QuarantineStoreFileSchema = z.object({
+  version: z.literal(1),
+  entries: z.array(QuarantineStoreEntrySchema),
+}).strict();
 
 export function openQuarantineStore(opts: {
   readonly path: string;
@@ -138,101 +155,38 @@ function writeEntries(
 function parseStoreFile(
   value: unknown,
 ): Result<ReadonlyArray<ProcessorExecutionStateEntry>, string> {
-  if (!isRecord(value)) {
-    return err("quarantine store must be a JSON object");
-  }
-  if (value.version !== 1) {
-    return err("quarantine store version must be 1");
-  }
-  if (!Array.isArray(value.entries)) {
-    return err("quarantine store entries must be an array");
+  const parsed = QuarantineStoreFileSchema.safeParse(value);
+  if (!parsed.success) {
+    return err(formatZodError(parsed.error));
   }
 
-  const entries: ProcessorExecutionStateEntry[] = [];
-  for (let i = 0; i < value.entries.length; i += 1) {
-    const entry = parseEntry(value.entries[i], i);
-    if (!entry.ok) return entry;
-    entries.push(entry.value);
-  }
-  return ok(Object.freeze(entries));
+  return ok(Object.freeze(parsed.data.entries.map(entryFromParsed)));
 }
 
-function parseEntry(
-  value: unknown,
-  index: number,
-): Result<ProcessorExecutionStateEntry, string> {
-  if (!isRecord(value)) {
-    return err(`entries[${index}] must be an object`);
-  }
-  if (!isProcessorPhase(value.phase)) {
-    return err(`entries[${index}].phase is invalid`);
-  }
-  if (typeof value.processorId !== "string" || value.processorId === "") {
-    return err(`entries[${index}].processorId must be a non-empty string`);
-  }
-  if (
-    typeof value.processorVersion !== "string" ||
-    value.processorVersion === ""
-  ) {
-    return err(
-      `entries[${index}].processorVersion must be a non-empty string`,
-    );
-  }
-  if (typeof value.triggerHash !== "string" || value.triggerHash === "") {
-    return err(`entries[${index}].triggerHash must be a non-empty string`);
-  }
-  if (
-    typeof value.consecutiveRetryableFailures !== "number" ||
-    !Number.isSafeInteger(value.consecutiveRetryableFailures) ||
-    value.consecutiveRetryableFailures < 0
-  ) {
-    return err(
-      `entries[${index}].consecutiveRetryableFailures must be a non-negative integer`,
-    );
-  }
-
-  let quarantinedAt: Date | undefined;
-  if (value.quarantineId !== undefined) {
-    if (typeof value.quarantineId !== "string" || value.quarantineId === "") {
-      return err(`entries[${index}].quarantineId must be a non-empty string`);
-    }
-  }
-  if (value.quarantinedAt !== undefined) {
-    if (typeof value.quarantinedAt !== "string") {
-      return err(`entries[${index}].quarantinedAt must be a string`);
-    }
-    const parsed = new Date(value.quarantinedAt);
-    if (Number.isNaN(parsed.getTime())) {
-      return err(`entries[${index}].quarantinedAt must be an ISO date`);
-    }
-    quarantinedAt = parsed;
-  }
-  if (value.reason !== undefined && typeof value.reason !== "string") {
-    return err(`entries[${index}].reason must be a string`);
-  }
-
-  return ok(
-    Object.freeze({
-      phase: value.phase,
-      processorId: value.processorId,
-      processorVersion: value.processorVersion,
-      triggerHash: value.triggerHash,
-      consecutiveRetryableFailures: value.consecutiveRetryableFailures,
-      ...(value.quarantineId !== undefined
-        ? { quarantineId: value.quarantineId }
-        : {}),
-      ...(quarantinedAt !== undefined ? { quarantinedAt } : {}),
-      ...(value.reason !== undefined ? { reason: value.reason } : {}),
-    }),
-  );
+function entryFromParsed(
+  entry: z.infer<typeof QuarantineStoreEntrySchema>,
+): ProcessorExecutionStateEntry {
+  return Object.freeze({
+    phase: entry.phase,
+    processorId: entry.processorId,
+    processorVersion: entry.processorVersion,
+    triggerHash: entry.triggerHash,
+    consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
+    ...(entry.quarantineId !== undefined
+      ? { quarantineId: entry.quarantineId }
+      : {}),
+    ...(entry.quarantinedAt !== undefined
+      ? { quarantinedAt: new Date(entry.quarantinedAt) }
+      : {}),
+    ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
+  });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isProcessorPhase(value: unknown): value is ProcessorPhase {
-  return value === "adoption" || value === "garden" || value === "view";
+function formatZodError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (issue === undefined) return "quarantine store failed validation";
+  const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
+  return `${path}: ${issue.message}`;
 }
 
 function errorMessage(e: unknown): string {

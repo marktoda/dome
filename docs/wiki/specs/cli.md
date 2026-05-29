@@ -17,10 +17,9 @@ dome sync [--force-advance]     Catch-up: construct Proposal from working-tree H
 dome status [--json]            Vault health + content dashboard.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
-dome lint [--apply <id>] [--report-only]
-                                Run dome.lint; write report; optionally apply a finding.
+dome run <name> [--json] [-- <processor flags>]
+                                Invoke a command-triggered view processor.
 dome rebuild                    Wipe and rebuild projection store from adopted commit.
-dome stats                      Vault size / processor counts / ledger summary.
 dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox, quarantine.
@@ -33,19 +32,19 @@ dome answer <question-id> [<value>]
 dome serve [--vault <path>] [--poll-interval-ms <n>]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
-dome export-context <topic>     Render a portable context packet for cross-AI handoff.
-dome migrate                    Upgrade vault for newer SDK schema.
-dome run-processor <id> [--args ...]
-                                Invoke a specific command-triggered processor by id.
 ```
 
-The CLI is the user-facing primary surface in v1. Every command above maps to one of:
+The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
 - **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
-- **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` retry/abandon handling for failed outbox rows plus reset handling for quarantined processors. Orphan-run recovery remains v1 work. See [[wiki/syntheses/v1-claude-code-vault-plan]].
-- **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
+- **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+
+Planned dedicated view aliases such as `dome lint`, `dome stats`, and
+`dome export-context` are not Commander bindings yet. Until they ship, their
+processors are invoked through `dome run <command-name>` when present.
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
@@ -215,15 +214,18 @@ dome query: 4 matches for "platform ownership"
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
 
-### `dome lint [--apply <id>] [--report-only]`
+### `dome run <name> [--json] [-- <processor flags>]`
 
-Runs the `dome.lint` view-phase processor against the adopted snapshot. The processor walks the wiki, emits DiagnosticEffect for each finding, writes a structured report to `inbox/review/lint-report-YYYY-MM-DD.md` with stable finding ids (H1, H2, M1, etc.).
+Invokes the view-phase processor whose command trigger declares `<name>`.
+The shared view-command boundary validates the adopted ref, opens the runtime,
+rebuilds stale projections before read access, routes emitted effects through
+the broker, records capability use in the run ledger, and renders returned
+ViewEffects as JSON. Unknown flags after the command name are passed through
+to `ctx.input.commandArgs.flags` so extension-defined view commands can add
+their own option shapes without changing the core CLI parser.
 
-`--apply <id>` invokes `dome.lint` in apply-mode for the named finding: re-resolve the finding's PatchEffect against current state, submit as a Proposal. The finding's annotation in the report flips to `Applied: <commit-oid>` or `Apply-failed: <reason>`.
-
-`--report-only` skips finding application even if `--apply` is passed; useful for inspecting what would happen.
-
-Exit codes: 0 on success (whether findings were found or not); 1 on apply failure; 2 on usage error.
+Exit codes: 0 on success; 64 when no matching view processor exists or the
+vault has no usable adopted ref; 1 on runtime or dispatch failure.
 
 ### `dome rebuild`
 
@@ -239,24 +241,6 @@ dome rebuild: rebuilding projection.db from adopted commit 41a98c2...
 ```
 
 Exit codes: 0 on success; 1 on rebuild failure (engine error); 2 on usage error.
-
-### `dome stats`
-
-Renders summary statistics:
-
-```text
-vault: /Users/mark/vaults/work
-  branch:   main
-  adopted:  41a98c2 (current)
-  pages:    1,247 wiki / 412 raw / 87 notes / 14 inbox-pending
-  log:      8,143 entries
-  ledger:   13,847 runs (last 30d: 412; last 7d: 89)
-  outbox:   2 pending, 0 failed
-  bundles:  3 (dome.markdown, dome.graph, dome.lint)
-  invariants: <linked count from canonical INVARIANTS const>
-```
-
-The `<linked count>` is rendered from `src/types.ts` `INVARIANTS` at run time — not inlined as a literal.
 
 ### `dome inspect <subject> [--limit <n>] [--json]`
 
@@ -439,26 +423,34 @@ The scheduled-trigger dispatcher for garden/view processors is wired through the
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 
-### `dome export-context <topic>`
+### Planned dedicated view aliases
 
-Renders a portable context packet (markdown) summarizing what the vault knows about `<topic>`. Used for cross-AI handoff (e.g., paste into ChatGPT to give it the relevant context from your Dome vault). Composes adopted-state reads + FTS query + Fact lookups; the output is a single markdown document.
+`dome lint`, `dome stats`, `dome export-context`, and `dome migrate` are
+roadmap commands, not current Commander bindings. The intended shape is:
 
-### `dome migrate`
+- `dome lint` — an error-recovering checker over adopted state and current
+  diagnostics, with future review/apply affordances.
+- `dome stats` — richer vault analytics beyond the compact `dome status`
+  dashboard.
+- `dome export-context <topic>` — a portable context packet for cross-AI
+  handoff, built from adopted-state search and fact lookups.
+- `dome migrate` — explicit vault/schema upgrade orchestration beyond the
+  current open-time SQLite migration and projection rebuild paths.
 
-Upgrades a vault between SDK schema versions. The migration is idempotent — running it on an already-current vault is a no-op. Specific migrations are encoded as command-triggered processors in `dome.migrate`; the CLI command dispatches them in order.
-
-### `dome run-processor <id> [--args <json>]`
-
-Direct invocation of a processor by id. Used for testing and for processors that don't have a dedicated CLI command. The id is `<bundle>:<processor-id>`; the `--args` payload is the processor's `ProcessorContext.input`. The processor runs in its declared phase; only command-triggered processors are invokable this way (signal/path/schedule processors fire via the engine).
+Until these aliases ship, command-triggered view processors are invoked via
+`dome run <command-name>`.
 
 ## Adding a new command
 
-The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding a processor" — CLI commands are command-triggered view-phase processors. Four file edits:
+The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding a processor" — CLI commands are command-triggered view-phase processors. A generic `dome run <name>` command needs two edits:
 
 1. **The processor file** at `assets/extensions/<bundle>/processors/<command-name>.ts` exporting a Processor with `phase: "view"` and `triggers: [{ kind: "command", name: "<command-name>" }]`.
 2. **The manifest entry** in the bundle's `manifest.yaml` declaring the processor.
-3. **A Commander binding** in `src/cli/index.ts` (`program.command("<name>")...action(...)`) that routes to a typed command handler or to `AbstractSurface.commands[<name>].invoke(args)`.
-4. **An end-to-end test** at `tests/integration/cli-<command>.test.ts` exercising the CLI invocation against a fixture vault.
+3. **An end-to-end test** at `tests/harness/scenarios/cli-surface/<command>.scenario.test.ts` exercising `dome run <command-name>` against a fixture vault.
+
+A dedicated `dome <name>` Commander binding is a fourth edit when the command
+has user-facing ergonomics that justify first-class flags, help text, or text
+rendering.
 
 The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly. Both dedicated view commands and generic `dome run` use the same shared dispatch boundary, so they inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
 
@@ -467,7 +459,12 @@ The substrate scaffold catches missing pieces:
 
 ## Why the CLI surface is rich (not minimal)
 
-The CLI is the primary v1 surface for agentic harnesses. Every operation the harness might want to invoke explicitly — `sync`, `query`, `lint`, `stats`, `doctor` — is a named CLI command, not a generic dispatch path. The structural payoff: a harness's AGENTS.md teaches "here are the named operations; invoke `dome <name>`"; the agent reaches for them like it reaches for `git status` or `npm test`. Rich, named, well-documented CLI commands match the agentic-harness mental model better than a single generic dispatcher.
+The CLI is the primary v1 surface for agentic harnesses. Stable operational
+verbs (`sync`, `status`, `query`, `inspect`, `doctor`, `answer`, `rebuild`,
+`serve`) are named CLI commands. Extension-defined view commands can start
+behind `dome run <name>` and graduate to dedicated aliases once their workflow
+deserves first-class help text, flags, and text rendering. This keeps the core
+surface small while leaving a clean path to richer named commands.
 
 The MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views are reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
 

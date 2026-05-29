@@ -116,4 +116,38 @@ describe("quarantine store", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("invalid entry shape returns a boundary validation error", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-quarantine-store-"));
+    try {
+      const path = join(root, "quarantined.json");
+      await writeFile(
+        path,
+        JSON.stringify({
+          version: 1,
+          entries: [
+            {
+              phase: "garden",
+              processorId: "test.processor",
+              processorVersion: "0.0.1",
+              triggerHash: "abc123",
+              consecutiveRetryableFailures: -1,
+            },
+          ],
+        }),
+        "utf8",
+      );
+
+      const opened = openQuarantineStore({ path });
+
+      expect(opened.ok).toBe(false);
+      if (opened.ok) return;
+      expect(opened.error.kind).toBe("quarantine-store-parse-failed");
+      expect(opened.error.cause).toContain(
+        "entries.0.consecutiveRetryableFailures",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
