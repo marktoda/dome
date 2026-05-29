@@ -84,7 +84,7 @@ Most CLI commands are not things Claude should call constantly. The CLI should b
 | Load-bearing | `dome serve`, `dome sync`, `dome status` | Drive the compiler runtime; let Claude/user wait for adoption; show whether the vault is healthy. |
 | Recovery | `dome inspect`, `dome doctor`, `dome answer` | Explain and resolve stuck engine work. |
 | User-value views | `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda` | Explicit views when the user asks for them. |
-| Admin/dev | `dome rebuild`, `dome migrate`, `dome run`, future low-level run-processor | Maintenance, testing, escape hatches. |
+| Admin/dev | `dome rebuild`, `dome run`, future `dome migrate` / low-level run-processor | Maintenance, testing, escape hatches. |
 
 The v1 CLI should not be a huge command zoo Claude is expected to remember. `CLAUDE.md` should teach only the load-bearing and recovery commands by default, plus a small list of named views.
 
@@ -169,11 +169,33 @@ Shipped and strong:
 Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, `dome prep`, and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, low-confidence question/answer handling, confidence-carrying `dome.intake.*` fact indexing, stale-inbox diagnostics, source-backed capture synthesis pages, and a source-backed recent-capture rollup. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The first-party bundle cut is now narrower than the older aspirational
+  matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and
+  `dome export-context`; `dome.health` ships failed-outbox retry/abandon,
+  quarantined-processor reset, and orphan-run recovery; `dome.daily` ships
+  deterministic daily creation, task carry-forward, source-ref-backed
+  task/followup fact indexing across wiki pages, `dome today`, `dome prep`,
+  and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction
+  into generated capture pages, processed archives, low-confidence
+  question/answer handling, confidence-carrying `dome.intake.*` fact
+  indexing, stale-inbox diagnostics, source-backed capture synthesis pages,
+  and a source-backed recent-capture rollup. `dome.index`, `dome.log`, and
+  `dome.migrate` are deferred.
 
-Not yet at v1:
+Still before a v1 release:
 
-- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, deterministic `dome agenda`, production model-provider packaging, raw inbox capture compilation, source-backed per-capture synthesis, source-backed recent-capture rollup synthesis, low-confidence capture question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics. Remaining v1 work is real-vault dogfood and richer long-horizon synthesis.
+- The day-to-day workflows the user wants are still maturing beyond the
+  deterministic core. Shipped pieces include daily note creation,
+  carry-forward tasks, deterministic `TODO:` / `Follow up:` directive
+  extraction across wiki pages, ambiguity questions for prose follow-up
+  guesses, `dome today`, deterministic `dome prep`, deterministic
+  `dome agenda`, production model-provider packaging, raw inbox capture
+  compilation, source-backed per-capture synthesis, source-backed
+  recent-capture rollup synthesis, low-confidence capture question/answer
+  handling, confidence-carrying intake fact indexing, and stale-inbox
+  diagnostics. Remaining v1 release work is week-long real-vault soak and
+  any fixes that soak uncovers; richer long-horizon synthesis can follow
+  after the local loop is dependable.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -259,9 +281,9 @@ The universal human-decision channel. The current implementation can print a
 question, validate a choice, record an answer by row id, and dispatch matching
 garden-phase answer handlers through normal Effect routing. Failed outbox rows,
 quarantines, and orphaned running rows are recoverable through first-party
-`dome.health` answer handlers. Complete v1 still needs broader user-decision
-flows for intake/daily ambiguity; the durable answer store already keeps answer
-records outside rebuildable projection state.
+`dome.health` answer handlers. Future hardening can broaden the question
+patterns for daily/intake ambiguity; the durable answer store already keeps
+answer records outside rebuildable projection state.
 
 The rule: do not create one-off commands like `dome replay-outbox-row` or `dome clear-quarantine`. Instead:
 
@@ -317,9 +339,11 @@ should be deterministic and source-backed in v1: open followups, open tasks,
 unresolved questions, and adopted-state snippets that mention the supplied
 person or topic. LLM summarization can follow later over the retrieved evidence.
 
-### `dome rebuild`, `dome migrate`, `dome run`
+### `dome rebuild`, `dome run`, future `dome migrate`
 
-Admin/dev surfaces. They should exist, but they should not be taught as normal Claude Code behavior except when troubleshooting.
+Admin/dev surfaces. `dome rebuild` and `dome run` exist today; `dome migrate`
+is conditional future surface for schema/version churn. These should not be
+taught as normal Claude Code behavior except when troubleshooting.
 
 ## First-party bundle cut
 
@@ -330,7 +354,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | Bundle | Why it matters | Key processors |
 |---|---|---|
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
-| `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
+| `dome.graph` | link/tag substrate for recall | wikilink and tag facts; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
 | `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, source-backed per-capture synthesis, recent-capture rollup synthesis, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer long-horizon synthesis remains |
@@ -345,167 +369,17 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.log` | Defer or make append-only minimal. The run ledger already records engine history; a markdown log is useful only if humans read it. |
 | `dome.migrate` | Ship when schema/version churn requires it. Until then, keep migrations internal and idempotent. |
 
-## Implementation sequence
+## Roadmap ownership
 
-### Milestone 0: v1 cut and doc cleanup
+This synthesis is the product contract: it names the user workflow, the
+first-principles boundaries, and the acceptance shape for local Claude Code
+use. It should not carry milestone checkboxes or shipped-status claims beyond
+the high-level "current state" summary above.
 
-- Keep this plan as the canonical v1 product scope document.
-- Keep [[v1-roadmap]] as the technical execution plan and shipped-status ledger.
-- Update `docs/index.md` to link both.
-- Mark aspirational matrices as roadmap when they name unshipped bundles.
-- Fix Claude Code orientation docs: `CLAUDE.md` shim is v1.
-- Reword MCP as optional/additive until the implementation exists.
-
-Acceptance:
-
-- A contributor can read `docs/index.md` and understand what v1 must ship versus what is v1.5/v2.
-
-### Milestone 1: Claude Code boot path
-
-- Keep `dome init` writing `AGENTS.md` and `CLAUDE.md`, where `CLAUDE.md` imports `AGENTS.md`.
-- Keep the generated instructions short enough for daily Claude Code use:
-  - edit markdown normally,
-  - commit meaningful changes,
-  - rely on `dome serve`/`dome sync` for adoption,
-  - use `dome status`/`inspect` only for health/recovery,
-  - do not edit `.dome/state/`.
-- Maintain the integration test that opens a freshly initialized vault and verifies instruction files, config, gitignore, first sync, and initial commit.
-
-Acceptance:
-
-- A new vault can be opened directly with Claude Code without the user manually explaining Dome's workflow.
-
-### Milestone 2: compiler host spine
-
-- Finish `dome serve` robustness for foreground and background use.
-- Add explicit quiet/verbose modes.
-- Ensure one adoption is active per branch at a time.
-- Coalesce multiple HEAD movements while a run is active.
-- Ensure operational work drains on quiet ticks.
-- Add `dome status` counts for diagnostics, questions, outbox, quarantine, and failed runs.
-- Keep `dome sync --json` and `status --json` fixtures stable for agent consumption.
-
-Acceptance:
-
-- With `dome serve` running, a user/Claude commit gets adopted automatically and produces a clear status trail.
-
-### Milestone 3: deterministic adopted-state substrate
-
-- Complete `dome.markdown` and `dome.graph` against real vault files.
-- [x] Extend shipped `dome.search` beyond FTS/`dome query` into export-context retrieval.
-- Keep `dome rebuild` as the explicit projection recovery path from adopted commit.
-- Keep stale projection invalidation for processor-version and extension-set changes covered by cache-key drift rebuilds.
-
-Acceptance:
-
-- After commits, `dome query` can find adopted-state snippets and facts with SourceRefs.
-- `dome rebuild` can wipe/recreate projection state without touching run ledger/outbox.
-
-### Milestone 4: recovery and questions
-
-- Finish answer durability beyond rebuildable projection state.
-- Add first-party recovery answer handlers where human intent is required.
-- Add `dome.health` probes:
-  - failed/stuck outbox,
-  - orphan running rows,
-  - quarantined processors,
-  - schema skew,
-  - AGENTS/CLAUDE managed-section drift,
-  - adopted-ref divergence.
-- Add question emitters and answer handlers for recoverable cases.
-- Keep quarantine visible/resettable through the same question/answer flow; optionally move the backing store from JSON to sqlite if the operational state model needs richer history.
-
-Acceptance:
-
-- A stuck outbox row, orphan run, or quarantined processor is visible and recoverable without opening sqlite manually.
-
-### Milestone 5: daily-note and task loop
-
-- Define minimal markdown task schema compatible with plain Obsidian checkboxes.
-- [x] Implement `dome.daily.create-daily`.
-- [x] Implement carry-forward of unfinished tasks from the previous daily note.
-- [x] Index explicit open checkboxes and `#followup` / `#follow-up` markers
-  in daily notes as source-ref-backed facts.
-- [x] Extract deterministic `TODO:` / `Follow up:` directives from daily
-  notes as source-ref-backed facts.
-- [x] Extract deterministic `TODO:` / `Follow up:` directives from non-daily
-  wiki pages as source-ref-backed facts.
-- [x] Ask questions for ambiguous prose follow-up guesses instead of mutating
-  silently.
-- [x] Extend raw-capture extraction with low-confidence question emission.
-- [x] Extend raw-capture extraction with answer handling.
-- [x] Extend raw-capture extraction with richer fact namespaces.
-- [x] Add `dome today` once the data is useful enough to render.
-- [x] Add prep views once planning context is useful enough to render.
-- [x] Add a source-backed agenda view for people/topics.
-
-External prior: Obsidian task plugins show the durable expectation here: users want vault-wide task queries, due/recurring metadata, and carry-forward into daily/weekly notes. See <https://community.obsidian.md/plugins/obsidian-tasks-plugin> and <https://www.obsidianstats.com/plugins/auto-tasks>.
-
-Acceptance:
-
-- A user can talk with Claude about today's work, commit the daily note, and Dome creates/carries forward the next actionable task surface; `dome today` renders the source-backed open tasks, followups, and daily questions; `dome prep` renders a source-backed planning packet; `dome agenda <person>` renders source-backed topics for a meeting.
-
-### Milestone 6: modelInvoke substrate
-
-- [x] Define the stable `modelInvoke` capability and provider boundary.
-- [x] Enforce model allowlists and per-bundle `maxDailyCostUsd`.
-- [x] Ledger token/cost data on every model attempt.
-- [x] Validate structured outputs at the boundary.
-- [x] Treat model parse/schema failures as nominal processor failures.
-- [x] Ensure retries are bounded and idempotent.
-- [x] Require model-capable PatchEffects to carry SourceRefs before routing.
-
-Acceptance:
-
-- LLM-capable processors can fail, time out, exceed budget, or emit source-less patches without corrupting adopted state or hiding cost.
-
-### Milestone 7: LLM garden processors
-
-- [x] Implement `dome.intake.extract-capture` for `inbox/raw/*.md`.
-- [x] Implement task/followup extraction with structured output validation.
-- [x] Consume the shipped model allowlist and per-bundle `maxDailyCostUsd`
-  enforcement.
-- [x] Ensure malformed LLM output is ledgered and recoverable.
-- [x] Build on the shipped capability-scoped, source-ref-backed model patch guard.
-- [x] Add low-confidence question emission.
-- [x] Add low-confidence answer handling.
-- [x] Add stale-inbox diagnostics after the happy path has soaked.
-- [x] Add first source-backed synthesis from generated capture pages.
-
-Acceptance:
-
-- Raw captures can become wiki/daily/task updates without blocking adoption.
-- Generated capture pages can become source-linked synthesis pages without
-  bypassing model budgets or SourceRef requirements.
-- Bad model output produces a diagnostic/run error, not a corrupted vault.
-
-### Milestone 8: user-value views
-
-- [x] Implement `dome export-context <topic>`.
-- [x] Implement `dome lint` as a report over diagnostics plus additional checks.
-- [x] Add `dome today` once the daily bundle has enough data to render something useful.
-- [x] Add `dome prep` once planning context is useful enough.
-- [x] Add `dome agenda` once daily/search context is useful enough.
-- [x] Keep generic `dome run` as a development escape hatch; teach named commands in instructions.
-
-Acceptance:
-
-- Claude/user can ask for a source-backed context packet, a vault cleanup
-  report, a daily action surface, or a planning packet without manually
-  spelunking projections.
-
-### Milestone 9: v1 release hardening
-
-- Add live harness scenarios matching the acceptance scenario.
-- Add fixtures for host-on and host-off workflows.
-- Add stable status/doctor/query/export JSON fixture coverage for agent-facing schemas.
-- Add cost/quarantine/outbox failure tests.
-- Add bundle coverage tests so docs/matrices cannot name unshipped processors as shipped.
-- Run full `bun test`, `bunx tsc --noEmit`, and `git diff --check`.
-
-Acceptance:
-
-- The system can be used against the author's real vault for a week without manual sqlite edits, lost garden patches, or confusing silent failures.
+[[v1-roadmap]] is the technical ledger. It owns implementation order, checked
+work, remaining release-hardening items, bundle status, and test gates. When a
+feature ships or a remaining item changes, update the roadmap first and revise
+this synthesis only if the product contract or boundary changed.
 
 ## Hosted queue runway
 
