@@ -10,6 +10,9 @@ import {
 import {
   synthesisOutputPath,
 } from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
+import {
+  rollupOutputPath,
+} from "../../../../assets/extensions/dome.intake/processors/synthesize-rollup";
 import { scenario } from "../../index";
 import type { Harness } from "../../types";
 
@@ -64,7 +67,21 @@ ${BASE_CONFIG}
 
 const COMMAND_PROVIDER_SOURCE = `
 const request = JSON.parse(await Bun.stdin.text());
-if (request.prompt.startsWith("Synthesize a Dome generated intake capture")) {
+if (request.prompt.startsWith("Synthesize recent Dome generated intake captures")) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Launch management rollup",
+      thesis: "Recent captures point to launch staffing and budget as the active management thread.",
+      themes: ["Ada needs launch staffing support", "Ben owns budget follow-up"],
+      risks: ["Budget uncertainty may block launch staffing"],
+      nextSteps: ["Review launch staffing with Ada and Ben"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else if (
+  request.prompt.startsWith("Synthesize a Dome generated intake capture")
+) {
   console.log(JSON.stringify({
     text: JSON.stringify({
       title: "Launch staffing synthesis",
@@ -309,6 +326,132 @@ scenario(
       expect.objectContaining({
         capability: "patch.auto",
         resource: synthesisPath,
+        outcome: "allowed",
+      }),
+    ]);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake synthesizes cross-capture rollups",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async (request) => {
+        expect(request.model).toBe("test-model");
+        if (
+          request.prompt.startsWith(
+            "Synthesize recent Dome generated intake captures",
+          )
+        ) {
+          expect(request.prompt).toContain(
+            "wiki/generated/intake/manager-day.md",
+          );
+          expect(request.prompt).toContain(
+            "wiki/generated/intake/project-day.md",
+          );
+          return {
+            text: JSON.stringify({
+              title: "Launch management rollup",
+              thesis:
+                "Recent captures point to launch staffing and budget as the active management thread.",
+              themes: [
+                "Ada needs launch staffing support",
+                "Ben owns budget follow-up",
+              ],
+              risks: ["Budget uncertainty may block launch staffing"],
+              nextSteps: ["Review launch staffing with Ada and Ben"],
+            }),
+            costUsd: 0.07,
+          };
+        }
+        return modelResponseForPrompt(request.prompt, {
+          title: "Unused per-capture synthesis",
+          summary: "Unused",
+          tasks: [],
+          followups: [],
+          decisions: [],
+          entities: [],
+          sourceQuotes: [],
+        });
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/generated/intake/manager-day.md": [
+          "---",
+          "type: capture",
+          "---",
+          "",
+          "# Manager Day",
+          "",
+          "Ada needs launch staffing support.",
+          "",
+        ].join("\n"),
+        "wiki/generated/intake/project-day.md": [
+          "---",
+          "type: capture",
+          "---",
+          "",
+          "# Project Day",
+          "",
+          "Ben owns budget follow-up for the launch.",
+          "",
+        ].join("\n"),
+      },
+      message: "add generated captures",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    const rollupPath = rollupOutputPath();
+    await h.expectFile(rollupPath).toContain("# Launch management rollup");
+    await h
+      .expectFile(rollupPath)
+      .toContain("Recent captures point to launch staffing");
+    await h
+      .expectFile(rollupPath)
+      .toContain("- Ada needs launch staffing support");
+    await h
+      .expectFile(rollupPath)
+      .toContain("- [[wiki/generated/intake/manager-day.md]]");
+    await h
+      .expectFile(rollupPath)
+      .toContain("- [[wiki/generated/intake/project-day.md]]");
+
+    const run = await h
+      .expectLedger({
+        processorId: "dome.intake.synthesize-rollup",
+        status: "succeeded",
+      })
+      .toHaveExactlyOne();
+    expect(capabilityUsesByRun(h.ledger, run.id as RunId)).toEqual([
+      expect.objectContaining({
+        capability: "model.invoke",
+        resource: "test-model",
+        outcome: "allowed",
+      }),
+      expect.objectContaining({
+        capability: "patch.auto",
+        resource: rollupPath,
         outcome: "allowed",
       }),
     ]);
@@ -817,6 +960,22 @@ function modelResponseForPrompt(
   prompt: string,
   extraction: CaptureExtractionFixture,
 ): { readonly text: string; readonly costUsd: number } {
+  if (prompt.startsWith("Synthesize recent Dome generated intake captures")) {
+    return {
+      text: JSON.stringify({
+        title: "Launch management rollup",
+        thesis:
+          "Recent captures point to launch staffing and budget as the active management thread.",
+        themes: [
+          "Ada needs launch staffing support",
+          "Ben owns budget follow-up",
+        ],
+        risks: ["Budget uncertainty may block launch staffing"],
+        nextSteps: ["Review launch staffing with Ada and Ben"],
+      }),
+      costUsd: 0.05,
+    };
+  }
   if (prompt.startsWith("Synthesize a Dome generated intake capture")) {
     return {
       text: JSON.stringify({

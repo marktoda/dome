@@ -165,7 +165,7 @@ Shipped and strong:
 Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, `dome prep`, and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, low-confidence question/answer handling, confidence-carrying `dome.intake.*` fact indexing, stale-inbox diagnostics, and source-backed capture synthesis pages. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, `dome prep`, and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, low-confidence question/answer handling, confidence-carrying `dome.intake.*` fact indexing, stale-inbox diagnostics, source-backed capture synthesis pages, and a source-backed recent-capture rollup. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 
 Not yet at v1:
 
@@ -329,7 +329,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
 | `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
 | `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
-| `dome.intake` | "talk about my day" capture compilation | raw capture extraction, source-backed capture synthesis, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer cross-capture synthesis remains |
+| `dome.intake` | "talk about my day" capture compilation | raw capture extraction, source-backed per-capture synthesis, recent-capture rollup synthesis, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer long-horizon synthesis remains |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
 
 ### Optional or later

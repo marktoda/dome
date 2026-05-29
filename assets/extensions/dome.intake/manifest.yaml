@@ -88,6 +88,32 @@ processors:
       modelCallTimeoutMs: 180000
     module: processors/synthesize-capture.ts
 
+  - id: dome.intake.synthesize-rollup
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/generated/intake/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/generated/intake/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/syntheses/intake-*.md"]
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+    execution:
+      class: llm
+      timeoutMs: 600000
+      modelCallTimeoutMs: 180000
+    module: processors/synthesize-rollup.ts
+
   - id: dome.intake.low-confidence-answer
     version: 0.2.0
     phase: garden

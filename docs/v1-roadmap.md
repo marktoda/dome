@@ -75,7 +75,7 @@ Shipped:
       `dome.health` (6),
       `dome.daily` (6),
       `dome.lint` (1), and
-      `dome.intake` (5).
+      `dome.intake` (6).
 - [x] Page-type schema substrate.
 - [x] Diagnostic auto-resolve for changed paths.
 - [x] Page-subject graph/tag fact replacement for changed and deleted paths.
@@ -94,8 +94,8 @@ V1 capability ledger:
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
       task/followup fact indexing, `today` / `prep` / `agenda` views, and
       first raw inbox capture extraction plus low-confidence answer handling
-      plus source-backed capture synthesis are shipped; richer cross-capture
-      synthesis remains.
+      plus source-backed per-capture and cross-capture synthesis are shipped;
+      real-vault dogfood remains.
 - [x] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
@@ -103,8 +103,8 @@ V1 capability ledger:
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice, low-confidence capture
       questions/answers, confidence-carrying intake fact namespaces, and
-      stale-inbox diagnostics shipped; first source-backed capture synthesis
-      processor shipped.
+      stale-inbox diagnostics shipped; source-backed capture synthesis and
+      cross-capture rollup processors shipped.
 - [x] User-value views: `dome today`, `dome prep`, `dome agenda`,
       `dome lint`, and
       `dome export-context` are shipped.
@@ -434,6 +434,8 @@ Work:
 - [x] Emit stale-inbox diagnostics for lingering unprocessed inbox files.
 - [x] Implement first synthesis processor only after intake has provenance and
       budget gates.
+- [x] Implement first cross-capture synthesis rollup over recent generated
+      captures through the same model budget and source-ref guardrails.
 
 Acceptance:
 
@@ -454,6 +456,9 @@ Acceptance:
 - [x] Generated capture pages synthesize into source-linked
       `wiki/syntheses/intake-*.md` pages through the same model budget and
       source-ref guardrails.
+- [x] Recent generated capture pages synthesize into a source-linked
+      `wiki/syntheses/intake-rollup.md` page through the same model budget
+      and source-ref guardrails.
 
 ## Milestone 8 - User-Value Views
 
@@ -528,7 +533,7 @@ Required for daily value:
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, `dome prep`, and `dome agenda` shipped; generated intake captures feed the same task index |
-| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, stale-inbox diagnostics, and source-backed capture synthesis shipped; richer cross-capture synthesis remains |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, stale-inbox diagnostics, source-backed per-capture synthesis, and source-backed recent-capture rollup shipped; richer long-horizon synthesis remains |
 
 Optional or conditional:
 
