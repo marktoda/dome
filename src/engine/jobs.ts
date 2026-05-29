@@ -238,6 +238,7 @@ async function runOneJob(opts: {
         ...(opts.adoptSubProposal !== undefined
           ? { adoptSubProposal: opts.adoptSubProposal }
           : {}),
+        now: opts.now,
         disabledDiagnostic: {
           code: "jobs.garden-sub-proposal-spawn-disabled",
           message:

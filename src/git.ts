@@ -153,8 +153,16 @@ export async function commit(opts: {
 }
 
 export async function readTree(opts: { path: string; oid: string }): Promise<Awaited<ReturnType<typeof git.readTree>>> {
-  const { root } = await resolveGitContext(opts.path);
-  return git.readTree({ fs, dir: root, oid: opts.oid });
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const commitTree = await treeOidIfCommit(root, opts.oid);
+  if (commitTree === null) {
+    return git.readTree({ fs, dir: root, oid: opts.oid });
+  }
+  return readPrefixedTree({
+    root,
+    treeOid: commitTree,
+    prefix,
+  });
 }
 
 /**
@@ -197,6 +205,50 @@ export async function readBlob(opts: {
     }
     throw e;
   }
+}
+
+async function treeOidIfCommit(
+  root: string,
+  oid: string,
+): Promise<string | null> {
+  try {
+    const result = await git.readCommit({ fs, dir: root, oid });
+    return result.commit.tree;
+  } catch {
+    return null;
+  }
+}
+
+async function readPrefixedTree(opts: {
+  root: string;
+  treeOid: string;
+  prefix: string;
+}): Promise<Awaited<ReturnType<typeof git.readTree>>> {
+  if (opts.prefix === "") {
+    return git.readTree({ fs, dir: opts.root, oid: opts.treeOid });
+  }
+
+  let current = await git.readTree({
+    fs,
+    dir: opts.root,
+    oid: opts.treeOid,
+  });
+  for (const segment of opts.prefix.split("/")) {
+    const entry = current.tree.find(
+      (candidate) => candidate.path === segment && candidate.type === "tree",
+    );
+    if (entry === undefined) {
+      throw new Error(
+        `vault prefix '${opts.prefix}' does not exist in commit tree`,
+      );
+    }
+    current = await git.readTree({
+      fs,
+      dir: opts.root,
+      oid: entry.oid,
+    });
+  }
+  return current;
 }
 
 export async function resolveRef(opts: { path: string; ref?: string }): Promise<string> {
@@ -289,6 +341,33 @@ export async function readRef(opts: { path: string; ref: string }): Promise<stri
 export async function writeRef(opts: { path: string; ref: string; value: string }): Promise<void> {
   const { root } = await resolveGitContext(opts.path);
   await git.writeRef({ fs, dir: root, ref: opts.ref, value: opts.value, force: true });
+}
+
+/**
+ * Materialize selected vault-relative paths from `ref` into the working tree
+ * without changing HEAD. In dogfood mode, the path list is translated through
+ * the vault prefix before reaching isomorphic-git.
+ */
+export async function checkoutPathsAtRef(opts: {
+  path: string;
+  ref: string;
+  filepaths: ReadonlyArray<string>;
+  dryRun?: boolean;
+}): Promise<void> {
+  if (opts.filepaths.length === 0) return;
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const fullpaths = opts.filepaths.map((filepath) =>
+    prefix === "" ? filepath : posix.join(prefix, filepath),
+  );
+  await git.checkout({
+    fs,
+    dir: root,
+    ref: opts.ref,
+    filepaths: fullpaths,
+    noUpdateHead: true,
+    force: false,
+    dryRun: opts.dryRun ?? false,
+  });
 }
 
 /**

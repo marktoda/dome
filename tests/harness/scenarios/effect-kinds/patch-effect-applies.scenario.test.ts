@@ -1,10 +1,9 @@
 // scenarios/effect-kinds/patch-effect-applies.scenario.test.ts
 //
-// A PatchEffect from normalize-frontmatter produces a closure commit on
-// the source branch with the four Dome-* trailers. The closure commit's
-// tree reflects the normalized content, but the working tree is left
-// untouched — the engine writes the commit, it does not check the
-// closure tree out into the user's workspace.
+// A PatchEffect from normalize-frontmatter produces an engine commit on
+// the source branch with the four Dome-* trailers. The commit's tree reflects
+// the normalized content, and the compiler host materializes the changed paths
+// into the working tree so the checked-out branch and filesystem stay aligned.
 
 import { expect } from "bun:test";
 import { readFile } from "node:fs/promises";
@@ -14,7 +13,7 @@ import { scenario } from "../../index";
 
 scenario(
   {
-    name: "effect-kinds: PatchEffect applies as closure commit; working tree is untouched",
+    name: "effect-kinds: PatchEffect applies as engine commit and materializes working tree",
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "effect", effect: "patch" },
@@ -62,14 +61,12 @@ scenario(
       .expectFile("wiki/foo.md")
       .toMatch(/type:\s*page[\s\S]*id:\s*foo/);
 
-    // Step 5: the working tree file is UNCHANGED from what the user wrote.
-    // The engine writes a commit; it does not re-check-out the closure
-    // tree over the user's workspace.
+    // Step 5: the working tree file matches the engine-advanced branch.
     const workingTree = await readFile(
       join(h.vaultPath, "wiki/foo.md"),
       "utf8",
     );
-    expect(workingTree).toBe(userContent);
+    expect(workingTree).toMatch(/type:\s*page[\s\S]*id:\s*foo/);
 
     // Step 6: exactly one normalize-frontmatter run has a non-null
     // output_commit equal to HEAD (the closure commit). The adoption loop
@@ -88,5 +85,49 @@ scenario(
       })
       .toHaveExactlyOne();
     expect(contributingRun.outputCommit).toBe(refs.head);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: engine patch does not overwrite uncommitted working tree edits",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "patch.auto" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const userContent = "---\nid: foo\ntype: page\n---\n# body\n";
+    const userHead = await h.userCommit({
+      files: { "wiki/foo.md": userContent },
+      message: "messy frontmatter",
+    });
+    const localEdit = "---\nid: foo\ntype: page\n---\n# local edit\n";
+    await h.userEdit({ files: { "wiki/foo.md": localEdit } });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(false);
+    expect(result.diagnosticCount).toBe(1);
+    await h
+      .expectProjection()
+      .diagnostics({
+        code: "adoption.working-tree-materialize-conflict",
+        severity: "block",
+      })
+      .toHaveCount(1);
+    await h.expectRef("refs/heads/main").toEqual(userHead);
+
+    const workingTree = await readFile(
+      join(h.vaultPath, "wiki/foo.md"),
+      "utf8",
+    );
+    expect(workingTree).toBe(localEdit);
   },
 );

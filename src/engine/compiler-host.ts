@@ -404,7 +404,7 @@ async function runAdoptionCycle(opts: {
   });
 
   const vault = runtimeVault(runtime);
-  const sinksFor = sinksForRuntime(runtime);
+  const sinksFor = sinksForRuntime(runtime, now);
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
 
@@ -433,10 +433,11 @@ async function runAdoptionCycle(opts: {
   const cursor: AdoptedCursor = { current: adoptionResult.adoptedRef };
 
   if (adoptionResult.adopted) {
-    projectionRebuild = await rebuildProjectionIfCacheKeysChanged({
+    projectionRebuild = await rebuildProjectionAfterAdoption({
       runtime,
       adopted: adoptionResult.adoptedRef,
       branch: drift.branch,
+      initialBootstrap: drift.base === drift.head,
       now,
     });
 
@@ -445,6 +446,7 @@ async function runAdoptionCycle(opts: {
       vault: adoptOpts.vault,
       sinksFor,
       cursor,
+      now,
       ...(onEvent !== undefined ? { onEvent } : {}),
     });
     const gardenCompiled = await compileRange({
@@ -465,6 +467,7 @@ async function runAdoptionCycle(opts: {
       currentAdopted: () => cursor.current,
       extensionIdFor: runtime.extensionIdFor,
       cascadeDepth: 0,
+      now,
     });
 
     operational = await runOperationalWorkForAdopted({
@@ -512,7 +515,7 @@ export async function runOperationalWorkForAdopted(opts: {
     });
   }
   const vault = runtimeVault(opts.runtime);
-  const sinksFor = sinksForRuntime(opts.runtime);
+  const sinksFor = sinksForRuntime(opts.runtime, now);
   const sinks =
     opts.sinks ?? sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal =
@@ -522,6 +525,7 @@ export async function runOperationalWorkForAdopted(opts: {
       vault,
       sinksFor,
       cursor,
+      now,
     });
 
   return runOperationalWork({
@@ -647,13 +651,15 @@ export async function rebuildProjectionIfStale(opts: {
   });
 }
 
-async function rebuildProjectionIfCacheKeysChanged(opts: {
+async function rebuildProjectionAfterAdoption(opts: {
   readonly runtime: VaultRuntime;
   readonly adopted: CommitOid;
   readonly branch: string;
+  readonly initialBootstrap: boolean;
   readonly now?: () => Date;
 }): Promise<ProjectionRebuildResult | null> {
   if (
+    !opts.initialBootstrap &&
     !projectionCacheKeysChanged(opts.runtime.projectionDb, {
       extensionSet: opts.runtime.extensions,
       processorVersions: opts.runtime.processorVersions,
@@ -694,6 +700,7 @@ function runtimeVault(runtime: VaultRuntime): {
 // keyed to the proposal that actually produced them.
 function sinksForRuntime(
   runtime: VaultRuntime,
+  now?: () => Date,
 ): (
   frame: { readonly base: CommitOid; readonly head: CommitOid },
 ) => ApplyEffectSinks {
@@ -721,6 +728,7 @@ function sinksForRuntime(
           base: frame.base,
           sourceHead: frame.head,
         },
+        ...(now !== undefined ? { now } : {}),
       });
 
       if (result === null) {
@@ -802,6 +810,7 @@ function makeAdoptSubProposal(opts: {
   readonly vault: ReturnType<typeof runtimeVault>;
   readonly sinksFor: ReturnType<typeof sinksForRuntime>;
   readonly cursor?: AdoptedCursor;
+  readonly now?: () => Date;
   readonly onEvent?: (event: AdoptEvent) => void;
 }): AdoptSubProposalFn {
   const adoptSubProposal: AdoptSubProposalFn = async (
@@ -862,6 +871,7 @@ function makeAdoptSubProposal(opts: {
         ...(currentAdopted !== undefined ? { currentAdopted } : {}),
         extensionIdFor: opts.runtime.extensionIdFor,
         cascadeDepth,
+        ...(opts.now !== undefined ? { now: opts.now } : {}),
       });
     }
     return subResult;

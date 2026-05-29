@@ -379,6 +379,7 @@ async function runSchedulerInner(opts: {
             extensionId: extensionIdFor(result.processorId),
             ...(ledger !== undefined ? { ledger } : {}),
             ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
+            now,
             disabledDiagnostic: {
               code: "scheduler.garden-sub-proposal-spawn-disabled",
               message:

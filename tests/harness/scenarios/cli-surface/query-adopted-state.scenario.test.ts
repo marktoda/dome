@@ -119,3 +119,44 @@ scenario(
     );
   },
 );
+
+scenario(
+  {
+    name: "cli-surface: first sync bootstraps adopted-state search for existing vaults",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
+    ],
+    harness: {
+      bundles: ["dome.markdown", "dome.graph", "dome.search"],
+      initialFiles: {
+        "wiki/existing.md":
+          "---\n" +
+          "type: concept\n" +
+          "---\n" +
+          "# Existing Vault\n\n" +
+          "Dome should index this note on the first sync.\n",
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const cli = await h.runCli(["query", "first sync", "--json"]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+    const payload = JSON.parse(cli.stdout) as {
+      readonly matches: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(payload.matches.map((match) => match.path)).toContain(
+      "wiki/existing.md",
+    );
+  },
+);

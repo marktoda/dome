@@ -190,6 +190,9 @@ Work:
 - [x] Ensure only one compiler-host tick runs per branch at a time.
 - [x] Refresh drift inside the branch lock so one-shot sync cannot adopt a
       stale observed HEAD while newer committed work is already present.
+- [x] Materialize engine-created branch commits into the checked-out working
+      tree for changed paths, while blocking before adoption if that would
+      overwrite uncommitted local edits.
 - [x] Add explicit verbose output mode.
 - [x] Decide whether `serve --exclusive` belongs in v1: no separate flag for
       v1; branch-level compiler-host locking is always on.
@@ -219,6 +222,10 @@ Work:
 - [x] Detect processor-version / extension-set cache-key drift.
 - [x] Rebuild projection rows from adopted state before stale rows are
       consumed.
+- [x] Bootstrap projection rows on the first sync of an existing vault, even
+      when the adopted ref starts uninitialized and the commit range is empty.
+- [x] Keep git tree reads scoped to the vault subtree when a Dome vault is
+      dogfooded inside a larger git repository.
 - [x] Rebuild projection rows from explicitly deterministic, projection-safe
       garden processors without re-running patches, jobs, operational
       recovery, external actions, or model calls.
@@ -479,6 +486,8 @@ Work:
       processors are shipped.
 - [x] Add status/doctor/query/export JSON fixtures.
 - [x] Add docs for the foreground compiler workflow and recovery loop.
+- [x] Dogfood `dome sync --vault docs --json`; this uncovered and fixed
+      branch/worktree materialization for engine-created commits.
 - [ ] Dogfood against `docs/` and `~/vaults/work`.
 
 Acceptance:

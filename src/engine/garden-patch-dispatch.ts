@@ -52,6 +52,7 @@ export async function dispatchGardenPatchEffect(opts: {
     readonly message: string;
   };
   readonly cascadeDepth?: number;
+  readonly now?: () => Date;
 }): Promise<GardenPatchDispatchResult> {
   const routed = await routeGardenPatchForSubProposal({
     effect: opts.effect,
@@ -109,6 +110,7 @@ export async function dispatchGardenPatchEffect(opts: {
     runId: opts.runId,
     extensionId: opts.extensionId,
     cascadeDepth: opts.cascadeDepth ?? 1,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
     applyPatch: opts.applyGardenPatch,
     adoptSubProposal: opts.adoptSubProposal,
   });

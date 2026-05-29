@@ -230,6 +230,7 @@ export async function runGardenPhase(opts: {
   readonly cascadeDepth?: number;
   /** Cap on cascade recursion. Defaults to `DEFAULT_MAX_CASCADE_DEPTH`. */
   readonly maxCascadeDepth?: number;
+  readonly now?: () => Date;
 }): Promise<GardenPhaseResult> {
   const cascadeDepth = opts.cascadeDepth ?? 0;
   try {
@@ -295,6 +296,7 @@ async function runGardenPhaseInner(opts: {
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cascadeDepth?: number;
   readonly maxCascadeDepth?: number;
+  readonly now?: () => Date;
 }): Promise<GardenPhaseResult> {
   const {
     vault,
@@ -528,6 +530,7 @@ async function runGardenPhaseInner(opts: {
           runId: req.runId,
           extensionId: extensionIdFor(req.processorId),
           cascadeDepth: cascadeDepth + 1,
+          ...(opts.now !== undefined ? { now: opts.now } : {}),
           applyPatch: applyPatchToCandidate,
           adoptSubProposal,
         });

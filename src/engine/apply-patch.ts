@@ -78,6 +78,7 @@ export type ApplyPatchInput = {
     /** HEAD SHA at loop start. */
     readonly sourceHead: CommitOid;
   };
+  readonly now?: () => Date;
 };
 
 // ----- applyPatchToCandidate ------------------------------------------------
@@ -180,7 +181,8 @@ export async function applyPatchToCandidate(
     },
   });
 
-  const now = Math.floor(Date.now() / 1000);
+  const committedAt = opts.now?.() ?? new Date();
+  const now = Math.floor(committedAt.getTime() / 1000);
   const identity = {
     name: "dome",
     email: "engine@dome.local",

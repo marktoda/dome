@@ -43,6 +43,7 @@ export async function spawnGardenSubProposal(opts: {
   readonly runId: RunId;
   readonly extensionId: string;
   readonly cascadeDepth: number;
+  readonly now?: () => Date;
   readonly applyPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
   readonly adoptSubProposal: AdoptGardenSubProposalFn;
 }): Promise<GardenSubProposalSpawnResult> {
@@ -57,6 +58,7 @@ export async function spawnGardenSubProposal(opts: {
       base: opts.base,
       sourceHead: opts.sourceHead,
     },
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
   if (newHead === null) {
     return Object.freeze({

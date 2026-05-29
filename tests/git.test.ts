@@ -4,7 +4,13 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { commit, countCommitsSince, fileInfoAtCommit, initRepo } from "../src/git";
+import {
+  commit,
+  countCommitsSince,
+  fileInfoAtCommit,
+  initRepo,
+  readTree,
+} from "../src/git";
 
 describe("git boundary", () => {
   test("fileInfoAtCommit returns the commit that last changed a file", async () => {
@@ -113,6 +119,33 @@ describe("git boundary", () => {
       ).toBeNull();
     } finally {
       await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("readTree scopes commit OIDs to a nested vault prefix", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-git-nested-tree-"));
+    const vaultPath = join(root, "docs");
+    try {
+      await initRepo(root);
+      await write(root, "README.md", "outer\n");
+      await write(root, "docs/wiki/a.md", "inner\n");
+      const sha = await commit({
+        path: root,
+        message: "nested vault",
+        files: ["README.md", "docs/wiki/a.md"],
+      });
+
+      const vaultTree = await readTree({ path: vaultPath, oid: sha });
+      expect(vaultTree.tree.map((entry) => entry.path)).toEqual(["wiki"]);
+
+      const wiki = vaultTree.tree.find((entry) => entry.path === "wiki");
+      expect(wiki?.type).toBe("tree");
+      if (wiki === undefined) throw new Error("expected wiki tree");
+
+      const wikiTree = await readTree({ path: vaultPath, oid: wiki.oid });
+      expect(wikiTree.tree.map((entry) => entry.path)).toEqual(["a.md"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -77,7 +77,12 @@ import type {
 } from "../core/proposal";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
-import { currentBranch, currentSha, writeRef } from "../git";
+import {
+  checkoutPathsAtRef,
+  currentBranch,
+  currentSha,
+  writeRef,
+} from "../git";
 // Note: `currentSha` was used Phase-2 to re-read HEAD after each iteration
 // to detect candidate progression by an out-of-band sink mutation. Phase
 // 12a removes that pattern — `applyPatch` returns the new candidate OID
@@ -609,12 +614,11 @@ export async function adopt(opts: {
   // forming a hard error loop on every poll. The fix is structural:
   // advance the branch so the closure commit is on its history.
   //
-  // Working-tree impact: `writeRef` updates only the ref, not the
-  // working tree. The user's `git status` may show "modified" files
-  // for any path the closure normalized (their working tree has the
-  // pre-closure content; `main` now points at the normalized content).
-  // This is expected v1.0 behavior in single-client mode; a future
-  // working-tree-overlay step is a v1.x improvement.
+  // Working-tree impact: engine commits are created through git plumbing, so
+  // after advancing the checked-out branch we materialize only the paths that
+  // changed between the user's source head and the engine target. A dry-run
+  // checkout happens before the branch move so uncommitted local edits block
+  // adoption instead of being overwritten.
   //
   // Failure mode: if `writeRef` fails (disk full, permission denied), we
   // surface as a blocking diagnostic and do not advance the adopted ref
@@ -622,6 +626,34 @@ export async function adopt(opts: {
   // target commit is still a floating object the loop can reproduce.
   const branchAdvanceTarget = newAdopted;
   if (branchAdvanceTarget !== sourceHead) {
+    const materializePaths = await changedPathsBetween({
+      vaultPath: vault.path,
+      base: sourceHead,
+      head: branchAdvanceTarget,
+    });
+    const materializeDiagnostic = await validateBranchMaterialization({
+      vaultPath: vault.path,
+      target: branchAdvanceTarget,
+      paths: materializePaths,
+    });
+    if (materializeDiagnostic !== null) {
+      allDiagnostics.push(materializeDiagnostic);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [materializeDiagnostic],
+        processorId: "engine.adoption",
+        proposalId: proposal.id,
+      });
+      return frozenResult({
+        proposalId: proposal.id,
+        adopted: false,
+        adoptedRef: adopted,
+        diagnostics: allDiagnostics,
+        closureCommitOid,
+        iterations: iteration,
+      });
+    }
+
     try {
       await writeRef({
         path: vault.path,
@@ -640,6 +672,40 @@ export async function adopt(opts: {
       await recordDiagnosticsViaSink({
         sinks,
         diagnostics: [branchAdvanceDiag],
+        processorId: "engine.adoption",
+        proposalId: proposal.id,
+      });
+      return frozenResult({
+        proposalId: proposal.id,
+        adopted: false,
+        adoptedRef: adopted,
+        diagnostics: allDiagnostics,
+        closureCommitOid,
+        iterations: iteration,
+      });
+    }
+
+    try {
+      await materializeBranchTarget({
+        vaultPath: vault.path,
+        target: branchAdvanceTarget,
+        paths: materializePaths,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const materializeFailedDiag = diagnosticEffect({
+        severity: "block",
+        code: "adoption.working-tree-materialize-failed",
+        message:
+          `Advanced refs/heads/${branch} to engine target ` +
+          `${branchAdvanceTarget.slice(0, 7)}, but failed to materialize ` +
+          `the changed paths into the working tree: ${msg}`,
+        sourceRefs: [],
+      });
+      allDiagnostics.push(materializeFailedDiag);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [materializeFailedDiag],
         processorId: "engine.adoption",
         proposalId: proposal.id,
       });
@@ -700,6 +766,57 @@ export async function adopt(opts: {
 }
 
 // ----- internals ------------------------------------------------------------
+
+async function changedPathsBetween(opts: {
+  readonly vaultPath: string;
+  readonly base: CommitOid;
+  readonly head: CommitOid;
+}): Promise<ReadonlyArray<string>> {
+  const compiled = await compileRange({
+    vaultPath: opts.vaultPath,
+    base: opts.base,
+    head: opts.head,
+  });
+  return compiled.changedPaths;
+}
+
+async function validateBranchMaterialization(opts: {
+  readonly vaultPath: string;
+  readonly target: CommitOid;
+  readonly paths: ReadonlyArray<string>;
+}): Promise<DiagnosticEffect | null> {
+  try {
+    await checkoutPathsAtRef({
+      path: opts.vaultPath,
+      ref: opts.target,
+      filepaths: opts.paths,
+      dryRun: true,
+    });
+    return null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return diagnosticEffect({
+      severity: "block",
+      code: "adoption.working-tree-materialize-conflict",
+      message:
+        `Cannot materialize engine commit ${opts.target.slice(0, 7)} into ` +
+        `the working tree without overwriting local edits: ${msg}`,
+      sourceRefs: [],
+    });
+  }
+}
+
+async function materializeBranchTarget(opts: {
+  readonly vaultPath: string;
+  readonly target: CommitOid;
+  readonly paths: ReadonlyArray<string>;
+}): Promise<void> {
+  await checkoutPathsAtRef({
+    path: opts.vaultPath,
+    ref: opts.target,
+    filepaths: opts.paths,
+  });
+}
 
 type ResolveDiagnosticsInput = Parameters<
   NonNullable<ApplyEffectSinks["resolveDiagnostics"]>
