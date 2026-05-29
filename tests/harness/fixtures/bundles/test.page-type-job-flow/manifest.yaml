@@ -24,3 +24,13 @@ processors:
       - kind: patch.auto
         paths: [".dome/page-types.yaml"]
     module: processors/worker.ts
+  - id: test.page-type-job-flow.answer-worker
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "dome.markdown.duplicate-detection:"
+    capabilities:
+      - kind: patch.auto
+        paths: [".dome/page-types.yaml"]
+    module: processors/answer-worker.ts

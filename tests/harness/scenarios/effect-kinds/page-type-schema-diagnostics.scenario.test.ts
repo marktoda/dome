@@ -200,3 +200,117 @@ extensions:
       .toHaveCount(0);
   },
 );
+
+scenario(
+  {
+    name: "effect-kinds: answer-handler page-type patches rebuild schema diagnostics",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "garden" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "trigger", trigger: "answer" },
+      { kind: "route", route: "garden-answer" },
+    ],
+    harness: {
+      bundles: [
+        "dome.markdown",
+        { id: "test.page-type-job-flow", root: PAGE_TYPE_JOB_BUNDLE },
+      ],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read: ["**/*.md", ".dome/page-types.yaml"]
+      patch.auto: ["**/*.md"]
+      question.ask: true
+  test.page-type-job-flow:
+    enabled: true
+    grant:
+      patch.auto: [".dome/page-types.yaml"]
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const duplicateBody =
+      "# Recipe duplicate\n\n" +
+      "This body is intentionally duplicated so the question emitter fires.\n";
+    await h.userCommit({
+      files: {
+        ".dome/page-types.yaml":
+          "extensions:\n" +
+          "  - name: recipe\n" +
+          "    frontmatter_extras:\n" +
+          "      cuisine: required\n",
+        "wiki/recipes/soup.md":
+          "---\n" +
+          "type: recipe\n" +
+          "created: 2026-05-28\n" +
+          "updated: 2026-05-28\n" +
+          "unexpected: yes\n" +
+          "---\n" +
+          "# Soup\n",
+        "wiki/recipes/dupe-a.md": duplicateBody,
+        "wiki/recipes/dupe-b.md": duplicateBody,
+      },
+      message: "add answer-driven schema cleanup fixture",
+    });
+
+    const defective = await h.tick();
+    expect(defective.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-required-field" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.unknown-frontmatter-field" })
+      .toHaveCount(1);
+
+    const inspect = await h.runCli(["inspect", "questions", "--json"]);
+    expect(inspect.exitCode).toBe(0);
+    const rows = JSON.parse(inspect.stdout) as ReadonlyArray<{
+      readonly id: number;
+    }>;
+    expect(rows.length).toBe(1);
+    const questionId = rows[0]?.id;
+    expect(questionId).toBeGreaterThan(0);
+    if (questionId === undefined) return;
+
+    const answered = await h.runCli([
+      "answer",
+      String(questionId),
+      "keep separate",
+      "--json",
+    ]);
+    expect(answered.exitCode).toBe(0);
+    const body = JSON.parse(answered.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<{ readonly processor_id: string }>;
+      } | null;
+    };
+    expect(body.handlers?.status).toBe("handled");
+    expect(body.handlers?.runs.map((run) => run.processor_id)).toContain(
+      "test.page-type-job-flow.answer-worker",
+    );
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-required-field" })
+      .toHaveCount(0);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.unknown-frontmatter-field" })
+      .toHaveCount(0);
+  },
+);

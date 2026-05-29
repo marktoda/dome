@@ -640,6 +640,8 @@ export async function runAnswerHandlersForQuestion(opts: {
     sinksFor,
     cursor,
   });
+  const now = (): Date => new Date();
+  const beforeHandlers = cursor.current;
 
   const result = await runAnswerHandlers({
     vault,
@@ -660,6 +662,23 @@ export async function runAnswerHandlersForQuestion(opts: {
     adoptSubProposal,
     currentAdopted: () => cursor.current,
   });
+
+  if (cursor.current !== beforeHandlers) {
+    await rebuildProjectionIfGlobalConfigChanged({
+      runtime: opts.runtime,
+      base: beforeHandlers,
+      head: cursor.current,
+      branch,
+      now,
+    });
+    markProjectionBuilt(opts.runtime.projectionDb, {
+      adoptedCommit: cursor.current,
+      extensionSet: opts.runtime.extensions,
+      processorVersions: opts.runtime.processorVersions,
+      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
+      builtAt: now(),
+    });
+  }
 
   return Object.freeze({
     kind: "handled" as const,
