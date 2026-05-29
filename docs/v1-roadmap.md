@@ -87,9 +87,9 @@ Still missing for v1:
 
 - [x] Adopted-state recall: `dome.search` FTS indexing and `dome query`.
 - [ ] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
-      and probe-only `dome doctor` are shipped; quarantine reset, outbox
-      recovery, orphan-run recovery, and remaining health probes are still
-      pending.
+      probe-only `dome doctor`, and answer-driven outbox recovery substrate
+      are shipped; quarantine reset, orphan-run recovery, and remaining
+      health handlers are still pending.
 - [ ] Daily/task loop: daily creation, carry-forward, followup/todo
       extraction, today/prep views.
 - [ ] Productized model boundary: provider injection, cost ledger, budgets,
@@ -245,14 +245,14 @@ Work:
       operations.
 - [ ] Move quarantine into durable operational state or provide inspect/reset
       through the same question/answer flow.
-- [ ] Route outbox retry/abandon through questions where human intent is
+- [x] Route outbox retry/abandon through questions where human intent is
       required.
 
 Acceptance:
 
 - [x] Duplicate-detection emits a question; `dome answer` records the answer.
 - [x] Answering a question triggers follow-up processor behavior.
-- [ ] Forced outbox failure is visible in status/doctor and recoverable.
+- [x] Forced outbox failure is visible in status/doctor and recoverable.
 - [ ] Quarantined processor is visible and resettable without direct sqlite or
       JSON edits.
 - [x] Orphan run is detected by doctor.
@@ -396,7 +396,7 @@ Required for daily value:
 | `dome.markdown` | partially shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
-| `dome.health` | partially shipped | doctor probes and recovery questions; probe-only CLI exists, answer handlers missing |
+| `dome.health` | partially shipped | doctor probes and recovery questions; probe-only CLI and outbox recovery substrate exist, quarantine handlers missing |
 | `dome.daily` | missing | daily creation, task carry-forward, today/prep views |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 

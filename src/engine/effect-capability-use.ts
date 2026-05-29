@@ -57,6 +57,12 @@ export function capabilityUseForEffect(
         resource: effect.capability,
         outcome,
       });
+    case "outbox-recovery":
+      return Object.freeze({
+        capability: "outbox.recover",
+        resource: `${effect.action}:${effect.idempotencyKey}`,
+        outcome,
+      });
     case "diagnostic":
     case "view":
       return null;

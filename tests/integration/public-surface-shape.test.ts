@@ -24,6 +24,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "viewEffect",
   "jobEffect",
   "externalActionEffect",
+  "outboxRecoveryEffect",
 
   // Processor types + helpers.
   "defineProcessor",

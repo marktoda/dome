@@ -95,7 +95,7 @@ describe("TriggerSchema (discriminated union)", () => {
   });
 });
 
-describe("CapabilitySchema (discriminated union, 10 kinds)", () => {
+describe("CapabilitySchema (discriminated union, 12 kinds)", () => {
   test("read", () => {
     expect(CapabilitySchema.parse({ kind: "read", paths: ["wiki/**"] }).kind).toBe("read");
   });
@@ -150,6 +150,12 @@ describe("CapabilitySchema (discriminated union, 10 kinds)", () => {
     expect(
       CapabilitySchema.parse({ kind: "external", capability: "calendar.write" }).kind,
     ).toBe("external");
+  });
+
+  test("outbox.recover", () => {
+    expect(
+      CapabilitySchema.parse({ kind: "outbox.recover", actions: ["retry"] }).kind,
+    ).toBe("outbox.recover");
   });
 });
 

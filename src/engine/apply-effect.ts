@@ -2,11 +2,11 @@
 //
 // Every Effect emitted by a processor flows through this router. It performs
 // two checks in order — (1) phase compatibility, (2) capability enforcement —
-// and then dispatches to one of eight injected sinks via an exhaustive
+// and then dispatches to one of nine injected sinks via an exhaustive
 // `switch` on `Effect.kind`. The router itself is pure: it owns no I/O and
 // holds no state; the wired sinks (projection store, ledger, outbox, etc.)
 // live in Phase 4 + Phase 8. Garden-phase PatchEffects are the one route
-// owned by `garden-patch-router.ts`, because their destination is
+// owned by `garden-patch-dispatch.ts`, because their destination is
 // sub-Proposal construction rather than an inline sink.
 //
 // Normative references:
@@ -15,9 +15,9 @@
 //   - docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER.md
 //
 // Structural fence: TypeScript's `never`-type exhaustiveness check on the
-// `switch (effect.kind)` makes "adding a ninth Effect kind without a route"
+// `switch (effect.kind)` makes adding an Effect kind without a route
 // a compile error here for the generic sink routes. The capability broker
-// (`./capability-broker`) is also called by `garden-patch-router.ts` for
+// (`./capability-broker`) is also called by `garden-patch-dispatch.ts` for
 // garden PatchEffects; both call sites are inside the engine routing layer.
 //
 // v1 Phase 2 scope:
@@ -59,6 +59,7 @@ import type {
   ExternalActionEffect,
   FactEffect,
   JobEffect,
+  OutboxRecoveryEffect,
   PatchEffect,
   QuestionEffect,
   SearchDocumentEffect,
@@ -170,6 +171,13 @@ export type ApplyEffectSinks = {
     readonly runId: RunId;
   }) => Promise<void>;
 
+  /** OutboxRecoveryEffect — retry/abandon failed durable outbox rows. */
+  readonly recoverOutbox: (input: {
+    readonly effect: OutboxRecoveryEffect;
+    readonly processorId: string;
+    readonly runId: RunId;
+  }) => Promise<void>;
+
   /** ViewEffect — captured for return to the view-phase caller. */
   readonly captureView: (input: {
     readonly effect: ViewEffect;
@@ -273,6 +281,7 @@ export function noopSinks(): ApplyEffectSinks {
     recordQuestion: async () => undefined,
     enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
+    recoverOutbox: async () => undefined,
     captureView: async () => undefined,
   };
 }
@@ -282,7 +291,7 @@ export function noopSinks(): ApplyEffectSinks {
 /**
  * The generic effect applier route. Routes one Effect through phase
  * compatibility + capability enforcement + the matching sink. Garden
- * PatchEffects are routed by `garden-patch-router.ts` because they spawn
+ * PatchEffects are routed by `garden-patch-dispatch.ts` because they spawn
  * sub-Proposals instead of writing through the patch sink directly.
  *
  * Ordering invariant: phase compatibility is checked *before* capability
@@ -437,11 +446,11 @@ function capabilityUseField(
  * Per docs/wiki/matrices/effect-router-targets.md, the (kind, phase) cells
  * marked "Rejected: phase-mismatch":
  *
- *   - adoption: JobEffect, ExternalActionEffect, ViewEffect
+ *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect, ViewEffect
  *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
  *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
- *               ExternalActionEffect
+ *               ExternalActionEffect, OutboxRecoveryEffect
  *
  * Every other (kind, phase) pair is routed normally.
  */
@@ -451,6 +460,7 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
       return (
         effect.kind !== "job" &&
         effect.kind !== "external" &&
+        effect.kind !== "outbox-recovery" &&
         effect.kind !== "view"
       );
     case "garden":
@@ -462,7 +472,8 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind === "search-document" ||
         effect.kind === "question" ||
         effect.kind === "job" ||
-        effect.kind === "external"
+        effect.kind === "external" ||
+        effect.kind === "outbox-recovery"
       ) {
         return false;
       }
@@ -496,7 +507,7 @@ function rejectedByPhase(
 /**
  * Exhaustive `switch` on `Effect.kind` — the structural fence behind
  * [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]. The `never`-typed
- * `_exhaustive` makes adding a ninth Effect kind here a compile error
+ * `_exhaustive` makes adding an Effect kind here a compile error
  * until every kind has a route.
  */
 async function routeToSink(
@@ -562,6 +573,13 @@ async function routeToSink(
         runId: opts.runId,
       });
       return { newCandidate: null };
+    case "outbox-recovery":
+      await opts.sinks.recoverOutbox({
+        effect,
+        processorId: opts.processorId,
+        runId: opts.runId,
+      });
+      return { newCandidate: null };
     case "view":
       await opts.sinks.captureView({
         effect,
@@ -571,7 +589,7 @@ async function routeToSink(
       return { newCandidate: null };
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
-  // Adding a ninth Effect kind here is a compile error until every branch
+  // Adding an Effect kind here is a compile error until every branch
   // above is updated.
   const _exhaustive: never = effect;
   return _exhaustive;

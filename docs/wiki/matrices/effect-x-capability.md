@@ -7,7 +7,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Effect × capability matrix
 
-Per-Effect-kind capability requirements enforced by the broker at the engine routing boundary. Generic routes go through `apply-effect.ts`; garden PatchEffects go through `garden-patch-router.ts` because their destination is sub-Proposal construction. The broker rejects effects emitted without the required capability; the integration test at `tests/integration/capability-enforcement.test.ts` exercises every cell of this matrix.
+Per-Effect-kind capability requirements enforced by the broker at the engine routing boundary. Generic routes go through `apply-effect.ts`; garden PatchEffects go through `garden-patch-dispatch.ts` because their destination is sub-Proposal construction. The broker rejects effects emitted without the required capability; the integration test at `tests/integration/capability-enforcement.test.ts` exercises every cell of this matrix.
 
 ## The matrix
 
@@ -23,6 +23,7 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **QuestionEffect** | `question.ask` | question namespace / channel (defaults to emitting bundle namespace when omitted) | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
 | **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
+| **OutboxRecoveryEffect** | `outbox.recover` | requested action (`retry` or `abandon`) | Denied; diagnostic with `code: capability-deny-outbox-recover`; effect discarded |
 | **ViewEffect** | (none at capability layer — phase check rejects view effects from non-view processors) | — | (n/a at capability layer; phase mismatch at the routing layer per [[wiki/matrices/effect-router-targets]]) |
 
 ## Downgrade vs denial

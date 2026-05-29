@@ -8,6 +8,7 @@ import {
   diagnosticEffect,
   externalActionEffect,
   jobEffect,
+  outboxRecoveryEffect,
   patchEffect,
   questionEffect,
   searchDocumentEffect,
@@ -54,6 +55,20 @@ describe("phase-mismatch rejections", () => {
         capability: "calendar.write",
         idempotencyKey: "e-1",
         payload: {},
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("rejected-by-phase");
+  });
+
+  test("OutboxRecoveryEffect in adoption phase", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "adoption",
+      effect: outboxRecoveryEffect({
+        action: "retry",
+        idempotencyKey: "e-1",
+        reason: "recover",
         sourceRefs: [ref],
       }),
     });
@@ -278,6 +293,28 @@ describe("successful routes (noopSinks)", () => {
     expect(r.capabilityUse?.capability).toBe("job.enqueue");
     expect(r.capabilityUse?.resource).toBe("test.worker");
   });
+
+  test("OutboxRecoveryEffect in garden phase with outbox.recover granted → applied", async () => {
+    const recover: Capability = {
+      kind: "outbox.recover",
+      actions: ["retry", "abandon"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: outboxRecoveryEffect({
+        action: "retry",
+        idempotencyKey: "e-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("outbox.recover");
+    expect(r.capabilityUse?.resource).toBe("retry:e-1");
+  });
 });
 
 describe("capability denial flows through", () => {
@@ -346,6 +383,23 @@ describe("capability denial flows through", () => {
     expect(r.diagnostics[0]?.code).toBe("capability-deny-job-enqueue");
     expect(r.capabilityUse?.capability).toBe("job.enqueue");
     expect(r.capabilityUse?.resource).toBe("test.worker");
+  });
+
+  test("OutboxRecoveryEffect with no outbox.recover grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: outboxRecoveryEffect({
+        action: "abandon",
+        idempotencyKey: "e-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-outbox-recover");
+    expect(r.capabilityUse?.capability).toBe("outbox.recover");
+    expect(r.capabilityUse?.resource).toBe("abandon:e-1");
   });
 });
 

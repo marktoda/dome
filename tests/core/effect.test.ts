@@ -1,4 +1,4 @@
-// Smoke tests for src/core/effect.ts: the eight-kind Effect union — each
+// Smoke tests for src/core/effect.ts: the nine-kind Effect union — each
 // kind's per-schema parse, the discriminated-union EffectSchema parse, the
 // FactEffect semantic refinements, and the constructor freeze + kind-stamp
 // invariants.
@@ -11,6 +11,7 @@ import {
   externalActionEffect,
   factEffect,
   jobEffect,
+  outboxRecoveryEffect,
   patchEffect,
   questionEffect,
   searchDocumentEffect,
@@ -75,6 +76,13 @@ const minEffects = {
       capability: "calendar.write",
       idempotencyKey: "e-1",
       payload: { event: "x" },
+      sourceRefs: refs,
+    }),
+  "outbox-recovery": () =>
+    outboxRecoveryEffect({
+      action: "retry",
+      idempotencyKey: "e-1",
+      reason: "recover failed outbox row",
       sourceRefs: refs,
     }),
   view: () =>
@@ -159,6 +167,11 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
     expect(EffectSchema.parse(e).kind).toBe("external");
   });
 
+  test("OutboxRecoveryEffect", () => {
+    const e = minEffects["outbox-recovery"]();
+    expect(EffectSchema.parse(e).kind).toBe("outbox-recovery");
+  });
+
   test("ViewEffect", () => {
     const e = minEffects.view();
     expect(EffectSchema.parse(e).kind).toBe("view");
@@ -227,6 +240,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(Object.isFrozen(minEffects.question())).toBe(true);
     expect(Object.isFrozen(minEffects.job())).toBe(true);
     expect(Object.isFrozen(minEffects.external())).toBe(true);
+    expect(Object.isFrozen(minEffects["outbox-recovery"]())).toBe(true);
     expect(Object.isFrozen(minEffects.view())).toBe(true);
   });
 
@@ -238,6 +252,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(minEffects.question().kind).toBe("question");
     expect(minEffects.job().kind).toBe("job");
     expect(minEffects.external().kind).toBe("external");
+    expect(minEffects["outbox-recovery"]().kind).toBe("outbox-recovery");
     expect(minEffects.view().kind).toBe("view");
   });
 
@@ -297,6 +312,7 @@ describe("exhaustive-routing self-test", () => {
       "question",
       "job",
       "external",
+      "outbox-recovery",
       "view",
     ] as const;
     for (const k of kinds) {

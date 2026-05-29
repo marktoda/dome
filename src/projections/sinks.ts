@@ -1,10 +1,10 @@
-// projection-sinks: assembles the eight-sink `ApplyEffectSinks` shape against
+// projection-sinks: assembles the nine-sink `ApplyEffectSinks` shape against
 // the projection database, the outbox database, and two engine-layer
 // injections (`applyPatch`, `captureView`). This is the Phase 4 wiring layer
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Six sinks are owned here (delegating to the per-table accessors):
+// Seven sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
 //   - recordFact       → src/projections/facts.ts:       insertFact
@@ -12,6 +12,7 @@
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
+//   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
 //
 // Two sinks are injected by the caller (engine layer):
 //
@@ -63,6 +64,8 @@ import { insertQuestion } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
 import {
   dispatchExternalEffect,
+  markAbandoned,
+  replayFailed,
   type ExternalHandlerRegistry,
 } from "../outbox/dispatch";
 
@@ -105,8 +108,8 @@ export type BuildSqliteSinksOpts = {
 // ----- buildSqliteSinks -----------------------------------------------------
 
 /**
- * Assemble the eight-sink `ApplyEffectSinks` object the engine's
- * `applyEffect` router calls into. Six sinks delegate to the per-table
+ * Assemble the nine-sink `ApplyEffectSinks` object the engine's
+ * `applyEffect` router calls into. Seven sinks delegate to the per-table
  * projection accessors + the outbox dispatcher; two are pass-through
  * injections from the engine layer (`applyPatch`, `captureView`).
  *
@@ -177,6 +180,14 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         runId,
         handlers: opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
       });
+    },
+
+    recoverOutbox: async ({ effect }) => {
+      if (effect.action === "retry") {
+        replayFailed(opts.outboxDb, effect.idempotencyKey);
+      } else {
+        markAbandoned(opts.outboxDb, effect.idempotencyKey);
+      }
     },
   });
 }

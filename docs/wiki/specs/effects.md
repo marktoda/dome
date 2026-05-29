@@ -7,9 +7,9 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # Effects
 
-This spec is normative for the eight-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, or rendering a view.
+This spec is normative for the nine-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
 
-The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the eight existing kinds within their declared capabilities.
+The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the nine existing kinds within their declared capabilities.
 
 ## The Effect union
 
@@ -22,12 +22,13 @@ type Effect =
   | QuestionEffect
   | JobEffect
   | ExternalActionEffect
+  | OutboxRecoveryEffect
   | ViewEffect;
 ```
 
 Effects are immutable values. Once returned from a processor, they are routed by the engine but never modified. Effect validation (Zod schemas at the engine boundary) rejects malformed effects before routing.
 
-The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-router.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding a 9th effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-dispatch.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding an effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 ## PatchEffect
 
@@ -203,7 +204,25 @@ interface ExternalActionEffect {
 
 **Routing:** the engine inserts a row in `outbox.db` with `status: "pending"` and `next_attempt_at = enqueued_at`, then attempts the external call via the capability handler registered for `capability`. On success, the row updates to `status: "sent"` with the external system's id. On failure, retries per `maxAttempts` (default 3) with bounded exponential backoff by advancing `next_attempt_at`; terminal failure marks `status: "failed"`. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
 
-**No fire-and-forget.** The engine never attempts an external call without an outbox row preceding it. This is what makes retries idempotent (the idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure follows the engine-asks model: the engine emits a `QuestionEffect` on `engine.outbox.terminal-failure`; the user answers via `dome answer <id> retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]] §"dome answer"); the deferred `dome.health` bundle's answer-handler processor applies the resulting mutation. v1.0 surfaces the failed rows via `dome inspect outbox`; the full answer-handler loop ships with `dome.health` in v1.x.
+**No fire-and-forget.** The engine never attempts an external call without an outbox row preceding it. This is what makes retries idempotent (the idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure follows the engine-asks model: the engine emits a `QuestionEffect` on `engine.outbox.terminal-failure`; the user answers via `dome answer <id> retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]] §"dome answer"); a health/recovery answer-handler processor emits an `OutboxRecoveryEffect`; the engine-owned outbox sink applies the state transition.
+
+## OutboxRecoveryEffect
+
+A recovery transition for a durable outbox row.
+
+```ts
+interface OutboxRecoveryEffect {
+  readonly kind: "outbox-recovery";
+  readonly action: "retry" | "abandon";
+  readonly idempotencyKey: string;    // existing outbox row idempotency key
+  readonly reason: string;            // audit explanation
+  readonly sourceRefs: SourceRef[];   // question/source that justified recovery
+}
+```
+
+**Routing:** garden phase only. The effect is capability-checked via `outbox.recover` for the requested action. `action: "retry"` moves a failed outbox row back to `status: "pending"` with attempts reset and `last_error` cleared. `action: "abandon"` moves a failed row to `status: "abandoned"` so it stops surfacing as actionable while remaining auditable. Adoption processors cannot emit this effect because recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
+
+**Why an effect instead of direct outbox access:** answer handlers are processors. Letting them import `outbox.db` accessors would create a second write path outside the broker and ledger. This effect keeps operational recovery under the same Processor → Effect → capability → sink contract as every other mutation.
 
 ## ViewEffect
 
@@ -264,6 +283,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | QuestionEffect | `question.ask` for the question namespace/channel |
 | JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
+| OutboxRecoveryEffect | `outbox.recover` for `retry` or `abandon` |
 | ViewEffect | (none — view emission is the phase's purpose; the broker enforces phase compatibility instead) |
 
 ## Why a closed taxonomy
@@ -272,7 +292,7 @@ Three properties depend on the union being closed:
 
 1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
-3. **Substrate stability.** The eight kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, render). A new kind is a *design move*, not a plugin's convenience.
+3. **Substrate stability.** The nine kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox rows, render). A new kind is a *design move*, not a plugin's convenience.
 
 ## Related
 

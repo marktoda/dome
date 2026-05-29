@@ -41,7 +41,7 @@
 //   - Optional fields use `field?: T` (not `T | undefined`) for
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - Exhaustive `switch` on `Effect.kind` with a `never`-typed catch-all
-//     so adding a ninth Effect kind is a compile error here.
+//     so adding an Effect kind is a compile error here.
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating broker outputs.
 //   - Imports limited to pure types from `../core/` plus the
@@ -54,6 +54,7 @@ import type {
   ExternalActionEffect,
   FactEffect,
   JobEffect,
+  OutboxRecoveryEffect,
   PatchEffect,
   SearchDocumentEffect,
 } from "../core/effect";
@@ -118,6 +119,7 @@ const downgrade = (
  *   - question   → `question.ask`
  *   - job        → `job.enqueue` matching the target processor id
  *   - external   → `external:<capability>` matching effect's `capability`
+ *   - outbox-recovery → `outbox.recover` matching effect's action
  *   - view       → always allow at this layer (phase check lives elsewhere)
  */
 export function enforceCapability(
@@ -140,11 +142,13 @@ export function enforceCapability(
       return enforceJob(effect, declared, granted);
     case "external":
       return enforceExternal(effect, declared, granted);
+    case "outbox-recovery":
+      return enforceOutboxRecovery(effect, declared, granted);
     case "view":
       return allow();
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
-  // Adding a ninth Effect kind here is a compile error until every
+  // Adding an Effect kind here is a compile error until every
   // branch above is updated.
   const _exhaustive: never = effect;
   return _exhaustive;
@@ -424,6 +428,30 @@ function enforceExternal(
       severity: "error",
       code: "capability-deny-external",
       message: `ExternalActionEffect denied: capability '${effect.capability}' has no effective 'external' grant. Declare 'external: ${effect.capability}' in the manifest and grant it in config.yaml.`,
+      sourceRefs: [],
+    }),
+  );
+}
+
+// ----- OutboxRecoveryEffect enforcement ------------------------------------
+
+function enforceOutboxRecovery(
+  effect: OutboxRecoveryEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  const hasDeclared = declared.some(
+    (c) => c.kind === "outbox.recover" && c.actions.includes(effect.action),
+  );
+  const hasGranted = granted.some(
+    (c) => c.kind === "outbox.recover" && c.actions.includes(effect.action),
+  );
+  if (hasDeclared && hasGranted) return allow();
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: "capability-deny-outbox-recover",
+      message: `OutboxRecoveryEffect denied: action '${effect.action}' has no effective 'outbox.recover' grant.`,
       sourceRefs: [],
     }),
   );

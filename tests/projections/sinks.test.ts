@@ -1,7 +1,7 @@
 // Smoke tests for src/projections/sinks.ts: the buildSqliteSinks factory
-// composes the five projection-store sinks against a real projection.db +
-// outbox.db, and passes through the two engine-layer injections (applyPatch,
-// captureView) verbatim. Each test exercises one sink callback end-to-end
+// composes the projection-store/outbox sinks against real sqlite handles, and
+// passes through the two engine-layer injections (applyPatch, captureView)
+// verbatim. Each test exercises one sink callback end-to-end
 // by asserting a row is visible via the corresponding read accessor.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -14,6 +14,7 @@ import {
   externalActionEffect,
   factEffect,
   jobEffect,
+  outboxRecoveryEffect,
   patchEffect,
   questionEffect,
   viewEffect,
@@ -28,7 +29,7 @@ import { factsBySubject } from "../../src/projections/facts";
 import { queryDiagnostics } from "../../src/projections/diagnostics";
 import { queryQuestions } from "../../src/projections/questions";
 import { nextEligibleJob } from "../../src/projections/jobs";
-import { queryOutbox } from "../../src/outbox/dispatch";
+import { insertPending, markFailed, queryOutbox } from "../../src/outbox/dispatch";
 import type { ApplyEffectSinks } from "../../src/engine/apply-effect";
 import type { RunId } from "../../src/engine/runner-contract";
 
@@ -97,6 +98,7 @@ describe("buildSqliteSinks shape", () => {
     expect(typeof sinks.recordQuestion).toBe("function");
     expect(typeof sinks.enqueueJob).toBe("function");
     expect(typeof sinks.dispatchExternal).toBe("function");
+    expect(typeof sinks.recoverOutbox).toBe("function");
     expect(typeof sinks.captureView).toBe("function");
   });
 });
@@ -239,6 +241,60 @@ describe("buildSqliteSinks projection-store sinks", () => {
     expect(got[0]?.status).toBe("sent");
     expect(got[0]?.externalId).toBe("ext-1");
     expect(calls).toEqual(["ext-1"]);
+  });
+
+  it("recoverOutbox retries and abandons failed rows", async () => {
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+    });
+    for (const key of ["retry-me", "abandon-me"] as const) {
+      insertPending(outboxDb, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: key,
+          payload: {},
+          sourceRefs: [REF],
+        }),
+        runId: RUN_ID,
+      });
+      markFailed(outboxDb, key, "terminal");
+    }
+
+    await sinks.recoverOutbox({
+      effect: outboxRecoveryEffect({
+        action: "retry",
+        idempotencyKey: "retry-me",
+        reason: "retry after credentials fixed",
+        sourceRefs: [REF],
+      }),
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+    await sinks.recoverOutbox({
+      effect: outboxRecoveryEffect({
+        action: "abandon",
+        idempotencyKey: "abandon-me",
+        reason: "no longer needed",
+        sourceRefs: [REF],
+      }),
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+
+    expect(
+      queryOutbox(outboxDb).map((row) => ({
+        key: row.idempotencyKey,
+        status: row.status,
+        lastError: row.lastError,
+      })),
+    ).toEqual([
+      { key: "retry-me", status: "pending", lastError: null },
+      { key: "abandon-me", status: "abandoned", lastError: "terminal" },
+    ]);
   });
 });
 

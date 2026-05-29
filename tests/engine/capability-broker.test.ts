@@ -10,6 +10,7 @@ import {
   externalActionEffect,
   factEffect,
   jobEffect,
+  outboxRecoveryEffect,
   patchEffect,
   questionEffect,
   viewEffect,
@@ -271,5 +272,28 @@ describe("QuestionEffect", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.code).toBe("capability-deny-question-ask");
+  });
+});
+
+describe("OutboxRecoveryEffect", () => {
+  const e = outboxRecoveryEffect({
+    action: "retry",
+    idempotencyKey: "e-1",
+    reason: "recover failed outbox row",
+    sourceRefs: [ref],
+  });
+
+  test("allowed when outbox.recover covers the action", () => {
+    const cap: Capability = { kind: "outbox.recover", actions: ["retry"] };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("allow");
+  });
+
+  test("denied when outbox.recover does not cover the action", () => {
+    const cap: Capability = { kind: "outbox.recover", actions: ["abandon"] };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-outbox-recover");
   });
 });

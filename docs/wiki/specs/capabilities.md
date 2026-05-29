@@ -17,7 +17,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Eleven tiers cover every effect a processor can emit:
+Capabilities are about **effect power**, not arbitrary trust labels. Twelve tiers cover every effect a processor can emit:
 
 ```ts
 type Capability =
@@ -31,7 +31,8 @@ type Capability =
   | { kind: "question.ask";  namespaces?: string[] }            // QuestionEffect namespaces / channels
   | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
-  | { kind: "external";      capability: string };              // ExternalActionEffect capabilities (e.g., "calendar.write")
+  | { kind: "external";      capability: string }               // ExternalActionEffect capabilities (e.g., "calendar.write")
+  | { kind: "outbox.recover"; actions: ("retry" | "abandon")[] }; // OutboxRecoveryEffect actions
 ```
 
 ### `read`
@@ -99,6 +100,10 @@ The runtime enforces the intersection of the declared and granted allowlists bef
 Permits emitting `ExternalActionEffect` with the named capability. Each external capability is a separate grant — `external: "calendar.write"` does not imply `external: "notify.push"`.
 
 External capabilities are registered as handlers in the SDK (or in a plugin bundle); the engine looks up the handler at outbox dispatch time. Capability handlers live at `src/external-handlers/<capability>.ts` for first-party (calendar, notify, network); plugin-contributed handlers register through their bundle's `external-handlers/` directory.
+
+### `outbox.recover`
+
+Permits emitting `OutboxRecoveryEffect` for the listed actions. This is a narrow operational capability for answer-handler and health processors: `retry` re-queues a failed outbox row; `abandon` marks a failed row as no longer actionable. It does not permit arbitrary outbox reads or writes.
 
 ## Manifest schema
 
@@ -186,7 +191,7 @@ type EnforcementResult =
   | { kind: "deny";     diagnostic: DiagnosticEffect };
 ```
 
-Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Adoption, view, and non-patch garden effects call it through `src/engine/apply-effect.ts`; garden PatchEffects call it through `src/engine/garden-patch-router.ts` because their route target is sub-Proposal construction. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Adoption, view, and non-patch garden effects call it through `src/engine/apply-effect.ts`; garden PatchEffects call it through `src/engine/garden-patch-dispatch.ts` / `src/engine/garden-patch-router.ts` because their route target is sub-Proposal construction. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 `tests/integration/capability-enforcement.test.ts` ships positive and negative cases for every capability kind × every effect kind. The matrix at [[wiki/matrices/effect-x-capability]] enumerates the pairs.
 
@@ -194,13 +199,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why eleven tiers, not more
+## Why twelve tiers, not more
 
-The eleven cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
+The twelve cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
 
-1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the ten would mean inventing effects or runtime powers without a routing target.
+1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the twelve would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Eleven cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Twelve cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

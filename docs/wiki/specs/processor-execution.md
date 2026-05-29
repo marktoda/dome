@@ -101,7 +101,7 @@ Processor.run(ctx): Promise<Effect[]>
 The executor boundary validates returned values before routing:
 
 1. The resolved value must be an array.
-2. Each array element must match one of the seven Effect schemas in [[wiki/specs/effects]].
+2. Each array element must match one of the nine Effect schemas in [[wiki/specs/effects]].
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
 4. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
 

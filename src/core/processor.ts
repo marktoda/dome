@@ -39,6 +39,7 @@ import type {
   Effect,
   FactEffect,
   QuestionEffect,
+  OutboxRecoveryEffect,
   SearchDocumentEffect,
 } from "./effect";
 import type { PageTypeRegistry } from "../page-types";
@@ -194,6 +195,7 @@ export type Trigger =
  *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
  *   - `external`      — emit ExternalActionEffect with the named capability.
+ *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
  */
 export type ReadCapability = {
   readonly kind: "read";
@@ -240,6 +242,10 @@ export type ExternalCapability = {
   readonly kind: "external";
   readonly capability: string;
 };
+export type OutboxRecoverCapability = {
+  readonly kind: "outbox.recover";
+  readonly actions: ReadonlyArray<OutboxRecoveryEffect["action"]>;
+};
 
 export type Capability =
   | ReadCapability
@@ -252,7 +258,8 @@ export type Capability =
   | QuestionAskCapability
   | JobEnqueueCapability
   | ModelInvokeCapability
-  | ExternalCapability;
+  | ExternalCapability
+  | OutboxRecoverCapability;
 
 // ----- CapabilityToken ------------------------------------------------------
 
@@ -579,6 +586,13 @@ export const ExternalCapabilitySchema = z
   })
   .strict();
 
+export const OutboxRecoverCapabilitySchema = z
+  .object({
+    kind: z.literal("outbox.recover"),
+    actions: z.array(z.enum(["retry", "abandon"])).min(1),
+  })
+  .strict();
+
 export const CapabilitySchema = z.discriminatedUnion("kind", [
   ReadCapabilitySchema,
   PatchProposeCapabilitySchema,
@@ -591,6 +605,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,
   ExternalCapabilitySchema,
+  OutboxRecoverCapabilitySchema,
 ]);
 
 // SnapshotSchema validates only the data fields (commit, tree); the read

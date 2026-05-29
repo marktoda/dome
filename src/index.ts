@@ -50,6 +50,7 @@ export type {
   ViewEffect,
   JobEffect,
   ExternalActionEffect,
+  OutboxRecoveryEffect,
   NodeRefInput,
 } from "./core/effect";
 export {
@@ -60,6 +61,7 @@ export {
   viewEffect,
   jobEffect,
   externalActionEffect,
+  outboxRecoveryEffect,
 } from "./core/effect";
 
 export type {

@@ -1,4 +1,4 @@
-// The eight-kind Effect union: the only value a Processor returns.
+// The nine-kind Effect union: the only value a Processor returns.
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
@@ -253,6 +253,21 @@ export type ExternalActionEffect = {
 };
 
 /**
+ * A recovery transition for a durable outbox row. Health/recovery processors
+ * emit this after a user answers an operational question; the engine-owned
+ * outbox sink applies the state-machine transition. This keeps failed-row
+ * recovery behind Effect routing instead of giving processors direct SQLite
+ * access.
+ */
+export type OutboxRecoveryEffect = {
+  readonly kind: "outbox-recovery";
+  readonly action: "retry" | "abandon";
+  readonly idempotencyKey: string;
+  readonly reason: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+/**
  * A rendered response to a query or command. View effects are *not*
  * persisted by default — they're computed on demand. `scope` lists the
  * pages the view summarizes, for cache invalidation by callers.
@@ -267,7 +282,7 @@ export type ViewEffect = {
 /**
  * The closed Effect union. The engine's `apply-effect.ts` uses an
  * exhaustive `switch` on `kind` (TypeScript `never`-type exhaustiveness)
- * to guarantee every kind has a route. Adding a ninth kind requires a
+ * to guarantee every kind has a route. Adding another kind requires a
  * spec change; the codebase fails to compile until every route is added.
  */
 export type Effect =
@@ -278,6 +293,7 @@ export type Effect =
   | QuestionEffect
   | JobEffect
   | ExternalActionEffect
+  | OutboxRecoveryEffect
   | ViewEffect;
 
 // ----- Zod schemas ----------------------------------------------------------
@@ -508,6 +524,16 @@ export const ExternalActionEffectSchema = z
   })
   .strict();
 
+export const OutboxRecoveryEffectSchema = z
+  .object({
+    kind: z.literal("outbox-recovery"),
+    action: z.enum(["retry", "abandon"]),
+    idempotencyKey: z.string().min(1),
+    reason: z.string().min(1),
+    sourceRefs: z.array(SourceRefSchema),
+  })
+  .strict();
+
 export const ViewEffectSchema = z
   .object({
     kind: z.literal("view"),
@@ -518,7 +544,7 @@ export const ViewEffectSchema = z
   .strict();
 
 /**
- * Discriminated union over the eight effect kinds. Use this at engine
+ * Discriminated union over the nine effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
  * preserve `exactOptionalPropertyTypes` semantics.
@@ -536,6 +562,7 @@ export const EffectSchema = z
     QuestionEffectSchema,
     JobEffectSchema,
     ExternalActionEffectSchema,
+    OutboxRecoveryEffectSchema,
     ViewEffectSchema,
   ])
   .superRefine((v, ctx) => {
@@ -663,6 +690,21 @@ export function externalActionEffect(
     capability: input.capability,
     idempotencyKey: input.idempotencyKey,
     payload: input.payload,
+    sourceRefs: input.sourceRefs,
+  };
+  return Object.freeze(e);
+}
+
+export function outboxRecoveryEffect(
+  input: Omit<OutboxRecoveryEffect, "kind">,
+): OutboxRecoveryEffect {
+  const e: {
+    -readonly [K in keyof OutboxRecoveryEffect]: OutboxRecoveryEffect[K];
+  } = {
+    kind: "outbox-recovery",
+    action: input.action,
+    idempotencyKey: input.idempotencyKey,
+    reason: input.reason,
     sourceRefs: input.sourceRefs,
   };
   return Object.freeze(e);

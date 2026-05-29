@@ -94,6 +94,7 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
   pushJobEnqueueCapability(capabilities, grant["job.enqueue"]);
   pushModelInvokeCapability(capabilities, grant["model.invoke"]);
   pushExternalCapability(capabilities, grant.external);
+  pushOutboxRecoverCapability(capabilities, grant["outbox.recover"]);
   return Object.freeze(capabilities);
 }
 
@@ -163,6 +164,19 @@ function pushExternalCapability(out: Capability[], raw: unknown): void {
   for (const capability of capabilities) {
     out.push({ kind: "external", capability });
   }
+}
+
+function pushOutboxRecoverCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) {
+    out.push({ kind: "outbox.recover", actions: ["retry", "abandon"] });
+    return;
+  }
+  const actions = stringArray(raw)?.filter(
+    (action): action is "retry" | "abandon" =>
+      action === "retry" || action === "abandon",
+  );
+  if (actions === undefined || actions.length === 0) return;
+  out.push({ kind: "outbox.recover", actions });
 }
 
 function stringArray(raw: unknown): ReadonlyArray<string> | null {

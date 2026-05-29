@@ -1,0 +1,13 @@
+id: test.outbox-recovery
+version: 0.1.0
+processors:
+  - id: test.outbox-recovery.answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "test.outbox-recovery:"
+    capabilities:
+      - kind: outbox.recover
+        actions: ["retry", "abandon"]
+    module: processors/recover.ts
