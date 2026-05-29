@@ -55,7 +55,7 @@ const synthesizeCapture: Processor = defineProcessor({
   ],
   capabilities: [
     { kind: "read", paths: ["wiki/generated/intake/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/syntheses/*.md"] },
+    { kind: "patch.auto", paths: ["wiki/syntheses/intake-*.md"] },
     { kind: "model.invoke", maxDailyCostUsd: 5 },
   ],
   execution: {
@@ -106,7 +106,7 @@ export default synthesizeCapture;
 export function synthesisOutputPath(path: string): string {
   const basename = path.split("/").at(-1) ?? "capture.md";
   const stem = basename.replace(/\.md$/i, "");
-  const slug = slugify(stem) || "capture";
+  const slug = stripStableDigest(slugify(stem)) || "capture";
   const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
   return `wiki/syntheses/intake-${slug}-${digest}.md`;
 }
@@ -189,6 +189,10 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+}
+
+function stripStableDigest(value: string): string {
+  return value.replace(/-[a-f0-9]{12}$/i, "");
 }
 
 function yamlString(value: string): string {

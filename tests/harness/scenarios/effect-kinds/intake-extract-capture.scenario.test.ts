@@ -28,7 +28,7 @@ extensions:
         - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
-        - "wiki/syntheses/*.md"
+        - "wiki/syntheses/intake-*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
       graph.write:
