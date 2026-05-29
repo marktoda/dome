@@ -7,7 +7,7 @@ import { commitOid } from "../../core/source-ref";
 import { rebuildProjection } from "../../engine/projection-rebuild";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { resolveBundleRoots } from "./sync-shared";
 
 export type RunRebuildOptions = {
   readonly vault?: string | undefined;
@@ -35,7 +35,10 @@ export async function runRebuild(
   options: RunRebuildOptions = {},
 ): Promise<number> {
   const vaultPath = resolve(options.vault ?? process.cwd());
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
   const jsonMode = options.json === true;
 
   const branch = await getCurrentBranch(vaultPath);
@@ -62,7 +65,7 @@ export async function runRebuild(
     });
   }
 
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     return emitError({
       jsonMode,

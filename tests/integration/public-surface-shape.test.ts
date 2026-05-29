@@ -39,6 +39,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
 
   // Extension bundle loader.
   "loadBundles",
+  "loadBundlesFromRoots",
   "flattenBundleProcessors",
   "parseManifest",
   "ManifestSchema",

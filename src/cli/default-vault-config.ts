@@ -167,11 +167,12 @@ const DEFAULT_CONFIG_HEADER = `# Dome vault configuration (v1.0).
 # This file controls which extensions are active and their capability
 # grants. The shipped first-party bundles (\`dome.daily\`, \`dome.graph\`,
 # \`dome.health\`, \`dome.intake\`, \`dome.lint\`, \`dome.markdown\`,
-# \`dome.search\`) live with the SDK; the CLI's default \`--bundles-root\`
-# resolves to the SDK's \`assets/extensions/\` directory.
+# \`dome.search\`) live with the SDK. By default, CLI commands compose those
+# shipped bundles with any vault-local bundles under \`.dome/extensions/\`.
 #
 # To install a third-party bundle, create \`.dome/extensions/<bundle-id>/\`
-# here and pass \`--bundles-root .dome/extensions\` on the command line.
+# here and add an enabled stanza below. \`--bundles-root <path>\` is an exact
+# override for tests and ad-hoc development.
 #
 # Model-capable bundles can use an injected host provider or a command
 # provider configured here. The command runs with the vault root as cwd,

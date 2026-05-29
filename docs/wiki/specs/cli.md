@@ -98,11 +98,13 @@ the processor's own view payloads without imposing a first-party schema.
 Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
 hotfix: `dome init` no longer copies the shipped first-party bundles
 into the vault. They live with the SDK at `<SDK>/assets/extensions/`
-and are resolved at runtime via `resolveShippedBundlesRoot()` (the
-default `--bundles-root` for every CLI command). Per [[wiki/specs/vault-layout]]
-§"`extensions/`" and docs/v1.md §10.1, the vault carries activations +
-grants in `.dome/config.yaml`; the bundle code itself doesn't need to
-be copied into every vault.
+and are resolved at runtime via `resolveShippedBundlesRoot()`. Normal CLI
+commands also compose an existing vault-local `.dome/extensions/` root after
+the shipped root, so third-party bundles only need a local bundle directory
+and an enabled `.dome/config.yaml` stanza. Per [[wiki/specs/vault-layout]]
+§"`extensions/`" and docs/v1.md §10.1, the vault carries activations + grants
+in `.dome/config.yaml`; shipped bundle code itself doesn't need to be copied
+into every vault.
 
 The shipped initialization steps:
 
@@ -151,12 +153,10 @@ Deferred to v1.1:
   the adopted-ref substrate initializes on first sync.
 
 Installing a third-party bundle: create
-`<vault>/.dome/extensions/<bundle-id>/` and pass
-`--bundles-root <vault>/.dome/extensions` to the CLI commands. The
-default `--bundles-root` (the SDK's shipped first-party bundles) does
-not need to be passed explicitly. Multi-root resolution (merging the
-SDK's shipped bundles with a vault-local third-party set in one
-runtime) is a v1.x polish.
+`<vault>/.dome/extensions/<bundle-id>/` and enable the bundle in
+`.dome/config.yaml`. `--bundles-root <path>` is an exact root override for
+tests and ad-hoc development; it is not needed for normal vault-local
+installation.
 
 Each step prints a one-line outcome (`created`, `updated`, or `skipped
 (already present)`); idempotent re-runs surface as all-skipped no-ops.
@@ -170,7 +170,7 @@ The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome
 
 Composition (v1.0):
 
-1. Resolve `vaultPath` (default cwd) and `bundlesRoot` (default SDK-shipped `assets/extensions/` via `resolveShippedBundlesRoot()`; optional override to `<vaultPath>/.dome/extensions` for vault-local bundles).
+1. Resolve `vaultPath` (default cwd) and bundle roots (default SDK-shipped `assets/extensions/` via `resolveShippedBundlesRoot()`, plus `<vaultPath>/.dome/extensions` when it exists; optional `--bundles-root` exact override).
 2. Inspect drift via the shared `detectDrift` helper (same code path `dome serve` polls in a loop).
 3. Branch on drift outcome:
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
@@ -571,7 +571,7 @@ Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Cl
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved bundles root (SDK-shipped `assets/extensions/` by default; vault-local `.dome/extensions/` only when explicitly selected).
+1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.

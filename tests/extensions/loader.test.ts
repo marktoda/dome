@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   flattenBundleProcessors,
   loadBundles,
+  loadBundlesFromRoots,
 } from "../../src/extensions/loader";
 import type { ProcessorContext } from "../../src/core/processor";
 import { buildRegistry } from "../../src/processors/registry";
@@ -252,6 +253,67 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.map((bundle) => bundle.id)).toEqual(["active.bundle"]);
+  });
+});
+
+describe("loadBundlesFromRoots — composed roots", () => {
+  test("loads bundles from all roots in deterministic bundle-id order", async () => {
+    const firstRoot = makeTmpRoot("loader-roots-first-");
+    const secondRoot = makeTmpRoot("loader-roots-second-");
+    await writeEmptyBundle(firstRoot, "test.zeta");
+    await writeEmptyBundle(secondRoot, "test.alpha");
+
+    const result = await loadBundlesFromRoots({
+      bundlesRoots: [firstRoot, secondRoot],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((bundle) => bundle.id)).toEqual([
+      "test.alpha",
+      "test.zeta",
+    ]);
+  });
+
+  test("later roots override earlier bundles with the same id", async () => {
+    const shippedRoot = makeTmpRoot("loader-roots-shipped-");
+    const localRoot = makeTmpRoot("loader-roots-local-");
+    await writeEmptyBundle(shippedRoot, "test.override", "0.1.0");
+    await writeEmptyBundle(localRoot, "test.override", "0.2.0");
+
+    const result = await loadBundlesFromRoots({
+      bundlesRoots: [shippedRoot, localRoot],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.id).toBe("test.override");
+    expect(result.value[0]?.version).toBe("0.2.0");
+    expect(result.value[0]?.bundlePath).toBe(join(localRoot, "test.override"));
+  });
+
+  test("detects page-type collisions after cross-root composition", async () => {
+    const firstRoot = makeTmpRoot("loader-roots-page-types-a-");
+    const secondRoot = makeTmpRoot("loader-roots-page-types-b-");
+    await writeEmptyBundle(firstRoot, "test.page-a");
+    await writeFile(
+      join(firstRoot, "test.page-a", "page-types.yaml"),
+      "extensions:\n  - name: decision\n",
+    );
+    await writeEmptyBundle(secondRoot, "test.page-b");
+    await writeFile(
+      join(secondRoot, "test.page-b", "page-types.yaml"),
+      "extensions:\n  - name: decision\n",
+    );
+
+    const result = await loadBundlesFromRoots({
+      bundlesRoots: [firstRoot, secondRoot],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("page-type-collision");
   });
 });
 
@@ -749,5 +811,22 @@ async function writeCommandBundle(
         },
       };
     `,
+  );
+}
+
+async function writeEmptyBundle(
+  root: string,
+  bundleId: string,
+  version = "0.1.0",
+): Promise<void> {
+  const bundleDir = join(root, bundleId);
+  await mkdir(bundleDir, { recursive: true });
+  await writeFile(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({
+      id: bundleId,
+      version,
+      processors: [],
+    }),
   );
 }

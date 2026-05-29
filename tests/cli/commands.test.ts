@@ -616,7 +616,128 @@ describe("runInit", () => {
     // 30s is comfortably above the observed runtime on CI.
     30_000,
   );
+
+  test(
+    "default CLI bundle roots compose shipped bundles with vault-local bundles",
+    async () => {
+      const target = mkdtempSync(join(tmpdir(), "cli-local-bundle-"));
+      try {
+        expect(await runInit({ path: target })).toBe(0);
+        await writeLocalDiagnosticBundle(target);
+        await appendLocalBundleConfig(target);
+        await commit({
+          path: target,
+          message: "enable custom local bundle\n",
+          files: [
+            ".dome/config.yaml",
+            ".dome/extensions/custom.local/manifest.json",
+            ".dome/extensions/custom.local/processors/audit.ts",
+          ],
+        });
+
+        expect(await runSync({ vault: target })).toBe(0);
+
+        await writeFile(
+          join(target, "wiki", "local.md"),
+          "# Local bundle proof\n",
+          "utf8",
+        );
+        await commit({
+          path: target,
+          message: "add local bundle proof page\n",
+          files: ["wiki/local.md"],
+        });
+
+        expect(await runSync({ vault: target })).toBe(0);
+
+        captured.out = [];
+        captured.err = [];
+        const inspectCode = await runInspect({
+          subject: "diagnostics",
+          vault: target,
+          code: "custom.local.seen",
+          json: true,
+        });
+        expect(inspectCode).toBe(0);
+        const diagnostics = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+          readonly code: string;
+          readonly message: string;
+        }>;
+        expect(diagnostics).toContainEqual(
+          expect.objectContaining({
+            code: "custom.local.seen",
+            message: "Vault-local bundle ran through the default composed root.",
+          }),
+        );
+      } finally {
+        await rm(target, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
+
+async function appendLocalBundleConfig(target: string): Promise<void> {
+  const configPath = join(target, ".dome", "config.yaml");
+  const config = await readFile(configPath, "utf8");
+  const localBundleStanza = `  custom.local:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+`;
+  await writeFile(
+    configPath,
+    config.replace("\nengine:\n", `\n${localBundleStanza}\nengine:\n`),
+    "utf8",
+  );
+}
+
+async function writeLocalDiagnosticBundle(target: string): Promise<void> {
+  const bundleDir = join(target, ".dome", "extensions", "custom.local");
+  const processorsDir = join(bundleDir, "processors");
+  await mkdir(processorsDir, { recursive: true });
+  await writeFile(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({
+      id: "custom.local",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "custom.local.audit",
+          version: "0.1.0",
+          phase: "adoption",
+          triggers: [
+            {
+              kind: "signal",
+              name: "file.created",
+              pathPattern: "wiki/**/*.md",
+            },
+          ],
+          capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+          module: "processors/audit.ts",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(processorsDir, "audit.ts"),
+    `
+      export default {
+        async run(ctx) {
+          return [{
+            kind: "diagnostic",
+            severity: "info",
+            code: "custom.local.seen",
+            message: "Vault-local bundle ran through the default composed root.",
+            sourceRefs: [ctx.sourceRef("wiki/local.md")],
+          }];
+        },
+      };
+    `,
+    "utf8",
+  );
+}
 
 // ----- runInspect -----------------------------------------------------------
 //

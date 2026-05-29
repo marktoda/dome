@@ -3,14 +3,14 @@
 // One `VaultRuntime` opens the operational databases — projection, answers,
 // outbox, and run-ledger — and builds the `ProcessorRuntime` against
 // either a caller-supplied `ProcessorRegistry` or a bundle-loader-derived
-// registry built by walking `bundlesRoot/`. The handle is consumed by the
-// engine-internal daemon (Phase 11b's `dome serve`); a single VaultRuntime
+// registry built by walking one or more bundle roots. The handle is consumed
+// by the engine-internal daemon (Phase 11b's `dome serve`); a single VaultRuntime
 // can serve many adoption runs without re-opening sqlite per run.
 //
 // `openVaultRuntime` accepts either the pre-built-registry opts (used by
 // tests and advanced consumers that hand-compose their processor set) or
 // the `bundlesRoot:` opts (the canonical entry shape for v1 vaults —
-// `<vault>/.dome/extensions/` or `assets/extensions/`).
+// SDK-shipped bundles plus optional vault-local extensions).
 //
 // This module is not re-exported from `src/index.ts`. The daemon is the
 // only consumer; harnesses that want to query the projection / outbox /
@@ -90,7 +90,7 @@ import {
 } from "../processors/registry";
 import {
   flattenBundleProcessors,
-  loadBundles,
+  loadBundlesFromRoots,
   type LoadBundlesError,
   type LoadedBundle,
 } from "../extensions/loader";
@@ -203,15 +203,14 @@ export type OpenVaultRuntimeWithRegistryOpts = {
 };
 
 /**
- * The auto-load shape: the caller points at a `bundlesRoot/` directory
- * and the runtime walks it, loads + validates each bundle's manifest,
+ * The auto-load shape: the caller points at one or more bundle root directories
+ * and the runtime walks them, loads + validates each bundle's manifest,
  * dynamic-imports each declared processor module, builds the registry,
  * and derives `(extensions, processorVersions)` from the loaded bundles.
  *
- * This is the canonical entry shape for v1 vaults — `bundlesRoot` is
- * typically `<vault>/.dome/extensions/` (per
- * [[wiki/specs/sdk-surface]] §"Extension bundles") or `assets/extensions/`
- * (for SDK-shipped first-party bundles in tests / dev).
+ * This is the canonical entry shape for v1 vaults — `bundlesRoot` is the
+ * primary root, and `additionalBundlesRoots` are later-precedence roots that
+ * can add or override bundles.
  */
 export type OpenVaultRuntimeWithBundlesOpts = {
   readonly vaultPath: string;
@@ -221,6 +220,12 @@ export type OpenVaultRuntimeWithBundlesOpts = {
    * directory with the declared processor modules.
    */
   readonly bundlesRoot: string;
+  /**
+   * Optional additional roots composed after `bundlesRoot`. Later roots win
+   * on duplicate bundle ids, which lets vault-local bundles override shipped
+   * bundles without changing the Processor/Effect boundary.
+   */
+  readonly additionalBundlesRoots?: ReadonlyArray<string>;
   /**
    * Capability handlers used by the outbox dispatcher for
    * ExternalActionEffects. Bundle-discovered handlers are a future loader
@@ -279,8 +284,9 @@ export type OpenVaultRuntimeError =
  *   - Pre-built registry shape: caller supplies `registry`, `extensions`,
  *     `processorVersions` — used by tests + advanced consumers that hand-
  *     compose their processor set.
- *   - Auto-load shape: caller supplies `bundlesRoot` — the runtime walks
- *     it, loads + validates each bundle's manifest, dynamic-imports
+ *   - Auto-load shape: caller supplies `bundlesRoot` plus optional
+ *     `additionalBundlesRoots` — the runtime walks them, loads + validates
+ *     each bundle's manifest, dynamic-imports
  *     declared processor modules, builds the registry, and derives the
  *     projection-cache-key lists from the loaded bundles. This is the
  *     canonical entry shape for v1 vaults.
@@ -623,9 +629,10 @@ async function resolveRegistryFromOpts(
     });
   }
 
-  // Auto-load path: walk `bundlesRoot`, then compose.
-  const bundlesResult = await loadBundles({
-    bundlesRoot: opts.bundlesRoot,
+  // Auto-load path: walk bundle roots, then compose. Later roots override
+  // earlier roots by bundle id.
+  const bundlesResult = await loadBundlesFromRoots({
+    bundlesRoots: [opts.bundlesRoot, ...(opts.additionalBundlesRoots ?? [])],
     ...(policy.foundConfig
       ? { activeBundleIds: new Set(policy.enabledExtensionIds) }
       : {}),

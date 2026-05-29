@@ -670,6 +670,9 @@ Work:
 - [x] Extract shipped first-party default grants from the `dome init` YAML
       literal into `src/cli/default-vault-config.ts`, with lockstep coverage
       against shipped bundle declared capability kinds.
+- [x] Compose SDK-shipped bundles with vault-local `.dome/extensions/` by
+      default, while keeping `--bundles-root` as an exact override for tests
+      and ad-hoc development.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

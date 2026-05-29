@@ -58,7 +58,7 @@ import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
 
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { resolveBundleRoots } from "./sync-shared";
 
 import { formatJson } from "../format";
 import { collectVaultAnalytics } from "../vault-analytics";
@@ -154,15 +154,11 @@ export async function runStatus(
   });
   const syncNeeded = branch !== null && head !== null && head !== adopted;
 
-  // Open the runtime to read the ledger. If the runtime can't open (no
-  // .dome/extensions/, missing bundles), surface a useful error and exit
-  // non-zero — the ledger is part of the snapshot.
-  //
-  // Default `bundlesRoot` is the SDK's shipped first-party bundles
-  // (`resolveShippedBundlesRoot`). The vault-local `.dome/extensions/`
-  // is no longer the default; `--bundles-root <path>` overrides.
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
+  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     console.error(
       `dome status: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,

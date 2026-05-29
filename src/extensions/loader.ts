@@ -171,6 +171,16 @@ export type LoadBundlesOpts = {
   readonly activeBundleIds?: ReadonlySet<string>;
 };
 
+export type LoadBundleRootsOpts = {
+  /**
+   * Ordered bundle roots. Later roots override earlier roots when they
+   * provide the same bundle id, so vault-local bundles can replace shipped
+   * first-party bundles without inventing a second extension mechanism.
+   */
+  readonly bundlesRoots: ReadonlyArray<string>;
+  readonly activeBundleIds?: ReadonlySet<string>;
+};
+
 // ----- loadBundles ----------------------------------------------------------
 
 /**
@@ -256,6 +266,43 @@ export async function loadBundles(
     });
   }
 
+  return ok(Object.freeze(loaded));
+}
+
+/**
+ * Load and compose bundles from multiple roots. Each root is validated with
+ * the same fail-loud semantics as `loadBundles`; duplicate bundle ids are
+ * resolved by root order, with later roots replacing earlier bundles. The
+ * composed bundle set is returned in deterministic bundle-id order.
+ */
+export async function loadBundlesFromRoots(
+  opts: LoadBundleRootsOpts,
+): Promise<Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>> {
+  const byId = new Map<string, LoadedBundle>();
+  for (const bundlesRoot of opts.bundlesRoots) {
+    const result = await loadBundles({
+      bundlesRoot,
+      ...(opts.activeBundleIds !== undefined
+        ? { activeBundleIds: opts.activeBundleIds }
+        : {}),
+    });
+    if (!result.ok) return err(result.error);
+    for (const bundle of result.value) {
+      byId.set(bundle.id, bundle);
+    }
+  }
+
+  const loaded = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const pageTypeCollisionCheck = mergePageTypeDeclarations(
+    loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    { enforceKnownTypes: true },
+  );
+  if (!pageTypeCollisionCheck.ok) {
+    return err({
+      kind: "page-type-collision",
+      cause: pageTypeCollisionCheck.error,
+    });
+  }
   return ok(Object.freeze(loaded));
 }
 

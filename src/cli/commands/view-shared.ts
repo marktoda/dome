@@ -16,7 +16,7 @@ import type { CommitOid } from "../../core/source-ref";
 import type { RunCommandResult } from "../../engine/commands";
 import { runRuntimeViewCommand } from "../../engine/view-command";
 
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { resolveBundleRoots } from "./sync-shared";
 
 export type ViewCommandOptions = {
   readonly commandLabel: string;
@@ -81,11 +81,14 @@ export async function runSharedViewCommand(
   opts: ViewCommandOptions,
 ): Promise<ViewCommandRunResult> {
   const vaultPath = resolve(opts.vault ?? process.cwd());
-  const bundlesRoot = opts.bundlesRoot ?? resolveShippedBundlesRoot();
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: opts.bundlesRoot,
+  });
 
   const run = await runRuntimeViewCommand({
     vaultPath,
-    bundlesRoot,
+    ...bundleRoots,
     commandName: opts.commandName,
     commandArgs: opts.commandArgs ?? null,
   });

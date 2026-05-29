@@ -188,9 +188,9 @@ extensions:
 
 ### `extensions/`
 
-Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs/sdk-surface]] §"Bundle directory shape". The SDK-shipped first-party `dome.*` bundles do **not** live here in v1.0 — they ship with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()` (the default `--bundles-root` for every CLI command). The vault carries activations + grants in `.dome/config.yaml`; the bundle code is the SDK's responsibility.
+Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs/sdk-surface]] §"Bundle directory shape". The SDK-shipped first-party `dome.*` bundles do **not** live here in v1.0 — they ship with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()`. The vault carries activations + grants in `.dome/config.yaml`; shipped bundle code is the SDK's responsibility.
 
-`.dome/extensions/` is therefore **optional** and used only for vault-local overrides: a third-party bundle the user installs, or a customized version of a shipped first-party bundle. Install by creating the bundle directory under `.dome/extensions/<bundle-id>/` and passing `--bundles-root .dome/extensions` to the CLI commands. Multi-root resolution (merging the SDK's shipped bundles with a vault-local set in one runtime) is a v1.x polish; v1.0 picks exactly one root.
+`.dome/extensions/` is therefore **optional** and used for vault-local bundles: a third-party bundle the user installs, or a customized version of a shipped first-party bundle. Normal CLI/runtime use composes the shipped root plus `.dome/extensions/` when the directory exists; later roots override earlier roots by bundle id. Install by creating the bundle directory under `.dome/extensions/<bundle-id>/` and enabling it in `.dome/config.yaml`. `--bundles-root .dome/extensions` remains an exact override for tests and ad-hoc development.
 
 ### Derived operational state under `.dome/state/`
 

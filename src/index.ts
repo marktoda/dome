@@ -107,9 +107,11 @@ export type { EngineVault } from "./engine/vault-shape";
 
 export {
   loadBundles,
+  loadBundlesFromRoots,
   flattenBundleProcessors,
   type LoadedBundle,
   type LoadBundlesOpts,
+  type LoadBundleRootsOpts,
   type LoadBundlesError,
 } from "./extensions/loader";
 export {

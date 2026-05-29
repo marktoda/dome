@@ -45,9 +45,9 @@ import {
 import type { GardenPhaseResult } from "../../engine/garden";
 import type { OperationalWorkResult } from "../../engine/operational-work";
 import {
+  resolveBundleRoots,
   formatFilteredAdoptEvent,
   printHostFollowupLines,
-  resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { formatJson } from "../format";
 
@@ -124,16 +124,17 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
   const vaultPath = resolve(options.vault ?? process.cwd());
 
-  // Default to the SDK's shipped first-party bundles. See serve.ts /
-  // sync-shared.ts `resolveShippedBundlesRoot` for the shipped-bundle path.
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
 
   const jsonMode = options.json === true;
   const verbose = options.verbose === true;
   const quiet = options.quiet === true && !jsonMode;
 
   // ----- 2. Open the runtime ------------------------------------------------
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     const msg = `dome sync: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`;
     if (jsonMode) {

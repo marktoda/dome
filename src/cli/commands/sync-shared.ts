@@ -2,8 +2,11 @@
 //
 // Engine host operations live in `src/engine/compiler-host.ts`; this module
 // intentionally owns only command-surface helpers: resolving the SDK-shipped
-// bundle directory and formatting verbose adoption events for stdout.
+// bundle directory, composing the default vault-local extension root, and
+// formatting verbose adoption events for stdout.
 
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { AdoptEvent } from "../../engine/compiler-host";
@@ -11,6 +14,11 @@ import type { GardenPhaseResult } from "../../engine/garden";
 import type { OperationalWorkResult } from "../../engine/operational-work";
 
 const processorGlobCache = new Map<string, Bun.Glob>();
+
+export type ResolvedBundleRoots = {
+  readonly bundlesRoot: string;
+  readonly additionalBundlesRoots?: ReadonlyArray<string>;
+};
 
 /**
  * Returns the absolute path to the SDK's shipped first-party bundles
@@ -26,6 +34,37 @@ const processorGlobCache = new Map<string, Bun.Glob>();
 export function resolveShippedBundlesRoot(): string {
   const url = new URL("../../../assets/extensions", import.meta.url);
   return fileURLToPath(url);
+}
+
+export function resolveVaultLocalBundlesRoot(vaultPath: string): string {
+  return join(vaultPath, ".dome", "extensions");
+}
+
+/**
+ * Resolve bundle roots for normal CLI/runtime use. An explicit
+ * `--bundles-root` remains an exact override for tests and ad-hoc dev. The
+ * default path composes SDK-shipped bundles with an existing vault-local
+ * `.dome/extensions/` root, with vault-local bundles taking precedence.
+ */
+export function resolveBundleRoots(opts: {
+  readonly vaultPath: string;
+  readonly bundlesRoot?: string | undefined;
+}): ResolvedBundleRoots {
+  if (opts.bundlesRoot !== undefined) {
+    return Object.freeze({
+      bundlesRoot: resolve(opts.bundlesRoot),
+    });
+  }
+
+  const shipped = resolveShippedBundlesRoot();
+  const local = resolveVaultLocalBundlesRoot(opts.vaultPath);
+  if (!existsSync(local)) {
+    return Object.freeze({ bundlesRoot: shipped });
+  }
+  return Object.freeze({
+    bundlesRoot: shipped,
+    additionalBundlesRoots: Object.freeze([local]),
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ import { buildSqliteSinks } from "../projections/sinks";
 export type RuntimeViewCommandOptions = {
   readonly vaultPath: string;
   readonly bundlesRoot: string;
+  readonly additionalBundlesRoots?: ReadonlyArray<string>;
   readonly commandName: string;
   readonly commandArgs?: unknown;
 };
@@ -62,6 +63,9 @@ export async function runRuntimeViewCommand(
   const runtimeResult = await openVaultRuntime({
     vaultPath: opts.vaultPath,
     bundlesRoot: opts.bundlesRoot,
+    ...(opts.additionalBundlesRoots !== undefined
+      ? { additionalBundlesRoots: opts.additionalBundlesRoots }
+      : {}),
   });
   if (!runtimeResult.ok) {
     return Object.freeze({

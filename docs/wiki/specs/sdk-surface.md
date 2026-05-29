@@ -28,7 +28,7 @@ A Vault, once unwrapped:
 
 - Knows its `path` (absolute directory).
 - Loads `.dome/page-types.yaml` and `.dome/config.yaml`.
-- Loads extension bundles from one configured bundles root and registers their processors. CLI commands default that root to the SDK-shipped `assets/extensions/`; tests and vault-local installs can override it with `--bundles-root`.
+- Loads extension bundles from configured bundle roots and registers their processors. CLI commands default to the SDK-shipped `assets/extensions/` root plus an existing vault-local `.dome/extensions/` root; tests and ad-hoc development can still replace the root set with `--bundles-root`.
 - Holds the engine, processor runtime, projection store, run ledger, and outbox.
 - Exposes read/Recall APIs plus engine-control operations such as `sync`, `rebuild`, and adoption status.
 
@@ -176,7 +176,7 @@ Three engine APIs are exposed on the Vault surface:
 
 ## Extension bundles
 
-An **extension bundle** is a directory under a configured bundles root: `assets/extensions/<bundle-name>/` for SDK-shipped bundles by default, or `<vault>/.dome/extensions/<bundle-name>/` when a command is explicitly run with `--bundles-root <vault>/.dome/extensions`. The bundle contains a `manifest.yaml` plus contributions across five kinds: page-types, preamble, processors, capabilities, external-handlers.
+An **extension bundle** is a directory under a configured bundles root: `assets/extensions/<bundle-name>/` for SDK-shipped bundles, or `<vault>/.dome/extensions/<bundle-name>/` for vault-local bundles. Normal CLI/runtime use composes both roots when the vault-local root exists; `--bundles-root <path>` is an exact override for tests and ad-hoc development. The bundle contains a `manifest.yaml` plus contributions across five kinds: page-types, preamble, processors, capabilities, external-handlers.
 
 ### Bundle directory shape
 
@@ -325,7 +325,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 
 ### Bundle load lifecycle
 
-The current runtime loads bundles from a single root per process. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`); `--bundles-root` replaces that root for tests or vault-local third-party installs. Multi-root composition of shipped plus vault-local bundles in one runtime remains v1.x polish. Within the selected root, bundles load alphabetically by directory name. Each bundle:
+The current runtime composes bundle roots in deterministic order. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`) and append `<vault>/.dome/extensions/` when that directory exists. Later roots override earlier roots by bundle id, so a vault-local bundle can intentionally replace a shipped bundle without a second extension mechanism. `--bundles-root <path>` replaces the composed default with one exact root for tests or ad-hoc development. The composed bundle set is sorted by bundle id before registry construction. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`. When the vault-local file changes, adoption invalidates the full projection store because schema diagnostics may change for pages outside the commit's changed-path set.
@@ -352,7 +352,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
 
-Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles into the vault — they live with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()` (the default `--bundles-root` for every CLI command). A vault that wants to override a first-party bundle does so by enabling/disabling activations in `<vault>/.dome/config.yaml`, not by editing copied files.
+Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles into the vault — they live with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()`. A vault can add third-party bundles under `.dome/extensions/<bundle-id>/` and enable them in `.dome/config.yaml`; a vault-local bundle with the same id as a shipped bundle overrides the shipped bundle in that runtime.
 
 ## Adding a processor
 

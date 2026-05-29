@@ -51,9 +51,9 @@ import {
   type ServeHeartbeatHandle,
 } from "../../engine/compiler-host-heartbeat";
 import {
+  resolveBundleRoots,
   formatFilteredAdoptEvent,
   printHostFollowupLines,
-  resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { parsePositiveIntegerValue } from "../parse-options";
 
@@ -121,12 +121,10 @@ export async function runServe(
   // ----- 1. Parse flags -----------------------------------------------------
   const vaultPath = resolve(options.vault ?? process.cwd());
 
-  // Default to the SDK's shipped first-party bundles. The vault-local
-  // `.dome/extensions/` is no longer the default: per docs/v1.md §"Vault"
-  // + §10.1, shipped bundles live with the SDK, not in every user's
-  // vault. `--bundles-root <path>` overrides for vault-local third-party
-  // installs or testing.
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
 
   const pollIntervalMs = parsePollInterval(options.pollIntervalMs);
   if (pollIntervalMs === null) {
@@ -159,7 +157,7 @@ export async function runServe(
   }
 
   // ----- 3. Open the runtime ------------------------------------------------
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     console.error(
       `dome serve: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,

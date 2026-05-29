@@ -17,7 +17,7 @@ import {
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
 const EX_USAGE = 64;
@@ -54,7 +54,10 @@ export async function runDoctor(
   }
 
   const vaultPath = resolve(options.vault ?? process.cwd());
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
+  const bundleRoots = resolveBundleRoots({
+    vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
 
   const storageReport = collectOperationalSchemaReport({ vaultPath });
   if (storageReport.status === "unhealthy") {
@@ -66,7 +69,7 @@ export async function runDoctor(
     return 0;
   }
 
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
+  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     console.error(
       `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
