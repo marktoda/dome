@@ -87,6 +87,9 @@ export type LoadedBundle = {
  *   - `manifest-invalid`: the parsed payload failed `parseManifest` —
  *     either Zod shape rejection or phase × trigger matrix violation.
  *     Carries the nested `ManifestError` for the operator's error message.
+ *   - `manifest-id-mismatch`: the bundle directory name and manifest `id`
+ *     disagree. Bundle activation keys address directory names before
+ *     import, so drift here must fail loudly.
  *   - `processor-module-load-failed`: a dynamic import threw, OR the
  *     imported module's default export's `(id, version, phase)` didn't
  *     match the manifest declaration. The `cause` field carries the
@@ -106,6 +109,11 @@ export type LoadBundlesError =
       readonly kind: "manifest-invalid";
       readonly bundleId: string;
       readonly cause: ManifestError;
+    }
+  | {
+      readonly kind: "manifest-id-mismatch";
+      readonly bundleDir: string;
+      readonly manifestId: string;
     }
   | {
       readonly kind: "processor-module-load-failed";
@@ -297,6 +305,13 @@ async function loadOneBundle(
     });
   }
   const manifest: Manifest = parsed.value;
+  if (manifest.id !== dirName) {
+    return err({
+      kind: "manifest-id-mismatch",
+      bundleDir: dirName,
+      manifestId: manifest.id,
+    });
+  }
   const pageTypesResult = await readBundlePageTypes(bundlePath, manifest.id);
   if (!pageTypesResult.ok) {
     return err(pageTypesResult.error);

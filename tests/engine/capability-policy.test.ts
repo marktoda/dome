@@ -138,6 +138,78 @@ extensions:
     );
   });
 
+  test("rejects unknown extension-level config keys", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabledd: true
+    grant:
+      patch.auto: ["**"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.enabledd is not a known extension config field",
+    );
+  });
+
+  test("accepts opaque per-extension config maps", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.daily:
+    enabled: true
+    grant: {}
+    config:
+      timezone: America/New_York
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isExtensionEnabled("dome.daily")).toBe(true);
+  });
+
+  test("rejects non-map per-extension config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.daily:
+    enabled: true
+    grant: {}
+    config: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("extensions.dome.daily.config must be a YAML mapping");
+  });
+
   test("rejects ambiguous grant aliases", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);

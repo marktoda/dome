@@ -92,8 +92,10 @@ V1 capability ledger:
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, followup/todo
       extraction, today/prep views.
-- [ ] Productized model boundary: provider injection, cost ledger, budgets,
-      structured-output validation, bounded retries.
+- [ ] Productized model boundary: provider injection, model allowlists,
+      structured-output validation, nominal model failures, and run-local cost
+      ledgering are shipped; daily budget enforcement and production provider
+      packaging remain.
 - [ ] LLM garden/intake processors with provenance and source-backed writes.
 - [ ] User-value views: `dome export-context`, useful `dome lint`, and
       daily/task views once data exists.
@@ -316,27 +318,28 @@ Acceptance:
 
 ## Milestone 6 - modelInvoke Substrate
 
-Status: partially proven by fixtures; not productized.
+Status: partially shipped; not productized.
 
 Goal: LLM processors can run without corrupting state, hiding costs, or
 creating retry chaos.
 
 Work:
 
-- [ ] Define the stable `modelInvoke` provider boundary. Prefer a maintained
+- [x] Define the stable `modelInvoke` provider boundary. Prefer a maintained
       library such as AI SDK if it keeps the boundary simpler than a
       hand-rolled client.
-- [ ] Enforce model allowlists and per-bundle daily cost budgets.
-- [ ] Ledger token/cost data on every model attempt.
-- [ ] Validate structured outputs at the boundary.
-- [ ] Treat model parse/schema failures as nominal processor failures.
-- [ ] Ensure retries are bounded and idempotent.
+- [ ] Enforce per-bundle daily cost budgets.
+- [x] Enforce effective model allowlists before provider calls.
+- [x] Ledger provider-reported run-local cost.
+- [x] Validate structured outputs at the boundary.
+- [x] Treat model parse/schema failures as nominal processor failures.
+- [x] Ensure structured-output retries are bounded.
 - [ ] Keep LLM write effects capability-scoped and SourceRef-backed.
 
 Acceptance:
 
-- [ ] Model processor succeeds and records cost.
-- [ ] Malformed model output becomes a diagnostic/run failure, not a patch.
+- [x] Model processor succeeds and records cost.
+- [x] Malformed model output becomes a diagnostic/run failure, not a patch.
 - [ ] Cost budget denial is visible and recoverable.
 - [ ] Timeout/cancellation does not leave orphan running rows.
 

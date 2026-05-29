@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { viewEffect } from "../../src/core/effect";
 import { defineProcessor } from "../../src/core/processor";
+import { pageTypeDeclaration } from "../../src/page-types";
 import { buildRegistry } from "../../src/processors/registry";
 import { openVaultRuntime } from "../../src/engine/vault-runtime";
 
@@ -79,6 +80,16 @@ extensions:
         { id: "enabled.bundle.view", version: "0.1.0" },
         { id: "disabled.bundle.view", version: "0.1.0" },
       ],
+      extensionPageTypes: new Map([
+        [
+          "enabled.bundle",
+          [pageTypeDeclaration("enabled-type", "test:enabled.bundle")],
+        ],
+        [
+          "disabled.bundle",
+          [pageTypeDeclaration("disabled-type", "test:disabled.bundle")],
+        ],
+      ]),
     });
 
     expect(runtimeResult.ok).toBe(true);
@@ -92,6 +103,8 @@ extensions:
       expect(runtimeResult.value.processorVersions).toEqual([
         { id: "enabled.bundle.view", version: "0.1.0" },
       ]);
+      expect(runtimeResult.value.pageTypes.types.has("enabled-type")).toBe(true);
+      expect(runtimeResult.value.pageTypes.types.has("disabled-type")).toBe(false);
     } finally {
       await runtimeResult.value.close();
     }

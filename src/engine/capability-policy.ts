@@ -62,11 +62,19 @@ export async function loadCapabilityPolicy(
       if (extension === null) {
         return err(`${path} ${extensionPath} must be a YAML mapping`);
       }
+      for (const key of Object.keys(extension)) {
+        if (!EXTENSION_KEYS.has(key)) {
+          return err(`${path} ${extensionPath}.${key} is not a known extension config field`);
+        }
+      }
       if (
         extension.enabled !== undefined &&
         typeof extension.enabled !== "boolean"
       ) {
         return err(`${path} ${extensionPath}.enabled must be a boolean`);
+      }
+      if (extension.config !== undefined && asRecord(extension.config) === null) {
+        return err(`${path} ${extensionPath}.config must be a YAML mapping`);
       }
       if (extension.enabled !== true) {
         grants.set(extensionId, Object.freeze([]));
@@ -129,6 +137,8 @@ const GRANT_KEYS = new Set([
   "run.read",
   "run.recover",
 ]);
+
+const EXTENSION_KEYS = new Set(["enabled", "grant", "grants", "config"]);
 
 const OUTBOX_STATUSES = ["pending", "sent", "failed", "abandoned"] as const;
 const OUTBOX_RECOVERY_ACTIONS = ["retry", "abandon"] as const;

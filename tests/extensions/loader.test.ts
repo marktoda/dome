@@ -111,7 +111,7 @@ describe("loadBundles — shipped dome.lint bundle", () => {
 
   test("binds manifest execution metadata onto the loaded processor", async () => {
     const root = makeTmpRoot("loader-execution-metadata-");
-    const bundleDir = join(root, "exec-bundle");
+    const bundleDir = join(root, "test.exec");
     const processorsDir = join(bundleDir, "processors");
     await mkdir(processorsDir, { recursive: true });
 
@@ -227,9 +227,32 @@ describe("loadBundles — error variants", () => {
     expect(result.error.cause.kind).toBe("invalid-shape");
   });
 
+  test("manifest-id-mismatch when bundle directory disagrees with manifest id", async () => {
+    const root = makeTmpRoot("loader-id-mismatch-");
+    const bundleDir = join(root, "wrong.dir");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "right.id",
+        version: "0.1.0",
+        processors: [],
+      }),
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("manifest-id-mismatch");
+    if (result.error.kind !== "manifest-id-mismatch") return;
+    expect(result.error.bundleDir).toBe("wrong.dir");
+    expect(result.error.manifestId).toBe("right.id");
+  });
+
   test("manifest-invalid (phase-trigger-mismatch) when a view-phase processor declares a signal trigger", async () => {
     const root = makeTmpRoot("loader-phase-mismatch-");
-    const bundleDir = join(root, "bad-bundle");
+    const bundleDir = join(root, "test.bad");
     await mkdir(bundleDir, { recursive: true });
     // view + signal violates the matrix.
     const manifest = {
@@ -279,7 +302,7 @@ describe("loadBundles — error variants", () => {
 
   test("empty bundle with zero declared processors loads successfully", async () => {
     const root = makeTmpRoot("loader-empty-procs-");
-    const bundleDir = join(root, "empty-bundle");
+    const bundleDir = join(root, "test.empty");
     await mkdir(bundleDir, { recursive: true });
     await writeFile(
       join(bundleDir, "manifest.json"),
@@ -302,7 +325,7 @@ describe("loadBundles — error variants", () => {
 
   test("empty bundle can contribute page types", async () => {
     const root = makeTmpRoot("loader-page-types-");
-    const bundleDir = join(root, "page-types-bundle");
+    const bundleDir = join(root, "test.page-types");
     await mkdir(bundleDir, { recursive: true });
     await writeFile(
       join(bundleDir, "manifest.json"),
@@ -327,13 +350,13 @@ describe("loadBundles — error variants", () => {
 
   test("duplicate bundle page types fail loudly", async () => {
     const root = makeTmpRoot("loader-page-type-collision-");
-    for (const id of ["a", "b"]) {
+    for (const id of ["test.a", "test.b"]) {
       const bundleDir = join(root, id);
       await mkdir(bundleDir, { recursive: true });
       await writeFile(
         join(bundleDir, "manifest.json"),
         JSON.stringify({
-          id: `test.${id}`,
+          id,
           version: "0.1.0",
           processors: [],
         }),

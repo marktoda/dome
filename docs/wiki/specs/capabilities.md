@@ -48,7 +48,7 @@ Default for adoption-phase processors: the paths their triggers match (read what
 
 ### `patch.propose`
 
-Permits `PatchEffect` with `mode: "propose"` for paths matching the glob. Propose-mode patches are **not applied** in the adoption phase — they emit a diagnostic naming the proposed patch; the user reviews and applies via `dome lint --apply`. Safe-by-default for processors with broad write intent.
+Permits `PatchEffect` with `mode: "propose"` for paths matching the glob. Propose-mode patches are **not applied** in the adoption phase — they emit a diagnostic naming the proposed patch. The review/apply UX is still a v1.x lint surface; until it ships, proposed patches are visible as diagnostics rather than silently mutating the vault. Safe-by-default for processors with broad write intent.
 
 ### `patch.auto`
 
@@ -104,7 +104,7 @@ The runtime enforces the intersection of the declared and granted allowlists bef
 
 Permits emitting `ExternalActionEffect` with the named capability. Each external capability is a separate grant — `external: "calendar.write"` does not imply `external: "notify.push"`.
 
-External capabilities are registered as handlers in the SDK (or in a plugin bundle); the engine looks up the handler at outbox dispatch time. Capability handlers live at `src/external-handlers/<capability>.ts` for first-party (calendar, notify, network); plugin-contributed handlers register through their bundle's `external-handlers/` directory.
+External capabilities are registered as handlers at the runtime boundary; the engine looks up the injected handler at outbox dispatch time. Bundle-discovered handler directories are planned, but v1 currently supports caller-injected handlers only, so missing handlers fail explicitly in `outbox.db` rather than disappearing.
 
 ### `outbox.read`
 
@@ -207,7 +207,7 @@ extensions:
 
 With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Grant blocks are validated fail-loudly when the runtime opens the vault: unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set.
+Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, and opaque per-extension `config`.
 
 Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted reads and auto-patches for `wiki/dailies/*.md`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to inactive until the user explicitly opts in.
 

@@ -130,6 +130,7 @@ export type VaultRuntime = {
   }>;
   readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
+  readonly pageTypes: PageTypeRegistry;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly externalHandlers: ExternalHandlerRegistry;
@@ -181,6 +182,10 @@ export type OpenVaultRuntimeWithRegistryOpts = {
    * extension names by longest prefix.
    */
   readonly processorExtensionIds?: ReadonlyMap<string, string>;
+  readonly extensionPageTypes?: ReadonlyMap<
+    string,
+    ReadonlyArray<PageTypeDeclaration>
+  >;
   readonly pageTypes?: PageTypeRegistry;
   /**
    * Capability handlers used by the outbox dispatcher for
@@ -425,6 +430,7 @@ export async function openVaultRuntime(
     processorVersions,
     registry,
     processorRuntime,
+    pageTypes,
     resolveGrants,
     extensionIdFor,
     externalHandlers,
@@ -492,7 +498,7 @@ async function resolveRegistryFromOpts(
         extensions: opts.extensions,
         processorVersions: opts.processorVersions,
         processorExtensionIds,
-        pageTypes: opts.pageTypes ?? buildPageTypeRegistryForBundles([]),
+        pageTypes: pageTypeRegistryForPrebuiltOpts(opts, policy),
         policy,
       });
     }
@@ -501,7 +507,7 @@ async function resolveRegistryFromOpts(
       extensions: opts.extensions,
       processorVersions: opts.processorVersions,
       processorExtensionIds,
-      pageTypes: opts.pageTypes ?? buildPageTypeRegistryForBundles([]),
+      pageTypes: pageTypeRegistryForPrebuiltOpts(opts, policy),
     });
   }
 
@@ -586,6 +592,19 @@ function activePrebuiltRegistryForPolicy(input: {
   });
 }
 
+function pageTypeRegistryForPrebuiltOpts(
+  opts: OpenVaultRuntimeWithRegistryOpts,
+  policy: CapabilityPolicy,
+): PageTypeRegistry {
+  if (!policy.foundConfig && opts.pageTypes !== undefined) {
+    return opts.pageTypes;
+  }
+  return buildPageTypeRegistryForExtensionPageTypes(
+    opts.extensionPageTypes ?? new Map(),
+    policy.foundConfig ? policy : null,
+  );
+}
+
 function activeBundlesForPolicy(
   bundles: ReadonlyArray<LoadedBundle>,
   policy: CapabilityPolicy,
@@ -642,6 +661,29 @@ function buildPageTypeRegistryForBundles(
   }
   const result = mergePageTypeDeclarations(declarations, {
     enforceKnownTypes: bundles.some((bundle) => bundle.pageTypes.length > 0),
+  });
+  if (!result.ok) {
+    throw new Error(
+      `page type collision for '${result.error.name}' between ` +
+        `${result.error.firstSource} and ${result.error.secondSource}`,
+    );
+  }
+  return result.value;
+}
+
+function buildPageTypeRegistryForExtensionPageTypes(
+  extensionPageTypes: ReadonlyMap<string, ReadonlyArray<PageTypeDeclaration>>,
+  policy: CapabilityPolicy | null,
+): PageTypeRegistry {
+  const declarations: PageTypeDeclaration[] = [
+    ...DEFAULT_PAGE_TYPE_DECLARATIONS,
+  ];
+  for (const [extensionId, pageTypes] of extensionPageTypes.entries()) {
+    if (policy !== null && !policy.isExtensionEnabled(extensionId)) continue;
+    declarations.push(...pageTypes);
+  }
+  const result = mergePageTypeDeclarations(declarations, {
+    enforceKnownTypes: declarations.length > DEFAULT_PAGE_TYPE_DECLARATIONS.length,
   });
   if (!result.ok) {
     throw new Error(

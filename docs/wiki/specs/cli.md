@@ -13,7 +13,7 @@ This spec is normative for Dome's command-line interface. The CLI is **one proto
 
 ```text
 dome init [path]                Initialize a new vault.
-dome sync [--force-advance]     Catch-up: construct Proposal from working-tree HEAD; adopt.
+dome sync [--json]              Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
@@ -105,8 +105,10 @@ The shipped initialization steps:
    no-op for this step).
 
 Deferred to v1.1:
-- `.dome/page-types.yaml` (page-type registry) — lands when the
-  page-types substrate ships.
+- `.dome/page-types.yaml` is not scaffolded by default. The page-type
+  substrate ships today through built-in and bundle-contributed page types;
+  this vault-local file remains an optional extension point for custom
+  frontmatter schemas.
 - The initial `dome sync` to produce `refs/dome/adopted/main` — the
   user runs `dome sync` (or `dome serve`) manually as their next step;
   the adopted-ref substrate initializes on first sync.
@@ -125,7 +127,7 @@ present)`); idempotent re-runs surface as all-skipped no-ops.
 Exit codes: 0 on success (including idempotent re-runs); 1 on
 unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
 
-### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [--force-advance]`
+### `dome sync [--vault <path>] [--bundles-root <path>] [--json]`
 
 The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome/adopted/<branch>`, construct a `manual`-source Proposal, run it through the engine's adoption loop, print the result, exit. This is the manual trigger for users who don't want a `dome serve` compiler host running continuously.
 
