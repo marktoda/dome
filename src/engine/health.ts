@@ -269,8 +269,9 @@ function outboxFinding(row: OutboxRow): HealthFinding {
       `Outbox row ${row.id} (${row.capability}) failed after ` +
       `${row.attempts}/${row.maxAttempts} attempt(s).`,
     recovery:
-      "Inspect with `dome inspect outbox`; recovery will route through " +
-      "`dome answer` when dome.health answer handlers ship.",
+      "Inspect with `dome inspect outbox`; run `dome sync` or `dome serve` " +
+      "with dome.health enabled to raise a retry/abandon question, then " +
+      "answer it with `dome answer`.",
     outbox: Object.freeze({
       id: row.id,
       capability: row.capability,
@@ -315,8 +316,8 @@ function orphanFinding(row: RunRow): HealthFinding {
       `Run ${row.id} for ${row.processorId} is still running from ` +
       `${row.startedAt}.`,
     recovery:
-      "Inspect with `dome inspect runs`; recovery will route through " +
-      "`dome answer` when dome.health answer handlers ship.",
+      "Inspect with `dome inspect runs`; orphan-run recovery should route " +
+      "through `dome answer` when run-recovery handlers ship.",
     run: Object.freeze({
       id: row.id,
       processorId: row.processorId,
@@ -527,8 +528,8 @@ function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {
       `${row.key.triggerHash.slice(0, 12)} after ` +
       `${row.consecutiveRetryableFailures} retryable failure(s).`,
     recovery:
-      "Inspect recent runs; reset/retry will route through `dome answer` " +
-      "when dome.health answer handlers ship.",
+      "Inspect recent runs; reset/retry should route through `dome answer` " +
+      "when quarantine recovery handlers ship.",
     quarantine: Object.freeze({
       phase: row.key.phase,
       processorId: row.key.processorId,
