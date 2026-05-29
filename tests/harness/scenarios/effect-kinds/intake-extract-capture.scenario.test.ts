@@ -19,7 +19,9 @@ extensions:
   dome.intake:
     enabled: true
     grant:
-      read: ["inbox/raw/*.md"]
+      read:
+        - "inbox/raw/*.md"
+        - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
         - "inbox/processed/*.md"
@@ -335,6 +337,115 @@ scenario(
       text: "Ask Chris about launch staffing",
     });
     expect(targets).not.toContain(null);
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.intake tracks accepted low-confidence answers",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "fact" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "answer" },
+      { kind: "route", route: "garden-answer" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async () => ({
+        text: JSON.stringify({
+          title: "Launch follow-up",
+          summary: "Chris may need a staffing check.",
+          tasks: [
+            { text: "Ask Chris about launch staffing", confidence: 0.45 },
+          ],
+          followups: [],
+          decisions: [],
+          entities: [],
+          sourceQuotes: [],
+        }),
+      }),
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [CAPTURE_PATH]: [
+          "# Capture",
+          "",
+          "Maybe Chris needs a launch staffing check.",
+          "",
+        ].join("\n"),
+      },
+      message: "capture uncertain task",
+    });
+
+    const extracted = await h.tick();
+    expect(extracted.adopted).toBe(true);
+    await h.expectFile(OUTPUT_PATH).toNotContain(
+      "Ask Chris about launch staffing",
+    );
+
+    const inspect = await h.runCli(["inspect", "questions", "--json"]);
+    expect(inspect.exitCode).toBe(0);
+    const rows = JSON.parse(inspect.stdout) as ReadonlyArray<{
+      readonly id: number;
+      readonly status: string;
+      readonly options: ReadonlyArray<string>;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("open");
+    expect(rows[0]?.options).toEqual(["track", "ignore"]);
+
+    const questionId = rows[0]?.id;
+    expect(questionId).toBeGreaterThan(0);
+    if (questionId === undefined) return;
+
+    const answer = await h.runCli([
+      "answer",
+      String(questionId),
+      "track",
+      "--json",
+    ]);
+    expect(answer.exitCode).toBe(0);
+    expect(answer.stderr).toBe("");
+    const answered = JSON.parse(answer.stdout) as {
+      readonly status: string;
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<{ readonly processor_id: string }>;
+        readonly sub_proposals: number;
+      };
+    };
+    expect(answered.status).toBe("answered");
+    expect(answered.handlers.status).toBe("handled");
+    expect(answered.handlers.runs.map((run) => run.processor_id)).toEqual([
+      "dome.intake.low-confidence-answer",
+    ]);
+    expect(answered.handlers.sub_proposals).toBe(1);
+
+    await h.expectFile(OUTPUT_PATH).toContain(
+      "- [ ] Ask Chris about launch staffing",
+    );
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Ask Chris about launch staffing",
+      })
+      .toHaveCount(1);
   },
 );
 

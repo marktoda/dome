@@ -219,6 +219,22 @@ processors:
       timeoutMs: 600000
       modelCallTimeoutMs: 180000
     module: processors/extract-capture.ts
+
+  - id: dome.intake.low-confidence-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.intake.extract-capture
+        idempotencyKeyPrefix: "dome.intake.low-confidence:"
+    capabilities:
+      - kind: read
+        paths:
+          - "inbox/raw/*.md"
+          - "wiki/generated/intake/*.md"
+      - kind: patch.auto
+        paths: ["wiki/generated/intake/*.md"]
+    module: processors/low-confidence-answer.ts
 ```
 
 The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.

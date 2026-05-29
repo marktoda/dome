@@ -165,11 +165,11 @@ Shipped and strong:
 Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, and `dome prep`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, and low-confidence questions. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, and `dome prep`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, and low-confidence question/answer handling. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 
 Not yet at v1:
 
-- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, production model-provider packaging, raw inbox capture compilation, and low-confidence capture questions. Remaining v1 work is low-confidence capture answer handling, stale-inbox checks, real-vault dogfood, and richer synthesis.
+- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, production model-provider packaging, raw inbox capture compilation, and low-confidence capture question/answer handling. Remaining v1 work is stale-inbox checks, real-vault dogfood, and richer synthesis.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -322,7 +322,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
 | `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
 | `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`; generated intake captures feed the same task index |
-| `dome.intake` | "talk about my day" capture compilation | raw capture extraction and low-confidence question emission shipped for `inbox/raw/*.md`; answer handling, stale-inbox checks, and richer synthesis remain |
+| `dome.intake` | "talk about my day" capture compilation | raw capture extraction plus low-confidence question/answer handling shipped for `inbox/raw/*.md`; stale-inbox checks and richer synthesis remain |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
 
 ### Optional or later
@@ -422,7 +422,8 @@ Acceptance:
 - [x] Ask questions for ambiguous prose follow-up guesses instead of mutating
   silently.
 - [x] Extend raw-capture extraction with low-confidence question emission.
-- Extend raw-capture extraction with answer handling and richer fact namespaces.
+- [x] Extend raw-capture extraction with answer handling.
+- Extend raw-capture extraction with richer fact namespaces.
 - [x] Add `dome today` once the data is useful enough to render.
 - [x] Add prep views once planning context is useful enough to render.
 
@@ -455,7 +456,7 @@ Acceptance:
 - [x] Ensure malformed LLM output is ledgered and recoverable.
 - [x] Build on the shipped capability-scoped, source-ref-backed model patch guard.
 - [x] Add low-confidence question emission.
-- Add low-confidence answer handling.
+- [x] Add low-confidence answer handling.
 - Add stale-inbox diagnostics after the happy path has soaked.
 
 Acceptance:

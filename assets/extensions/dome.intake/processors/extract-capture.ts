@@ -1,7 +1,5 @@
 // dome.intake.extract-capture — compile raw inbox captures into markdown.
 
-import { createHash } from "node:crypto";
-
 import {
   patchEffect,
   questionEffect,
@@ -14,6 +12,7 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
+import { captureOutputPaths } from "./capture-page";
 import {
   LOW_CONFIDENCE_QUESTION_OPTIONS,
   lowConfidenceQuestionKey,
@@ -106,7 +105,7 @@ const extractCapture: Processor = defineProcessor({
         prompt: promptForCapture(path, capture),
         parse: parseCaptureExtraction,
       });
-      const paths = outputPaths(path);
+      const paths = captureOutputPaths(path);
       const archive = renderArchive({ sourcePath: path, capture });
       const generated = renderGeneratedCapture({
         sourcePath: path,
@@ -218,21 +217,6 @@ function freezeItems(
       }),
     ),
   );
-}
-
-function outputPaths(path: string): {
-  readonly generated: string;
-  readonly archive: string;
-} {
-  const basename = path.split("/").at(-1) ?? "capture.md";
-  const stem = basename.replace(/\.md$/i, "");
-  const slug = slugify(stem) || "capture";
-  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
-  const name = `${slug}-${digest}.md`;
-  return Object.freeze({
-    generated: `wiki/generated/intake/${name}`,
-    archive: `inbox/processed/${name}`,
-  });
 }
 
 function renderGeneratedCapture(input: {
@@ -391,12 +375,4 @@ function appendListSection(
 
 function yamlString(value: string): string {
   return JSON.stringify(value);
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
 }

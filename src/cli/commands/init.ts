@@ -319,6 +319,7 @@ extensions:
     grant:
       read:
         - "inbox/raw/*.md"
+        - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
         - "inbox/processed/*.md"

@@ -186,6 +186,7 @@ extensions:
     grant:
       read:
         - inbox/raw/*.md
+        - wiki/generated/intake/*.md
       patch.auto:
         - wiki/generated/intake/*.md
         - inbox/processed/*.md
@@ -209,7 +210,7 @@ With a config file present, `extensions.<bundle>.enabled: true` is the activatio
 
 Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, and opaque per-extension `config`.
 
-Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask` so low-confidence extracted items become user questions instead of silent writes. Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, raw/generated capture reads, and generated-page patch grants so low-confidence extracted items become user-mediated writes instead of silent writes. Third-party bundles default to inactive until the user explicitly opts in.
 
 ## Enforcement chokepoint
 

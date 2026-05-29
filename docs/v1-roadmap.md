@@ -93,16 +93,15 @@ V1 capability ledger:
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
       task/followup fact indexing, `today` / `prep` views, and first raw
-      inbox capture extraction are shipped; richer capture answer handling and
-      synthesis remain.
+      inbox capture extraction plus low-confidence answer handling are shipped;
+      richer capture synthesis remains.
 - [x] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
       packaging gives vaults a production path without SDK vendor dependencies.
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice and low-confidence capture
-      questions shipped; richer fact namespaces, answer handling, and synthesis
-      remain.
+      questions/answers shipped; richer fact namespaces and synthesis remain.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
 - [x] V1 end-to-end acceptance harness.
@@ -397,8 +396,8 @@ Work:
       regions.
 - [x] Emit low-confidence capture questions instead of committing uncertain
       model items as tasks, followups, decisions, or entities.
+- [x] Add answer handling for low-confidence capture questions.
 - [ ] Emit richer intake fact namespaces with confidence.
-- [ ] Add answer handling for low-confidence capture questions.
 - [ ] Implement first synthesis processor only after intake has provenance and
       budget gates.
 
@@ -411,6 +410,8 @@ Acceptance:
 - [x] Processor cannot mutate outside capability-scoped paths.
 - [x] Low-confidence extracted items are not written into generated capture
       pages until the user answers a question.
+- [x] Answering `track` for a low-confidence item patches the generated
+      capture page through a garden sub-Proposal and downstream task facts.
 
 ## Milestone 8 - User-Value Views
 
@@ -477,7 +478,7 @@ Required for daily value:
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
-| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions, and downstream task/followup facts shipped; low-confidence answer handling, richer fact namespaces, and synthesis remain |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, and downstream task/followup facts shipped; richer fact namespaces and synthesis remain |
 
 Optional or conditional:
 
