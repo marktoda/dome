@@ -62,7 +62,51 @@ scenario(
       })
       .toHaveCount(2);
 
-    // Step 4: ledger records a succeeded run for dome.graph.links.
+    // Step 4: editing the page to remove links clears the old extracted facts.
+    await h.userCommit({
+      files: {
+        "wiki/source.md": "# source\n\nThe source no longer links anywhere.\n",
+      },
+      message: "remove source wikilinks",
+    });
+    const removeResult = await h.tick();
+    expect(removeResult.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.graph.links_to",
+        subjectId: "wiki/source.md",
+      })
+      .toHaveCount(0);
+
+    // Step 5: a later replacement run inserts only the current links.
+    await h.userCommit({
+      files: {
+        "wiki/source.md": "# source\n\nNow it only mentions [[entity-c]].\n",
+      },
+      message: "replace source wikilinks",
+    });
+    const replaceResult = await h.tick();
+    expect(replaceResult.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.graph.links_to",
+        subjectId: "wiki/source.md",
+      })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.graph.links_to",
+        subjectId: "wiki/source.md",
+        objectString: "entity-c",
+      })
+      .toHaveCount(1);
+
+    // Step 6: ledger records succeeded runs for dome.graph.links.
     await h
       .expectLedger({ processorId: "dome.graph.links" })
       .toAllHaveStatus("succeeded");

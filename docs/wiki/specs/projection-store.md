@@ -90,6 +90,15 @@ CREATE INDEX facts_by_predicate ON facts(namespace, predicate);
 
 Writes scoped by `graph.write` capability per [[wiki/specs/capabilities]] §"graph.write".
 
+Incremental adoption resolves stale page-subject facts at the same boundary as
+diagnostic auto-resolve: after a processor succeeds, before its new FactEffects
+are inserted, the projection sink deletes that processor's prior
+`subject_kind = 'page'` rows for the paths it re-inspected. This makes
+deterministic extractors like `dome.graph.links` and `dome.graph.tag-index`
+replace page facts on modified/deleted files without giving processors a
+direct delete API. Task and entity fact invalidation is intentionally not
+automatic until those subjects have a stable lifecycle policy.
+
 ### `fts_documents` (FTS5)
 
 Full-text search over markdown bodies, maintained by `dome.search`'s `index-text` adoption-phase processor.

@@ -77,6 +77,7 @@ Shipped:
       `dome.graph.tag-index`.
 - [x] Page-type schema substrate.
 - [x] Diagnostic auto-resolve for changed paths.
+- [x] Page-subject graph/tag fact replacement for changed and deleted paths.
 - [x] Projection cache-key drift rebuild on processor-version / extension-set
       changes.
 - [x] High-level harness coverage for adoption, triggers, effects,
@@ -205,6 +206,8 @@ Work:
       SourceRefs and no LLM summary.
 - [x] Make graph facts and tag facts queryable through the same adopted-state
       view path.
+- [x] Replace graph/tag page facts on edit/delete instead of accumulating stale
+      projection rows until a full rebuild.
 
 Acceptance:
 
@@ -215,6 +218,8 @@ Acceptance:
 - [x] Commit markdown, sync, query by text returns adopted-state snippets and
       SourceRefs.
 - [x] Query returns graph/tag facts relevant to the search term or filters.
+- [x] Editing or deleting a page removes stale graph/tag facts for that page
+      through normal sync, without requiring `dome rebuild`.
 
 ## Milestone 4 - Recovery and Questions
 

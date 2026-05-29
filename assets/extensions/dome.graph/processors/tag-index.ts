@@ -33,6 +33,7 @@ const graphTagIndex: Processor = defineProcessor({
   triggers: [
     { kind: "signal", name: "document.changed" },
     { kind: "signal", name: "file.created" },
+    { kind: "signal", name: "file.deleted" },
   ],
   capabilities: [
     { kind: "read", paths: ["**/*.md"] },

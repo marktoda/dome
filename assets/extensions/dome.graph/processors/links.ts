@@ -24,19 +24,9 @@
 //
 // Per [[wiki/matrices/processor-phase-x-trigger]], adoption-phase
 // processors may subscribe to `signal` triggers; we subscribe to
-// `document.changed` (markdown overlay) and `file.created` (covers
-// newly-added paths whose `document.changed` may not fire if the path
-// was added without a content diff — defensive, matches sibling
-// markdown processors).
-//
-// Idempotency contract: FactEffects are written via `INSERT` into
-// `projection.facts` (no UNIQUE constraint at v1). Re-running this
-// processor against the same content will insert duplicate rows.
-// Phase 14+'s "diagnostic auto-resolve + processor-version invalidation"
-// substrate is the right home for fact-row invalidation; for v1.0 the
-// adoption loop's run-ledger dedup (by `(processor_id, processor_version,
-// input_commit, trigger_hash)`) prevents re-runs within the same
-// adoption cycle.
+// `document.changed`, `file.created`, and `file.deleted`. Deleted paths emit
+// no facts; the projection sink clears this processor's page facts for every
+// inspected changed path before inserting the run's new facts.
 //
 // This file lives under `assets/` which is excluded from the root
 // `tsconfig.json`. Imports use relative paths into `src/`, resolved at
@@ -84,6 +74,7 @@ const graphLinks: Processor = defineProcessor({
   triggers: [
     { kind: "signal", name: "document.changed" },
     { kind: "signal", name: "file.created" },
+    { kind: "signal", name: "file.deleted" },
   ],
   capabilities: [
     { kind: "read", paths: ["**/*.md"] },
@@ -108,10 +99,8 @@ const graphLinks: Processor = defineProcessor({
 
     for (const path of changedMarkdown) {
       const content = await ctx.snapshot.readFile(path);
-      // `null` → path deleted or never existed in the candidate. We do
-      // NOT emit a "links removed" effect — v1's projection has no
-      // delete API for facts; Phase 14's invalidation substrate handles
-      // staleness.
+      // `null` means the path was deleted in this candidate. The engine's
+      // fact-resolution hook clears old page facts for inspected paths.
       if (content === null) continue;
 
       const wikilinks = findWikilinks(content);

@@ -27,6 +27,7 @@ import {
   factsByPredicate,
   factsBySubject,
   insertFact,
+  resolveStalePageFacts,
 } from "../../src/projections/facts";
 import {
   insertDiagnostic,
@@ -161,6 +162,71 @@ describe("facts accessor", () => {
     const got = factsByPredicate(db, "dome.tasks", "dome.tasks.dueDate");
     expect(got.length).toBe(1);
     expect(got[0]?.predicate).toBe("dome.tasks.dueDate");
+  });
+
+  it("resolveStalePageFacts clears only the processor's page-subject rows for inspected paths", () => {
+    const stale = factEffect({
+      subject: { kind: "page", path: "wiki/a.md" },
+      predicate: "dome.graph.links_to",
+      object: { kind: "string", value: "old" },
+      assertion: "extracted",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+    });
+    const otherPath = factEffect({
+      subject: { kind: "page", path: "wiki/b.md" },
+      predicate: "dome.graph.links_to",
+      object: { kind: "string", value: "kept-path" },
+      assertion: "extracted",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/b.md" })],
+    });
+    const otherProcessor = factEffect({
+      subject: { kind: "page", path: "wiki/a.md" },
+      predicate: "dome.other.links_to",
+      object: { kind: "string", value: "kept-processor" },
+      assertion: "extracted",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+    });
+    const entity = factEffect({
+      subject: { kind: "entity", name: "Acme" },
+      predicate: "dome.graph.mentioned_in",
+      object: { kind: "string", value: "wiki/a.md" },
+      assertion: "extracted",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+    });
+
+    insertFact(db, {
+      effect: stale,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+    insertFact(db, {
+      effect: otherPath,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+    insertFact(db, {
+      effect: otherProcessor,
+      processorId: "p2",
+      adoptedCommit: ADOPTED,
+    });
+    insertFact(db, {
+      effect: entity,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+
+    const deleted = resolveStalePageFacts(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/a.md", "wiki/a.md"],
+    });
+
+    expect(deleted).toBe(1);
+    const pageA = factsBySubject(db, { kind: "page", path: "wiki/a.md" });
+    expect(pageA.map((f) => f.predicate)).toEqual(["dome.other.links_to"]);
+    expect(factsBySubject(db, { kind: "page", path: "wiki/b.md" }).length).toBe(
+      1,
+    );
+    expect(factsBySubject(db, { kind: "entity", name: "Acme" }).length).toBe(1);
   });
 });
 

@@ -71,6 +71,23 @@ scenario(
       })
       .toHaveCount(0);
 
+    await h.userCommit({
+      files: {
+        "wiki/tagged.md": null,
+      },
+      message: "delete tagged page",
+    });
+    const deleteResult = await h.tick();
+    expect(deleteResult.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.graph.tagged",
+        subjectId: "wiki/tagged.md",
+      })
+      .toHaveCount(0);
+
     await h
       .expectLedger({ processorId: "dome.graph.tag-index" })
       .toAllHaveStatus("succeeded");

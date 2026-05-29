@@ -93,6 +93,7 @@ describe("buildSqliteSinks shape", () => {
     expect(typeof sinks.applyPatch).toBe("function");
     expect(typeof sinks.recordDiagnostic).toBe("function");
     expect(typeof sinks.resolveDiagnostics).toBe("function");
+    expect(typeof sinks.resolveFacts).toBe("function");
     expect(typeof sinks.recordFact).toBe("function");
     expect(typeof sinks.recordSearchDocument).toBe("function");
     expect(typeof sinks.recordQuestion).toBe("function");
@@ -128,6 +129,54 @@ describe("buildSqliteSinks projection-store sinks", () => {
     });
     expect(got.length).toBe(1);
     expect(got[0]?.predicate).toBe("dome.tasks.dueDate");
+  });
+
+  it("resolveFacts clears stale page facts before replacement inserts", async () => {
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+    });
+
+    const stale = factEffect({
+      subject: { kind: "page", path: "wiki/alice.md" },
+      predicate: "dome.graph.links_to",
+      object: { kind: "string", value: "old-target" },
+      assertion: "extracted",
+      sourceRefs: [REF],
+    });
+    const fresh = factEffect({
+      subject: { kind: "page", path: "wiki/alice.md" },
+      predicate: "dome.graph.links_to",
+      object: { kind: "string", value: "new-target" },
+      assertion: "extracted",
+      sourceRefs: [REF],
+    });
+
+    await sinks.recordFact({
+      effect: stale,
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+    await sinks.resolveFacts?.({
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+      inspectedPaths: ["wiki/alice.md"],
+    });
+    await sinks.recordFact({
+      effect: fresh,
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+
+    const got = factsBySubject(projectionDb, {
+      kind: "page",
+      path: "wiki/alice.md",
+    });
+    expect(got.length).toBe(1);
+    expect(got[0]?.object).toEqual({ kind: "string", value: "new-target" });
   });
 
   it("recordDiagnostic writes a row visible via queryDiagnostics", async () => {

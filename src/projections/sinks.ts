@@ -1,12 +1,13 @@
-// projection-sinks: assembles the nine-sink `ApplyEffectSinks` shape against
+// projection-sinks: assembles the `ApplyEffectSinks` shape against
 // the projection database, the outbox database, and two engine-layer
 // injections (`applyPatch`, `captureView`). This is the Phase 4 wiring layer
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Seven sinks are owned here (delegating to the per-table accessors):
+// Eight sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
+//   - resolveFacts     → src/projections/facts.ts:       resolveStalePageFacts
 //   - recordFact       → src/projections/facts.ts:       insertFact
 //   - recordSearchDocument → src/projections/search.ts:  applySearchDocumentEffect
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
@@ -58,7 +59,7 @@ import type { ProjectionDb } from "./db";
 import type { OutboxDb } from "../outbox/db";
 
 import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
-import { insertFact } from "./facts";
+import { insertFact, resolveStalePageFacts } from "./facts";
 import { applySearchDocumentEffect } from "./search";
 import { insertQuestion } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
@@ -74,7 +75,7 @@ const EMPTY_EXTERNAL_HANDLERS = Object.freeze({});
 // ----- Public types ---------------------------------------------------------
 
 export type BuildSqliteSinksOpts = {
-  /** The open projection.db handle. Used by the five projection-store sinks. */
+  /** The open projection.db handle. Used by the projection-store sinks. */
   readonly projectionDb: ProjectionDb;
   /** The open outbox.db handle. Used by `dispatchExternal`. */
   readonly outboxDb: OutboxDb;
@@ -108,10 +109,10 @@ export type BuildSqliteSinksOpts = {
 // ----- buildSqliteSinks -----------------------------------------------------
 
 /**
- * Assemble the nine-sink `ApplyEffectSinks` object the engine's
- * `applyEffect` router calls into. Seven sinks delegate to the per-table
- * projection accessors + the outbox dispatcher; two are pass-through
- * injections from the engine layer (`applyPatch`, `captureView`).
+ * Assemble the `ApplyEffectSinks` object the engine calls while routing
+ * effects and maintaining projection rows. Eight sinks delegate to the
+ * per-table projection accessors + the outbox dispatcher; two are
+ * pass-through injections from the engine layer (`applyPatch`, `captureView`).
  *
  * The returned object is `Object.freeze`'d so a misbehaving caller cannot
  * swap a sink out mid-run (e.g., a downstream layer attempting to monkey-
@@ -141,6 +142,13 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         processorId,
         inspectedPaths,
         emittedDiagnostics,
+      });
+    },
+
+    resolveFacts: async ({ processorId, inspectedPaths }) => {
+      resolveStalePageFacts(opts.projectionDb, {
+        processorId,
+        inspectedPaths,
       });
     },
 

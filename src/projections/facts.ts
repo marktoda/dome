@@ -33,6 +33,11 @@ export type FactInsertOpts = {
   readonly adoptedCommit: CommitOid;
 };
 
+export type ResolveStalePageFactsOpts = {
+  readonly processorId: string;
+  readonly inspectedPaths: ReadonlyArray<string>;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_FACT_SQL = `
@@ -56,6 +61,11 @@ SELECT namespace, subject_kind, subject_id, predicate, object_json,
 FROM facts
 WHERE namespace = ? AND predicate = ?
 ORDER BY id
+`.trim();
+
+const DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL = `
+DELETE FROM facts
+WHERE processor_id = ? AND subject_kind = 'page' AND subject_id = ?
 `.trim();
 
 // ----- Row shape ------------------------------------------------------------
@@ -125,6 +135,30 @@ export function factsByPredicate(
     .query<FactRow, [string, string]>(FACTS_BY_PREDICATE_SQL)
     .all(namespace, predicate);
   return Object.freeze(rows.map(rowToFact));
+}
+
+/**
+ * Clear page-subject facts for paths a processor just re-inspected. The
+ * engine calls this before routing the processor's newly emitted FactEffects,
+ * so each successful run replaces that processor's extracted facts for the
+ * inspected page set instead of appending stale rows forever.
+ *
+ * Scope is intentionally narrow: page-subject facts are the v1 extraction
+ * shape used by graph/link/tag processors. Task/entity fact lifecycles need
+ * their own stable identity policy before automatic invalidation is safe.
+ */
+export function resolveStalePageFacts(
+  db: ProjectionDb,
+  opts: ResolveStalePageFactsOpts,
+): number {
+  if (opts.inspectedPaths.length === 0) return 0;
+  const stmt = db.raw.query(DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL);
+  let deleted = 0;
+  for (const path of new Set(opts.inspectedPaths)) {
+    const result = stmt.run(opts.processorId, path);
+    deleted += result.changes;
+  }
+  return deleted;
 }
 
 // ----- internals ------------------------------------------------------------

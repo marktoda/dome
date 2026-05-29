@@ -231,6 +231,8 @@ export async function adopt(opts: {
   const { vault, proposal, runAdoptionProcessors, sinks, ledger, onEvent } = opts;
   const maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const forceAdvance = opts.forceAdvance ?? false;
+  const projectionBuffer = bufferAdoptionProjectionEffects(sinks);
+  const routingSinks = projectionBuffer.sinks;
 
   // Snapshot the source HEAD once at loop start — it becomes the
   // `Dome-Source-Head` trailer on the closure commit and is invariant
@@ -361,6 +363,16 @@ export async function adopt(opts: {
       const emittedDiagnostics = effects.filter(
         (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
       );
+      if (
+        executionStatus === "succeeded" &&
+        routingSinks.resolveFacts !== undefined
+      ) {
+        await routingSinks.resolveFacts({
+          processorId,
+          runId,
+          inspectedPaths: compiled.changedPaths,
+        });
+      }
       for (const effect of effects) {
         const applied = await applyEffect({
           effect,
@@ -370,7 +382,7 @@ export async function adopt(opts: {
           phase: "adoption",
           declared,
           granted,
-          sinks,
+          sinks: routingSinks,
           candidate: candidateAtIterationEnd,
         });
 
@@ -428,9 +440,9 @@ export async function adopt(opts: {
 
       if (
         executionStatus === "succeeded" &&
-        sinks.resolveDiagnostics !== undefined
+        routingSinks.resolveDiagnostics !== undefined
       ) {
-        await sinks.resolveDiagnostics({
+        await routingSinks.resolveDiagnostics({
           processorId,
           runId,
           inspectedPaths: compiled.changedPaths,
@@ -655,6 +667,8 @@ export async function adopt(opts: {
     });
   }
 
+  await projectionBuffer.flush();
+
   return frozenResult({
     proposalId: proposal.id,
     adopted: true,
@@ -666,6 +680,89 @@ export async function adopt(opts: {
 }
 
 // ----- internals ------------------------------------------------------------
+
+type ResolveDiagnosticsInput = Parameters<
+  NonNullable<ApplyEffectSinks["resolveDiagnostics"]>
+>[0];
+type ResolveFactsInput = Parameters<
+  NonNullable<ApplyEffectSinks["resolveFacts"]>
+>[0];
+type RecordFactInput = Parameters<ApplyEffectSinks["recordFact"]>[0];
+type RecordSearchDocumentInput = Parameters<
+  ApplyEffectSinks["recordSearchDocument"]
+>[0];
+type RecordQuestionInput = Parameters<ApplyEffectSinks["recordQuestion"]>[0];
+
+type BufferedProjectionOperation =
+  | {
+      readonly kind: "resolveDiagnostics";
+      readonly input: ResolveDiagnosticsInput;
+    }
+  | { readonly kind: "resolveFacts"; readonly input: ResolveFactsInput }
+  | { readonly kind: "recordFact"; readonly input: RecordFactInput }
+  | {
+      readonly kind: "recordSearchDocument";
+      readonly input: RecordSearchDocumentInput;
+    }
+  | { readonly kind: "recordQuestion"; readonly input: RecordQuestionInput };
+
+/**
+ * Adoption runs processors against a candidate commit that might still block.
+ * Diagnostics are recorded immediately so a blocked proposal remains
+ * inspectable, but adopted-state projection rows (facts/search/questions and
+ * stale-row resolution) are replayed only after the branch and adopted ref
+ * have advanced. This keeps `projection.db` derived from the still-current
+ * adopted commit when adoption fails.
+ */
+function bufferAdoptionProjectionEffects(sinks: ApplyEffectSinks): {
+  readonly sinks: ApplyEffectSinks;
+  readonly flush: () => Promise<void>;
+} {
+  const operations: BufferedProjectionOperation[] = [];
+  const bufferedSinks: ApplyEffectSinks = {
+    ...sinks,
+    resolveDiagnostics: async (input) => {
+      operations.push({ kind: "resolveDiagnostics", input });
+    },
+    resolveFacts: async (input) => {
+      operations.push({ kind: "resolveFacts", input });
+    },
+    recordFact: async (input) => {
+      operations.push({ kind: "recordFact", input });
+    },
+    recordSearchDocument: async (input) => {
+      operations.push({ kind: "recordSearchDocument", input });
+    },
+    recordQuestion: async (input) => {
+      operations.push({ kind: "recordQuestion", input });
+    },
+  };
+
+  return Object.freeze({
+    sinks: Object.freeze(bufferedSinks),
+    flush: async () => {
+      for (const op of operations) {
+        switch (op.kind) {
+          case "resolveDiagnostics":
+            await sinks.resolveDiagnostics?.(op.input);
+            break;
+          case "resolveFacts":
+            await sinks.resolveFacts?.(op.input);
+            break;
+          case "recordFact":
+            await sinks.recordFact(op.input);
+            break;
+          case "recordSearchDocument":
+            await sinks.recordSearchDocument(op.input);
+            break;
+          case "recordQuestion":
+            await sinks.recordQuestion(op.input);
+            break;
+        }
+      }
+    },
+  });
+}
 
 /**
  * Build a frozen AdoptionResult. `Object.freeze` on the inner diagnostics

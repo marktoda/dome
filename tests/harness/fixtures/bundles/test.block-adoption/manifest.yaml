@@ -1,0 +1,13 @@
+id: test.block-adoption
+version: 0.1.0
+processors:
+  - id: test.block-adoption.always
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+    module: processors/block.ts

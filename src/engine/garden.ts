@@ -338,6 +338,17 @@ async function runGardenPhaseInner(opts: {
   const spawnCountByProcessor = new Map<string, number>();
 
   for (const result of runnerResults) {
+    if (
+      result.executionStatus === "succeeded" &&
+      sinks.resolveFacts !== undefined
+    ) {
+      await sinks.resolveFacts({
+        processorId: result.processorId,
+        runId: result.runId,
+        inspectedPaths: changedPaths,
+      });
+    }
+
     for (const effect of result.effects) {
       if (effect.kind === "patch") {
         const routed = await routeGardenPatchForSubProposal({

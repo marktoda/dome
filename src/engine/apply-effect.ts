@@ -2,7 +2,7 @@
 //
 // Every Effect emitted by a processor flows through this router. It performs
 // two checks in order — (1) phase compatibility, (2) capability enforcement —
-// and then dispatches to one of nine injected sinks via an exhaustive
+// and then dispatches to one of the injected sinks via an exhaustive
 // `switch` on `Effect.kind`. The router itself is pure: it owns no I/O and
 // holds no state; the wired sinks (projection store, ledger, outbox, etc.)
 // live in Phase 4 + Phase 8. Garden-phase PatchEffects are the one route
@@ -131,6 +131,18 @@ export type ApplyEffectSinks = {
     readonly runId: RunId;
     readonly inspectedPaths: ReadonlyArray<string>;
     readonly emittedDiagnostics: ReadonlyArray<DiagnosticEffect>;
+  }) => Promise<void>;
+
+  /**
+   * Optional projection-maintenance hook. Before routing a successful
+   * processor's new FactEffects, the engine tells the sink which paths the
+   * processor re-inspected so page-subject extracted facts can be replaced
+   * deterministically.
+   */
+  readonly resolveFacts?: (input: {
+    readonly processorId: string;
+    readonly runId: RunId;
+    readonly inspectedPaths: ReadonlyArray<string>;
   }) => Promise<void>;
 
   /** FactEffect — written to `projection_store.facts`. */
@@ -276,6 +288,7 @@ export function noopSinks(): ApplyEffectSinks {
   return {
     applyPatch: async () => null,
     recordDiagnostic: async () => undefined,
+    resolveFacts: async () => undefined,
     recordFact: async () => undefined,
     recordSearchDocument: async () => undefined,
     recordQuestion: async () => undefined,
