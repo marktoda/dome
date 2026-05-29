@@ -51,19 +51,17 @@ The run ledger stores `status`, `started_at`, `finished_at`, `duration_ms`, `err
 
 ## Timeouts
 
-Timeouts are phase-scoped. The current runtime resolves per-processor
-execution metadata and default phase policy inside `resolveExecutionPolicy`;
-vault-level timeout caps from `.dome/config.yaml` are a planned v1.x policy
-surface, not yet wired through `src/processors/runtime.ts`.
+Timeouts are phase-scoped. The runtime resolves per-processor execution
+metadata, default phase policy, and optional vault-level caps inside
+`resolveExecutionPolicy`.
 
-Planned vault-level configuration:
+Vault-level configuration:
 
 ```yaml
 engine:
-  processor_timeouts_ms:
-    adoption: 2000
-    garden: 120000
-    view: 30000
+  # Optional global caps applied after manifest/default policy resolution.
+  processor_timeout_ms: 600000
+  model_call_timeout_ms: 180000
 ```
 
 Defaults:

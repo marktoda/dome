@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { CapabilitySchema, type Capability } from "../core/processor";
+import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import { err, ok, type Result } from "../types";
 
 export type CapabilityPolicy = {
@@ -29,6 +30,7 @@ export type CapabilityPolicy = {
 export type RuntimeConfig = {
   readonly engine: {
     readonly maxIterations: number;
+    readonly executionCap: ExecutionPolicyCap;
   };
   readonly git: {
     readonly auto_commit_workflows: boolean;
@@ -142,6 +144,7 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   engine: Object.freeze({
     maxIterations: 100,
+    executionCap: Object.freeze({}),
   }),
   git: Object.freeze({
     auto_commit_workflows: true,
@@ -212,6 +215,16 @@ function parseRuntimeConfig(
     DEFAULT_RUNTIME_CONFIG.engine.maxIterations,
   );
   if (!maxIterations.ok) return err(maxIterations.error);
+  const processorTimeoutMs = parseOptionalPositiveInteger(
+    engine.processor_timeout_ms,
+    `${path} engine.processor_timeout_ms`,
+  );
+  if (!processorTimeoutMs.ok) return err(processorTimeoutMs.error);
+  const modelCallTimeoutMs = parseOptionalPositiveInteger(
+    engine.model_call_timeout_ms,
+    `${path} engine.model_call_timeout_ms`,
+  );
+  if (!modelCallTimeoutMs.ok) return err(modelCallTimeoutMs.error);
 
   const engineAutoCommit = parseOptionalBoolean(
     engine.auto_commit_workflows,
@@ -237,6 +250,14 @@ function parseRuntimeConfig(
     Object.freeze({
       engine: Object.freeze({
         maxIterations: maxIterations.value,
+        executionCap: freezeExecutionCap({
+          ...(processorTimeoutMs.value !== undefined
+            ? { timeoutMs: processorTimeoutMs.value }
+            : {}),
+          ...(modelCallTimeoutMs.value !== undefined
+            ? { modelCallTimeoutMs: modelCallTimeoutMs.value }
+            : {}),
+        }),
       }),
       git: Object.freeze({
         auto_commit_workflows:
@@ -248,7 +269,12 @@ function parseRuntimeConfig(
   );
 }
 
-const ENGINE_KEYS = new Set(["max_iterations", "auto_commit_workflows"]);
+const ENGINE_KEYS = new Set([
+  "max_iterations",
+  "auto_commit_workflows",
+  "processor_timeout_ms",
+  "model_call_timeout_ms",
+]);
 const GIT_KEYS = new Set(["auto_commit_workflows"]);
 
 function parsePositiveInteger(
@@ -261,6 +287,21 @@ function parsePositiveInteger(
     return err(`${label} must be a positive integer`);
   }
   return ok(raw);
+}
+
+function parseOptionalPositiveInteger(
+  raw: unknown,
+  label: string,
+): Result<number | undefined, string> {
+  if (raw === undefined) return ok(undefined);
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw <= 0) {
+    return err(`${label} must be a positive integer`);
+  }
+  return ok(raw);
+}
+
+function freezeExecutionCap(cap: ExecutionPolicyCap): ExecutionPolicyCap {
+  return Object.freeze({ ...cap });
 }
 
 function parseOptionalBoolean(

@@ -420,6 +420,7 @@ export async function openVaultRuntime(
     operational: operationalQueryView,
     pageTypes,
     executionState,
+    executionCap: policy.runtime.engine.executionCap,
     ...(modelProvider !== undefined ? { modelProvider } : {}),
   });
 

@@ -122,6 +122,8 @@ extensions:
       `
 engine:
   max_iterations: 7
+  processor_timeout_ms: 300000
+  model_call_timeout_ms: 120000
   auto_commit_workflows: false
 git:
   auto_commit_workflows: false
@@ -135,7 +137,13 @@ extensions: {}
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.runtime).toEqual({
-      engine: { maxIterations: 7 },
+      engine: {
+        maxIterations: 7,
+        executionCap: {
+          timeoutMs: 300000,
+          modelCallTimeoutMs: 120000,
+        },
+      },
       git: { auto_commit_workflows: false },
     });
   });
@@ -158,6 +166,28 @@ engine:
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("engine.max_iterations must be a positive integer");
+  });
+
+  test("rejects malformed runtime execution caps", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+engine:
+  processor_timeout_ms: 0
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "engine.processor_timeout_ms must be a positive integer",
+    );
   });
 
   test("rejects conflicting auto-commit mirrors", async () => {

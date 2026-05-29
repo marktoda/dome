@@ -36,6 +36,7 @@ import { makeManualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/compile-range";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import type { ModelProvider } from "../../src/engine/model-invoke";
+import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 
@@ -94,6 +95,7 @@ function buildRuntimeFor(
   ledger: LedgerDb,
   overrides?: {
     resolveGrants?: (processorId: string) => ReadonlyArray<Capability>;
+    executionCap?: ExecutionPolicyCap;
     modelProvider?: ModelProvider;
   },
 ) {
@@ -105,6 +107,9 @@ function buildRuntimeFor(
     extensionIdFor: (id) => id,
     resolveTree: async () => TREE,
     ledger,
+    ...(overrides?.executionCap !== undefined
+      ? { executionCap: overrides.executionCap }
+      : {}),
     ...(overrides?.modelProvider !== undefined
       ? { modelProvider: overrides.modelProvider }
       : {}),
@@ -585,6 +590,38 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     const parsedSkipped = JSON.parse(skipped.error ?? "{}");
     expect(parsedSkipped.code).toBe("processor.quarantined");
     expect(parsedSkipped.retryable).toBe(false);
+  });
+
+  test("vault execution cap bounds processor timeout at dispatch", async () => {
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.execution-cap",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      execution: { class: "background", timeoutMs: 1_000 },
+      run: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger, {
+      executionCap: { timeoutMs: 5 },
+    });
+
+    const results = await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(results[0]?.executionStatus).toBe("timed_out");
+    expect(results[0]?.executionError?.code).toBe("processor.timeout");
+    expect(results[0]?.executionError?.message).toContain("5ms");
+    const rows = queryRuns(ledger, { processorId: "test.ledger.execution-cap" });
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.status).toBe("timed_out");
   });
 
   test("no ledger wired (Phase 6 transitional) — runs proceed and no rows are written", async () => {

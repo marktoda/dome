@@ -347,6 +347,11 @@ engine:
   # or in a patch-fight); surface diagnostic + block.
   max_iterations: 100
 
+  # Optional global execution caps. Uncomment to bound processor manifest
+  # requests more tightly for this vault.
+  # processor_timeout_ms: 600000
+  # model_call_timeout_ms: 180000
+
   # Auto-commit closure commits when adoption-phase processors emit
   # patches that converge. When false, processors that emit PatchEffect
   # are dropped (with a diagnostic). Default true for normal vaults.

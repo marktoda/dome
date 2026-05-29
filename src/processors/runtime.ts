@@ -107,6 +107,7 @@ import {
 import {
   resolveExecutionPolicy,
   type ExecutionPolicyError,
+  type ExecutionPolicyCap,
   type ResolvedExecutionPolicy,
 } from "./execution-policy";
 import {
@@ -275,6 +276,7 @@ export type BuildRuntimeOptions = {
   readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
 };
 
@@ -307,6 +309,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     projection,
     operational,
     pageTypes,
+    executionCap,
     modelProvider,
   } = opts;
   const executionState =
@@ -351,6 +354,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(executionCap !== undefined ? { executionCap } : {}),
         ...(input.signal !== undefined ? { signal: input.signal } : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
@@ -407,6 +411,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(executionCap !== undefined ? { executionCap } : {}),
         ...(input.signal !== undefined ? { signal: input.signal } : {}),
         ...(operational !== undefined ? { operational } : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
@@ -487,6 +492,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       extensionIdFor,
       ledger,
       executionState,
+      ...(executionCap !== undefined ? { executionCap } : {}),
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
       ...(pageTypes !== undefined ? { pageTypes } : {}),
       ...(modelProvider !== undefined ? { modelProvider } : {}),
@@ -575,6 +581,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger: LedgerDb | undefined;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly signal?: AbortSignal;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
@@ -603,6 +610,7 @@ type DispatchFrame = {
   readonly granted: ReadonlyArray<Capability>;
   readonly inspectedPaths: ReadonlyArray<string>;
   readonly startedAt: Date;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly ledger?: LedgerDb;
 };
 
@@ -690,6 +698,9 @@ function beginDispatch<TEnvelope>(
     granted,
     inspectedPaths: filterReadablePaths(opts.changedPaths, declared, granted),
     startedAt,
+    ...(opts.executionCap !== undefined
+      ? { executionCap: opts.executionCap }
+      : {}),
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
   };
   return Object.freeze(frame);
@@ -701,7 +712,7 @@ function resolveDispatchPolicy(frame: DispatchFrame): ReturnType<
   return resolveExecutionPolicy({
     phase: frame.phase,
     request: frame.processor.execution,
-    vaultCap: undefined,
+    vaultCap: frame.executionCap,
   });
 }
 
