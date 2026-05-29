@@ -54,6 +54,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "adoptedRefDivergence",
   "instructionDrift",
   "operationalSchemaMismatch",
+  "capabilityGrantGaps",
 ]);
 
 const QUERY_KEYS = Object.freeze(["schema", "query", "filters", "matches"]);

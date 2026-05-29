@@ -258,6 +258,13 @@ Processor-specific grants live under `extensions.<bundle>.processors.<processor-
 
 Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown processor-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, non-map `processors`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, `processors`, and opaque per-extension `config`. Processor-level keys are closed to `grant` and `grants`.
 
+`dome doctor` also reports active processors whose declared capability kinds
+are entirely missing from their effective vault grants. This is a read-only
+configuration-drift probe for older or hand-edited `.dome/config.yaml` files:
+it catches cases where an enabled processor would later skip, degrade, or
+block during capability enforcement because the bundle was installed without
+the matching grant kind.
+
 Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, inbox/generated capture reads, generated-page and synthesis-page patch grants, and `dome.intake.*` graph writes so low-confidence extracted items become user-mediated writes instead of silent writes, model-written syntheses remain source-linked, confidence-carrying facts stay rebuildable, and stale-inbox diagnostics can inspect active inbox buckets. Third-party bundles default to inactive until the user explicitly opts in.
 
 ## Enforcement chokepoint

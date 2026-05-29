@@ -285,6 +285,8 @@ Work:
       adopted-ref divergence, and stuck-pending outbox rows.
 - [x] Add non-destructive reporting for operational DB schema mismatches
       before any unrebuildable state is refused or wiped.
+- [x] Add read-only `dome doctor` reporting for enabled processors whose
+      declared capability kinds are missing from the vault's effective grants.
 - [x] Make `dome doctor` render health findings, not a grab bag of admin
       operations.
 - [x] Move quarantine into durable operational state or provide inspect/reset
@@ -317,6 +319,9 @@ Acceptance:
 - [x] Orphan run is detected by doctor.
 - [x] Orphan run is recoverable through shipped `dome.health` questions, not
       direct sqlite edits.
+- [x] Old or hand-edited configs with enabled processors but missing grant
+      kinds are visible in doctor before the next sync blocks on capability
+      enforcement.
 
 ## Milestone 5 - Daily Note and Task Loop
 
@@ -491,6 +496,8 @@ Work:
 - [x] Add docs for the foreground compiler workflow and recovery loop.
 - [x] Dogfood `dome sync --vault docs --json`; this uncovered and fixed
       branch/worktree materialization for engine-created commits.
+- [x] Dogfood `dome doctor --vault ~/vaults/work --json`; this uncovered and
+      fixed missing-grant drift reporting for old first-party config.
 - [ ] Dogfood against `docs/` and `~/vaults/work`.
 
 Acceptance:

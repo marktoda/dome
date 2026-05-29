@@ -426,7 +426,9 @@ function + one case in the dispatcher; no new CLI surface per subject.
 Engine-substrate **health check** verb. The current implementation is
 probe-only and read-only: it reports failed/stuck outbox rows, orphan running
 rows, quarantined processor triggers, projection cache drift, adopted-ref
-divergence, and instruction drift from `src/engine/health.ts`.
+divergence, instruction drift, operational schema mismatches, and enabled
+processor capability kinds that are declared but not granted from
+`src/engine/health.ts`.
 
 **Current behavior.** `dome doctor` opens the runtime, collects a
 `HealthReport`, prints a compact text report, and exits 0. `--json` emits the

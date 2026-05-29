@@ -24,6 +24,8 @@ import type {
 } from "../processors/execution-state";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha, isAncestor } from "../git";
+import type { Capability } from "../core/processor";
+import type { ProcessorRegistry } from "../processors/registry";
 
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
 export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
@@ -136,6 +138,18 @@ export type HealthFinding =
         readonly stored: string | null;
         readonly expected: string;
       };
+    }
+  | {
+      readonly code: "capability.grant-missing";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly capability: {
+        readonly processorId: string;
+        readonly missingKinds: ReadonlyArray<Capability["kind"]>;
+      };
     };
 
 export type HealthSummary = {
@@ -150,6 +164,7 @@ export type HealthSummary = {
   readonly adoptedRefDivergence: number;
   readonly instructionDrift: number;
   readonly operationalSchemaMismatch: number;
+  readonly capabilityGrantGaps: number;
 };
 
 export type HealthReport = {
@@ -174,6 +189,10 @@ export async function collectHealthReport(opts: {
     readonly version: string;
   }>;
   readonly capabilityPolicyHash: string;
+  readonly registry?: ProcessorRegistry;
+  readonly resolveGrants?: (
+    processorId: string,
+  ) => ReadonlyArray<Capability>;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -198,9 +217,17 @@ export async function collectHealthReport(opts: {
   const adoptedDivergence = await adoptedRefDivergenceFinding(opts.vaultPath);
   const instructionDrift = instructionDriftFindings(opts.vaultPath);
   const storageSchema = collectOperationalSchemaFindings(opts.vaultPath);
+  const capabilityGrants =
+    opts.registry === undefined || opts.resolveGrants === undefined
+      ? []
+      : capabilityGrantFindings({
+          registry: opts.registry,
+          resolveGrants: opts.resolveGrants,
+        });
 
   const findings: HealthFinding[] = [
     ...storageSchema,
+    ...capabilityGrants,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -246,9 +273,58 @@ function buildHealthReport(
       adoptedRefDivergence: count("adopted-ref.diverged"),
       instructionDrift: count("instructions.drift"),
       operationalSchemaMismatch: count("operational.schema-mismatch"),
+      capabilityGrantGaps: count("capability.grant-missing"),
     }),
     findings: Object.freeze([...findings]),
   });
+}
+
+function capabilityGrantFindings(opts: {
+  readonly registry: ProcessorRegistry;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+}): ReadonlyArray<HealthFinding> {
+  const findings: HealthFinding[] = [];
+  for (const processor of opts.registry.all()) {
+    const declaredKinds = capabilityKinds(processor.capabilities);
+    if (declaredKinds.size === 0) continue;
+    const grantedKinds = capabilityKinds(opts.resolveGrants(processor.id));
+    const missingKinds = [...declaredKinds]
+      .filter((kind) => !grantedKinds.has(kind))
+      .sort();
+    if (missingKinds.length === 0) continue;
+    findings.push(
+      Object.freeze({
+        code: "capability.grant-missing" as const,
+        severity: "warning" as const,
+        subject: "config" as const,
+        id: processor.id,
+        message:
+          `Processor ${processor.id} declares ` +
+          `${formatList(missingKinds)} but the vault config does not grant ` +
+          `${missingKinds.length === 1 ? "that capability" : "those capabilities"}.`,
+        recovery:
+          "Update .dome/config.yaml to grant the capability, or disable the " +
+          "processor/bundle if the missing capability is intentionally denied.",
+        capability: Object.freeze({
+          processorId: processor.id,
+          missingKinds: Object.freeze(missingKinds),
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+function capabilityKinds(
+  capabilities: ReadonlyArray<Capability>,
+): ReadonlySet<Capability["kind"]> {
+  return new Set(capabilities.map((capability) => capability.kind));
+}
+
+function formatList(values: ReadonlyArray<string>): string {
+  if (values.length === 0) return "";
+  if (values.length === 1) return `'${values[0]}'`;
+  return values.map((value) => `'${value}'`).join(", ");
 }
 
 function isStuckPendingOutbox(

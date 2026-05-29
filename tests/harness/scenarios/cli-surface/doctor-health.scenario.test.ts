@@ -141,3 +141,76 @@ scenario(
     ]);
   },
 );
+
+scenario(
+  {
+    name: "cli-surface: dome doctor reports enabled processor grant gaps",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "capability", capability: "question.ask" },
+    ],
+    harness: {
+      bundles: ["dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml":
+          "extensions:\n" +
+          "  dome.markdown:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read: [\"**/*.md\"]\n",
+        "AGENTS.md":
+          "# This is a Dome vault.\n\n" +
+          "<!-- BEGIN user-prose -->\n" +
+          "<!-- END user-prose -->\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+      },
+    },
+  },
+  async (h) => {
+    const doctor = await h.runCli(["doctor", "--json"]);
+    expect(doctor.exitCode).toBe(0);
+    expect(doctor.stderr).toBe("");
+    const report = JSON.parse(doctor.stdout) as {
+      readonly status: string;
+      readonly summary: {
+        readonly capabilityGrantGaps: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly id: string;
+        readonly capability?: {
+          readonly processorId: string;
+          readonly missingKinds: ReadonlyArray<string>;
+        };
+      }>;
+    };
+
+    expect(report.status).toBe("unhealthy");
+    expect(report.summary.capabilityGrantGaps).toBe(2);
+
+    const grantGaps = report.findings.filter(
+      (finding) => finding.code === "capability.grant-missing",
+    );
+    expect(grantGaps.map((finding) => finding.id).sort()).toEqual([
+      "dome.markdown.duplicate-detection",
+      "dome.markdown.normalize-frontmatter",
+    ]);
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.normalize-frontmatter",
+          missingKinds: ["patch.auto"],
+        },
+      }),
+    );
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.duplicate-detection",
+          missingKinds: ["question.ask"],
+        },
+      }),
+    );
+  },
+);
