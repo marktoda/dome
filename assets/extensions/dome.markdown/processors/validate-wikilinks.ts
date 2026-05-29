@@ -73,7 +73,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
