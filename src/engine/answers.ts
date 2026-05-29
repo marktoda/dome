@@ -29,14 +29,13 @@ import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ProcessorRegistry } from "../processors/registry";
 import type { TriggerMatch } from "../processors/triggers";
-import { recordEffectCapabilityUse } from "./effect-capability-use";
-import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
+import type { ApplyEffectSinks } from "./apply-effect";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "./apply-patch";
 import { recordDiagnosticsViaSink } from "./diagnostics";
-import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
+import { routeGardenRunEffects } from "./garden-run-routing";
 import type { ModelProvider } from "./model-invoke";
 import type {
   RunId,
@@ -218,65 +217,32 @@ async function runAnswerHandlersInner(opts: {
       ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     });
 
-    let authorizedPatchCount = 0;
-    for (const effect of result.effects) {
-      if (effect.kind === "patch") {
-        const routed = await dispatchGardenPatchEffect({
-          effect,
-          vault: opts.vault,
-          adopted: inputAdopted,
-          ...(opts.currentAdopted !== undefined
-            ? { currentAdopted: opts.currentAdopted }
-            : {}),
-          processorId: result.processorId,
-          runId: result.runId,
-          proposalId: null,
-          declared: result.declared,
-          granted: result.granted,
-          sinks: opts.sinks,
-          diagnostics,
-          applyGardenPatch,
-          extensionId: opts.extensionIdFor(result.processorId),
-          ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-          ...(opts.adoptSubProposal !== undefined
-            ? { adoptSubProposal: opts.adoptSubProposal }
-            : {}),
-          disabledDiagnostic: {
-            code: "answer.garden-sub-proposal-spawn-disabled",
-            message:
-              `Answer handler ${result.processorId} emitted an authorized ` +
-              `PatchEffect, but no adoptSubProposal callback was wired; ` +
-              `patch dropped.`,
-          },
-        });
-        if (routed.authorized) authorizedPatchCount += 1;
-        if (routed.spawned) subProposalCount += 1;
-        if (routed.rejected) rejectedPatchCount += 1;
-        continue;
-      }
-
-      const applied = await applyEffect({
-        effect,
-        processorId: result.processorId,
-        runId: result.runId,
-        proposalId: null,
-        phase: "garden",
-        declared: result.declared,
-        granted: result.granted,
-        sinks: opts.sinks,
-        candidate: inputAdopted,
-      });
-      if (applied.diagnostics.length > 0) {
-        diagnostics.push(...applied.diagnostics);
-      }
-      recordEffectCapabilityUse({
-        ledger: opts.ledger,
-        runId: result.runId,
-        ...(applied.capabilityUse !== undefined
-          ? { capabilityUse: applied.capabilityUse }
-          : {}),
-      });
-    }
+    const routed = await routeGardenRunEffects({
+      result,
+      vault: opts.vault,
+      adopted: inputAdopted,
+      ...(opts.currentAdopted !== undefined
+        ? { currentAdopted: opts.currentAdopted }
+        : {}),
+      proposalId: null,
+      sinks: opts.sinks,
+      diagnostics,
+      applyGardenPatch,
+      extensionIdFor: opts.extensionIdFor,
+      ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+      ...(opts.adoptSubProposal !== undefined
+        ? { adoptSubProposal: opts.adoptSubProposal }
+        : {}),
+      disabledDiagnostic: {
+        code: "answer.garden-sub-proposal-spawn-disabled",
+        message:
+          `Answer handler ${result.processorId} emitted an authorized ` +
+          `PatchEffect, but no adoptSubProposal callback was wired; ` +
+          `patch dropped.`,
+      },
+    });
+    subProposalCount += routed.spawnedPatchCount;
+    rejectedPatchCount += routed.rejectedPatchCount;
 
     runs.push(
       Object.freeze({
@@ -287,7 +253,7 @@ async function runAnswerHandlersInner(opts: {
           ? { executionError: result.executionError }
           : {}),
         effectCount: result.effects.length,
-        authorizedPatchCount,
+        authorizedPatchCount: routed.authorizedPatchCount,
       }),
     );
   }

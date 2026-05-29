@@ -36,14 +36,12 @@ import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import type { ApplyEffectSinks } from "./apply-effect";
-import { applyEffect } from "./apply-effect";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "./apply-patch";
 import { recordDiagnosticsViaSink } from "./diagnostics";
-import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
-import { recordEffectCapabilityUse } from "./effect-capability-use";
+import { routeGardenRunEffects } from "./garden-run-routing";
 import type { RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
@@ -216,62 +214,31 @@ async function runOneJob(opts: {
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
   });
 
-  for (const effect of result.effects) {
-    if (effect.kind === "patch") {
-      await dispatchGardenPatchEffect({
-        effect,
-        vault: opts.vault,
-        adopted: inputAdopted,
-        ...(opts.currentAdopted !== undefined
-          ? { currentAdopted: opts.currentAdopted }
-          : {}),
-        processorId: result.processorId,
-        runId: result.runId,
-        proposalId: null,
-        declared: result.declared,
-        granted: result.granted,
-        sinks: opts.sinks,
-        diagnostics: opts.diagnostics,
-        extensionId: opts.extensionIdFor(result.processorId),
-        applyGardenPatch: opts.applyGardenPatch,
-        ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-        ...(opts.adoptSubProposal !== undefined
-          ? { adoptSubProposal: opts.adoptSubProposal }
-          : {}),
-        now: opts.now,
-        disabledDiagnostic: {
-          code: "jobs.garden-sub-proposal-spawn-disabled",
-          message:
-            `Queued job processor ${result.processorId} emitted an authorized ` +
-            `PatchEffect, but no adoptSubProposal callback was wired; ` +
-            `patch dropped.`,
-        },
-      });
-      continue;
-    }
-
-    const applied = await applyEffect({
-      effect,
-      processorId: result.processorId,
-      runId: result.runId,
-      proposalId: null,
-      phase: "garden",
-      declared: result.declared,
-      granted: result.granted,
-      sinks: opts.sinks,
-      candidate: inputAdopted,
-    });
-    if (applied.diagnostics.length > 0) {
-      opts.diagnostics.push(...applied.diagnostics);
-    }
-    recordEffectCapabilityUse({
-      ledger: opts.ledger,
-      runId: result.runId,
-      ...(applied.capabilityUse !== undefined
-        ? { capabilityUse: applied.capabilityUse }
-        : {}),
-    });
-  }
+  await routeGardenRunEffects({
+    result,
+    vault: opts.vault,
+    adopted: inputAdopted,
+    ...(opts.currentAdopted !== undefined
+      ? { currentAdopted: opts.currentAdopted }
+      : {}),
+    proposalId: null,
+    sinks: opts.sinks,
+    diagnostics: opts.diagnostics,
+    applyGardenPatch: opts.applyGardenPatch,
+    extensionIdFor: opts.extensionIdFor,
+    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+    ...(opts.adoptSubProposal !== undefined
+      ? { adoptSubProposal: opts.adoptSubProposal }
+      : {}),
+    now: opts.now,
+    disabledDiagnostic: {
+      code: "jobs.garden-sub-proposal-spawn-disabled",
+      message:
+        `Queued job processor ${result.processorId} emitted an authorized ` +
+        `PatchEffect, but no adoptSubProposal callback was wired; ` +
+        `patch dropped.`,
+    },
+  });
 
   if (result.executionStatus === "succeeded") {
     markJobSucceeded(opts.projection, opts.job.id, opts.now());

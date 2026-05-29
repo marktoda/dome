@@ -58,13 +58,13 @@ import {
 } from "../core/effect";
 import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
-import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
+import type { ApplyEffectSinks } from "./apply-effect";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "./apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
-import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
+import { routeGardenRunEffects } from "./garden-run-routing";
 import type { EngineVault } from "./vault-shape";
 import {
   getCursor,
@@ -88,7 +88,6 @@ import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import { recordDiagnosticsViaSink } from "./diagnostics";
-import { recordEffectCapabilityUse } from "./effect-capability-use";
 
 type AdoptScheduledSubProposalFn = (
   proposal: Proposal,
@@ -355,62 +354,30 @@ async function runSchedulerInner(opts: {
         ...(operational !== undefined ? { operational } : {}),
       });
 
-      // Route each emitted effect through the phase-appropriate boundary.
       // Scheduled garden PatchEffects become garden sub-Proposals, matching
       // signal-triggered garden semantics instead of mutating a candidate
       // through the generic applyPatch sink.
-      for (const effect of result.effects) {
-        if (effect.kind === "patch") {
-          await dispatchGardenPatchEffect({
-            effect,
-            vault,
-            adopted: inputAdopted,
-            ...(currentAdopted !== undefined ? { currentAdopted } : {}),
-            processorId: result.processorId,
-            runId: result.runId,
-            proposalId: null,
-            declared: result.declared,
-            granted: result.granted,
-            sinks,
-            diagnostics,
-            applyGardenPatch,
-            extensionId: extensionIdFor(result.processorId),
-            ...(ledger !== undefined ? { ledger } : {}),
-            ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
-            now,
-            disabledDiagnostic: {
-              code: "scheduler.garden-sub-proposal-spawn-disabled",
-              message:
-                `Scheduled garden processor ${result.processorId} emitted ` +
-                `an authorized PatchEffect, but no adoptSubProposal ` +
-                `callback was wired; patch dropped.`,
-            },
-          });
-          continue;
-        }
-
-        const applied = await applyEffect({
-          effect,
-          processorId: result.processorId,
-          runId: result.runId,
-          proposalId: null,
-          phase,
-          declared: result.declared,
-          granted: result.granted,
-          sinks,
-          candidate: inputAdopted,
-        });
-        if (applied.diagnostics.length > 0) {
-          diagnostics.push(...applied.diagnostics);
-        }
-        recordEffectCapabilityUse({
-          ledger,
-          runId: result.runId,
-          ...(applied.capabilityUse !== undefined
-            ? { capabilityUse: applied.capabilityUse }
-            : {}),
-        });
-      }
+      await routeGardenRunEffects({
+        result,
+        vault,
+        adopted: inputAdopted,
+        ...(currentAdopted !== undefined ? { currentAdopted } : {}),
+        proposalId: null,
+        sinks,
+        diagnostics,
+        applyGardenPatch,
+        extensionIdFor,
+        ...(ledger !== undefined ? { ledger } : {}),
+        ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
+        now,
+        disabledDiagnostic: {
+          code: "scheduler.garden-sub-proposal-spawn-disabled",
+          message:
+            `Scheduled garden processor ${result.processorId} emitted ` +
+            `an authorized PatchEffect, but no adoptSubProposal ` +
+            `callback was wired; patch dropped.`,
+        },
+      });
 
       // Success means the executor accepted the invocation as a processor
       // success. Executor failures/timeouts/cancellations and not-invoked
