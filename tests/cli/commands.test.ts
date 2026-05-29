@@ -61,6 +61,7 @@ import { openOutboxDb } from "../../src/outbox/db";
 import {
   insertPending,
   markFailed as markOutboxFailed,
+  queryOutbox,
 } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
 import {
@@ -675,6 +676,66 @@ describe("runInit", () => {
     },
     30_000,
   );
+
+  test(
+    "vault-local bundle external handlers dispatch ExternalActionEffect rows",
+    async () => {
+      const target = mkdtempSync(join(tmpdir(), "cli-local-handler-"));
+      try {
+        expect(await runInit({ path: target })).toBe(0);
+        await writeLocalExternalHandlerBundle(target);
+        await appendLocalExternalHandlerConfig(target);
+        await commit({
+          path: target,
+          message: "enable local external handler bundle\n",
+          files: [
+            ".dome/config.yaml",
+            ".dome/extensions/custom.external/manifest.json",
+            ".dome/extensions/custom.external/processors/emit.ts",
+            ".dome/extensions/custom.external/external-handlers/calendar.write.ts",
+          ],
+        });
+
+        expect(await runSync({ vault: target })).toBe(0);
+
+        await writeFile(
+          join(target, "wiki", "handler.md"),
+          "# Handler proof\n",
+          "utf8",
+        );
+        await commit({
+          path: target,
+          message: "trigger local external handler\n",
+          files: ["wiki/handler.md"],
+        });
+
+        expect(await runSync({ vault: target })).toBe(0);
+
+        const outboxResult = await openOutboxDb({
+          path: join(target, ".dome", "state", "outbox.db"),
+        });
+        expect(outboxResult.ok).toBe(true);
+        if (!outboxResult.ok) return;
+        try {
+          const row = queryOutbox(outboxResult.value.db, {
+            capability: "calendar.write",
+          })[0];
+          expect(row).toEqual(
+            expect.objectContaining({
+              idempotencyKey: "custom.external:wiki/handler.md",
+              status: "sent",
+              externalId: "local-handler:wiki/handler.md",
+            }),
+          );
+        } finally {
+          outboxResult.value.db.close();
+        }
+      } finally {
+        await rm(target, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
 });
 
 async function appendLocalBundleConfig(target: string): Promise<void> {
@@ -734,6 +795,86 @@ async function writeLocalDiagnosticBundle(target: string): Promise<void> {
           }];
         },
       };
+    `,
+    "utf8",
+  );
+}
+
+async function appendLocalExternalHandlerConfig(target: string): Promise<void> {
+  const configPath = join(target, ".dome", "config.yaml");
+  const config = await readFile(configPath, "utf8");
+  const localBundleStanza = `  custom.external:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      external: ["calendar.write"]
+`;
+  await writeFile(
+    configPath,
+    config.replace("\nengine:\n", `\n${localBundleStanza}\nengine:\n`),
+    "utf8",
+  );
+}
+
+async function writeLocalExternalHandlerBundle(target: string): Promise<void> {
+  const bundleDir = join(target, ".dome", "extensions", "custom.external");
+  const processorsDir = join(bundleDir, "processors");
+  const handlersDir = join(bundleDir, "external-handlers");
+  await mkdir(processorsDir, { recursive: true });
+  await mkdir(handlersDir, { recursive: true });
+  await writeFile(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({
+      id: "custom.external",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "custom.external.emit",
+          version: "0.1.0",
+          phase: "garden",
+          triggers: [
+            {
+              kind: "signal",
+              name: "file.created",
+              pathPattern: "wiki/handler.md",
+            },
+          ],
+          capabilities: [
+            { kind: "read", paths: ["wiki/**/*.md"] },
+            { kind: "external", capability: "calendar.write" },
+          ],
+          module: "processors/emit.ts",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(processorsDir, "emit.ts"),
+    `
+      export default {
+        async run(ctx) {
+          const path = "wiki/handler.md";
+          const content = await ctx.snapshot.readFile(path);
+          if (content === null) return [];
+          return [{
+            kind: "external",
+            capability: "calendar.write",
+            idempotencyKey: "custom.external:" + path,
+            payload: { path },
+            sourceRefs: [ctx.sourceRef(path)],
+          }];
+        },
+      };
+    `,
+    "utf8",
+  );
+  await writeFile(
+    join(handlersDir, "calendar.write.ts"),
+    `
+      export default async function handle(input) {
+        return { externalId: "local-handler:" + input.payload.path };
+      }
     `,
     "utf8",
   );

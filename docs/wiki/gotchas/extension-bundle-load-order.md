@@ -17,7 +17,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 1. **`page-type-collision`** — two bundles declare `page-types.yaml extensions:` entries with the same `name:`. Or a bundle's page-type name collides with a vault-local declaration in `<vault>/.dome/page-types.yaml`.
 2. **`duplicate-processor-id`** — two bundles register processors with the same fully qualified manifest id. First-party bundles use dotted bundle-prefixed ids such as `dome.daily.task-index`; third-party bundles should use the same convention.
-3. **`capability-handler-collision`** — two bundles register handlers for the same external capability (e.g., both `acme.calendar` and `widget.cal` register `calendar.write` handlers). The user must enable one or the other.
+3. **`external-handler-collision`** — two bundles register handlers for the same external capability (e.g., both `acme.calendar` and `widget.cal` register `calendar.write` handlers). The user must enable one or the other.
 4. **`bundle-deps-unmet`** — a bundle's `deps:` block names a bundle not present in `<vault>/.dome/extensions/`. The bundle that depends on the missing one fails to load.
 5. **`duplicate-command-trigger`** — two bundles register command-triggered view-phase processors with the same `triggers[].name` (the CLI surface name). Or one malformed view processor repeats the same command trigger.
 
@@ -41,7 +41,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 - **CLI command collision.** A bundle declares a view-phase processor with `triggers: [{ kind: "command", name: "lint" }]` — colliding with `dome.lint`. Runtime opening fails during registry validation with `duplicate-command-trigger`.
 
-- **Capability handler collision.** Two bundles register `external-handlers/calendar.write.ts`. The user must pick one (disable the other in `.dome/config.yaml`).
+- **External handler collision.** Two bundles register `external-handlers/calendar.write.ts`. The user must pick one (disable the other in `.dome/config.yaml`).
 
 - **Cross-bundle dependency unmet.** `community.advanced-recall` depends on `community.basic-recall`. The user installs only the former. Load fails with `bundle-deps-unmet`; the message names the missing dep.
 

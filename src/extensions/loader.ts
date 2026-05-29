@@ -34,8 +34,9 @@
 //     in alphabetical-directory order; circular / dependent bundles aren't
 //     supported.
 //   - Bundle install / scaffold logic — that's `dome init` (later phase).
-//   - External-handler registration — Phase 9+ adds the
-//     `external-handlers/` directory scan.
+//   - Scans `<bundle>/external-handlers/*.ts` and registers default-exported
+//     handler functions by filename stem. Handler collision across the selected
+//     bundle set fails before runtime open.
 //   - Per-bundle preamble loading — Phase 9+ adds that. Bundle page types
 //     are loaded today via `page-types.yaml`.
 //
@@ -46,6 +47,7 @@
 //     the `yaml` package (already in package.json).
 
 import { readFile, readdir, stat } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -53,6 +55,7 @@ import { parse as parseYaml } from "yaml";
 
 import { err, ok, type Result } from "../types";
 import type { Processor, ProcessorImplementation } from "../core/processor";
+import type { ExternalHandler } from "../outbox/dispatch";
 import {
   mergePageTypeDeclarations,
   parsePageTypesYaml,
@@ -77,6 +80,7 @@ export type LoadedBundle = {
   readonly id: string;
   readonly version: string;
   readonly processors: ReadonlyArray<Processor<unknown>>;
+  readonly externalHandlers: ReadonlyMap<string, ExternalHandler>;
   readonly pageTypes: ReadonlyArray<PageTypeDeclaration>;
   readonly bundlePath: string;
 };
@@ -138,6 +142,27 @@ export type LoadBundlesError =
       readonly kind: "processor-missing-default-export";
       readonly bundleId: string;
       readonly modulePath: string;
+    }
+  | {
+      readonly kind: "external-handler-read-failed";
+      readonly bundleId: string;
+      readonly cause: string;
+    }
+  | {
+      readonly kind: "external-handler-module-load-failed";
+      readonly bundleId: string;
+      readonly modulePath: string;
+      readonly cause: string;
+    }
+  | {
+      readonly kind: "external-handler-missing-default-export";
+      readonly bundleId: string;
+      readonly modulePath: string;
+    }
+  | {
+      readonly kind: "external-handler-collision";
+      readonly capability: string;
+      readonly bundleIds: ReadonlyArray<string>;
     }
   | {
       readonly kind: "page-type-read-failed";
@@ -265,6 +290,10 @@ export async function loadBundles(
       cause: pageTypeCollisionCheck.error,
     });
   }
+  const externalHandlerCollisionCheck = detectExternalHandlerCollision(loaded);
+  if (externalHandlerCollisionCheck !== null) {
+    return err(externalHandlerCollisionCheck);
+  }
 
   return ok(Object.freeze(loaded));
 }
@@ -302,6 +331,10 @@ export async function loadBundlesFromRoots(
       kind: "page-type-collision",
       cause: pageTypeCollisionCheck.error,
     });
+  }
+  const externalHandlerCollisionCheck = detectExternalHandlerCollision(loaded);
+  if (externalHandlerCollisionCheck !== null) {
+    return err(externalHandlerCollisionCheck);
   }
   return ok(Object.freeze(loaded));
 }
@@ -385,12 +418,18 @@ async function loadOneBundle(
     if (!procResult.ok) return err(procResult.error);
     processors.push(procResult.value);
   }
+  const externalHandlersResult = await loadExternalHandlers(
+    bundlePath,
+    manifest.id,
+  );
+  if (!externalHandlersResult.ok) return err(externalHandlersResult.error);
 
   return ok(
     Object.freeze({
       id: manifest.id,
       version: manifest.version,
       processors: Object.freeze(processors),
+      externalHandlers: externalHandlersResult.value,
       pageTypes,
       bundlePath,
     }),
@@ -601,6 +640,101 @@ function resolveProcessorModulePath(
   return ok(moduleAbs);
 }
 
+async function loadExternalHandlers(
+  bundlePath: string,
+  bundleId: string,
+): Promise<Result<ReadonlyMap<string, ExternalHandler>, LoadBundlesError>> {
+  const handlersRoot = join(bundlePath, "external-handlers");
+  let entries: Dirent[];
+  try {
+    entries = await readdir(handlersRoot, { withFileTypes: true });
+  } catch (e) {
+    if (isMissingPathError(e)) return ok(new Map());
+    return err({
+      kind: "external-handler-read-failed",
+      bundleId,
+      cause: stringifyCause(e),
+    });
+  }
+
+  const moduleFiles: string[] = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".ts") || entry.name.endsWith(".d.ts")) continue;
+    if (entry.isFile()) {
+      moduleFiles.push(entry.name);
+      continue;
+    }
+    if (entry.isSymbolicLink()) {
+      try {
+        const targetStat = await stat(join(handlersRoot, entry.name));
+        if (targetStat.isFile()) moduleFiles.push(entry.name);
+      } catch {
+        // Broken symlink — skip silently during enumeration.
+      }
+    }
+  }
+  moduleFiles.sort();
+
+  const handlers = new Map<string, ExternalHandler>();
+  for (const moduleFile of moduleFiles) {
+    const capability = moduleFile.slice(0, -".ts".length);
+    const modulePath = join("external-handlers", moduleFile);
+    const moduleAbs = join(handlersRoot, moduleFile);
+    let mod: { default?: unknown };
+    try {
+      mod = (await import(pathToFileURL(moduleAbs).href)) as {
+        default?: unknown;
+      };
+    } catch (e) {
+      return err({
+        kind: "external-handler-module-load-failed",
+        bundleId,
+        modulePath,
+        cause: stringifyCause(e),
+      });
+    }
+    if (typeof mod.default !== "function") {
+      return err({
+        kind: "external-handler-missing-default-export",
+        bundleId,
+        modulePath,
+      });
+    }
+    handlers.set(capability, mod.default as ExternalHandler);
+  }
+
+  return ok(handlers);
+}
+
+function detectExternalHandlerCollision(
+  bundles: ReadonlyArray<LoadedBundle>,
+): Extract<
+  LoadBundlesError,
+  { readonly kind: "external-handler-collision" }
+> | null {
+  const byCapability = new Map<string, string[]>();
+  for (const bundle of bundles) {
+    for (const capability of bundle.externalHandlers.keys()) {
+      const bundleIds = byCapability.get(capability);
+      if (bundleIds === undefined) {
+        byCapability.set(capability, [bundle.id]);
+      } else {
+        bundleIds.push(bundle.id);
+      }
+    }
+  }
+  for (const [capability, bundleIds] of byCapability) {
+    if (bundleIds.length > 1) {
+      return {
+        kind: "external-handler-collision",
+        capability,
+        bundleIds: Object.freeze([...bundleIds]),
+      };
+    }
+  }
+  return null;
+}
+
 function isWithin(root: string, child: string): boolean {
   const rel = relative(resolve(root), resolve(child));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -691,4 +825,8 @@ function bindProcessorDeclaration(
 function stringifyCause(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+function isMissingPathError(e: unknown): boolean {
+  return e instanceof Error && /\bENOENT\b|no such file/i.test(e.message);
 }

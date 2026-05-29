@@ -28,7 +28,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 
 - **Processors** — `<bundle>/processors/*.ts` export implementation objects via `defineProcessorImplementation({ run })` per [[wiki/specs/processors]] §"Registration". The bundle's manifest lists each processor's fully qualified dotted id, version, phase, triggers, capabilities, execution policy, and module path. Bundle-name-prefixed IDs (`dome.daily.create-daily`) prevent cross-bundle collision.
 
-- **External handlers** — `<bundle>/external-handlers/*.ts` register handlers for external capabilities (calendar, notify, network) per [[wiki/specs/capabilities]] §"external". A bundle may register an external handler for a capability it doesn't grant to its own processors (so a calendar-sync bundle can provide a `calendar.write` handler that other bundles' processors consume).
+- **External handlers** — `<bundle>/external-handlers/*.ts` register handlers for external capabilities (calendar, notify, network) per [[wiki/specs/capabilities]] §"external". The filename stem is the capability name, so `external-handlers/calendar.write.ts` registers `calendar.write`. A bundle may register an external handler for a capability it doesn't grant to its own processors (so a calendar-sync bundle can provide a `calendar.write` handler that other bundles' processors consume). Collisions across the loaded bundle set fail before runtime open.
 
 - **Capability grants** — `<bundle>/manifest.yaml`'s `processors[].capabilities` declares per-processor capabilities; `<vault>/.dome/config.yaml`'s `extensions.<bundle>.grant` declares per-bundle grants. The intersection is what the broker enforces per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 

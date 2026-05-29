@@ -320,7 +320,10 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `processor-missing-default-export` | A processor module imports but does not default-export an object. |
 | `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids, duplicate command triggers, empty triggers, or invalid phases. |
 | `page-type-collision` | Two bundles declare the same page-type name; the loader fails before opening the runtime. Vault-local collisions with bundle/default page types are surfaced by `dome.markdown.lint-frontmatter` from the candidate snapshot. |
-| `capability-handler-collision` | Two bundles register handlers for the same external capability. |
+| `external-handler-read-failed` | A bundle's `external-handlers/` directory exists but cannot be read. A missing directory is valid and means the bundle contributes no handlers. |
+| `external-handler-module-load-failed` | A handler module under `external-handlers/*.ts` fails to import. |
+| `external-handler-missing-default-export` | A handler module imports but does not default-export a function. |
+| `external-handler-collision` | Two loaded bundles register handlers for the same external capability. |
 | `bundle-deps-unmet` | A `deps:` entry names a bundle not present in the selected bundles root. |
 
 ### Bundle load lifecycle
@@ -332,7 +335,7 @@ The current runtime composes bundle roots in deterministic order. CLI commands u
 3. **Preamble fragment** loading is planned. Bundle-local `preamble.md` files are part of the intended extension shape, but the current loader does not yet merge them into `AGENTS.md`.
 4. **Processors register** into the engine's processor registry under their fully qualified manifest ids.
 5. **Capabilities register** with the broker.
-6. **External-handler discovery** is planned. The outbox dispatcher supports injected handler registries today; scanning bundle `external-handlers/` directories is a future loader extension.
+6. **External handlers register** by scanning immediate `<bundle>/external-handlers/*.ts` files. The filename stem is the external capability (`calendar.write.ts` registers `calendar.write`), and the module must default-export an async-compatible handler function. Loaded-bundle handler collisions fail before runtime open. Runtime-injected handlers remain available for tests and hosts and override discovered handlers for the same capability.
 
 The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` with a structured `bundle-load-failed` error. Registry validation failures abort startup with `registry-build-failed`.
 
@@ -362,6 +365,13 @@ Four file edits, paralleling the v0.5 "Adding a Tool" recipe:
 2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities / execution.
 3. **The shipped default grants** in `src/cli/default-vault-config.ts` (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`; if one processor in a bundle needs a narrower or broader scope than the rest of the bundle, use `extensions.<bundle>.processors.<processor-id>.grant` as a replacement grant.
 4. **The test** at `tests/processors/<bundle-id>-<processor-id>.test.ts` asserting the processor runs against a representative input and emits the expected effects.
+
+For an **external handler**, add a default-exported function at
+`assets/extensions/<bundle>/external-handlers/<capability>.ts` or
+`<vault>/.dome/extensions/<bundle>/external-handlers/<capability>.ts`. The
+capability name is the filename stem. Handler modules are intentionally outside
+`processors/`: they are allowed to touch external systems, while processors
+remain effect-only.
 
 The substrate scaffold catches the missing pieces:
 - `tests/integration/processor-registration.test.ts` iterates the manifest entries and asserts each bound to an importable processor.

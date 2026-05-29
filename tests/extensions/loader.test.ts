@@ -315,6 +315,62 @@ describe("loadBundlesFromRoots — composed roots", () => {
     if (result.ok) return;
     expect(result.error.kind).toBe("page-type-collision");
   });
+
+  test("loads external handlers from external-handlers/*.ts", async () => {
+    const root = makeTmpRoot("loader-external-handler-");
+    await writeExternalHandlerBundle(root, "test.external", "calendar.write");
+
+    const result = await loadBundles({ bundlesRoot: root });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const handler = result.value[0]?.externalHandlers.get("calendar.write");
+    expect(handler).toBeDefined();
+    if (handler === undefined) return;
+    const handled = await handler({
+      capability: "calendar.write",
+      idempotencyKey: "loader-handler",
+      payload: null,
+      sourceRefs: [],
+      runId: "run-loader",
+      attempt: 1,
+      signal: new AbortController().signal,
+    });
+    expect(handled.externalId).toBe("handled:loader-handler");
+  });
+
+  test("duplicate external handlers across loaded bundles fail loudly", async () => {
+    const root = makeTmpRoot("loader-external-handler-collision-");
+    await writeExternalHandlerBundle(root, "test.external-a", "calendar.write");
+    await writeExternalHandlerBundle(root, "test.external-b", "calendar.write");
+
+    const result = await loadBundles({ bundlesRoot: root });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      kind: "external-handler-collision",
+      capability: "calendar.write",
+      bundleIds: ["test.external-a", "test.external-b"],
+    });
+  });
+
+  test("external handlers must default-export a function", async () => {
+    const root = makeTmpRoot("loader-external-handler-invalid-");
+    await writeEmptyBundle(root, "test.external-invalid");
+    const handlersDir = join(root, "test.external-invalid", "external-handlers");
+    await mkdir(handlersDir, { recursive: true });
+    await writeFile(
+      join(handlersDir, "calendar.write.ts"),
+      "export default {};",
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("external-handler-missing-default-export");
+  });
 });
 
 // ----- Error variants ------------------------------------------------------
@@ -828,5 +884,23 @@ async function writeEmptyBundle(
       version,
       processors: [],
     }),
+  );
+}
+
+async function writeExternalHandlerBundle(
+  root: string,
+  bundleId: string,
+  capability: string,
+): Promise<void> {
+  await writeEmptyBundle(root, bundleId);
+  const handlersDir = join(root, bundleId, "external-handlers");
+  await mkdir(handlersDir, { recursive: true });
+  await writeFile(
+    join(handlersDir, `${capability}.ts`),
+    `
+      export default async function handle(input) {
+        return { externalId: "handled:" + input.idempotencyKey };
+      }
+    `,
   );
 }

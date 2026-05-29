@@ -673,6 +673,9 @@ Work:
 - [x] Compose SDK-shipped bundles with vault-local `.dome/extensions/` by
       default, while keeping `--bundles-root` as an exact override for tests
       and ad-hoc development.
+- [x] Discover bundle external handlers from `external-handlers/*.ts` and
+      thread them into the runtime outbox dispatcher, with collision checks
+      before runtime open and host-injected handlers preserved as overrides.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

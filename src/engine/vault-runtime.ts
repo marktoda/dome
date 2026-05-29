@@ -73,7 +73,10 @@ import { openAnswersDb, type AnswersDb } from "../answers/db";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
 import { buildProjectionQueryView } from "../projections/query-view";
 import { openOutboxDb, type OutboxDb } from "../outbox/db";
-import type { ExternalHandlerRegistry } from "../outbox/dispatch";
+import type {
+  ExternalHandler,
+  ExternalHandlerRegistry,
+} from "../outbox/dispatch";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
 import { buildOperationalQueryView } from "./operational-query-view";
 import { openQuarantineStore } from "./quarantine-store";
@@ -101,7 +104,7 @@ import {
   type PageTypeRegistry,
 } from "../page-types";
 
-const EMPTY_EXTERNAL_HANDLERS: ExternalHandlerRegistry = Object.freeze({});
+const EMPTY_EXTERNAL_HANDLERS: ReadonlyMap<string, ExternalHandler> = new Map();
 
 // ----- Public types ---------------------------------------------------------
 
@@ -378,7 +381,10 @@ function runtimeSettingsForPolicy(input: {
     extensionIdFor: extensionIdForProcessor(
       input.resolved.processorExtensionIds,
     ),
-    externalHandlers: input.opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
+    externalHandlers: mergeExternalHandlerRegistries(
+      input.resolved.externalHandlers,
+      input.opts.externalHandlers,
+    ),
     ...(modelProvider !== undefined ? { modelProvider } : {}),
   });
 }
@@ -585,6 +591,7 @@ type ResolvedRegistry = {
     readonly version: string;
   }>;
   readonly processorExtensionIds: ReadonlyMap<string, string>;
+  readonly externalHandlers: ReadonlyMap<string, ExternalHandler>;
   readonly pageTypes: PageTypeRegistry;
 };
 
@@ -625,6 +632,7 @@ async function resolveRegistryFromOpts(
       extensions: opts.extensions,
       processorVersions: opts.processorVersions,
       processorExtensionIds,
+      externalHandlers: EMPTY_EXTERNAL_HANDLERS,
       pageTypes: pageTypeRegistryForPrebuiltOpts(opts, policy),
     });
   }
@@ -657,6 +665,7 @@ async function resolveRegistryFromOpts(
     extensions: deriveExtensionList(activeBundles),
     processorVersions: deriveProcessorVersionList(processors),
     processorExtensionIds: deriveProcessorExtensionIds(activeBundles),
+    externalHandlers: deriveExternalHandlers(activeBundles),
     pageTypes: buildPageTypeRegistryForBundles(activeBundles),
   });
 }
@@ -707,6 +716,7 @@ function activePrebuiltRegistryForPolicy(input: {
       activeProcessorIds.has(processorVersion.id),
     ),
     processorExtensionIds: activeProcessorExtensionIds,
+    externalHandlers: EMPTY_EXTERNAL_HANDLERS,
     pageTypes: input.pageTypes,
   });
 }
@@ -767,6 +777,44 @@ function deriveProcessorExtensionIds(
     }
   }
   return out;
+}
+
+function deriveExternalHandlers(
+  bundles: ReadonlyArray<LoadedBundle>,
+): ReadonlyMap<string, ExternalHandler> {
+  const out = new Map<string, ExternalHandler>();
+  for (const bundle of bundles) {
+    for (const [capability, handler] of bundle.externalHandlers) {
+      out.set(capability, handler);
+    }
+  }
+  return out;
+}
+
+function mergeExternalHandlerRegistries(
+  discovered: ReadonlyMap<string, ExternalHandler>,
+  injected: ExternalHandlerRegistry | undefined,
+): ReadonlyMap<string, ExternalHandler> {
+  if (injected === undefined) return discovered;
+  const out = new Map(discovered);
+  for (const [capability, handler] of externalHandlerEntries(injected)) {
+    out.set(capability, handler);
+  }
+  return out;
+}
+
+function externalHandlerEntries(
+  registry: ExternalHandlerRegistry,
+): ReadonlyArray<readonly [string, ExternalHandler]> {
+  if (
+    typeof (registry as ReadonlyMap<string, ExternalHandler>).entries ===
+    "function"
+  ) {
+    return Object.freeze([
+      ...(registry as ReadonlyMap<string, ExternalHandler>).entries(),
+    ]);
+  }
+  return Object.freeze(Object.entries(registry));
 }
 
 function buildPageTypeRegistryForBundles(
