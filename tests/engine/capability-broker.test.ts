@@ -14,6 +14,7 @@ import {
   patchEffect,
   quarantineRecoveryEffect,
   questionEffect,
+  runRecoveryEffect,
   viewEffect,
   type PatchEffect,
 } from "../../src/core/effect";
@@ -325,5 +326,32 @@ describe("QuarantineRecoveryEffect", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.code).toBe("capability-deny-quarantine-recover");
+  });
+});
+
+describe("RunRecoveryEffect", () => {
+  const e = runRecoveryEffect({
+    action: "fail",
+    runId: "run_1_orphan",
+    startedAt: "2026-05-29T00:00:00.000Z",
+    processorId: "test.proc",
+    processorVersion: "0.1.0",
+    phase: "garden",
+    reason: "recover orphaned run",
+    sourceRefs: [ref],
+  });
+
+  test("allowed when run.recover covers the action", () => {
+    const cap: Capability = { kind: "run.recover", actions: ["fail"] };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("allow");
+  });
+
+  test("denied when run.recover is not granted", () => {
+    const cap: Capability = { kind: "run.read", statuses: ["running"] };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-run-recover");
   });
 });

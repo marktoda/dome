@@ -12,6 +12,7 @@ import {
   patchEffect,
   quarantineRecoveryEffect,
   questionEffect,
+  runRecoveryEffect,
   searchDocumentEffect,
   viewEffect,
 } from "../../src/core/effect";
@@ -89,6 +90,24 @@ describe("phase-mismatch rejections", () => {
         quarantineId: "quarantine-1",
         quarantinedAt: "2026-05-29T00:00:00.000Z",
         consecutiveRetryableFailures: 3,
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("rejected-by-phase");
+  });
+
+  test("RunRecoveryEffect in adoption phase", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "adoption",
+      effect: runRecoveryEffect({
+        action: "fail",
+        runId: "run_1_orphan",
+        startedAt: "2026-05-29T00:00:00.000Z",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        phase: "garden",
         reason: "recover",
         sourceRefs: [ref],
       }),
@@ -366,6 +385,34 @@ describe("successful routes (noopSinks)", () => {
       "reset:garden:test.proc:0.1.0:trigger-1:quarantine-1:2026-05-29T00:00:00.000Z:3",
     );
   });
+
+  test("RunRecoveryEffect in garden phase with run.recover granted → applied", async () => {
+    const recover: Capability = {
+      kind: "run.recover",
+      actions: ["fail"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: runRecoveryEffect({
+        action: "fail",
+        runId: "run_1_orphan",
+        startedAt: "2026-05-29T00:00:00.000Z",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        phase: "garden",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("run.recover");
+    expect(r.capabilityUse?.resource).toBe(
+      "fail:run_1_orphan:2026-05-29T00:00:00.000Z:test.proc:0.1.0:garden",
+    );
+  });
 });
 
 describe("capability denial flows through", () => {
@@ -475,6 +522,29 @@ describe("capability denial flows through", () => {
     expect(r.capabilityUse?.capability).toBe("quarantine.recover");
     expect(r.capabilityUse?.resource).toBe(
       "reset:garden:test.proc:0.1.0:trigger-1:quarantine-1:2026-05-29T00:00:00.000Z:3",
+    );
+  });
+
+  test("RunRecoveryEffect with no run.recover grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: runRecoveryEffect({
+        action: "fail",
+        runId: "run_1_orphan",
+        startedAt: "2026-05-29T00:00:00.000Z",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        phase: "garden",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-run-recover");
+    expect(r.capabilityUse?.capability).toBe("run.recover");
+    expect(r.capabilityUse?.resource).toBe(
+      "fail:run_1_orphan:2026-05-29T00:00:00.000Z:test.proc:0.1.0:garden",
     );
   });
 });

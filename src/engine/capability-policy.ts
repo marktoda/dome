@@ -98,6 +98,8 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
   pushOutboxRecoverCapability(capabilities, grant["outbox.recover"]);
   pushQuarantineReadCapability(capabilities, grant["quarantine.read"]);
   pushQuarantineRecoverCapability(capabilities, grant["quarantine.recover"]);
+  pushRunReadCapability(capabilities, grant["run.read"]);
+  pushRunRecoverCapability(capabilities, grant["run.recover"]);
   return Object.freeze(capabilities);
 }
 
@@ -212,6 +214,46 @@ function pushQuarantineRecoverCapability(out: Capability[], raw: unknown): void 
   );
   if (actions === undefined || actions.length === 0) return;
   out.push({ kind: "quarantine.recover", actions });
+}
+
+function pushRunReadCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) {
+    out.push({ kind: "run.read" });
+    return;
+  }
+  const statuses = stringArray(raw)?.filter(
+    (
+      status,
+    ): status is
+      | "queued"
+      | "running"
+      | "succeeded"
+      | "failed"
+      | "skipped"
+      | "timed_out"
+      | "cancelled" =>
+      status === "queued" ||
+      status === "running" ||
+      status === "succeeded" ||
+      status === "failed" ||
+      status === "skipped" ||
+      status === "timed_out" ||
+      status === "cancelled",
+  );
+  if (statuses === undefined || statuses.length === 0) return;
+  out.push({ kind: "run.read", statuses });
+}
+
+function pushRunRecoverCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) {
+    out.push({ kind: "run.recover", actions: ["fail"] });
+    return;
+  }
+  const actions = stringArray(raw)?.filter(
+    (action): action is "fail" => action === "fail",
+  );
+  if (actions === undefined || actions.length === 0) return;
+  out.push({ kind: "run.recover", actions });
 }
 
 function stringArray(raw: unknown): ReadonlyArray<string> | null {

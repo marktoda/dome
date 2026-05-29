@@ -316,8 +316,8 @@ function orphanFinding(row: RunRow): HealthFinding {
       `Run ${row.id} for ${row.processorId} is still running from ` +
       `${row.startedAt}.`,
     recovery:
-      "Inspect with `dome inspect runs`; orphan-run recovery should route " +
-      "through `dome answer` when run-recovery handlers ship.",
+      "Inspect with `dome inspect runs`; answer the `dome.health` " +
+      "orphan-run recovery question with `fail` to mark the row failed.",
     run: Object.freeze({
       id: row.id,
       processorId: row.processorId,

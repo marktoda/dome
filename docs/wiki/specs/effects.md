@@ -7,9 +7,9 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # Effects
 
-This spec is normative for the ten-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
+This spec is normative for the eleven-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
 
-The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the ten existing kinds within their declared capabilities.
+The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the eleven existing kinds within their declared capabilities.
 
 ## The Effect union
 
@@ -24,6 +24,7 @@ type Effect =
   | ExternalActionEffect
   | OutboxRecoveryEffect
   | QuarantineRecoveryEffect
+  | RunRecoveryEffect
   | ViewEffect;
 ```
 
@@ -249,6 +250,28 @@ interface QuarantineRecoveryEffect {
 
 **Why an effect instead of direct quarantine access:** quarantine state controls whether processor code is allowed to run. Resetting it must be visible in the run ledger and capability audit trail, so recovery follows the same engine-asks model as outbox recovery: health processors read operational state, ask a question, answer handlers emit a recovery effect, and the engine applies the state transition.
 
+## RunRecoveryEffect
+
+A recovery transition for a stuck running ledger row.
+
+```ts
+interface RunRecoveryEffect {
+  readonly kind: "run-recovery";
+  readonly action: "fail";
+  readonly runId: string;
+  readonly startedAt: string;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly phase: "adoption" | "garden" | "view";
+  readonly reason: string;
+  readonly sourceRefs: SourceRef[];
+}
+```
+
+**Routing:** garden phase only. The effect is capability-checked via `run.recover` for `action: "fail"`. The engine-owned ledger sink transitions the matching `status: "running"` run to `status: "failed"` only when both `runId` and `startedAt` still match. Stale answers therefore cannot mutate a later or already-terminal run row. Adoption processors cannot emit this effect because run recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
+
+**Why an effect instead of direct ledger access:** the run ledger is the audit backbone. Marking an orphaned row failed must itself be capability-checked and ledgered, so recovery follows the same engine-asks model as outbox and quarantine recovery: health processors read operational state, ask a question, answer handlers emit a recovery effect, and the engine applies the state transition.
+
 ## ViewEffect
 
 A rendered response to a query or command.
@@ -310,6 +333,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
 | OutboxRecoveryEffect | `outbox.recover` for `retry` or `abandon` |
 | QuarantineRecoveryEffect | `quarantine.recover` for `reset` |
+| RunRecoveryEffect | `run.recover` for `fail` |
 | ViewEffect | (none — view emission is the phase's purpose; the broker enforces phase compatibility instead) |
 
 ## Why a closed taxonomy
@@ -318,7 +342,7 @@ Three properties depend on the union being closed:
 
 1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
-3. **Substrate stability.** The ten kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox/quarantine rows, render). A new kind is a *design move*, not a plugin's convenience.
+3. **Substrate stability.** The eleven kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox/quarantine/run rows, render). A new kind is a *design move*, not a plugin's convenience.
 
 ## Related
 

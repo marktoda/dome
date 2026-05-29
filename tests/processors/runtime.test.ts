@@ -493,6 +493,7 @@ describe("gardenRunner — executor diagnostics", () => {
         );
       },
       quarantines: () => Object.freeze([]),
+      orphanRuns: () => Object.freeze([]),
     });
     const p = makeFixtureProcessor({
       id: "test.garden.operational",
@@ -539,6 +540,7 @@ describe("gardenRunner — executor diagnostics", () => {
     const operational: OperationalQueryView = Object.freeze({
       outbox: () => Object.freeze([]),
       quarantines: () => Object.freeze([row]),
+      orphanRuns: () => Object.freeze([]),
     });
     const seen: { allowed: ReadonlyArray<string>; denied: boolean } = {
       allowed: [],

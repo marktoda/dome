@@ -66,6 +66,8 @@ import type { QuestionRecord } from "../projections/questions";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha } from "../git";
 import type { ApplyEffectSinks } from "./apply-effect";
+import { failRunIfCurrent } from "../ledger/runs";
+import type { RunId } from "./runner-contract";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -644,6 +646,14 @@ function sinksForRuntime(
             effect.consecutiveRetryableFailures,
         });
       },
+      recoverRun: async ({ effect }) => {
+        failRunIfCurrent(runtime.ledgerDb, {
+          id: effect.runId as RunId,
+          startedAt: effect.startedAt,
+          error: effect.reason,
+          finishedAt: new Date(),
+        });
+      },
     });
   };
 }
@@ -670,6 +680,7 @@ function sinksForCursor(opts: {
     dispatchExternal: async (input) => current().dispatchExternal(input),
     recoverOutbox: async (input) => current().recoverOutbox(input),
     recoverQuarantine: async (input) => current().recoverQuarantine(input),
+    recoverRun: async (input) => current().recoverRun(input),
   } satisfies ApplyEffectSinks);
 }
 

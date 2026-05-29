@@ -1,4 +1,4 @@
-// The ten-kind Effect union: the only value a Processor returns.
+// The eleven-kind Effect union: the only value a Processor returns.
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
@@ -288,6 +288,23 @@ export type QuarantineRecoveryEffect = {
 };
 
 /**
+ * A recovery transition for a stuck running processor run. Health/recovery
+ * processors emit this after a user answers an operational question; the
+ * engine-owned ledger sink marks that exact running-row generation failed.
+ */
+export type RunRecoveryEffect = {
+  readonly kind: "run-recovery";
+  readonly action: "fail";
+  readonly runId: string;
+  readonly startedAt: string;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly phase: "adoption" | "garden" | "view";
+  readonly reason: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+/**
  * A rendered response to a query or command. View effects are *not*
  * persisted by default — they're computed on demand. `scope` lists the
  * pages the view summarizes, for cache invalidation by callers.
@@ -315,6 +332,7 @@ export type Effect =
   | ExternalActionEffect
   | OutboxRecoveryEffect
   | QuarantineRecoveryEffect
+  | RunRecoveryEffect
   | ViewEffect;
 
 // ----- Zod schemas ----------------------------------------------------------
@@ -571,6 +589,20 @@ export const QuarantineRecoveryEffectSchema = z
   })
   .strict();
 
+export const RunRecoveryEffectSchema = z
+  .object({
+    kind: z.literal("run-recovery"),
+    action: z.literal("fail"),
+    runId: z.string().min(1),
+    startedAt: z.string().datetime(),
+    processorId: z.string().min(1),
+    processorVersion: z.string().min(1),
+    phase: z.enum(["adoption", "garden", "view"]),
+    reason: z.string().min(1),
+    sourceRefs: z.array(SourceRefSchema),
+  })
+  .strict();
+
 export const ViewEffectSchema = z
   .object({
     kind: z.literal("view"),
@@ -581,7 +613,7 @@ export const ViewEffectSchema = z
   .strict();
 
 /**
- * Discriminated union over the ten effect kinds. Use this at engine
+ * Discriminated union over the eleven effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
  * preserve `exactOptionalPropertyTypes` semantics.
@@ -601,6 +633,7 @@ export const EffectSchema = z
     ExternalActionEffectSchema,
     OutboxRecoveryEffectSchema,
     QuarantineRecoveryEffectSchema,
+    RunRecoveryEffectSchema,
     ViewEffectSchema,
   ])
   .superRefine((v, ctx) => {
@@ -763,6 +796,25 @@ export function quarantineRecoveryEffect(
     quarantineId: input.quarantineId,
     quarantinedAt: input.quarantinedAt,
     consecutiveRetryableFailures: input.consecutiveRetryableFailures,
+    reason: input.reason,
+    sourceRefs: input.sourceRefs,
+  };
+  return Object.freeze(e);
+}
+
+export function runRecoveryEffect(
+  input: Omit<RunRecoveryEffect, "kind">,
+): RunRecoveryEffect {
+  const e: {
+    -readonly [K in keyof RunRecoveryEffect]: RunRecoveryEffect[K];
+  } = {
+    kind: "run-recovery",
+    action: input.action,
+    runId: input.runId,
+    startedAt: input.startedAt,
+    processorId: input.processorId,
+    processorVersion: input.processorVersion,
+    phase: input.phase,
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };

@@ -41,6 +41,7 @@ import type {
   QuestionEffect,
   OutboxRecoveryEffect,
   QuarantineRecoveryEffect,
+  RunRecoveryEffect,
   SearchDocumentEffect,
 } from "./effect";
 import type { PageTypeRegistry } from "../page-types";
@@ -200,6 +201,8 @@ export type Trigger =
  *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
  *   - `quarantine.read` — read operational quarantine rows via `ctx.operational`.
  *   - `quarantine.recover` — emit QuarantineRecoveryEffect reset actions.
+ *   - `run.read`       — read stuck operational run rows via `ctx.operational`.
+ *   - `run.recover`    — emit RunRecoveryEffect fail actions.
  */
 export type ReadCapability = {
   readonly kind: "read";
@@ -266,6 +269,22 @@ export type QuarantineRecoverCapability = {
   readonly kind: "quarantine.recover";
   readonly actions: ReadonlyArray<QuarantineRecoveryEffect["action"]>;
 };
+export type OperationalRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "timed_out"
+  | "cancelled";
+export type RunReadCapability = {
+  readonly kind: "run.read";
+  readonly statuses?: ReadonlyArray<OperationalRunStatus>;
+};
+export type RunRecoverCapability = {
+  readonly kind: "run.recover";
+  readonly actions: ReadonlyArray<RunRecoveryEffect["action"]>;
+};
 
 export type Capability =
   | ReadCapability
@@ -282,7 +301,9 @@ export type Capability =
   | OutboxReadCapability
   | OutboxRecoverCapability
   | QuarantineReadCapability
-  | QuarantineRecoverCapability;
+  | QuarantineRecoverCapability
+  | RunReadCapability
+  | RunRecoverCapability;
 
 // ----- CapabilityToken ------------------------------------------------------
 
@@ -421,6 +442,23 @@ export type OperationalQuarantineRow = {
   readonly reason: string;
 };
 
+export type OperationalRunRow = {
+  readonly id: string;
+  readonly proposalId: string | null;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly phase: "adoption" | "garden" | "view";
+  readonly inputCommit: string;
+  readonly outputCommit: string | null;
+  readonly status: OperationalRunStatus;
+  readonly costUsd: number | null;
+  readonly durationMs: number | null;
+  readonly error: string | null;
+  readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command" | "job";
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
+};
+
 /**
  * Read-only operational-state surface for garden/view processors that need to
  * explain or recover engine substrate state. This is intentionally not a raw
@@ -432,6 +470,9 @@ export type OperationalQueryView = {
     readonly status?: OperationalOutboxStatus;
   }) => ReadonlyArray<OperationalOutboxRow>;
   readonly quarantines: () => ReadonlyArray<OperationalQuarantineRow>;
+  readonly orphanRuns: (filter?: {
+    readonly runningOlderThanMs?: number;
+  }) => ReadonlyArray<OperationalRunRow>;
 };
 
 // ----- ProcessorContext -----------------------------------------------------
@@ -684,6 +725,30 @@ export const QuarantineRecoverCapabilitySchema = z
   })
   .strict();
 
+export const OperationalRunStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "timed_out",
+  "cancelled",
+]);
+
+export const RunReadCapabilitySchema = z
+  .object({
+    kind: z.literal("run.read"),
+    statuses: z.array(OperationalRunStatusSchema).min(1).optional(),
+  })
+  .strict();
+
+export const RunRecoverCapabilitySchema = z
+  .object({
+    kind: z.literal("run.recover"),
+    actions: z.array(z.enum(["fail"])).min(1),
+  })
+  .strict();
+
 export const CapabilitySchema = z.discriminatedUnion("kind", [
   ReadCapabilitySchema,
   PatchProposeCapabilitySchema,
@@ -700,6 +765,8 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OutboxRecoverCapabilitySchema,
   QuarantineReadCapabilitySchema,
   QuarantineRecoverCapabilitySchema,
+  RunReadCapabilitySchema,
+  RunRecoverCapabilitySchema,
 ]);
 
 // SnapshotSchema validates only the data fields (commit, tree); the read

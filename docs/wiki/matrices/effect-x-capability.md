@@ -25,6 +25,7 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
 | **OutboxRecoveryEffect** | `outbox.recover` | requested action (`retry` or `abandon`) | Denied; diagnostic with `code: capability-deny-outbox-recover`; effect discarded |
 | **QuarantineRecoveryEffect** | `quarantine.recover` | requested action (`reset`) | Denied; diagnostic with `code: capability-deny-quarantine-recover`; effect discarded |
+| **RunRecoveryEffect** | `run.recover` | requested action (`fail`) | Denied; diagnostic with `code: capability-deny-run-recover`; effect discarded |
 | **ViewEffect** | (none at capability layer — phase check rejects view effects from non-view processors) | — | (n/a at capability layer; phase mismatch at the routing layer per [[wiki/matrices/effect-router-targets]]) |
 
 ## Downgrade vs denial

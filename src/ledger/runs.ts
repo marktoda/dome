@@ -53,14 +53,14 @@
 //                         any not-invoked run, including idempotency
 //                         dedup and pre-run policy denial.
 //
-// `failOrphanedRuns` is the recovery path for engine crashes between
+// `failOrphanedRuns` / `failRunIfCurrent` are the recovery paths for engine crashes between
 // `markRunning` and a terminal mark — it transitions stuck-running rows
 // to `failed` so the audit history reaches a terminal state. v1.0
 // surfaces orphans via `dome inspect runs --status running`; v1.x wires
 // the recovery via the engine-asks model — the deferred
 // `dome.health.detect-orphan-runs` garden-phase processor emits a
 // QuestionEffect per orphan row, and the user answers `fail` / `keep`
-// via `dome answer` (the answer-handler invokes `failOrphanedRuns`).
+// via `dome answer` (the answer-handler invokes `failRunIfCurrent`).
 //
 // Imports (tight by design — the ledger is the SQLite boundary):
 //   - `node:crypto` for the random suffix in `newRunId`.
@@ -228,6 +228,13 @@ export type MarkSkippedOpts = {
   readonly error?: string;
 };
 
+export type FailRunIfCurrentOpts = {
+  readonly id: RunId;
+  readonly startedAt: string;
+  readonly error: string;
+  readonly finishedAt: Date;
+};
+
 /**
  * Bulk-update `output_commit` for the named successful runs. Called by the
  * engine's adoption loop (`src/engine/adopt.ts`) once `makeClosureCommit`
@@ -377,6 +384,15 @@ SET status = 'failed',
     error = 'orphaned-run: engine crash detected; transitioned by failOrphanedRuns',
     finished_at = ?
 WHERE status = 'running' AND started_at < ?
+`.trim();
+
+const FAIL_RUN_IF_CURRENT_SQL = `
+UPDATE runs
+SET status = 'failed',
+    error = ?,
+    duration_ms = ?,
+    finished_at = ?
+WHERE id = ? AND status = 'running' AND started_at = ?
 `.trim();
 
 // ----- Raw row shape --------------------------------------------------------
@@ -656,6 +672,26 @@ export function failOrphanedRuns(
   return result.changes;
 }
 
+/**
+ * Transition one exact running-row generation to failed. The `started_at`
+ * guard makes answer-mediated recovery stale-safe: a delayed answer cannot
+ * mutate a row whose id/start generation no longer matches the question that
+ * produced the RunRecoveryEffect.
+ */
+export function failRunIfCurrent(
+  db: LedgerDb,
+  opts: FailRunIfCurrentOpts,
+): boolean {
+  const result = db.raw.query(FAIL_RUN_IF_CURRENT_SQL).run(
+    opts.error,
+    durationBetween(opts.startedAt, opts.finishedAt),
+    opts.finishedAt.toISOString(),
+    opts.id,
+    opts.startedAt,
+  );
+  return result.changes > 0;
+}
+
 // ----- internals ------------------------------------------------------------
 
 /**
@@ -725,4 +761,10 @@ function narrowTriggerKind(s: string): TriggerKind {
     default:
       throw new Error(`ledger.runs: unknown trigger_kind '${s}'`);
   }
+}
+
+function durationBetween(startedAt: string, finishedAt: Date): number {
+  const started = new Date(startedAt).getTime();
+  if (Number.isNaN(started)) return 0;
+  return Math.max(0, finishedAt.getTime() - started);
 }

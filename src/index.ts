@@ -52,6 +52,7 @@ export type {
   ExternalActionEffect,
   OutboxRecoveryEffect,
   QuarantineRecoveryEffect,
+  RunRecoveryEffect,
   NodeRefInput,
 } from "./core/effect";
 export {
@@ -64,6 +65,7 @@ export {
   externalActionEffect,
   outboxRecoveryEffect,
   quarantineRecoveryEffect,
+  runRecoveryEffect,
 } from "./core/effect";
 
 export type {

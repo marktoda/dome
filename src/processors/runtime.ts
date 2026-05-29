@@ -72,6 +72,7 @@ import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
   OperationalOutboxStatus,
+  OperationalRunStatus,
   OperationalQueryView,
   Processor,
   ProcessorContext,
@@ -833,7 +834,17 @@ function operationalContextField(
     frame.declared,
     frame.granted,
   );
-  if (allowedStatuses === null && !canReadQuarantine) return {};
+  const allowedRunStatuses = effectiveRunReadStatuses(
+    frame.declared,
+    frame.granted,
+  );
+  if (
+    allowedStatuses === null &&
+    !canReadQuarantine &&
+    allowedRunStatuses === null
+  ) {
+    return {};
+  }
   return {
     operational: Object.freeze({
       outbox: (filter) => {
@@ -854,6 +865,15 @@ function operationalContextField(
         canReadQuarantine
           ? operational.quarantines()
           : Object.freeze([]),
+      orphanRuns: (filter) => {
+        if (
+          allowedRunStatuses === null ||
+          !allowedRunStatuses.has("running")
+        ) {
+          return Object.freeze([]);
+        }
+        return operational.orphanRuns(filter);
+      },
     }),
   };
 }
@@ -895,6 +915,38 @@ function effectiveQuarantineRead(
     declared.some((cap) => cap.kind === "quarantine.read") &&
     granted.some((cap) => cap.kind === "quarantine.read")
   );
+}
+
+function effectiveRunReadStatuses(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): ReadonlySet<OperationalRunStatus> | null {
+  const declaredCap = declared.find((cap) => cap.kind === "run.read");
+  const grantedCap = granted.find((cap) => cap.kind === "run.read");
+  if (declaredCap === undefined || grantedCap === undefined) return null;
+
+  const declaredStatuses = runReadStatuses(declaredCap.statuses);
+  const grantedStatuses = runReadStatuses(grantedCap.statuses);
+  const effective = [...declaredStatuses].filter((status) =>
+    grantedStatuses.has(status),
+  );
+  return effective.length === 0 ? null : new Set(effective);
+}
+
+const ALL_RUN_STATUSES: ReadonlySet<OperationalRunStatus> = new Set([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "timed_out",
+  "cancelled",
+]);
+
+function runReadStatuses(
+  statuses: ReadonlyArray<OperationalRunStatus> | undefined,
+): ReadonlySet<OperationalRunStatus> {
+  return statuses === undefined ? ALL_RUN_STATUSES : new Set(statuses);
 }
 
 function scopeSnapshotForProcessor(

@@ -87,10 +87,9 @@ Shipped:
 Still missing for v1:
 
 - [x] Adopted-state recall: `dome.search` FTS indexing and `dome query`.
-- [ ] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
+- [x] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
       probe-only `dome doctor`, and first-party outbox retry/abandon
-      plus quarantine reset recovery are shipped; orphan-run recovery is still
-      pending.
+      plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, followup/todo
       extraction, today/prep views.
 - [ ] Productized model boundary: provider injection, cost ledger, budgets,
@@ -268,6 +267,10 @@ Work:
       processor triggers without direct state-file access.
 - [x] Ship first-party `dome.health` quarantine recovery question emitters and
       answer handlers.
+- [x] Add `RunRecoveryEffect` + `run.read` / `run.recover` so health answer
+      handlers can fail orphaned running rows without direct ledger access.
+- [x] Ship first-party `dome.health` orphan-run recovery question emitters and
+      answer handlers.
 
 Acceptance:
 
@@ -278,6 +281,8 @@ Acceptance:
 - [x] Quarantined processor is visible and resettable without direct sqlite or
       JSON edits.
 - [x] Orphan run is detected by doctor.
+- [x] Orphan run is recoverable through shipped `dome.health` questions, not
+      direct sqlite edits.
 
 ## Milestone 5 - Daily Note and Task Loop
 

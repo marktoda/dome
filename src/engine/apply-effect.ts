@@ -63,6 +63,7 @@ import type {
   PatchEffect,
   QuarantineRecoveryEffect,
   QuestionEffect,
+  RunRecoveryEffect,
   SearchDocumentEffect,
   ViewEffect,
 } from "../core/effect";
@@ -198,6 +199,13 @@ export type ApplyEffectSinks = {
     readonly runId: RunId;
   }) => Promise<void>;
 
+  /** RunRecoveryEffect — mark a stuck running ledger row failed. */
+  readonly recoverRun: (input: {
+    readonly effect: RunRecoveryEffect;
+    readonly processorId: string;
+    readonly runId: RunId;
+  }) => Promise<void>;
+
   /** ViewEffect — captured for return to the view-phase caller. */
   readonly captureView: (input: {
     readonly effect: ViewEffect;
@@ -304,6 +312,7 @@ export function noopSinks(): ApplyEffectSinks {
     dispatchExternal: async () => undefined,
     recoverOutbox: async () => undefined,
     recoverQuarantine: async () => undefined,
+    recoverRun: async () => undefined,
     captureView: async () => undefined,
   };
 }
@@ -469,12 +478,12 @@ function capabilityUseField(
  * marked "Rejected: phase-mismatch":
  *
  *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect,
- *               QuarantineRecoveryEffect, ViewEffect
+ *               QuarantineRecoveryEffect, RunRecoveryEffect, ViewEffect
  *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
  *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
  *               ExternalActionEffect, OutboxRecoveryEffect,
- *               QuarantineRecoveryEffect
+ *               QuarantineRecoveryEffect, RunRecoveryEffect
  *
  * Every other (kind, phase) pair is routed normally.
  */
@@ -486,6 +495,7 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind !== "external" &&
         effect.kind !== "outbox-recovery" &&
         effect.kind !== "quarantine-recovery" &&
+        effect.kind !== "run-recovery" &&
         effect.kind !== "view"
       );
     case "garden":
@@ -499,7 +509,8 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind === "job" ||
         effect.kind === "external" ||
         effect.kind === "outbox-recovery" ||
-        effect.kind === "quarantine-recovery"
+        effect.kind === "quarantine-recovery" ||
+        effect.kind === "run-recovery"
       ) {
         return false;
       }
@@ -608,6 +619,13 @@ async function routeToSink(
       return { newCandidate: null };
     case "quarantine-recovery":
       await opts.sinks.recoverQuarantine({
+        effect,
+        processorId: opts.processorId,
+        runId: opts.runId,
+      });
+      return { newCandidate: null };
+    case "run-recovery":
+      await opts.sinks.recoverRun({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,

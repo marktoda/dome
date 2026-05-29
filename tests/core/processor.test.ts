@@ -95,7 +95,7 @@ describe("TriggerSchema (discriminated union)", () => {
   });
 });
 
-describe("CapabilitySchema (discriminated union, 15 kinds)", () => {
+describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
   test("read", () => {
     expect(CapabilitySchema.parse({ kind: "read", paths: ["wiki/**"] }).kind).toBe("read");
   });
@@ -174,6 +174,18 @@ describe("CapabilitySchema (discriminated union, 15 kinds)", () => {
     expect(
       CapabilitySchema.parse({ kind: "quarantine.recover", actions: ["reset"] }).kind,
     ).toBe("quarantine.recover");
+  });
+
+  test("run.read", () => {
+    expect(
+      CapabilitySchema.parse({ kind: "run.read", statuses: ["running"] }).kind,
+    ).toBe("run.read");
+  });
+
+  test("run.recover", () => {
+    expect(
+      CapabilitySchema.parse({ kind: "run.recover", actions: ["fail"] }).kind,
+    ).toBe("run.recover");
   });
 });
 

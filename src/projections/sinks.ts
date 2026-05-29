@@ -1,6 +1,6 @@
 // projection-sinks: assembles the `ApplyEffectSinks` shape against
-// the projection database, the outbox database, and three engine-layer
-// injections (`applyPatch`, `captureView`, `recoverQuarantine`). This is the
+// the projection database, the outbox database, and engine-layer injections
+// (`applyPatch`, `captureView`, `recoverQuarantine`, `recoverRun`). This is the
 // Phase 4 wiring layer
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
@@ -16,7 +16,7 @@
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
 //
-// Three sinks are injected by the caller (engine layer):
+// Four sinks are injected by the caller (engine layer):
 //
 //   - applyPatch  — patch application is dual-mode per the matrix below
 //     (adoption-phase patches mutate the candidate tree; garden-phase patches
@@ -32,6 +32,9 @@
 //   - recoverQuarantine — QuarantineRecoveryEffect targets processor
 //     execution state, which is owned by the engine runtime rather than
 //     the projection/outbox stores.
+//
+//   - recoverRun — RunRecoveryEffect targets the run ledger, which is owned
+//     by the engine runtime rather than the projection/outbox stores.
 //
 // Normative references:
 //   - docs/wiki/matrices/effect-router-targets.md — the (kind, phase) → sink
@@ -114,6 +117,10 @@ export type BuildSqliteSinksOpts = {
    * execution state, not projection or outbox state.
    */
   readonly recoverQuarantine: ApplyEffectSinks["recoverQuarantine"];
+  /**
+   * Injected by the engine layer. Run recovery mutates the run ledger.
+   */
+  readonly recoverRun: ApplyEffectSinks["recoverRun"];
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -122,7 +129,8 @@ export type BuildSqliteSinksOpts = {
  * Assemble the `ApplyEffectSinks` object the engine calls while routing
  * effects and maintaining projection rows. Eight sinks delegate to the
  * per-table projection accessors + the outbox dispatcher; two are
- * pass-through injections from the engine layer (`applyPatch`, `captureView`).
+ * pass-through injections from the engine layer (`applyPatch`, `captureView`,
+ * `recoverQuarantine`, `recoverRun`).
  *
  * The returned object is `Object.freeze`'d so a misbehaving caller cannot
  * swap a sink out mid-run (e.g., a downstream layer attempting to monkey-
@@ -209,5 +217,6 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
     },
 
     recoverQuarantine: opts.recoverQuarantine,
+    recoverRun: opts.recoverRun,
   });
 }

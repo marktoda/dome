@@ -392,6 +392,7 @@ export async function openVaultRuntime(
   //    views can read facts / diagnostics / questions.
   const operationalQueryView = buildOperationalQueryView({
     outbox: outboxDb,
+    ledger: ledgerDb,
     executionState,
   });
   const processorRuntime = buildRuntime({

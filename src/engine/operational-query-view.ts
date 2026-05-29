@@ -9,8 +9,11 @@
 import type {
   OperationalOutboxRow,
   OperationalQuarantineRow,
+  OperationalRunRow,
   OperationalQueryView,
 } from "../core/processor";
+import type { LedgerDb } from "../ledger/db";
+import { orphanRuns, type RunRow } from "../ledger/runs";
 import type { OutboxDb } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
 import type {
@@ -20,6 +23,7 @@ import type {
 
 export function buildOperationalQueryView(opts: {
   readonly outbox: OutboxDb;
+  readonly ledger: LedgerDb;
   readonly executionState: ProcessorExecutionState;
 }): OperationalQueryView {
   return Object.freeze({
@@ -30,6 +34,14 @@ export function buildOperationalQueryView(opts: {
     quarantines: () =>
       Object.freeze(
         opts.executionState.quarantines().map(toOperationalQuarantineRow),
+      ),
+    orphanRuns: (filter) =>
+      Object.freeze(
+        orphanRuns(
+          opts.ledger,
+          filter?.runningOlderThanMs ?? 5 * 60 * 1000,
+          new Date(),
+        ).map(toOperationalRunRow),
       ),
   });
 }
@@ -62,5 +74,24 @@ function toOperationalQuarantineRow(
     consecutiveRetryableFailures: row.consecutiveRetryableFailures,
     quarantinedAt: row.quarantinedAt.toISOString(),
     reason: row.reason,
+  });
+}
+
+function toOperationalRunRow(row: RunRow): OperationalRunRow {
+  return Object.freeze({
+    id: row.id,
+    proposalId: row.proposalId,
+    processorId: row.processorId,
+    processorVersion: row.processorVersion,
+    phase: row.phase,
+    inputCommit: row.inputCommit,
+    outputCommit: row.outputCommit,
+    status: row.status,
+    costUsd: row.costUsd,
+    durationMs: row.durationMs,
+    error: row.error,
+    triggerKind: row.triggerKind,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
   });
 }

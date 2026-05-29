@@ -1,4 +1,4 @@
-// Smoke tests for src/core/effect.ts: the ten-kind Effect union — each
+// Smoke tests for src/core/effect.ts: the eleven-kind Effect union — each
 // kind's per-schema parse, the discriminated-union EffectSchema parse, the
 // FactEffect semantic refinements, and the constructor freeze + kind-stamp
 // invariants.
@@ -15,6 +15,7 @@ import {
   patchEffect,
   quarantineRecoveryEffect,
   questionEffect,
+  runRecoveryEffect,
   searchDocumentEffect,
   viewEffect,
   type Effect,
@@ -97,6 +98,17 @@ const minEffects = {
       quarantinedAt: "2026-05-29T00:00:00.000Z",
       consecutiveRetryableFailures: 3,
       reason: "retry quarantined processor",
+      sourceRefs: refs,
+    }),
+  "run-recovery": () =>
+    runRecoveryEffect({
+      action: "fail",
+      runId: "run_1_orphan",
+      startedAt: "2026-05-29T00:00:00.000Z",
+      processorId: "dome.test",
+      processorVersion: "0.1.0",
+      phase: "garden",
+      reason: "fail orphan run",
       sourceRefs: refs,
     }),
   view: () =>
@@ -191,6 +203,11 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
     expect(EffectSchema.parse(e).kind).toBe("quarantine-recovery");
   });
 
+  test("RunRecoveryEffect", () => {
+    const e = minEffects["run-recovery"]();
+    expect(EffectSchema.parse(e).kind).toBe("run-recovery");
+  });
+
   test("ViewEffect", () => {
     const e = minEffects.view();
     expect(EffectSchema.parse(e).kind).toBe("view");
@@ -261,6 +278,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(Object.isFrozen(minEffects.external())).toBe(true);
     expect(Object.isFrozen(minEffects["outbox-recovery"]())).toBe(true);
     expect(Object.isFrozen(minEffects["quarantine-recovery"]())).toBe(true);
+    expect(Object.isFrozen(minEffects["run-recovery"]())).toBe(true);
     expect(Object.isFrozen(minEffects.view())).toBe(true);
   });
 
@@ -276,6 +294,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(minEffects["quarantine-recovery"]().kind).toBe(
       "quarantine-recovery",
     );
+    expect(minEffects["run-recovery"]().kind).toBe("run-recovery");
     expect(minEffects.view().kind).toBe("view");
   });
 
@@ -337,6 +356,7 @@ describe("exhaustive-routing self-test", () => {
       "external",
       "outbox-recovery",
       "quarantine-recovery",
+      "run-recovery",
       "view",
     ] as const;
     for (const k of kinds) {

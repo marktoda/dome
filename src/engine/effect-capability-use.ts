@@ -75,6 +75,15 @@ export function capabilityUseForEffect(
           `${effect.consecutiveRetryableFailures}`,
         outcome,
       });
+    case "run-recovery":
+      return Object.freeze({
+        capability: "run.recover",
+        resource:
+          `${effect.action}:${effect.runId}:` +
+          `${effect.startedAt}:${effect.processorId}:` +
+          `${effect.processorVersion}:${effect.phase}`,
+        outcome,
+      });
     case "diagnostic":
     case "view":
       return null;

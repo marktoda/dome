@@ -305,6 +305,9 @@ extensions:
       outbox.recover: true
       quarantine.read: true
       quarantine.recover: true
+      run.read:
+        - running
+      run.recover: true
 
 engine:
   # Maximum iterations of the fixed-point adoption loop per Proposal.

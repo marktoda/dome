@@ -57,6 +57,7 @@ import type {
   OutboxRecoveryEffect,
   PatchEffect,
   QuarantineRecoveryEffect,
+  RunRecoveryEffect,
   SearchDocumentEffect,
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
@@ -122,6 +123,7 @@ const downgrade = (
  *   - external   → `external:<capability>` matching effect's `capability`
  *   - outbox-recovery → `outbox.recover` matching effect's action
  *   - quarantine-recovery → `quarantine.recover` matching effect's action
+ *   - run-recovery → `run.recover` matching effect's action
  *   - view       → always allow at this layer (phase check lives elsewhere)
  */
 export function enforceCapability(
@@ -148,6 +150,8 @@ export function enforceCapability(
       return enforceOutboxRecovery(effect, declared, granted);
     case "quarantine-recovery":
       return enforceQuarantineRecovery(effect, declared, granted);
+    case "run-recovery":
+      return enforceRunRecovery(effect, declared, granted);
     case "view":
       return allow();
   }
@@ -480,6 +484,30 @@ function enforceQuarantineRecovery(
       severity: "error",
       code: "capability-deny-quarantine-recover",
       message: `QuarantineRecoveryEffect denied: action '${effect.action}' has no effective 'quarantine.recover' grant.`,
+      sourceRefs: [],
+    }),
+  );
+}
+
+// ----- RunRecoveryEffect enforcement ---------------------------------------
+
+function enforceRunRecovery(
+  effect: RunRecoveryEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  const hasDeclared = declared.some(
+    (c) => c.kind === "run.recover" && c.actions.includes(effect.action),
+  );
+  const hasGranted = granted.some(
+    (c) => c.kind === "run.recover" && c.actions.includes(effect.action),
+  );
+  if (hasDeclared && hasGranted) return allow();
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: "capability-deny-run-recover",
+      message: `RunRecoveryEffect denied: action '${effect.action}' has no effective 'run.recover' grant.`,
       sourceRefs: [],
     }),
   );

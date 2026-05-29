@@ -18,9 +18,11 @@ import {
   patchEffect,
   quarantineRecoveryEffect,
   questionEffect,
+  runRecoveryEffect,
   viewEffect,
   type PatchEffect,
   type QuarantineRecoveryEffect,
+  type RunRecoveryEffect,
   type ViewEffect,
 } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -47,6 +49,7 @@ const noopApplyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
 const noopCaptureView: ApplyEffectSinks["captureView"] = async () => undefined;
 const noopRecoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
   async () => undefined;
+const noopRecoverRun: ApplyEffectSinks["recoverRun"] = async () => undefined;
 
 let root: string;
 let projectionDb: ProjectionDb;
@@ -92,6 +95,7 @@ describe("buildSqliteSinks shape", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     expect(Object.isFrozen(sinks)).toBe(true);
@@ -106,6 +110,7 @@ describe("buildSqliteSinks shape", () => {
     expect(typeof sinks.dispatchExternal).toBe("function");
     expect(typeof sinks.recoverOutbox).toBe("function");
     expect(typeof sinks.recoverQuarantine).toBe("function");
+    expect(typeof sinks.recoverRun).toBe("function");
     expect(typeof sinks.captureView).toBe("function");
   });
 });
@@ -119,6 +124,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = factEffect({
@@ -146,6 +152,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const stale = factEffect({
@@ -195,6 +202,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = diagnosticEffect({
@@ -223,6 +231,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = questionEffect({
@@ -249,6 +258,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = jobEffect({
@@ -276,6 +286,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
       externalHandlers: {
         "calendar.write": async ({ idempotencyKey }) => {
           calls.push(idempotencyKey);
@@ -312,6 +323,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
     for (const key of ["retry-me", "abandon-me"] as const) {
       insertPending(outboxDb, {
@@ -385,6 +397,7 @@ describe("buildSqliteSinks pass-through injections", () => {
       applyPatch: spyApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = patchEffect({
@@ -428,6 +441,7 @@ describe("buildSqliteSinks pass-through injections", () => {
       applyPatch: noopApplyPatch,
       captureView: spyCaptureView,
       recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = viewEffect({
@@ -469,6 +483,7 @@ describe("buildSqliteSinks pass-through injections", () => {
       applyPatch: noopApplyPatch,
       captureView: noopCaptureView,
       recoverQuarantine: spyRecoverQuarantine,
+      recoverRun: noopRecoverRun,
     });
 
     const effect = quarantineRecoveryEffect({
@@ -484,6 +499,53 @@ describe("buildSqliteSinks pass-through injections", () => {
       sourceRefs: [REF],
     });
     await sinks.recoverQuarantine({
+      effect,
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.effect).toBe(effect);
+    expect(calls[0]?.processorId).toBe(PROCESSOR_ID);
+    expect(calls[0]?.runId).toBe(RUN_ID);
+  });
+
+  it("recoverRun is invoked with the input verbatim (pass-through)", async () => {
+    const calls: Array<{
+      effect: RunRecoveryEffect;
+      processorId: string;
+      runId: string;
+    }> = [];
+    const spyRecoverRun: ApplyEffectSinks["recoverRun"] =
+      async (input) => {
+        calls.push({
+          effect: input.effect,
+          processorId: input.processorId,
+          runId: input.runId,
+        });
+      };
+
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: spyRecoverRun,
+    });
+
+    const effect = runRecoveryEffect({
+      action: "fail",
+      runId: "run_1_orphan",
+      startedAt: "2026-05-29T00:00:00.000Z",
+      processorId: "test.proc",
+      processorVersion: "0.1.0",
+      phase: "garden",
+      reason: "mark orphan failed",
+      sourceRefs: [REF],
+    });
+    await sinks.recoverRun({
       effect,
       processorId: PROCESSOR_ID,
       runId: RUN_ID,

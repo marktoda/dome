@@ -56,6 +56,7 @@ export async function rebuildProjection(opts: {
     captureView: async () => undefined,
     externalHandlers: opts.runtime.externalHandlers,
     recoverQuarantine: async () => undefined,
+    recoverRun: async () => undefined,
   });
 
   const runnerResults = await opts.runtime.processorRuntime.adoptionRunner({

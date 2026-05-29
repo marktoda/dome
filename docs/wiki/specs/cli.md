@@ -39,7 +39,7 @@ The CLI is the user-facing primary surface in v1. The implemented commands above
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
 - **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` — command-triggered view-phase processors invoked through the shared view-command boundary.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` retry/abandon handling for failed outbox rows plus reset handling for quarantined processors. Orphan-run recovery remains v1 work. See [[wiki/syntheses/v1-claude-code-vault-plan]].
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
 Planned dedicated view aliases such as `dome lint`, `dome stats`, and
@@ -397,9 +397,10 @@ answered question when `answers.db.question_answers.handler_status` is not
 `handled`. Projection rebuild preserves the answered state by replaying
 `answers.db.question_answers` onto rebuilt question rows.
 
-`dome.health` now ships the failed-outbox retry/abandon loop and quarantined
-processor reset loop as first-party processors. Orphan-run recovery remains a
-planned question/answer flow rather than a hidden per-substrate CLI verb.
+`dome.health` now ships the failed-outbox retry/abandon loop, quarantined
+processor reset loop, and orphan-run fail loop as first-party processors.
+All three use the same question/answer flow rather than hidden per-substrate
+CLI verbs.
 
 ### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 

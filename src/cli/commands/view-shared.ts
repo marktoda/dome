@@ -92,6 +92,7 @@ export async function runSharedViewCommand(
     const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
     const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
       async () => undefined;
+    const recoverRun: ApplyEffectSinks["recoverRun"] = async () => undefined;
     const sinks = buildSqliteSinks({
       projectionDb: runtime.projectionDb,
       outboxDb: runtime.outboxDb,
@@ -100,6 +101,7 @@ export async function runSharedViewCommand(
       applyPatch,
       externalHandlers: runtime.externalHandlers,
       recoverQuarantine,
+      recoverRun,
     });
 
     const result = await runViewCommand({

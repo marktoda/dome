@@ -24,6 +24,7 @@ The canonical mapping from Effect kind × processor phase → engine routing des
 | **ExternalActionEffect** | Rejected: adoption-phase processors can't touch the outside world (would race with the merge gate) | Inserted into `outbox.db`; dispatched to the registered external handler; status tracked per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] | Rejected: `phase-mismatch` diagnostic |
 | **OutboxRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned outbox recovery transition (`retry` or `abandon`) after `outbox.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
 | **QuarantineRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned quarantine-generation recovery transition (`reset`) after `quarantine.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
+| **RunRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned run-ledger recovery transition (`fail`) after `run.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
 | **ViewEffect** | Rejected: adoption-phase processors don't render views | Rejected: garden-phase processors don't render views (run async, no caller waiting) | Returned to the caller (CLI command, MCP `dome.run_command`, future HTTP request) |
 
 ## Phase-mismatch diagnostic shape
@@ -65,7 +66,7 @@ Three properties hold:
 
 ## Related
 
-- [[wiki/specs/effects]] — the ten kinds
+- [[wiki/specs/effects]] — the eleven kinds
 - [[wiki/specs/processors]] — phase semantics
 - [[wiki/specs/adoption]] — the fixed-point loop
 - [[wiki/specs/projection-store]] — where Facts / Diagnostics / Questions / Jobs land

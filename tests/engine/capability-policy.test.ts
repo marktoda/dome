@@ -48,6 +48,8 @@ extensions:
       outbox.recover: true
       quarantine.read: true
       quarantine.recover: true
+      run.read: ["running"]
+      run.recover: true
   disabled.bundle:
     enabled: false
     grant:
@@ -88,6 +90,14 @@ extensions:
     expect(grants).toContainEqual({
       kind: "quarantine.recover",
       actions: ["reset"],
+    });
+    expect(grants).toContainEqual({
+      kind: "run.read",
+      statuses: ["running"],
+    });
+    expect(grants).toContainEqual({
+      kind: "run.recover",
+      actions: ["fail"],
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);

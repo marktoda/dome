@@ -21,6 +21,7 @@ import {
 } from "../../src/ledger/capability-uses";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import {
+  failRunIfCurrent,
   failOrphanedRuns,
   getRun,
   insertQueued,
@@ -579,6 +580,54 @@ describe("runs lifecycle", () => {
     // Now that the row is transitioned, a second sweep finds nothing.
     expect(orphanRuns(db, 60_000, now).length).toBe(0);
     expect(failOrphanedRuns(db, 60_000, now)).toBe(0);
+  });
+
+  it("failRunIfCurrent recovers only the matching running generation", () => {
+    const id = newRunId(new Date(), () => "dddddd");
+    const startedAt = new Date("2026-05-27T00:00:00.000Z");
+    insertQueued(db, {
+      id,
+      proposalId: null,
+      processorId: "dome.stuck",
+      processorVersion: "1.0.0",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(db, id, startedAt);
+
+    const stale = failRunIfCurrent(db, {
+      id,
+      startedAt: "2026-05-27T00:00:01.000Z",
+      error: "stale recovery",
+      finishedAt: new Date("2026-05-27T00:05:00.000Z"),
+    });
+    expect(stale).toBe(false);
+    expect(getRun(db, id)?.status).toBe("running");
+
+    const recovered = failRunIfCurrent(db, {
+      id,
+      startedAt: startedAt.toISOString(),
+      error: "orphaned-run: user confirmed fail",
+      finishedAt: new Date("2026-05-27T00:05:00.000Z"),
+    });
+    expect(recovered).toBe(true);
+
+    const after = getRun(db, id);
+    expect(after?.status).toBe("failed");
+    expect(after?.error).toBe("orphaned-run: user confirmed fail");
+    expect(after?.durationMs).toBe(300_000);
+
+    expect(
+      failRunIfCurrent(db, {
+        id,
+        startedAt: startedAt.toISOString(),
+        error: "second recovery",
+        finishedAt: new Date("2026-05-27T00:06:00.000Z"),
+      }),
+    ).toBe(false);
   });
 });
 

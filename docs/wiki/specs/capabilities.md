@@ -17,7 +17,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Fifteen tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
+Capabilities are about **effect power**, not arbitrary trust labels. Seventeen tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
 
 ```ts
 type Capability =
@@ -35,7 +35,9 @@ type Capability =
   | { kind: "outbox.read";   statuses?: ("pending" | "sent" | "failed" | "abandoned")[] }
   | { kind: "outbox.recover"; actions: ("retry" | "abandon")[] } // OutboxRecoveryEffect actions
   | { kind: "quarantine.read" }
-  | { kind: "quarantine.recover"; actions: Array<"reset"> };     // QuarantineRecoveryEffect actions
+  | { kind: "quarantine.recover"; actions: Array<"reset"> }      // QuarantineRecoveryEffect actions
+  | { kind: "run.read";      statuses?: ("queued" | "running" | "succeeded" | "failed" | "skipped" | "timed_out" | "cancelled")[] }
+  | { kind: "run.recover";   actions: Array<"fail"> };           // RunRecoveryEffect actions
 ```
 
 ### `read`
@@ -124,6 +126,21 @@ Permits reading processor quarantine rows through `ctx.operational.quarantines()
 
 Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the only action is `reset`, which clears one quarantine generation after the user approves a `dome.health` recovery question. It does not permit direct mutation of processor execution state.
 
+### `run.read`
+
+Permits reading orphaned running rows through `ctx.operational.orphanRuns()`.
+The runtime exposes this query view only to non-adoption processors whose
+declaration and vault grant both include `run.read` with visibility of
+`status: "running"`. This is a read power, not a mutation power: processors
+recover stuck runs only by emitting `RunRecoveryEffect`.
+
+### `run.recover`
+
+Permits emitting `RunRecoveryEffect` for the listed actions. Today the only
+action is `fail`, which marks one exact running-row generation failed after
+the user approves a `dome.health` recovery question. It does not permit
+arbitrary run-ledger mutation.
+
 ## Manifest schema
 
 A bundle declares its processors' capabilities in `manifest.yaml`:
@@ -190,7 +207,7 @@ extensions:
 
 The broker enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`). A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
 
 ## Enforcement chokepoint
 
@@ -218,13 +235,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why fifteen tiers, not more
+## Why seventeen tiers, not more
 
-The fifteen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, and operational quarantine reads). Three properties drive the closed set:
+The seventeen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
 
-1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`) have explicit context gates. Adding capabilities beyond the fifteen would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the seventeen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Fifteen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Seventeen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 
