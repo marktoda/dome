@@ -103,13 +103,16 @@ The executor boundary validates returned values before routing:
 1. The resolved value must be an array.
 2. Each array element must match one of the eleven Effect schemas in [[wiki/specs/effects]].
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
-4. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
+4. Runtime output policy is checked before routing. Today that policy requires non-adoption processors with an effective `model.invoke` grant to include at least one SourceRef on every PatchEffect.
+5. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
 
 Validation failure returns `status: "failed"` with `code: "processor.invalid-output"` and emits a diagnostic naming the offending processor and effect index. `processor.invalid-output` is executor-created from returned output; a processor-thrown object that happens to carry this code is still classified as `processor.threw`. No effects from that executor result are routed. This all-or-nothing rule prevents partial application of a processor that returned a mixed valid/invalid effect list.
 
 ## Model invocation and structured output
 
 Processors should never import LLM SDKs directly. A non-adoption processor with an effective `model.invoke` declaration + grant receives `ctx.modelInvoke`; processors without the capability receive no model function. Core stays provider-neutral through an injected `ModelProvider` interface. Provider adapters may live in a workflow package, but they are outside the `@dome/sdk` root import graph.
+
+Model-capable processors remain subject to the same Effect/capability pipeline as every other processor. A PatchEffect emitted by such a processor must be source-backed before it reaches the router: an empty `sourceRefs` array fails the run with `processor.invalid-output`, and non-empty refs are then broker-checked against effective `read` grants before any patch capability is considered. Deterministic processors may still create source-less generated files when their effect schema allows it; the stricter rule is tied to effective `model.invoke`.
 
 The `ctx.modelInvoke` runtime boundary has these guarantees:
 
@@ -203,7 +206,7 @@ Already pinned:
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
 - Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
-- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, and explicit `drainOperationalWork()`.
+- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, explicit `drainOperationalWork()`, and source-backed model PatchEffect routing/rejection.
 
 Pending:
 

@@ -96,6 +96,7 @@ import type { LedgerDb } from "../ledger/db";
 import {
   executeProcessor,
   type ProcessorExecutionResult,
+  type ProcessorOutputPolicy,
 } from "./executor";
 import {
   buildProcessorExecutionState,
@@ -631,6 +632,7 @@ export async function dispatchOneProcessor<TEnvelope>(
     runId: frame.runId,
     makeContext: executionInput.makeContext,
     policy: policyResult.value,
+    outputPolicy: outputPolicyForFrame(frame),
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     run: frame.processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
   });
@@ -701,6 +703,26 @@ function resolveDispatchPolicy(frame: DispatchFrame): ReturnType<
     request: frame.processor.execution,
     vaultCap: undefined,
   });
+}
+
+function outputPolicyForFrame(frame: DispatchFrame): ProcessorOutputPolicy {
+  return Object.freeze({
+    requireSourceBackedPatchEffects: hasEffectiveCapability(
+      frame,
+      "model.invoke",
+    ),
+  });
+}
+
+function hasEffectiveCapability(
+  frame: DispatchFrame,
+  kind: Capability["kind"],
+): boolean {
+  if (frame.phase === "adoption") return false;
+  return (
+    frame.declared.some((capability) => capability.kind === kind) &&
+    frame.granted.some((capability) => capability.kind === kind)
+  );
 }
 
 function skipForPolicyDenial(

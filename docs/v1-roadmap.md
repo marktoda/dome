@@ -364,7 +364,7 @@ Work:
 - [x] Validate structured outputs at the boundary.
 - [x] Treat model parse/schema failures as nominal processor failures.
 - [x] Ensure structured-output retries are bounded.
-- [ ] Keep LLM write effects capability-scoped and SourceRef-backed.
+- [x] Keep LLM write effects capability-scoped and SourceRef-backed.
 
 Acceptance:
 
@@ -372,6 +372,7 @@ Acceptance:
 - [x] Malformed model output becomes a diagnostic/run failure, not a patch.
 - [x] Cost budget denial is visible and recoverable.
 - [x] Timeout/cancellation does not leave orphan running rows.
+- [x] Model-generated patches without SourceRefs fail before routing.
 
 ## Milestone 7 - LLM Garden and Intake
 

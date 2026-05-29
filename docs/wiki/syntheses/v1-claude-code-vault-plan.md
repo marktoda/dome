@@ -436,10 +436,11 @@ Acceptance:
 - Validate structured outputs at the boundary.
 - Treat model parse/schema failures as nominal processor failures.
 - Ensure retries are bounded and idempotent.
+- Require model-capable PatchEffects to carry SourceRefs before routing.
 
 Acceptance:
 
-- LLM-capable processors can fail, time out, or exceed budget without corrupting adopted state or hiding cost.
+- LLM-capable processors can fail, time out, exceed budget, or emit source-less patches without corrupting adopted state or hiding cost.
 
 ### Milestone 7: LLM garden processors
 
@@ -448,7 +449,7 @@ Acceptance:
 - Consume the shipped model allowlist and per-bundle `maxDailyCostUsd`
   enforcement.
 - Ensure all LLM processor failures are ledgered and recoverable.
-- Keep all LLM-generated patches behind capability-scoped paths and source refs.
+- Build on the shipped capability-scoped, source-ref-backed model patch guard.
 
 Acceptance:
 

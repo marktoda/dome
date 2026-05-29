@@ -21,6 +21,14 @@ import {
 
 export const MAX_EFFECTS_PER_INVOCATION = 10_000;
 
+export type ProcessorOutputPolicy = {
+  readonly requireSourceBackedPatchEffects: boolean;
+};
+
+const DEFAULT_OUTPUT_POLICY: ProcessorOutputPolicy = Object.freeze({
+  requireSourceBackedPatchEffects: false,
+});
+
 export type ProcessorExecutionResult =
   | ProcessorSucceededExecutionResult
   | ProcessorFailedExecutionResult
@@ -70,6 +78,7 @@ export async function executeProcessor(opts: {
   readonly signal?: AbortSignal;
   readonly makeContext: (signal: AbortSignal) => ProcessorContext<unknown>;
   readonly policy: ResolvedExecutionPolicy;
+  readonly outputPolicy?: ProcessorOutputPolicy;
   readonly run: (ctx: ProcessorContext<unknown>) => Promise<unknown>;
 }): Promise<ProcessorExecutionResult> {
   const startedAt = performance.now();
@@ -143,6 +152,7 @@ export async function executeProcessor(opts: {
         processorId: opts.processorId,
         phase: opts.phase,
         durationMs: durationMs(),
+        outputPolicy: opts.outputPolicy ?? DEFAULT_OUTPUT_POLICY,
       });
     case "threw":
       return terminalResult({
@@ -238,6 +248,7 @@ function outputResult(input: {
   readonly processorId: string;
   readonly phase: ProcessorPhase;
   readonly durationMs: number;
+  readonly outputPolicy: ProcessorOutputPolicy;
 }): ProcessorExecutionResult {
   let outputIsArray: boolean;
   try {
@@ -377,6 +388,27 @@ function outputResult(input: {
     effects.push(parsed.data as Effect);
   }
 
+  const outputPolicyError = validateOutputPolicy({
+    effects,
+    outputPolicy: input.outputPolicy,
+  });
+  if (outputPolicyError !== null) {
+    const error = makeExecutionError({
+      code: "processor.invalid-output",
+      message: outputPolicyError,
+      retryable: false,
+      phase: input.phase,
+      processorId: input.processorId,
+    });
+    return terminalResult({
+      status: "failed",
+      runId: input.runId,
+      processorId: input.processorId,
+      durationMs: input.durationMs,
+      error,
+    });
+  }
+
   let effectHashes: Array<string>;
   try {
     effectHashes = effects.map(hashEffect);
@@ -406,6 +438,22 @@ function outputResult(input: {
     effectHashes: Object.freeze(effectHashes),
     durationMs: input.durationMs,
   });
+}
+
+function validateOutputPolicy(input: {
+  readonly effects: ReadonlyArray<Effect>;
+  readonly outputPolicy: ProcessorOutputPolicy;
+}): string | null {
+  if (!input.outputPolicy.requireSourceBackedPatchEffects) return null;
+  for (const [index, effect] of input.effects.entries()) {
+    if (effect.kind === "patch" && effect.sourceRefs.length === 0) {
+      return (
+        `Processor returned invalid output at effect[${index}]: ` +
+        "model-capable processors must include at least one SourceRef on PatchEffect writes."
+      );
+    }
+  }
+  return null;
 }
 
 type TerminalResultInput =
