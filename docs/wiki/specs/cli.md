@@ -203,7 +203,8 @@ counts excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
 reports. Use `dome inspect diagnostics`, `dome inspect questions`,
 `dome inspect outbox`, or `dome inspect runs` for details. See
-[[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing.
+[[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and
+[[wiki/specs/foreground-compiler-workflow]] for the normal session pulse.
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
 

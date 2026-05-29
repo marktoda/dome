@@ -20,6 +20,9 @@ Dome doesn't dictate which tools an agentic harness reaches for. Claude Code wit
 3. **The compiler host** — `dome serve` is the first host mode and can run foreground like an LSP/watch process or as a background service (launchd / systemd). The host catches committed branch movement and turns it into Proposals; the engine adopts; garden-phase processors fire on their schedules. Future mobile/web/server hosts reuse the same runtime boundary rather than inventing another compiler.
 4. **`dome sync`** — explicit adoption catch-up. `dome sync` constructs an internal Proposal from `refs/dome/adopted/<branch>..refs/heads/<branch>` when the compiler host was off or the agent wants to block on adoption. It runs the same engine adoption loop per [[wiki/specs/adoption]].
 
+See [[wiki/specs/foreground-compiler-workflow]] for the operational day-to-day
+Claude Code loop built on this contract.
+
 These four surfaces are the *load-bearing* contract. The MCP server ([[wiki/specs/mcp-surface]]) is preserved as a fifth, non-primary surface — available for future harnesses that benefit from explicitly-typed MCP-routed operations, but not load-bearing for v1 value delivery.
 
 ## How a harness writes into the vault
@@ -144,6 +147,7 @@ For v2+, this design lets native mobile / desktop / web / voice clients sit on t
 
 - [[VISION]] §"Two surface patterns" — the native-shell vs agentic-harness distinction this spec implements.
 - [[wiki/specs/sdk-surface]] — the Recall + processor catalog harnesses consume, plus CLI-only engine control.
+- [[wiki/specs/foreground-compiler-workflow]] — day-to-day Claude Code operating guide.
 - [[wiki/specs/adoption]] — what `dome sync` drives.
 - [[wiki/specs/mcp-surface]] — the MCP server as a non-primary protocol adapter.
 - [[wiki/specs/cli]] — the CLI surface harnesses invoke via shell.

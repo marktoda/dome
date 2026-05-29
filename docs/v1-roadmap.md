@@ -449,7 +449,7 @@ Work:
 - [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
 - [x] Add status/doctor/query/export JSON fixtures.
-- [ ] Add docs for the foreground compiler workflow and recovery loop.
+- [x] Add docs for the foreground compiler workflow and recovery loop.
 - [ ] Dogfood against `docs/` and `~/vaults/work`.
 
 Acceptance:
@@ -457,7 +457,7 @@ Acceptance:
 - [ ] `bun test`
 - [ ] `bunx tsc --noEmit`
 - [ ] `git diff --check`
-- [ ] `bin/dome status --vault docs`
+- [x] `bin/dome status --vault docs`
 - [ ] Real-vault smoke test with no manual `.dome/state` edits.
 
 ## V1 Bundle Cut
