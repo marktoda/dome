@@ -30,6 +30,9 @@ scenario(
       expect(existsSync(join(target, ".git"))).toBe(true);
       expect(existsSync(join(target, ".dome", "config.yaml"))).toBe(true);
       expect(existsSync(join(target, ".dome", "state"))).toBe(true);
+      expect(existsSync(join(target, "notes"))).toBe(true);
+      expect(existsSync(join(target, "inbox", "raw"))).toBe(true);
+      expect(existsSync(join(target, "inbox", "processed"))).toBe(true);
       expect(existsSync(join(target, ".gitignore"))).toBe(true);
       expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
       expect(existsSync(join(target, "CLAUDE.md"))).toBe(true);
@@ -55,6 +58,8 @@ scenario(
       expect(agents).toContain("dome inspect questions");
       expect(agents).toContain("dome answer <id> <value>");
       expect(agents).toContain("dome rebuild");
+      expect(agents).toContain("inbox/raw/");
+      expect(agents).toContain("dome.intake");
       expect(agents).toContain(".dome/state/");
       expect(gitignore).toContain(".dome/state/");
 

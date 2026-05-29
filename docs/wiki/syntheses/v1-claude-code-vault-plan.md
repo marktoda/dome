@@ -162,7 +162,7 @@ Shipped and strong:
 
 - Four-concept engine model is real: Proposal, Processor, Effect, adopted ref.
 - Adoption loop, garden sub-Proposals, scheduler, JobEffect routing, outbox dispatch, run ledger, projection store, and capability broker exist.
-- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome agenda`, `dome export-context`, and `dome rebuild` exist.
+- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome doctor`, `dome answer`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome agenda`, `dome export-context`, and `dome rebuild` exist.
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
 - Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.intake`.
 
@@ -203,7 +203,7 @@ Still before a v1 release:
 
 A v1 release is good enough when this scenario works on a real vault:
 
-1. `dome init ~/vaults/work` creates a git repo, `.dome/config.yaml`, `AGENTS.md`, `CLAUDE.md`, `.gitignore`, and an initial commit.
+1. `dome init ~/vaults/work` creates a git repo, local working directories (`wiki/`, `notes/`, `inbox/raw/`, `inbox/processed/`, `.dome/state/`), `.dome/config.yaml`, `AGENTS.md`, `CLAUDE.md`, `.gitignore`, and an initial commit.
 2. User starts a compiler host: foreground `dome serve --vault ~/vaults/work`, a local background service, or future embedded app host.
 3. User opens Claude Code in `~/vaults/work`.
 4. Claude reads `CLAUDE.md`, understands the vault conventions, talks with the user about the day, writes a daily note/capture/project note, and commits.
@@ -295,9 +295,9 @@ The rule: do not create one-off commands like `dome replay-outbox-row` or `dome 
 
 The health report, not an admin grab bag. The current CLI renders on-demand
 probe findings for failed outbox rows, orphan running rows, and quarantined
-processors. Complete v1 can add persisted `dome.health` findings and
-`--repair`, but repair remains limited to safe deterministic work or
-question/answer-mediated mutations.
+processors. Persisted `dome.health` findings and a safe `--repair` surface are
+post-v1 hardening unless the release soak proves they are needed for the local
+Claude Code loop.
 
 ### `dome query`
 
@@ -355,7 +355,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 |---|---|---|
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
 | `dome.graph` | link/tag substrate for recall | wikilink and tag facts; task facts live in `dome.daily`, intake entities in `dome.intake` |
-| `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
+| `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain post-v1 |
 | `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, source-backed per-capture synthesis, recent-capture rollup synthesis, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer long-horizon synthesis remains |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |

@@ -276,6 +276,9 @@ describe("runInit", () => {
       // Scaffold dirs. `.dome/extensions/` is NOT created — the shipped
       // first-party bundles live with the SDK, not in the vault.
       expect(existsSync(join(target, "wiki"))).toBe(true);
+      expect(existsSync(join(target, "notes"))).toBe(true);
+      expect(existsSync(join(target, "inbox", "raw"))).toBe(true);
+      expect(existsSync(join(target, "inbox", "processed"))).toBe(true);
       expect(existsSync(join(target, ".dome", "state"))).toBe(true);
       expect(existsSync(join(target, ".dome", "extensions"))).toBe(false);
 
@@ -310,6 +313,8 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome inspect questions");
       expect(agentsBody).toContain("dome answer <id> <value>");
       expect(agentsBody).toContain("dome rebuild");
+      expect(agentsBody).toContain("inbox/raw/");
+      expect(agentsBody).toContain("dome.intake");
       expect(agentsBody).toContain("Do not edit or commit it");
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
       expect(agentsBody).toContain("<!-- END user-prose -->");
@@ -328,6 +333,7 @@ describe("runInit", () => {
       expect(claudeBody).toContain("dome inspect <subject>");
       expect(claudeBody).not.toContain("only use `dome status`");
       expect(captured.out.join("\n")).toContain("CLAUDE.md:");
+      expect(captured.out.join("\n")).toContain("inbox/raw/:");
 
       // Git initialized + HEAD resolves (the initial scaffold commit landed).
       expect(existsSync(join(target, ".git"))).toBe(true);

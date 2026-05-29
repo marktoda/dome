@@ -6,6 +6,9 @@
 //
 //   - `.git/`              — git repository
 //   - `wiki/`              — markdown content
+//   - `notes/`             — loose markdown notes
+//   - `inbox/raw/`         — raw capture drop-zone when dome.intake is enabled
+//   - `inbox/processed/`   — processed capture archive target
 //   - `.dome/state/`       — derived sqlite databases (gitignored)
 //   - `.dome/config.yaml`  — extension activation + grants
 //   - `.gitignore`         — engine-managed
@@ -26,7 +29,9 @@
 //
 //   1. Resolve target path (positional arg, else cwd).
 //   2. Run `git init` if `<target>/.git/` doesn't exist.
-//   3. Create dirs `<target>/wiki/` and `<target>/.dome/state/`.
+//   3. Create dirs `<target>/wiki/`, `<target>/notes/`,
+//      `<target>/inbox/raw/`, `<target>/inbox/processed/`, and
+//      `<target>/.dome/state/`.
 //   4. Write `<target>/.dome/config.yaml` from a shipped default (below).
 //   5. Write `<target>/.gitignore` (ignores `.dome/state/`).
 //   6. Write `<target>/AGENTS.md` from the shipped orientation template.
@@ -88,6 +93,9 @@ type InitSummary = {
   readonly vaultPath: string;
   readonly gitInit: StepOutcome;
   readonly wikiDir: StepOutcome;
+  readonly notesDir: StepOutcome;
+  readonly inboxRawDir: StepOutcome;
+  readonly inboxProcessedDir: StepOutcome;
   readonly stateDir: StepOutcome;
   readonly configYaml: StepOutcome;
   readonly gitignore: StepOutcome;
@@ -128,9 +136,15 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     //    third-party bundle creates `<vault>/.dome/extensions/<id>/`
     //    themselves and passes `--bundles-root <path>` to the CLI.
     const wikiDir = join(vaultPath, "wiki");
+    const notesDir = join(vaultPath, "notes");
+    const inboxRawDir = join(vaultPath, "inbox", "raw");
+    const inboxProcessedDir = join(vaultPath, "inbox", "processed");
     const stateDir = join(vaultPath, ".dome", "state");
 
     const wikiOutcome = await ensureDir(wikiDir);
+    const notesOutcome = await ensureDir(notesDir);
+    const inboxRawOutcome = await ensureDir(inboxRawDir);
+    const inboxProcessedOutcome = await ensureDir(inboxProcessedDir);
     const stateOutcome = await ensureDir(stateDir);
 
     // 4. Write `.dome/config.yaml` (first-write-only by default). Existing
@@ -192,6 +206,9 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       vaultPath,
       gitInit: gitInitOutcome,
       wikiDir: wikiOutcome,
+      notesDir: notesOutcome,
+      inboxRawDir: inboxRawOutcome,
+      inboxProcessedDir: inboxProcessedOutcome,
       stateDir: stateOutcome,
       configYaml: configOutcome,
       gitignore: gitignoreOutcome,
@@ -382,6 +399,9 @@ function printSummary(s: InitSummary): void {
   console.log(`dome init: initialized vault at ${s.vaultPath}`);
   console.log(`  git init:                ${s.gitInit}`);
   console.log(`  wiki/:                   ${s.wikiDir}`);
+  console.log(`  notes/:                  ${s.notesDir}`);
+  console.log(`  inbox/raw/:              ${s.inboxRawDir}`);
+  console.log(`  inbox/processed/:        ${s.inboxProcessedDir}`);
   console.log(`  .dome/state/:            ${s.stateDir}`);
   console.log(`  .dome/config.yaml:       ${s.configYaml}`);
   console.log(`  .gitignore:              ${s.gitignore}`);
@@ -606,6 +626,13 @@ Do not call Dome after every edit. Dome works at the git commit boundary.
 
 - \`wiki/\` is the main markdown knowledge base. Pages can link with
   \`[[wikilinks]]\`.
+- \`notes/\` is available for loose markdown notes that do not yet belong in a
+  wiki page.
+- \`inbox/raw/\` is the raw capture drop-zone for committed captures when
+  \`dome.intake\` is enabled and a model provider is configured. Until then,
+  keep management notes directly under \`wiki/\` or \`notes/\`.
+- \`inbox/processed/\` is where \`dome.intake\` archives captures it has
+  compiled into generated wiki material.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
 - \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
   run ledger. Do not edit or commit it.

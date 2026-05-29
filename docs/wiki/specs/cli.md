@@ -107,12 +107,13 @@ The shipped initialization steps:
 
 1. Initializes a git repository if one doesn't exist (`git init` is
    idempotent — a no-op when `.git/` already exists).
-2. Creates the directory scaffold: `wiki/`, `.dome/state/`. (The
-   `raw/`, `inbox/raw/`, `notes/` dirs are created lazily by the
-   processors that write into them; pre-creating them is a v1.1 polish
-   once the intake / capture surfaces ship. `.dome/extensions/` is not
-   created — the shipped bundles live with the SDK; users wanting
-   vault-local third-party bundles create the directory themselves.)
+2. Creates the directory scaffold: `wiki/`, `notes/`, `inbox/raw/`,
+   `inbox/processed/`, and `.dome/state/`. `inbox/raw/` is the raw
+   capture drop-zone once `dome.intake` is enabled and a model provider is
+   configured; `inbox/processed/` is the archive target for processed
+   captures. `.dome/extensions/` is not created — the shipped bundles live
+   with the SDK; users wanting vault-local third-party bundles create the
+   directory themselves.
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
    activation + engine settings). First-write-only by default.
    `--refresh-config` is an explicit maintenance path for old or hand-edited

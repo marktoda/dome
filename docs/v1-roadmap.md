@@ -207,6 +207,8 @@ Work:
 
 - [x] Write `.dome/config.yaml`, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
       an initial commit.
+- [x] Create the day-one local directory scaffold: `wiki/`, `notes/`,
+      `inbox/raw/`, `inbox/processed/`, and `.dome/state/`.
 - [x] Make `CLAUDE.md` delegate to `AGENTS.md`.
 - [x] Keep generated instructions short and operational: edit markdown,
       commit meaningful changes, use `serve`/`sync`, inspect health, avoid
@@ -726,8 +728,8 @@ Fold these into nearby milestone work when they are on-path:
 V1 is ready when the Claude Code acceptance scenario works against a real
 vault:
 
-1. `dome init ~/vaults/work` creates the repo, config, orientation files,
-   gitignore, and initial commit.
+1. `dome init ~/vaults/work` creates the repo, local working directories,
+   config, orientation files, gitignore, and initial commit.
 2. The user starts `dome serve` or runs `dome sync`.
 3. Claude Code opens the vault, reads `CLAUDE.md`, edits markdown, and
    commits.
