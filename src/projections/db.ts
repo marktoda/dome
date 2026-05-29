@@ -72,6 +72,8 @@ import { createHash } from "node:crypto";
 import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
 
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+
 // ----- Schema DDL -----------------------------------------------------------
 //
 // The canonical DDL. Order matters for schema-hash determinism — changing
@@ -469,6 +471,7 @@ export async function openProjectionDb(
   let raw: Database;
   try {
     raw = new Database(opts.path);
+    configureSqliteConnection(raw);
   } catch (e) {
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
   }
@@ -706,6 +709,10 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
+}
+
+function configureSqliteConnection(db: Database): void {
+  db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 /**

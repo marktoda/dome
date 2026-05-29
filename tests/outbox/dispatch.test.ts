@@ -73,6 +73,17 @@ describe("openOutboxDb", () => {
     expect(r.value.migration).toBe("fresh");
   });
 
+  it("configures a busy timeout for concurrent readers", async () => {
+    const r = await openOutboxDb({ path: dbPath });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+    const row = r.value.db.raw
+      .query<{ timeout: number }, []>("PRAGMA busy_timeout")
+      .get();
+    expect(row?.timeout).toBe(5000);
+  });
+
   it("migrates old outbox rows without wiping pending external actions", async () => {
     mkdirSync(join(root, ".dome", "state"), { recursive: true });
     const old = new Database(dbPath);

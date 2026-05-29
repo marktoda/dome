@@ -27,6 +27,7 @@ import { currentSha, isAncestor } from "../git";
 
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
 export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 export type HealthFinding =
   | {
@@ -489,6 +490,7 @@ function readOperationalSchemaHash(path: string, table: string): string | null {
   let db: Database;
   try {
     db = new Database(path, { readonly: true, create: false });
+    db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
   } catch {
     return null;
   }

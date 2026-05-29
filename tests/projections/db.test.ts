@@ -64,6 +64,21 @@ describe("openProjectionDb", () => {
     expect(r.value.migration).toBe("fresh");
   });
 
+  it("configures a busy timeout for concurrent readers", async () => {
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: EMPTY_EXT,
+      processorVersions: EMPTY_PROCS,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+    const row = r.value.db.raw
+      .query<{ timeout: number }, []>("PRAGMA busy_timeout")
+      .get();
+    expect(row?.timeout).toBe(5000);
+  });
+
   it("returns migration: 'ok' on re-open with identical inputs", async () => {
     // First open populates the cache-key columns. The "fresh" path leaves
     // them NULL, so we need to do a populated-meta write first to land in

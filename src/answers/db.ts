@@ -12,6 +12,8 @@ import { dirname } from "node:path";
 
 import { err, ok, type Result } from "../types";
 
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
     + "schema_hash TEXT NOT NULL PRIMARY KEY,"
@@ -88,6 +90,7 @@ export async function openAnswersDb(
   let raw: Database;
   try {
     raw = new Database(opts.path);
+    configureSqliteConnection(raw);
   } catch (e) {
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
   }
@@ -135,6 +138,10 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
+}
+
+function configureSqliteConnection(db: Database): void {
+  db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {
