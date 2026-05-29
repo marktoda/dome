@@ -34,7 +34,7 @@ const searchQuery: Processor = defineProcessor({
       query: input.text,
       ...(input.category !== undefined ? { category: input.category } : {}),
       ...(input.type !== undefined ? { type: input.type } : {}),
-      limit: input.limit,
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
     });
     const factsByPath = factsForMatches(ctx, matches);
     const data = Object.freeze({

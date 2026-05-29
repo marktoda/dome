@@ -94,6 +94,7 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
   pushJobEnqueueCapability(capabilities, grant["job.enqueue"]);
   pushModelInvokeCapability(capabilities, grant["model.invoke"]);
   pushExternalCapability(capabilities, grant.external);
+  pushOutboxReadCapability(capabilities, grant["outbox.read"]);
   pushOutboxRecoverCapability(capabilities, grant["outbox.recover"]);
   return Object.freeze(capabilities);
 }
@@ -164,6 +165,22 @@ function pushExternalCapability(out: Capability[], raw: unknown): void {
   for (const capability of capabilities) {
     out.push({ kind: "external", capability });
   }
+}
+
+function pushOutboxReadCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) {
+    out.push({ kind: "outbox.read" });
+    return;
+  }
+  const statuses = stringArray(raw)?.filter(
+    (status): status is "pending" | "sent" | "failed" | "abandoned" =>
+      status === "pending" ||
+      status === "sent" ||
+      status === "failed" ||
+      status === "abandoned",
+  );
+  if (statuses === undefined || statuses.length === 0) return;
+  out.push({ kind: "outbox.read", statuses });
 }
 
 function pushOutboxRecoverCapability(out: Capability[], raw: unknown): void {

@@ -205,6 +205,7 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "job.enqueue",
   "model.invoke",
   "external",
+  "outbox.read",
   "outbox.recover",
 ];
 

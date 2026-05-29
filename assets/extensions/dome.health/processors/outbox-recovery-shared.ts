@@ -1,5 +1,6 @@
 export const OUTBOX_RECOVERY_QUESTION_PREFIX =
   "dome.health.outbox-recovery:";
+export const OUTBOX_RECOVERY_FAILURE_SEPARATOR = "|failure:";
 
 export const OUTBOX_RECOVERY_OPTIONS = Object.freeze(["retry", "abandon"]);
 
@@ -14,7 +15,10 @@ export function parseOutboxRecoveryAnswer(
 export function outboxKeyFromQuestionIdempotencyKey(
   idempotencyKey: string,
 ): string | null {
-  return idempotencyKey.startsWith(OUTBOX_RECOVERY_QUESTION_PREFIX)
-    ? idempotencyKey.slice(OUTBOX_RECOVERY_QUESTION_PREFIX.length)
-    : null;
+  if (!idempotencyKey.startsWith(OUTBOX_RECOVERY_QUESTION_PREFIX)) {
+    return null;
+  }
+  const suffix = idempotencyKey.slice(OUTBOX_RECOVERY_QUESTION_PREFIX.length);
+  const separatorIndex = suffix.lastIndexOf(OUTBOX_RECOVERY_FAILURE_SEPARATOR);
+  return separatorIndex === -1 ? suffix : suffix.slice(0, separatorIndex);
 }

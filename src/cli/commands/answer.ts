@@ -136,6 +136,33 @@ async function runAnswerHandlersIfNeeded(opts: {
     return result;
   }
 
+  const failedRun = result.result.runs.find(
+    (run) => run.executionStatus !== "succeeded",
+  );
+  if (failedRun !== undefined) {
+    markAnswerHandlersFailed(opts.runtime.answersDb, {
+      idempotencyKey: opts.question.effect.idempotencyKey,
+      status: "failed",
+      error:
+        failedRun.executionError?.message ??
+        `answer handler ${failedRun.processorId} finished with ${failedRun.executionStatus}`,
+    });
+    return result;
+  }
+
+  const routingDiagnostic = result.result.diagnostics.find(
+    (diagnostic) =>
+      diagnostic.severity === "error" || diagnostic.severity === "block",
+  );
+  if (routingDiagnostic !== undefined) {
+    markAnswerHandlersFailed(opts.runtime.answersDb, {
+      idempotencyKey: opts.question.effect.idempotencyKey,
+      status: "failed",
+      error: routingDiagnostic.message,
+    });
+    return result;
+  }
+
   markAnswerHandlersHandled(opts.runtime.answersDb, {
     idempotencyKey: opts.question.effect.idempotencyKey,
     handledAt: new Date().toISOString(),
@@ -250,12 +277,20 @@ function handlerResultToJson(
   if (result.kind === "skipped") {
     return { status: "skipped", reason: result.reason };
   }
+  const failed =
+    result.result.runs.some((run) => run.executionStatus !== "succeeded") ||
+    result.result.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.severity === "error" || diagnostic.severity === "block",
+    );
   return {
-    status: "handled",
+    status: failed ? "failed" : "handled",
     adopted: result.adopted,
     runs: result.result.runs.map((run) => ({
       run_id: run.runId,
       processor_id: run.processorId,
+      execution_status: run.executionStatus,
+      execution_error: run.executionError ?? null,
       effect_count: run.effectCount,
       authorized_patch_count: run.authorizedPatchCount,
     })),

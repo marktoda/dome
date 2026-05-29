@@ -71,6 +71,7 @@ import { posix } from "node:path";
 import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
+  OperationalOutboxStatus,
   OperationalQueryView,
   Processor,
   ProcessorContext,
@@ -808,9 +809,7 @@ function buildExecutionContext<TEnvelope>(
         ...(frame.phase === "view" && opts.projection !== undefined
           ? { projection: opts.projection }
           : {}),
-        ...(frame.phase !== "adoption" && opts.operational !== undefined
-          ? { operational: opts.operational }
-          : {}),
+        ...operationalContextField(frame, opts.operational),
         ...(opts.pageTypes !== undefined ? { pageTypes: opts.pageTypes } : {}),
         ...(modelInvoke !== undefined ? { modelInvoke } : {}),
       };
@@ -819,6 +818,64 @@ function buildExecutionContext<TEnvelope>(
     },
     costUsd: () => costUsd,
   });
+}
+
+function operationalContextField(
+  frame: DispatchFrame,
+  operational: OperationalQueryView | undefined,
+): { readonly operational?: OperationalQueryView } {
+  if (frame.phase === "adoption" || operational === undefined) return {};
+  const allowedStatuses = effectiveOutboxReadStatuses(
+    frame.declared,
+    frame.granted,
+  );
+  if (allowedStatuses === null) return {};
+  return {
+    operational: Object.freeze({
+      outbox: (filter) => {
+        if (
+          filter?.status !== undefined &&
+          !allowedStatuses.has(filter.status)
+        ) {
+          return Object.freeze([]);
+        }
+        return Object.freeze(
+          operational
+            .outbox(filter)
+            .filter((row) => allowedStatuses.has(row.status)),
+        );
+      },
+    }),
+  };
+}
+
+function effectiveOutboxReadStatuses(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): ReadonlySet<OperationalOutboxStatus> | null {
+  const declaredCap = declared.find((cap) => cap.kind === "outbox.read");
+  const grantedCap = granted.find((cap) => cap.kind === "outbox.read");
+  if (declaredCap === undefined || grantedCap === undefined) return null;
+
+  const declaredStatuses = outboxReadStatuses(declaredCap.statuses);
+  const grantedStatuses = outboxReadStatuses(grantedCap.statuses);
+  const effective = [...declaredStatuses].filter((status) =>
+    grantedStatuses.has(status),
+  );
+  return effective.length === 0 ? null : new Set(effective);
+}
+
+const ALL_OUTBOX_STATUSES: ReadonlySet<OperationalOutboxStatus> = new Set([
+  "pending",
+  "sent",
+  "failed",
+  "abandoned",
+]);
+
+function outboxReadStatuses(
+  statuses: ReadonlyArray<OperationalOutboxStatus> | undefined,
+): ReadonlySet<OperationalOutboxStatus> {
+  return statuses === undefined ? ALL_OUTBOX_STATUSES : new Set(statuses);
 }
 
 function scopeSnapshotForProcessor(

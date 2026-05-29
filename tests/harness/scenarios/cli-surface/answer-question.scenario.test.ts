@@ -8,6 +8,9 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 
+import { questionEffect } from "../../../../src/core/effect";
+import { commitOid, sourceRef } from "../../../../src/core/source-ref";
+import { insertQuestion } from "../../../../src/projections/questions";
 import { scenario } from "../../index";
 
 const ANSWER_HANDLER_BUNDLE_ROOT = join(
@@ -17,6 +20,14 @@ const ANSWER_HANDLER_BUNDLE_ROOT = join(
   "fixtures",
   "bundles",
   "test.answer-handler",
+);
+const INVALID_ANSWER_HANDLER_BUNDLE_ROOT = join(
+  __dirname,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.invalid-answer-handler",
 );
 
 scenario(
@@ -175,5 +186,92 @@ scenario(
       )
       .get();
     expect(answerHandlerRuns?.count).toBe(2);
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome answer keeps failed handler dispatch retryable",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "garden" },
+      { kind: "capability", capability: "outbox.recover" },
+      { kind: "trigger", trigger: "answer" },
+    ],
+    harness: {
+      bundles: [
+        {
+          id: "test.invalid-answer-handler",
+          root: INVALID_ANSWER_HANDLER_BUNDLE_ROOT,
+        },
+      ],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  test.invalid-answer-handler:
+    enabled: true
+    grant:
+      outbox.recover: ["retry"]
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+    const adopted = await h.refs.adopted();
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+
+    const ref = sourceRef({
+      commit: commitOid(adopted),
+      path: ".dome/config.yaml",
+    });
+    insertQuestion(h.projection, {
+      effect: questionEffect({
+        question: "Trigger invalid handler?",
+        options: ["yes"],
+        sourceRefs: [ref],
+        idempotencyKey: "test.invalid-answer-handler:bad-output",
+      }),
+      processorId: "test.ask",
+      adoptedCommit: commitOid(adopted),
+    });
+
+    const answer = await h.runCli(["answer", "1", "yes", "--json"]);
+    expect(answer.exitCode).toBe(0);
+    const body = JSON.parse(answer.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<{
+          readonly processor_id: string;
+          readonly execution_status: string;
+        }>;
+      };
+    };
+    expect(body.handlers.status).toBe("failed");
+    expect(body.handlers.runs).toEqual([
+      expect.objectContaining({
+        processor_id: "test.invalid-answer-handler.invalid-output",
+        execution_status: "failed",
+      }),
+    ]);
+
+    const durableAnswer = h.answers.raw
+      .query<{
+        handler_status: string;
+        handler_attempts: number;
+        last_handler_error: string | null;
+      }, []>(
+        "SELECT handler_status, handler_attempts, last_handler_error FROM question_answers",
+      )
+      .get();
+    expect(durableAnswer?.handler_status).toBe("failed");
+    expect(durableAnswer?.handler_attempts).toBe(1);
+    expect(durableAnswer?.last_handler_error).toContain(
+      "Processor returned invalid output",
+    );
   },
 );

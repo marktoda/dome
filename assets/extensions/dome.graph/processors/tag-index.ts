@@ -52,9 +52,13 @@ const graphTagIndex: Processor = defineProcessor({
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
-      const tags = extractTags(content, (line, startChar, endChar) =>
-        ctx.sourceRef(path, { startLine: line, endLine: line, startChar, endChar }),
-      );
+      const tags = extractTags(content, (line, startChar, endChar) => {
+        const range =
+          startChar === undefined || endChar === undefined
+            ? { startLine: line, endLine: line }
+            : { startLine: line, endLine: line, startChar, endChar };
+        return ctx.sourceRef(path, range);
+      });
 
       for (const tag of tags) {
         facts.push(
@@ -146,6 +150,7 @@ function extractInlineTags(
     let match: RegExpExecArray | null;
     while ((match = INLINE_TAG_RE.exec(line)) !== null) {
       const raw = match[2];
+      if (raw === undefined) continue;
       const tag = normalizeTag(raw);
       if (tag === null) continue;
       const prefix = match[1] ?? "";

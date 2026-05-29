@@ -186,7 +186,7 @@ function lintContent(
   // `isEmpty: true` → `---\n---` with no content between delimiters.
   // Treat as missing-frontmatter (the user opened a block but never
   // populated it).
-  if (parsed.isEmpty || Object.keys(parsed.data).length === 0) {
+  if (matterFileIsEmpty(parsed) || Object.keys(parsed.data).length === 0) {
     return [
       {
         code: CODE_MISSING_FRONTMATTER,
@@ -251,6 +251,11 @@ function lintContent(
   }
 
   return findings;
+}
+
+function matterFileIsEmpty(file: matter.GrayMatterFile<string>): boolean {
+  return (file as matter.GrayMatterFile<string> & { readonly isEmpty?: boolean })
+    .isEmpty === true;
 }
 
 function lintPageTypeFields(

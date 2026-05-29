@@ -299,6 +299,8 @@ extensions:
   dome.health:
     enabled: true
     grant:
+      outbox.read:
+        - failed
       question.ask: true
       outbox.recover: true
 

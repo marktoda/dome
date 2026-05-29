@@ -20,7 +20,8 @@
   },
   "scripts": {
     "test": "bun test",
-    "test:invariants": "bun test tests/invariants"
+    "test:invariants": "bun test tests/invariants",
+    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json"
   },
   "dependencies": {
     "commander": "^14.0.3",

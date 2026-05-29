@@ -15,6 +15,8 @@ import {
   treeOid,
   type Capability,
   type ExecutionPolicyRequest,
+  type OperationalOutboxRow,
+  type OperationalQueryView,
   type Processor,
   type ProcessorContext,
   type ProcessorPhase,
@@ -81,6 +83,7 @@ function buildRuntimeFor(
     extensionIdFor?: (processorId: string) => string;
     resolveTree?: (commit: CommitOid) => Promise<typeof TREE>;
     modelProvider?: ModelProvider;
+    operational?: OperationalQueryView;
   },
 ) {
   const reg = buildRegistry(processors);
@@ -92,6 +95,9 @@ function buildRuntimeFor(
     resolveTree: overrides?.resolveTree ?? (async () => TREE),
     ...(overrides?.modelProvider !== undefined
       ? { modelProvider: overrides.modelProvider }
+      : {}),
+    ...(overrides?.operational !== undefined
+      ? { operational: overrides.operational }
       : {}),
   });
 }
@@ -441,6 +447,77 @@ describe("gardenRunner — executor diagnostics", () => {
     expect(effect?.kind).toBe("diagnostic");
     if (effect?.kind !== "diagnostic") return;
     expect(effect.message).toBe("model result");
+  });
+
+  test("garden processor receives ctx.operational only with effective outbox.read grant", async () => {
+    const cap: Capability = { kind: "outbox.read", statuses: ["failed"] };
+    const seen: { granted: ReadonlyArray<string>; denied: boolean } = {
+      granted: [],
+      denied: false,
+    };
+    const operational: OperationalQueryView = Object.freeze({
+      outbox: (filter) => {
+        const rows: OperationalOutboxRow[] = [
+          {
+            id: 1,
+            capability: "calendar.write",
+            idempotencyKey: "pending",
+            status: "pending",
+            attempts: 0,
+            maxAttempts: 3,
+            enqueuedAt: "2026-05-28T00:00:00.000Z",
+            nextAttemptAt: "2026-05-28T00:00:00.000Z",
+            sentAt: null,
+            lastError: null,
+            sourceRefs: [],
+          },
+          {
+            id: 2,
+            capability: "calendar.write",
+            idempotencyKey: "failed",
+            status: "failed",
+            attempts: 3,
+            maxAttempts: 3,
+            enqueuedAt: "2026-05-28T00:00:00.000Z",
+            nextAttemptAt: "2026-05-28T00:01:00.000Z",
+            sentAt: null,
+            lastError: "boom",
+            sourceRefs: [],
+          },
+        ];
+        return Object.freeze(
+          rows.filter(
+            (row) => filter?.status === undefined || row.status === filter.status,
+          ),
+        );
+      },
+    });
+    const p = makeFixtureProcessor({
+      id: "test.garden.operational",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      run: async (ctx) => {
+        seen.granted = ctx.operational?.outbox().map((row) => row.idempotencyKey) ?? [];
+        seen.denied = ctx.operational?.outbox({ status: "pending" }).length === 0;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], {
+      resolveGrants: () => [cap],
+      operational,
+    });
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(seen.granted).toEqual(["failed"]);
+    expect(seen.denied).toBe(true);
   });
 
   test("model output parse errors preserve model-specific execution codes", async () => {

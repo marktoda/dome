@@ -16,6 +16,7 @@ import {
 } from "../../../../src/core/processor";
 
 import {
+  OUTBOX_RECOVERY_FAILURE_SEPARATOR,
   OUTBOX_RECOVERY_OPTIONS,
   OUTBOX_RECOVERY_QUESTION_PREFIX,
 } from "./outbox-recovery-shared";
@@ -50,6 +51,18 @@ function questionForFailedRow(row: OperationalOutboxRow): QuestionEffect {
       `${row.attempts}/${row.maxAttempts} attempt(s). Retry or abandon it?`,
     options: OUTBOX_RECOVERY_OPTIONS,
     sourceRefs: row.sourceRefs,
-    idempotencyKey: `${OUTBOX_RECOVERY_QUESTION_PREFIX}${row.idempotencyKey}`,
+    idempotencyKey:
+      `${OUTBOX_RECOVERY_QUESTION_PREFIX}${row.idempotencyKey}` +
+      `${OUTBOX_RECOVERY_FAILURE_SEPARATOR}${failureToken(row)}`,
   });
+}
+
+function failureToken(row: OperationalOutboxRow): string {
+  return encodeURIComponent(
+    JSON.stringify({
+      attempts: row.attempts,
+      nextAttemptAt: row.nextAttemptAt,
+      lastError: row.lastError,
+    }),
+  );
 }

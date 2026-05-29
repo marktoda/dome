@@ -44,6 +44,8 @@ extensions:
       question.ask: true
       job.enqueue: ["dome.worker.*"]
       external: ["calendar.write"]
+      outbox.read: ["failed"]
+      outbox.recover: true
   disabled.bundle:
     enabled: false
     grant:
@@ -71,6 +73,14 @@ extensions:
     expect(grants).toContainEqual({
       kind: "external",
       capability: "calendar.write",
+    });
+    expect(grants).toContainEqual({
+      kind: "outbox.read",
+      statuses: ["failed"],
+    });
+    expect(grants).toContainEqual({
+      kind: "outbox.recover",
+      actions: ["retry", "abandon"],
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);

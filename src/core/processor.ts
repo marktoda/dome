@@ -195,6 +195,7 @@ export type Trigger =
  *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
  *   - `external`      — emit ExternalActionEffect with the named capability.
+ *   - `outbox.read`   — read operational outbox rows via `ctx.operational`.
  *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
  */
 export type ReadCapability = {
@@ -242,6 +243,15 @@ export type ExternalCapability = {
   readonly kind: "external";
   readonly capability: string;
 };
+export type OperationalOutboxStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "abandoned";
+export type OutboxReadCapability = {
+  readonly kind: "outbox.read";
+  readonly statuses?: ReadonlyArray<OperationalOutboxStatus>;
+};
 export type OutboxRecoverCapability = {
   readonly kind: "outbox.recover";
   readonly actions: ReadonlyArray<OutboxRecoveryEffect["action"]>;
@@ -259,6 +269,7 @@ export type Capability =
   | JobEnqueueCapability
   | ModelInvokeCapability
   | ExternalCapability
+  | OutboxReadCapability
   | OutboxRecoverCapability;
 
 // ----- CapabilityToken ------------------------------------------------------
@@ -372,12 +383,6 @@ export type SearchDocumentResult = {
 };
 
 // ----- OperationalQueryView -------------------------------------------------
-
-export type OperationalOutboxStatus =
-  | "pending"
-  | "sent"
-  | "failed"
-  | "abandoned";
 
 export type OperationalOutboxRow = {
   readonly id: number;
@@ -621,6 +626,20 @@ export const ExternalCapabilitySchema = z
   })
   .strict();
 
+export const OperationalOutboxStatusSchema = z.enum([
+  "pending",
+  "sent",
+  "failed",
+  "abandoned",
+]);
+
+export const OutboxReadCapabilitySchema = z
+  .object({
+    kind: z.literal("outbox.read"),
+    statuses: z.array(OperationalOutboxStatusSchema).min(1).optional(),
+  })
+  .strict();
+
 export const OutboxRecoverCapabilitySchema = z
   .object({
     kind: z.literal("outbox.recover"),
@@ -640,6 +659,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,
   ExternalCapabilitySchema,
+  OutboxReadCapabilitySchema,
   OutboxRecoverCapabilitySchema,
 ]);
 

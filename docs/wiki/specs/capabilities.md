@@ -32,6 +32,7 @@ type Capability =
   | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
   | { kind: "external";      capability: string }               // ExternalActionEffect capabilities (e.g., "calendar.write")
+  | { kind: "outbox.read";   statuses?: ("pending" | "sent" | "failed" | "abandoned")[] }
   | { kind: "outbox.recover"; actions: ("retry" | "abandon")[] }; // OutboxRecoveryEffect actions
 ```
 
@@ -100,6 +101,14 @@ The runtime enforces the intersection of the declared and granted allowlists bef
 Permits emitting `ExternalActionEffect` with the named capability. Each external capability is a separate grant — `external: "calendar.write"` does not imply `external: "notify.push"`.
 
 External capabilities are registered as handlers in the SDK (or in a plugin bundle); the engine looks up the handler at outbox dispatch time. Capability handlers live at `src/external-handlers/<capability>.ts` for first-party (calendar, notify, network); plugin-contributed handlers register through their bundle's `external-handlers/` directory.
+
+### `outbox.read`
+
+Permits reading operational outbox rows through `ctx.operational.outbox()`.
+The runtime exposes this query view only to non-adoption processors whose
+declaration and vault grant both include `outbox.read`; optional `statuses`
+scope which row states are visible. This is a read power, not a mutation
+power: processors still recover rows only by emitting `OutboxRecoveryEffect`.
 
 ### `outbox.recover`
 
@@ -171,7 +180,7 @@ extensions:
 
 The broker enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`). A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `question.ask`, and `outbox.recover`; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
 
 ## Enforcement chokepoint
 
@@ -199,13 +208,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why twelve tiers, not more
+## Why thirteen tiers, not more
 
-The twelve cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
+The thirteen cover every effect kind and two non-effect powers (`model.invoke` and operational outbox reads). Three properties drive the closed set:
 
-1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the twelve would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`) have explicit context gates. Adding capabilities beyond the thirteen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Twelve cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Thirteen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

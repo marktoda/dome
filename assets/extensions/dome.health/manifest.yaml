@@ -8,6 +8,8 @@ processors:
       - kind: schedule
         cron: "* * * * *"
     capabilities:
+      - kind: outbox.read
+        statuses: ["failed"]
       - kind: question.ask
     module: processors/outbox-recovery-questions.ts
 

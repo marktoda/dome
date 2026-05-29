@@ -12,6 +12,7 @@ import type { RunId } from "../../../../src/engine/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import {
   insertPending,
+  markAbandoned,
   markFailed,
   queryOutbox,
 } from "../../../../src/outbox/dispatch";
@@ -26,6 +27,7 @@ scenario(
       { kind: "effect", effect: "question" },
       { kind: "effect", effect: "outbox-recovery" },
       { kind: "phase", phase: "garden" },
+      { kind: "capability", capability: "outbox.read" },
       { kind: "capability", capability: "question.ask" },
       { kind: "capability", capability: "outbox.recover" },
       { kind: "trigger", trigger: "schedule" },
@@ -39,6 +41,7 @@ extensions:
   dome.health:
     enabled: true
     grant:
+      outbox.read: ["failed"]
       question.ask: true
       outbox.recover: ["retry", "abandon"]
 `,
@@ -89,11 +92,15 @@ extensions:
     }>;
     const retryQuestion = questions.find(
       (q) =>
-        q.idempotency_key === "dome.health.outbox-recovery:health-retry",
+        q.idempotency_key.startsWith(
+          "dome.health.outbox-recovery:health-retry|failure:",
+        ),
     );
     const abandonQuestion = questions.find(
       (q) =>
-        q.idempotency_key === "dome.health.outbox-recovery:health-abandon",
+        q.idempotency_key.startsWith(
+          "dome.health.outbox-recovery:health-abandon|failure:",
+        ),
     );
     expect(retryQuestion).toBeDefined();
     expect(abandonQuestion).toBeDefined();
@@ -190,5 +197,22 @@ extensions:
       },
     ]);
 
+    markFailed(h.outbox, "health-retry", "failed again");
+    await h.advance(60_000);
+    await h.drainOperationalWork();
+    const afterRetryFailure = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<{
+      readonly status: string;
+      readonly idempotency_key: string;
+    }>;
+    expect(
+      afterRetryFailure.filter((q) =>
+        q.idempotency_key.startsWith(
+          "dome.health.outbox-recovery:health-retry|failure:",
+        ),
+      ).map((q) => q.status),
+    ).toEqual(["answered", "open"]);
+    markAbandoned(h.outbox, "health-retry");
   },
 );

@@ -364,11 +364,12 @@ When operational substrate gets stuck (outbox row terminally failed,
 processor quarantined, force-advance needed across a divergent
 adopted ref), the natural pattern is:
 
-1. **Engine publishes a signal** (e.g., `engine.outbox.terminal-failure`).
-2. **A garden-phase processor in `dome.health`** subscribes to the
-   signal and emits a `QuestionEffect` with options (e.g., `["retry",
-   "abandon", "wait"]`), `idempotencyKey` set to the underlying row id,
-   and `sourceRefs` pointing at the substrate row.
+1. **A scheduled garden-phase processor in `dome.health`** reads the relevant
+   operational substrate through a scoped `ctx.operational` query view
+   (for example failed outbox rows via `outbox.read`).
+2. **That processor emits a `QuestionEffect`** with options (for example
+   `["retry", "abandon"]`), an idempotency key that names the stuck row and
+   failure instance, and `sourceRefs` pointing at the substrate row's origin.
 3. **User runs `dome inspect questions`** to see pending questions.
 4. **User runs `dome answer <question-id> retry`** to resolve.
 5. **A second garden-phase processor in `dome.health`** declares an

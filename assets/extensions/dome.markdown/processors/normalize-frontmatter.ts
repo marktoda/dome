@@ -51,7 +51,7 @@ import matter from "gray-matter";
 import {
   patchEffect,
   type Effect,
-  type FileChange,
+  type FileChangeInput,
 } from "../../../../src/core/effect";
 import {
   defineProcessor,
@@ -107,7 +107,7 @@ const normalizeFrontmatter: Processor = defineProcessor({
     // YAML frontmatter in the vault convention.
     const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
 
-    const changes: FileChange[] = [];
+    const changes: FileChangeInput[] = [];
     const sourceRefs: SourceRef[] = [];
 
     for (const path of changedMarkdown) {
@@ -189,7 +189,7 @@ function normalizeContent(content: string): string | null {
   //                        (gray-matter returns early in parseMatter
   //                        without ever populating `data` beyond the
   //                        default `{}` set by `to-file`).
-  if (parsed.isEmpty || Object.keys(parsed.data).length === 0) {
+  if (matterFileIsEmpty(parsed) || Object.keys(parsed.data).length === 0) {
     return null;
   }
 
@@ -206,6 +206,11 @@ function normalizeContent(content: string): string | null {
   // no-op (the parsed file's data is `{}`), and the reordered object's
   // insertion order is preserved through to the YAML output.
   return matter.stringify(parsed.content, reordered);
+}
+
+function matterFileIsEmpty(file: matter.GrayMatterFile<string>): boolean {
+  return (file as matter.GrayMatterFile<string> & { readonly isEmpty?: boolean })
+    .isEmpty === true;
 }
 
 /**

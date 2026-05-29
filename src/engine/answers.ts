@@ -13,6 +13,7 @@ import {
 import type {
   AnswerTrigger,
   Capability,
+  OperationalQueryView,
   Processor,
   TreeOid,
 } from "../core/processor";
@@ -36,7 +37,11 @@ import {
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
 import type { ModelProvider } from "./model-invoke";
-import type { RunId } from "./runner-contract";
+import type {
+  RunId,
+  RunnerError,
+  RunnerExecutionStatus,
+} from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
 export type AnswerRunInput = {
@@ -51,6 +56,8 @@ export type AnswerRunInput = {
 export type AnswerHandlerRunSummary = {
   readonly runId: RunId;
   readonly processorId: string;
+  readonly executionStatus: RunnerExecutionStatus;
+  readonly executionError?: RunnerError;
   readonly effectCount: number;
   readonly authorizedPatchCount: number;
 };
@@ -80,6 +87,7 @@ export async function runAnswerHandlers(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
@@ -133,6 +141,7 @@ async function runAnswerHandlersInner(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
@@ -197,6 +206,7 @@ async function runAnswerHandlersInner(opts: {
       ...(opts.modelProvider !== undefined
         ? { modelProvider: opts.modelProvider }
         : {}),
+      ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     });
 
     let authorizedPatchCount = 0;
@@ -260,6 +270,10 @@ async function runAnswerHandlersInner(opts: {
       Object.freeze({
         runId: result.runId,
         processorId: result.processorId,
+        executionStatus: result.executionStatus,
+        ...(result.executionError !== undefined
+          ? { executionError: result.executionError }
+          : {}),
         effectCount: result.effects.length,
         authorizedPatchCount,
       }),
