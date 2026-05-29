@@ -20,13 +20,12 @@
 //      (EX_USAGE) and a clear error message.
 //
 // Fixture pattern mirrors `tests/cli/serve.test.ts`: a tmpdir vault with
-// a seed commit and the shipped `dome.lint` bundle copied into
-// `.dome/extensions/`. No mocks; the real git boundary, the real engine,
-// the real sqlite handles.
+// a valid seed commit and the shipped first-party bundle root. No mocks;
+// the real git boundary, the real engine, the real sqlite handles.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +46,18 @@ import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
+const SYNC_JSON_KEYS = Object.freeze([
+  "status",
+  "branch",
+  "base",
+  "head",
+  "adoptedRef",
+  "iterations",
+  "closureCommit",
+  "diagnostics",
+]);
+const SYNC_ERROR_JSON_KEYS = Object.freeze([...SYNC_JSON_KEYS, "error"]);
 
 // ----- Console capture ------------------------------------------------------
 
@@ -93,15 +104,16 @@ type Fixture = {
 };
 
 /**
- * Build a fresh tmpdir vault: a real git repo with one seed commit + the
- * shipped `dome.lint` bundle copied into `.dome/extensions/`.
+ * Build a fresh tmpdir vault: a real git repo with one valid seed commit.
+ * The command opens the SDK's shipped first-party bundles through
+ * `bundlesRoot`.
  */
 async function makeFixture(): Promise<Fixture> {
   const vaultPath = mkdtempSync(join(tmpdir(), "sync-test-"));
   await initRepo(vaultPath);
   await mkdir(join(vaultPath, "wiki"), { recursive: true });
 
-  await writeFile(join(vaultPath, "wiki/seed.md"), "seed\n");
+  await writeFile(join(vaultPath, "wiki/seed.md"), VALID_CONCEPT_PAGE);
   const initialSha = await commit({
     path: vaultPath,
     message: "init\n",
@@ -109,11 +121,6 @@ async function makeFixture(): Promise<Fixture> {
   });
 
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "extensions"), { recursive: true });
-  await copyTree(
-    join(SHIPPED_BUNDLES_ROOT, "dome.lint"),
-    join(vaultPath, ".dome", "extensions", "dome.lint"),
-  );
 
   return {
     vaultPath,
@@ -123,23 +130,6 @@ async function makeFixture(): Promise<Fixture> {
       await rm(vaultPath, { recursive: true, force: true });
     },
   };
-}
-
-async function copyTree(src: string, dst: string): Promise<void> {
-  const s = await stat(src);
-  if (!s.isDirectory()) {
-    await mkdir(dirname(dst), { recursive: true });
-    await copyFile(src, dst);
-    return;
-  }
-  await mkdir(dst, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcChild = join(src, entry.name);
-    const dstChild = join(dst, entry.name);
-    if (entry.isDirectory()) await copyTree(srcChild, dstChild);
-    else if (entry.isFile()) await copyFile(srcChild, dstChild);
-  }
 }
 
 const fixtures: Fixture[] = [];
@@ -173,6 +163,30 @@ describe("runSync empty-diff init", () => {
     const outBlob = captured.out.join("\n");
     expect(outBlob).toContain("adopted");
     expect(outBlob).toContain("main");
+  }, 10_000);
+
+  test("--json adopted payload keeps the fixture schema stable", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    expect(code).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(Object.keys(parsed)).toEqual([...SYNC_JSON_KEYS]);
+    expect(parsed["status"]).toBe("adopted");
+    expect(parsed["branch"]).toBe("main");
+    expect(parsed["base"]).toBe(f.initialSha);
+    expect(parsed["head"]).toBe(f.initialSha);
+    expect(parsed["adoptedRef"]).toBe(f.initialSha);
+    expect(parsed["iterations"]).toBe(1);
+    expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 });
 
@@ -219,6 +233,37 @@ describe("runSync idempotent", () => {
     } finally {
       ledger2.value.db.close();
     }
+  }, 10_000);
+
+  test("--json in-sync payload keeps the fixture schema stable", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const options = {
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    };
+
+    const code1 = await runSync(options);
+    expect(code1).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    const code2 = await runSync(options);
+    expect(code2).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(Object.keys(parsed)).toEqual([...SYNC_JSON_KEYS]);
+    expect(parsed["status"]).toBe("in-sync");
+    expect(parsed["branch"]).toBe("main");
+    expect(parsed["base"]).toBe(f.initialSha);
+    expect(parsed["head"]).toBe(f.initialSha);
+    expect(parsed["adoptedRef"]).toBe(f.initialSha);
+    expect(parsed["iterations"]).toBe(0);
+    expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
   test("in-sync sync still drains durable operational work", async () => {
@@ -291,7 +336,7 @@ describe("runSync drift adoption", () => {
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
 
     // Make a second commit. The adopted ref is now behind HEAD.
-    await writeFile(join(f.vaultPath, "wiki/new.md"), "new page\n");
+    await writeFile(join(f.vaultPath, "wiki/new.md"), VALID_CONCEPT_PAGE);
     const newSha = await commit({
       path: f.vaultPath,
       message: "add wiki/new.md\n",
@@ -353,4 +398,43 @@ describe("runSync detached HEAD", () => {
     const errBlob = captured.err.join("\n");
     expect(errBlob).toContain("detached");
   }, 5_000);
+
+  test("--json detached-head payload keeps the fixture schema stable", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const sha = await currentSha(f.vaultPath);
+    if (sha === null) throw new Error("expected initial sha");
+    await writeFile(join(f.vaultPath, ".git", "HEAD"), `${sha}\n`);
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    expect(code).toBe(64);
+
+    const parsed = parseSingleJsonObject({ allowStderr: true });
+    expect(Object.keys(parsed)).toEqual([...SYNC_ERROR_JSON_KEYS]);
+    expect(parsed["status"]).toBe("error");
+    expect(parsed["branch"]).toBeNull();
+    expect(parsed["base"]).toBeNull();
+    expect(parsed["head"]).toBeNull();
+    expect(parsed["adoptedRef"]).toBeNull();
+    expect(parsed["iterations"]).toBe(0);
+    expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["diagnostics"]).toEqual([]);
+    expect(parsed["error"]).toBe("detached-head");
+  }, 5_000);
 });
+
+function parseSingleJsonObject(opts: {
+  readonly allowStderr?: boolean;
+} = {}): Record<string, unknown> {
+  if (opts.allowStderr !== true) {
+    expect(captured.err.join("\n")).toBe("");
+  }
+  expect(captured.out.length).toBe(1);
+  return JSON.parse(captured.out[0] ?? "{}") as Record<string, unknown>;
+}

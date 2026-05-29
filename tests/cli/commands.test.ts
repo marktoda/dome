@@ -63,6 +63,30 @@ import {
   queryQuestionRecords,
 } from "../../src/projections/questions";
 
+const STATUS_JSON_KEYS = Object.freeze([
+  "vault",
+  "branch",
+  "head",
+  "adopted",
+  "dirty_modified",
+  "dirty_untracked",
+  "content_pages",
+  "wiki_pages",
+  "notes_pages",
+  "inbox_pages",
+  "wikilinks",
+  "raw_files",
+  "raw_bytes",
+  "last_sync",
+  "pending_runs",
+  "failed_runs",
+  "diagnostics",
+  "questions",
+  "outbox_pending",
+  "outbox_failed",
+  "quarantined",
+]);
+
 // ----- Console capture ------------------------------------------------------
 //
 // Each test silences console.log / console.error so the suite output stays
@@ -794,6 +818,7 @@ describe("runStatus", () => {
     expect(blob).toBeDefined();
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual([...STATUS_JSON_KEYS]);
     expect(parsed["vault"]).toBe(f.vaultPath);
     expect(parsed["branch"]).toBeDefined();
     expect(parsed["dirty_modified"]).toBe(0);

@@ -174,7 +174,7 @@ Work:
 - [x] Keep `sync --json` available for agent consumption.
 - [x] Add host-on `serve` E2E coverage: commit while `serve` runs, adopted ref
       catches up, status reports healthy.
-- [ ] Stabilize `sync --json` and `status --json` fixture schemas.
+- [x] Stabilize `sync --json` and `status --json` fixture schemas.
 - [ ] Coalesce branch movement while adoption is active.
 - [ ] Ensure only one adoption runs per branch at a time.
 - [ ] Add explicit quiet/verbose output modes and decide whether
@@ -185,7 +185,7 @@ Acceptance:
 - [x] Host-on E2E scenario proves `serve` adopts branch movement.
 - [x] Host-off E2E path is covered by `sync` harness scenarios.
 - [x] In-sync operational-drain path is covered by harness/CLI scenarios.
-- [ ] CLI fixture tests cover status/sync text and JSON schemas.
+- [x] CLI fixture tests cover status/sync text and JSON schemas.
 
 ## Milestone 3 - Deterministic Adopted-State Substrate
 
