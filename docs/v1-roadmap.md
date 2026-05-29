@@ -172,7 +172,7 @@ Work:
 - [x] Drain operational work even when HEAD/adopted are already in sync.
 - [x] Preserve the pretty text `status` dashboard.
 - [x] Keep `sync --json` available for agent consumption.
-- [ ] Add host-on `serve` E2E coverage: commit while `serve` runs, adopted ref
+- [x] Add host-on `serve` E2E coverage: commit while `serve` runs, adopted ref
       catches up, status reports healthy.
 - [ ] Stabilize `sync --json` and `status --json` fixture schemas.
 - [ ] Coalesce branch movement while adoption is active.
@@ -182,7 +182,7 @@ Work:
 
 Acceptance:
 
-- [ ] Host-on E2E scenario proves `serve` adopts branch movement.
+- [x] Host-on E2E scenario proves `serve` adopts branch movement.
 - [x] Host-off E2E path is covered by `sync` harness scenarios.
 - [x] In-sync operational-drain path is covered by harness/CLI scenarios.
 - [ ] CLI fixture tests cover status/sync text and JSON schemas.

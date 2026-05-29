@@ -3,8 +3,8 @@
 // Two tests cover the load-bearing surface:
 //
 //   1. End-to-end smoke: start the daemon against a real tmpdir vault with
-//      the shipped `dome.lint` bundle copied in; let it run the empty-diff
-//      init (advances refs/dome/adopted/main from null → initial commit);
+//      the shipped first-party bundle root; let it run the empty-diff init
+//      (advances refs/dome/adopted/main from null → initial commit);
 //      make a second commit; wait for the daemon to detect the drift and
 //      advance the adopted ref to the new HEAD; cancel via AbortSignal;
 //      assert the daemon exited 0 and the run-ledger is clean (no failed
@@ -21,12 +21,13 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runServe } from "../../src/cli/commands/serve";
+import { runStatus } from "../../src/cli/commands/status";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -42,6 +43,7 @@ import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -88,17 +90,16 @@ type Fixture = {
 };
 
 /**
- * Build a fresh tmpdir vault: a real git repo with one seed commit + the
- * shipped `dome.lint` bundle copied into `.dome/extensions/`. The daemon
- * starts against this fixture; the test makes additional commits during
- * the run.
+ * Build a fresh tmpdir vault: a real git repo with one valid seed commit.
+ * The daemon opens the SDK's shipped first-party bundles through
+ * `bundlesRoot`; the test makes additional commits during the run.
  */
 async function makeFixture(): Promise<Fixture> {
   const vaultPath = mkdtempSync(join(tmpdir(), "serve-test-"));
   await initRepo(vaultPath);
   await mkdir(join(vaultPath, "wiki"), { recursive: true });
 
-  await writeFile(join(vaultPath, "wiki/seed.md"), "seed\n");
+  await writeFile(join(vaultPath, "wiki/seed.md"), VALID_CONCEPT_PAGE);
   const initialSha = await commit({
     path: vaultPath,
     message: "init\n",
@@ -106,11 +107,6 @@ async function makeFixture(): Promise<Fixture> {
   });
 
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "extensions"), { recursive: true });
-  await copyTree(
-    join(SHIPPED_BUNDLES_ROOT, "dome.lint"),
-    join(vaultPath, ".dome", "extensions", "dome.lint"),
-  );
 
   return {
     vaultPath,
@@ -120,23 +116,6 @@ async function makeFixture(): Promise<Fixture> {
       await rm(vaultPath, { recursive: true, force: true });
     },
   };
-}
-
-async function copyTree(src: string, dst: string): Promise<void> {
-  const s = await stat(src);
-  if (!s.isDirectory()) {
-    await mkdir(dirname(dst), { recursive: true });
-    await copyFile(src, dst);
-    return;
-  }
-  await mkdir(dst, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcChild = join(src, entry.name);
-    const dstChild = join(dst, entry.name);
-    if (entry.isDirectory()) await copyTree(srcChild, dstChild);
-    else if (entry.isFile()) await copyFile(srcChild, dstChild);
-  }
 }
 
 const fixtures: Fixture[] = [];
@@ -179,7 +158,7 @@ describe("runServe smoke", () => {
 
     // Make a second commit. The daemon should detect drift on the next
     // poll and run adoption against `(initialSha, newSha)`.
-    await writeFile(join(f.vaultPath, "wiki/new.md"), "new page\n");
+    await writeFile(join(f.vaultPath, "wiki/new.md"), VALID_CONCEPT_PAGE);
     const newSha = await commit({
       path: f.vaultPath,
       message: "add wiki/new.md\n",
@@ -197,15 +176,42 @@ describe("runServe smoke", () => {
     const code = await servePromise;
     expect(code).toBe(0);
 
-    // Open the ledger READ-ONLY through a separate handle (the host's
-    // runtime already closed). The dome.lint v1.0 bundle ships only a
-    // view-phase, command-triggered processor — adoption-phase processors
-    // for `wiki/new.md` don't yet exist in the shipped first-party set
-    // (that lands in Phase 11d with `dome.markdown.validate-wikilinks`).
-    // So the load-bearing assertion here is the adopted-ref advance
-    // above; the ledger is asserted to be at least *openable* and
-    // structurally consistent (no failed or running rows from the two
-    // adoption cycles).
+    captured.out = [];
+    captured.err = [];
+    const statusCode = await runStatus({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    expect(statusCode).toBe(0);
+    expect(captured.err.join("\n")).toBe("");
+    const status = JSON.parse(captured.out.join("\n")) as {
+      readonly branch: string | null;
+      readonly head: string | null;
+      readonly adopted: string | null;
+      readonly pending_runs: number;
+      readonly failed_runs: number;
+      readonly diagnostics: number;
+      readonly questions: number;
+      readonly outbox_pending: number;
+      readonly outbox_failed: number;
+      readonly quarantined: number;
+    };
+    expect(status.branch).toBe("main");
+    expect(status.head).toBe(newSha);
+    expect(status.adopted).toBe(newSha);
+    expect(status.pending_runs).toBe(0);
+    expect(status.failed_runs).toBe(0);
+    expect(status.diagnostics).toBe(0);
+    expect(status.questions).toBe(0);
+    expect(status.outbox_pending).toBe(0);
+    expect(status.outbox_failed).toBe(0);
+    expect(status.quarantined).toBe(0);
+
+    // Open the ledger READ-ONLY through a separate handle after the host's
+    // runtime closes. The load-bearing assertions above cover the host and
+    // status surfaces; this final check ensures no failed or stuck-running
+    // rows leaked from the two adoption cycles.
     const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
     const ledger = await openLedgerDb({ path: ledgerPath });
     if (!ledger.ok) throw new Error(`could not reopen ledger: ${ledger.error.kind}`);
