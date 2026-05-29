@@ -150,6 +150,17 @@ export type HealthFinding =
         readonly processorId: string;
         readonly missingKinds: ReadonlyArray<Capability["kind"]>;
       };
+    }
+  | {
+      readonly code: "model.provider-missing";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: "model_provider";
+      readonly message: string;
+      readonly recovery: string;
+      readonly model: {
+        readonly processorIds: ReadonlyArray<string>;
+      };
     };
 
 export type HealthSummary = {
@@ -165,6 +176,7 @@ export type HealthSummary = {
   readonly instructionDrift: number;
   readonly operationalSchemaMismatch: number;
   readonly capabilityGrantGaps: number;
+  readonly modelProviderMissing: number;
 };
 
 export type HealthReport = {
@@ -193,6 +205,7 @@ export async function collectHealthReport(opts: {
   readonly resolveGrants?: (
     processorId: string,
   ) => ReadonlyArray<Capability>;
+  readonly modelProviderConfigured?: boolean;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -224,10 +237,19 @@ export async function collectHealthReport(opts: {
           registry: opts.registry,
           resolveGrants: opts.resolveGrants,
         });
+  const modelProvider =
+    opts.registry === undefined || opts.resolveGrants === undefined
+      ? []
+      : modelProviderFindings({
+          registry: opts.registry,
+          resolveGrants: opts.resolveGrants,
+          modelProviderConfigured: opts.modelProviderConfigured === true,
+        });
 
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
+    ...modelProvider,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -274,6 +296,7 @@ function buildHealthReport(
       instructionDrift: count("instructions.drift"),
       operationalSchemaMismatch: count("operational.schema-mismatch"),
       capabilityGrantGaps: count("capability.grant-missing"),
+      modelProviderMissing: count("model.provider-missing"),
     }),
     findings: Object.freeze([...findings]),
   });
@@ -321,6 +344,42 @@ function capabilityKinds(
   capabilities: ReadonlyArray<Capability>,
 ): ReadonlySet<Capability["kind"]> {
   return new Set(capabilities.map((capability) => capability.kind));
+}
+
+function modelProviderFindings(opts: {
+  readonly registry: ProcessorRegistry;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly modelProviderConfigured: boolean;
+}): ReadonlyArray<HealthFinding> {
+  if (opts.modelProviderConfigured) return Object.freeze([]);
+
+  const processorIds = [...opts.registry.all()]
+    .filter((processor) =>
+      capabilityKinds(processor.capabilities).has("model.invoke") &&
+      capabilityKinds(opts.resolveGrants(processor.id)).has("model.invoke"),
+    )
+    .map((processor) => processor.id)
+    .sort();
+  if (processorIds.length === 0) return Object.freeze([]);
+
+  return Object.freeze([
+    Object.freeze({
+      code: "model.provider-missing" as const,
+      severity: "warning" as const,
+      subject: "config" as const,
+      id: "model_provider" as const,
+      message:
+        `${processorIds.length} enabled processor(s) can invoke models, ` +
+        "but no model provider is configured for this vault.",
+      recovery:
+        "Configure model_provider in .dome/config.yaml, run the host with an " +
+        "injected ModelProvider, or disable the model-capable bundle until " +
+        "the provider is ready.",
+      model: Object.freeze({
+        processorIds: Object.freeze(processorIds),
+      }),
+    }),
+  ]);
 }
 
 function formatList(values: ReadonlyArray<string>): string {

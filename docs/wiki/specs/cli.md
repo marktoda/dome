@@ -444,7 +444,9 @@ Engine-substrate **health check** verb. The current implementation is
 probe-only and read-only: it reports failed/stuck outbox rows, orphan running
 rows, quarantined processor triggers, projection cache drift, adopted-ref
 divergence, instruction drift, operational schema mismatches, and enabled
-processor capability kinds that are declared but not granted from
+processor capability kinds that are declared but not granted. It also reports
+enabled/granted model-capable processors when the vault has no configured or
+host-injected model provider. The implementation lives in
 `src/engine/health.ts`.
 
 **Current behavior.** `dome doctor` opens the runtime, collects a

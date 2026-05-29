@@ -87,6 +87,7 @@ export async function runDoctor(
       capabilityPolicyHash: runtime.capabilityPolicyHash,
       registry: runtime.registry,
       resolveGrants: runtime.resolveGrants,
+      modelProviderConfigured: runtime.modelProvider !== undefined,
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {
@@ -121,7 +122,8 @@ function printDoctorText(report: HealthReport): void {
       `git ${report.summary.adoptedRefDivergence} | ` +
       `instructions ${report.summary.instructionDrift} | ` +
       `storage ${report.summary.operationalSchemaMismatch} | ` +
-      `grants ${report.summary.capabilityGrantGaps}`,
+      `grants ${report.summary.capabilityGrantGaps} | ` +
+      `model ${report.summary.modelProviderMissing}`,
   );
   for (const finding of report.findings) {
     console.log(formatFinding(finding));

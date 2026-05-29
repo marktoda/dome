@@ -478,6 +478,9 @@ Work:
 - [x] Keep LLM write effects capability-scoped and SourceRef-backed.
 - [x] Package a production provider path; vaults can configure a command
       provider and the CLI/harness path exercises it without runtime injection.
+- [x] Report a read-only doctor preflight when model-capable processors are
+      enabled and granted `model.invoke` but no provider is configured for the
+      CLI/host runtime.
 
 Acceptance:
 
@@ -486,6 +489,9 @@ Acceptance:
 - [x] Cost budget denial is visible and recoverable.
 - [x] Timeout/cancellation does not leave orphan running rows.
 - [x] Model-generated patches without SourceRefs fail before routing.
+- [x] `dome doctor --json` warns before a configured model-capable bundle is
+      run without a provider, and the V1 acceptance harness exercises the
+      production command-provider path.
 
 ## Milestone 7 - LLM Garden and Intake
 

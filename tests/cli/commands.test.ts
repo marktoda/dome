@@ -875,6 +875,7 @@ describe("runDoctor", () => {
   test("clean vault reports ok", async () => {
     const f = await makeFixture();
     fixtures.push(f);
+    await writeDoctorConfig(f);
 
     const code = await runDoctor({ vault: f.vaultPath });
     expect(code).toBe(0);
@@ -886,6 +887,7 @@ describe("runDoctor", () => {
   test("--json reports failed outbox, orphan runs, and quarantines", async () => {
     const f = await makeFixture();
     fixtures.push(f);
+    await writeDoctorConfig(f);
     await seedUnhealthyOperationalState(f);
 
     const code = await runDoctor({
@@ -979,6 +981,26 @@ describe("runDoctor", () => {
     );
   });
 });
+
+async function writeDoctorConfig(f: Fixture): Promise<void> {
+  await writeFile(
+    join(f.vaultPath, ".dome", "config.yaml"),
+    "extensions: {}\n",
+    "utf8",
+  );
+  await writeFile(
+    join(f.vaultPath, "AGENTS.md"),
+    [
+      "# This is a Dome vault.",
+      "",
+      "<!-- BEGIN user-prose -->",
+      "<!-- END user-prose -->",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(join(f.vaultPath, "CLAUDE.md"), "@AGENTS.md\n", "utf8");
+}
 
 // ----- runStatus ------------------------------------------------------------
 

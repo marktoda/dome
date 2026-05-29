@@ -18,6 +18,70 @@ const GENERATED_CAPTURE_PATH = outputPath(CAPTURE_PATH, "wiki/generated/intake")
 const ARCHIVE_PATH = outputPath(CAPTURE_PATH, "inbox/processed");
 const SYNTHESIS_PATH = synthesisOutputPath(GENERATED_CAPTURE_PATH);
 const ROLLUP_PATH = rollupOutputPath();
+const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
+const COMMAND_PROVIDER_SOURCE = `
+const request = JSON.parse(await Bun.stdin.text());
+if (request.model !== "test-model") {
+  console.error("expected test-model");
+  process.exit(2);
+}
+if (
+  request.prompt.startsWith(
+    "Synthesize recent Dome generated intake captures",
+  )
+) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Manager day rollup",
+      thesis:
+        "Recent captures keep launch staffing and hiring budget follow-up in view.",
+      themes: [
+        "Ada needs launch staffing notes",
+        "Ben owns the hiring budget follow-up",
+      ],
+      risks: ["Budget follow-up may block the launch staffing thread"],
+      nextSteps: ["Send Ada the launch staffing note"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else if (
+  request.prompt.startsWith(
+    "Synthesize a Dome generated intake capture",
+  )
+) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Manager day synthesis",
+      thesis:
+        "The capture keeps launch staffing and hiring budget follow-up in view.",
+      highlights: [
+        "Ada needs launch staffing notes",
+        "Ben owns the hiring budget follow-up",
+      ],
+      risks: ["Budget follow-up may block the launch staffing thread"],
+      nextSteps: ["Send Ada the launch staffing note"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Manager day follow-up",
+      summary:
+        "Ada needs launch staffing notes and Ben owns the hiring budget follow-up.",
+      tasks: ["Send Ada the launch staffing note"],
+      followups: ["Ask Ben about hiring budget"],
+      decisions: ["Keep launch staffing review in this week's plan"],
+      entities: [],
+      sourceQuotes: ["Ask Ben about hiring budget"],
+    }),
+    model: request.model,
+    costUsd: 0.1,
+  }));
+}
+`;
 
 scenario(
   {
@@ -56,6 +120,7 @@ scenario(
       ],
       initialFiles: {
         ".dome/config.yaml": v1Config(),
+        [COMMAND_PROVIDER_PATH]: COMMAND_PROVIDER_SOURCE,
         "AGENTS.md": [
           "# This is a Dome vault.",
           "",
@@ -81,62 +146,6 @@ scenario(
           "- [x] Completed item should not carry forward",
           "",
         ].join("\n"),
-      },
-      modelProvider: async (request) => {
-        expect(request.model).toBe("test-model");
-        if (
-          request.prompt.startsWith(
-            "Synthesize recent Dome generated intake captures",
-          )
-        ) {
-          return {
-            text: JSON.stringify({
-              title: "Manager day rollup",
-              thesis:
-                "Recent captures keep launch staffing and hiring budget follow-up in view.",
-              themes: [
-                "Ada needs launch staffing notes",
-                "Ben owns the hiring budget follow-up",
-              ],
-              risks: ["Budget follow-up may block the launch staffing thread"],
-              nextSteps: ["Send Ada the launch staffing note"],
-            }),
-            costUsd: 0.05,
-          };
-        }
-        if (
-          request.prompt.startsWith(
-            "Synthesize a Dome generated intake capture",
-          )
-        ) {
-          return {
-            text: JSON.stringify({
-              title: "Manager day synthesis",
-              thesis:
-                "The capture keeps launch staffing and hiring budget follow-up in view.",
-              highlights: [
-                "Ada needs launch staffing notes",
-                "Ben owns the hiring budget follow-up",
-              ],
-              risks: ["Budget follow-up may block the launch staffing thread"],
-              nextSteps: ["Send Ada the launch staffing note"],
-            }),
-            costUsd: 0.05,
-          };
-        }
-        return {
-          text: JSON.stringify({
-            title: "Manager day follow-up",
-            summary:
-              "Ada needs launch staffing notes and Ben owns the hiring budget follow-up.",
-            tasks: ["Send Ada the launch staffing note"],
-            followups: ["Ask Ben about hiring budget"],
-            decisions: ["Keep launch staffing review in this week's plan"],
-            entities: [],
-            sourceQuotes: ["Ask Ben about hiring budget"],
-          }),
-          costUsd: 0.1,
-        };
       },
     },
   },
@@ -301,6 +310,9 @@ scenario(
 
 function v1Config(): string {
   return `
+model_provider:
+  kind: command
+  command: ${JSON.stringify([process.execPath, COMMAND_PROVIDER_PATH])}
 extensions:
   dome.markdown:
     enabled: true

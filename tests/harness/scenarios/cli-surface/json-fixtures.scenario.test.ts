@@ -60,6 +60,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "instructionDrift",
   "operationalSchemaMismatch",
   "capabilityGrantGaps",
+  "modelProviderMissing",
 ]);
 
 const QUERY_KEYS = Object.freeze(["schema", "query", "filters", "matches"]);

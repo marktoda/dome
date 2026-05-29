@@ -214,3 +214,79 @@ scenario(
     );
   },
 );
+
+scenario(
+  {
+    name: "cli-surface: dome doctor reports missing model provider preflight",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "capability", capability: "model.invoke" },
+    ],
+    harness: {
+      bundles: ["dome.intake"],
+      initialFiles: {
+        ".dome/config.yaml": [
+          "extensions:",
+          "  dome.intake:",
+          "    enabled: true",
+          "    grant:",
+          "      read:",
+          "        - \"inbox/**/*.md\"",
+          "        - \"wiki/generated/intake/*.md\"",
+          "      patch.auto:",
+          "        - \"wiki/generated/intake/*.md\"",
+          "        - \"wiki/syntheses/intake-*.md\"",
+          "        - \"wiki/syntheses/intake-rollup.md\"",
+          "        - \"inbox/processed/*.md\"",
+          "        - \"inbox/raw/*.md\"",
+          "      graph.write:",
+          "        - \"dome.intake.*\"",
+          "      model.invoke:",
+          "        maxDailyCostUsd: 5",
+          "      question.ask: true",
+        ].join("\n"),
+        "AGENTS.md":
+          "# This is a Dome vault.\n\n" +
+          "<!-- BEGIN user-prose -->\n" +
+          "<!-- END user-prose -->\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+      },
+    },
+  },
+  async (h) => {
+    const doctor = await h.runCli(["doctor", "--json"]);
+    expect(doctor.exitCode).toBe(0);
+    expect(doctor.stderr).toBe("");
+    const report = JSON.parse(doctor.stdout) as {
+      readonly status: string;
+      readonly summary: {
+        readonly modelProviderMissing: number;
+        readonly capabilityGrantGaps: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly id: string;
+        readonly model?: {
+          readonly processorIds: ReadonlyArray<string>;
+        };
+      }>;
+    };
+
+    expect(report.status).toBe("unhealthy");
+    expect(report.summary.modelProviderMissing).toBe(1);
+    expect(report.summary.capabilityGrantGaps).toBe(0);
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        code: "model.provider-missing",
+        id: "model_provider",
+        model: {
+          processorIds: [
+            "dome.intake.extract-capture",
+            "dome.intake.synthesize-capture",
+            "dome.intake.synthesize-rollup",
+          ],
+        },
+      }),
+    ]);
+  },
+);
