@@ -446,7 +446,7 @@ Work:
 - [x] Add one top-level acceptance scenario matching the Claude Code vault
       plan end to end.
 - [ ] Add host-on and host-off live harness fixtures.
-- [ ] Add bundle coverage tests so docs/matrices cannot claim unshipped
+- [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
 - [ ] Add status/doctor/query/export JSON fixtures.
 - [ ] Add docs for the foreground compiler workflow and recovery loop.
@@ -517,7 +517,7 @@ Fold these into nearby milestone work when they are on-path:
 - [ ] `status --json`: add per-processor recent-run summary once the status schema
   is stable.
 - [ ] SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
-- [ ] Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
+- [x] Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
   docs/matrices agree.
 - [x] Command-trigger uniqueness: reject duplicate view command names at
   registry/load time instead of letting runtime dispatch pick the first match.

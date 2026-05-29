@@ -49,7 +49,7 @@ Adding a first-party processor:
 3. Add a cell to this matrix.
 4. Add a test at `tests/processors/<bundle>-<name>.test.ts`.
 
-Planned structural fence: a future bundle-coverage test should iterate this matrix and assert every shipped processor exists at the declared bundle path. Until that lands, keep the shipped/planned status explicit in this file and in [[wiki/matrices/extension-bundle-shape]].
+Lockstep coverage: `tests/integration/bundle-matrix-lockstep.test.ts` parses this matrix and asserts every active shipped processor listed here matches the corresponding first-party bundle manifest. Planned entries are documentation-of-intent until promoted to shipped status with assets and tests.
 
 ## Why not collapse `dome.markdown` and `dome.index` into one bundle
 
