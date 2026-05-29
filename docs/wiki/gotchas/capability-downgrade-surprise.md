@@ -48,7 +48,7 @@ The user resolves by either:
 
 - **Third-party bundle with broad ask.** `community.heavy-linter` requests `patch.auto: ["**"]` in its manifest. The user installs it; the bundle loads (the manifest is valid); but the user has not granted `patch.auto: ["**"]` in `config.yaml` (default is empty). Every auto-patch the bundle emits gets downgraded to propose. The user sees a stream of warning diagnostics; reads the bundle's preamble.md to understand what it does; then either grants the full reach or removes the bundle.
 
-- **Region ownership conflict.** `dome.daily.create-daily` emits a patch touching `wiki/dailies/2026-05-27.md` (a path it's granted `patch.auto` for). The same patch also touches a region owned by `acme.todo-tracker` (`owns.region: ["acme.todo-tracker.today"]`). The patch is downgraded because of the region-ownership violation, not the path-grant — the diagnostic message names the region owner explicitly.
+- **Region ownership conflict (future).** Once generated-region ownership ships, `dome.daily.create-daily` might emit a patch touching `wiki/dailies/2026-05-27.md` (a path it's granted `patch.auto` for) and also touch a region owned by `acme.todo-tracker` (`owns.region: ["acme.todo-tracker.today"]`). That future patch should be downgraded or denied because of the region-ownership violation, not the path grant. In v1, manifests/configs reject `owns.region` until parser-backed enforcement exists.
 
 **Operational notes:**
 

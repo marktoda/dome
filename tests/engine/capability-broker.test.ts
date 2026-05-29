@@ -118,6 +118,23 @@ describe("PatchEffect (mode: auto)", () => {
     expect(r.diagnostic.message).toContain("owned/y.md");
   });
 
+  test("denies owns.region in v1 instead of pretending to enforce it", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+    const region: Capability = {
+      kind: "owns.region",
+      regionIds: ["dome.daily.generated"],
+    };
+    const r = enforceCapability(
+      patchTouching("wiki/x.md"),
+      [read, auto, region],
+      [read, auto, region],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.message).toContain("owns.region");
+    expect(r.diagnostic.message).toContain("not supported in v1");
+  });
+
   test("denies forged non-vault-relative paths before glob matching", () => {
     const auto: Capability = { kind: "patch.auto", paths: ["**"] };
     const forged = {

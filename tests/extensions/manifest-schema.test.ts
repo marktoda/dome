@@ -173,4 +173,27 @@ describe("parseManifest — execution metadata", () => {
     expect(result.error.phase).toBe("adoption");
     expect(result.error.capability).toBe("model.invoke");
   });
+
+  test("rejects owns.region until region ownership enforcement ships", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          capabilities: [
+            { kind: "owns.region", regionIds: ["test.generated"] },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("capability-not-supported");
+    if (result.error.kind !== "capability-not-supported") return;
+    expect(result.error.processorId).toBe("test.proc");
+    expect(result.error.capability).toBe("owns.region");
+    expect(result.error.message).toContain("not supported in v1");
+  });
 });

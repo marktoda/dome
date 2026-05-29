@@ -64,7 +64,7 @@ Permits `PatchEffect` with `mode: "auto"` for paths matching the glob. Auto-mode
 
 Marker-delimited region ownership. A processor that `owns.region: ["dome.daily.morning_brief"]` is the only one allowed to write inside `<!-- dome:region id="dome.daily.morning_brief" --> ... <!-- /dome:region -->` markers. Another processor's patch that touches the region is rejected.
 
-Implementation status: the capability kind and manifest/config schema exist, but region parsing and enforcement are not shipped yet. Current v1 enforcement covers `owns.path`; `owns.region` remains a planned generated-region boundary and should not be used as a shipped safety claim until the parser and harness coverage land.
+Implementation status: the core type exists as a planned API, but region parsing and enforcement are not shipped yet. V1 runtime manifests and config reject `owns.region`, and the broker denies hand-built PatchEffect routing that carries it, rather than pretending the generated-region boundary is safe. Current v1 enforcement covers `owns.path`; `owns.region` can be enabled only after parser-backed broker enforcement and harness coverage land.
 
 ### `owns.path`
 

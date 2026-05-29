@@ -112,6 +112,12 @@ export type ManifestError =
       readonly processorId: string;
       readonly phase: ProcessorPhase;
       readonly capability: string;
+    }
+  | {
+      readonly kind: "capability-not-supported";
+      readonly processorId: string;
+      readonly capability: string;
+      readonly message: string;
     };
 
 /** Closed set of trigger discriminators — the surface the matrix gates on. */
@@ -216,6 +222,19 @@ function checkCapabilityPhaseMatrix(
   manifest: Manifest,
 ): Result<void, ManifestError> {
   for (const decl of manifest.processors) {
+    if (
+      decl.capabilities.some((capability) =>
+        capability.kind === "owns.region"
+      )
+    ) {
+      return err({
+        kind: "capability-not-supported",
+        processorId: decl.id,
+        capability: "owns.region",
+        message:
+          "owns.region is planned but not supported in v1 manifests; use owns.path or path-scoped patch grants until generated-region ownership enforcement ships.",
+      });
+    }
     if (
       decl.phase === "adoption" &&
       decl.capabilities.some((capability) => capability.kind === "model.invoke")

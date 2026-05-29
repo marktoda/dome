@@ -17,7 +17,7 @@
 //   - docs/wiki/matrices/effect-x-capability.md
 //   - docs/wiki/specs/effects.md §"The Effect union"
 //
-// v1 Phase 2 limitations (documented for downstream phases):
+// v1 limitations (documented for downstream phases):
 //   - PatchEffect enforcement emits one verdict per effect, not per change.
 //     The verdict is computed against every changed path: an auto patch is
 //     auto-applied only when every path has effective `patch.auto`, and it is
@@ -25,15 +25,15 @@
 //     A PatchEffect with an empty `changes` list is structurally impossible
 //     (`PatchEffectSchema` enforces `.min(1)`); the broker defensively denies
 //     if it ever sees one.
-//   - `owns.region` detection is deferred to Phase 6 (the `dome.markdown`
-//     region parser produces region ids from marker pairs in the candidate
-//     tree). For now the broker falls through to the regular
-//     `patch.auto` / `patch.propose` check rather than enforcing region
-//     ownership; Phase 6 will plumb a region-parser callback through
-//     `enforcePatch`. `owns.path` is enforced here: a path-bearing
-//     PatchEffect targeting a path matched by a granted `owns.path`
-//     capability that the emitting processor's declared capabilities do
-//     not include is denied with a `capability-deny-patch` diagnostic.
+//   - `owns.region` is a planned generated-region ownership capability, but
+//     it is not enforceable until the engine has a region parser at the
+//     patch boundary. Runtime config and manifests reject it in v1. If a
+//     hand-built test/runtime still passes it to the broker, PatchEffect is
+//     denied rather than pretending the region boundary is safe. `owns.path`
+//     is enforced here: a path-bearing PatchEffect targeting a path matched
+//     by a granted `owns.path` capability that the emitting processor's
+//     declared capabilities do not include is denied with a
+//     `capability-deny-patch` diagnostic.
 //   - Content/user-visible SourceRefs are broker-checked against the
 //     processor's effective `read` grant after the effect-kind-specific
 //     capability check succeeds. This prevents processors from bypassing
@@ -259,8 +259,8 @@ function sourceRefsForReadCheck(effect: Effect): ReadonlyArray<SourceRef> {
  *      - If `patch.propose` is effective for every path → allow.
  *      - Else → deny.
  *
- * `owns.region` enforcement is deferred (Phase 6 region parser); the
- * broker falls through to the auto/propose check.
+ * `owns.region` is rejected in v1 because region ownership cannot be
+ * enforced until the patch boundary can parse marker-delimited regions.
  */
 function enforcePatch(
   effect: PatchEffect,
@@ -280,14 +280,20 @@ function enforcePatch(
     );
   }
 
-  // Phase 2 limitation: `owns.region` verification (matching changes
-  // against marker-delimited regions in the candidate tree) is deferred to
-  // Phase 6's region parser. The broker currently falls through to the
-  // patch.auto / patch.propose check without enforcing region ownership;
-  // the result discriminator only carries one diagnostic per verdict, so
-  // the limitation is documented in the file banner rather than surfaced
-  // per-call. Downstream Phase 6 will plumb a region-parser callback
-  // through this function.
+  if (
+    hasCapabilityKind(declared, "owns.region") ||
+    hasCapabilityKind(granted, "owns.region")
+  ) {
+    return deny(
+      diagnosticEffect({
+        severity: "error",
+        code: "capability-deny-patch",
+        message:
+          "PatchEffect denied: 'owns.region' is planned but not supported in v1. Use 'owns.path' or path-scoped patch grants until generated-region ownership enforcement ships.",
+        sourceRefs: [],
+      }),
+    );
+  }
 
   // owns.path: if a granted owns.path covers any touched path and the
   // emitting processor does NOT declare the same owns.path coverage, the
@@ -373,6 +379,13 @@ function enforcePatch(
       sourceRefs: [],
     }),
   );
+}
+
+function hasCapabilityKind(
+  capabilities: ReadonlyArray<Capability>,
+  kind: Capability["kind"],
+): boolean {
+  return capabilities.some((capability) => capability.kind === kind);
 }
 
 function uniqueChangedPaths(effect: PatchEffect): ReadonlyArray<string> {

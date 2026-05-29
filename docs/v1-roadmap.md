@@ -642,6 +642,9 @@ Work:
       followed by working-tree materialization failure or adopted-ref refusal,
       roll the source branch and affected paths back before returning the
       blocking diagnostic.
+- [x] Tighten planned `owns.region` support so v1 manifests/configs reject
+      it and broker-level direct calls deny it until parser-backed region
+      enforcement exists.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

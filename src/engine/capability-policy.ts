@@ -530,7 +530,6 @@ const STRING_LIST_GRANTS: Record<
       | "patch.auto"
       | "owns.path"
       | "search.write"
-      | "owns.region"
       | "graph.write"
       | "job.enqueue";
     readonly field: "paths" | "regionIds" | "namespaces" | "processors";
@@ -541,7 +540,6 @@ const STRING_LIST_GRANTS: Record<
   "patch.auto": { kind: "patch.auto", field: "paths" },
   "owns.path": { kind: "owns.path", field: "paths" },
   "search.write": { kind: "search.write", field: "paths" },
-  "owns.region": { kind: "owns.region", field: "regionIds" },
   "graph.write": { kind: "graph.write", field: "namespaces" },
   "job.enqueue": { kind: "job.enqueue", field: "processors" },
 };
@@ -559,6 +557,10 @@ function normalizeGrantEntry(
   }
 
   switch (key) {
+    case "owns.region":
+      return err(
+        `${label} is planned but not supported in v1; use owns.path or path-scoped patch grants until generated-region ownership enforcement ships`,
+      );
     case "question.ask":
       return normalizeQuestionAsk(raw, label);
     case "model.invoke":
