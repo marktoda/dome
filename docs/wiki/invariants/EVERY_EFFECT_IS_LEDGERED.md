@@ -18,7 +18,7 @@ This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: t
 
 **Structural enforcement:**
 
-1. **The engine applier writes an audit record per effect.** `src/engine/apply-effect.ts` calls the appropriate sink for each Effect kind: `ledger.recordEffect()` for the effect hash; `projections.facts.insert()` for FactEffects; `outbox.insert()` for ExternalActionEffects; `commitWorkflow()` carries the run id in the trailer for adopting PatchEffects.
+1. **The engine applier writes an audit record per effect.** `src/engine/apply-effect.ts` calls the appropriate sink for each Effect kind: `ledger.recordEffect()` for the effect hash; `projections.facts.insert()` for FactEffects; `outbox.insert()` for ExternalActionEffects; `commitEngineChange()` carries the run id in the trailer for adopting PatchEffects.
 2. **Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]**, the RunRecord row carries `effect_hashes_json` — a sha256 list of every emitted effect for the run. Joined back to projection tables by the per-effect lookup, the union is the complete audit history.
 3. **`log.md` is a projection of the run ledger** reserved for the planned `dome.log` adoption-phase processor. The user-facing `log.md` view should be reconstructable from `runs.db` + `outbox.db` once that bundle ships; today the ledger DB and `dome inspect runs` are the implemented audit surfaces.
 4. **The integration test exercises every Effect kind's audit landing.** `tests/integration/effect-ledger-completeness.test.ts` runs each Effect kind against the engine and asserts the audit record reaches its expected sink.

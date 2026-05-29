@@ -1,6 +1,6 @@
 // The four-trailer primitive backing ENGINE_COMMITS_CARRY_DOME_TRAILERS.
-// Consumed by `commitWorkflow` (the engine-commit chokepoint today) and by
-// future Phase 4 closure-pass / patch-mediated extension-effect callers.
+// Consumed by `commitEngineChange` (the engine-commit chokepoint today) and by
+// closure-pass / patch-mediated extension-effect callers.
 //
 // Lives in its own file (rather than inside `src/engine/adopt.ts`) because the
 // per-commit RunContext primitive has a different change surface than the
@@ -12,15 +12,15 @@ import { randomBytes } from "node:crypto";
 /**
  * The four trailers every engine commit carries (per
  * ENGINE_COMMITS_CARRY_DOME_TRAILERS). Constructed via `makeRunContext`,
- * consumed by `commitWorkflow`.
+ * consumed by `commitEngineChange`.
  */
 export interface RunContext {
   /** `run_<unix-ms>_<6-char-random>` — sortable, debuggable, unique. */
   readonly runId: string;
   /**
-   * Workflow name for per-workflow commits (e.g., `"ingest"`); the well-known
+   * Extension name for engine commits (e.g., `"dome.intake"`); the well-known
    * `ENGINE_EXTENSION_ID` (`"engine"`) for closure-pass commits made directly
-   * by the engine; future Phase 4 bundles carry their own bundle id.
+   * by the engine; bundle-originated commits carry their own bundle id.
    */
   readonly extensionId: string;
   /** Adopted ref SHA at run start, or `ZERO_SHA` when uninitialized. */
@@ -38,7 +38,7 @@ export const ZERO_SHA = "0000000000000000000000000000000000000000";
 
 /**
  * The well-known `Dome-Extension` value for engine-driven commits that
- * don't originate from a named workflow or bundle — closure-pass commits
+ * don't originate from a named bundle — closure-pass commits
  * made directly by `src/engine/adopt.ts`'s close step.
  */
 export const ENGINE_EXTENSION_ID = "engine";

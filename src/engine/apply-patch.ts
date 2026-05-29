@@ -13,7 +13,7 @@
 // value of `refs/dome/adopted/<branch>` (Decision 6 in v1.x Phase 12a). The
 // commit carries the four `Dome-*` trailers per
 // ENGINE_COMMITS_CARRY_DOME_TRAILERS via `composeCommitMessage` from
-// `../workflow-commit`.
+// `../engine-commit`.
 //
 // Normative references:
 //   - docs/wiki/specs/effects.md §"PatchEffect" — the effect shape.
@@ -41,7 +41,7 @@
 //   - Imports limited to isomorphic-git (the engine layer's git boundary
 //     callout — same exception closure-commit.ts carries), Node `fs`
 //     (isomorphic-git fs client), `node:path` for POSIX joins,
-//     `../workflow-commit` (the trailer composer), and pure types from
+//     `../engine-commit` (the trailer composer), and pure types from
 //     `../core/`.
 //   - `type X = { ... }` for the public input shape; every field `readonly`.
 
@@ -53,8 +53,8 @@ import git from "isomorphic-git";
 import type { PatchEffect } from "../core/effect";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { requireVaultPath } from "../core/vault-path";
+import { composeCommitMessage } from "../engine-commit";
 import { findGitRoot } from "../git";
-import { composeCommitMessage } from "../workflow-commit";
 
 // ----- ApplyPatchInput ------------------------------------------------------
 
@@ -91,7 +91,7 @@ export type ApplyPatchInput = {
  * `engine(applyPatch): <processorId>`. The parent is the input candidate.
  * The author + committer are the engine identity (`dome / engine@dome.local`)
  * — consistent with the closure-commit author per
- * src/workflow-commit.ts §"author default".
+ * src/engine-commit.ts §"author default".
  */
 export async function applyPatchToCandidate(
   opts: ApplyPatchInput,

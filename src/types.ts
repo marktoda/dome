@@ -1,5 +1,5 @@
 // Canonical types for the Dome v1 SDK surface.
-// See docs/wiki/specs/sdk-surface.md §"Tool".
+// See docs/wiki/specs/sdk-surface.md §"The four concepts".
 //
 // Phase 7b: trimmed to the surfaces v1 actually consumes.
 //   - `Result<T, E>` + `ok` / `err`: the never-throws sum type the engine,

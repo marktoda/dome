@@ -261,7 +261,7 @@ The adopted-ref + Dome-* trailer machinery landed in v0.5 (per the prior `2026-0
 What changes in v1:
 - The reconcile machinery (three-phase inbox/diff/scheduled) dissolves into adoption-phase + scheduled-trigger processors. The same work happens; it happens through the processor runtime instead of a separate function.
 - The closure step is no longer a no-op (in v0.5 it was a no-op because per-workflow atomic commits made closure unnecessary). In v1, the fixed-point loop's accumulated patches advance the candidate via engine-produced commits; the final chain head is the Proposal's closure OID.
-- Garden-emitted Proposals (a new concept in v1) re-enter the adoption loop instead of writing directly via the workflow-commit chokepoint.
+- Garden-emitted Proposals (a new concept in v1) re-enter the adoption loop instead of writing directly via the engine-commit chokepoint.
 
 The migration is non-invasive:
 - Existing `refs/dome/adopted/<branch>` values are preserved.

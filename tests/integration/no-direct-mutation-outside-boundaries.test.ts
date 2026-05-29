@@ -11,8 +11,8 @@ const ALLOWED_DIRS = [
 ];
 
 const ALLOWED_FILES = new Set([
+  "src/engine-commit.ts",
   "src/git.ts",
-  "src/workflow-commit.ts",
   "src/cli/commands/init.ts",
 ]);
 

@@ -58,6 +58,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
 
 const FORBIDDEN_RUNTIME_EXPORTS = new Set<string>([
   "commitWorkflow",
+  "commitEngineChange",
   "openProjectionDb",
   "openOutboxDb",
   "openLedgerDb",

@@ -18,7 +18,7 @@
 //   - The Proposal constructors — internal; the daemon synthesizes from
 //     working-tree drift.
 //   - openVaultRuntime — internal to the daemon.
-//   - commitWorkflow / raw DB openers — internal write-capable handles.
+//   - commitEngineChange / raw DB openers — internal write-capable handles.
 //
 // Per [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this
 // entrypoint depends on no LLM SDK, MCP transport, or HTTP framework.
@@ -119,10 +119,10 @@ export {
 // ----- Engine commit-trailer helpers ----------------------------------------
 //
 // `composeCommitMessage` is pure and exposed for tests/tools that need to
-// render the Dome trailer shape. `commitWorkflow` is intentionally internal:
+// render the Dome trailer shape. `commitEngineChange` is intentionally internal:
 // it performs a real git commit and is part of the engine write boundary.
 
-export { composeCommitMessage, type WorkflowCommitInput } from "./workflow-commit";
+export { composeCommitMessage, type EngineCommitInput } from "./engine-commit";
 export {
   makeRunContext,
   ENGINE_EXTENSION_ID,
