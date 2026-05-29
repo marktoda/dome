@@ -22,6 +22,8 @@
 //                       (max startedAt across queryRuns status=succeeded).
 //   - pending_runs:     count of ledger rows in `status='queued'`.
 //   - failed_runs:      count of ledger rows in `status='failed'`.
+//   - recent_processor_runs:
+//                       bounded per-processor summary from the recent run ledger.
 //   - diagnostics:      count of unresolved projection diagnostics.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
@@ -44,7 +46,7 @@ import { resolve } from "node:path";
 import { countCommitsSince, currentSha } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { openVaultRuntime } from "../../engine/vault-runtime";
-import { queryRuns } from "../../ledger/runs";
+import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
@@ -54,7 +56,27 @@ import { resolveShippedBundlesRoot } from "./sync-shared";
 import { formatJson } from "../format";
 import { collectVaultAnalytics } from "../vault-analytics";
 
+const RECENT_PROCESSOR_RUN_LIMIT = 100;
+const PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
+  "failed",
+  "timed_out",
+  "cancelled",
+]);
+
 // ----- Public types ---------------------------------------------------------
+
+type ProcessorRunSummary = {
+  readonly processor_id: string;
+  readonly processor_version: string;
+  readonly phase: RunRow["phase"];
+  readonly latest_run_id: string;
+  readonly latest_status: RunStatus;
+  readonly latest_started_at: string;
+  readonly latest_finished_at: string | null;
+  readonly latest_duration_ms: number | null;
+  readonly recent_runs: number;
+  readonly recent_problem_runs: number;
+};
 
 /**
  * The status snapshot. Keys stay stable across vault states so agent
@@ -79,6 +101,7 @@ type StatusSnapshot = {
   readonly last_sync: string | null;
   readonly pending_runs: number;
   readonly failed_runs: number;
+  readonly recent_processor_runs: ReadonlyArray<ProcessorRunSummary>;
   readonly diagnostics: number;
   readonly questions: number;
   readonly outbox_pending: number;
@@ -152,6 +175,11 @@ export async function runStatus(
     const failed_runs = queryRuns(runtime.ledgerDb, {
       status: "failed",
     }).length;
+    const recent_processor_runs = summarizeRecentProcessorRuns(
+      queryRuns(runtime.ledgerDb, {
+        limit: RECENT_PROCESSOR_RUN_LIMIT,
+      }),
+    );
     const diagnostics = queryDiagnostics(runtime.projectionDb).length;
     const questions = queryQuestions(runtime.projectionDb, {
       resolved: false,
@@ -184,6 +212,7 @@ export async function runStatus(
       last_sync,
       pending_runs,
       failed_runs,
+      recent_processor_runs,
       diagnostics,
       questions,
       outbox_pending,
@@ -259,3 +288,38 @@ async function countPendingCommits(opts: {
 function formatPendingCommits(count: number | null): string {
   return count === null ? "unknown" : String(count);
 }
+
+function summarizeRecentProcessorRuns(
+  rows: ReadonlyArray<RunRow>,
+): ReadonlyArray<ProcessorRunSummary> {
+  const byProcessor = new Map<string, MutableProcessorRunSummary>();
+  for (const row of rows) {
+    const existing = byProcessor.get(row.processorId);
+    if (existing === undefined) {
+      byProcessor.set(row.processorId, {
+        processor_id: row.processorId,
+        processor_version: row.processorVersion,
+        phase: row.phase,
+        latest_run_id: row.id,
+        latest_status: row.status,
+        latest_started_at: row.startedAt,
+        latest_finished_at: row.finishedAt,
+        latest_duration_ms: row.durationMs,
+        recent_runs: 1,
+        recent_problem_runs: PROBLEM_RUN_STATUSES.has(row.status) ? 1 : 0,
+      });
+      continue;
+    }
+    existing.recent_runs++;
+    if (PROBLEM_RUN_STATUSES.has(row.status)) {
+      existing.recent_problem_runs++;
+    }
+  }
+  return Object.freeze(
+    [...byProcessor.values()].map((summary) => Object.freeze({ ...summary })),
+  );
+}
+
+type MutableProcessorRunSummary = {
+  -readonly [K in keyof ProcessorRunSummary]: ProcessorRunSummary[K];
+};

@@ -514,7 +514,7 @@ Fold these into nearby milestone work when they are on-path:
   opt-in flag.
 - [x] Per-processor verbose logging:
   `dome serve --verbose --filter-processor dome.markdown.*`.
-- [ ] `status --json`: add per-processor recent-run summary once the status schema
+- [x] `status --json`: add per-processor recent-run summary once the status schema
   is stable.
 - [x] SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
 - [x] Bundle lockstep tests: assert shipped bundle manifests, capabilities, and

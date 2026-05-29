@@ -46,6 +46,7 @@ import {
   insertQueued,
   markFailed as markRunFailed,
   markRunning,
+  markSucceeded,
   newRunId,
 } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
@@ -82,6 +83,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "last_sync",
   "pending_runs",
   "failed_runs",
+  "recent_processor_runs",
   "diagnostics",
   "questions",
   "outbox_pending",
@@ -897,6 +899,7 @@ describe("runStatus", () => {
     expect(parsed["raw_bytes"]).toBe(0);
     expect(parsed["pending_runs"]).toBe(0);
     expect(parsed["failed_runs"]).toBe(0);
+    expect(parsed["recent_processor_runs"]).toEqual([]);
     expect(parsed["diagnostics"]).toBe(0);
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
@@ -1049,6 +1052,7 @@ describe("runStatus", () => {
     }
     try {
       const runId = newRunId(new Date(0), () => "status");
+      const succeededRunId = newRunId(new Date(10), () => "statok");
       insertQueued(ledger.value.db, {
         id: runId,
         proposalId: null,
@@ -1066,6 +1070,26 @@ describe("runStatus", () => {
         error: "failed",
         durationMs: 1,
         finishedAt: new Date(2),
+      });
+      insertQueued(ledger.value.db, {
+        id: succeededRunId,
+        proposalId: null,
+        processorId: "test.status",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "later" },
+        startedAt: new Date(10),
+      });
+      markRunning(ledger.value.db, succeededRunId, new Date(11));
+      markSucceeded(ledger.value.db, {
+        id: succeededRunId,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 2,
+        outputCommit: null,
+        finishedAt: new Date(12),
       });
     } finally {
       ledger.value.db.close();
@@ -1099,6 +1123,20 @@ describe("runStatus", () => {
     expect(parsed["outbox_failed"]).toBe(1);
     expect(parsed["failed_runs"]).toBe(1);
     expect(parsed["quarantined"]).toBe(1);
+    expect(parsed["recent_processor_runs"]).toEqual([
+      {
+        processor_id: "test.status",
+        processor_version: "0.0.1",
+        phase: "garden",
+        latest_run_id: "run_10_statok",
+        latest_status: "succeeded",
+        latest_started_at: new Date(10).toISOString(),
+        latest_finished_at: new Date(12).toISOString(),
+        latest_duration_ms: 2,
+        recent_runs: 2,
+        recent_problem_runs: 1,
+      },
+    ]);
   });
 
   // The "status after a submit reports the advanced adopted ref" test
