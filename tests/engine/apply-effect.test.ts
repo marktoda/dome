@@ -21,6 +21,7 @@ import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { RunId } from "../../src/engine/runner-contract";
 
 const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
+const read: Capability = { kind: "read", paths: ["wiki/**"] };
 
 const baseOpts = {
   processorId: "test.proc",
@@ -254,8 +255,8 @@ describe("successful routes (noopSinks)", () => {
     const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
     const r = await applyEffect({
       ...baseOpts,
-      declared: [auto],
-      granted: [auto],
+      declared: [read, auto],
+      granted: [read, auto],
       phase: "adoption",
       effect: patchEffect({
         mode: "auto",
@@ -283,6 +284,8 @@ describe("successful routes (noopSinks)", () => {
   test("ViewEffect in view phase → applied", async () => {
     const r = await applyEffect({
       ...baseOpts,
+      declared: [read],
+      granted: [read],
       phase: "view",
       effect: viewEffect({
         name: "v",
@@ -297,8 +300,8 @@ describe("successful routes (noopSinks)", () => {
     const ask: Capability = { kind: "question.ask" };
     const r = await applyEffect({
       ...baseOpts,
-      declared: [ask],
-      granted: [ask],
+      declared: [read, ask],
+      granted: [read, ask],
       phase: "garden",
       effect: questionEffect({
         question: "Continue?",
@@ -314,8 +317,8 @@ describe("successful routes (noopSinks)", () => {
     const write: Capability = { kind: "search.write", paths: ["wiki/**"] };
     const r = await applyEffect({
       ...baseOpts,
-      declared: [write],
-      granted: [write],
+      declared: [read, write],
+      granted: [read, write],
       phase: "adoption",
       effect: searchDocumentEffect({
         operation: "upsert",
@@ -572,8 +575,8 @@ describe("adoption propose patches block for review", () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
     const r = await applyEffect({
       ...baseOpts,
-      declared: [propose],
-      granted: [propose],
+      declared: [read, propose],
+      granted: [read, propose],
       phase: "adoption",
       effect: patchEffect({
         mode: "propose",
@@ -595,8 +598,8 @@ describe("adoption propose patches block for review", () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
     const r = await applyEffect({
       ...baseOpts,
-      declared: [propose],
-      granted: [propose],
+      declared: [read, propose],
+      granted: [read, propose],
       phase: "adoption",
       effect: patchEffect({
         mode: "auto",

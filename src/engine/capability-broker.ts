@@ -34,6 +34,10 @@
 //     PatchEffect targeting a path matched by a granted `owns.path`
 //     capability that the emitting processor's declared capabilities do
 //     not include is denied with a `capability-deny-patch` diagnostic.
+//   - Content/user-visible SourceRefs are broker-checked against the
+//     processor's effective `read` grant after the effect-kind-specific
+//     capability check succeeds. This prevents processors from bypassing
+//     the scoped `ctx.sourceRef()` helper by importing the raw constructor.
 //
 // House-style notes (matches src/core/source-ref.ts,
 // src/core/effect.ts, src/engine/compile-range.ts):
@@ -62,9 +66,11 @@ import type {
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
+import type { SourceRef } from "../core/source-ref";
 import {
   pathCapabilityEffectiveFor,
   pathIsOwnedByThirdParty,
+  readablePath,
 } from "./path-capabilities";
 import { globMatch } from "./glob-cache";
 
@@ -131,6 +137,20 @@ export function enforceCapability(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
+  const kindVerdict = enforceEffectKindCapability(effect, declared, granted);
+  if (kindVerdict.kind === "deny") return kindVerdict;
+
+  const sourceRefsVerdict = enforceSourceRefRead(effect, declared, granted);
+  if (sourceRefsVerdict.kind === "deny") return sourceRefsVerdict;
+
+  return kindVerdict;
+}
+
+function enforceEffectKindCapability(
+  effect: Effect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
   switch (effect.kind) {
     case "patch":
       return enforcePatch(effect, declared, granted);
@@ -158,6 +178,50 @@ export function enforceCapability(
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
   // Adding an Effect kind here is a compile error until every
   // branch above is updated.
+  const _exhaustive: never = effect;
+  return _exhaustive;
+}
+
+function enforceSourceRefRead(
+  effect: Effect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  for (const ref of sourceRefsForReadCheck(effect)) {
+    if (readablePath(ref.path, declared, granted) === null) {
+      return deny(
+        diagnosticEffect({
+          severity: "error",
+          code: "capability-deny-source-ref-read",
+          message:
+            `Effect denied: sourceRef path '${ref.path}' has no effective ` +
+            "'read' grant. Use ctx.sourceRef(...) only for readable paths, " +
+            "or declare and grant read access for the referenced evidence.",
+          sourceRefs: [],
+        }),
+      );
+    }
+  }
+  return allow();
+}
+
+function sourceRefsForReadCheck(effect: Effect): ReadonlyArray<SourceRef> {
+  switch (effect.kind) {
+    case "patch":
+    case "diagnostic":
+    case "fact":
+    case "search-document":
+    case "question":
+    case "external":
+      return effect.sourceRefs;
+    case "view":
+      return effect.scope;
+    case "job":
+    case "outbox-recovery":
+    case "quarantine-recovery":
+    case "run-recovery":
+      return [];
+  }
   const _exhaustive: never = effect;
   return _exhaustive;
 }

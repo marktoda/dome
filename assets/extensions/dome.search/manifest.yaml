@@ -24,5 +24,7 @@ processors:
     triggers:
       - kind: command
         name: query
-    capabilities: []
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
     module: processors/query.ts

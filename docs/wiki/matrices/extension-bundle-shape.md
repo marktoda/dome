@@ -38,7 +38,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 |---|---|---|---|---|---|---|
 | **`dome.markdown`** *(first-party)* | `shipped` | — | — | `validate-wikilinks.ts`, `normalize-frontmatter.ts`, `lint-frontmatter.ts`, `broken-images.ts`, `duplicate-detection.ts`, `stale-dates.ts`, `orphan-pages.ts` | — | `read: ["**/*.md", ".dome/page-types.yaml", images]`; `patch.auto: ["**/*.md"]`; `question.ask: true` |
 | **`dome.graph`** *(first-party)* | `shipped` | — | — | `links.ts`, `tag-index.ts` | — | `read: ["**/*.md"]`; `graph.write: ["dome.graph.*"]` |
-| **`dome.health`** *(first-party)* | `shipped` | — | — | `outbox-recovery-questions.ts`, `outbox-recovery-answer.ts`, `quarantine-recovery-questions.ts`, `quarantine-recovery-answer.ts`, `orphan-run-recovery-questions.ts`, `orphan-run-recovery-answer.ts` | — | `outbox.read: ["failed"]`; `outbox.recover: true`; `quarantine.read: true`; `quarantine.recover: true`; `run.read: ["running"]`; `run.recover: true`; `question.ask: true` |
+| **`dome.health`** *(first-party)* | `shipped` | — | — | `outbox-recovery-questions.ts`, `outbox-recovery-answer.ts`, `quarantine-recovery-questions.ts`, `quarantine-recovery-answer.ts`, `orphan-run-recovery-questions.ts`, `orphan-run-recovery-answer.ts` | — | `read: ["**"]` for failed-row source provenance; `outbox.read: ["failed"]`; `outbox.recover: true`; `quarantine.read: true`; `quarantine.recover: true`; `run.read: ["running"]`; `run.recover: true`; `question.ask: true` |
 | **`dome.index`** *(first-party)* | `anticipated` | — | — | `update-index.ts` | — | `read: wiki/**`; `owns.path: ["index.md"]`; `patch.auto: ["index.md"]` |
 | **`dome.log`** *(first-party)* | `anticipated` | — | — | `append-log.ts` | — | `owns.path: ["log.md"]`; `patch.auto: ["log.md"]` |
 | **`dome.links`** *(first-party)* | `anticipated` | — | `preamble.md` | `cross-reference.ts` | — | `read: wiki/**`; `patch.propose: ["wiki/**"]` |
@@ -56,7 +56,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 - **A bundle with no `Page type` cell** doesn't extend the wiki ontology; it operates over the existing types.
 - **A bundle with `owns.path` in its capability grants** is the exclusive writer for those paths — `dome.index` for `index.md`, `dome.log` for `log.md`. The broker rejects other processors' patches targeting owned paths.
 - **A bundle with `external` capability requests** provides or consumes external handlers. `acme.calendar-sync` provides handlers (its `external-handlers/` directory has the handler implementations) AND consumes the capabilities (its processors emit `ExternalActionEffect`).
-- **The `dome.markdown` capability `patch.auto: ["**"]`** is the broadest grant in the shipped-default set — markdown autoformatting needs to touch every page. The grant is acceptable because the processor only emits autoformatting patches (whitespace, trailing-newlines, frontmatter ordering); these never change semantic meaning.
+- **The `dome.markdown` capability `patch.auto: ["**/*.md"]`** is the broadest markdown write grant in the shipped-default set — markdown autoformatting needs to touch every page. The grant is acceptable because the processor only emits autoformatting patches (whitespace, trailing-newlines, frontmatter ordering); these never change semantic meaning.
 
 ## Adding a bundle to the matrix
 

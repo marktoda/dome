@@ -44,6 +44,8 @@ type Capability =
 
 Permits the processor to read paths matching the listed glob patterns via `ctx.snapshot`. This covers both content reads (`readFile`, `listMarkdownFiles`) and path metadata reads (`getFileInfo`). Paths outside the granted set return `null` from snapshot reads — the processor cannot accidentally observe data it has no business reading.
 
+The same effective `read` grant also gates source provenance on emitted content/user-visible effects. If a processor emits a `DiagnosticEffect`, `FactEffect`, `SearchDocumentEffect`, `QuestionEffect`, `ExternalActionEffect`, `PatchEffect`, or `ViewEffect` scope containing a `SourceRef`, every referenced path must be readable by that processor. This keeps processors from bypassing `ctx.sourceRef()` by importing the raw `sourceRef()` constructor and attaching evidence from paths they cannot read.
+
 Default for adoption-phase processors: the paths their triggers match (read what you react to). Garden-phase processors typically request broader read (whole `wiki/` to cross-reference).
 
 ### `patch.propose`
@@ -60,7 +62,7 @@ Permits `PatchEffect` with `mode: "auto"` for paths matching the glob. Auto-mode
 
 Marker-delimited region ownership. A processor that `owns.region: ["dome.daily.morning_brief"]` is the only one allowed to write inside `<!-- dome:region id="dome.daily.morning_brief" --> ... <!-- /dome:region -->` markers. Another processor's patch that touches the region is rejected.
 
-Region ownership is checked at patch application — the engine parses the candidate tree's regions, identifies which regions the patch modifies, and asserts each modified region is owned by the emitting processor.
+Implementation status: the capability kind and manifest/config schema exist, but region parsing and enforcement are not shipped yet. Current v1 enforcement covers `owns.path`; `owns.region` remains a planned generated-region boundary and should not be used as a shipped safety claim until the parser and harness coverage land.
 
 ### `owns.path`
 
@@ -209,7 +211,7 @@ With a config file present, `extensions.<bundle>.enabled: true` is the activatio
 
 Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, and opaque per-extension `config`.
 
-Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted reads and auto-patches for `wiki/dailies/*.md`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted reads and auto-patches for `wiki/dailies/*.md`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to inactive until the user explicitly opts in.
 
 ## Enforcement chokepoint
 

@@ -21,7 +21,7 @@ const searchQuery: Processor = defineProcessor({
   version: "0.1.0",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
-  capabilities: [],
+  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

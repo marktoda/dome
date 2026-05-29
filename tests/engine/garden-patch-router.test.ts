@@ -27,6 +27,7 @@ const proposePatch = patchEffect({
 
 const autoCap: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
 const proposeCap: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+const readCap: Capability = { kind: "read", paths: ["wiki/**"] };
 
 describe("routeGardenPatchForSubProposal", () => {
   test("denied patches are dropped and surfaced as rejected diagnostics", async () => {
@@ -66,8 +67,8 @@ describe("routeGardenPatchForSubProposal", () => {
       processorId: "test.router",
       runId,
       proposalId,
-      declared: [proposeCap],
-      granted: [proposeCap],
+      declared: [proposeCap, readCap],
+      granted: [proposeCap, readCap],
       sinks: {
         ...noopSinks(),
         recordDiagnostic: async ({ effect }) => {
@@ -93,8 +94,8 @@ describe("routeGardenPatchForSubProposal", () => {
       processorId: "test.router",
       runId,
       proposalId,
-      declared: [autoCap],
-      granted: [autoCap],
+      declared: [autoCap, readCap],
+      granted: [autoCap, readCap],
       sinks: noopSinks(),
     });
 
@@ -117,8 +118,8 @@ describe("routeGardenPatchForSubProposal", () => {
       processorId: "test.router",
       runId,
       proposalId,
-      declared: [proposeCap],
-      granted: [proposeCap],
+      declared: [proposeCap, readCap],
+      granted: [proposeCap, readCap],
       sinks: {
         ...noopSinks(),
         recordDiagnostic: async ({ effect }) => {

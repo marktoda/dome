@@ -22,6 +22,7 @@ import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 
 const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
+const read: Capability = { kind: "read", paths: ["wiki/**"] };
 
 const patchTouching = (path: string) =>
   patchEffect({
@@ -59,8 +60,8 @@ describe("PatchEffect (mode: auto)", () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
     const r = enforceCapability(
       patchTouching("wiki/x.md"),
-      [propose],
-      [propose],
+      [read, propose],
+      [read, propose],
     );
     expect(r.kind).toBe("downgrade");
     if (r.kind !== "downgrade") return;
@@ -73,7 +74,11 @@ describe("PatchEffect (mode: auto)", () => {
 
   test("allowed when patch.auto granted for the touched path", () => {
     const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
-    const r = enforceCapability(patchTouching("wiki/x.md"), [auto], [auto]);
+    const r = enforceCapability(
+      patchTouching("wiki/x.md"),
+      [read, auto],
+      [read, auto],
+    );
     expect(r.kind).toBe("allow");
   });
 
@@ -94,8 +99,8 @@ describe("PatchEffect (mode: auto)", () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**", "notes/**"] };
     const r = enforceCapability(
       patchTouchingMany(["wiki/x.md", "notes/y.md"]),
-      [auto, propose],
-      [auto, propose],
+      [read, auto, propose],
+      [read, auto, propose],
     );
     expect(r.kind).toBe("downgrade");
   });
@@ -192,7 +197,11 @@ describe("FactEffect", () => {
 
   test("allowed when graph.write covers the predicate's namespace", () => {
     const cap: Capability = { kind: "graph.write", namespaces: ["dome.tasks"] };
-    const r = enforceCapability(makeFact("dome.tasks.dueDate"), [cap], [cap]);
+    const r = enforceCapability(
+      makeFact("dome.tasks.dueDate"),
+      [read, cap],
+      [read, cap],
+    );
     expect(r.kind).toBe("allow");
   });
 });
@@ -214,19 +223,19 @@ describe("ExternalActionEffect", () => {
 
   test("allowed when matching external capability granted", () => {
     const cap: Capability = { kind: "external", capability: "calendar.write" };
-    const r = enforceCapability(e, [cap], [cap]);
+    const r = enforceCapability(e, [read, cap], [read, cap]);
     expect(r.kind).toBe("allow");
   });
 });
 
 describe("ViewEffect", () => {
-  test("ViewEffect always allowed (phase-mismatch handled elsewhere)", () => {
+  test("ViewEffect allowed when scope sourceRefs are readable", () => {
     const e = viewEffect({
       name: "x",
       content: { kind: "markdown", body: "ok" },
       scope: [ref],
     });
-    const r = enforceCapability(e, [], []);
+    const r = enforceCapability(e, [read], [read]);
     expect(r.kind).toBe("allow");
   });
 });
@@ -265,7 +274,7 @@ describe("QuestionEffect", () => {
 
   test("allowed when question.ask granted (declared + granted)", () => {
     const cap: Capability = { kind: "question.ask" };
-    const r = enforceCapability(q, [cap], [cap]);
+    const r = enforceCapability(q, [read, cap], [read, cap]);
     expect(r.kind).toBe("allow");
   });
 
@@ -274,6 +283,42 @@ describe("QuestionEffect", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.code).toBe("capability-deny-question-ask");
+  });
+});
+
+describe("Effect sourceRefs", () => {
+  test("otherwise-allowed sourceRefs require effective read grants", () => {
+    const cap: Capability = { kind: "graph.write", namespaces: ["dome.tasks"] };
+    const e = factEffect({
+      subject: { kind: "page", path: "wiki/x.md" },
+      predicate: "dome.tasks.dueDate",
+      object: { kind: "string", value: "v" },
+      assertion: "explicit",
+      sourceRefs: [ref],
+    });
+
+    const r = enforceCapability(e, [cap], [cap]);
+
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-source-ref-read");
+    expect(r.diagnostic.message).toContain("wiki/x.md");
+  });
+
+  test("sourceRef read checks preserve primary capability denials", () => {
+    const e = factEffect({
+      subject: { kind: "page", path: "wiki/x.md" },
+      predicate: "dome.tasks.dueDate",
+      object: { kind: "string", value: "v" },
+      assertion: "explicit",
+      sourceRefs: [ref],
+    });
+
+    const r = enforceCapability(e, [], []);
+
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-graph-write");
   });
 });
 

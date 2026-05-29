@@ -41,6 +41,7 @@ extensions:
   dome.health:
     enabled: true
     grant:
+      read: ["**"]
       outbox.read: ["failed"]
       question.ask: true
       outbox.recover: ["retry", "abandon"]
