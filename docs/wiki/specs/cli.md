@@ -232,13 +232,13 @@ git       branch main | head 41a98c2 | adopted 41a98c2 | sync ok | pending 0
 draft     0 modified | 0 untracked
 content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
 engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
-health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
+health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
 ```
 
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"attention_required":true,"attention":["outbox_pending"],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"projection_stale":false,"projection_cache_drift":false,"attention_required":true,"attention":["outbox_pending"],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"diagnostic_summary":{"total":0,"group_count":0,"shown_groups":0,"groups":[]},"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
@@ -247,9 +247,9 @@ need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
 `attention_required` and `attention` summarize the status counters into stable
 reason codes. Current reasons include `adopted_ref_diverged`, `sync_needed`,
-`dirty_modified`, `dirty_untracked`, `pending_runs`, `failed_runs`,
-`serve_stale`, `diagnostics`, `questions`, `outbox_pending`, `outbox_failed`,
-and `quarantined`.
+`projection_stale`, `dirty_modified`, `dirty_untracked`, `pending_runs`,
+`failed_runs`, `serve_stale`, `diagnostics`, `questions`, `outbox_pending`,
+`outbox_failed`, and `quarantined`.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink

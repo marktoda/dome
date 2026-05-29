@@ -16,6 +16,8 @@ const STATUS_KEYS = Object.freeze([
   "sync_needed",
   "pending_commits",
   "adopted_diverged",
+  "projection_stale",
+  "projection_cache_drift",
   "attention_required",
   "attention",
   "dirty_modified",
@@ -137,6 +139,8 @@ scenario(
     expect(status["sync_needed"]).toBe(false);
     expect(status["pending_commits"]).toBe(0);
     expect(status["adopted_diverged"]).toBe(false);
+    expect(status["projection_stale"]).toBe(false);
+    expect(status["projection_cache_drift"]).toBe(false);
     expect(status["attention_required"]).toBe(true);
     expect(status["attention"]).toEqual(["dirty_untracked"]);
     expect(status["dirty_untracked"]).toBeGreaterThan(0);

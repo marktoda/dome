@@ -63,7 +63,7 @@ import {
   markFailed as markOutboxFailed,
   queryOutbox,
 } from "../../src/outbox/dispatch";
-import { openProjectionDb } from "../../src/projections/db";
+import { markProjectionBuilt, openProjectionDb } from "../../src/projections/db";
 import {
   insertDiagnostic,
   queryDiagnostics,
@@ -81,6 +81,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "sync_needed",
   "pending_commits",
   "adopted_diverged",
+  "projection_stale",
+  "projection_cache_drift",
   "attention_required",
   "attention",
   "dirty_modified",
@@ -1479,6 +1481,7 @@ describe("runStatus", () => {
     expect(out).toContain("DOME status");
     expect(out).toContain("content   2 pages");
     expect(out).toContain("links 0");
+    expect(out).toContain("health    projection fresh | diagnostics 0");
     expect(out).toContain("diagnostics 0");
     expect(out).toContain("questions 0");
     expect(out).toContain("outbox 0 pending / 0 failed");
@@ -1502,6 +1505,8 @@ describe("runStatus", () => {
     expect(parsed["sync_needed"]).toBe(true);
     expect(parsed["pending_commits"]).toBeNull();
     expect(parsed["adopted_diverged"]).toBe(false);
+    expect(parsed["projection_stale"]).toBe(false);
+    expect(parsed["projection_cache_drift"]).toBe(false);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(
       expect.arrayContaining(["sync_needed"]),
@@ -1523,10 +1528,58 @@ describe("runStatus", () => {
     expect(parsed["serve_branch"]).toBeNull();
     expect(parsed["serve_updated_at"]).toBeNull();
     expect(parsed["diagnostics"]).toBe(0);
+    expect(parsed["diagnostic_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json mode reports stale projection rows as attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    captured.out = [];
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "stale-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      markProjectionBuilt(projection.value.db, {
+        adoptedCommit: commitOid(f.headSha),
+        extensionSet: [],
+        processorVersions: [],
+        capabilityPolicyHash: "stale-policy",
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["projection_stale"]).toBe(true);
+    expect(parsed["projection_cache_drift"]).toBe(true);
+    expect(parsed["attention"]).toEqual(
+      expect.arrayContaining(["projection_stale"]),
+    );
+    expect((parsed["attention"] as ReadonlyArray<string>)[0]).toBe(
+      "projection_stale",
+    );
   });
 
   test("--json mode reports stale serve heartbeat", async () => {

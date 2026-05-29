@@ -143,7 +143,72 @@ scenario(
   },
 );
 
+scenario(
+  {
+    name: "convergence: source-less broker diagnostics resolve after grant repair",
+    tags: [
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "effect", effect: "patch" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "adoption" },
+    ],
+    harness: {
+      bundles: ["dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": markdownConfigWithPatchPaths(["wiki/**/*.md"]),
+      },
+    },
+  },
+  async (h) => {
+    const boot = await h.runCli(["sync", "--json"]);
+    expect(boot.exitCode).toBe(0);
+
+    await h.userCommit({
+      files: {
+        "notes/noisy.md": "---\nid: noisy\ntype: note\n---\n# Noisy\n",
+      },
+      message: "add denied note frontmatter",
+    });
+    const blocked = await h.runCli(["sync", "--json"]);
+    expect(blocked.exitCode).toBe(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "capability-deny-patch" })
+      .toHaveCount(1);
+
+    await h.userCommit({
+      files: {
+        ".dome/config.yaml": markdownConfigWithPatchPaths(["**/*.md"]),
+      },
+      message: "repair markdown patch grants",
+    });
+    const repaired = await h.runCli(["sync", "--json"]);
+    expect(repaired.exitCode).toBe(0);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "capability-deny-patch" })
+      .toHaveCount(0);
+
+    const unresolvedRows = h.projection.raw
+      .query<{ resolved_at: string | null }, []>(
+        "SELECT resolved_at FROM diagnostics "
+          + "WHERE code = 'capability-deny-patch' "
+          + "AND resolved_at IS NULL",
+      )
+      .all();
+    expect(unresolvedRows).toEqual([]);
+  },
+);
+
 function markdownConfig(): string {
+  return markdownConfigWithPatchPaths(["**/*.md"]);
+}
+
+function markdownConfigWithPatchPaths(paths: ReadonlyArray<string>): string {
   return [
     "extensions:",
     "  dome.markdown:",
@@ -153,7 +218,7 @@ function markdownConfig(): string {
     "        - \"**/*.md\"",
     "        - \".dome/page-types.yaml\"",
     "      patch.auto:",
-    "        - \"**/*.md\"",
+    ...paths.map((path) => `        - "${path}"`),
     "      question.ask: true",
     "",
   ]

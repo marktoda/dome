@@ -688,6 +688,9 @@ Work:
 - [x] Add bounded diagnostic grouping to `dome status --json` and status text,
       sorted by severity before volume, so Claude Code sees blocking
       diagnostics without needing a separate inspect command first.
+- [x] Surface projection freshness in `dome status --json` and status text,
+      including cache-key drift, so stale projection diagnostics do not look
+      like fresh blockers during real-vault soak.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

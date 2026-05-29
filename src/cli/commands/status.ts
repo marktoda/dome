@@ -10,6 +10,11 @@
 //   - sync_needed:      true when HEAD and adopted differ.
 //   - pending_commits:  commit count from adopted..HEAD, or null when unknown.
 //   - adopted_diverged: true when adopted is initialized but not an ancestor of HEAD.
+//   - projection_stale: true when projection rows need rebuild before
+//                       projection-backed views can be trusted.
+//   - projection_cache_drift:
+//                       true when loaded extension/processor/policy cache
+//                       keys differ from the last built projection keys.
 //   - attention_required:
 //                       true when any status field needs user/agent action.
 //   - attention:        stable reason codes explaining attention_required.
@@ -51,6 +56,7 @@
 
 import { resolve } from "node:path";
 
+import { commitOid } from "../../core/source-ref";
 import { countCommitsSince, currentSha, isAncestor } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import {
@@ -61,6 +67,10 @@ import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
+import {
+  projectionCacheKeysChanged,
+  projectionRequiresRebuild,
+} from "../../projections/db";
 import { queryQuestions } from "../../projections/questions";
 
 import { resolveBundleRoots } from "./sync-shared";
@@ -107,6 +117,8 @@ type StatusSnapshot = {
   readonly sync_needed: boolean;
   readonly pending_commits: number | null;
   readonly adopted_diverged: boolean;
+  readonly projection_stale: boolean;
+  readonly projection_cache_drift: boolean;
   readonly attention_required: boolean;
   readonly attention: ReadonlyArray<string>;
   readonly dirty_modified: number;
@@ -207,6 +219,23 @@ export async function runStatus(
       }),
     );
     const serve = await readServeHeartbeatStatus({ vaultPath });
+    const projection_cache_drift = projectionCacheKeysChanged(
+      runtime.projectionDb,
+      {
+        extensionSet: runtime.extensions,
+        processorVersions: runtime.processorVersions,
+        capabilityPolicyHash: runtime.capabilityPolicyHash,
+      },
+    );
+    const projection_stale =
+      adopted === null
+        ? false
+        : projectionRequiresRebuild(runtime.projectionDb, {
+            adoptedCommit: commitOid(adopted),
+            extensionSet: runtime.extensions,
+            processorVersions: runtime.processorVersions,
+            capabilityPolicyHash: runtime.capabilityPolicyHash,
+          });
     const diagnosticRows = queryDiagnostics(runtime.projectionDb);
     const diagnostics = diagnosticRows.length;
     const diagnostic_summary = summarizeDiagnosticEffects(
@@ -228,6 +257,7 @@ export async function runStatus(
     const attention = statusAttention({
       syncNeeded,
       adoptedDiverged,
+      projectionStale: projection_stale,
       dirtyModified: analytics.dirty_modified,
       dirtyUntracked: analytics.dirty_untracked,
       pendingRuns: pending_runs,
@@ -248,6 +278,8 @@ export async function runStatus(
       sync_needed: syncNeeded,
       pending_commits: pendingCommits,
       adopted_diverged: adoptedDiverged,
+      projection_stale,
+      projection_cache_drift,
       attention_required: attention.length > 0,
       attention,
       dirty_modified: analytics.dirty_modified,
@@ -314,7 +346,7 @@ function printStatusText(s: StatusSnapshot): void {
     `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
   );
   console.log(
-    `health    diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
+    `health    projection ${formatProjectionFreshness(s)} | diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
   if (s.diagnostic_summary.groups.length > 0) {
     console.log(`diag top  ${formatDiagnosticTopLine(s.diagnostic_summary)}`);
@@ -330,9 +362,15 @@ function formatServe(s: StatusSnapshot): string {
   return `${s.serve_status}${branch}`;
 }
 
+function formatProjectionFreshness(s: StatusSnapshot): string {
+  if (!s.projection_stale) return "fresh";
+  return s.projection_cache_drift ? "stale (cache drift)" : "stale";
+}
+
 function statusAttention(input: {
   readonly syncNeeded: boolean;
   readonly adoptedDiverged: boolean;
+  readonly projectionStale: boolean;
   readonly dirtyModified: number;
   readonly dirtyUntracked: number;
   readonly pendingRuns: number;
@@ -347,6 +385,7 @@ function statusAttention(input: {
   const out: string[] = [];
   if (input.adoptedDiverged) out.push("adopted_ref_diverged");
   if (input.syncNeeded) out.push("sync_needed");
+  if (input.projectionStale) out.push("projection_stale");
   if (input.dirtyModified > 0) out.push("dirty_modified");
   if (input.dirtyUntracked > 0) out.push("dirty_untracked");
   if (input.pendingRuns > 0) out.push("pending_runs");
