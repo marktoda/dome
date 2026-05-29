@@ -75,18 +75,22 @@ openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
    │     vault.query(...)             — read path
    │     vault.sync(...)              — engine adoption loop
    │
-   ├─→ drainProcessors()              (planned; idempotent; settles async garden/view work)
+   ├─→ drainProcessors()              (planned public API; internal close drain shipped)
    │
-   └─→ close()                         (current: releases resources; future: drains first)
+   └─→ close()                         (drains processor runtime, then releases resources)
 ```
 
-`drainProcessors()` is the planned v1.x drain surface. When implemented, it is idempotent — re-callable any number of times — and awaits the engine's garden/view processor work plus any in-flight outbox dispatch attempts.
+`drainProcessors()` is the planned v1.x public drain surface. The internal
+processor-runtime close path already stops new runner invocations, cancels
+in-flight garden/view dispatch, waits for active runner promises to settle, and
+then lets `VaultRuntime.close()` release operational handles. The future public
+method will expose that operation before full close and extend it to in-flight
+outbox dispatch attempts.
 
-`close()` currently releases the SQLite handles for the projection store,
-answers store, run ledger, and outbox. The future drain-integrated close path
-calls `drainProcessors()` first, then releases handles, then sets a `closed`
-flag so subsequent `query` / `sync` / `rebuild` calls return
-`Result.err({ kind: "vault-closed" })`.
+`close()` drains the processor runtime first, then releases the SQLite handles
+for the projection store, answers store, run ledger, and outbox. The remaining
+public-surface hardening is a closed-state guard so subsequent `query` / `sync`
+/ `rebuild` calls return `Result.err({ kind: "vault-closed" })`.
 
 #### Composable construction
 

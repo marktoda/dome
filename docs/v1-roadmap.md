@@ -539,6 +539,10 @@ Work:
 - [x] Add reproducible `bun run v1:smoke` real-vault smoke gate for `docs/`
       and `~/vaults/work`, with mutation limited to explicit `--sync-docs`.
 - [x] Dogfood against `docs/` and `~/vaults/work`.
+- [x] Make runtime close drain processor work before SQLite handles close:
+      garden/view dispatch is cancelled through the executor signal, adoption
+      work is awaited for atomicity, and terminal run rows are written before
+      handle release.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -449,6 +449,7 @@ export async function openVaultRuntime(
     operationalQueryView,
     ...(modelProvider !== undefined ? { modelProvider } : {}),
     close: async () => {
+      await processorRuntime.close();
       // Close in reverse-open order. SQLite handles are idempotent under
       // `sqlite3_close_v2`, so a double-close is safe.
       ledgerDb.close();

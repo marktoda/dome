@@ -217,6 +217,7 @@ export type ProcessorRuntime = {
   readonly gardenRunner: GardenPhaseRunner;
   readonly viewRunner: ViewPhaseRunner;
   readonly executionState: ProcessorExecutionState;
+  readonly close: () => Promise<void>;
 };
 
 // ----- BuildRuntimeOptions --------------------------------------------------
@@ -315,8 +316,21 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
   } = opts;
   const executionState =
     opts.executionState ?? buildProcessorExecutionState();
+  const lifecycle = makeRuntimeLifecycle();
 
-  const adoptionRunner: AdoptionPhaseRunner = async (input) => {
+  const adoptionRunner: AdoptionPhaseRunner = (input) =>
+    lifecycle.track(runAdoption(input));
+  const gardenRunner: GardenPhaseRunner = (input) =>
+    lifecycle.track(runGarden(input));
+  const viewRunner: ViewPhaseRunner = (input) =>
+    lifecycle.track(runView(input));
+
+  async function runAdoption(
+    input: Parameters<AdoptionPhaseRunner>[0],
+  ): Promise<ReadonlyArray<RunnerResult>> {
+    if (lifecycle.isClosing()) {
+      return Object.freeze([]);
+    }
     const adoptionProcessors = registry.byPhase("adoption");
     if (adoptionProcessors.length === 0) {
       return Object.freeze([]);
@@ -364,67 +378,83 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     }
 
     return Object.freeze(results);
-  };
+  }
 
-  const gardenRunner: GardenPhaseRunner = async (input) => {
+  async function runGarden(
+    input: Parameters<GardenPhaseRunner>[0],
+  ): Promise<ReadonlyArray<RunnerResult>> {
+    if (lifecycle.isClosing()) {
+      return Object.freeze([]);
+    }
     const gardenProcessors = registry.byPhase("garden");
     if (gardenProcessors.length === 0) {
       return Object.freeze([]);
     }
+    const runnerSignal = combineAbortSignals(input.signal, lifecycle.signal);
+    try {
+      // Garden's Snapshot is built against the **adopted** commit — the
+      // new trusted state — not a candidate. Same closures, different
+      // commit. Processors read from this snapshot via `ctx.snapshot`.
+      const snapshot = await makeSnapshot(
+        input.vault.path,
+        input.adopted,
+        resolveTree,
+      );
 
-    // Garden's Snapshot is built against the **adopted** commit — the
-    // new trusted state — not a candidate. Same closures, different
-    // commit. Processors read from this snapshot via `ctx.snapshot`.
-    const snapshot = await makeSnapshot(
-      input.vault.path,
-      input.adopted,
-      resolveTree,
-    );
+      const results: RunnerResult[] = [];
+      for (const processor of gardenProcessors) {
+        if (runnerSignal.signal?.aborted === true) break;
+        const readableSignals = readableSignalsForProcessor({
+          processor,
+          signals: input.signals,
+          resolveGrants,
+        });
+        const matches = matchTriggers(processor.triggers, readableSignals);
+        if (matches.length === 0) continue;
 
-    const results: RunnerResult[] = [];
-    for (const processor of gardenProcessors) {
-      if (input.signal?.aborted === true) break;
-      const readableSignals = readableSignalsForProcessor({
-        processor,
-        signals: input.signals,
-        resolveGrants,
-      });
-      const matches = matchTriggers(processor.triggers, readableSignals);
-      if (matches.length === 0) continue;
+        const result = await dispatchOneProcessor({
+          processor,
+          phase: "garden",
+          envelope: Object.freeze({
+            kind: "garden" as const,
+            matchedTriggers: matches,
+          }),
+          snapshot,
+          changedPaths: input.changedPaths,
+          proposal: input.proposal,
+          // `inputCommit` for garden is the adopted commit — the snapshot
+          // the processor read from. This is what lands in
+          // `runs.input_commit` for the audit trail; it joins to the
+          // closure commit of the adoption that just completed.
+          inputCommit: input.adopted,
+          matches,
+          resolveGrants,
+          extensionIdFor,
+          ledger,
+          executionState,
+          ...(executionCap !== undefined ? { executionCap } : {}),
+          ...(runnerSignal.signal !== undefined
+            ? { signal: runnerSignal.signal }
+            : {}),
+          ...(operational !== undefined ? { operational } : {}),
+          ...(pageTypes !== undefined ? { pageTypes } : {}),
+          ...(modelProvider !== undefined ? { modelProvider } : {}),
+        });
+        results.push(result);
+      }
 
-      const result = await dispatchOneProcessor({
-        processor,
-        phase: "garden",
-        envelope: Object.freeze({
-          kind: "garden" as const,
-          matchedTriggers: matches,
-        }),
-        snapshot,
-        changedPaths: input.changedPaths,
-        proposal: input.proposal,
-        // `inputCommit` for garden is the adopted commit — the snapshot
-        // the processor read from. This is what lands in
-        // `runs.input_commit` for the audit trail; it joins to the
-        // closure commit of the adoption that just completed.
-        inputCommit: input.adopted,
-        matches,
-        resolveGrants,
-        extensionIdFor,
-        ledger,
-        executionState,
-        ...(executionCap !== undefined ? { executionCap } : {}),
-        ...(input.signal !== undefined ? { signal: input.signal } : {}),
-        ...(operational !== undefined ? { operational } : {}),
-        ...(pageTypes !== undefined ? { pageTypes } : {}),
-        ...(modelProvider !== undefined ? { modelProvider } : {}),
-      });
-      results.push(result);
+      return Object.freeze(results);
+    } finally {
+      runnerSignal.cleanup();
     }
+  }
 
-    return Object.freeze(results);
-  };
-
-  const viewRunner: ViewPhaseRunner = async (input) => {
+  async function runView(
+    input: Parameters<ViewPhaseRunner>[0],
+  ): Promise<RunnerResult | null> {
+    if (lifecycle.isClosing()) {
+      return null;
+    }
     const viewProcessors = registry.byPhase("view");
     if (viewProcessors.length === 0) {
       return null;
@@ -458,62 +488,131 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       input.adopted,
       resolveTree,
     );
+    const runnerSignal = combineAbortSignals(input.signal, lifecycle.signal);
+    try {
+      // Synthesize a one-element TriggerMatch list for the dispatcher.
+      // View commands have no signal events; `matchedSignals` is empty.
+      const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
+        Object.freeze({
+          trigger: matchedTrigger,
+          matchedSignals: Object.freeze([]) as ReadonlyArray<never>,
+        }),
+      ] as unknown as TriggerMatch[]);
 
-    // Synthesize a one-element TriggerMatch list for the dispatcher.
-    // View commands have no signal events; `matchedSignals` is empty.
-    const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
-      Object.freeze({
-        trigger: matchedTrigger,
-        matchedSignals: Object.freeze([]) as ReadonlyArray<never>,
-      }),
-    ] as unknown as TriggerMatch[]);
-
-    return dispatchOneProcessor({
-      processor,
-      phase: "view",
-      envelope: Object.freeze({
-        kind: "view" as const,
-        commandName: input.commandName,
-        commandArgs: input.commandArgs,
-      }),
-      snapshot,
-      // View runs don't have a base..head delta the way adoption /
-      // garden do. `changedPaths` is empty; processors that need to
-      // walk the adopted snapshot use `ctx.snapshot.listMarkdownFiles`.
-      changedPaths: Object.freeze([]),
-      // View runs are not proposal-anchored. The ledger row's
-      // proposal_id is NULL.
-      proposal: null,
-      // The adopted commit is the "input" for ledger purposes (the
-      // snapshot the processor read from). This is what
-      // `runs.input_commit` records for view-phase rows.
-      inputCommit: input.adopted,
-      matches,
-      resolveGrants,
-      extensionIdFor,
-      ledger,
-      executionState,
-      ...(executionCap !== undefined ? { executionCap } : {}),
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-      ...(pageTypes !== undefined ? { pageTypes } : {}),
-      ...(modelProvider !== undefined ? { modelProvider } : {}),
-      // View-phase processors receive the projection query view so they
-      // can read facts / diagnostics / questions out of the projection
-      // store via `ctx.projection`. Adoption + garden phases do NOT pass
-      // the handle — those processors read state from `ctx.snapshot`.
-      // Conditional spread keeps the call site exactOptionalPropertyTypes-
-      // clean when no projection is wired (e.g., test harnesses that build
-      // a runtime without projection).
-      ...(projection !== undefined ? { projection } : {}),
-      ...(operational !== undefined ? { operational } : {}),
-    });
-  };
+      return dispatchOneProcessor({
+        processor,
+        phase: "view",
+        envelope: Object.freeze({
+          kind: "view" as const,
+          commandName: input.commandName,
+          commandArgs: input.commandArgs,
+        }),
+        snapshot,
+        // View runs don't have a base..head delta the way adoption /
+        // garden do. `changedPaths` is empty; processors that need to
+        // walk the adopted snapshot use `ctx.snapshot.listMarkdownFiles`.
+        changedPaths: Object.freeze([]),
+        // View runs are not proposal-anchored. The ledger row's
+        // proposal_id is NULL.
+        proposal: null,
+        // The adopted commit is the "input" for ledger purposes (the
+        // snapshot the processor read from). This is what
+        // `runs.input_commit` records for view-phase rows.
+        inputCommit: input.adopted,
+        matches,
+        resolveGrants,
+        extensionIdFor,
+        ledger,
+        executionState,
+        ...(executionCap !== undefined ? { executionCap } : {}),
+        ...(runnerSignal.signal !== undefined
+          ? { signal: runnerSignal.signal }
+          : {}),
+        ...(pageTypes !== undefined ? { pageTypes } : {}),
+        ...(modelProvider !== undefined ? { modelProvider } : {}),
+        // View-phase processors receive the projection query view so they
+        // can read facts / diagnostics / questions out of the projection
+        // store via `ctx.projection`. Adoption + garden phases do NOT pass
+        // the handle — those processors read state from `ctx.snapshot`.
+        // Conditional spread keeps the call site exactOptionalPropertyTypes-
+        // clean when no projection is wired (e.g., test harnesses that build
+        // a runtime without projection).
+        ...(projection !== undefined ? { projection } : {}),
+        ...(operational !== undefined ? { operational } : {}),
+      });
+    } finally {
+      runnerSignal.cleanup();
+    }
+  }
 
   return Object.freeze({
     adoptionRunner,
     gardenRunner,
     viewRunner,
     executionState,
+    close: lifecycle.close,
+  });
+}
+
+type RuntimeLifecycle = {
+  readonly signal: AbortSignal;
+  readonly isClosing: () => boolean;
+  readonly close: () => Promise<void>;
+  readonly track: <T>(promise: Promise<T>) => Promise<T>;
+};
+
+function makeRuntimeLifecycle(): RuntimeLifecycle {
+  const controller = new AbortController();
+  const active = new Set<Promise<unknown>>();
+  let closing = false;
+
+  return Object.freeze({
+    signal: controller.signal,
+    isClosing: () => closing,
+    close: async () => {
+      if (!closing) {
+        closing = true;
+        controller.abort();
+      }
+      await Promise.allSettled([...active]);
+    },
+    track: <T>(promise: Promise<T>): Promise<T> => {
+      active.add(promise);
+      return promise.finally(() => active.delete(promise));
+    },
+  });
+}
+
+type CombinedAbortSignal = {
+  readonly signal?: AbortSignal;
+  readonly cleanup: () => void;
+};
+
+function combineAbortSignals(
+  primary: AbortSignal | undefined,
+  runtime: AbortSignal,
+): CombinedAbortSignal {
+  if (primary === undefined) {
+    return Object.freeze({ signal: runtime, cleanup: () => {} });
+  }
+
+  if (primary.aborted || runtime.aborted) {
+    const controller = new AbortController();
+    controller.abort();
+    return Object.freeze({ signal: controller.signal, cleanup: () => {} });
+  }
+
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  primary.addEventListener("abort", abort, { once: true });
+  runtime.addEventListener("abort", abort, { once: true });
+
+  return Object.freeze({
+    signal: controller.signal,
+    cleanup: () => {
+      primary.removeEventListener("abort", abort);
+      runtime.removeEventListener("abort", abort);
+    },
   });
 }
 

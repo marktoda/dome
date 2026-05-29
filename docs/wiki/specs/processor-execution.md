@@ -25,7 +25,9 @@ Shipped in the current v1 runtime:
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
 - `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, retries one runtime-classified provider failure, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
-- Vendor SDK adapters and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
+- Vendor SDK adapters, outbox-handler cancellation, and a public
+  `drainProcessors()` SDK method are target surfaces described here for the
+  completed architecture; they are not fully implemented yet.
 
 ## Run state machine
 
@@ -184,8 +186,24 @@ Adoption-phase processors are never quarantined automatically. If an adoption pr
 
 ## Drain and shutdown
 
-This section describes the target drain/close contract. It is not fully
-implemented yet.
+The processor runtime now owns an internal lifecycle boundary. `close()` stops
+new runner invocations, aborts in-flight garden/view processor dispatch through
+the same executor signal used for explicit cancellation, waits for active
+runner promises to settle, and only then returns to the outer `VaultRuntime`
+close path. `VaultRuntime.close()` calls this processor-runtime close before
+closing projection, answers, ledger, or outbox SQLite handles, so cancelled
+processor invocations have terminal run rows before the DB handles are
+released.
+
+Adoption-phase work is tracked but not force-aborted by runtime close. This
+preserves adoption atomicity: a running adoption processor finishes, times out,
+or is cancelled by an explicit caller-supplied signal under the normal adoption
+loop contract before close proceeds.
+
+The still-planned public `drainProcessors()` surface will make the same
+lifecycle operation addressable before full runtime close, and will also cover
+outbox-handler cancellation once external handlers accept an engine-owned
+signal.
 
 `drainProcessors()` waits for queued and running garden/view work to settle up to the configured drain timeout. It does not start new schedule-triggered work while draining. On graceful shutdown:
 
@@ -195,7 +213,10 @@ implemented yet.
 4. Preserve adoption-phase atomicity: an adoption loop either finishes and advances the adopted ref, or exits without advancing.
 5. Close SQLite handles after terminal run rows are written.
 
-`close()` calls `drainProcessors()` and is one-shot. Calls against a closed Vault return a typed `vault-closed` error rather than throwing.
+Current `close()` behavior satisfies the internal processor drain ordering and
+is idempotent. The future public SDK close path still needs a closed-state
+guard so calls against a closed Vault return a typed `vault-closed` error
+rather than throwing.
 
 ## Diagnostics
 
@@ -228,6 +249,8 @@ Already pinned:
 - Executor-boundary tests assert success, thrown errors, invalid output, timeout, cancellation, diagnostic severity, discarded late effects, and model-provider abort propagation at `executeProcessor`.
 - Ledger tests assert `timed_out` / `cancelled` status persistence, structured error JSON, query filtering, and terminal transition filtering.
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, garden timeout discards late output while recording `timed_out`, and runner cancellation records `cancelled` without leaving orphan `running` rows.
+- Runtime close tests assert `close()` cancels in-flight garden work, waits for
+  the runner to settle, and leaves no orphan `running` rows before returning.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
 - Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, one retry for retryable provider failures, no retry for model-call timeouts, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
@@ -235,7 +258,9 @@ Already pinned:
 
 Pending:
 
-- Drain tests assert `close()` cancels or settles in-flight runs and releases SQLite handles only after run records are terminal.
+- Public `drainProcessors()` and closed-Vault typed error tests.
+- Outbox-handler cancellation/timeout tests once external handlers accept an
+  engine-owned signal.
 
 ## Related
 
