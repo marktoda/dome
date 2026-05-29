@@ -92,13 +92,16 @@ V1 capability ledger:
       probe-only `dome doctor`, and first-party outbox retry/abandon
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
-      task/followup fact indexing, and the `today` / `prep` views are shipped;
-      raw-capture extraction remains.
+      task/followup fact indexing, `today` / `prep` views, and first raw
+      inbox capture extraction are shipped; richer capture questions and
+      synthesis remain.
 - [ ] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; production provider
       packaging remains.
-- [ ] LLM garden/intake processors with provenance and source-backed writes.
+- [ ] LLM garden/intake processors with provenance and source-backed writes:
+      first `dome.intake.extract-capture` slice shipped; low-confidence
+      questions and synthesis remain.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
 - [ ] V1 end-to-end acceptance harness and real-vault dogfood run.
@@ -376,16 +379,17 @@ Acceptance:
 
 ## Milestone 7 - LLM Garden and Intake
 
-Status: missing.
+Status: partially shipped.
 
 Goal: captures become useful vault material with provenance.
 
 Work:
 
-- [ ] Implement `dome.intake.extract-capture` for the final v1 inbox/raw
-      path.
-- [ ] Extract candidate entities, tasks, decisions, and source quotes.
-- [ ] File processed captures into durable source pages or owned generated
+- [x] Implement `dome.intake.extract-capture` for the final v1
+      `inbox/raw/*.md` path.
+- [x] Extract candidate entities, tasks, decisions, and source quotes into a
+      generated capture page.
+- [x] File processed captures into durable archive pages and owned generated
       regions.
 - [ ] Emit facts and questions where confidence is low.
 - [ ] Implement first synthesis processor only after intake has provenance and
@@ -393,11 +397,11 @@ Work:
 
 Acceptance:
 
-- [ ] Raw capture enters inbox; sync/garden extracts tasks/facts and files
+- [x] Raw capture enters inbox; sync/garden extracts tasks/facts and files
       source material.
-- [ ] Bad model output leaves the capture intact and emits a recoverable
+- [x] Bad model output leaves the capture intact and emits a recoverable
       diagnostic.
-- [ ] Processor cannot mutate outside capability-scoped paths.
+- [x] Processor cannot mutate outside capability-scoped paths.
 
 ## Milestone 8 - User-Value Views
 
@@ -463,8 +467,8 @@ Required for daily value:
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; raw-capture compilation remains |
-| `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
+| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, and downstream task/followup facts shipped; low-confidence questions, richer fact namespaces, and synthesis remain |
 
 Optional or conditional:
 

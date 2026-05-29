@@ -13,8 +13,9 @@
 //   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
 // The vault does NOT carry the first-party extension bundles
-// (`dome.daily`, `dome.graph`, `dome.health`, `dome.lint`, `dome.markdown`,
-// `dome.search`). They live with the SDK at `<SDK>/assets/extensions/` and are
+// (`dome.daily`, `dome.graph`, `dome.health`, `dome.intake`, `dome.lint`,
+// `dome.markdown`, `dome.search`). They live with the SDK at
+// `<SDK>/assets/extensions/` and are
 // resolved at runtime by the bundle loader (`resolveShippedBundlesRoot` in
 // `./sync-shared.ts`). This matches the v1.md model: "Core features are just
 // built-in extensions"
@@ -256,7 +257,8 @@ const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
 # grants. The shipped first-party bundles (\`dome.daily\`, \`dome.graph\`,
-# \`dome.health\`, \`dome.lint\`, \`dome.markdown\`, \`dome.search\`) live with the SDK — the
+# \`dome.health\`, \`dome.intake\`, \`dome.lint\`, \`dome.markdown\`,
+# \`dome.search\`) live with the SDK — the
 # CLI's default \`--bundles-root\` resolves to the SDK's \`assets/extensions/\`
 # directory.
 # To install a third-party bundle,
@@ -300,6 +302,21 @@ extensions:
       graph.write:
         - "dome.daily.*"
       question.ask: true
+
+  # Opt in when your Dome host injects a ModelProvider. The bundle compiles
+  # committed markdown captures from inbox/raw/*.md into generated intake
+  # pages and processed archives.
+  dome.intake:
+    enabled: false
+    grant:
+      read:
+        - "inbox/raw/*.md"
+      patch.auto:
+        - "wiki/generated/intake/*.md"
+        - "inbox/processed/*.md"
+        - "inbox/raw/*.md"
+      model.invoke:
+        maxDailyCostUsd: 5
 
   dome.search:
     enabled: true
@@ -446,7 +463,7 @@ Includes:
 - .dome/config.yaml (extension activation + engine settings)
 
 The first-party extension bundles (dome.daily, dome.graph, dome.health,
-dome.lint, dome.markdown, dome.search) live with the SDK at
+dome.intake, dome.lint, dome.markdown, dome.search) live with the SDK at
 <SDK>/assets/extensions/ and
 are resolved at runtime — the vault doesn't carry copies.
 

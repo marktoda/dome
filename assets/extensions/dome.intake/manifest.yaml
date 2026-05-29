@@ -1,0 +1,25 @@
+id: dome.intake
+version: 0.1.0
+processors:
+  - id: dome.intake.extract-capture
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/raw/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/raw/*.md"]
+      - kind: patch.auto
+        paths:
+          - "wiki/generated/intake/*.md"
+          - "inbox/processed/*.md"
+          - "inbox/raw/*.md"
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+    execution:
+      class: llm
+      timeoutMs: 600000
+      modelCallTimeoutMs: 180000
+    module: processors/extract-capture.ts

@@ -191,33 +191,33 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 
 ```yaml
 id: dome.intake
-version: 1.0.0
+version: 0.1.0
 description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
 
 processors:
-  - id: extract-capture
-    version: 1.0.0
+  - id: dome.intake.extract-capture
+    version: 0.1.0
     phase: garden
     triggers:
       - kind: signal
         name: file.created
-        pathPattern: "inbox/raw/**"
+        pathPattern: "inbox/raw/*.md"
     capabilities:
       - kind: read
-        paths: ["inbox/raw/**", "wiki/**"]
-      - kind: patch.propose
-        paths: ["wiki/**"]
+        paths: ["inbox/raw/*.md"]
       - kind: patch.auto
-        paths: ["wiki/generated/intake/**", "inbox/processed/**"]
-      - kind: graph.write
-        namespaces: ["dome.tasks", "dome.people"]
+        paths:
+          - "wiki/generated/intake/*.md"
+          - "inbox/processed/*.md"
+          - "inbox/raw/*.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5.00
+        maxDailyCostUsd: 5
     execution:
       class: llm
       timeoutMs: 600000
       modelCallTimeoutMs: 180000
+    module: processors/extract-capture.ts
 ```
 
 The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.

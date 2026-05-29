@@ -330,6 +330,7 @@ describe("runInit", () => {
       if (loaded.ok) {
         const ids = loaded.value.map((b) => b.id);
         expect(ids).toContain("dome.graph");
+        expect(ids).toContain("dome.intake");
         expect(ids).toContain("dome.lint");
         expect(ids).toContain("dome.markdown");
       }

@@ -38,7 +38,7 @@ The diagnostic surfaces:
 
 **Specific scenarios:**
 
-- **Mutual triggers.** `dome.intake.extract-capture` emits a patch creating an entity page. `dome.links.cross-reference` reacts to the new entity by emitting a patch adding backlinks. The backlink patch re-triggers `dome.intake` (because the entity now has a section structure intake re-parses). Cascade depth grows; cap fires at 10. Fix: scope `dome.intake`'s trigger more narrowly (e.g., `signal: file.created` on `inbox/raw/**` only, not `signal: document.changed` on `wiki/entities/**`).
+- **Mutual triggers.** A future entity-creation intake processor emits a patch creating an entity page. `dome.links.cross-reference` reacts to the new entity by emitting a patch adding backlinks. The backlink patch re-triggers intake (because the entity now has a section structure intake re-parses). Cascade depth grows; cap fires at 10. Fix: scope intake triggers narrowly, as the shipped `dome.intake.extract-capture` processor does with `signal: file.created` on `inbox/raw/*.md`, not `signal: document.changed` on `wiki/entities/**`.
 
 - **Self-trigger.** A community bundle's processor `acme.recommendations` adds suggestions to every entity page on `signal: document.changed` for `wiki/entities/**`. Each suggestion-write triggers the processor on the same path. Cap fires at 10. Fix: scope to `signal: file.created` instead of `document.changed`, or add an idempotency check (don't add suggestions if already present).
 

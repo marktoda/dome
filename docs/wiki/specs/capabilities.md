@@ -153,33 +153,23 @@ A bundle declares its processors' capabilities in `manifest.yaml`:
 
 ```yaml
 id: dome.intake
-version: 1.0.0
+version: 0.1.0
 description: "Compile raw captures into wiki updates."
 
 processors:
-  - id: extract-capture
-    version: 1.0.0
+  - id: dome.intake.extract-capture
+    version: 0.1.0
     phase: garden
     capabilities:
       - kind: read
-        paths: ["inbox/raw/**", "wiki/**", "notes/**"]
-      - kind: patch.propose
-        paths: ["**"]
+        paths: ["inbox/raw/*.md"]
       - kind: patch.auto
-        paths: ["wiki/generated/intake/**", "inbox/processed/**"]
-      - kind: graph.write
-        namespaces: ["dome.tasks", "dome.people"]
+        paths:
+          - "wiki/generated/intake/*.md"
+          - "inbox/processed/*.md"
+          - "inbox/raw/*.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5.00
-
-  - id: detect-capture
-    version: 1.0.0
-    phase: adoption
-    capabilities:
-      - kind: read
-        paths: ["inbox/raw/**"]
-      - kind: patch.auto
-        paths: ["inbox/raw/**"]   # only for adding stable IDs to the capture frontmatter
+        maxDailyCostUsd: 5
 ```
 
 The schema is validated by Zod at bundle load. A capability with an unknown `kind`, a malformed `paths` pattern, or a `model.invoke` requested by an adoption-phase processor fails the load with a `bundle-load-failed` error (per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy").
@@ -192,13 +182,15 @@ The vault's `<vault>/.dome/config.yaml` grants capabilities to specific extensio
 extensions:
   dome.intake:
     enabled: true
-    grants:
-      model.invoke: true
+    grant:
+      read:
+        - inbox/raw/*.md
       patch.auto:
-        - wiki/generated/intake/**
-        - inbox/processed/**
-      external:
-        - calendar.write   # if the user wants intake to write calendar events
+        - wiki/generated/intake/*.md
+        - inbox/processed/*.md
+        - inbox/raw/*.md
+      model.invoke:
+        maxDailyCostUsd: 5
     config:
       confidence_threshold: 0.82
 
@@ -215,7 +207,7 @@ With a config file present, `extensions.<bundle>.enabled: true` is the activatio
 
 Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, and opaque per-extension `config`.
 
-Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected `ModelProvider`. Third-party bundles default to inactive until the user explicitly opts in.
 
 ## Enforcement chokepoint
 

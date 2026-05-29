@@ -1,0 +1,4 @@
+extensions:
+  - name: capture
+    frontmatter_extras:
+      processed_from: optional

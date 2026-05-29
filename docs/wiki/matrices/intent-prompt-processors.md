@@ -15,7 +15,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
-| "Quick-capture a thought" | planned | `dome.intake.extract-capture` | garden | `assets/extensions/dome.intake/processors/extract-capture.prompt.md` | PatchEffect (wiki updates), FactEffect (mentions), PatchEffect (archive raw → processed) |
+| "Quick-capture a thought" | partially shipped | `dome.intake.extract-capture` | garden | inline prompt in `assets/extensions/dome.intake/processors/extract-capture.ts` | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), downstream FactEffect via `dome.daily.task-index` |
 | "Voice-capture a meeting" | planned | `dome.intake.extract-capture` (with voice frontmatter type) | garden | same | same |
 | "Drop a research clip" | planned | `dome.intake.extract-capture` (with research frontmatter type) | garden | same | same |
 | "Add a follow-up to a daily" | planned | `dome.daily.append-followup` | garden | `assets/extensions/dome.daily/processors/append-followup.prompt.md` | PatchEffect (insert into daily's followups section) |

@@ -22,12 +22,12 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
-| **`dome.intake`** | planned | `inbox-stale-check` | `extract-capture`; `process-questions` | — |
+| **`dome.intake`** | partially shipped | planned: `inbox-stale-check` | shipped: `extract-capture`; planned: `process-questions` | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts
 
-- **Shipped processors:** 24 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
+- **Shipped processors:** 25 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
 - **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
