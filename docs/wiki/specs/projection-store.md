@@ -162,7 +162,7 @@ Two prior shapes have been retired:
 - `UNIQUE (processor_id, code, proposal_id)` (no hash) collapsed all distinct diagnostics from one processor in one proposal into a single row, masking real defects in the user's vault.
 - `UNIQUE (..., source_refs_hash)` where `source_refs_hash` hashed the full SourceRef including `commit` over-distinguished re-emissions across loop iterations: the same finding landed twice (once per candidate commit) instead of once.
 
-The structural fence is the [[wiki/scenarios/effect-kinds]] `patch-and-diagnostic-same-cycle` scenario, which asserts exactly one row when a sibling patch causes a re-iteration.
+The structural fence is the `tests/harness/scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test.ts` scenario, which asserts exactly one row when a sibling patch causes a re-iteration.
 
 ### `questions`
 

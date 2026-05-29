@@ -90,10 +90,11 @@ const validateWikilinks: Processor = defineProcessor({
 
     const diagnostics: DiagnosticEffect[] = [];
 
-    // Filter changedPaths to markdown files. file.created fires for every
-    // added path; we only care about markdown bodies (other file types
-    // don't contain wikilink syntax).
-    const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+    // Filter changedPaths to Dome content roots. A vault may grant broad read
+    // so links can resolve to historical/external markdown, but that does not
+    // mean the validator should lint append-only projections or external
+    // design residue during projection rebuilds.
+    const changedMarkdown = ctx.changedPaths.filter(isValidatableMarkdownPath);
 
     for (const changedPath of changedMarkdown) {
       const content = await ctx.snapshot.readFile(changedPath);
@@ -180,6 +181,16 @@ function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
     });
   }
   return matches;
+}
+
+function isValidatableMarkdownPath(path: string): boolean {
+  if (!path.endsWith(".md")) return false;
+  if (path.startsWith("wiki/")) return true;
+  if (path.startsWith("notes/")) return true;
+  if (path.startsWith("captures/")) return true;
+  if (path.startsWith("inbox/review/")) return false;
+  if (path.startsWith("inbox/processed/")) return false;
+  return path.startsWith("inbox/");
 }
 
 type OffsetRange = {

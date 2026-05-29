@@ -286,6 +286,37 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.message).not.toContain("also-not-real");
   });
 
+  test("does not lint external markdown paths while still resolving targets there", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "cohesive/history.md",
+        content: "Historical note with [[old-missing-target]].\n",
+      },
+      {
+        path: "wiki/page.md",
+        content: "Project source is [[cohesive/source-note]].\n",
+      },
+      {
+        path: "cohesive/source-note.md",
+        content: "External source note.\n",
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["cohesive/history.md", "wiki/page.md"],
+      proposal: null,
+      runId: "run-test-external-roots",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(0);
+  });
+
   // Regression: [[parent/child]] resolves to <anything>/parent/child.md via
   // suffix-match. Pre-fix, the resolver only tried vault-root-relative
   // paths and would flag this as broken.

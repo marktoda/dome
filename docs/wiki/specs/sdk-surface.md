@@ -397,7 +397,7 @@ The SDK ships features across three tiers:
 | Tier | Description | Examples |
 |---|---|---|
 | **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants. The four core types. The fixed-point adoption loop. The capability broker. The projection store + run ledger + outbox. |
-| **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | First-party `dome.*` bundles, the shipped-default-tier invariants per [[wiki/invariants/]], the four default page types. |
+| **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | First-party `dome.*` bundles, the shipped-default-tier invariants under `wiki/invariants/`, the four default page types. |
 | **Opt-in** | Shipped, not active by default. Activated by config or by installing an additional bundle. | Voice-intake (`inbox/voice/` bucket + ingest workflow inside `dome.intake`), research-intake, third-party bundles. |
 
 `dome init <path>` produces a minimal general-purpose vault — the axioms plus shipped defaults. Activation of opt-in features is `extensions.<name>.enabled: true` in `<vault>/.dome/config.yaml`.
