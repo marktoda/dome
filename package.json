@@ -21,7 +21,9 @@
   "scripts": {
     "test": "bun test",
     "test:invariants": "bun test tests/invariants",
-    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json"
+    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json",
+    "v1:smoke": "bun scripts/v1-smoke.ts",
+    "v1:check": "bun run typecheck && git diff --check && bun test && bun run v1:smoke"
   },
   "dependencies": {
     "commander": "^14.0.3",

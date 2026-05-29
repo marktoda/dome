@@ -519,15 +519,17 @@ Work:
 - [x] Narrow unsupported scheduled view processors out of the v1 manifest
       contract; scheduled work is garden-only until a scheduled view delivery
       surface exists.
-- [ ] Dogfood against `docs/` and `~/vaults/work`.
+- [x] Add reproducible `bun run v1:smoke` real-vault smoke gate for `docs/`
+      and `~/vaults/work`, with mutation limited to explicit `--sync-docs`.
+- [x] Dogfood against `docs/` and `~/vaults/work`.
 
 Acceptance:
 
-- [ ] `bun test`
-- [ ] `bunx tsc --noEmit`
-- [ ] `git diff --check`
+- [x] `bun test`
+- [x] `bunx tsc --noEmit`
+- [x] `git diff --check`
 - [x] `bin/dome status --vault docs`
-- [ ] Real-vault smoke test with no manual `.dome/state` edits.
+- [x] Real-vault smoke test with no manual `.dome/state` edits.
 
 ## V1 Bundle Cut
 
