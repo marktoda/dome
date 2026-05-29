@@ -95,7 +95,7 @@ inbox/
   processed/   # where dome.intake archives successfully-processed captures
 ```
 
-Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's intake processor via `signal:file.created` + a bucket path pattern. The shipped `dome.intake.extract-capture` processor handles `inbox/raw/*.md` and archives processed captures under `inbox/processed/` while writing generated pages under `wiki/generated/intake/`. The shipped `dome.intake.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — intake files are expected to move out or surface a recoverable diagnostic.
+Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's intake processor via `signal:file.created` + a bucket path pattern. The shipped `dome.intake.extract-capture` processor handles `inbox/raw/*.md` and archives processed captures under `inbox/processed/` while writing generated pages under `wiki/generated/intake/`; `dome.intake.synthesize-capture` turns those generated capture pages into source-linked `wiki/syntheses/intake-*.md` pages. The shipped `dome.intake.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — intake files are expected to move out or surface a recoverable diagnostic.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
 
@@ -223,6 +223,7 @@ The capability broker enforces ownership. Default rules:
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `wiki/dailies/*.md` | `dome.daily` (via `patch.auto`) |
 | `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
+| `wiki/syntheses/intake-*.md` | `dome.intake` (via `patch.auto`, source-backed capture synthesis) |
 | `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
 | `wiki/<type>/**` (general) | open — any processor with `patch.auto: ["wiki/**"]` |
 | `notes/**` | user only — engine never writes here |

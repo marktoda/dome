@@ -7,6 +7,9 @@ import type { RunId } from "../../../../src/engine/runner-contract";
 import {
   targetFromLowConfidenceQuestionKey,
 } from "../../../../assets/extensions/dome.intake/processors/low-confidence-shared";
+import {
+  synthesisOutputPath,
+} from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
 import { scenario } from "../../index";
 import type { Harness } from "../../types";
 
@@ -25,6 +28,7 @@ extensions:
         - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
       graph.write:
@@ -60,6 +64,19 @@ ${BASE_CONFIG}
 
 const COMMAND_PROVIDER_SOURCE = `
 const request = JSON.parse(await Bun.stdin.text());
+if (request.prompt.startsWith("Synthesize a Dome generated intake capture")) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Launch staffing synthesis",
+      thesis: "The capture identifies launch staffing as the active management thread.",
+      highlights: ["Ada needs staffing notes", "Ben owns budget follow-up"],
+      risks: ["Budget ownership may block launch staffing"],
+      nextSteps: ["Send Ada the staffing note"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else {
 console.log(JSON.stringify({
   text: JSON.stringify({
     title: "Command launch follow-up",
@@ -73,6 +90,7 @@ console.log(JSON.stringify({
   model: request.model,
   costUsd: 0.2,
 }));
+}
 `;
 
 const OLD_CAPTURE_AUTHOR = {
@@ -101,18 +119,15 @@ scenario(
       },
       modelProvider: async (request) => {
         expect(request.model).toBe("test-model");
-        return {
-          text: JSON.stringify({
-            title: "Launch follow-up",
-            summary: "Ada needs a staffing note and Ben owns budget follow-up.",
-            tasks: ["Send Ada the launch staffing note"],
-            followups: ["Ask Ben about hiring budget"],
-            decisions: ["Keep launch staffing review in this week's plan"],
-            entities: ["Ada", "Ben"],
-            sourceQuotes: ["Ask Ben about hiring budget"],
-          }),
-          costUsd: 0.1,
-        };
+        return modelResponseForPrompt(request.prompt, {
+          title: "Launch follow-up",
+          summary: "Ada needs a staffing note and Ben owns budget follow-up.",
+          tasks: ["Send Ada the launch staffing note"],
+          followups: ["Ask Ben about hiring budget"],
+          decisions: ["Keep launch staffing review in this week's plan"],
+          entities: ["Ada", "Ben"],
+          sourceQuotes: ["Ask Ben about hiring budget"],
+        });
       },
     },
   },
@@ -141,6 +156,9 @@ scenario(
     await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
     await h.expectFile(OUTPUT_PATH).toContain(`[[${ARCHIVE_PATH}]]`);
     await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
+    await h
+      .expectFile(synthesisOutputPath(OUTPUT_PATH))
+      .toContain("# Launch staffing synthesis");
     const refs = await h.refs.current();
     if (refs.head === null) throw new Error("expected HEAD");
     await h.expectFile(CAPTURE_PATH, { atCommit: refs.head }).toBeAbsent();
@@ -206,6 +224,91 @@ scenario(
       expect.objectContaining({
         capability: "patch.auto",
         resource: `${OUTPUT_PATH},${ARCHIVE_PATH},${CAPTURE_PATH}`,
+        outcome: "allowed",
+      }),
+    ]);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake synthesizes generated capture pages",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async (request) => {
+        expect(request.model).toBe("test-model");
+        return modelResponseForPrompt(request.prompt, {
+          title: "Unused extraction",
+          summary: "Unused",
+          tasks: [],
+          followups: [],
+          decisions: [],
+          entities: [],
+          sourceQuotes: [],
+        });
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const generatedPath = "wiki/generated/intake/manager-day.md";
+    await h.userCommit({
+      files: {
+        [generatedPath]: [
+          "---",
+          "type: capture",
+          "---",
+          "",
+          "# Manager Day",
+          "",
+          "Ada needs staffing notes. Ben owns budget follow-up.",
+          "",
+        ].join("\n"),
+      },
+      message: "add generated capture",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    const synthesisPath = synthesisOutputPath(generatedPath);
+    await h.expectFile(synthesisPath).toContain("# Launch staffing synthesis");
+    await h
+      .expectFile(synthesisPath)
+      .toContain("[[wiki/generated/intake/manager-day.md]]");
+    await h
+      .expectFile(synthesisPath)
+      .toContain("- Ben owns budget follow-up");
+
+    const run = await h
+      .expectLedger({
+        processorId: "dome.intake.synthesize-capture",
+        status: "succeeded",
+      })
+      .toHaveExactlyOne();
+    expect(capabilityUsesByRun(h.ledger, run.id as RunId)).toEqual([
+      expect.objectContaining({
+        capability: "model.invoke",
+        resource: "test-model",
+        outcome: "allowed",
+      }),
+      expect.objectContaining({
+        capability: "patch.auto",
+        resource: synthesisPath,
         outcome: "allowed",
       }),
     ]);
@@ -293,8 +396,8 @@ scenario(
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
       },
-      modelProvider: async () => ({
-        text: JSON.stringify({
+      modelProvider: async (request) =>
+        modelResponseForPrompt(request.prompt, {
           title: "Launch follow-up",
           summary: "Ada needs a staffing note; Chris may need a check-in.",
           tasks: [
@@ -315,7 +418,6 @@ scenario(
           ],
           sourceQuotes: ["Ask Ben about hiring budget"],
         }),
-      }),
     },
   },
   async (h) => {
@@ -415,8 +517,8 @@ scenario(
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
       },
-      modelProvider: async () => ({
-        text: JSON.stringify({
+      modelProvider: async (request) =>
+        modelResponseForPrompt(request.prompt, {
           title: "Launch follow-up",
           summary: "Chris may need a staffing check.",
           tasks: [
@@ -427,7 +529,6 @@ scenario(
           entities: [],
           sourceQuotes: [],
         }),
-      }),
     },
   },
   async (h) => {
@@ -700,6 +801,42 @@ function outputPath(path: string, dir: string): string {
     .slice(0, 64) || "capture";
   const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
   return `${dir}/${slug}-${digest}.md`;
+}
+
+type CaptureExtractionFixture = {
+  readonly title: string;
+  readonly summary: string;
+  readonly tasks: ReadonlyArray<unknown>;
+  readonly followups: ReadonlyArray<unknown>;
+  readonly decisions: ReadonlyArray<unknown>;
+  readonly entities: ReadonlyArray<unknown>;
+  readonly sourceQuotes: ReadonlyArray<unknown>;
+};
+
+function modelResponseForPrompt(
+  prompt: string,
+  extraction: CaptureExtractionFixture,
+): { readonly text: string; readonly costUsd: number } {
+  if (prompt.startsWith("Synthesize a Dome generated intake capture")) {
+    return {
+      text: JSON.stringify({
+        title: "Launch staffing synthesis",
+        thesis:
+          "The capture identifies launch staffing as the active management thread.",
+        highlights: [
+          "Ada needs staffing notes",
+          "Ben owns budget follow-up",
+        ],
+        risks: ["Budget ownership may block launch staffing"],
+        nextSteps: ["Send Ada the staffing note"],
+      }),
+      costUsd: 0.05,
+    };
+  }
+  return {
+    text: JSON.stringify(extraction),
+    costUsd: 0.1,
+  };
 }
 
 function factConfidence(

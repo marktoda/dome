@@ -9,11 +9,13 @@ import { createHash } from "node:crypto";
 
 import { expect } from "bun:test";
 
+import { synthesisOutputPath } from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
 import { TestClock, scenario } from "../../index";
 
 const CAPTURE_PATH = "inbox/raw/manager-day.md";
 const GENERATED_CAPTURE_PATH = outputPath(CAPTURE_PATH, "wiki/generated/intake");
 const ARCHIVE_PATH = outputPath(CAPTURE_PATH, "inbox/processed");
+const SYNTHESIS_PATH = synthesisOutputPath(GENERATED_CAPTURE_PATH);
 
 scenario(
   {
@@ -80,6 +82,26 @@ scenario(
       },
       modelProvider: async (request) => {
         expect(request.model).toBe("test-model");
+        if (
+          request.prompt.startsWith(
+            "Synthesize a Dome generated intake capture",
+          )
+        ) {
+          return {
+            text: JSON.stringify({
+              title: "Manager day synthesis",
+              thesis:
+                "The capture keeps launch staffing and hiring budget follow-up in view.",
+              highlights: [
+                "Ada needs launch staffing notes",
+                "Ben owns the hiring budget follow-up",
+              ],
+              risks: ["Budget follow-up may block the launch staffing thread"],
+              nextSteps: ["Send Ada the launch staffing note"],
+            }),
+            costUsd: 0.05,
+          };
+        }
         return {
           text: JSON.stringify({
             title: "Manager day follow-up",
@@ -128,6 +150,8 @@ scenario(
     await h
       .expectFile(GENERATED_CAPTURE_PATH)
       .toContain("- [ ] #followup Ask Ben about hiring budget");
+    await h.expectFile(SYNTHESIS_PATH).toContain("# Manager day synthesis");
+    await h.expectFile(SYNTHESIS_PATH).toContain(`[[${GENERATED_CAPTURE_PATH}]]`);
     await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
     const refs = await h.refs.current();
     await h.expectFile(CAPTURE_PATH, { atCommit: refs.head }).toBeAbsent();
@@ -290,6 +314,7 @@ extensions:
         - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
       graph.write: ["dome.intake.*"]

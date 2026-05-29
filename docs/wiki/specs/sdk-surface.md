@@ -260,6 +260,29 @@ processors:
         paths: ["inbox/**/*.md"]
     module: processors/inbox-stale-check.ts
 
+  - id: dome.intake.synthesize-capture
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/generated/intake/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/generated/intake/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/syntheses/*.md"]
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+    execution:
+      class: llm
+      timeoutMs: 600000
+      modelCallTimeoutMs: 180000
+    module: processors/synthesize-capture.ts
+
   - id: dome.intake.low-confidence-answer
     version: 0.2.0
     phase: garden
@@ -318,7 +341,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer | Compiles raw captures, routes low-confidence items through questions, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture | Compiles raw captures, routes low-confidence items through questions, writes source-backed synthesis pages from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
