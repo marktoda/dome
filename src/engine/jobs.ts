@@ -31,6 +31,7 @@ import {
   dispatchOneProcessor,
   makeSnapshot,
 } from "../processors/runtime";
+import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
@@ -78,6 +79,7 @@ export async function runQueuedJobs(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
@@ -164,6 +166,7 @@ async function runOneJob(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
@@ -203,6 +206,9 @@ async function runOneJob(opts: {
     ledger: opts.ledger,
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
+      : {}),
+    ...(opts.executionCap !== undefined
+      ? { executionCap: opts.executionCap }
       : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }

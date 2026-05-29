@@ -471,6 +471,7 @@ export async function runOperationalWorkForAdopted(opts: {
     now,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    executionCap: opts.runtime.config.engine.executionCap,
     operational: operationalQueryViewForRuntime(opts.runtime, now),
     ...(opts.runtime.modelProvider !== undefined
       ? { modelProvider: opts.runtime.modelProvider }

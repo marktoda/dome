@@ -25,6 +25,7 @@ import {
 } from "../outbox/dispatch";
 import type { OutboxDb } from "../outbox/db";
 import type { ProjectionDb } from "../projections/db";
+import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ProcessorRegistry } from "../processors/registry";
 import type { ModelProvider } from "./model-invoke";
@@ -56,6 +57,7 @@ export async function runOperationalWork(opts: {
   readonly operational?: OperationalQueryView;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly adoptSubProposal?: (
     proposal: Proposal,
@@ -82,6 +84,9 @@ export async function runOperationalWork(opts: {
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
+      : {}),
+    ...(opts.executionCap !== undefined
+      ? { executionCap: opts.executionCap }
       : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
@@ -111,6 +116,9 @@ export async function runOperationalWork(opts: {
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
+      : {}),
+    ...(opts.executionCap !== undefined
+      ? { executionCap: opts.executionCap }
       : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }

@@ -83,6 +83,7 @@ import {
   dispatchOneProcessor,
   makeSnapshot,
 } from "../processors/runtime";
+import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
@@ -148,6 +149,7 @@ export async function runScheduler(opts: {
   readonly now: () => Date;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
@@ -201,6 +203,7 @@ async function runSchedulerInner(opts: {
   readonly now: () => Date;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
@@ -221,6 +224,7 @@ async function runSchedulerInner(opts: {
     now,
     ledger,
     executionState,
+    executionCap,
     modelProvider,
     operational,
     resolveGrants,
@@ -341,6 +345,7 @@ async function runSchedulerInner(opts: {
         extensionIdFor,
         ledger,
         ...(executionState !== undefined ? { executionState } : {}),
+        ...(executionCap !== undefined ? { executionCap } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
         ...(operational !== undefined ? { operational } : {}),
       });
