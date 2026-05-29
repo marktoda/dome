@@ -442,7 +442,7 @@ edits, lost garden patches, or silent processor failure.
 
 Work:
 
-- [ ] Add one top-level acceptance scenario matching the Claude Code vault
+- [x] Add one top-level acceptance scenario matching the Claude Code vault
       plan end to end.
 - [ ] Add host-on and host-off live harness fixtures.
 - [ ] Add bundle coverage tests so docs/matrices cannot claim unshipped

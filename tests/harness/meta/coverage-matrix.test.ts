@@ -60,6 +60,7 @@ import "../scenarios/cli-surface/view-command-failure.scenario.test";
 import "../scenarios/cli-surface/today-task-view.scenario.test";
 import "../scenarios/cli-surface/prep-view.scenario.test";
 import "../scenarios/cli-surface/export-context.scenario.test";
+import "../scenarios/v1-acceptance/claude-code-vault-loop.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
@@ -162,6 +163,7 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
       "lifecycle",
       "cli-surface",
       "garden-cascade",
+      "v1-acceptance",
       "regression",
     ];
     const registry = getRegistry();

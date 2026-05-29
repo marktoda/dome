@@ -155,6 +155,7 @@ export type ScenarioGroup =
   | "multi-bundle"
   | "cli-surface"
   | "garden-cascade"
+  | "v1-acceptance"
   | "regression";
 
 export type LifecycleEvent =
