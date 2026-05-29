@@ -33,7 +33,8 @@
 //   - Bundle install / scaffold logic — that's `dome init` (later phase).
 //   - External-handler registration — Phase 9+ adds the
 //     `external-handlers/` directory scan.
-//   - Per-bundle preamble / page-types loading — Phase 9+ adds those.
+//   - Per-bundle preamble loading — Phase 9+ adds that. Bundle page types
+//     are loaded today via `page-types.yaml`.
 //
 // House-style notes (matches src/engine/vault-runtime.ts, src/git.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -140,6 +141,13 @@ export type LoadBundlesOpts = {
    * first-party bundles during testing / dev).
    */
   readonly bundlesRoot: string;
+  /**
+   * Optional activation filter. When present, only bundle directories whose
+   * directory name is in this set are read and imported. The runtime passes
+   * this from `.dome/config.yaml` so disabled or omitted bundles do not get
+   * dynamic-imported before the activation boundary.
+   */
+  readonly activeBundleIds?: ReadonlySet<string>;
 };
 
 // ----- loadBundles ----------------------------------------------------------
@@ -184,6 +192,12 @@ export async function loadBundles(
   const entries = await readdir(rootAbs, { withFileTypes: true });
   const bundleDirs: string[] = [];
   for (const e of entries) {
+    if (
+      opts.activeBundleIds !== undefined &&
+      !opts.activeBundleIds.has(e.name)
+    ) {
+      continue;
+    }
     if (e.isDirectory()) {
       bundleDirs.push(e.name);
       continue;

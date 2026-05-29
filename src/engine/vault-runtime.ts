@@ -480,22 +480,38 @@ async function resolveRegistryFromOpts(
   policy: CapabilityPolicy,
 ): Promise<Result<ResolvedRegistry, OpenVaultRuntimeError>> {
   if ("registry" in opts) {
+    const processorExtensionIds =
+      opts.processorExtensionIds ??
+      inferProcessorExtensionIds(
+        opts.registry,
+        opts.extensions.map((e) => e.name),
+      );
+    if (policy.foundConfig) {
+      return activePrebuiltRegistryForPolicy({
+        registry: opts.registry,
+        extensions: opts.extensions,
+        processorVersions: opts.processorVersions,
+        processorExtensionIds,
+        pageTypes: opts.pageTypes ?? buildPageTypeRegistryForBundles([]),
+        policy,
+      });
+    }
     return ok({
       registry: opts.registry,
       extensions: opts.extensions,
       processorVersions: opts.processorVersions,
-      processorExtensionIds:
-        opts.processorExtensionIds ??
-        inferProcessorExtensionIds(
-          opts.registry,
-          opts.extensions.map((e) => e.name),
-        ),
+      processorExtensionIds,
       pageTypes: opts.pageTypes ?? buildPageTypeRegistryForBundles([]),
     });
   }
 
   // Auto-load path: walk `bundlesRoot`, then compose.
-  const bundlesResult = await loadBundles({ bundlesRoot: opts.bundlesRoot });
+  const bundlesResult = await loadBundles({
+    bundlesRoot: opts.bundlesRoot,
+    ...(policy.foundConfig
+      ? { activeBundleIds: new Set(policy.enabledExtensionIds) }
+      : {}),
+  });
   if (!bundlesResult.ok) {
     return err({ kind: "bundle-load-failed", cause: bundlesResult.error });
   }
@@ -517,6 +533,56 @@ async function resolveRegistryFromOpts(
     processorVersions: deriveProcessorVersionList(processors),
     processorExtensionIds: deriveProcessorExtensionIds(activeBundles),
     pageTypes: buildPageTypeRegistryForBundles(activeBundles),
+  });
+}
+
+function activePrebuiltRegistryForPolicy(input: {
+  readonly registry: ProcessorRegistry;
+  readonly extensions: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
+  readonly processorExtensionIds: ReadonlyMap<string, string>;
+  readonly pageTypes: PageTypeRegistry;
+  readonly policy: CapabilityPolicy;
+}): Result<ResolvedRegistry, OpenVaultRuntimeError> {
+  const processors = input.registry
+    .all()
+    .filter((processor) =>
+      input.policy.isExtensionEnabled(
+        input.processorExtensionIds.get(processor.id) ?? processor.id,
+      ),
+    );
+  const registryResult = buildRegistry(processors);
+  if (!registryResult.ok) {
+    return err({
+      kind: "registry-build-failed",
+      cause: registryResult.error,
+    });
+  }
+
+  const activeProcessorIds = new Set(processors.map((processor) => processor.id));
+  const activeProcessorExtensionIds = new Map<string, string>();
+  for (const processor of processors) {
+    const extensionId =
+      input.processorExtensionIds.get(processor.id) ?? processor.id;
+    activeProcessorExtensionIds.set(processor.id, extensionId);
+  }
+
+  return ok({
+    registry: registryResult.value,
+    extensions: input.extensions.filter((extension) =>
+      input.policy.isExtensionEnabled(extension.name),
+    ),
+    processorVersions: input.processorVersions.filter((processorVersion) =>
+      activeProcessorIds.has(processorVersion.id),
+    ),
+    processorExtensionIds: activeProcessorExtensionIds,
+    pageTypes: input.pageTypes,
   });
 }
 

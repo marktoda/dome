@@ -87,7 +87,7 @@ Raw files carry a `type:` frontmatter naming the capture source (e.g., `type: vo
 
 ```
 inbox/
-  raw/         # quick-capture target (shipped-default)
+  raw/         # quick-capture target (planned dome.intake default)
   voice/       # voice capture target (opt-in via voice-ingest activation)
   research/    # research-clip target (opt-in)
   clip/        # share-sheet target (opt-in)
@@ -95,21 +95,21 @@ inbox/
   processed/   # where dome.intake archives successfully-processed captures
 ```
 
-Files in `inbox/<bucket>/` (except `inbox/review/`) trigger the bucket's intake processor via `signal:file.created` + `pathPattern:"inbox/<bucket>/**"`. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — files are expected to move out (archived to `inbox/processed/` or compiled into `wiki/`) within minutes; lingering files are surfaced as diagnostics by `dome.lint`.
+Files in `inbox/<bucket>/` (except `inbox/review/`) are the planned trigger surface for the bucket's intake processor via `signal:file.created` + `pathPattern:"inbox/<bucket>/**"`. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — once `dome.intake` ships, files are expected to move out (archived to `inbox/processed/` or compiled into `wiki/`) within minutes; lingering files are surfaced as diagnostics.
 
-`inbox/review/` is the destination for `dome lint` reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report.
+`inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
 
 ## `log.md` — append-only run-projection
 
-`log.md` is a markdown projection of the run ledger ([[wiki/specs/run-ledger]]) — the human-readable view of "what did Dome do." Maintained by the `dome.log` adoption-phase processor with `owns.path: ["log.md"]` capability ([[wiki/specs/capabilities]] §"owns.path").
+`log.md` is a reserved markdown projection of the run ledger ([[wiki/specs/run-ledger]]) — the human-readable view of "what did Dome do." The planned `dome.log` adoption-phase processor will maintain it with `owns.path: ["log.md"]` capability ([[wiki/specs/capabilities]] §"owns.path").
 
-Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is supported via the reserved-for-v1.x `dome doctor --repair` verb (per [[wiki/specs/cli]] §"dome doctor"); v1.0 callers may invoke the underlying processor directly via `dome run-processor dome.log:rebuild`.
+Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is planned through a repair/rebuild path once `dome.log` ships.
 
 ## `index.md` — wiki catalogue
 
-`index.md` is a markdown catalogue of every wiki page, partitioned by section. Maintained by the `dome.index` adoption-phase processor with `owns.path: ["index.md"]` capability.
+`index.md` is a reserved markdown catalogue of every wiki page, partitioned by section. The planned `dome.index` adoption-phase processor will maintain it with `owns.path: ["index.md"]` capability.
 
-Rebuilt by `dome rebuild` when stale. (The pre-recut `dome doctor --rebuild-index` flag is retired in favor of the unified `dome rebuild` scope plus, in v1.x, `dome rebuild --target index` if a scoped rebuild is needed.)
+Once `dome.index` ships, it should be rebuildable through `dome rebuild` when stale. (The pre-recut `dome doctor --rebuild-index` flag is retired in favor of the unified `dome rebuild` scope plus, in v1.x, `dome rebuild --target index` if a scoped rebuild is needed.)
 
 ## `.dome/` — configuration + derived state
 
@@ -223,16 +223,16 @@ The capability broker enforces ownership. Default rules:
 
 | Path | Owner |
 |---|---|
-| `index.md` | `dome.index` (via `owns.path`) |
-| `log.md` | `dome.log` (via `owns.path`) |
+| `index.md` | planned `dome.index` (via `owns.path`) |
+| `log.md` | planned `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `wiki/dailies/*.md` | `dome.daily` (via `patch.auto`) |
-| `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
-| `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
+| `wiki/generated/intake/**` | planned `dome.intake` (via `patch.auto`) |
+| `inbox/processed/**` | planned `dome.intake` (via `patch.auto`) |
 | `wiki/<type>/**` (general) | open — any processor with `patch.auto: ["wiki/**"]` |
 | `notes/**` | user only — engine never writes here |
 
-Plugin / third-party bundles cannot grant themselves `owns.path` on shipped-default paths (`index.md`, `log.md`). The broker rejects such grants at config-load time.
+Plugin / third-party bundles should not grant themselves `owns.path` on shipped-default reserved paths (`index.md`, `log.md`). The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
 
 ## Why this layout
 

@@ -49,7 +49,9 @@ export function parseDailyPath(path: string): DailyDate | null {
   if (match === null) return null;
   const [, yyyy, mm, dd] = match;
   if (yyyy === undefined || mm === undefined || dd === undefined) return null;
-  return Object.freeze({ yyyy, mm, dd });
+  const parsed = Object.freeze({ yyyy, mm, dd });
+  if (!isValidDailyDate(parsed)) return null;
+  return parsed;
 }
 
 export function formatDate(date: DailyDate): string {
@@ -136,6 +138,17 @@ export function replaceCarriedForwardSection(input: {
 
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
+}
+
+function isValidDailyDate(date: DailyDate): boolean {
+  const normalized = localDateParts(
+    new Date(Number(date.yyyy), Number(date.mm) - 1, Number(date.dd)),
+  );
+  return (
+    normalized.yyyy === date.yyyy &&
+    normalized.mm === date.mm &&
+    normalized.dd === date.dd
+  );
 }
 
 function carriedForwardBlockRange(

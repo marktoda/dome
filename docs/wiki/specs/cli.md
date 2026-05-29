@@ -78,7 +78,7 @@ default `--bundles-root` for every CLI command). Per [[wiki/specs/vault-layout]]
 grants in `.dome/config.yaml`; the bundle code itself doesn't need to
 be copied into every vault.
 
-The shipped five steps:
+The shipped initialization steps:
 
 1. Initializes a git repository if one doesn't exist (`git init` is
    idempotent — a no-op when `.git/` already exists).
@@ -459,8 +459,8 @@ rendering.
 
 The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly. Both dedicated view commands and generic `dome run` use the same shared dispatch boundary, so they inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
 
-The substrate scaffold catches missing pieces:
-- `tests/integration/cli-shell-shape.test.ts` enumerates command-triggered processors in `assets/extensions/dome.*/processors/` and asserts each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.
+Planned substrate scaffold:
+- A future CLI-shell-shape test should enumerate command-triggered processors in `assets/extensions/dome.*/processors/` and assert each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.
 
 ## Why the CLI surface is rich (not minimal)
 

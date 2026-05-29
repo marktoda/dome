@@ -48,6 +48,7 @@ import "../scenarios/basic-adoption/multi-file-commit.scenario.test";
 import "../scenarios/convergence/normalize-frontmatter-idempotency.scenario.test";
 import "../scenarios/convergence/validate-wikilinks-no-duplicate-diagnostics.scenario.test";
 import "../scenarios/convergence/diagnostics-auto-resolve.scenario.test";
+import "../scenarios/convergence/blocked-adoption-preserves-projections.scenario.test";
 import "../scenarios/cli-surface/init-claude-boot.scenario.test";
 import "../scenarios/cli-surface/answer-question.scenario.test";
 import "../scenarios/cli-surface/doctor-health.scenario.test";
@@ -82,6 +83,7 @@ import "../scenarios/lifecycle/crash-and-restart-mid-stream.scenario.test";
 import "../scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test";
 import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test";
 import "../scenarios/garden-cascade/sub-proposal-frame-correctness.scenario.test";
+import "../scenarios/garden-cascade/multiple-garden-patches.scenario.test";
 
 describe("coverage matrix (Phase H2 mini-version)", () => {
   test("registry is non-empty", () => {

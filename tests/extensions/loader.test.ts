@@ -163,6 +163,37 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(proc.triggers.length).toBe(1);
     expect(proc.capabilities.length).toBe(1);
   });
+
+  test("activeBundleIds filters before manifest reads and processor imports", async () => {
+    const root = makeTmpRoot("loader-active-filter-");
+
+    const activeDir = join(root, "active.bundle");
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(
+      join(activeDir, "manifest.json"),
+      JSON.stringify({
+        id: "active.bundle",
+        version: "0.1.0",
+        processors: [],
+      }),
+    );
+
+    const inactiveDir = join(root, "inactive.bundle");
+    await mkdir(inactiveDir, { recursive: true });
+    await writeFile(
+      join(inactiveDir, "manifest.json"),
+      "{ this is not valid json",
+    );
+
+    const result = await loadBundles({
+      bundlesRoot: root,
+      activeBundleIds: new Set(["active.bundle"]),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((bundle) => bundle.id)).toEqual(["active.bundle"]);
+  });
 });
 
 // ----- Error variants ------------------------------------------------------

@@ -49,7 +49,7 @@ Adding a first-party processor:
 3. Add a cell to this matrix.
 4. Add a test at `tests/processors/<bundle>-<name>.test.ts`.
 
-The structural fence: `tests/integration/built-in-extensions-coverage.test.ts` iterates this matrix and asserts every named processor exists at the declared bundle path. Drift between the matrix and the shipped bundles fails CI.
+Planned structural fence: a future bundle-coverage test should iterate this matrix and assert every shipped processor exists at the declared bundle path. Until that lands, keep the shipped/planned status explicit in this file and in [[wiki/matrices/extension-bundle-shape]].
 
 ## Why not collapse `dome.markdown` and `dome.index` into one bundle
 

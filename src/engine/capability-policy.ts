@@ -16,6 +16,7 @@ import { err, ok, type Result } from "../types";
 
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
+  readonly enabledExtensionIds: ReadonlyArray<string>;
   readonly isExtensionEnabled: (extensionId: string) => boolean;
   readonly grantsForExtension: (
     extensionId: string,
@@ -55,7 +56,7 @@ export async function loadCapabilityPolicy(
     for (const [extensionId, rawExtension] of Object.entries(extensions)) {
       const extension = asRecord(rawExtension);
       if (extension === null) continue;
-      if (extension.enabled === false) {
+      if (extension.enabled !== true) {
         grants.set(extensionId, Object.freeze([]));
         continue;
       }
@@ -68,6 +69,7 @@ export async function loadCapabilityPolicy(
   return ok(
     Object.freeze({
       foundConfig: true,
+      enabledExtensionIds: Object.freeze([...enabled]),
       isExtensionEnabled: (extensionId: string) => enabled.has(extensionId),
       grantsForExtension: (extensionId: string) =>
         grants.get(extensionId) ?? Object.freeze([]),
@@ -78,6 +80,7 @@ export async function loadCapabilityPolicy(
 function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   return Object.freeze({
     foundConfig,
+    enabledExtensionIds: Object.freeze([]),
     isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
   });

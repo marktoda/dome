@@ -32,7 +32,7 @@ The mirror failure: the user assumes scheduled processors never re-fire on catch
 
 **Specific scenarios:**
 
-- The first-party `dome.daily.create-daily` processor declares `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]`. The processor internally checks the candidate snapshot for `wiki/dailies/<today>.md`; if present, emits no PatchEffect (idempotent no-op). A user off for three days syncs, the processor fires once (per clamp), the PatchEffect creates today's daily (the other two days stay un-created — the v1 backfill path is to invoke `dome run-processor dome.daily:create-daily --args='{"date":"<YYYY-MM-DD>"}'` for each missed date).
+- The first-party `dome.daily.create-daily` processor declares `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]`. The processor internally checks the candidate snapshot for `wiki/dailies/<today>.md`; if present, emits no PatchEffect (idempotent no-op). A user off for three days syncs, the processor fires once (per clamp), and the PatchEffect creates today's daily. The other two days stay un-created until a backfill workflow ships.
 
 - A third-party `acme.nightly-export` processor with `triggers: [{ kind: "schedule", cron: "0 2 * * *" }]` and `external: ["network.post"]` capability. A user off for a week syncs, the processor fires once (per clamp), one nightly-export attempt lands in the outbox per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]]. The other six nights' exports are lost — which is fine because exports are non-idempotent side effects that shouldn't be silently re-fired against external systems.
 

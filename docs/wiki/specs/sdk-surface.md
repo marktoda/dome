@@ -98,7 +98,7 @@ A Processor is code that reads a vault snapshot and returns effects. The only be
 
 ### Effect
 
-An Effect is what a processor returns. Seven kinds; closed taxonomy. See [[wiki/specs/effects]] for the full spec.
+An Effect is what a processor returns. Eleven kinds; closed taxonomy. See [[wiki/specs/effects]] for the full spec.
 
 ## Submission API
 

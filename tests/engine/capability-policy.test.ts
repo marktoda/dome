@@ -55,6 +55,13 @@ extensions:
     enabled: false
     grant:
       patch.auto: ["**"]
+  omitted-enabled.bundle:
+    grant:
+      patch.auto: ["**"]
+  malformed-enabled.bundle:
+    enabled: "true"
+    grant:
+      patch.auto: ["**"]
 `,
       "utf8",
     );
@@ -101,9 +108,14 @@ extensions:
       actions: ["fail"],
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
+    expect(result.value.grantsForExtension("omitted-enabled.bundle")).toEqual([]);
+    expect(result.value.grantsForExtension("malformed-enabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);
+    expect(result.value.enabledExtensionIds).toEqual(["dome.markdown"]);
     expect(result.value.isExtensionEnabled("dome.markdown")).toBe(true);
     expect(result.value.isExtensionEnabled("disabled.bundle")).toBe(false);
+    expect(result.value.isExtensionEnabled("omitted-enabled.bundle")).toBe(false);
+    expect(result.value.isExtensionEnabled("malformed-enabled.bundle")).toBe(false);
     expect(result.value.isExtensionEnabled("missing.bundle")).toBe(false);
   });
 });

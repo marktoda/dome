@@ -289,7 +289,7 @@ Acceptance:
 
 ## Milestone 5 - Daily Note and Task Loop
 
-Status: missing.
+Status: partially shipped.
 
 Goal: the user's stated daily workflow works without hand-maintained glue.
 

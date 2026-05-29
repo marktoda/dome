@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 The canonical map of "what an extension bundle contributes to a vault." Rows are bundles (first-party shipped + community-authored shapes anticipated); columns are the five registration kinds bundles can contribute. Each cell names which file (or directory) inside the bundle provides the contribution, or marks the kind unused by this bundle.
 
-**Lockstep status:** lockstep-checked in v1. `tests/integration/extension-bundle-shape-coverage.test.ts` parses this matrix and asserts each cell that names a specific filename corresponds to an actual file at the row's location. Rows with `Status: anticipated` are skipped.
+**Lockstep status:** planned. A future matrix-coverage test should parse this matrix and assert each shipped filename corresponds to an actual file at the row's location. Rows with `Status: anticipated` are documentation-of-intent and skipped until promoted.
 
 | `Status` value | Location convention | Lockstep behavior |
 |---|---|---|
