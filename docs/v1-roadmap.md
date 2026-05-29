@@ -65,17 +65,17 @@ Shipped:
       nominal transient/model errors, and quarantine.
 - [x] Commander-based CLI dispatch.
 - [x] `dome init`, `dome sync`, `dome serve`, `dome status`, `dome inspect`,
-      `dome run`, and `dome rebuild`.
-- [x] Deterministic first-party processors:
-      `dome.markdown.validate-wikilinks`,
-      `dome.markdown.normalize-frontmatter`,
-      `dome.markdown.lint-frontmatter`,
-      `dome.markdown.broken-images`,
-      `dome.markdown.duplicate-detection`,
-      `dome.markdown.stale-dates`,
-      `dome.markdown.orphan-pages`,
-      `dome.graph.links`,
-      `dome.graph.tag-index`.
+      `dome doctor`, `dome answer`, `dome query`, `dome lint`,
+      `dome export-context`, `dome today`, `dome prep`, `dome run`, and
+      `dome rebuild`.
+- [x] Shipped first-party bundle processors:
+      `dome.markdown` (7 processors),
+      `dome.graph` (2),
+      `dome.search` (3),
+      `dome.health` (6),
+      `dome.daily` (5),
+      `dome.lint` (1), and
+      `dome.intake.extract-capture`.
 - [x] Page-type schema substrate.
 - [x] Diagnostic auto-resolve for changed paths.
 - [x] Page-subject graph/tag fact replacement for changed and deleted paths.
@@ -436,7 +436,7 @@ Acceptance:
 
 ## Milestone 9 - V1 Release Hardening
 
-Status: missing.
+Status: partially shipped.
 
 Goal: Dome can run against a real daily vault for a week without manual state
 edits, lost garden patches, or silent processor failure.
@@ -448,7 +448,7 @@ Work:
 - [ ] Add host-on and host-off live harness fixtures.
 - [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
-- [ ] Add status/doctor/query/export JSON fixtures.
+- [x] Add status/doctor/query/export JSON fixtures.
 - [ ] Add docs for the foreground compiler workflow and recovery loop.
 - [ ] Dogfood against `docs/` and `~/vaults/work`.
 

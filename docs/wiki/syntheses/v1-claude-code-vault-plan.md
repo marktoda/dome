@@ -169,7 +169,7 @@ Shipped, but still needs release hardening:
 
 Not yet at v1:
 
-- The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, and first raw inbox capture compilation work. Production model-provider packaging, low-confidence capture questions, stale-inbox checks, and richer synthesis remain.
+- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, and first raw inbox capture compilation. Remaining v1 work is production model-provider packaging, low-confidence capture questions, stale-inbox checks, real-vault dogfood, and richer synthesis.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -372,7 +372,7 @@ Acceptance:
 - Coalesce multiple HEAD movements while a run is active.
 - Ensure operational work drains on quiet ticks.
 - Add `dome status` counts for diagnostics, questions, outbox, quarantine, and failed runs.
-- Add `dome sync --json` and `status --json` fixtures that are stable for agent consumption.
+- Keep `dome sync --json` and `status --json` fixtures stable for agent consumption.
 
 Acceptance:
 
@@ -479,6 +479,7 @@ Acceptance:
 
 - Add live harness scenarios matching the acceptance scenario.
 - Add fixtures for host-on and host-off workflows.
+- Add stable status/doctor/query/export JSON fixture coverage for agent-facing schemas.
 - Add cost/quarantine/outbox failure tests.
 - Add bundle coverage tests so docs/matrices cannot name unshipped processors as shipped.
 - Run full `bun test`, `bunx tsc --noEmit`, and `git diff --check`.
