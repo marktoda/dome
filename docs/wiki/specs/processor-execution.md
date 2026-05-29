@@ -13,7 +13,7 @@ The goal is boring execution semantics: a processor run has one state machine, o
 
 ## Implementation stage
 
-As of the processor-executor-boundary branch:
+Shipped in the current v1 runtime:
 
 - `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
@@ -21,8 +21,8 @@ As of the processor-executor-boundary branch:
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
-- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants and allowlists, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, and captures run-local cost.
-- Daily cost caps, provider adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented by this branch.
+- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, and captures run-local cost.
+- Provider adapters, provider-transient retry policy, vault-level timeout caps, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
 
 ## Run state machine
 
@@ -156,7 +156,8 @@ Adoption-phase processors are never quarantined automatically. If an adoption pr
 
 ## Drain and shutdown
 
-This section describes the target drain/close contract. It is not fully implemented by the current processor-executor-boundary branch.
+This section describes the target drain/close contract. It is not fully
+implemented yet.
 
 `drainProcessors()` waits for queued and running garden/view work to settle up to the configured drain timeout. It does not start new schedule-triggered work while draining. On graceful shutdown:
 
@@ -201,12 +202,11 @@ Already pinned in this branch:
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, and garden timeout discards late output while recording `timed_out`.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
-- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
-- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, in-sync `tick()` drains, and explicit `drainOperationalWork()`.
+- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
+- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, and explicit `drainOperationalWork()`.
 
 Pending:
 
-- Daily cost-cap tests assert historical run cost is enforced before provider calls.
 - Drain tests assert `close()` cancels or settles in-flight runs and releases SQLite handles only after run records are terminal.
 
 ## Related

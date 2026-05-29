@@ -60,7 +60,7 @@ CREATE TABLE runs (
   cost_usd             REAL,                     -- nullable; populated by model.invoke usage
   duration_ms          INTEGER,                  -- nullable; null while running
   error                TEXT,                     -- nullable; failure detail or not-invoked reason JSON
-  trigger_kind         TEXT NOT NULL,            -- "signal" | "path" | "schedule" | "command"
+  trigger_kind         TEXT NOT NULL,            -- "signal" | "path" | "schedule" | "answer" | "command" | "job"
   trigger_payload_json TEXT NOT NULL,            -- the input that fired the trigger
   started_at           TEXT NOT NULL,
   finished_at          TEXT
@@ -110,11 +110,9 @@ The cost surface backs `model.invoke.maxDailyCostUsd` enforcement (per [[wiki/sp
 
 ```text
 dome inspect runs                        # recent runs across all processors
-dome inspect runs --processor dome.intake.extract-capture
-dome inspect runs --status failed --since 24h
+dome inspect runs
 dome inspect cost                        # per-processor spend, current day + last 7 days (v1.x subject)
-dome inspect runs --status running       # runs stuck in "running" state (engine crash); the dedicated
-                                      # `orphan-runs` subject ships with the dome.health bundle (v1.x)
+dome doctor                              # reports orphan running rows and other health findings
 ```
 
 The ledger is also queryable via the MCP server's `dome.runs.list` tool when MCP is mounted (per [[wiki/specs/mcp-surface]]).

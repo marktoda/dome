@@ -96,8 +96,8 @@ V1 capability ledger:
       raw-capture extraction remains.
 - [ ] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
-      ledgering are shipped; daily budget enforcement and production provider
-      packaging remain.
+      ledgering plus daily budget enforcement are shipped; production provider
+      packaging remains.
 - [ ] LLM garden/intake processors with provenance and source-backed writes.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
