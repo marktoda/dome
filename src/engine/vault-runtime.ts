@@ -64,6 +64,7 @@ import {
 import {
   loadCapabilityPolicy,
   type CapabilityPolicy,
+  type RuntimeConfig,
 } from "./capability-policy";
 import { readTree } from "../git";
 import { openAnswersDb, type AnswersDb } from "../answers/db";
@@ -131,6 +132,7 @@ export type VaultRuntime = {
   readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
   readonly pageTypes: PageTypeRegistry;
+  readonly config: RuntimeConfig;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly externalHandlers: ExternalHandlerRegistry;
@@ -431,6 +433,7 @@ export async function openVaultRuntime(
     registry,
     processorRuntime,
     pageTypes,
+    config: policy.runtime,
     resolveGrants,
     extensionIdFor,
     externalHandlers,

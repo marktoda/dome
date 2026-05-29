@@ -330,10 +330,9 @@ engine:
   auto_commit_workflows: true
 
 git:
-  # Mirror of engine.auto_commit_workflows so workflow-commit.ts can
-  # read it via EngineVault.config.git.auto_commit_workflows. Kept in
-  # sync by the config-merge mechanism (today: dome init re-runs; v1.x:
-  # the reserved \`dome doctor --repair\` verb) when both surfaces evolve.
+  # Mirror of engine.auto_commit_workflows so EngineVault.config can expose
+  # the historical git-shaped flag to closure-commit code. When both keys
+  # are present, they must agree.
   auto_commit_workflows: true
 `;
 

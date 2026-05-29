@@ -156,9 +156,10 @@ extensions:
 
 engine:
   max_iterations: 100             # MAX_ITER for the fixed-point loop
-  inbox_stale_age_hours: 168      # diagnostic threshold for INBOX_IS_EPHEMERAL
-  git:
-    auto_commit_closures: true    # whether closure commits land automatically
+  auto_commit_workflows: true     # whether closure commits land automatically
+
+git:
+  auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
 
 ledger:
   retention_days: null            # null = forever; set a number to enable pruning

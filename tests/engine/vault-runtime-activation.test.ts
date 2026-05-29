@@ -26,6 +26,10 @@ describe("openVaultRuntime bundle activation", () => {
     writeFileSync(
       join(root, ".dome", "config.yaml"),
       `
+engine:
+  max_iterations: 9
+git:
+  auto_commit_workflows: false
 extensions:
   enabled.bundle:
     enabled: true
@@ -103,6 +107,10 @@ extensions:
       expect(runtimeResult.value.processorVersions).toEqual([
         { id: "enabled.bundle.view", version: "0.1.0" },
       ]);
+      expect(runtimeResult.value.config).toEqual({
+        engine: { maxIterations: 9 },
+        git: { auto_commit_workflows: false },
+      });
       expect(runtimeResult.value.pageTypes.types.has("enabled-type")).toBe(true);
       expect(runtimeResult.value.pageTypes.types.has("disabled-type")).toBe(false);
     } finally {

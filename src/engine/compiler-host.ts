@@ -325,6 +325,7 @@ async function runAdoptionCycle(opts: {
     runAdoptionProcessors: typeof runtime.processorRuntime.adoptionRunner;
     sinks: ApplyEffectSinks;
     ledger: typeof runtime.ledgerDb;
+    maxIterations: number;
     onEvent?: (event: AdoptEvent) => void;
   } = {
     vault,
@@ -332,6 +333,7 @@ async function runAdoptionCycle(opts: {
     runAdoptionProcessors: runtime.processorRuntime.adoptionRunner,
     sinks,
     ledger: runtime.ledgerDb,
+    maxIterations: runtime.config.engine.maxIterations,
   };
   if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
   const adoptionResult = await adopt(adoptOpts);
@@ -587,11 +589,11 @@ async function latestAdoptedOr(
 
 function runtimeVault(runtime: VaultRuntime): {
   readonly path: string;
-  readonly config: { readonly git: { readonly auto_commit_workflows: true } };
+  readonly config: VaultRuntime["config"];
 } {
   return {
     path: runtime.path,
-    config: { git: { auto_commit_workflows: true } },
+    config: runtime.config,
   };
 }
 

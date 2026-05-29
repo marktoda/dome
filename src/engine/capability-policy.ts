@@ -1,10 +1,12 @@
-// capability-policy: vault config → effective bundle grants.
+// capability-policy: vault config → runtime settings + effective bundle grants.
 //
 // Processors declare their requested capabilities in manifest.yaml. The
 // vault grants capabilities in .dome/config.yaml under
 // `extensions.<bundle>.grant` (or the documented plural `grants`). The
 // broker receives the intersection: declaration from the processor, grant
-// from this policy resolver.
+// from this policy resolver. The same parse pass owns the small runtime
+// config surface (`engine.max_iterations`, `*.auto_commit_workflows`) so
+// generated config keys are either honored or rejected loudly.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,11 +18,21 @@ import { err, ok, type Result } from "../types";
 
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
+  readonly runtime: RuntimeConfig;
   readonly enabledExtensionIds: ReadonlyArray<string>;
   readonly isExtensionEnabled: (extensionId: string) => boolean;
   readonly grantsForExtension: (
     extensionId: string,
   ) => ReadonlyArray<Capability>;
+};
+
+export type RuntimeConfig = {
+  readonly engine: {
+    readonly maxIterations: number;
+  };
+  readonly git: {
+    readonly auto_commit_workflows: boolean;
+  };
 };
 
 export async function loadCapabilityPolicy(
@@ -48,6 +60,13 @@ export async function loadCapabilityPolicy(
   if (root === null) {
     return err(`${path} must be a YAML mapping`);
   }
+  for (const key of Object.keys(root)) {
+    if (!ROOT_KEYS.has(key)) {
+      return err(`${path} ${key} is not a known top-level config field`);
+    }
+  }
+  const runtimeConfig = parseRuntimeConfig(root, path);
+  if (!runtimeConfig.ok) return err(runtimeConfig.error);
 
   const grants = new Map<string, ReadonlyArray<Capability>>();
   const enabled = new Set<string>();
@@ -101,6 +120,7 @@ export async function loadCapabilityPolicy(
   return ok(
     Object.freeze({
       foundConfig: true,
+      runtime: runtimeConfig.value,
       enabledExtensionIds: Object.freeze([...enabled]),
       isExtensionEnabled: (extensionId: string) => enabled.has(extensionId),
       grantsForExtension: (extensionId: string) =>
@@ -112,11 +132,23 @@ export async function loadCapabilityPolicy(
 function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   return Object.freeze({
     foundConfig,
+    runtime: DEFAULT_RUNTIME_CONFIG,
     enabledExtensionIds: Object.freeze([]),
     isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
   });
 }
+
+export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
+  engine: Object.freeze({
+    maxIterations: 100,
+  }),
+  git: Object.freeze({
+    auto_commit_workflows: true,
+  }),
+});
+
+const ROOT_KEYS = new Set(["extensions", "engine", "git"]);
 
 const GRANT_KEYS = new Set([
   "read",
@@ -153,6 +185,92 @@ const RUN_STATUSES = [
   "cancelled",
 ] as const;
 const RUN_RECOVERY_ACTIONS = ["fail"] as const;
+
+function parseRuntimeConfig(
+  root: Record<string, unknown>,
+  path: string,
+): Result<RuntimeConfig, string> {
+  const engine = root.engine === undefined ? {} : asRecord(root.engine);
+  if (engine === null) return err(`${path} engine must be a YAML mapping`);
+  const git = root.git === undefined ? {} : asRecord(root.git);
+  if (git === null) return err(`${path} git must be a YAML mapping`);
+
+  for (const key of Object.keys(engine)) {
+    if (!ENGINE_KEYS.has(key)) {
+      return err(`${path} engine.${key} is not a known engine config field`);
+    }
+  }
+  for (const key of Object.keys(git)) {
+    if (!GIT_KEYS.has(key)) {
+      return err(`${path} git.${key} is not a known git config field`);
+    }
+  }
+
+  const maxIterations = parsePositiveInteger(
+    engine.max_iterations,
+    `${path} engine.max_iterations`,
+    DEFAULT_RUNTIME_CONFIG.engine.maxIterations,
+  );
+  if (!maxIterations.ok) return err(maxIterations.error);
+
+  const engineAutoCommit = parseOptionalBoolean(
+    engine.auto_commit_workflows,
+    `${path} engine.auto_commit_workflows`,
+  );
+  if (!engineAutoCommit.ok) return err(engineAutoCommit.error);
+  const gitAutoCommit = parseOptionalBoolean(
+    git.auto_commit_workflows,
+    `${path} git.auto_commit_workflows`,
+  );
+  if (!gitAutoCommit.ok) return err(gitAutoCommit.error);
+  if (
+    engineAutoCommit.value !== undefined &&
+    gitAutoCommit.value !== undefined &&
+    engineAutoCommit.value !== gitAutoCommit.value
+  ) {
+    return err(
+      `${path} engine.auto_commit_workflows and git.auto_commit_workflows must agree`,
+    );
+  }
+
+  return ok(
+    Object.freeze({
+      engine: Object.freeze({
+        maxIterations: maxIterations.value,
+      }),
+      git: Object.freeze({
+        auto_commit_workflows:
+          engineAutoCommit.value ??
+          gitAutoCommit.value ??
+          DEFAULT_RUNTIME_CONFIG.git.auto_commit_workflows,
+      }),
+    }),
+  );
+}
+
+const ENGINE_KEYS = new Set(["max_iterations", "auto_commit_workflows"]);
+const GIT_KEYS = new Set(["auto_commit_workflows"]);
+
+function parsePositiveInteger(
+  raw: unknown,
+  label: string,
+  fallback: number,
+): Result<number, string> {
+  if (raw === undefined) return ok(fallback);
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw <= 0) {
+    return err(`${label} must be a positive integer`);
+  }
+  return ok(raw);
+}
+
+function parseOptionalBoolean(
+  raw: unknown,
+  label: string,
+): Result<boolean | undefined, string> {
+  if (raw === undefined) return ok(undefined);
+  if (typeof raw !== "boolean") return err(`${label} must be a boolean`);
+  return ok(raw);
+}
 
 function parseGrantBlock(
   raw: unknown,

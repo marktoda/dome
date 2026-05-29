@@ -113,6 +113,75 @@ extensions:
     expect(result.value.isExtensionEnabled("missing.bundle")).toBe(false);
   });
 
+  test("parses runtime config from .dome/config.yaml", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+engine:
+  max_iterations: 7
+  auto_commit_workflows: false
+git:
+  auto_commit_workflows: false
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.runtime).toEqual({
+      engine: { maxIterations: 7 },
+      git: { auto_commit_workflows: false },
+    });
+  });
+
+  test("rejects malformed runtime config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+engine:
+  max_iterations: 0
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("engine.max_iterations must be a positive integer");
+  });
+
+  test("rejects conflicting auto-commit mirrors", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+engine:
+  auto_commit_workflows: true
+git:
+  auto_commit_workflows: false
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("must agree");
+  });
+
   test("rejects malformed extension activation", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);
