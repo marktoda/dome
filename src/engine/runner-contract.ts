@@ -164,8 +164,8 @@ export type AdoptionPhaseRunner = (input: {
  *   - Return `ViewEffect` (the rendered output) or no effects. Mutation
  *     effects (Patch / Diagnostic-block / Fact / Question / Job /
  *     External) are rejected by the broker as `phase-mismatch`.
- *   - Are at most one per command name (collision = bundle-load failure
- *     with `cli-command-collision`).
+ *   - Are at most one per command name (collision = registry-build failure
+ *     with `duplicate-command-trigger`).
  *
  * Returns the matching processor's `RunnerResult` (or `null` when no
  * processor matches the command name). Schedule-triggered view

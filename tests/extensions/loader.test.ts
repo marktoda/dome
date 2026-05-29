@@ -11,6 +11,7 @@
 //     trigger is rejected).
 //   - Root-not-found rejection.
 //   - `flattenBundleProcessors` flattens correctly.
+//   - Manifest module paths are confined under `<bundle>/processors/`.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -24,6 +25,7 @@ import {
   loadBundles,
 } from "../../src/extensions/loader";
 import type { ProcessorContext } from "../../src/core/processor";
+import { buildRegistry } from "../../src/processors/registry";
 
 // ----- Paths ---------------------------------------------------------------
 //
@@ -300,6 +302,68 @@ describe("loadBundles — error variants", () => {
     expect(result.error.bundleId).toBe("naked-bundle");
   });
 
+  test("processor-module-path-invalid when module escapes the bundle root", async () => {
+    const root = makeTmpRoot("loader-module-escape-");
+    const bundleDir = join(root, "test.escape");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.escape",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.escape.proc",
+            version: "0.1.0",
+            phase: "view",
+            triggers: [{ kind: "command", name: "escape" }],
+            capabilities: [],
+            module: "../escape.ts",
+          },
+        ],
+      }),
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-path-invalid");
+    if (result.error.kind !== "processor-module-path-invalid") return;
+    expect(result.error.bundleId).toBe("test.escape");
+    expect(result.error.modulePath).toBe("../escape.ts");
+  });
+
+  test("processor-module-path-invalid when module bypasses processors directory", async () => {
+    const root = makeTmpRoot("loader-module-outside-processors-");
+    const bundleDir = join(root, "test.outside");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.outside",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.outside.proc",
+            version: "0.1.0",
+            phase: "view",
+            triggers: [{ kind: "command", name: "outside" }],
+            capabilities: [],
+            module: "proc.ts",
+          },
+        ],
+      }),
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-path-invalid");
+    if (result.error.kind !== "processor-module-path-invalid") return;
+    expect(result.error.bundleId).toBe("test.outside");
+    expect(result.error.modulePath).toBe("proc.ts");
+  });
+
   test("empty bundle with zero declared processors loads successfully", async () => {
     const root = makeTmpRoot("loader-empty-procs-");
     const bundleDir = join(root, "test.empty");
@@ -397,4 +461,78 @@ describe("loadBundles — error variants", () => {
     expect(procIds).toContain("dome.markdown.normalize-frontmatter");
     expect(procIds).toContain("dome.markdown.validate-wikilinks");
   });
+
+  test("duplicate command triggers across loaded bundles fail registry build", async () => {
+    const root = makeTmpRoot("loader-command-collision-");
+    await writeCommandBundle(root, {
+      bundleId: "test.command-a",
+      processorId: "test.command-a.query",
+      commandName: "query",
+    });
+    await writeCommandBundle(root, {
+      bundleId: "test.command-b",
+      processorId: "test.command-b.query",
+      commandName: "query",
+    });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const registry = buildRegistry(flattenBundleProcessors(result.value));
+    expect(registry.ok).toBe(false);
+    if (registry.ok) return;
+    expect(registry.error.kind).toBe("duplicate-command-trigger");
+    if (registry.error.kind !== "duplicate-command-trigger") return;
+    expect(registry.error.commandName).toBe("query");
+    expect(registry.error.processors).toEqual([
+      "test.command-a.query",
+      "test.command-b.query",
+    ]);
+  });
 });
+
+async function writeCommandBundle(
+  root: string,
+  opts: {
+    readonly bundleId: string;
+    readonly processorId: string;
+    readonly commandName: string;
+  },
+): Promise<void> {
+  const bundleDir = join(root, opts.bundleId);
+  const processorsDir = join(bundleDir, "processors");
+  await mkdir(processorsDir, { recursive: true });
+  await writeFile(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({
+      id: opts.bundleId,
+      version: "0.1.0",
+      processors: [
+        {
+          id: opts.processorId,
+          version: "0.1.0",
+          phase: "view",
+          triggers: [{ kind: "command", name: opts.commandName }],
+          capabilities: [],
+          module: "processors/proc.ts",
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    join(processorsDir, "proc.ts"),
+    `
+      export default {
+        id: "${opts.processorId}",
+        version: "0.1.0",
+        phase: "view",
+        triggers: [],
+        capabilities: [],
+        async run() {
+          return [];
+        },
+      };
+    `,
+  );
+}

@@ -209,7 +209,7 @@ processors:
       modelCallTimeoutMs: 180000
 ```
 
-The schema is validated by Zod at bundle load. Invalid manifests fail the load with a `bundle-load-failure` error (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.
+The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.
 
 #### Bundle-loader error taxonomy
 
@@ -218,9 +218,10 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `root-not-found` | The configured bundles root does not exist or is not a directory. |
 | `manifest-read-failed` | A bundle has neither readable `manifest.yaml` nor `manifest.json`, or the manifest cannot be parsed. |
 | `manifest-invalid` | Zod validation fails (missing `id:`, malformed `version:`, etc.) or a phase × trigger / phase × execution / phase × capability matrix check rejects the declaration. |
+| `processor-module-path-invalid` | A manifest `module:` path is absolute, escapes the bundle root, bypasses `<bundle>/processors/`, or does not point at a `.ts` file. |
 | `processor-module-load-failed` | A `<bundle>/processors/<name>.ts` fails to import, has identity drift against the manifest, or default-exports an object without a `run` function. |
 | `processor-missing-default-export` | A processor module imports but does not default-export an object. |
-| `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids or empty triggers. |
+| `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids, duplicate command triggers, empty triggers, or invalid phases. |
 | `page-type-collision` | Two bundles declare the same page-type name; the loader fails before opening the runtime. Vault-local collisions with bundle/default page types are surfaced by `dome.markdown.lint-frontmatter` from the candidate snapshot. |
 | `capability-handler-collision` | Two bundles register handlers for the same external capability. |
 | `bundle-deps-unmet` | A `deps:` entry names a bundle not present in `.dome/extensions/`. |
@@ -232,11 +233,11 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`.
 3. **Preamble fragment** loading is planned. Bundle-local `preamble.md` files are part of the intended extension shape, but the current loader does not yet merge them into `AGENTS.md`.
-4. **Processors register** into the engine's processor registry under id `<bundle>:<processor-id>`.
+4. **Processors register** into the engine's processor registry under their fully qualified manifest ids.
 5. **Capabilities register** with the broker.
 6. **External-handler discovery** is planned. The outbox dispatcher supports injected handler registries today; scanning bundle `external-handlers/` directories is a future loader extension.
 
-The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` with a `bundle-load-failure` `ToolError`.
+The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` with a structured `bundle-load-failed` error. Registry validation failures abort startup with `registry-build-failed`.
 
 ### First-party bundles
 

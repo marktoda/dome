@@ -249,8 +249,9 @@ export type OpenVaultRuntimeOpts =
  *     (root missing, manifest invalid, processor import failure, etc.).
  *     Carries the nested `LoadBundlesError` for the operator's diagnostic.
  *   - `registry-build-failed`: the loaded processor set failed
- *     `buildRegistry`'s structural checks (duplicate id, empty triggers,
- *     invalid phase). Carries the nested `RegistryError`.
+ *     `buildRegistry`'s structural checks (duplicate ids, duplicate
+ *     command triggers, empty triggers, invalid phase). Carries the
+ *     nested `RegistryError`.
  */
 export type OpenVaultRuntimeError =
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }

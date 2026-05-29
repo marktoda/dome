@@ -178,7 +178,7 @@ processors:
         paths: ["inbox/raw/**"]   # only for adding stable IDs to the capture frontmatter
 ```
 
-The schema is validated by Zod at bundle load. A capability with an unknown `kind`, a malformed `paths` pattern, or a `model.invoke` requested by an adoption-phase processor fails the load with a `bundle-load-failure` error (per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy").
+The schema is validated by Zod at bundle load. A capability with an unknown `kind`, a malformed `paths` pattern, or a `model.invoke` requested by an adoption-phase processor fails the load with a `bundle-load-failed` error (per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy").
 
 ## Vault grants
 

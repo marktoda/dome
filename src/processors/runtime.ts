@@ -420,11 +420,10 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 
     // Find the view-phase processor whose triggers include
     // `{ kind: "command", name: input.commandName }`. Per
-    // [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy"
-    // §`cli-command-collision`, only one view-phase processor per
-    // command name is allowed; the bundle loader rejects collisions at
-    // load time. So `find` (not `filter`) is correct — at most one
-    // match exists.
+    // Registry validation rejects `duplicate-command-trigger`, so one
+    // command name maps to at most one view-phase processor. `find`
+    // (not `filter`) is correct here because runtime construction would
+    // have failed before this dispatcher can run.
     const processor = viewProcessors.find((p) =>
       p.triggers.some(
         (t) => t.kind === "command" && t.name === input.commandName,

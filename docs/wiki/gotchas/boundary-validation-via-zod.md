@@ -36,13 +36,13 @@ For state-file corruption (`quarantined.json`, future state files), the validati
 **Specific scenarios:**
 
 - A user with a hand-edited `<vault>/.dome/config.yaml` carries a malformed `invariants:` block. The current behavior (without the schema) crashes during the spread merge in `openVault`; with the schema, it returns `Result.err({ kind: 'invalid-vault-config', path: 'invariants', expected: 'object', got: 'string' })` and `dome inspect diagnostics` surfaces the error as a DiagnosticEffect.
-- A third-party bundle author ships a `manifest.yaml` with a typo'd `processors[].triggers[].kind` field. Current behavior: an unhelpful "Cannot read property 'kind' of undefined" error during processor registration. Future behavior: `Result.err({ kind: 'bundle-load-failure', detail: 'processor-invalid', errors: [<Zod-issue-path>] })` per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy".
+- A third-party bundle author ships a `manifest.yaml` with a typo'd `processors[].triggers[].kind` field. V1 behavior: `Result.err({ kind: "bundle-load-failed", cause: { kind: "manifest-invalid", cause: { kind: "invalid-shape", issues: [...] } } })` per [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy".
 - A v2 mobile shell wakes from background, finds `<vault>/.dome/state/quarantined.json` corrupted by a previous-version process. Pre-v1 behavior silently reset quarantine state. V1 behavior returns `quarantine-store-parse-failed` with the offending schema path, so the host can surface or repair the corruption deliberately.
 
 **Related:**
 
 - [[wiki/specs/effects]] — the `Result<T, ToolError>` shape the boundary schemas mirror
-- [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy" — the `bundle-load-failure` discriminator set
+- [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy" — the `bundle-load-failed` error wrapper and nested loader discriminators
 - [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`" — the state-file persistence surface
 - [[wiki/specs/projection-store]] §"Schema migrations" — SQLite-side validation via schema-hash mismatch
 - [[wiki/gotchas/agent-prompt-regression]] — a different boundary (LLM output) with a different mitigation (eval suite)

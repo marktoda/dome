@@ -20,7 +20,9 @@
 //     exists for v1-era simplicity.
 //   - Dynamic-imports each processor's `module:` path. The module's
 //     default export must be a `Processor` whose (id, version, phase)
-//     matches the manifest declaration. A mismatch fails the load with
+//     matches the manifest declaration. Manifest `module:` paths are
+//     confined to TypeScript files under `<bundle>/processors/`; path
+//     escapes fail before import. A mismatch fails the load with
 //     `processor-module-load-failed`.
 //   - Returns `Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>` —
 //     never throws on expected I/O failures. Programmer errors (the bundle
@@ -43,7 +45,7 @@
 //     the `yaml` package (already in package.json).
 
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parse as parseYaml } from "yaml";
@@ -95,6 +97,9 @@ export type LoadedBundle = {
  *     match the manifest declaration. The `cause` field carries the
  *     thrown message (for import failures) or a structured "manifest
  *     declared X; module exported Y" string (for mismatches).
+ *   - `processor-module-path-invalid`: a manifest `module:` path was
+ *     absolute, escaped the bundle root, bypassed `processors/`, or did
+ *     not point at a TypeScript module.
  *   - `processor-missing-default-export`: the imported module loaded but
  *     had no default export (or a non-object default).
  */
@@ -117,6 +122,12 @@ export type LoadBundlesError =
     }
   | {
       readonly kind: "processor-module-load-failed";
+      readonly bundleId: string;
+      readonly modulePath: string;
+      readonly cause: string;
+    }
+  | {
+      readonly kind: "processor-module-path-invalid";
       readonly bundleId: string;
       readonly modulePath: string;
       readonly cause: string;
@@ -435,7 +446,9 @@ async function loadProcessorModule(
   bundleId: string,
   decl: ProcessorDeclaration,
 ): Promise<Result<Processor<unknown>, LoadBundlesError>> {
-  const moduleAbs = resolve(bundlePath, decl.module);
+  const modulePath = resolveProcessorModulePath(bundlePath, bundleId, decl);
+  if (!modulePath.ok) return err(modulePath.error);
+  const moduleAbs = modulePath.value;
   let mod: { default?: unknown };
   try {
     mod = (await import(pathToFileURL(moduleAbs).href)) as {
@@ -488,6 +501,57 @@ async function loadProcessorModule(
   }
 
   return ok(bindProcessorDeclaration(decl, processor));
+}
+
+function resolveProcessorModulePath(
+  bundlePath: string,
+  bundleId: string,
+  decl: ProcessorDeclaration,
+): Result<string, LoadBundlesError> {
+  if (isAbsolute(decl.module)) {
+    return err({
+      kind: "processor-module-path-invalid",
+      bundleId,
+      modulePath: decl.module,
+      cause: "module path must be relative to the bundle root",
+    });
+  }
+
+  const moduleAbs = resolve(bundlePath, decl.module);
+  if (!isWithin(bundlePath, moduleAbs)) {
+    return err({
+      kind: "processor-module-path-invalid",
+      bundleId,
+      modulePath: decl.module,
+      cause: "module path must not escape the bundle root",
+    });
+  }
+
+  const processorsRoot = resolve(bundlePath, "processors");
+  if (!isWithin(processorsRoot, moduleAbs)) {
+    return err({
+      kind: "processor-module-path-invalid",
+      bundleId,
+      modulePath: decl.module,
+      cause: "module path must live under processors/",
+    });
+  }
+
+  if (!moduleAbs.endsWith(".ts")) {
+    return err({
+      kind: "processor-module-path-invalid",
+      bundleId,
+      modulePath: decl.module,
+      cause: "module path must point at a .ts file",
+    });
+  }
+
+  return ok(moduleAbs);
+}
+
+function isWithin(root: string, child: string): boolean {
+  const rel = relative(resolve(root), resolve(child));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 /**

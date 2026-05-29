@@ -9,9 +9,8 @@
 //
 // Phase 4b scope:
 //   - One command name → at most one view-phase processor fires (the
-//     bundle loader rejects collisions at load time per
-//     [[wiki/specs/sdk-surface]] §"Bundle-loader error taxonomy"
-//     §`cli-command-collision`).
+//     processor registry rejects collisions while opening the runtime per
+//     `RegistryError.kind === "duplicate-command-trigger"`).
 //   - Returns the collected `ViewEffect`s — ready for the caller to
 //     render (CLI prints `markdown` content; MCP wraps as a typed
 //     response; etc.).

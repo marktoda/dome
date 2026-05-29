@@ -2,7 +2,7 @@
 //
 // The bundle loader (per docs/wiki/specs/sdk-surface.md §"Bundle load
 // lifecycle", step 4 — "Processors register into the engine's processor
-// registry under id `<bundle>:<processor-id>`") hands a flat list of
+// registry under each processor's manifest id") hands a flat list of
 // `Processor<unknown>` values to `buildRegistry`. The registry validates
 // the set, indexes by id and by phase, and exposes a sealed query surface
 // the runtime uses to walk per-phase candidates, look up by id, and
@@ -23,18 +23,16 @@
 //     per-processor `TInput` narrowing happens at invocation time in the
 //     processor runtime (Phase 3 next task), not here. Generic-preserving
 //     registries in TypeScript cost more than they pay for a v1 surface.
-//   - Convention (not enforced here): the bundle loader prefixes each
-//     processor's id with the bundle name (e.g.,
-//     `dome.intake:extract-capture`). This file documents the convention
-//     but applies no shape check on the id string — that lives in the
-//     loader, where the bundle name is known.
+//   - Convention (not enforced here): manifest ids are fully qualified
+//     with the bundle namespace (e.g., `dome.intake.extract-capture`).
+//     This file treats ids as opaque strings and only enforces uniqueness.
 //   - Validation is structural, not Zod. `Processor`'s static-data fields
 //     are already shape-checked at construction via `defineProcessor` +
 //     the per-field Zod schemas exported from `../core/processor`. The
 //     registry's checks are runtime checks for properties TypeScript
-//     cannot catch from the type alone: duplicate ids, empty trigger
-//     arrays, and (defensively) phase-enum values outside the closed
-//     `ProcessorPhase` union.
+//     cannot catch from the type alone: duplicate ids, duplicate command
+//     triggers, empty trigger arrays, and (defensively) phase-enum values
+//     outside the closed `ProcessorPhase` union.
 //
 // House-style notes (matches src/core/source-ref.ts, src/core/effect.ts,
 // src/engine/capability-broker.ts, src/engine/compile-range.ts,
@@ -46,8 +44,9 @@
 //     phase check uses a closed-union allowlist (`ProcessorPhase`).
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating the indexes.
-//   - Returns `Result<T, E>` — never throws. Caller (the bundle loader)
-//     surfaces a `bundle-load-failure` `ToolError` per its own taxonomy.
+//   - Returns `Result<T, E>` — never throws. The runtime opener wraps
+//     failures as `registry-build-failed` so startup fails before any
+//     ambiguous processor dispatch can happen.
 //   - Imports limited to pure types from `../core/processor` plus the
 //     `Result` / `ok` / `err` triple from `../types`. No engine-layer
 //     imports — the registry is upstream of the engine runtime.
@@ -66,6 +65,10 @@ import { type Result, ok, err } from "../types";
  *                                    under the same id. `processors` lists
  *                                    every id that collided on `id` (the
  *                                    full set, not just the first pair).
+ *   - `duplicate-command-trigger`   — two view processors, or one malformed
+ *                                    view processor with repeated triggers,
+ *                                    claim the same command name. View
+ *                                    dispatch must be unambiguous.
  *   - `processor-no-triggers`      — a processor declared an empty
  *                                    `triggers` array. Per processors.md
  *                                    §"The Processor type", a processor
@@ -83,6 +86,11 @@ export type RegistryError =
   | {
       readonly kind: "duplicate-processor-id";
       readonly id: string;
+      readonly processors: ReadonlyArray<string>;
+    }
+  | {
+      readonly kind: "duplicate-command-trigger";
+      readonly commandName: string;
       readonly processors: ReadonlyArray<string>;
     }
   | {
@@ -154,6 +162,8 @@ const VALID_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([
  *      every offending id (not just the first pair). This matches the
  *      acceptance criterion that callers see the full conflict set, not
  *      a piecemeal trickle of errors.
+ *   3. View command trigger collision detection. A command name is a
+ *      protocol surface and must resolve to at most one processor.
  *
  * On success, returns a frozen registry handle whose indexes (by id, by
  * phase, the alphabetical all-list) are computed once and shared across
@@ -213,6 +223,11 @@ export function buildRegistry(
     });
   }
 
+  const commandCollision = findCommandTriggerCollision(processors);
+  if (commandCollision !== null) {
+    return err(commandCollision);
+  }
+
   // 3. Build indexes. The all-list is alphabetical by id; per-phase
   //    lists are filtered views of the all-list (so per-phase order is
   //    also alphabetical and is consistent with `all()`).
@@ -242,6 +257,39 @@ export function buildRegistry(
 }
 
 // ----- internals ------------------------------------------------------------
+
+function findCommandTriggerCollision(
+  processors: ReadonlyArray<Processor<unknown>>,
+): Extract<RegistryError, { readonly kind: "duplicate-command-trigger" }> | null {
+  const buckets = new Map<
+    string,
+    { readonly processorIds: Set<string>; count: number }
+  >();
+  for (const processor of processors) {
+    if (processor.phase !== "view") continue;
+    for (const trigger of processor.triggers) {
+      if (trigger.kind !== "command") continue;
+      const existing =
+        buckets.get(trigger.name) ??
+        { processorIds: new Set<string>(), count: 0 };
+      existing.processorIds.add(processor.id);
+      existing.count += 1;
+      buckets.set(trigger.name, existing);
+    }
+  }
+
+  const collisions = [...buckets.entries()]
+    .filter(([, bucket]) => bucket.count > 1)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const first = collisions[0];
+  if (first === undefined) return null;
+  const [commandName, bucket] = first;
+  return {
+    kind: "duplicate-command-trigger",
+    commandName,
+    processors: Object.freeze([...bucket.processorIds].sort()),
+  };
+}
 
 /**
  * Bucket the alphabetically-sorted processor list by phase. Returns a

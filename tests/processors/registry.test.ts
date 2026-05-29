@@ -4,21 +4,31 @@
 
 import { describe, test, expect } from "bun:test";
 import { buildRegistry } from "../../src/processors/registry";
-import { defineProcessor, type Processor, type ProcessorPhase } from "../../src/core/processor";
+import {
+  defineProcessor,
+  type Processor,
+  type ProcessorPhase,
+  type Trigger,
+} from "../../src/core/processor";
 
 function makeProcessor(opts: {
   id: string;
   phase?: ProcessorPhase;
   hasTriggers?: boolean;
+  triggers?: ReadonlyArray<Trigger>;
 }): Processor {
+  const triggers =
+    opts.triggers !== undefined
+      ? opts.triggers
+      : opts.hasTriggers === false
+        ? []
+        : [{ kind: "path" as const, pattern: "wiki/**/*.md" }];
+
   return defineProcessor({
     id: opts.id,
     version: "0.0.1",
     phase: opts.phase ?? "adoption",
-    triggers:
-      opts.hasTriggers === false
-        ? []
-        : [{ kind: "path", pattern: "wiki/**/*.md" }],
+    triggers,
     capabilities: [],
     run: async () => [],
   });
@@ -87,6 +97,44 @@ describe("buildRegistry — error variants", () => {
     if (r.error.kind !== "duplicate-processor-id") return;
     expect(r.error.id).toBe(dupId);
     expect(r.error.processors).toEqual([dupId]);
+  });
+
+  test("duplicate view command names → err 'duplicate-command-trigger'", () => {
+    const a = makeProcessor({
+      id: "bundle.a.query",
+      phase: "view",
+      triggers: [{ kind: "command", name: "query" }],
+    });
+    const b = makeProcessor({
+      id: "bundle.b.query",
+      phase: "view",
+      triggers: [{ kind: "command", name: "query" }],
+    });
+    const r = buildRegistry([a, b]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.kind).toBe("duplicate-command-trigger");
+    if (r.error.kind !== "duplicate-command-trigger") return;
+    expect(r.error.commandName).toBe("query");
+    expect(r.error.processors).toEqual(["bundle.a.query", "bundle.b.query"]);
+  });
+
+  test("duplicate command triggers inside one view processor are rejected", () => {
+    const p = makeProcessor({
+      id: "bundle.query",
+      phase: "view",
+      triggers: [
+        { kind: "command", name: "query" },
+        { kind: "command", name: "query" },
+      ],
+    });
+    const r = buildRegistry([p]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.kind).toBe("duplicate-command-trigger");
+    if (r.error.kind !== "duplicate-command-trigger") return;
+    expect(r.error.commandName).toBe("query");
+    expect(r.error.processors).toEqual(["bundle.query"]);
   });
 
   test("empty triggers → err 'processor-no-triggers'", () => {
