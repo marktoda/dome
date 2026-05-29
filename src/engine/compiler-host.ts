@@ -488,19 +488,14 @@ async function runAdoptionCycle(opts: {
     });
 
     if (cursor.current !== adoptionResult.adoptedRef) {
-      const finalCompiled = await compileRange({
-        vaultPath: runtime.path,
-        base: adoptionResult.adoptedRef,
-        head: cursor.current,
-      });
-      if (projectionGlobalConfigChanged(finalCompiled.changedPaths)) {
-        projectionRebuild = await rebuildProjection({
+      projectionRebuild =
+        await rebuildProjectionIfGlobalConfigChanged({
           runtime,
-          adopted: cursor.current,
+          base: adoptionResult.adoptedRef,
+          head: cursor.current,
           branch: drift.branch,
           now,
-        });
-      }
+        }) ?? projectionRebuild;
     }
 
     markProjectionBuilt(runtime.projectionDb, {
@@ -554,7 +549,8 @@ export async function runOperationalWorkForAdopted(opts: {
       now,
     });
 
-  return runOperationalWork({
+  const beforeOperational = cursor.current;
+  const result = await runOperationalWork({
     vault,
     adopted: cursor.current,
     registry: opts.runtime.registry,
@@ -576,6 +572,25 @@ export async function runOperationalWorkForAdopted(opts: {
     adoptSubProposal,
     currentAdopted: () => cursor.current,
   });
+
+  if (opts.branch !== undefined && cursor.current !== beforeOperational) {
+    await rebuildProjectionIfGlobalConfigChanged({
+      runtime: opts.runtime,
+      base: beforeOperational,
+      head: cursor.current,
+      branch: opts.branch,
+      now,
+    });
+    markProjectionBuilt(opts.runtime.projectionDb, {
+      adoptedCommit: cursor.current,
+      extensionSet: opts.runtime.extensions,
+      processorVersions: opts.runtime.processorVersions,
+      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
+      builtAt: now(),
+    });
+  }
+
+  return result;
 }
 
 function operationalQueryViewForRuntime(
@@ -710,6 +725,28 @@ function projectionGlobalConfigChanged(
   changedPaths: ReadonlyArray<string>,
 ): boolean {
   return changedPaths.some((path) => PROJECTION_GLOBAL_CONFIG_PATHS.has(path));
+}
+
+async function rebuildProjectionIfGlobalConfigChanged(opts: {
+  readonly runtime: VaultRuntime;
+  readonly base: CommitOid;
+  readonly head: CommitOid;
+  readonly branch: string;
+  readonly now: () => Date;
+}): Promise<ProjectionRebuildResult | null> {
+  const compiled = await compileRange({
+    vaultPath: opts.runtime.path,
+    base: opts.base,
+    head: opts.head,
+  });
+  if (!projectionGlobalConfigChanged(compiled.changedPaths)) return null;
+
+  return rebuildProjection({
+    runtime: opts.runtime,
+    adopted: opts.head,
+    branch: opts.branch,
+    now: opts.now,
+  });
 }
 
 async function latestAdoptedOr(

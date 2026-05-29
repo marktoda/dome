@@ -1,0 +1,26 @@
+id: test.page-type-job-flow
+version: 0.1.0
+processors:
+  - id: test.page-type-job-flow.enqueue
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/seed.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/seed.md"]
+      - kind: job.enqueue
+        processors: ["test.page-type-job-flow.worker"]
+    module: processors/enqueue.ts
+  - id: test.page-type-job-flow.worker
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+    capabilities:
+      - kind: patch.auto
+        paths: [".dome/page-types.yaml"]
+    module: processors/worker.ts
