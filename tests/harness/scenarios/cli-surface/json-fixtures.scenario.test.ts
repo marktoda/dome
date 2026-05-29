@@ -78,6 +78,8 @@ const QUERY_MATCH_KEYS = Object.freeze([
   "rank",
   "sourceRefs",
   "facts",
+  "diagnostics",
+  "questions",
 ]);
 
 const EXPORT_KEYS = Object.freeze([

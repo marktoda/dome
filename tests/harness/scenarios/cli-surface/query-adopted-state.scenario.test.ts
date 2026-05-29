@@ -39,6 +39,14 @@ scenario(
           "  - strategy\n" +
           "---\n" +
           "# Project Alpha\n\n" +
+          "Roadmap notes for the alpha launch and ownership model.\n" +
+          "\n" +
+          "See [[missing-alpha-owner]].\n",
+        "wiki/project-alpha-copy.md":
+          "---\n" +
+          "type: project\n" +
+          "---\n" +
+          "# Project Alpha\n\n" +
           "Roadmap notes for the alpha launch and ownership model.\n",
         "wiki/other.md": "# Other\n\nUnrelated operations note.\n",
       },
@@ -65,6 +73,8 @@ scenario(
         readonly title: string;
         readonly type: string | null;
         readonly facts: ReadonlyArray<{ readonly predicate: string }>;
+        readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
+        readonly questions: ReadonlyArray<{ readonly question: string }>;
       }>;
     };
 
@@ -78,6 +88,16 @@ scenario(
     expect(match?.type).toBe("project");
     expect(match?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
+    expect(
+      match?.diagnostics.some(
+        (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
+      ),
+    ).toBe(true);
+    expect(
+      match?.questions.some((question) =>
+        question.question.includes("Possible duplicate pages")
+      ),
+    ).toBe(true);
 
     h.projection.raw.run(
       "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",

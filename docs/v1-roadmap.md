@@ -568,6 +568,9 @@ Work:
 
 - [x] Implement `dome export-context <topic>` as a source-backed markdown
       packet.
+- [x] Include source-ref-related diagnostics and open questions on
+      `dome query` matches, so adopted-state recall can explain relevant
+      engine state without a separate inspect detour.
 - [x] Implement `dome lint` as a report over diagnostics plus deterministic
       checks.
 - [x] Implement `dome today` once daily/task data is strong enough.
@@ -581,6 +584,8 @@ Acceptance:
 
 - [x] Export-context returns paths, snippets, facts, and SourceRefs for a
       topic.
+- [x] Query returns paths, snippets, facts, related diagnostics, related open
+      questions, and SourceRefs for matched adopted-state pages.
 - [x] Lint report is stable and exits nonzero only on defined severity
       thresholds.
 - [x] Today view renders useful daily/task data.

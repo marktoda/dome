@@ -101,6 +101,16 @@ function formatQueryResult(data: unknown): string {
         .join(", ");
       lines.push(`   facts: ${facts}`);
     }
+    if (match.diagnostics.length > 0) {
+      const diagnostics = match.diagnostics
+        .slice(0, 5)
+        .map((diagnostic) => diagnostic.code)
+        .join(", ");
+      lines.push(`   diagnostics: ${diagnostics}`);
+    }
+    if (match.questions.length > 0) {
+      lines.push(`   questions: ${match.questions.length} open`);
+    }
   }
   return lines.join("\n");
 }
@@ -113,6 +123,8 @@ type QueryResultData = {
     readonly snippet: string;
     readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
     readonly facts: ReadonlyArray<{ readonly predicate: string }>;
+    readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
+    readonly questions: ReadonlyArray<{ readonly question: string }>;
   }>;
 };
 
@@ -144,6 +156,8 @@ function parseQueryResult(data: unknown): QueryResultData {
           snippet: stringOrEmpty(match.snippet),
           sourceRefs: Object.freeze(parseSourceRefs(match.sourceRefs)),
           facts: Object.freeze(parseFacts(match.facts)),
+          diagnostics: Object.freeze(parseDiagnostics(match.diagnostics)),
+          questions: Object.freeze(parseQuestions(match.questions)),
         });
       }),
     ),
@@ -162,6 +176,40 @@ function parseFacts(raw: unknown): ReadonlyArray<{ readonly predicate: string }>
         return predicate.length > 0 ? { predicate } : null;
       })
       .filter((item): item is { readonly predicate: string } => item !== null),
+  );
+}
+
+function parseDiagnostics(
+  raw: unknown,
+): ReadonlyArray<{ readonly code: string }> {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(
+    raw
+      .map((item) => {
+        const record = item !== null && typeof item === "object"
+          ? item as Record<string, unknown>
+          : {};
+        const code = stringOrEmpty(record.code);
+        return code.length > 0 ? { code } : null;
+      })
+      .filter((item): item is { readonly code: string } => item !== null),
+  );
+}
+
+function parseQuestions(
+  raw: unknown,
+): ReadonlyArray<{ readonly question: string }> {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(
+    raw
+      .map((item) => {
+        const record = item !== null && typeof item === "object"
+          ? item as Record<string, unknown>
+          : {};
+        const question = stringOrEmpty(record.question);
+        return question.length > 0 ? { question } : null;
+      })
+      .filter((item): item is { readonly question: string } => item !== null),
   );
 }
 

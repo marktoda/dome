@@ -282,6 +282,9 @@ processor-version hash is stale. Output (text mode):
    Atlas owns runtime; platform owns infrastructure boundaries...
    SourceRefs:
      - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
+   facts: dome.graph.tagged, dome.daily.followup
+   diagnostics: dome.markdown.broken-wikilink
+   questions: 1 open
 
 2. 2026-05-23 (wiki/dailies/2026-05-23.md)
    Discussed platform ownership with Danny...
@@ -293,6 +296,9 @@ processor-version hash is stale. Output (text mode):
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
+Matches also include related page facts and unresolved diagnostics/questions
+whose SourceRefs point at the matched path, so recall can explain relevant
+engine state without forcing an immediate `inspect` detour.
 
 ### `dome lint [--fail-on <severity>] [--json]`
 
