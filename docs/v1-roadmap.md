@@ -516,7 +516,7 @@ Fold these into nearby milestone work when they are on-path:
   `dome serve --verbose --filter-processor dome.markdown.*`.
 - [ ] `status --json`: add per-processor recent-run summary once the status schema
   is stable.
-- [ ] SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
+- [x] SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
 - [x] Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
   docs/matrices agree.
 - [x] Command-trigger uniqueness: reject duplicate view command names at

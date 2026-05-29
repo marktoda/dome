@@ -876,6 +876,19 @@ describe("capability_uses accessor", () => {
     expect(got[0]?.runId).toBe(runId);
   });
 
+  it("recordCapabilityUse refuses rows for unknown runs", () => {
+    const missingRunId = newRunId(new Date(), () => "ffffff");
+    expect(() =>
+      recordCapabilityUse(db, {
+        runId: missingRunId,
+        capability: "patch.auto:wiki/**",
+        resource: "wiki/a.md",
+        outcome: "allowed",
+        recordedAt: new Date("2026-05-27T12:00:00.000Z"),
+      })
+    ).toThrow();
+  });
+
   it("capabilityUsesByRun returns empty array when no rows exist for the run", () => {
     const runId = newRunId(new Date(), () => "eeeeee");
     const got = capabilityUsesByRun(db, runId);

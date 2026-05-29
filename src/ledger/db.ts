@@ -163,10 +163,9 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   // 6. capability_uses — one row per capability-attempt recorded by the
   //    broker or by runtime-only capability boundaries such as
   //    `model.invoke`. Per the spec §"Tables — capability_uses":
-  //    - `run_id` REFERENCES runs(id). Foreign-key enforcement is not
-  //      enabled in v1 (PRAGMA foreign_keys defaults to off in SQLite);
-  //      the schema documents the relationship for human readers and for
-  //      a future tightening pass.
+  //    - `run_id` REFERENCES runs(id). `openLedgerDb` enables
+  //      `PRAGMA foreign_keys` so capability-use audit rows cannot orphan
+  //      from their RunRecord.
   //    - `resource` is nullable; "the specific resource touched (path,
   //      namespace, etc.) or null".
   //    - `outcome` is the closed enum {"allowed", "downgraded", "denied"}.
@@ -302,6 +301,7 @@ export async function openLedgerDb(
   let raw: Database;
   try {
     raw = new Database(opts.path);
+    enableForeignKeys(raw);
   } catch (e) {
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
   }
@@ -398,6 +398,10 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
+}
+
+function enableForeignKeys(db: Database): void {
+  db.run("PRAGMA foreign_keys = ON");
 }
 
 /**

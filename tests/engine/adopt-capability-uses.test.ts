@@ -28,7 +28,7 @@ import { commit, initRepo, currentSha } from "../../src/git";
 import type { Capability } from "../../src/core/processor";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
-import type { RunId } from "../../src/ledger/runs";
+import { insertQueued, type RunId } from "../../src/ledger/runs";
 
 type Fixture = {
   vault: EngineVault;
@@ -80,6 +80,27 @@ afterEach(async () => {
 
 const RUN_ID = "run_test_capuse" as RunId;
 
+function seedRun(
+  ledger: LedgerDb,
+  opts: {
+    readonly id: RunId;
+    readonly processorId: string;
+    readonly inputCommit: string;
+  },
+): void {
+  insertQueued(ledger, {
+    id: opts.id,
+    proposalId: null,
+    processorId: opts.processorId,
+    processorVersion: "1.0.0",
+    phase: "adoption",
+    inputCommit: commitOid(opts.inputCommit),
+    triggerKind: "signal",
+    triggerPayload: { kind: "test" },
+    startedAt: new Date("2026-05-28T00:00:00.000Z"),
+  });
+}
+
 describe("adopt — capability-use recording (Phase 6)", () => {
   test("PatchEffect (propose) with patch.propose granted → blocks adoption and records 'allowed' row", async () => {
     const f = await makeFixture();
@@ -94,6 +115,11 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     });
 
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    seedRun(f.ledger, {
+      id: RUN_ID,
+      processorId: "test.capuse.allowed",
+      inputCommit: sha,
+    });
     const runner: AdoptionPhaseRunner = async () => [
       {
         runId: RUN_ID,
@@ -150,6 +176,11 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     });
 
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    seedRun(f.ledger, {
+      id: RUN_ID,
+      processorId: "test.capuse.downgraded",
+      inputCommit: sha,
+    });
     const runner: AdoptionPhaseRunner = async () => [
       {
         runId: RUN_ID,
@@ -205,6 +236,11 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       branch: "main",
     });
 
+    seedRun(f.ledger, {
+      id: RUN_ID,
+      processorId: "test.capuse.denied",
+      inputCommit: sha,
+    });
     const runner: AdoptionPhaseRunner = async () => [
       {
         runId: RUN_ID,
