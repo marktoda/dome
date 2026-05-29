@@ -29,6 +29,7 @@ const quarantineRecoveryAnswer: Processor = defineProcessor({
   triggers: [
     {
       kind: "answer",
+      questionProcessorId: "dome.health.quarantine-recovery-questions",
       idempotencyKeyPrefix: QUARANTINE_RECOVERY_QUESTION_PREFIX,
     },
   ],

@@ -29,6 +29,7 @@ const outboxRecoveryAnswer: Processor = defineProcessor({
   triggers: [
     {
       kind: "answer",
+      questionProcessorId: "dome.health.outbox-recovery-questions",
       idempotencyKeyPrefix: OUTBOX_RECOVERY_QUESTION_PREFIX,
     },
   ],

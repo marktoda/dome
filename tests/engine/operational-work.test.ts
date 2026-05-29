@@ -93,7 +93,7 @@ describe("runOperationalWork", () => {
           dispatchExternal: async () => {},
           recoverOutbox: async () => {},
           recoverQuarantine: async () => {},
-          recoverRun: async () => {},
+          recoverRun: async () => true,
         },
         resolveTree: async () => treeOid("c".repeat(40)),
         now: () => logicalNow,

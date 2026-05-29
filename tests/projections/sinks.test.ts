@@ -49,7 +49,7 @@ const noopApplyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
 const noopCaptureView: ApplyEffectSinks["captureView"] = async () => undefined;
 const noopRecoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
   async () => undefined;
-const noopRecoverRun: ApplyEffectSinks["recoverRun"] = async () => undefined;
+const noopRecoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
 
 let root: string;
 let projectionDb: ProjectionDb;
@@ -523,6 +523,7 @@ describe("buildSqliteSinks pass-through injections", () => {
           processorId: input.processorId,
           runId: input.runId,
         });
+        return true;
       };
 
     const sinks = buildSqliteSinks({

@@ -333,6 +333,12 @@ function answerTriggerMatches(
   trigger: AnswerTrigger,
   question: QuestionRecord,
 ): boolean {
+  if (
+    trigger.questionProcessorId !== undefined &&
+    question.processorId !== trigger.questionProcessorId
+  ) {
+    return false;
+  }
   return trigger.idempotencyKeyPrefix === undefined
     || question.effect.idempotencyKey.startsWith(trigger.idempotencyKeyPrefix);
 }

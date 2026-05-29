@@ -204,7 +204,7 @@ export type ApplyEffectSinks = {
     readonly effect: RunRecoveryEffect;
     readonly processorId: string;
     readonly runId: RunId;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 
   /** ViewEffect — captured for return to the view-phase caller. */
   readonly captureView: (input: {
@@ -312,7 +312,7 @@ export function noopSinks(): ApplyEffectSinks {
     dispatchExternal: async () => undefined,
     recoverOutbox: async () => undefined,
     recoverQuarantine: async () => undefined,
-    recoverRun: async () => undefined,
+    recoverRun: async () => true,
     captureView: async () => undefined,
   };
 }
@@ -447,7 +447,10 @@ export async function applyEffect(opts: {
   const result = frozen({
     outcome: verdict.kind === "downgrade" ? "downgraded" : "applied",
     appliedEffect: routed,
-    diagnostics: verdictDiagnostics,
+    diagnostics: Object.freeze([
+      ...verdictDiagnostics,
+      ...sinkResult.diagnostics,
+    ]),
     ...capabilityUseField(opts.effect, outcome),
     ...(newCandidate !== undefined ? { newCandidate } : {}),
   });
@@ -556,7 +559,10 @@ async function routeToSink(
     readonly sinks: ApplyEffectSinks;
     readonly candidate: CommitOid;
   },
-): Promise<{ readonly newCandidate: CommitOid | null }> {
+): Promise<{
+  readonly newCandidate: CommitOid | null;
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+}> {
   switch (effect.kind) {
     case "patch": {
       const newCandidate = await opts.sinks.applyPatch({
@@ -565,7 +571,7 @@ async function routeToSink(
         runId: opts.runId,
         candidate: opts.candidate,
       });
-      return { newCandidate };
+      return { newCandidate, diagnostics: EMPTY_DIAGNOSTICS };
     }
     case "diagnostic":
       await opts.sinks.recordDiagnostic({
@@ -574,70 +580,86 @@ async function routeToSink(
         runId: opts.runId,
         proposalId: opts.proposalId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "fact":
       await opts.sinks.recordFact({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "search-document":
       await opts.sinks.recordSearchDocument({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "question":
       await opts.sinks.recordQuestion({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "job":
       await opts.sinks.enqueueJob({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "external":
       await opts.sinks.dispatchExternal({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "outbox-recovery":
       await opts.sinks.recoverOutbox({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "quarantine-recovery":
       await opts.sinks.recoverQuarantine({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
     case "run-recovery":
-      await opts.sinks.recoverRun({
-        effect,
-        processorId: opts.processorId,
-        runId: opts.runId,
-      });
-      return { newCandidate: null };
+      if (
+        !(await opts.sinks.recoverRun({
+          effect,
+          processorId: opts.processorId,
+          runId: opts.runId,
+        }))
+      ) {
+        return {
+          newCandidate: null,
+          diagnostics: Object.freeze([
+            diagnosticEffect({
+              severity: "warning",
+              code: "run-recovery.stale-or-missing",
+              message:
+                `RunRecoveryEffect did not change run ${effect.runId}: ` +
+                "the row is no longer running, no longer matches the question generation, or does not exist.",
+              sourceRefs: effect.sourceRefs,
+            }),
+          ]),
+        };
+      }
+      return EMPTY_SINK_RESULT;
     case "view":
       await opts.sinks.captureView({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,
       });
-      return { newCandidate: null };
+      return EMPTY_SINK_RESULT;
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
   // Adding an Effect kind here is a compile error until every branch
@@ -649,6 +671,13 @@ async function routeToSink(
 // ----- frozen-result helpers ------------------------------------------------
 
 const EMPTY_DIAGNOSTICS: ReadonlyArray<DiagnosticEffect> = Object.freeze([]);
+const EMPTY_SINK_RESULT: {
+  readonly newCandidate: CommitOid | null;
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+} = Object.freeze({
+  newCandidate: null,
+  diagnostics: EMPTY_DIAGNOSTICS,
+});
 
 /**
  * Freeze the result object so misbehaving callers (or downstream layers that

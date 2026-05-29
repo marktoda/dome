@@ -67,7 +67,7 @@ import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha } from "../git";
 import type { ApplyEffectSinks } from "./apply-effect";
 import { failRunIfCurrent } from "../ledger/runs";
-import type { RunId } from "./runner-contract";
+import { buildOperationalQueryView } from "./operational-query-view";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -443,7 +443,7 @@ export async function runOperationalWorkForAdopted(opts: {
     now,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
-    operational: opts.runtime.operationalQueryView,
+    operational: operationalQueryViewForRuntime(opts.runtime, now),
     ...(opts.runtime.modelProvider !== undefined
       ? { modelProvider: opts.runtime.modelProvider }
       : {}),
@@ -452,6 +452,18 @@ export async function runOperationalWorkForAdopted(opts: {
     externalHandlers: opts.runtime.externalHandlers,
     adoptSubProposal,
     currentAdopted: () => cursor.current,
+  });
+}
+
+function operationalQueryViewForRuntime(
+  runtime: VaultRuntime,
+  now: () => Date,
+) {
+  return buildOperationalQueryView({
+    outbox: runtime.outboxDb,
+    ledger: runtime.ledgerDb,
+    executionState: runtime.processorRuntime.executionState,
+    now,
   });
 }
 
@@ -647,9 +659,12 @@ function sinksForRuntime(
         });
       },
       recoverRun: async ({ effect }) => {
-        failRunIfCurrent(runtime.ledgerDb, {
-          id: effect.runId as RunId,
+        return failRunIfCurrent(runtime.ledgerDb, {
+          id: effect.runId,
           startedAt: effect.startedAt,
+          processorId: effect.processorId,
+          processorVersion: effect.processorVersion,
+          phase: effect.phase,
           error: effect.reason,
           finishedAt: new Date(),
         });

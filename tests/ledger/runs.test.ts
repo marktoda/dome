@@ -601,15 +601,33 @@ describe("runs lifecycle", () => {
     const stale = failRunIfCurrent(db, {
       id,
       startedAt: "2026-05-27T00:00:01.000Z",
+      processorId: "dome.stuck",
+      processorVersion: "1.0.0",
+      phase: "garden",
       error: "stale recovery",
       finishedAt: new Date("2026-05-27T00:05:00.000Z"),
     });
     expect(stale).toBe(false);
     expect(getRun(db, id)?.status).toBe("running");
 
+    const wrongProcessor = failRunIfCurrent(db, {
+      id,
+      startedAt: startedAt.toISOString(),
+      processorId: "dome.other",
+      processorVersion: "1.0.0",
+      phase: "garden",
+      error: "wrong processor recovery",
+      finishedAt: new Date("2026-05-27T00:05:00.000Z"),
+    });
+    expect(wrongProcessor).toBe(false);
+    expect(getRun(db, id)?.status).toBe("running");
+
     const recovered = failRunIfCurrent(db, {
       id,
       startedAt: startedAt.toISOString(),
+      processorId: "dome.stuck",
+      processorVersion: "1.0.0",
+      phase: "garden",
       error: "orphaned-run: user confirmed fail",
       finishedAt: new Date("2026-05-27T00:05:00.000Z"),
     });
@@ -624,6 +642,9 @@ describe("runs lifecycle", () => {
       failRunIfCurrent(db, {
         id,
         startedAt: startedAt.toISOString(),
+        processorId: "dome.stuck",
+        processorVersion: "1.0.0",
+        phase: "garden",
         error: "second recovery",
         finishedAt: new Date("2026-05-27T00:06:00.000Z"),
       }),

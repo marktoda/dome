@@ -84,7 +84,7 @@ Shipped:
       convergence, lifecycle, CLI surface, capability gates, and projection
       recovery.
 
-Still missing for v1:
+V1 capability ledger:
 
 - [x] Adopted-state recall: `dome.search` FTS indexing and `dome query`.
 - [x] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
@@ -271,6 +271,9 @@ Work:
       handlers can fail orphaned running rows without direct ledger access.
 - [x] Ship first-party `dome.health` orphan-run recovery question emitters and
       answer handlers.
+- [x] Bind privileged recovery answer handlers to the originating question
+      processor plus the idempotency-key prefix, and surface stale
+      orphan-run recovery answers as diagnostics rather than silent no-ops.
 
 Acceptance:
 

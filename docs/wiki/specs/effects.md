@@ -167,7 +167,7 @@ interface QuestionEffect {
 }
 ```
 
-**Routing:** written to `projection.db.questions` when the processor holds `question.ask`. The user surfaces them via `dome inspect questions` (CLI) or the query API (`dome query --questions`). When the user answers, the answer is written back to the originating page (via a garden-emitted PatchEffect from `dome.intake`) or handled by the relevant answer-handler processor, and the question row is marked resolved.
+**Routing:** written to `projection.db.questions` when the processor holds `question.ask`. The user surfaces them via `dome inspect questions` (CLI) or the query API (`dome query --questions`). When the user answers, the answer is written back to the originating page (via a garden-emitted PatchEffect from `dome.intake`) or handled by the relevant answer-handler processor, and the question row is marked resolved. Answer-handler triggers can require both an idempotency-key prefix and the `processorId` that created the question row; privileged operational handlers must use both so another question emitter cannot borrow their recovery capability by forging a prefix.
 
 The `idempotencyKey` is what keeps the question table from filling with duplicates when a garden processor runs repeatedly on the same input.
 
@@ -268,7 +268,7 @@ interface RunRecoveryEffect {
 }
 ```
 
-**Routing:** garden phase only. The effect is capability-checked via `run.recover` for `action: "fail"`. The engine-owned ledger sink transitions the matching `status: "running"` run to `status: "failed"` only when both `runId` and `startedAt` still match. Stale answers therefore cannot mutate a later or already-terminal run row. Adoption processors cannot emit this effect because run recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
+**Routing:** garden phase only. The effect is capability-checked via `run.recover` for `action: "fail"`. The engine-owned ledger sink transitions the matching `status: "running"` run to `status: "failed"` only when `runId`, `startedAt`, `processorId`, `processorVersion`, and `phase` still match. Stale answers therefore cannot mutate a later, already-terminal, or differently-owned run row. If the sink finds no current row, routing records a `run-recovery.stale-or-missing` warning diagnostic instead of silently reporting success. Adoption processors cannot emit this effect because run recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
 
 **Why an effect instead of direct ledger access:** the run ledger is the audit backbone. Marking an orphaned row failed must itself be capability-checked and ledgered, so recovery follows the same engine-asks model as outbox and quarantine recovery: health processors read operational state, ask a question, answer handlers emit a recovery effect, and the engine applies the state transition.
 

@@ -363,7 +363,8 @@ adopted ref), the natural pattern is:
 3. **User runs `dome inspect questions`** to see pending questions.
 4. **User runs `dome answer <question-id> retry`** to resolve.
 5. **A second garden-phase processor in `dome.health`** declares an
-   `answer` trigger, receives `{ question, answer }`, looks up the
+   `answer` trigger bound to both the emitting question processor and the
+   idempotency-key prefix, receives `{ question, answer }`, looks up the
    question's `idempotencyKey` → operational target, and emits the appropriate
    recovery effect to mutate the engine-owned operational state.
 
@@ -382,7 +383,10 @@ Answering writes the durable answer to `answers.db.question_answers`, updates
 the current `projection.db.questions` row for inspect/query ergonomics, and
 dispatches garden-phase processors with `answer` triggers. The relevant
 answer-handler processor catches the answer event and applies the mutation
-through normal Effect routing.
+through normal Effect routing. Operational recovery answer handlers must match
+the question's originating `processorId` as well as its idempotency-key prefix;
+this prevents a third-party question emitter from invoking a first-party
+handler that holds recovery capabilities.
 
 **Current behavior.** `dome answer` looks up the row id, prints the question
 when `<value>` is omitted, validates `<value>` against `options` when options

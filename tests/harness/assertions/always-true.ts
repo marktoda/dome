@@ -16,7 +16,7 @@ import { expect } from "bun:test";
 import { orphanRuns, queryRuns } from "../../../src/ledger/runs";
 import type { AlwaysTrueInvariant, Harness } from "../types";
 
-const ORPHAN_THRESHOLD_MS = 60_000;
+const ORPHAN_THRESHOLD_MS = 10 * 60_000;
 
 export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
   Object.freeze([
@@ -73,7 +73,7 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
     {
       name: "NO_ORPHAN_RUNNING_LEDGER_ROWS",
       description:
-        "No ledger row in status='running' older than 60 seconds in the test clock",
+        "No ledger row in status='running' older than 10 minutes in the test clock",
       check: async (h: Harness): Promise<void> => {
         const orphans = orphanRuns(
           h.ledger,
@@ -82,8 +82,8 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
         );
         expect(
           orphans.length,
-          `NO_ORPHAN_RUNNING_LEDGER_ROWS violated:\n` +
-            `  ${orphans.length} row(s) stuck in status='running' for >60s\n` +
+            `NO_ORPHAN_RUNNING_LEDGER_ROWS violated:\n` +
+            `  ${orphans.length} row(s) stuck in status='running' for >10m\n` +
             `  IDs: ${orphans
               .slice(0, 5)
               .map((r) => r.id)

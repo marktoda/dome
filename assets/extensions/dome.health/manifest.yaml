@@ -18,6 +18,7 @@ processors:
     phase: garden
     triggers:
       - kind: answer
+        questionProcessorId: dome.health.outbox-recovery-questions
         idempotencyKeyPrefix: "dome.health.outbox-recovery:"
     capabilities:
       - kind: outbox.recover
@@ -40,6 +41,7 @@ processors:
     phase: garden
     triggers:
       - kind: answer
+        questionProcessorId: dome.health.quarantine-recovery-questions
         idempotencyKeyPrefix: "dome.health.quarantine-recovery:"
     capabilities:
       - kind: quarantine.recover
@@ -63,6 +65,7 @@ processors:
     phase: garden
     triggers:
       - kind: answer
+        questionProcessorId: dome.health.orphan-run-recovery-questions
         idempotencyKeyPrefix: "dome.health.orphan-run-recovery:"
     capabilities:
       - kind: run.recover

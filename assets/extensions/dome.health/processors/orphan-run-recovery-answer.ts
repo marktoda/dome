@@ -29,6 +29,7 @@ const orphanRunRecoveryAnswer: Processor = defineProcessor({
   triggers: [
     {
       kind: "answer",
+      questionProcessorId: "dome.health.orphan-run-recovery-questions",
       idempotencyKeyPrefix: ORPHAN_RUN_RECOVERY_QUESTION_PREFIX,
     },
   ],

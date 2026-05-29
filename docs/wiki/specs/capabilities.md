@@ -84,7 +84,7 @@ FTS5 upsert/delete SQL.
 
 ### `question.ask`
 
-Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. Optional `namespaces` scope which question families the processor may create (for example `dome.intake` content questions vs `dome.health` operational questions). When omitted, the grant applies to the processor's own bundle namespace only.
+Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. The `namespaces` field is accepted in manifests/config as the planned scope shape, but the current `QuestionEffect` has no namespace/channel field to enforce against, so v1 enforcement is binary (`question.ask` present or absent). Operational recovery answer handlers must separately bind their `answer` triggers to the originating question processor plus the idempotency-key prefix; that is the current confused-deputy guard for privileged recovery flows.
 
 ### `job.enqueue`
 

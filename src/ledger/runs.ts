@@ -229,8 +229,11 @@ export type MarkSkippedOpts = {
 };
 
 export type FailRunIfCurrentOpts = {
-  readonly id: RunId;
+  readonly id: string;
   readonly startedAt: string;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly phase: "adoption" | "garden" | "view";
   readonly error: string;
   readonly finishedAt: Date;
 };
@@ -393,6 +396,7 @@ SET status = 'failed',
     duration_ms = ?,
     finished_at = ?
 WHERE id = ? AND status = 'running' AND started_at = ?
+  AND processor_id = ? AND processor_version = ? AND phase = ?
 `.trim();
 
 // ----- Raw row shape --------------------------------------------------------
@@ -649,10 +653,9 @@ export function orphanRuns(
 /**
  * Transition every orphaned-`running` row (per `orphanRuns(...)`) to
  * `status: 'failed'`. Returns the count of rows transitioned. The
- * recovery path is the engine-asks flow per [[wiki/specs/cli]] §"dome
- * answer" — the deferred `dome.health.detect-orphan-runs` garden-phase
- * processor emits a `QuestionEffect` per orphan row; the user answers
- * `fail` via `dome answer <id>`; the answer-handler invokes this.
+ * recovery path is retained for administrative/batch callers. The v1
+ * question/answer path uses `failRunIfCurrent` instead so each user answer
+ * targets one exact run generation.
  *
  * The synthetic error message identifies the recovery source so a future
  * `dome inspect` view can distinguish "real failure" from "engine crash
@@ -688,6 +691,9 @@ export function failRunIfCurrent(
     opts.finishedAt.toISOString(),
     opts.id,
     opts.startedAt,
+    opts.processorId,
+    opts.processorVersion,
+    opts.phase,
   );
   return result.changes > 0;
 }

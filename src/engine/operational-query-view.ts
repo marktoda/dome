@@ -21,11 +21,15 @@ import type {
   ProcessorQuarantineSnapshot,
 } from "../processors/execution-state";
 
+export const DEFAULT_ORPHAN_RUN_AGE_MS = 5 * 60 * 1000;
+
 export function buildOperationalQueryView(opts: {
   readonly outbox: OutboxDb;
   readonly ledger: LedgerDb;
   readonly executionState: ProcessorExecutionState;
+  readonly now?: () => Date;
 }): OperationalQueryView {
+  const now = opts.now ?? ((): Date => new Date());
   return Object.freeze({
     outbox: (filter) =>
       Object.freeze(
@@ -39,11 +43,17 @@ export function buildOperationalQueryView(opts: {
       Object.freeze(
         orphanRuns(
           opts.ledger,
-          filter?.runningOlderThanMs ?? 5 * 60 * 1000,
-          new Date(),
+          normalizeOrphanRunAgeMs(filter?.runningOlderThanMs),
+          now(),
         ).map(toOperationalRunRow),
       ),
   });
+}
+
+function normalizeOrphanRunAgeMs(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_ORPHAN_RUN_AGE_MS;
+  if (!Number.isFinite(value)) return DEFAULT_ORPHAN_RUN_AGE_MS;
+  return Math.max(Math.trunc(value), DEFAULT_ORPHAN_RUN_AGE_MS);
 }
 
 function toOperationalOutboxRow(row: OutboxRow): OperationalOutboxRow {

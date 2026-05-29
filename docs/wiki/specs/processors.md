@@ -142,8 +142,8 @@ Signals are synthesized by the engine from `compileRange(base, candidate)` ([[wi
 
 The full mapping is at [[wiki/matrices/processor-phase-x-trigger]]. Summary:
 
-- **Adoption-phase processors** subscribe to `signal:*`, `path:*`. Not `schedule:*` or `command:*` — adoption is per-Proposal, not periodic or user-invoked.
-- **Garden-phase processors** subscribe to `signal:*`, `path:*`, `schedule:*`. Not `command:*` — garden is autonomous, not user-driven.
+- **Adoption-phase processors** subscribe to `signal:*`, `path:*`. Not `schedule:*`, `answer:*`, or `command:*` — adoption is per-Proposal, not periodic, answer-mediated, or user-invoked.
+- **Garden-phase processors** subscribe to `signal:*`, `path:*`, `schedule:*`, and `answer:*`. Answer triggers may bind to the processor that originally asked the question, so privileged answer handlers cannot be invoked by a forged idempotency-key prefix from another bundle.
 - **View-phase processors** subscribe to `command:*` only. Views render on demand, not on signal.
 
 ## Capabilities
@@ -233,7 +233,7 @@ The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engi
 | Garden-phase runner | `gardenRunner` fires post-adoption garden-phase processors against signal + path triggers; the engine constructs sub-Proposals from garden-emitted PatchEffects with a depth cap (`garden.cascade-cap` diagnostic on hit) | **Shipped** (Phases 4a + 4a') |
 | View-phase runner | `viewRunner` (`src/processors/runtime.ts`) + `runViewCommand` dispatcher (`src/engine/commands.ts`) — command-driven view processors fire; non-View effect emissions are phase-rejected | **Shipped** (Phase 4b) |
 | Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table; minimal in-tree cron evaluator (`src/engine/cron.ts`); clock injection via `runOneAdoption({ now })` for deterministic harness testing | **Shipped** (Phase 4c) |
-| Answer-trigger dispatch | `dome answer` records a QuestionEffect answer, then garden-phase processors with `answer` triggers run through normal effect routing | **Shipped** |
+| Answer-trigger dispatch | `dome answer` records a QuestionEffect answer, then garden-phase processors with matching `answer` triggers run through normal effect routing. Recovery handlers bind triggers to the originating question processor as well as idempotency-key prefixes. | **Shipped** |
 | Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) | Phase 4d |
 | JobEffect runtime | `scheduled_jobs` table + `runQueuedJobs` dispatcher firing due jobs as garden-phase work with retry/backoff | **Shipped** (Phase 4e) |
 

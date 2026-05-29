@@ -6,6 +6,7 @@
 
 import { expect } from "bun:test";
 
+import { questionEffect } from "../../../../src/core/effect";
 import { commitOid } from "../../../../src/core/source-ref";
 import type { RunId } from "../../../../src/engine/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
@@ -15,6 +16,12 @@ import {
   markRunning,
   newRunId,
 } from "../../../../src/ledger/runs";
+import {
+  getQuestionRecord,
+  insertQuestion,
+  queryQuestionRecords,
+} from "../../../../src/projections/questions";
+import { orphanRunRecoveryQuestionKey } from "../../../../assets/extensions/dome.health/processors/orphan-run-recovery-shared";
 import { scenario } from "../../index";
 
 scenario(
@@ -58,7 +65,7 @@ extensions:
     expect(adopted).not.toBeNull();
     if (adopted === null) return;
 
-    const startedAt = new Date("2026-05-27T00:00:00.000Z");
+    const startedAt = new Date(h.clock.now().getTime() - 6 * 60_000);
     const orphanId = newRunId(startedAt, () => "eeeeee");
     insertQueued(h.ledger, {
       id: orphanId,
@@ -83,14 +90,50 @@ extensions:
       .questions()
       .toContainQuestion(`Run ${orphanId} for processor test.orphaned`);
 
-    const questions = JSON.parse(
-      (await h.runCli(["inspect", "questions", "--json"])).stdout,
-    ) as ReadonlyArray<{
-      readonly id: number;
-      readonly idempotency_key: string;
-    }>;
-    const failQuestion = questions.find((q) =>
-      q.idempotency_key.startsWith("dome.health.orphan-run-recovery:"),
+    insertQuestion(h.projection, {
+      processorId: "test.forged-question",
+      adoptedCommit: commitOid(adopted),
+      effect: questionEffect({
+        question: "Forged health recovery question",
+        options: ["fail", "ignore"],
+        sourceRefs: [],
+        idempotencyKey: orphanRunRecoveryQuestionKey({
+          runId: orphanId,
+          startedAt: new Date(startedAt.getTime() + 1).toISOString(),
+          processorId: "test.orphaned",
+          processorVersion: "0.1.0",
+          phase: "garden",
+        }),
+      }),
+    });
+    const forgedQuestion = queryQuestionRecords(h.projection).find(
+      (q) => q.processorId === "test.forged-question",
+    );
+    expect(forgedQuestion).toBeDefined();
+    if (forgedQuestion === undefined) return;
+
+    const forged = await h.runCli([
+      "answer",
+      String(forgedQuestion.id),
+      "fail",
+      "--json",
+    ]);
+    expect(forged.exitCode).toBe(0);
+    const forgedBody = JSON.parse(forged.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<unknown>;
+      };
+    };
+    expect(forgedBody.handlers.status).toBe("handled");
+    expect(forgedBody.handlers.runs).toEqual([]);
+    expect(getRun(h.ledger, orphanId)).toEqual(
+      expect.objectContaining({ status: "running" }),
+    );
+
+    const failQuestion = queryQuestionRecords(h.projection).find((q) =>
+      q.processorId === "dome.health.orphan-run-recovery-questions" &&
+      q.effect.idempotencyKey.startsWith("dome.health.orphan-run-recovery:"),
     );
     expect(failQuestion).toBeDefined();
     if (failQuestion === undefined) return;
@@ -131,5 +174,46 @@ extensions:
         outcome: "allowed",
       }),
     ]);
+
+    insertQuestion(h.projection, {
+      processorId: "dome.health.orphan-run-recovery-questions",
+      adoptedCommit: commitOid(adopted),
+      effect: questionEffect({
+        question: "Stale health recovery question",
+        options: ["fail", "ignore"],
+        sourceRefs: [],
+        idempotencyKey: orphanRunRecoveryQuestionKey({
+          runId: orphanId,
+          startedAt: new Date(startedAt.getTime() - 1).toISOString(),
+          processorId: "test.orphaned",
+          processorVersion: "0.1.0",
+          phase: "garden",
+        }),
+      }),
+    });
+    const staleQuestion = queryQuestionRecords(h.projection).find(
+      (q) => q.effect.question === "Stale health recovery question",
+    );
+    expect(staleQuestion).toBeDefined();
+    if (staleQuestion === undefined) return;
+
+    const stale = await h.runCli([
+      "answer",
+      String(staleQuestion.id),
+      "fail",
+      "--json",
+    ]);
+    expect(stale.exitCode).toBe(0);
+    const staleBody = JSON.parse(stale.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
+      };
+    };
+    expect(staleBody.handlers.status).toBe("handled");
+    expect(staleBody.handlers.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "run-recovery.stale-or-missing" }),
+    );
+    expect(getQuestionRecord(h.projection, staleQuestion.id)?.answer).toBe("fail");
   },
 );

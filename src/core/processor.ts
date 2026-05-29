@@ -164,6 +164,7 @@ export type ScheduleTrigger = {
 };
 export type AnswerTrigger = {
   readonly kind: "answer";
+  readonly questionProcessorId?: string;
   readonly idempotencyKeyPrefix?: string;
 };
 export type CommandTrigger = {
@@ -471,6 +472,11 @@ export type OperationalQueryView = {
   }) => ReadonlyArray<OperationalOutboxRow>;
   readonly quarantines: () => ReadonlyArray<OperationalQuarantineRow>;
   readonly orphanRuns: (filter?: {
+    /**
+     * Optional caller tightening for "old enough to consider abandoned".
+     * The engine clamps this to its conservative minimum so recovery
+     * processors cannot accidentally classify active runs as orphaned.
+     */
     readonly runningOlderThanMs?: number;
   }) => ReadonlyArray<OperationalRunRow>;
 };
@@ -594,6 +600,7 @@ export const ScheduleTriggerSchema = z
 export const AnswerTriggerSchema = z
   .object({
     kind: z.literal("answer"),
+    questionProcessorId: z.string().min(1).optional(),
     idempotencyKeyPrefix: z.string().min(1).optional(),
   })
   .strict();
