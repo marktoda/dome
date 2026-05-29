@@ -623,6 +623,9 @@ Work:
 - [x] Add diagnostic summary/filter support to `dome inspect diagnostics`
       so noisy real vaults can be triaged by severity, code, and processor
       without paging through raw rows.
+- [x] Add spawned `bin/dome` process smoke coverage for executable init /
+      sync / status and foreground `serve` SIGTERM shutdown, so the packaged
+      CLI path is covered in addition to in-process handler tests.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
