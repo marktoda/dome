@@ -32,6 +32,7 @@ import {
   insertDiagnostic,
   queryDiagnostics,
   resolveDiagnostic,
+  resolveStaleDiagnostics,
 } from "../../src/projections/diagnostics";
 import {
   answerQuestion,
@@ -377,6 +378,92 @@ describe("diagnostics accessor", () => {
     // queryDiagnostics filters `resolved_at IS NULL` — resolved rows fall
     // out of the live view.
     expect(queryDiagnostics(db).length).toBe(0);
+  });
+
+  it("resolveStaleDiagnostics resolves only stale rows on inspected paths", () => {
+    const stale = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "broken link in x.md",
+      sourceRefs: [REF],
+    });
+    const untouched = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "broken link in y.md",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/y.md",
+        }),
+      ],
+    });
+    insertDiagnostic(db, {
+      effect: stale,
+      processorId: "p1",
+      proposalId: "prop_3",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: untouched,
+      processorId: "p1",
+      proposalId: "prop_3",
+      adoptedCommit: ADOPTED,
+    });
+
+    const resolved = resolveStaleDiagnostics(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/x.md"],
+      emittedDiagnostics: [],
+    });
+
+    expect(resolved).toBe(1);
+    const got = queryDiagnostics(db);
+    expect(got.length).toBe(1);
+    expect(got[0]?.message).toBe("broken link in y.md");
+  });
+
+  it("resolveStaleDiagnostics keeps re-emitted diagnostics by content identity", () => {
+    const otherCommit = commitOid("1111110000000000000000000000000000000000");
+    const original = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "original message",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/x.md",
+          range: { startLine: 2, endLine: 2, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    const reEmitted = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "updated message",
+      sourceRefs: [
+        sourceRef({
+          commit: otherCommit,
+          path: "wiki/x.md",
+          range: { startLine: 2, endLine: 2, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    insertDiagnostic(db, {
+      effect: original,
+      processorId: "p1",
+      proposalId: "prop_4",
+      adoptedCommit: ADOPTED,
+    });
+
+    const resolved = resolveStaleDiagnostics(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/x.md"],
+      emittedDiagnostics: [reEmitted],
+    });
+
+    expect(resolved).toBe(0);
+    expect(queryDiagnostics(db).length).toBe(1);
   });
 });
 

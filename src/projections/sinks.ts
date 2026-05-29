@@ -55,7 +55,7 @@ import type { CommitOid } from "../core/source-ref";
 import type { ProjectionDb } from "./db";
 import type { OutboxDb } from "../outbox/db";
 
-import { insertDiagnostic } from "./diagnostics";
+import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
 import { insertFact } from "./facts";
 import { insertQuestion } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
@@ -124,6 +124,18 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         processorId,
         proposalId,
         adoptedCommit: opts.adoptedCommit,
+      });
+    },
+
+    resolveDiagnostics: async ({
+      processorId,
+      inspectedPaths,
+      emittedDiagnostics,
+    }) => {
+      resolveStaleDiagnostics(opts.projectionDb, {
+        processorId,
+        inspectedPaths,
+        emittedDiagnostics,
       });
     },
 

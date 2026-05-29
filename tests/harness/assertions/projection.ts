@@ -123,7 +123,7 @@ type DiagRowSql = {
 };
 
 function queryDiagnostics(h: Harness, f: DiagFilter): ReadonlyArray<DiagRow> {
-  const clauses: string[] = [];
+  const clauses: string[] = ["resolved_at IS NULL"];
   const params: string[] = [];
   if (f.severity !== undefined) {
     clauses.push("severity = ?");
@@ -133,7 +133,7 @@ function queryDiagnostics(h: Harness, f: DiagFilter): ReadonlyArray<DiagRow> {
     clauses.push("code = ?");
     params.push(f.code);
   }
-  const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
+  const where = ` WHERE ${clauses.join(" AND ")}`;
   const rows = h.projection.raw
     .query<DiagRowSql, string[]>(
       `SELECT id, severity, code, message, adopted_commit FROM diagnostics${where}`,

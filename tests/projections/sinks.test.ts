@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe("buildSqliteSinks shape", () => {
-  it("returns a frozen object with all seven sink callbacks", () => {
+  it("returns a frozen object with all sink callbacks", () => {
     const sinks = buildSqliteSinks({
       projectionDb,
       outboxDb,
@@ -91,6 +91,7 @@ describe("buildSqliteSinks shape", () => {
     expect(Object.isFrozen(sinks)).toBe(true);
     expect(typeof sinks.applyPatch).toBe("function");
     expect(typeof sinks.recordDiagnostic).toBe("function");
+    expect(typeof sinks.resolveDiagnostics).toBe("function");
     expect(typeof sinks.recordFact).toBe("function");
     expect(typeof sinks.recordQuestion).toBe("function");
     expect(typeof sinks.enqueueJob).toBe("function");

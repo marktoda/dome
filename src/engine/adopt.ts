@@ -328,7 +328,14 @@ export async function adopt(opts: {
     // next iteration's compileRange + runner see the post-patch state.
     let candidateAtIterationEnd: CommitOid = candidate;
 
-    for (const { runId, processorId, declared, granted, effects } of runnerResults) {
+    for (const {
+      runId,
+      processorId,
+      executionStatus,
+      declared,
+      granted,
+      effects,
+    } of runnerResults) {
       // A run "contributes" to the closure commit iff at least one of its
       // effects is a PatchEffect — those are what land via `applyPatch`
       // and become part of the closure's content. Diagnostic-only runs
@@ -351,6 +358,9 @@ export async function adopt(opts: {
         runId,
         effectCount: effects.length,
       });
+      const emittedDiagnostics = effects.filter(
+        (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
+      );
       for (const effect of effects) {
         const applied = await applyEffect({
           effect,
@@ -414,6 +424,18 @@ export async function adopt(opts: {
         if (applied.newCandidate !== undefined) {
           candidateAtIterationEnd = applied.newCandidate;
         }
+      }
+
+      if (
+        executionStatus === "succeeded" &&
+        sinks.resolveDiagnostics !== undefined
+      ) {
+        await sinks.resolveDiagnostics({
+          processorId,
+          runId,
+          inspectedPaths: compiled.changedPaths,
+          emittedDiagnostics,
+        });
       }
     }
 

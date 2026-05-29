@@ -119,6 +119,18 @@ export type ApplyEffectSinks = {
     readonly proposalId: string | null;
   }) => Promise<void>;
 
+  /**
+   * Optional projection-maintenance hook. After a processor re-checks a set of
+   * paths, the engine passes the diagnostic effects it emitted so the sink can
+   * mark older unresolved diagnostics for those paths as resolved.
+   */
+  readonly resolveDiagnostics?: (input: {
+    readonly processorId: string;
+    readonly runId: RunId;
+    readonly inspectedPaths: ReadonlyArray<string>;
+    readonly emittedDiagnostics: ReadonlyArray<DiagnosticEffect>;
+  }) => Promise<void>;
+
   /** FactEffect — written to `projection_store.facts`. */
   readonly recordFact: (input: {
     readonly effect: FactEffect;

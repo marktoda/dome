@@ -61,6 +61,12 @@ export type ResolveDiagnosticOpts = {
   readonly proposalId: string | null;
 };
 
+export type ResolveStaleDiagnosticsOpts = {
+  readonly processorId: string;
+  readonly inspectedPaths: ReadonlyArray<string>;
+  readonly emittedDiagnostics: ReadonlyArray<DiagnosticEffect>;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_DIAGNOSTIC_SQL = `
@@ -104,6 +110,18 @@ SET resolved_at = ?
 WHERE processor_id = ? AND code = ? AND proposal_id IS ? AND resolved_at IS NULL
 `.trim();
 
+const QUERY_UNRESOLVED_BY_PROCESSOR_SQL = `
+SELECT id, code, source_refs, subject_hash
+FROM diagnostics
+WHERE processor_id = ? AND resolved_at IS NULL
+`.trim();
+
+const RESOLVE_BY_ID_SQL = `
+UPDATE diagnostics
+SET resolved_at = ?
+WHERE id = ? AND resolved_at IS NULL
+`.trim();
+
 // ----- Row shape ------------------------------------------------------------
 
 type DiagnosticRow = {
@@ -111,6 +129,13 @@ type DiagnosticRow = {
   readonly code: string;
   readonly message: string;
   readonly source_refs: string;
+};
+
+type UnresolvedDiagnosticRow = {
+  readonly id: number;
+  readonly code: string;
+  readonly source_refs: string;
+  readonly subject_hash: string;
 };
 
 // ----- Public functions -----------------------------------------------------
@@ -172,6 +197,12 @@ function computeSubjectHash(
   return createHash("sha256").update(JSON.stringify(content)).digest("hex");
 }
 
+export function diagnosticSubjectHash(
+  effect: DiagnosticEffect,
+): string {
+  return computeSubjectHash(effect.sourceRefs);
+}
+
 /**
  * Read every unresolved diagnostic, optionally filtered by severity and/or
  * processor. Returns a frozen array; ordering is insertion order
@@ -225,6 +256,42 @@ export function resolveDiagnostic(
   );
 }
 
+/**
+ * Resolve stale diagnostics for a processor after it re-checks a bounded set
+ * of paths. Any unresolved diagnostic from the same processor whose source
+ * refs touch an inspected path is kept only when this run re-emitted the same
+ * `(code, subject_hash)` key; otherwise it is marked resolved.
+ *
+ * This is intentionally projection-owned. Processors remain pure effect
+ * producers; they don't need to remember or mutate their prior rows.
+ */
+export function resolveStaleDiagnostics(
+  db: ProjectionDb,
+  opts: ResolveStaleDiagnosticsOpts,
+): number {
+  if (opts.inspectedPaths.length === 0) return 0;
+  const inspected = new Set(opts.inspectedPaths);
+  const keep = new Set(
+    opts.emittedDiagnostics.map(
+      (effect) => `${effect.code}\0${diagnosticSubjectHash(effect)}`,
+    ),
+  );
+  const rows = db.raw
+    .query<UnresolvedDiagnosticRow, [string]>(QUERY_UNRESOLVED_BY_PROCESSOR_SQL)
+    .all(opts.processorId);
+
+  let resolved = 0;
+  const now = new Date().toISOString();
+  const stmt = db.raw.query(RESOLVE_BY_ID_SQL);
+  for (const row of rows) {
+    if (!diagnosticTouchesAnyPath(row.source_refs, inspected)) continue;
+    if (keep.has(`${row.code}\0${row.subject_hash}`)) continue;
+    stmt.run(now, row.id);
+    resolved += 1;
+  }
+  return resolved;
+}
+
 // ----- internals ------------------------------------------------------------
 
 function rowToDiagnostic(row: DiagnosticRow): DiagnosticEffect {
@@ -235,4 +302,17 @@ function rowToDiagnostic(row: DiagnosticRow): DiagnosticEffect {
     message: row.message,
     sourceRefs,
   });
+}
+
+function diagnosticTouchesAnyPath(
+  sourceRefsJson: string,
+  paths: ReadonlySet<string>,
+): boolean {
+  let refs: ReadonlyArray<SourceRef>;
+  try {
+    refs = JSON.parse(sourceRefsJson) as ReadonlyArray<SourceRef>;
+  } catch {
+    return false;
+  }
+  return refs.some((ref) => paths.has(ref.path as string));
 }
