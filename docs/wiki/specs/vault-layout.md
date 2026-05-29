@@ -143,7 +143,7 @@ extensions:
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
   dome.daily:    { enabled: true,  grants: { read: ["wiki/**/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"], question.ask: true } }
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
-  dome.lint:     { enabled: true,  grants: {} }
+  dome.lint:     { enabled: true,  grants: { read: ["**/*.md"] } }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }
 
 engine:

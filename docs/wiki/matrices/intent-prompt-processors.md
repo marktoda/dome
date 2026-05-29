@@ -29,7 +29,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Append run records to log.md" | planned | `dome.log.append-log` | adoption | none | PatchEffect (append log.md row) |
 | "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index` | adoption | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups |
 | "Show today's action surface" | shipped | `dome.daily.today` | view (command via `dome today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
-| "Lint the wiki for issues" | planned | `dome.lint.lint-report` | view (cron + command) | `assets/extensions/dome.lint/processors/lint-report.prompt.md` (LLM for narrative findings; rule-based for structural findings) | DiagnosticEffect (per finding), ViewEffect (report markdown) |
+| "Lint the wiki for issues" | shipped | `dome.lint.report` | view (command via `dome lint`) | none (projection diagnostics + deterministic adopted-state checks) | ViewEffect (structured lint report) |
 | "Apply a lint finding" | planned | `dome.lint.apply-finding` | view (command) | `assets/extensions/dome.lint/processors/apply-finding.prompt.md` | PatchEffect (the proposed fix) |
 
 ## Recall intents
@@ -49,7 +49,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Create today's daily note" | shipped | `dome.daily.create-daily` | garden | cron `0 6 * * *` | PatchEffect (create wiki/dailies/YYYY-MM-DD.md from template) |
 | "Carry forward unfinished tasks" | shipped | `dome.daily.carry-forward` | garden | signal `file.created` on `wiki/dailies/*` | PatchEffect (copy unfinished tasks from prior daily) |
 | "Create this week's weekly" | planned | `dome.daily.create-weekly` | garden | cron `0 6 * * MON` | PatchEffect (create wiki/weeklies/YYYY-Www.md) |
-| "Auto-lint weekly" | planned | `dome.lint.lint-report` | view (cron) | cron `0 7 * * MON` | ViewEffect (lint report written to inbox/review/) |
+| "Auto-lint weekly" | planned | `dome.lint.report` | view (cron) | cron `0 7 * * MON` | ViewEffect (scheduled lint report) |
 | "Inbox staleness check" | planned | `dome.intake.inbox-stale-check` | adoption | per-sync | DiagnosticEffect (warning for files older than threshold) |
 
 ## Why this matrix exists

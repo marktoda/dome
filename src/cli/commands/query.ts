@@ -4,7 +4,11 @@
 // view-phase processor named `query`. The processor owns retrieval behavior;
 // this file owns CLI ergonomics and rendering.
 
-import { runSharedViewCommand } from "./view-shared";
+import {
+  printViewCommandMessages,
+  runStructuredViewCommand,
+  structuredViewBrokerMessages,
+} from "./view-shared";
 import { formatJson } from "../format";
 
 export type QueryCommandOptions = {
@@ -27,7 +31,7 @@ export async function runQuery(
   }
 
   try {
-    const run = await runSharedViewCommand({
+    const run = await runStructuredViewCommand({
       commandLabel: "dome query",
       commandName: "query",
       commandArgs: Object.freeze({
@@ -38,57 +42,24 @@ export async function runQuery(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
+      notFoundMessage:
+        "dome query: dome.search is not installed or no query processor is enabled.",
+      noStructuredResultMessage:
+        "dome query: query processor returned no structured result.",
     });
 
-    if (run.kind === "usage-error") {
-      console.error(run.message);
-      return 64;
+    if (run.kind === "error") {
+      printViewCommandMessages(run.messages);
+      return run.exitCode;
     }
-    if (run.kind === "runtime-error") {
-      console.error(run.message);
-      return 1;
-    }
-
-    const result = run.result;
-    if (result.kind === "not-found") {
-      console.error(
-        "dome query: dome.search is not installed or no query processor is enabled.",
-      );
-      return 64;
-    }
-    if (result.kind === "failed") {
-      console.error(
-        `dome query: processor '${result.processorId}' finished with ${result.executionStatus}.`,
-      );
-      if (result.executionError !== undefined) {
-        console.error(
-          `dome query: ${result.executionError.code}: ${result.executionError.message}`,
-        );
-      }
-      for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
-        console.error(
-          `dome query: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-        );
-      }
-      return 1;
-    }
-
-    for (const d of result.brokerDiagnostics) {
-      console.error(
-        `dome query: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-      );
-    }
-
-    const view = run.capturedViews[0] ?? result.effects[0];
-    if (view === undefined || view.content.kind !== "structured") {
-      console.error("dome query: query processor returned no structured result.");
-      return 1;
-    }
+    printViewCommandMessages(
+      structuredViewBrokerMessages("dome query", run.brokerDiagnostics),
+    );
 
     if (options.json === true) {
-      console.log(formatJson(view.content.data));
+      console.log(formatJson(run.data));
     } else {
-      console.log(formatQueryResult(view.content.data));
+      console.log(formatQueryResult(run.data));
     }
     return 0;
   } catch (e) {

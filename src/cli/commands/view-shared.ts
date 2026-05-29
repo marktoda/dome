@@ -8,7 +8,7 @@
 import { resolve } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import type { ViewEffect } from "../../core/effect";
+import type { DiagnosticEffect, ViewEffect } from "../../core/effect";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import type { ApplyEffectSinks } from "../../engine/apply-effect";
 import { runViewCommand, type RunCommandResult } from "../../engine/commands";
@@ -41,6 +41,24 @@ export type ViewCommandRunResult =
       readonly adopted: CommitOid;
       readonly result: RunCommandResult;
       readonly capturedViews: ReadonlyArray<ViewEffect>;
+    };
+
+export type StructuredViewCommandOptions = ViewCommandOptions & {
+  readonly notFoundMessage: string;
+  readonly noStructuredResultMessage: string;
+};
+
+export type StructuredViewCommandResult =
+  | {
+      readonly kind: "ok";
+      readonly data: unknown;
+      readonly view: ViewEffect;
+      readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
+    }
+  | {
+      readonly kind: "error";
+      readonly exitCode: number;
+      readonly messages: ReadonlyArray<string>;
     };
 
 export async function runSharedViewCommand(
@@ -127,4 +145,82 @@ export async function runSharedViewCommand(
   } finally {
     await runtime.close();
   }
+}
+
+export async function runStructuredViewCommand(
+  opts: StructuredViewCommandOptions,
+): Promise<StructuredViewCommandResult> {
+  try {
+    const run = await runSharedViewCommand(opts);
+    if (run.kind === "usage-error") {
+      return structuredError(64, [run.message]);
+    }
+    if (run.kind === "runtime-error") {
+      return structuredError(1, [run.message]);
+    }
+
+    const result = run.result;
+    if (result.kind === "not-found") {
+      return structuredError(64, [opts.notFoundMessage]);
+    }
+    if (result.kind === "failed") {
+      const messages = [
+        `${opts.commandLabel}: processor '${result.processorId}' finished with ${result.executionStatus}.`,
+      ];
+      if (result.executionError !== undefined) {
+        messages.push(
+          `${opts.commandLabel}: ${result.executionError.code}: ${result.executionError.message}`,
+        );
+      }
+      for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
+        messages.push(
+          `${opts.commandLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+        );
+      }
+      return structuredError(1, messages);
+    }
+
+    const view = run.capturedViews[0] ?? result.effects[0];
+    if (view === undefined || view.content.kind !== "structured") {
+      return structuredError(1, [opts.noStructuredResultMessage]);
+    }
+
+    return Object.freeze({
+      kind: "ok" as const,
+      data: view.content.data,
+      view,
+      brokerDiagnostics: Object.freeze([...result.brokerDiagnostics]),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return structuredError(1, [`${opts.commandLabel}: failed: ${msg}`]);
+  }
+}
+
+export function structuredViewBrokerMessages(
+  commandLabel: string,
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+): ReadonlyArray<string> {
+  return Object.freeze(
+    diagnostics.map((d) =>
+      `${commandLabel}: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`
+    ),
+  );
+}
+
+export function printViewCommandMessages(
+  messages: ReadonlyArray<string>,
+): void {
+  for (const message of messages) console.error(message);
+}
+
+function structuredError(
+  exitCode: number,
+  messages: ReadonlyArray<string>,
+): StructuredViewCommandResult {
+  return Object.freeze({
+    kind: "error" as const,
+    exitCode,
+    messages: Object.freeze([...messages]),
+  });
 }

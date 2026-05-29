@@ -1,7 +1,11 @@
 // cli/commands/export-context: source-backed markdown packets for handoff.
 
 import { formatJson } from "../format";
-import { runSharedViewCommand } from "./view-shared";
+import {
+  printViewCommandMessages,
+  runStructuredViewCommand,
+  structuredViewBrokerMessages,
+} from "./view-shared";
 
 export type ExportContextCommandOptions = {
   readonly topic?: string | undefined;
@@ -23,7 +27,7 @@ export async function runExportContext(
   }
 
   try {
-    const run = await runSharedViewCommand({
+    const run = await runStructuredViewCommand({
       commandLabel: "dome export-context",
       commandName: "export-context",
       commandArgs: Object.freeze({
@@ -32,59 +36,24 @@ export async function runExportContext(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
+      notFoundMessage:
+        "dome export-context: dome.search is not installed or no export-context processor is enabled.",
+      noStructuredResultMessage:
+        "dome export-context: processor returned no structured result.",
     });
 
-    if (run.kind === "usage-error") {
-      console.error(run.message);
-      return 64;
+    if (run.kind === "error") {
+      printViewCommandMessages(run.messages);
+      return run.exitCode;
     }
-    if (run.kind === "runtime-error") {
-      console.error(run.message);
-      return 1;
-    }
-
-    const result = run.result;
-    if (result.kind === "not-found") {
-      console.error(
-        "dome export-context: dome.search is not installed or no export-context processor is enabled.",
-      );
-      return 64;
-    }
-    if (result.kind === "failed") {
-      console.error(
-        `dome export-context: processor '${result.processorId}' finished with ${result.executionStatus}.`,
-      );
-      if (result.executionError !== undefined) {
-        console.error(
-          `dome export-context: ${result.executionError.code}: ${result.executionError.message}`,
-        );
-      }
-      for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
-        console.error(
-          `dome export-context: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-        );
-      }
-      return 1;
-    }
-
-    for (const d of result.brokerDiagnostics) {
-      console.error(
-        `dome export-context: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-      );
-    }
-
-    const view = run.capturedViews[0] ?? result.effects[0];
-    if (view === undefined || view.content.kind !== "structured") {
-      console.error(
-        "dome export-context: processor returned no structured result.",
-      );
-      return 1;
-    }
+    printViewCommandMessages(
+      structuredViewBrokerMessages("dome export-context", run.brokerDiagnostics),
+    );
 
     if (options.json === true) {
-      console.log(formatJson(view.content.data));
+      console.log(formatJson(run.data));
     } else {
-      console.log(markdownFromData(view.content.data));
+      console.log(markdownFromData(run.data));
     }
     return 0;
   } catch (e) {

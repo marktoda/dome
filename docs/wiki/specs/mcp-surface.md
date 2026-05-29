@@ -45,7 +45,7 @@ The MCP server exposes Dome's Recall and view-command surfaces as MCP tools unde
 | `dome.query` | `AbstractSurface.query` | Full-text + structured query against adopted state. |
 | `dome.read_document` | `AbstractSurface.read` | Read a single document at the adopted commit. |
 | `dome.resolve_wikilink` | `AbstractSurface.resolveWikilink` (via vault) | Resolve a `[[wikilink]]` to a document. |
-| `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`query` / `export-context` today; planned examples include `lint` and `stats`). |
+| `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`query` / `lint` / `export-context` today; planned examples include `stats`). |
 
 Tool names are derived from the Recall/view surface — no parallel naming catalog. Adding a new view-phase command processor extends `dome.run_command`'s command list automatically.
 
@@ -74,7 +74,7 @@ inputSchema:
   type: object
   required: [name]
   properties:
-    name:  { type: string, description: "Command processor name (query/export-context today; planned examples include lint and stats)" }
+    name:  { type: string, description: "Command processor name (query/lint/export-context today; planned examples include stats)" }
     args:  { type: object, description: "Command-specific arguments" }
 ```
 

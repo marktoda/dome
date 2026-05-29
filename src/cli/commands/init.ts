@@ -266,8 +266,9 @@ const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 extensions:
   dome.lint:
     enabled: true
-    # No capability grants needed today — the shipped lint view command
-    # does not read vault content.
+    grant:
+      read:
+        - "**/*.md"
 
   dome.markdown:
     enabled: true
@@ -379,6 +380,7 @@ git commit -m "describe the vault change"
   user wants to wait for adoption.
 - \`dome today\` - source-backed open tasks, followups, and questions for today.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
+- \`dome lint\` - adopted-state hygiene report over diagnostics and lint checks.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
 - \`dome inspect diagnostics\` - current markdown and engine diagnostics.

@@ -29,7 +29,7 @@ Most claims survive directly:
 - ✓ LLM-maintained wiki layer (garden-LLM processors per [[wiki/specs/processors]] §"Garden phase").
 - ✓ Prompt as contract — garden-LLM processors carry their prompts alongside the processor source at `assets/extensions/<bundle>/processors/<name>.prompt.md`.
 - △ Index + log as canonical files — Dome preserves these as optional/planned markdown projections. The shipped v1 path currently relies on adopted refs, the run ledger, projections, and search first; `dome.index` and `dome.log` are planned only if humans actually need those files.
-- △ Operations: ingest, query, lint — query ships through `dome.search`; lint has a minimal `dome.lint` view processor; richer intake and lint/report flows remain on the v1 roadmap.
+- △ Operations: ingest, query, lint — query ships through `dome.search`; lint ships as an adopted-state `dome.lint` report; richer intake and lint apply flows remain on the v1 roadmap.
 
 Some are revised:
 

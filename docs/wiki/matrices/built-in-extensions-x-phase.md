@@ -17,7 +17,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
 | **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `today`; planned: `week-review`, `agenda-with`, `prep` |
-| **`dome.lint`** | partially shipped | — | — | shipped: `markdown-format`; planned: `lint-report`, `apply-finding` |
+| **`dome.lint`** | partially shipped | — | — | shipped: `report`; planned: `apply-finding` |
 | **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
@@ -38,7 +38,7 @@ A new bundle author looking at this matrix sees:
 
 - **Adoption-phase is sparse.** Most of the action is in garden + view. The author can register an adoption-phase processor only when they need merge-time validation (rare).
 - **Schedule-driven processors are explicit.** Each cron-driven processor's schedule is visible — the author can avoid overlapping with existing schedules.
-- **View processors are dominantly LLM-driven in the future plan.** `week-review`, `agenda-with`, `prep`, `lint-report` — most use `model.invoke`. The shipped `dome.search.query`, `dome.search.export-context`, and `dome.daily.today` paths are deterministic first.
+- **View processors are dominantly LLM-driven in the future plan.** `week-review`, `agenda-with`, `prep` — most use `model.invoke`. The shipped `dome.search.query`, `dome.search.export-context`, `dome.lint.report`, and `dome.daily.today` paths are deterministic first.
 
 ## Adding to the matrix
 

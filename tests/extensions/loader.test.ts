@@ -73,7 +73,7 @@ describe("loadBundles — shipped dome.lint bundle", () => {
 
     const proc = lint.processors[0];
     if (proc === undefined) throw new Error("expected one processor");
-    expect(proc.id).toBe("dome.lint.markdown-format");
+    expect(proc.id).toBe("dome.lint.report");
     expect(proc.version).toBe("0.1.0");
     expect(proc.phase).toBe("view");
     expect(proc.triggers.length).toBe(1);
@@ -87,7 +87,7 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const flat = flattenBundleProcessors(result.value);
-    const lintProc = flat.find((p) => p.id === "dome.lint.markdown-format");
+    const lintProc = flat.find((p) => p.id === "dome.lint.report");
     expect(lintProc).toBeDefined();
   });
 
@@ -96,14 +96,19 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const flat = flattenBundleProcessors(result.value);
-    const proc = flat.find((p) => p.id === "dome.lint.markdown-format");
-    if (proc === undefined) throw new Error("expected dome.lint.markdown-format");
+    const proc = flat.find((p) => p.id === "dome.lint.report");
+    if (proc === undefined) throw new Error("expected dome.lint.report");
 
-    // The processor doesn't read ctx — we can pass a minimal placeholder
-    // for the smoke check. The cast through `unknown` skips the structural
-    // requirements of `ProcessorContext` since `run` is typed as
-    // `(ctx) => Promise<Effect[]>` and the demo body ignores ctx entirely.
-    const fakeCtx = {} as unknown as ProcessorContext<unknown>;
+    const fakeCtx = {
+      input: null,
+      snapshot: {
+        listMarkdownFiles: async () => [],
+        readFile: async () => null,
+      },
+      projection: {
+        diagnostics: () => [],
+      },
+    } as unknown as ProcessorContext<unknown>;
     const effects = await proc.run(fakeCtx);
     expect(effects.length).toBe(1);
     const e = effects[0];

@@ -13,6 +13,7 @@ import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
+import { runLint, type LintFailOn } from "./commands/lint";
 import { runQuery } from "./commands/query";
 import { runRebuild } from "./commands/rebuild";
 import { runRun } from "./commands/run";
@@ -168,6 +169,28 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           json: options.json,
           commandFlags: parseProcessorFlags(processorArgs(command.args)),
+        }),
+      );
+    });
+
+  program
+    .command("lint")
+    .description("Render the adopted-state lint report.")
+    .option(
+      "--fail-on <severity>",
+      "Exit nonzero at severity: info, warning, error, block, or never.",
+      parseLintFailOnOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: LintCliOptions) => {
+      setExitCode(
+        await runLint({
+          failOn: options.failOn,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
         }),
       );
     });
@@ -336,6 +359,13 @@ type RunCliOptions = {
   readonly bundlesRoot?: string;
 };
 
+type LintCliOptions = {
+  readonly failOn?: LintFailOn;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
 type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
@@ -418,6 +448,23 @@ function parseProcessorFlags(
     }
   }
   return flags;
+}
+
+function parseLintFailOnOption(value: string): LintFailOn {
+  if (
+    value === "info" ||
+    value === "warning" ||
+    value === "error" ||
+    value === "block" ||
+    value === "never"
+  ) {
+    return value;
+  }
+  throw new CommanderError(
+    EX_USAGE,
+    "commander.invalidArgument",
+    `error: invalid lint severity '${value}'`,
+  );
 }
 
 function writeConsole(write: (text: string) => void, text: string): void {

@@ -1,11 +1,13 @@
 id: dome.lint
 version: 0.1.0
 processors:
-  - id: dome.lint.markdown-format
+  - id: dome.lint.report
     version: 0.1.0
     phase: view
     triggers:
       - kind: command
         name: lint
-    capabilities: []
-    module: processors/markdown-format.ts
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/report.ts

@@ -45,6 +45,7 @@ scenario(
       expect(agents).toContain("dome sync");
       expect(agents).toContain("dome today");
       expect(agents).toContain("dome export-context <topic>");
+      expect(agents).toContain("dome lint");
       expect(agents).toContain("dome inspect questions");
       expect(agents).toContain("dome answer <id> <value>");
       expect(agents).toContain("dome rebuild");

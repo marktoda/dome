@@ -158,13 +158,13 @@ Shipped and strong:
 
 - Four-concept engine model is real: Proposal, Processor, Effect, adopted ref.
 - Adoption loop, garden sub-Proposals, scheduler, JobEffect routing, outbox dispatch, run ledger, projection store, and capability broker exist.
-- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, and `dome rebuild` exist.
+- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, `dome lint`, and `dome rebuild` exist.
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
-- Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, and a minimal `dome.lint`.
+- Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, and `dome.lint`.
 
 Not yet at v1:
 
-- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
+- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
 - The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, and `dome today`. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 - The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, and `dome today` work. Capture compilation from raw inbox text, raw-capture todo/followup extraction, and prep views remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
@@ -326,7 +326,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 
 | Bundle | Recommendation |
 |---|---|
-| `dome.lint` | Ship if it adds concrete cleanup value beyond markdown diagnostics; otherwise make it a thin report over diagnostics. |
+| `dome.lint` | Shipped as an adopted-state report over diagnostics plus deterministic lint checks; future review/apply flow remains optional. |
 | `dome.index` | Defer unless `index.md` is truly part of the user's navigation loop. Search/graph may be more valuable. |
 | `dome.log` | Defer or make append-only minimal. The run ledger already records engine history; a markdown log is useful only if humans read it. |
 | `dome.migrate` | Ship when schema/version churn requires it. Until then, keep migrations internal and idempotent. |
@@ -457,7 +457,7 @@ Acceptance:
 ### Milestone 8: user-value views
 
 - [x] Implement `dome export-context <topic>`.
-- Implement `dome lint` as a report over diagnostics plus additional checks.
+- [x] Implement `dome lint` as a report over diagnostics plus additional checks.
 - [x] Add `dome today` once the daily bundle has enough data to render something useful.
 - Add `dome prep` once planning context is useful enough.
 - Keep generic `dome run` as a development escape hatch; teach named commands in instructions.

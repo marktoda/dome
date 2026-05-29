@@ -99,8 +99,8 @@ V1 capability ledger:
       ledgering are shipped; daily budget enforcement and production provider
       packaging remain.
 - [ ] LLM garden/intake processors with provenance and source-backed writes.
-- [ ] User-value views: `dome today` and `dome export-context` are shipped;
-      useful `dome lint` and `dome prep` remain.
+- [ ] User-value views: `dome today`, `dome lint`, and
+      `dome export-context` are shipped; `dome prep` remains.
 - [ ] V1 end-to-end acceptance harness and real-vault dogfood run.
 
 ## Milestone 0 - Plan and Spec Coherence
@@ -409,7 +409,7 @@ Work:
 
 - [x] Implement `dome export-context <topic>` as a source-backed markdown
       packet.
-- [ ] Implement `dome lint` as a report over diagnostics plus deterministic
+- [x] Implement `dome lint` as a report over diagnostics plus deterministic
       checks.
 - [x] Implement `dome today` once daily/task data is strong enough.
 - [ ] Implement `dome prep` once planning context is strong enough.
@@ -420,7 +420,7 @@ Acceptance:
 
 - [x] Export-context returns paths, snippets, facts, and SourceRefs for a
       topic.
-- [ ] Lint report is stable and exits nonzero only on defined severity
+- [x] Lint report is stable and exits nonzero only on defined severity
       thresholds.
 - [x] Today view renders useful daily/task data.
 - [ ] Prep view renders useful planning data.
@@ -468,7 +468,7 @@ Optional or conditional:
 
 | Bundle | Recommendation |
 |---|---|
-| `dome.lint` | Ship as a named report only if it adds concrete cleanup value beyond background diagnostics. |
+| `dome.lint` | Shipped as an adopted-state report over diagnostics plus deterministic lint checks; future review/apply flow remains optional. |
 | `dome.index` | Build only if human navigation still needs generated `index.md` after search/query works. |
 | `dome.log` | Defer unless humans actually read markdown engine history; the run ledger already records engine events. |
 | `dome.migrate` | Ship when schema/version churn requires explicit user-facing migration. |

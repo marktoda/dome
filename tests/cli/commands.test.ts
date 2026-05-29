@@ -289,6 +289,7 @@ describe("runInit", () => {
       expect(agentsBody).toContain("Dome works at the git commit boundary");
       expect(agentsBody).toContain("dome today");
       expect(agentsBody).toContain("dome export-context <topic>");
+      expect(agentsBody).toContain("dome lint");
       expect(agentsBody).toContain("dome inspect questions");
       expect(agentsBody).toContain("dome answer <id> <value>");
       expect(agentsBody).toContain("dome rebuild");
@@ -433,7 +434,7 @@ describe("runInit", () => {
             { name: "dome.markdown", version: "0.1.0" },
           ],
           processorVersions: [
-            { id: "dome.lint.markdown-format", version: "0.1.0" },
+            { id: "dome.lint.report", version: "0.1.0" },
             { id: "dome.markdown.validate-wikilinks", version: "0.1.0" },
           ],
         });
