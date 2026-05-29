@@ -207,6 +207,9 @@ Work:
 - [x] Detect processor-version / extension-set cache-key drift.
 - [x] Rebuild projection rows from adopted state before stale rows are
       consumed.
+- [x] Rebuild projection rows from explicitly deterministic, projection-safe
+      garden processors without re-running patches, jobs, operational
+      recovery, external actions, or model calls.
 - [x] Decide the clean FTS extension boundary before implementation:
       first-class effect/capability, engine-owned projection derivation, or
       another principled route. Do not let `dome.search` write SQLite
@@ -230,6 +233,8 @@ Acceptance:
 - [x] Query returns graph/tag facts relevant to the search term or filters.
 - [x] Editing or deleting a page removes stale graph/tag facts for that page
       through normal sync, without requiring `dome rebuild`.
+- [x] `dome rebuild --json` restores projection rows produced by an eligible
+      garden-phase processor, not only adoption-phase processors.
 
 ## Milestone 4 - Recovery and Questions
 

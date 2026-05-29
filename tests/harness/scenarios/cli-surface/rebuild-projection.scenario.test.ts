@@ -5,8 +5,18 @@
 // commit without touching git history, runs.db, or outbox.db.
 
 import { expect } from "bun:test";
+import { join } from "node:path";
 
 import { scenario } from "../../index";
+
+const GARDEN_REBUILD_FIXTURE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.garden-rebuild-facts",
+);
 
 scenario(
   {
@@ -16,11 +26,21 @@ scenario(
       { kind: "effect", effect: "diagnostic" },
       { kind: "effect", effect: "fact" },
       { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "garden" },
       { kind: "capability", capability: "read" },
       { kind: "capability", capability: "graph.write" },
       { kind: "trigger", trigger: "signal" },
     ],
-    harness: { bundles: ["dome.markdown", "dome.graph"] },
+    harness: {
+      bundles: [
+        "dome.markdown",
+        "dome.graph",
+        {
+          id: "test.garden-rebuild-facts",
+          root: GARDEN_REBUILD_FIXTURE,
+        },
+      ],
+    },
   },
   async (h) => {
     const seed = await h.tick();
@@ -30,6 +50,7 @@ scenario(
       files: {
         "wiki/source.md":
           "# Source\n\n" +
+          "garden-rebuild\n\n" +
           "See [[missing-target]].\n",
       },
       message: "add source page",
@@ -49,6 +70,10 @@ scenario(
       .expectProjection()
       .facts({ predicate: "dome.graph.links_to" })
       .toHaveCount(1);
+    await h
+      .expectProjection()
+      .facts({ predicate: "test.garden_rebuild.seen" })
+      .toHaveCount(1);
 
     h.projection.raw.run("DELETE FROM diagnostics");
     h.projection.raw.run("DELETE FROM facts");
@@ -59,6 +84,10 @@ scenario(
     await h
       .expectProjection()
       .facts({ predicate: "dome.graph.links_to" })
+      .toHaveCount(0);
+    await h
+      .expectProjection()
+      .facts({ predicate: "test.garden_rebuild.seen" })
       .toHaveCount(0);
 
     const cli = await h.runCli(["rebuild", "--json"]);
@@ -79,6 +108,10 @@ scenario(
     await h
       .expectProjection()
       .facts({ predicate: "dome.graph.links_to" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .facts({ predicate: "test.garden_rebuild.seen" })
       .toHaveCount(1);
 
     const meta = h.projection.raw

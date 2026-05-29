@@ -280,7 +280,7 @@ This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUG
 
 ## Rebuild path
 
-`dome rebuild` walks the current adopted commit's tree and re-runs every deterministic adoption-phase processor that contributes to projections, then re-runs deterministic garden-phase processors that produce projection outputs (Facts, Diagnostics, Questions). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits), does NOT re-fire external actions (the outbox is preserved), and does NOT make fresh model calls. LLM-derived durable claims must either be materialized into adopted markdown with SourceRefs or treated as cache entries that can be dropped and regenerated only by an explicit non-rebuild garden run.
+`dome rebuild` walks the current adopted commit's tree and re-runs every deterministic adoption-phase processor that contributes to projections, then re-runs deterministic garden-phase processors that produce projection outputs (Facts, Diagnostics, Questions). A garden processor is rebuild-eligible only when it explicitly declares `execution.class: deterministic`, has signal/path triggers, and declares only projection-safe capabilities (`read`, `graph.write`, `search.write`, `question.ask`). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits), does NOT enqueue jobs, does NOT read or mutate operational recovery state, does NOT re-fire external actions (the outbox is preserved), and does NOT make fresh model calls. LLM-derived durable claims must either be materialized into adopted markdown with SourceRefs or treated as cache entries that can be dropped and regenerated only by an explicit non-rebuild garden run.
 
 ```text
 dome rebuild
@@ -289,7 +289,7 @@ dome rebuild
   → walk wiki/, raw/, inbox/, notes/ at the current adopted commit
     → for each file, synthesize the trigger payload and fire the relevant adoption-phase processors
     → write resulting FactEffect / DiagnosticEffect / SearchDocumentEffect rows
-  → re-run deterministic garden-phase fact/question emitters only
+  → re-run deterministic, projection-safe garden-phase emitters only
   → emit `engine.projection.rebuilt` event
 ```
 
