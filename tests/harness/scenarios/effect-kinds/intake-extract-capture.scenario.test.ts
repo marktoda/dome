@@ -21,7 +21,7 @@ extensions:
     enabled: true
     grant:
       read:
-        - "inbox/raw/*.md"
+        - "inbox/**/*.md"
         - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"

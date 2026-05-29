@@ -75,7 +75,7 @@ Shipped:
       `dome.health` (6),
       `dome.daily` (5),
       `dome.lint` (1), and
-      `dome.intake.extract-capture`.
+      `dome.intake` (4).
 - [x] Page-type schema substrate.
 - [x] Diagnostic auto-resolve for changed paths.
 - [x] Page-subject graph/tag fact replacement for changed and deleted paths.
@@ -101,8 +101,8 @@ V1 capability ledger:
       packaging gives vaults a production path without SDK vendor dependencies.
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice, low-confidence capture
-      questions/answers, and confidence-carrying intake fact namespaces
-      shipped; synthesis remains.
+      questions/answers, confidence-carrying intake fact namespaces, and
+      stale-inbox diagnostics shipped; synthesis remains.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
 - [x] V1 end-to-end acceptance harness.
