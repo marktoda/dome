@@ -283,19 +283,26 @@ async function runSchedulerInner(opts: {
     const cursor = getCursor(projection, processor.id);
 
     // Decide whether to fire. Three cases:
-    //   1. No cursor row OR cron changed → fire immediately (the "first
-    //      tick / cron-changed = fire" semantic per the file banner).
-    //   2. Cursor exists, cron matches: compute nextFire(parsed, lastFireDate);
+    //   1. No cursor row → fire immediately.
+    //   2. Cron changed → preserve lastFire, update the stored cron +
+    //      nextFire from now, and do not retroactively fire.
+    //   3. Cursor exists, cron matches: compute nextFire(parsed, lastFireDate);
     //      fire if nextFire <= nowDate.
-    //   3. Otherwise: skip.
     let shouldFire: boolean;
     let previousLastFire: string | null;
     if (cursor === null) {
       shouldFire = true;
       previousLastFire = null;
     } else if (cursor.cron !== cron) {
-      shouldFire = true;
       previousLastFire = cursor.lastFire;
+      upsertCursor(projection, {
+        processorId: processor.id,
+        cron,
+        lastFire: cursor.lastFire,
+        nextFire: nextFire(parsed, nowDate).toISOString(),
+      });
+      skipped.push({ processorId: processor.id, reason: "cron-changed" });
+      continue;
     } else {
       previousLastFire = cursor.lastFire;
       const lastFireDate = new Date(cursor.lastFire);

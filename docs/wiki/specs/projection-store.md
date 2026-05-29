@@ -241,7 +241,7 @@ CREATE TABLE schedule_cursors (
 );
 ```
 
-The at-most-once-per-sync clamp for missed intervals ([[wiki/gotchas/scheduled-hook-idempotency]] — name carried forward, semantics unchanged) is enforced by the engine: it updates `last_fire` to the current time, not the missed-interval time, so multiple missed intervals collapse to one fire.
+The at-most-once-per-sync clamp for missed intervals ([[wiki/gotchas/scheduled-hook-idempotency]] — name carried forward, semantics unchanged) is enforced by the engine: it updates `last_fire` to the current time, not the missed-interval time, so multiple missed intervals collapse to one fire. If a processor's cron expression changes, the engine preserves `last_fire`, updates the stored cron and `next_fire` from the current tick time, and skips immediate retroactive execution.
 
 ## Outbox (separate database: `outbox.db`)
 

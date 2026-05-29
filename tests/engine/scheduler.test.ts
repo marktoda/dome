@@ -17,6 +17,10 @@ import type { ApplyPatchInput } from "../../src/engine/apply-patch";
 import { runScheduler } from "../../src/engine/scheduler";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
+import {
+  getCursor,
+  upsertCursor,
+} from "../../src/projections/schedule-cursors";
 import { buildRegistry } from "../../src/processors/registry";
 
 const ADOPTED = commitOid("adopted0000000000000000000000000000000000");
@@ -175,6 +179,43 @@ describe("runScheduler — executor-result telemetry", () => {
         proposalId: null,
       },
     ]);
+  });
+
+  test("cron changes preserve last fire and do not fire immediately", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.cron-changed",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async () => [
+        diagnosticEffect({
+          severity: "info",
+          code: "test.scheduler.should-not-fire",
+          message: "cron changes should not fire immediately",
+          sourceRefs: [],
+        }),
+      ],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    upsertCursor(fixture.projection, {
+      processorId: "test.scheduler.cron-changed",
+      cron: "0 * * * *",
+      lastFire: "2026-05-28T11:59:00.000Z",
+      nextFire: "2026-05-28T12:00:00.000Z",
+    });
+
+    const result = await runWithProcessor(fixture, processor);
+    const cursor = getCursor(fixture.projection, "test.scheduler.cron-changed");
+
+    expect(result.fired).toEqual([]);
+    expect(result.skipped).toEqual([
+      { processorId: "test.scheduler.cron-changed", reason: "cron-changed" },
+    ]);
+    expect(cursor?.cron).toBe("* * * * *");
+    expect(cursor?.lastFire).toBe("2026-05-28T11:59:00.000Z");
+    expect(cursor?.nextFire).toBe("2026-05-28T12:01:00.000Z");
   });
 
   test("broker diagnostics do not mark scheduled fire unsuccessful", async () => {
