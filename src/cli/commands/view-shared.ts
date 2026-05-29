@@ -1,24 +1,20 @@
-// cli/commands/view-shared: shared runtime boundary for view commands.
+// cli/commands/view-shared: CLI helpers for view commands.
 //
 // `dome run` and first-class view command wrappers such as `dome query` all
-// need the same engine-host ceremony: resolve the adopted commit, open the
-// runtime, ensure projection rows are fresh for the loaded processors, build
-// read-only view sinks, dispatch `runViewCommand`, and close the runtime.
+// share error translation, structured-view validation, and message printing.
+// Runtime opening and view dispatch live in `src/engine/view-command.ts` so
+// future non-CLI surfaces can reuse the same command boundary.
 
 import { resolve } from "node:path";
 
-import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import type {
   DiagnosticEffect,
   ViewContent,
   ViewEffect,
 } from "../../core/effect";
-import { commitOid, type CommitOid } from "../../core/source-ref";
-import type { ApplyEffectSinks } from "../../engine/apply-effect";
-import { runViewCommand, type RunCommandResult } from "../../engine/commands";
-import { rebuildProjectionIfStale } from "../../engine/compiler-host";
-import { openVaultRuntime } from "../../engine/vault-runtime";
-import { buildSqliteSinks } from "../../projections/sinks";
+import type { CommitOid } from "../../core/source-ref";
+import type { RunCommandResult } from "../../engine/commands";
+import { runRuntimeViewCommand } from "../../engine/view-command";
 
 import { resolveShippedBundlesRoot } from "./sync-shared";
 
@@ -87,84 +83,42 @@ export async function runSharedViewCommand(
   const vaultPath = resolve(opts.vault ?? process.cwd());
   const bundlesRoot = opts.bundlesRoot ?? resolveShippedBundlesRoot();
 
-  const branch = await getCurrentBranch(vaultPath);
-  if (branch === null) {
+  const run = await runRuntimeViewCommand({
+    vaultPath,
+    bundlesRoot,
+    commandName: opts.commandName,
+    commandArgs: opts.commandArgs ?? null,
+  });
+
+  if (run.kind === "detached-head") {
     return Object.freeze({
       kind: "usage-error" as const,
       message:
         `${opts.commandLabel}: HEAD is detached. Check out a branch and retry.`,
     });
   }
-
-  const adoptedSha = await getAdoptedRef(vaultPath, branch);
-  if (adoptedSha === null) {
+  if (run.kind === "missing-adopted-ref") {
     return Object.freeze({
       kind: "usage-error" as const,
       message:
-        `${opts.commandLabel}: vault has no adopted ref for branch '${branch}'. Run \`dome sync\` first to initialize.`,
+        `${opts.commandLabel}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`,
     });
   }
-  const adopted = commitOid(adoptedSha);
-
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
-  if (!runtimeResult.ok) {
+  if (run.kind === "runtime-open-failed") {
     return Object.freeze({
       kind: "runtime-error" as const,
       message:
-        `${opts.commandLabel}: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
+        `${opts.commandLabel}: openVaultRuntime failed (${run.errorKind}). Run \`dome init\` to initialize the vault.`,
     });
   }
 
-  const runtime = runtimeResult.value;
-  try {
-    await rebuildProjectionIfStale({
-      runtime,
-      adopted,
-      branch,
-    });
-
-    const capturedViews: ViewEffect[] = [];
-    const captureView: ApplyEffectSinks["captureView"] = async ({ effect }) => {
-      capturedViews.push(effect);
-    };
-    const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
-    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-      async () => undefined;
-    const recoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
-    const sinks = buildSqliteSinks({
-      projectionDb: runtime.projectionDb,
-      outboxDb: runtime.outboxDb,
-      adoptedCommit: adopted,
-      captureView,
-      applyPatch,
-      externalHandlers: runtime.externalHandlers,
-      recoverQuarantine,
-      recoverRun,
-    });
-
-    const result = await runViewCommand({
-      vault: {
-        path: vaultPath,
-        config: { git: { auto_commit_workflows: false } },
-      },
-      adopted,
-      commandName: opts.commandName,
-      commandArgs: opts.commandArgs ?? null,
-      viewRunner: runtime.processorRuntime.viewRunner,
-      sinks,
-      ledger: runtime.ledgerDb,
-    });
-
-    return Object.freeze({
-      kind: "ok" as const,
-      vaultPath,
-      adopted,
-      result,
-      capturedViews: Object.freeze([...capturedViews]),
-    });
-  } finally {
-    await runtime.close();
-  }
+  return Object.freeze({
+    kind: "ok" as const,
+    vaultPath,
+    adopted: run.adopted,
+    result: run.result,
+    capturedViews: run.capturedViews,
+  });
 }
 
 export async function runStructuredViewCommand(
