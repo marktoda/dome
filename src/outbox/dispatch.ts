@@ -23,8 +23,9 @@
 // Mitigated gotchas:
 //   - docs/wiki/gotchas/outbox-stuck.md — per the engine-asks recovery
 //     model in cli.md §"dome answer", `replayFailed` and `markAbandoned`
-//     are the answer-handler implementations invoked when the user
-//     answers a Question raised on `engine.outbox.terminal-failure`.
+//     are the state-machine transitions invoked by the engine-owned
+//     OutboxRecoveryEffect sink after a recovery answer handler emits
+//     `retry` or `abandon`.
 //     `queryOutbox` is the data source for `dome inspect outbox`. Failed
 //     rows are never auto-pruned (per the gotcha file: "dropped external
 //     actions are a serious failure mode").
@@ -440,9 +441,8 @@ export function incrementAttempts(
 }
 
 /**
- * Mark a row abandoned. Invoked by the deferred `dome.health` bundle's
- * outbox-answer-handler processor when the user answers `abandon` on
- * the Question raised for `engine.outbox.terminal-failure` (per
+ * Mark a row abandoned. Invoked by the engine-owned OutboxRecoveryEffect
+ * sink when a recovery answer handler emits `action: "abandon"` (per
  * [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]]).
  * Useful for entries that have become irrelevant (the meeting already
  * happened; the notification window passed). Abandoned rows "stop
@@ -460,11 +460,10 @@ export function markAbandoned(db: OutboxDb, idempotencyKey: string): void {
 }
 
 /**
- * Re-queue a previously-failed row. Invoked by the deferred
- * `dome.health` bundle's outbox-answer-handler processor when the user
- * answers `retry` on the Question raised for
- * `engine.outbox.terminal-failure` (per [[wiki/specs/cli]] §"dome
- * answer") — typically after the underlying cause has been fixed
+ * Re-queue a previously-failed row. Invoked by the engine-owned
+ * OutboxRecoveryEffect sink when a recovery answer handler emits
+ * `action: "retry"` (per [[wiki/specs/cli]] §"dome answer") — typically
+ * after the underlying cause has been fixed
  * (rotated credentials, remote service came back up, etc.). Resets
  * `attempts` to 0 and clears `last_error`; the row returns to
  * `status: "pending"` for the dispatcher to pick up on the next pass.

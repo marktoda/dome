@@ -2,7 +2,8 @@
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
-// external actions, rendering views. The taxonomy is *closed*: plugins
+// external actions, recovering operational outbox rows, rendering views.
+// The taxonomy is *closed*: plugins
 // emit existing kinds, not new ones. See docs/wiki/specs/effects.md for
 // the normative contract (kind-by-kind shape, routing, capability matrix,
 // and the rationale for closedness).

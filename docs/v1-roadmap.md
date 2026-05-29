@@ -245,14 +245,17 @@ Work:
       operations.
 - [ ] Move quarantine into durable operational state or provide inspect/reset
       through the same question/answer flow.
-- [x] Route outbox retry/abandon through questions where human intent is
-      required.
+- [x] Add `OutboxRecoveryEffect` + `outbox.recover` so answer handlers can
+      retry/abandon failed outbox rows without direct DB access.
+- [ ] Ship first-party `dome.health` outbox recovery question emitters and
+      answer handlers.
 
 Acceptance:
 
 - [x] Duplicate-detection emits a question; `dome answer` records the answer.
 - [x] Answering a question triggers follow-up processor behavior.
-- [x] Forced outbox failure is visible in status/doctor and recoverable.
+- [ ] Forced outbox failure is visible in status/doctor and recoverable
+      through shipped `dome.health` questions, not just the substrate fixture.
 - [ ] Quarantined processor is visible and resettable without direct sqlite or
       JSON edits.
 - [x] Orphan run is detected by doctor.
@@ -396,7 +399,7 @@ Required for daily value:
 | `dome.markdown` | partially shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
-| `dome.health` | partially shipped | doctor probes and recovery questions; probe-only CLI and outbox recovery substrate exist, quarantine handlers missing |
+| `dome.health` | partially shipped | doctor probes; probe-only CLI and outbox recovery substrate exist, recovery question emitters/handlers still missing |
 | `dome.daily` | missing | daily creation, task carry-forward, today/prep views |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 
