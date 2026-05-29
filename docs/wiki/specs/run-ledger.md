@@ -136,7 +136,7 @@ The engine prunes rows older than the policy at the start of each `dome sync`. P
 ## What the ledger cannot do
 
 - **Replace git trailers.** Successful engine commits MUST carry the four Dome-* trailers in their message body. The ledger is the audit surface; the trailers are the durable-in-git provenance surface. Both are required.
-- **Live in markdown.** `log.md` is a *projection* of the ledger maintained by the `dome.log` extension's adoption-phase processor. The ledger is the source of run truth; `log.md` is its human-readable view, committed for browseability. Removing or corrupting `log.md` rebuilds it from the ledger; corrupting the ledger requires rebuild from git trailers (lossy — capability uses and costs are unrecoverable for past runs).
+- **Depend on a shipped markdown log.** `log.md` is a planned human-readable projection of the ledger, but the `dome.log` bundle is not shipped in the current v1 cut. Today the run ledger is the structured audit surface and engine commit trailers are the durable-in-git provenance surface. When `dome.log` ships, removing or corrupting `log.md` should rebuild it from the ledger; corrupting the ledger would require a lossy rebuild from git trailers.
 - **Survive vault deletion.** The ledger lives in `<vault>/.dome/state/`; it's a per-vault history. Multi-vault aggregation is not in scope.
 
 ## Related
@@ -148,4 +148,4 @@ The engine prunes rows older than the policy at the start of each `dome sync`. P
 - [[wiki/specs/adoption]] §"Engine commit trailers" — the git-side surface
 - [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — structural fence
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — the trailer side of the dual surface
-- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — log.md is a ledger projection; both are append-only
+- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — planned log.md projection; current v1 audit uses ledger + git trailers

@@ -68,7 +68,7 @@ Implementation status: the capability kind and manifest/config schema exist, but
 
 ### `owns.path`
 
-Whole-file ownership. `dome.index` owns `index.md`; `dome.log` owns `log.md`. Other processors' PatchEffects touching these paths are rejected.
+Whole-file ownership. For example, a future `dome.index` bundle can own `index.md`, and a future `dome.log` bundle can own `log.md`. Other processors' PatchEffects touching those owned paths are rejected once the owning bundle and grants are present.
 
 Path ownership replaces v0.5's `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` invariant — same property, expressed as a capability rather than a hard-coded refusal in the writer layer.
 

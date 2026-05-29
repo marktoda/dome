@@ -66,8 +66,8 @@ Shipped:
 - [x] Commander-based CLI dispatch.
 - [x] `dome init`, `dome sync`, `dome serve`, `dome status`, `dome inspect`,
       `dome doctor`, `dome answer`, `dome query`, `dome lint`,
-      `dome export-context`, `dome today`, `dome prep`, `dome run`, and
-      `dome rebuild`.
+      `dome export-context`, `dome today`, `dome prep`, `dome agenda`,
+      `dome run`, and `dome rebuild`.
 - [x] Shipped first-party bundle processors:
       `dome.markdown` (7 processors),
       `dome.graph` (2),
@@ -100,7 +100,7 @@ V1 capability ledger:
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
       packaging gives vaults a production path without SDK vendor dependencies.
-- [ ] LLM garden/intake processors with provenance and source-backed writes:
+- [x] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice, low-confidence capture
       questions/answers, confidence-carrying intake fact namespaces, and
       stale-inbox diagnostics shipped; source-backed capture synthesis and

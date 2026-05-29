@@ -20,7 +20,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
-- [[wiki/specs/cli]] — The Dome CLI: init / sync / serve / status / today / query / lint / export-context / run / rebuild / inspect / doctor / answer, plus planned user-value aliases such as stats.
+- [[wiki/specs/cli]] — The Dome CLI: init / sync / serve / status / today / prep / agenda / query / lint / export-context / run / rebuild / inspect / doctor / answer, plus planned user-value aliases such as stats.
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
 - [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
@@ -43,7 +43,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — *(axiom)* `Processor.run(ctx)` returns `Promise<Effect[]>`; no direct mutation surface.
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files should move/delete on processing; stale-inbox diagnostics surface lingering files.
-- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by `dome.log`'s append-only adoption processor.
+- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom target)* future `log.md` projection mutated only by `dome.log`'s append-only adoption processor; current v1 uses run ledger + git trailers.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
