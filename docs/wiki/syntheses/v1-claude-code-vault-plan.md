@@ -423,7 +423,7 @@ Acceptance:
   silently.
 - [x] Extend raw-capture extraction with low-confidence question emission.
 - [x] Extend raw-capture extraction with answer handling.
-- Extend raw-capture extraction with richer fact namespaces.
+- [ ] Extend raw-capture extraction with richer fact namespaces.
 - [x] Add `dome today` once the data is useful enough to render.
 - [x] Add prep views once planning context is useful enough to render.
 
@@ -435,13 +435,13 @@ Acceptance:
 
 ### Milestone 6: modelInvoke substrate
 
-- Define the stable `modelInvoke` capability and provider boundary.
-- Enforce model allowlists and per-bundle `maxDailyCostUsd`.
-- Ledger token/cost data on every model attempt.
-- Validate structured outputs at the boundary.
-- Treat model parse/schema failures as nominal processor failures.
-- Ensure retries are bounded and idempotent.
-- Require model-capable PatchEffects to carry SourceRefs before routing.
+- [x] Define the stable `modelInvoke` capability and provider boundary.
+- [x] Enforce model allowlists and per-bundle `maxDailyCostUsd`.
+- [x] Ledger token/cost data on every model attempt.
+- [x] Validate structured outputs at the boundary.
+- [x] Treat model parse/schema failures as nominal processor failures.
+- [x] Ensure retries are bounded and idempotent.
+- [x] Require model-capable PatchEffects to carry SourceRefs before routing.
 
 Acceptance:
 
@@ -457,7 +457,7 @@ Acceptance:
 - [x] Build on the shipped capability-scoped, source-ref-backed model patch guard.
 - [x] Add low-confidence question emission.
 - [x] Add low-confidence answer handling.
-- Add stale-inbox diagnostics after the happy path has soaked.
+- [ ] Add stale-inbox diagnostics after the happy path has soaked.
 
 Acceptance:
 
