@@ -144,6 +144,7 @@ export type AdoptionPhaseRunner = (input: {
   readonly signals: ReadonlyArray<SignalEvent>;
   readonly iteration: number;
   readonly proposal: Proposal;
+  readonly signal?: AbortSignal;
 }) => Promise<ReadonlyArray<RunnerResult>>;
 
 // ----- ViewPhaseRunner ------------------------------------------------------
@@ -176,6 +177,7 @@ export type ViewPhaseRunner = (input: {
   readonly adopted: CommitOid;
   readonly commandName: string;
   readonly commandArgs: unknown;
+  readonly signal?: AbortSignal;
 }) => Promise<RunnerResult | null>;
 
 // ----- GardenPhaseRunner ----------------------------------------------------
@@ -215,6 +217,7 @@ export type GardenPhaseRunner = (input: {
   readonly changedPaths: ReadonlyArray<string>;
   readonly signals: ReadonlyArray<SignalEvent>;
   readonly proposal: Proposal;
+  readonly signal?: AbortSignal;
 }) => Promise<ReadonlyArray<RunnerResult>>;
 
 /**

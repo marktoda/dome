@@ -371,7 +371,7 @@ Acceptance:
 - [x] Model processor succeeds and records cost.
 - [x] Malformed model output becomes a diagnostic/run failure, not a patch.
 - [x] Cost budget denial is visible and recoverable.
-- [ ] Timeout/cancellation does not leave orphan running rows.
+- [x] Timeout/cancellation does not leave orphan running rows.
 
 ## Milestone 7 - LLM Garden and Intake
 

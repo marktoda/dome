@@ -367,6 +367,80 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(row.durationMs).not.toBeNull();
   });
 
+  test("garden processor cancellation lands cancelled row without orphaning", async () => {
+    const ledger = await openLedger();
+    let processorSignal: AbortSignal | undefined;
+    let started: (() => void) | undefined;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let laterInvoked = false;
+    const p = makeFixtureProcessor({
+      id: "test.ledger.cancelled-a",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      execution: { class: "background", timeoutMs: 5_000 },
+      run: async (ctx) => {
+        processorSignal = ctx.signal;
+        started?.();
+        await waitForAbort(ctx.signal);
+        return [];
+      },
+    });
+    const later = makeFixtureProcessor({
+      id: "test.ledger.cancelled-b",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        laterInvoked = true;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p, later], ledger);
+    const controller = new AbortController();
+
+    const run = rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+      signal: controller.signal,
+    });
+    await startedPromise;
+    expect(processorSignal?.aborted).toBe(false);
+    controller.abort();
+    const results = await run;
+
+    expect(processorSignal?.aborted).toBe(true);
+    expect(laterInvoked).toBe(false);
+    expect(results.length).toBe(1);
+    expect(results[0]?.executionStatus).toBe("cancelled");
+    expect(results[0]?.executionError?.code).toBe("processor.cancelled");
+    const effects = results[0]?.effects ?? [];
+    expect(effects.length).toBe(1);
+    expect(effects[0]?.kind).toBe("diagnostic");
+    if (effects[0]?.kind === "diagnostic") {
+      expect(effects[0].code).toBe("processor.cancelled");
+      expect(effects[0].severity).toBe("error");
+    }
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.cancelled-a" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    expect(row.status).toBe("cancelled");
+    expect(row.finishedAt).not.toBeNull();
+    expect(row.durationMs).not.toBeNull();
+    const parsed = JSON.parse(row.error ?? "{}");
+    expect(parsed.code).toBe("processor.cancelled");
+    expect(parsed.processorId).toBe("test.ledger.cancelled-a");
+    expect(queryRuns(ledger, { processorId: "test.ledger.cancelled-b" })).toEqual(
+      [],
+    );
+    expect(queryRuns(ledger, { status: "running" })).toEqual([]);
+  });
+
   test("quarantined garden trigger is recorded as skipped with structured error", async () => {
     const ledger = await openLedger();
     let invocations = 0;

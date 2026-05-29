@@ -17,7 +17,7 @@ Shipped in the current v1 runtime:
 
 - `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
-- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`.
+- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind.
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
@@ -43,7 +43,7 @@ Terminal states are final. A terminal run never transitions again. The ledger ac
 | `running` | `Processor.run()` is executing. Under the executor boundary it executes with a bounded context and timeout. |
 | `succeeded` | `Processor.run()` returned and every emitted Effect passed schema validation at the active boundary. Capability denial of an emitted Effect does not make the run fail; the denial is a routed outcome and is ledgered separately. |
 | `failed` | `Processor.run()` threw, returned a non-array, returned malformed Effects, or hit a non-timeout runtime error. |
-| `skipped` | The runtime did not invoke the processor. Idempotency dedup skips have `error = NULL`; policy denial and future quarantine skips write structured reason JSON. |
+| `skipped` | The runtime did not invoke the processor. Idempotency dedup skips have `error = NULL`; policy denial and quarantine skips write structured reason JSON. |
 | `timed_out` | The run exceeded its phase timeout. Effects produced after timeout are discarded. |
 | `cancelled` | The engine intentionally stopped the run during shutdown/drain cancellation or explicit operator intervention. |
 
@@ -195,11 +195,11 @@ Engine orchestration layers may add diagnostics outside a processor run: adoptio
 
 The execution contract is pinned in stages.
 
-Already pinned in this branch:
+Already pinned:
 
 - Executor-boundary tests assert success, thrown errors, invalid output, timeout, cancellation, diagnostic severity, discarded late effects, and model-provider abort propagation at `executeProcessor`.
 - Ledger tests assert `timed_out` / `cancelled` status persistence, structured error JSON, query filtering, and terminal transition filtering.
-- Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, and garden timeout discards late output while recording `timed_out`.
+- Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, garden timeout discards late output while recording `timed_out`, and runner cancellation records `cancelled` without leaving orphan `running` rows.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
 - Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.

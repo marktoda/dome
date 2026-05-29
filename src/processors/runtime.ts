@@ -325,6 +325,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 
     const results: RunnerResult[] = [];
     for (const processor of adoptionProcessors) {
+      if (input.signal?.aborted === true) break;
       const readableSignals = readableSignalsForProcessor({
         processor,
         signals: input.signals,
@@ -349,6 +350,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(input.signal !== undefined ? { signal: input.signal } : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
@@ -375,6 +377,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 
     const results: RunnerResult[] = [];
     for (const processor of gardenProcessors) {
+      if (input.signal?.aborted === true) break;
       const readableSignals = readableSignalsForProcessor({
         processor,
         signals: input.signals,
@@ -403,6 +406,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(input.signal !== undefined ? { signal: input.signal } : {}),
         ...(operational !== undefined ? { operational } : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
@@ -482,6 +486,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       extensionIdFor,
       ledger,
       executionState,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
       ...(pageTypes !== undefined ? { pageTypes } : {}),
       ...(modelProvider !== undefined ? { modelProvider } : {}),
       // View-phase processors receive the projection query view so they
@@ -569,6 +574,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly ledger: LedgerDb | undefined;
+  readonly signal?: AbortSignal;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
   readonly pageTypes?: PageTypeRegistry;
@@ -625,6 +631,7 @@ export async function dispatchOneProcessor<TEnvelope>(
     runId: frame.runId,
     makeContext: executionInput.makeContext,
     policy: policyResult.value,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     run: frame.processor.run as (ctx: ProcessorContext<unknown>) => Promise<unknown>,
   });
 
