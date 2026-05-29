@@ -620,6 +620,9 @@ Work:
 - [x] Surface garden sub-Proposals, garden diagnostics, and operational pump
       work in `dome sync --json` and foreground `dome serve` follow-up lines,
       so successful adoption does not hide follow-on maintenance trouble.
+- [x] Add diagnostic summary/filter support to `dome inspect diagnostics`
+      so noisy real vaults can be triaged by severity, code, and processor
+      without paging through raw rows.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

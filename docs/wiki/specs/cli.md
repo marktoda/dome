@@ -38,6 +38,7 @@ dome run <name> [--json] [-- <processor flags>]
                                 Invoke a command-triggered view processor.
 dome rebuild                    Wipe and rebuild projection store from adopted commit.
 dome inspect <subject> [--limit <n>] [--json]
+             [--summary] [--severity <level>] [--code <code>] [--processor <id>]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox, quarantine.
 dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
@@ -422,6 +423,14 @@ Subjects (v1.0):
 
 `--limit <n>` caps the row count (default 20). `--json` emits structured
 rows for cross-tool consumption.
+
+For noisy real vaults, `dome inspect diagnostics` also accepts
+`--summary`, `--severity <info|warning|error|block>`, `--code <code>`, and
+`--processor <id>`. `--summary` groups unresolved diagnostics by
+severity/code and includes the first message and SourceRef example for each
+group; `--limit` caps groups in summary mode. The filter flags apply to both
+row and summary output. They are diagnostic-only flags so `dome inspect runs
+--summary` is a usage error rather than a silently ignored option.
 
 Exit codes: 0 on a clean read (including empty result sets); 1 on
 runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed

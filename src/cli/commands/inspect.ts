@@ -19,10 +19,12 @@
 //   - 64 on usage error (unknown subject, missing positional).
 //
 // House-style notes:
-//   - `--limit N` caps the row count. Default 20. Applied at the SQL
-//     layer for `runs`; for the projection / outbox surfaces (which
-//     don't take a `limit` arg in the current query API) the cap is
-//     applied post-fetch via array slicing.
+//   - `--limit N` caps the row or summary group count. Default 20.
+//     Applied at the SQL layer for `runs`; for the projection / outbox
+//     surfaces (which don't take a `limit` arg in the current query API)
+//     the cap is applied post-fetch via array slicing.
+//   - `diagnostics --summary` groups unresolved diagnostics by severity/code
+//     so noisy real vaults have a first-glance triage view.
 //   - `--json` emits structured rows.
 //
 // Renamed from the pre-recut `dome doctor --show <subject>` in the v1.0
@@ -34,7 +36,10 @@ import { resolve } from "node:path";
 
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
-import { queryDiagnostics } from "../../projections/diagnostics";
+import {
+  queryDiagnostics,
+  type DiagnosticsFilter,
+} from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
 
@@ -53,6 +58,18 @@ const VALID_SUBJECTS = new Set<string>([
   "outbox",
   "quarantine",
 ]);
+const VALID_DIAGNOSTIC_SEVERITIES = new Set([
+  "info",
+  "warning",
+  "error",
+  "block",
+] as const);
+const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
+  block: 0,
+  error: 1,
+  warning: 2,
+  info: 3,
+};
 
 export type RunInspectOptions = {
   readonly subject?: string | undefined;
@@ -60,6 +77,10 @@ export type RunInspectOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly limit?: string | number | boolean | undefined;
   readonly json?: boolean | undefined;
+  readonly summary?: boolean | undefined;
+  readonly severity?: string | undefined;
+  readonly code?: string | undefined;
+  readonly processor?: string | undefined;
 };
 
 // ----- runInspect --------------------------------------------------------------
@@ -95,6 +116,17 @@ export async function runInspect(
     console.error("dome inspect: --limit must be a positive integer.");
     return 64;
   }
+  const diagnosticOptions = parseDiagnosticOptions({
+    subject,
+    ...(options.summary !== undefined ? { summary: options.summary } : {}),
+    ...(options.severity !== undefined ? { severity: options.severity } : {}),
+    ...(options.code !== undefined ? { code: options.code } : {}),
+    ...(options.processor !== undefined ? { processor: options.processor } : {}),
+  });
+  if (diagnosticOptions.ok === false) {
+    console.error(diagnosticOptions.message);
+    return 64;
+  }
 
   // Default `bundlesRoot` is the SDK's shipped first-party bundles.
   // Override via `--bundles-root <path>` for vault-local third-party
@@ -110,9 +142,14 @@ export async function runInspect(
   const runtime = runtimeResult.value;
 
   try {
-    let rows: ReadonlyArray<Row>;
+    let result: InspectResult;
     try {
-      rows = collectRows(subject, runtime, limit);
+      result = collectInspectResult({
+        subject,
+        runtime,
+        limit,
+        diagnosticOptions: diagnosticOptions.value,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(
@@ -121,10 +158,9 @@ export async function runInspect(
       return 1;
     }
     if (options.json === true) {
-      console.log(formatJson(rows));
+      console.log(formatJson(jsonForResult(result)));
     } else {
-      console.log(`dome inspect ${subject}:`);
-      console.log(formatTable(rows));
+      printTextResult(subject, result);
     }
     return 0;
   } finally {
@@ -135,6 +171,34 @@ export async function runInspect(
 // ----- internals ------------------------------------------------------------
 
 type Row = Record<string, unknown>;
+type DiagnosticSeverity = "info" | "warning" | "error" | "block";
+type ParsedDiagnosticOptions = {
+  readonly summary: boolean;
+  readonly filter: DiagnosticsFilter;
+  readonly code?: string;
+};
+type ParseDiagnosticOptionsResult =
+  | { readonly ok: true; readonly value: ParsedDiagnosticOptions | null }
+  | { readonly ok: false; readonly message: string };
+
+type DiagnosticGroup = {
+  readonly severity: DiagnosticSeverity;
+  readonly code: string;
+  readonly count: number;
+  readonly first_message: string;
+  readonly first_source_refs: string;
+};
+
+type DiagnosticSummary = {
+  readonly total: number;
+  readonly group_count: number;
+  readonly shown_groups: number;
+  readonly groups: ReadonlyArray<DiagnosticGroup>;
+};
+
+type InspectResult =
+  | { readonly kind: "rows"; readonly rows: ReadonlyArray<Row> }
+  | { readonly kind: "diagnostic-summary"; readonly summary: DiagnosticSummary };
 
 /**
  * Dispatch on the subject. Each branch queries the relevant surface and
@@ -143,10 +207,41 @@ type Row = Record<string, unknown>;
  *
  * The subject is already narrowed to one of the four valid strings.
  */
+function collectInspectResult(opts: {
+  readonly subject: string;
+  readonly runtime: VaultRuntime;
+  readonly limit: number;
+  readonly diagnosticOptions: ParsedDiagnosticOptions | null;
+}): InspectResult {
+  if (
+    opts.subject === "diagnostics" &&
+    opts.diagnosticOptions?.summary === true
+  ) {
+    return {
+      kind: "diagnostic-summary",
+      summary: summarizeDiagnostics(
+        opts.runtime,
+        opts.limit,
+        opts.diagnosticOptions,
+      ),
+    };
+  }
+  return {
+    kind: "rows",
+    rows: collectRows(
+      opts.subject,
+      opts.runtime,
+      opts.limit,
+      opts.diagnosticOptions,
+    ),
+  };
+}
+
 function collectRows(
   subject: string,
   runtime: VaultRuntime,
   limit: number,
+  diagnosticOptions: ParsedDiagnosticOptions | null,
 ): ReadonlyArray<Row> {
   switch (subject) {
     case "runs": {
@@ -162,7 +257,7 @@ function collectRows(
       }));
     }
     case "diagnostics": {
-      const all = queryDiagnostics(runtime.projectionDb);
+      const all = filteredDiagnostics(runtime, diagnosticOptions);
       return all.slice(0, limit).map((d) => ({
         severity: d.severity,
         code: d.code,
@@ -212,6 +307,136 @@ function collectRows(
       // Unreachable — VALID_SUBJECTS guard above enforces this.
       return [];
   }
+}
+
+function summarizeDiagnostics(
+  runtime: VaultRuntime,
+  limit: number,
+  diagnosticOptions: ParsedDiagnosticOptions,
+): DiagnosticSummary {
+  const diagnostics = filteredDiagnostics(runtime, diagnosticOptions);
+  const grouped = new Map<string, DiagnosticGroup>();
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.severity}\u0000${diagnostic.code}`;
+    const existing = grouped.get(key);
+    if (existing !== undefined) {
+      grouped.set(key, {
+        ...existing,
+        count: existing.count + 1,
+      });
+      continue;
+    }
+    grouped.set(key, {
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      count: 1,
+      first_message: diagnostic.message,
+      first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
+    });
+  }
+
+  const groups = [...grouped.values()].sort(compareDiagnosticGroups);
+  return Object.freeze({
+    total: diagnostics.length,
+    group_count: groups.length,
+    shown_groups: Math.min(limit, groups.length),
+    groups: Object.freeze(groups.slice(0, limit)),
+  });
+}
+
+function filteredDiagnostics(
+  runtime: VaultRuntime,
+  diagnosticOptions: ParsedDiagnosticOptions | null,
+): ReturnType<typeof queryDiagnostics> {
+  const diagnostics = queryDiagnostics(
+    runtime.projectionDb,
+    diagnosticOptions?.filter,
+  );
+  const code = diagnosticOptions?.code;
+  if (code === undefined) return diagnostics;
+  return Object.freeze(diagnostics.filter((d) => d.code === code));
+}
+
+function compareDiagnosticGroups(
+  a: DiagnosticGroup,
+  b: DiagnosticGroup,
+): number {
+  if (b.count !== a.count) return b.count - a.count;
+  if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) {
+    return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+  }
+  return a.code.localeCompare(b.code);
+}
+
+function jsonForResult(
+  result: InspectResult,
+): ReadonlyArray<Row> | DiagnosticSummary {
+  return result.kind === "rows" ? result.rows : result.summary;
+}
+
+function printTextResult(subject: string, result: InspectResult): void {
+  if (result.kind === "rows") {
+    console.log(`dome inspect ${subject}:`);
+    console.log(formatTable(result.rows));
+    return;
+  }
+  console.log("dome inspect diagnostics summary:");
+  console.log(
+    `total ${result.summary.total} | groups ${result.summary.shown_groups}/${result.summary.group_count}`,
+  );
+  console.log(formatTable(result.summary.groups));
+}
+
+function parseDiagnosticOptions(opts: {
+  readonly subject: string;
+  readonly summary?: boolean;
+  readonly severity?: string;
+  readonly code?: string;
+  readonly processor?: string;
+}): ParseDiagnosticOptionsResult {
+  const hasDiagnosticOption =
+    opts.summary === true ||
+    opts.severity !== undefined ||
+    opts.code !== undefined ||
+    opts.processor !== undefined;
+  if (!hasDiagnosticOption) {
+    return { ok: true, value: null };
+  }
+  if (opts.subject !== "diagnostics") {
+    return {
+      ok: false,
+      message:
+        "dome inspect: --summary, --severity, --code, and --processor are only valid for the diagnostics subject.",
+    };
+  }
+
+  let severity: DiagnosticSeverity | undefined;
+  if (opts.severity !== undefined) {
+    if (!isDiagnosticSeverity(opts.severity)) {
+      return {
+        ok: false,
+        message:
+          "dome inspect diagnostics: --severity must be one of info, warning, error, block.",
+      };
+    }
+    severity = opts.severity;
+  }
+
+  return {
+    ok: true,
+    value: {
+      summary: opts.summary === true,
+      filter: {
+        ...(severity !== undefined ? { severity } : {}),
+        ...(opts.processor !== undefined ? { processorId: opts.processor } : {}),
+      },
+      ...(opts.code !== undefined ? { code: opts.code } : {}),
+    },
+  };
+}
+
+function isDiagnosticSeverity(value: string): value is DiagnosticSeverity {
+  return VALID_DIAGNOSTIC_SEVERITIES.has(value as DiagnosticSeverity);
 }
 
 function formatSourceRefs(

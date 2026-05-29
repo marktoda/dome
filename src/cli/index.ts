@@ -105,6 +105,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "runs, diagnostics, questions, outbox, or quarantine.",
     )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
+    .option("--summary", "Group diagnostics by severity and code.")
+    .option("--severity <level>", "Filter diagnostics by severity.")
+    .option("--code <code>", "Filter diagnostics by code.")
+    .option("--processor <id>", "Filter diagnostics by processor id.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -116,6 +120,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           limit: options.limit,
           json: options.json,
+          summary: options.summary,
+          severity: options.severity,
+          code: options.code,
+          processor: options.processor,
         }),
       );
     });
@@ -431,6 +439,10 @@ type InitCliOptions = {
 
 type InspectCliOptions = {
   readonly limit?: number;
+  readonly summary?: boolean;
+  readonly severity?: string;
+  readonly code?: string;
+  readonly processor?: string;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

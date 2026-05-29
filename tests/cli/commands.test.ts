@@ -679,6 +679,159 @@ describe("runInspect", () => {
     expect(out).toContain("wiki/new.md:3-5");
   });
 
+  test("diagnostics --summary groups by severity and code", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.repeated",
+          message: "First repeated diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/new.md" }),
+          ],
+        }),
+        processorId: "test.cli",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.repeated",
+          message: "Second repeated diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" }),
+          ],
+        }),
+        processorId: "test.cli",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "error",
+          code: "test.single",
+          message: "Single diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/other.md" }),
+          ],
+        }),
+        processorId: "test.other",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        summary: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const payload = JSON.parse(captured.out.join("\n")) as {
+      readonly total: number;
+      readonly group_count: number;
+      readonly groups: ReadonlyArray<{
+        readonly severity: string;
+        readonly code: string;
+        readonly count: number;
+        readonly first_source_refs: string;
+      }>;
+    };
+    expect(payload.total).toBe(3);
+    expect(payload.group_count).toBe(2);
+    expect(payload.groups[0]).toEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "test.repeated",
+        count: 2,
+      }),
+    );
+    expect(payload.groups[0]?.first_source_refs).toContain("wiki/seed.md");
+  });
+
+  test("diagnostics filters by severity, code, and processor", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.keep",
+          message: "Keep this diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/new.md" }),
+          ],
+        }),
+        processorId: "test.keep",
+        proposalId: "prop_cli_filters",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "error",
+          code: "test.drop",
+          message: "Drop this diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" }),
+          ],
+        }),
+        processorId: "test.drop",
+        proposalId: "prop_cli_filters",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        severity: "warning",
+        code: "test.keep",
+        processor: "test.keep",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly severity: string;
+      readonly code: string;
+      readonly message: string;
+    }>;
+    expect(rows).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "test.keep",
+        message: "Keep this diagnostic",
+      }),
+    ]);
+  });
+
   test("subjects 'questions' and 'outbox' both return 0", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -755,6 +908,38 @@ describe("runInspect", () => {
     expect(await runInspect({ subject: "runs", limit: "10x" })).toBe(64);
     expect(captured.err.join("\n")).toContain(
       "--limit must be a positive integer",
+    );
+  });
+
+  test("diagnostic-only flags reject other subjects", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        summary: true,
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "only valid for the diagnostics subject",
+    );
+  });
+
+  test("invalid diagnostic severity returns 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        severity: "fatal",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--severity must be one of info, warning, error, block",
     );
   });
 });
