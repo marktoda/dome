@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: axiom
 ---
@@ -25,7 +25,7 @@ The invariant also lets the engine handle schema migrations cheaply: when the SD
 
 **Counter-example:** A processor emits a `FactEffect` that "extracts" a claim purely from its own internal state — not from any vault content. The fact lands in `projection.db.facts`. The user wipes `projection.db` and runs `dome rebuild`; the same processor re-runs against the same adopted commit and emits the same effect (idempotency), the same fact lands in the table. Idempotent processors + deterministic input = rebuildable projections. A processor that emits non-idempotent facts (e.g., a UUID for each invocation) violates [[wiki/specs/processors]] §"Idempotency" and breaks this invariant; the fix is in the processor, not in the projection.
 
-**Test guarantee:** `tests/invariants/projections-are-rebuildable.test.ts` pins the invariant doc into the AC3 lockstep surface. The high-level rebuild behavior is exercised by [[wiki/scenarios/cli-surface]] coverage: wipe projection rows, run `dome rebuild`, and assert diagnostics/facts/search rows are restored from adopted state without touching the run ledger or outbox.
+**Test guarantee:** `tests/invariants/projections-are-rebuildable.test.ts` pins the invariant doc into the AC3 lockstep surface. The high-level rebuild behavior is exercised by the `tests/harness/scenarios/cli-surface/` coverage: wipe projection rows, run `dome rebuild`, and assert diagnostics/facts/search rows are restored from adopted state without touching the run ledger or outbox.
 
 **Related:**
 - [[wiki/specs/projection-store]] §"Rebuild path"

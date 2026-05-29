@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 tier: axiom
 ---

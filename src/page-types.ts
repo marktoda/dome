@@ -65,10 +65,13 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       aliases: "optional",
       last_interaction: "optional",
     }),
-    pageTypeDeclaration("concept", "dome.default"),
+    pageTypeDeclaration("concept", "dome.default", {
+      status: "optional",
+    }),
     pageTypeDeclaration("source", "dome.default", {
       url: "required",
       author: "optional",
+      external: "optional",
       published: "optional",
     }),
     pageTypeDeclaration("synthesis", "dome.default", {

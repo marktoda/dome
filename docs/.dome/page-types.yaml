@@ -29,6 +29,11 @@ extensions:
       enforced_at_status: shipped | implemented | partial | deferred
   - name: matrix  # behavior matrices (tool × invariant, intent × prompt, event × payload)
     frontmatter_extras: {}
+  - name: linter  # structural lint rules encoded as substrate pages
+    frontmatter_extras:
+      coverage: off-matrix | matrix | deferred
+      enforced_at: <path>
+      enforced_at_status: shipped | implemented | partial | deferred
   - name: gotcha  # design gotchas / scars / failure modes
     frontmatter_extras:
       coverage: off-matrix | matrix | deferred

@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-26
-updated: 2026-05-26
+updated: 2026-05-29
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]"]
 severity: high
 coverage: off-matrix
