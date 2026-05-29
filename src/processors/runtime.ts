@@ -707,14 +707,14 @@ function resolveDispatchPolicy(frame: DispatchFrame): ReturnType<
 
 function outputPolicyForFrame(frame: DispatchFrame): ProcessorOutputPolicy {
   return Object.freeze({
-    requireSourceBackedPatchEffects: hasEffectiveCapability(
+    requireSourceBackedPatchEffects: hasEffectiveNonAdoptionCapability(
       frame,
       "model.invoke",
     ),
   });
 }
 
-function hasEffectiveCapability(
+function hasEffectiveNonAdoptionCapability(
   frame: DispatchFrame,
   kind: Capability["kind"],
 ): boolean {
