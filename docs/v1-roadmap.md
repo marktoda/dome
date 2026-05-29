@@ -244,6 +244,8 @@ Work:
 - [x] Make answer-handler dispatch retryable after partial failure by
       keeping handler status in `answers.db` and re-dispatching unanswered
       handler work when `dome answer` is re-run.
+- [x] Move durable answer-handler dispatch policy out of CLI glue and into
+      the engine question-answering boundary.
 - [x] Implement probe-only health checks for failed outbox rows, orphan
       running rows, and quarantined processors.
 - [x] Add health probes for projection cache-key skew, instruction drift,

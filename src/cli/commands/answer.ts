@@ -7,18 +7,11 @@
 import { resolve } from "node:path";
 
 import {
-  answerHandlersNeedDispatch,
-  getQuestionAnswer,
-  markAnswerHandlerAttempt,
-  markAnswerHandlersFailed,
-  markAnswerHandlersHandled,
-} from "../../answers/question-answers";
-import { answerQuestionDurably } from "../../engine/question-answering";
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
-import {
-  runAnswerHandlersForQuestion,
-  type AnswerHandlersForQuestionResult,
-} from "../../engine/compiler-host";
+  answerQuestionDurably,
+  dispatchAnswerHandlersIfNeeded,
+  type AnswerHandlerDispatchResult,
+} from "../../engine/question-answering";
+import { openVaultRuntime } from "../../engine/vault-runtime";
 import {
   getQuestionRecord,
   type AnswerQuestionResult,
@@ -82,7 +75,7 @@ export async function runAnswer(
     });
     const handlerResult =
       result.kind === "answered" || result.kind === "already-answered"
-        ? await runAnswerHandlersIfNeeded({
+        ? await dispatchAnswerHandlersIfNeeded({
             runtime,
             question: result.record,
           })
@@ -97,83 +90,10 @@ export async function runAnswer(
   }
 }
 
-async function runAnswerHandlersIfNeeded(opts: {
-  readonly runtime: VaultRuntime;
-  readonly question: QuestionRecord;
-}): Promise<AnswerHandlersForQuestionResult | null> {
-  const durable = getQuestionAnswer(
-    opts.runtime.answersDb,
-    opts.question.effect.idempotencyKey,
-  );
-  if (durable !== null && !answerHandlersNeedDispatch(durable)) {
-    return null;
-  }
-
-  markAnswerHandlerAttempt(
-    opts.runtime.answersDb,
-    opts.question.effect.idempotencyKey,
-    new Date().toISOString(),
-  );
-  const result = await runAnswerHandlersForQuestion(opts);
-  if (result.kind === "skipped") {
-    markAnswerHandlersFailed(opts.runtime.answersDb, {
-      idempotencyKey: opts.question.effect.idempotencyKey,
-      status: "skipped",
-      error: result.reason,
-    });
-    return result;
-  }
-
-  const crash = result.result.diagnostics.find(
-    (diagnostic) => diagnostic.code === "answer.dispatch-crashed",
-  );
-  if (crash !== undefined) {
-    markAnswerHandlersFailed(opts.runtime.answersDb, {
-      idempotencyKey: opts.question.effect.idempotencyKey,
-      status: "failed",
-      error: crash.message,
-    });
-    return result;
-  }
-
-  const failedRun = result.result.runs.find(
-    (run) => run.executionStatus !== "succeeded",
-  );
-  if (failedRun !== undefined) {
-    markAnswerHandlersFailed(opts.runtime.answersDb, {
-      idempotencyKey: opts.question.effect.idempotencyKey,
-      status: "failed",
-      error:
-        failedRun.executionError?.message ??
-        `answer handler ${failedRun.processorId} finished with ${failedRun.executionStatus}`,
-    });
-    return result;
-  }
-
-  const routingDiagnostic = result.result.diagnostics.find(
-    (diagnostic) =>
-      diagnostic.severity === "error" || diagnostic.severity === "block",
-  );
-  if (routingDiagnostic !== undefined) {
-    markAnswerHandlersFailed(opts.runtime.answersDb, {
-      idempotencyKey: opts.question.effect.idempotencyKey,
-      status: "failed",
-      error: routingDiagnostic.message,
-    });
-    return result;
-  }
-
-  markAnswerHandlersHandled(opts.runtime.answersDb, {
-    idempotencyKey: opts.question.effect.idempotencyKey,
-    handledAt: new Date().toISOString(),
-  });
-  return result;
-}
-
 function printAnswerResult(
   result: AnswerQuestionResult,
   json: boolean,
-  handlerResult: AnswerHandlersForQuestionResult | null,
+  handlerResult: AnswerHandlerDispatchResult,
 ): number {
   switch (result.kind) {
     case "not-found":
@@ -272,7 +192,7 @@ function recordToJson(record: QuestionRecord): Record<string, unknown> {
 }
 
 function handlerResultToJson(
-  result: AnswerHandlersForQuestionResult,
+  result: NonNullable<AnswerHandlerDispatchResult>,
 ): Record<string, unknown> {
   if (result.kind === "skipped") {
     return { status: "skipped", reason: result.reason };
