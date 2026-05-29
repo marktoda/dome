@@ -224,6 +224,40 @@ describe("runSync empty-diff init", () => {
     expect(outBlob).not.toContain("dome serve:   iteration");
   }, 10_000);
 
+  test("--filter-processor narrows verbose output to matching processors", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(initCode).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    await writeFile(join(f.vaultPath, "wiki/filter.md"), VALID_CONCEPT_PAGE);
+    await commit({
+      path: f.vaultPath,
+      message: "add filtered page\n",
+      files: ["wiki/filter.md"],
+    });
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      verbose: true,
+      filterProcessor: "dome.markdown.normalize-*",
+    });
+    expect(code).toBe(0);
+
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
+    expect(outBlob).not.toContain("dome sync:   iteration");
+    expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
+  }, 10_000);
+
   test("--quiet suppresses non-error text output without changing adoption", async () => {
     const f = await makeFixture();
     fixtures.push(f);

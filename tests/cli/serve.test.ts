@@ -338,6 +338,56 @@ describe("runServe smoke", () => {
     expect(captured.err.join("\n")).toBe("");
   }, 10_000);
 
+  test("--filter-processor narrows verbose adoption events", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(initCode).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+    captured.out = [];
+    captured.err = [];
+
+    await writeFile(join(f.vaultPath, "wiki/filter.md"), VALID_CONCEPT_PAGE);
+    const newSha = await commit({
+      path: f.vaultPath,
+      message: "add filtered page\n",
+      files: ["wiki/filter.md"],
+    });
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+        verbose: true,
+        filterProcessor: "dome.markdown.normalize-*",
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === newSha,
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
+    expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
+    expect(outBlob).not.toContain("dome serve:   iteration");
+  }, 10_000);
+
   test("coalesces HEAD movement that happens while adoption is active", async () => {
     const f = await makeFixture({
       bundlesRoot: TEST_BUNDLES_ROOT,

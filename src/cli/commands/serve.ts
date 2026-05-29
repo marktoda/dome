@@ -45,7 +45,7 @@ import {
   type DriftResult,
 } from "../../engine/compiler-host";
 import {
-  formatAdoptEvent,
+  formatFilteredAdoptEvent,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { parsePositiveIntegerValue } from "../parse-options";
@@ -74,6 +74,7 @@ export type RunServeOptions = {
   readonly pollIntervalMs?: string | number | boolean | undefined;
   readonly verbose?: boolean | undefined;
   readonly quiet?: boolean | undefined;
+  readonly filterProcessor?: string | undefined;
 };
 
 export type RunServeRuntimeOptions = {
@@ -207,6 +208,9 @@ export async function runServe(
       cancel: controller.signal,
       verbose,
       quiet,
+      ...(options.filterProcessor !== undefined
+        ? { filterProcessor: options.filterProcessor }
+        : {}),
     });
   } finally {
     // Detach signal handlers BEFORE closing the runtime, so a stray
@@ -253,6 +257,7 @@ async function pollLoop(input: {
   readonly cancel: AbortSignal;
   readonly verbose: boolean;
   readonly quiet: boolean;
+  readonly filterProcessor?: string | undefined;
 }): Promise<void> {
   const {
     runtime,
@@ -262,6 +267,7 @@ async function pollLoop(input: {
     cancel,
     verbose,
     quiet,
+    filterProcessor,
   } = input;
 
   // `lastKind` suppresses repeated log lines when the daemon enters an
@@ -288,6 +294,7 @@ async function pollLoop(input: {
           drift.kind === "drift" || nowMs >= nextOperationalAtMs,
         verbose,
         quiet,
+        ...(filterProcessor !== undefined ? { filterProcessor } : {}),
         suppressBusyLine: lastKind === "busy",
       });
       if (drift.kind === "drift" || nowMs >= nextOperationalAtMs) {
@@ -330,6 +337,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
   readonly runOperationalWhenInSync: boolean;
   readonly verbose: boolean;
   readonly quiet: boolean;
+  readonly filterProcessor?: string | undefined;
   readonly suppressBusyLine: boolean;
 }): Promise<CompilerHostTickResult | null> {
   const {
@@ -338,6 +346,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
     runOperationalWhenInSync,
     verbose,
     quiet,
+    filterProcessor,
     suppressBusyLine,
   } = input;
 
@@ -348,8 +357,15 @@ async function runCompilerHostTickWithErrorHandling(input: {
       runOperationalWhenInSync,
       ...(verbose && !quiet
         ? {
-            onEvent: (e) =>
-              console.log(formatAdoptEvent(e, { command: "serve" })),
+            onEvent: (e) => {
+              const line = formatFilteredAdoptEvent(e, {
+                command: "serve",
+                ...(filterProcessor !== undefined
+                  ? { processorFilter: filterProcessor }
+                  : {}),
+              });
+              if (line !== null) console.log(line);
+            },
           }
         : {}),
     });

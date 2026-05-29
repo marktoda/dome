@@ -512,7 +512,7 @@ Fold these into nearby milestone work when they are on-path:
 - [x] `serve --exclusive`: PID-file or lock so a second host does not race the
   first. V1 uses an always-on per-branch compiler-host lock instead of an
   opt-in flag.
-- [ ] Per-processor verbose logging:
+- [x] Per-processor verbose logging:
   `dome serve --verbose --filter-processor dome.markdown.*`.
 - [ ] `status --json`: add per-processor recent-run summary once the status schema
   is stable.

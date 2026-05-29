@@ -50,6 +50,7 @@ describe("runCli", () => {
     expect(await runCli(["serve", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("-q, --quiet");
+    expect(out).toContain("--filter-processor <glob>");
     expect(out).toContain("Suppress non-error text output");
   });
 

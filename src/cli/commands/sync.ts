@@ -45,7 +45,7 @@ import {
   type DriftResult,
 } from "../../engine/compiler-host";
 import {
-  formatAdoptEvent,
+  formatFilteredAdoptEvent,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { formatJson } from "../format";
@@ -91,6 +91,7 @@ export type RunSyncOptions = {
   readonly json?: boolean | undefined;
   readonly verbose?: boolean | undefined;
   readonly quiet?: boolean | undefined;
+  readonly filterProcessor?: string | undefined;
 };
 
 // ----- runSync --------------------------------------------------------------
@@ -173,8 +174,15 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
       drift,
       ...(verbose && !quiet && !jsonMode
         ? {
-            onEvent: (e) =>
-              console.log(formatAdoptEvent(e, { command: "sync" })),
+            onEvent: (e) => {
+              const line = formatFilteredAdoptEvent(e, {
+                command: "sync",
+                ...(options.filterProcessor !== undefined
+                  ? { processorFilter: options.filterProcessor }
+                  : {}),
+              });
+              if (line !== null) console.log(line);
+            },
           }
         : {}),
     });

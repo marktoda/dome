@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import type { AdoptEvent } from "../../engine/compiler-host";
 
+const processorGlobCache = new Map<string, Bun.Glob>();
+
 /**
  * Returns the absolute path to the SDK's shipped first-party bundles
  * directory (`<SDK>/assets/extensions/`).
@@ -51,4 +53,35 @@ export function formatAdoptEvent(
         : `${prefix}   iteration ${event.iteration}: ` +
             `${event.autoPatchCount} auto-patch${event.autoPatchCount === 1 ? "" : "es"} accumulated → re-iterating`;
   }
+}
+
+/**
+ * Format a verbose adoption event after applying the optional processor-id
+ * filter. A processor filter intentionally includes only per-processor result
+ * lines; iteration scaffolding is suppressed so filtered output stays focused.
+ */
+export function formatFilteredAdoptEvent(
+  event: AdoptEvent,
+  opts: {
+    readonly command: "serve" | "sync";
+    readonly processorFilter?: string | undefined;
+  },
+): string | null {
+  const filter = opts.processorFilter;
+  if (filter !== undefined) {
+    if (event.kind !== "processor-result") return null;
+    if (!processorIdMatches(filter, event.processorId)) return null;
+  }
+  return formatAdoptEvent(event, { command: opts.command });
+}
+
+function processorIdMatches(pattern: string, processorId: string): boolean {
+  if (pattern.length === 0) return false;
+  if (pattern === processorId) return true;
+  let glob = processorGlobCache.get(pattern);
+  if (glob === undefined) {
+    glob = new Bun.Glob(pattern);
+    processorGlobCache.set(pattern, glob);
+  }
+  return glob.match(processorId);
 }

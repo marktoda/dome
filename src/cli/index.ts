@@ -307,6 +307,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       parsePositiveIntegerOption,
     )
     .option("-v, --verbose", "Print adoption progress events.")
+    .option(
+      "--filter-processor <glob>",
+      "In verbose mode, only print matching processor ids.",
+    )
     .addOption(
       new Option("-q, --quiet", "Suppress non-error text output.").conflicts(
         "verbose",
@@ -322,6 +326,9 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           pollIntervalMs: options.pollIntervalMs,
           verbose: options.verbose,
           quiet: options.quiet,
+          ...(options.filterProcessor !== undefined
+            ? { filterProcessor: options.filterProcessor }
+            : {}),
         }),
       );
     });
@@ -347,6 +354,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("One-shot catch-up: adopt working-tree HEAD.")
     .option("--json", "Emit JSON.")
     .option("-v, --verbose", "Print adoption progress events.")
+    .option(
+      "--filter-processor <glob>",
+      "In verbose mode, only print matching processor ids.",
+    )
     .addOption(
       new Option("-q, --quiet", "Suppress non-error text output.").conflicts(
         "verbose",
@@ -362,6 +373,9 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
           verbose: options.verbose,
           quiet: options.quiet,
+          ...(options.filterProcessor !== undefined
+            ? { filterProcessor: options.filterProcessor }
+            : {}),
         }),
       );
     });
@@ -444,6 +458,7 @@ type ServeCliOptions = {
   readonly pollIntervalMs?: number;
   readonly verbose?: boolean;
   readonly quiet?: boolean;
+  readonly filterProcessor?: string;
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };
@@ -458,6 +473,7 @@ type SyncCliOptions = {
   readonly json?: boolean;
   readonly verbose?: boolean;
   readonly quiet?: boolean;
+  readonly filterProcessor?: string;
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };
