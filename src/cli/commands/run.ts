@@ -19,8 +19,8 @@
 // "command-triggered view-phase processor" pattern: each new
 // `dome run <name>` command is realized by adding a view-phase processor
 // whose `command` trigger declares `name` — no per-command code change in
-// this file is required. `viewRunner` does the lookup; the bundle loader
-// rejects collisions at load time.
+// this file is required. `viewRunner` does the lookup; registry validation
+// rejects duplicate command triggers before runtime construction succeeds.
 //
 // Exit codes:
 //   - 0   on successful run (the processor returned without throwing;
