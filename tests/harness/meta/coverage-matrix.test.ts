@@ -70,6 +70,7 @@ import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
+import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
 import "../scenarios/capabilities/model-invoke-scheduled.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";

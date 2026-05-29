@@ -10,7 +10,11 @@
 // future close/drain) from inventing its own partial lifecycle.
 
 import type { DiagnosticEffect } from "../core/effect";
-import type { Capability, TreeOid } from "../core/processor";
+import type {
+  Capability,
+  OperationalQueryView,
+  TreeOid,
+} from "../core/processor";
 import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import type { LedgerDb } from "../ledger/db";
@@ -49,6 +53,7 @@ export async function runOperationalWork(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly externalHandlers: ExternalHandlerRegistry;
+  readonly operational?: OperationalQueryView;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
@@ -80,6 +85,7 @@ export async function runOperationalWork(opts: {
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
       : {}),
+    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
       : {}),
@@ -105,6 +111,7 @@ export async function runOperationalWork(opts: {
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
       : {}),
+    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
       : {}),

@@ -371,6 +371,40 @@ export type SearchDocumentResult = {
   readonly sourceRefs: SearchDocumentEffect["sourceRefs"];
 };
 
+// ----- OperationalQueryView -------------------------------------------------
+
+export type OperationalOutboxStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "abandoned";
+
+export type OperationalOutboxRow = {
+  readonly id: number;
+  readonly capability: string;
+  readonly idempotencyKey: string;
+  readonly status: OperationalOutboxStatus;
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly enqueuedAt: string;
+  readonly nextAttemptAt: string;
+  readonly sentAt: string | null;
+  readonly lastError: string | null;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+/**
+ * Read-only operational-state surface for garden/view processors that need to
+ * explain or recover engine substrate state. This is intentionally not a raw
+ * DB handle: processors can inspect durable rows and emit Effects, while the
+ * engine-owned sinks keep all mutations capability-checked and ledgered.
+ */
+export type OperationalQueryView = {
+  readonly outbox: (filter?: {
+    readonly status?: OperationalOutboxStatus;
+  }) => ReadonlyArray<OperationalOutboxRow>;
+};
+
 // ----- ProcessorContext -----------------------------------------------------
 
 /**
@@ -379,9 +413,9 @@ export type SearchDocumentResult = {
  * (present for adoption + garden-PatchEffect-derived runs), the trigger
  * input (typed by the processor's `TInput` parameter), the cancellation
  * signal, the opaque capability token, the optional model-invoke handle
- * (present iff `model.invoke` capability granted), the optional projection query view
- * (present iff the runtime wired one — view-phase processors require it;
- * adoption-phase processors typically don't), and the `sourceRef` helper.
+ * (present iff `model.invoke` capability granted), optional query views
+ * (projection for adopted-state views; operational for recovery processors),
+ * and the `sourceRef` helper.
  *
  * `sourceRef` is modeled as a method (the spec uses method shorthand). In
  * `type X = { ... }` aliases the equivalent shape is a readonly function-
@@ -397,6 +431,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly capabilities: CapabilityToken;
   readonly modelInvoke?: ModelInvokeFn;
   readonly projection?: ProjectionQueryView;
+  readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
   readonly sourceRef: (path: string, range?: TextRange) => SourceRef;
 };

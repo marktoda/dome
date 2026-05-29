@@ -11,7 +11,12 @@ import {
 } from "../core/effect";
 import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
-import type { Capability, Processor, TreeOid } from "../core/processor";
+import type {
+  Capability,
+  OperationalQueryView,
+  Processor,
+  TreeOid,
+} from "../core/processor";
 import type { LedgerDb } from "../ledger/db";
 import {
   claimNextEligibleJob,
@@ -74,6 +79,7 @@ export async function runQueuedJobs(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
@@ -158,6 +164,7 @@ async function runOneJob(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
   readonly job: ScheduledJobRow;
   readonly processor: Processor<unknown>;
@@ -193,6 +200,7 @@ async function runOneJob(opts: {
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
       : {}),
+    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
   });
 
   for (const effect of result.effects) {

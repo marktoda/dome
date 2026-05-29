@@ -52,7 +52,12 @@ import { join } from "node:path";
 
 import { err, ok, type Result } from "../types";
 import type { CommitOid } from "../core/source-ref";
-import { treeOid, type Capability, type TreeOid } from "../core/processor";
+import {
+  treeOid,
+  type Capability,
+  type OperationalQueryView,
+  type TreeOid,
+} from "../core/processor";
 import {
   loadCapabilityPolicy,
   type CapabilityPolicy,
@@ -64,6 +69,7 @@ import { buildProjectionQueryView } from "../projections/query-view";
 import { openOutboxDb, type OutboxDb } from "../outbox/db";
 import type { ExternalHandlerRegistry } from "../outbox/dispatch";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
+import { buildOperationalQueryView } from "./operational-query-view";
 import { openQuarantineStore } from "./quarantine-store";
 import type { ModelProvider } from "./model-invoke";
 import {
@@ -124,6 +130,7 @@ export type VaultRuntime = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly externalHandlers: ExternalHandlerRegistry;
+  readonly operationalQueryView: OperationalQueryView;
   readonly modelProvider?: ModelProvider;
   readonly close: () => Promise<void>;
 };
@@ -383,6 +390,7 @@ export async function openVaultRuntime(
   //    processors (Phase 13a) — the runtime's view-phase dispatcher
   //    sets `ctx.projection` from this handle so command-triggered
   //    views can read facts / diagnostics / questions.
+  const operationalQueryView = buildOperationalQueryView({ outbox: outboxDb });
   const processorRuntime = buildRuntime({
     registry,
     resolveGrants,
@@ -390,6 +398,7 @@ export async function openVaultRuntime(
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
     projection: buildProjectionQueryView(projectionDb),
+    operational: operationalQueryView,
     pageTypes,
     executionState,
     ...(modelProvider !== undefined ? { modelProvider } : {}),
@@ -408,6 +417,7 @@ export async function openVaultRuntime(
     resolveGrants,
     extensionIdFor,
     externalHandlers,
+    operationalQueryView,
     ...(modelProvider !== undefined ? { modelProvider } : {}),
     close: async () => {
       // Close in reverse-open order. SQLite handles are idempotent under

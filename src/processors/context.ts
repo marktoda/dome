@@ -45,6 +45,7 @@
 import type {
   CapabilityToken,
   ModelInvokeFn,
+  OperationalQueryView,
   ProcessorContext,
   ProjectionQueryView,
   Snapshot,
@@ -74,6 +75,8 @@ import type { Proposal } from "../core/proposal";
  *   - `modelInvoke`  — present iff the processor has the `model.invoke`
  *                      capability granted by the broker; the runtime decides
  *                      whether to pass it.
+ *   - `operational`  — optional read-only operational state for recovery
+ *                      processors; never a raw DB handle.
  */
 export type ProcessorContextInput<TInput> = {
   readonly snapshot: Snapshot;
@@ -83,6 +86,7 @@ export type ProcessorContextInput<TInput> = {
   readonly input: TInput;
   readonly signal: AbortSignal;
   readonly modelInvoke?: ModelInvokeFn;
+  readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
   /**
    * Optional read-only projection query surface. View-phase invocations
@@ -151,6 +155,7 @@ export function makeProcessorContext<TInput>(
   };
   if (opts.modelInvoke !== undefined) ctx.modelInvoke = opts.modelInvoke;
   if (opts.projection !== undefined) ctx.projection = opts.projection;
+  if (opts.operational !== undefined) ctx.operational = opts.operational;
   if (opts.pageTypes !== undefined) ctx.pageTypes = opts.pageTypes;
   return Object.freeze(ctx);
 }

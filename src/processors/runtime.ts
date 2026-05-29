@@ -71,6 +71,7 @@ import { posix } from "node:path";
 import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
+  OperationalQueryView,
   Processor,
   ProcessorContext,
   ProjectionQueryView,
@@ -265,6 +266,7 @@ export type BuildRuntimeOptions = {
    * `ProjectionDb`.
    */
   readonly projection?: ProjectionQueryView;
+  readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
@@ -297,6 +299,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     resolveTree,
     ledger,
     projection,
+    operational,
     pageTypes,
     modelProvider,
   } = opts;
@@ -385,6 +388,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         extensionIdFor,
         ledger,
         executionState,
+        ...(operational !== undefined ? { operational } : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
       });
@@ -474,6 +478,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       // clean when no projection is wired (e.g., test harnesses that build
       // a runtime without projection).
       ...(projection !== undefined ? { projection } : {}),
+      ...(operational !== undefined ? { operational } : {}),
     });
   };
 
@@ -553,6 +558,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
   readonly pageTypes?: PageTypeRegistry;
+  readonly operational?: OperationalQueryView;
   /**
    * The projection query view to thread onto `ctx.projection`. Only the
    * view-phase caller passes this; adoption + garden callers leave it
@@ -801,6 +807,9 @@ function buildExecutionContext<TEnvelope>(
         signal,
         ...(frame.phase === "view" && opts.projection !== undefined
           ? { projection: opts.projection }
+          : {}),
+        ...(frame.phase !== "adoption" && opts.operational !== undefined
+          ? { operational: opts.operational }
           : {}),
         ...(opts.pageTypes !== undefined ? { pageTypes: opts.pageTypes } : {}),
         ...(modelInvoke !== undefined ? { modelInvoke } : {}),

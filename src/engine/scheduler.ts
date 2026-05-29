@@ -73,7 +73,12 @@ import {
 import type { ProjectionDb } from "../projections/db";
 import type { ProcessorRegistry } from "../processors/registry";
 import type { LedgerDb } from "../ledger/db";
-import type { Capability, Processor, TreeOid } from "../core/processor";
+import type {
+  Capability,
+  OperationalQueryView,
+  Processor,
+  TreeOid,
+} from "../core/processor";
 import {
   dispatchOneProcessor,
   makeSnapshot,
@@ -144,6 +149,7 @@ export async function runScheduler(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
@@ -195,6 +201,7 @@ async function runSchedulerInner(opts: {
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
@@ -213,6 +220,7 @@ async function runSchedulerInner(opts: {
     ledger,
     executionState,
     modelProvider,
+    operational,
     resolveGrants,
     extensionIdFor,
     adoptSubProposal,
@@ -330,6 +338,7 @@ async function runSchedulerInner(opts: {
         ledger,
         ...(executionState !== undefined ? { executionState } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
+        ...(operational !== undefined ? { operational } : {}),
       });
 
       // Route each emitted effect through the phase-appropriate boundary.

@@ -20,19 +20,19 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 The outbox is **never** silently discarded — every emitted `ExternalActionEffect` lands in `outbox.db` per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]]. When the engine's automatic retry (exponential backoff up to `maxAttempts`, default 3) exhausts, the row goes to `status: "failed"`. The recovery loop is engine-asks rather than user-imperative:
 
-1. **Health probe observes a terminal row.** In complete v1 this can be driven by an engine signal such as `engine.outbox.terminal-failure`; today failed rows are visible to `dome doctor` / `dome inspect outbox`.
-2. **`dome.health.outbox-failure-question` (garden-phase, v1.x, in the deferred `dome.health` bundle) subscribes to the signal** and emits a `QuestionEffect` with options `["retry", "abandon", "wait"]`, `idempotencyKey` set to the underlying row's key, and `sourceRefs` pointing at the failed row.
+1. **Health probe observes a terminal row.** Failed rows are visible to `dome doctor` / `dome inspect outbox`.
+2. **`dome.health.outbox-recovery-questions` (garden-phase, scheduled) reads failed rows through `ctx.operational`** and emits a `QuestionEffect` with options `["retry", "abandon"]`, `idempotencyKey` prefixed with `dome.health.outbox-recovery:`, and `sourceRefs` pointing at the failed row's originating source.
 3. **User inspects:** `dome inspect outbox` lists pending and failed entries with their last error message; `dome inspect questions` lists the open recovery questions.
-4. **User answers:** `dome answer <question-id> retry` re-queues the entry; the dispatcher retries. `dome answer <question-id> abandon` marks the row `status: "abandoned"`. `dome answer <question-id> wait` defers re-asking until a configurable cooldown elapses.
-5. **`dome.health.outbox-answer-handler` (garden-phase, v1 work)** declares an `answer` trigger for outbox-class questions and emits an `OutboxRecoveryEffect`, closing the loop without a per-substrate CLI verb.
+4. **User answers:** `dome answer <question-id> retry` re-queues the entry; the dispatcher retries. `dome answer <question-id> abandon` marks the row `status: "abandoned"`.
+5. **`dome.health.outbox-recovery-answer` (garden-phase)** declares an `answer` trigger for outbox recovery questions and emits an `OutboxRecoveryEffect`, closing the loop without a per-substrate CLI verb.
 
 The per-CLI-verb shape (`dome doctor --outbox-replay`, `dome doctor --outbox-abandon`) that earlier specs proposed is **retired in favor of the engine-asks model**: the engine raises Questions; the user answers via the universal `dome answer` channel; the `dome.health` bundle's answer-handler processors apply the mutation. This collapses every substrate-mutation verb-noun command into the existing Effect taxonomy.
 
-**Current status.** `dome answer`, answer-trigger dispatch, and the
-`OutboxRecoveryEffect` sink ship, but the first-party `dome.health` outbox
-question/handler processors are still deferred. Terminal outbox failures land
-as `status: "failed"` and are visible via `dome inspect outbox`; productized
-recovery still awaits the `dome.health` bundle wiring.
+**Current status.** `dome answer`, answer-trigger dispatch, the
+`OutboxRecoveryEffect` sink, and first-party `dome.health` failed-outbox
+retry/abandon questions all ship. Terminal outbox failures land as
+`status: "failed"`, are visible via `dome inspect outbox`, and can be
+recovered through `dome inspect questions` + `dome answer`.
 
 **Specific scenarios:**
 

@@ -1,0 +1,23 @@
+id: dome.health
+version: 0.1.0
+processors:
+  - id: dome.health.outbox-recovery-questions
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "* * * * *"
+    capabilities:
+      - kind: question.ask
+    module: processors/outbox-recovery-questions.ts
+
+  - id: dome.health.outbox-recovery-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "dome.health.outbox-recovery:"
+    capabilities:
+      - kind: outbox.recover
+        actions: ["retry", "abandon"]
+    module: processors/outbox-recovery-answer.ts
