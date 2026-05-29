@@ -6,6 +6,7 @@ import {
   validateDateOption,
 } from "./daily-options";
 import {
+  firstPartyViewNotFoundMessage,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -39,9 +40,11 @@ export async function runPrep(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage:
-        "dome prep: dome.daily is not installed or no prep processor is enabled. " +
-        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome prep",
+        bundleId: "dome.daily",
+        processorName: "prep",
+      }),
       noStructuredResultMessage:
         "dome prep: prep processor returned no structured result.",
     });

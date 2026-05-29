@@ -5,6 +5,7 @@
 // this file owns CLI ergonomics and rendering.
 
 import {
+  firstPartyViewNotFoundMessage,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -44,9 +45,11 @@ export async function runQuery(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage:
-        "dome query: dome.search is not installed or no query processor is enabled. " +
-        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome query",
+        bundleId: "dome.search",
+        processorName: "query",
+      }),
       noStructuredResultMessage:
         "dome query: query processor returned no structured result.",
     });

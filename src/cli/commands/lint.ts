@@ -2,6 +2,7 @@
 
 import { formatJson } from "../format";
 import {
+  firstPartyViewNotFoundMessage,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -30,9 +31,11 @@ export async function runLint(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage:
-        "dome lint: dome.lint is not installed or no lint processor is enabled. " +
-        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome lint",
+        bundleId: "dome.lint",
+        processorName: "lint",
+      }),
       noStructuredResultMessage:
         "dome lint: lint processor returned no structured result.",
     });

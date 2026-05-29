@@ -6,6 +6,7 @@ import {
   validateDateOption,
 } from "./daily-options";
 import {
+  firstPartyViewNotFoundMessage,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -47,9 +48,11 @@ export async function runAgenda(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage:
-        "dome agenda: dome.daily is not installed or no agenda processor is enabled. " +
-        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome agenda",
+        bundleId: "dome.daily",
+        processorName: "agenda",
+      }),
       noStructuredResultMessage:
         "dome agenda: agenda processor returned no structured result.",
     });

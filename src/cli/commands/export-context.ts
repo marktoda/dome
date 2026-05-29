@@ -2,6 +2,7 @@
 
 import { formatJson } from "../format";
 import {
+  firstPartyViewNotFoundMessage,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -38,9 +39,11 @@ export async function runExportContext(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage:
-        "dome export-context: dome.search is not installed or no export-context processor is enabled. " +
-        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome export-context",
+        bundleId: "dome.search",
+        processorName: "export-context",
+      }),
       noStructuredResultMessage:
         "dome export-context: processor returned no structured result.",
     });

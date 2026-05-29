@@ -67,6 +67,20 @@ export type StructuredViewCommandResult =
       readonly messages: ReadonlyArray<string>;
     };
 
+const OLD_FIRST_PARTY_CONFIG_HINT =
+  "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.";
+
+export function firstPartyViewNotFoundMessage(opts: {
+  readonly commandLabel: string;
+  readonly bundleId: string;
+  readonly processorName: string;
+}): string {
+  return (
+    `${opts.commandLabel}: ${opts.bundleId} is not installed or no ` +
+    `${opts.processorName} processor is enabled. ${OLD_FIRST_PARTY_CONFIG_HINT}`
+  );
+}
+
 export async function runSharedViewCommand(
   opts: ViewCommandOptions,
 ): Promise<ViewCommandRunResult> {
