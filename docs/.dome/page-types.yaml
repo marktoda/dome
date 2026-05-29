@@ -1,8 +1,7 @@
 # Dome vault page-types configuration
 #
 # Declares which page types are allowed under wiki/<type>/.
-# Tools enforce PAGE_TYPE_BY_DIRECTORY against this list:
-# writeDocument rejects writes to unknown types.
+# Processors enforce page-type schema diagnostics against this list.
 #
 # Defaults are the four shipped types Dome ships with.
 # Extensions are vault-specific types this project adds. Each extension may
@@ -20,7 +19,7 @@ extensions:
   - name: spec  # this project's authoritative specs (Dome SDK architecture)
     frontmatter_extras:
       status: draft | review | normative
-  - name: invariant  # named invariants the Tool layer enforces
+  - name: invariant  # named invariants the engine and processors enforce
     frontmatter_extras:
       tier: axiom | shipped-default | opt-in
       severity: required | recommended
