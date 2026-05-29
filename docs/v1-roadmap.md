@@ -114,6 +114,61 @@ V1 capability ledger:
 - [x] Initial real-vault smoke against `docs/` and `~/vaults/work`.
 - [ ] Week-long daily workflow dogfood without manual `.dome/state` edits.
 
+## Active Release Gate
+
+V1 is implementation-complete enough for release only after the real daily
+management vault survives the following audited soak. This is the remaining
+release gate; harness green is necessary but not sufficient.
+
+Target vault and host:
+
+- Vault: `~/vaults/work`.
+- Host: foreground `dome serve --vault ~/vaults/work` for normal sessions.
+- Catch-up fallback: `dome sync --vault ~/vaults/work --json` when the host was
+  intentionally off.
+- Model path: a configured command model provider for `dome.intake`, with the
+  same provider shape exercised by the V1 harness.
+
+Daily soak script, repeated for seven working days:
+
+- [ ] Start or verify `dome serve`.
+- [ ] Open Claude Code in `~/vaults/work`; rely on vault `CLAUDE.md` /
+      `AGENTS.md`, native file tools, and normal git commits.
+- [ ] Capture at least one management update in markdown: report follow-up,
+      project decision, idea, meeting note, or raw inbox capture.
+- [ ] Commit the vault change through git.
+- [ ] Let `dome serve` adopt it, or run `dome sync --json` to block.
+- [ ] Review `dome status --json`; record whether there are diagnostics,
+      questions, failed outbox rows, quarantines, pending runs, or pending
+      commits.
+- [ ] Use at least one user-value view for real work: `dome today`,
+      `dome prep`, `dome agenda <person-or-topic>`, `dome query <topic>`, or
+      `dome export-context <topic>`.
+- [ ] Resolve any open `dome.health` or intake questions through
+      `dome inspect questions` and `dome answer`, not by editing
+      `.dome/state` directly.
+
+Required evidence:
+
+- A dated soak note in the vault for each day with the commands run, status
+  summary, any open questions/diagnostics, and whether manual state edits were
+  needed.
+- `dome status --json` evidence before stopping each session.
+- For any stuck state, `dome doctor --json` plus the recovery command or code
+  fix that resolved it.
+
+Release-blocking failures:
+
+- Any manual sqlite/JSON edit under `.dome/state`.
+- A lost or overwritten human/Claude markdown edit.
+- An engine-created patch that does not materialize into the working tree.
+- A pending run, failed outbox row, quarantine, or open question that cannot be
+  understood and resolved through `status` / `doctor` / `inspect` / `answer`.
+- A model/intake failure mode that loses the raw capture or commits
+  ungrounded output without SourceRefs.
+- A repeated command or status output that is confusing enough that Claude Code
+  would plausibly take the wrong next action.
+
 ## Milestone 0 - Plan and Spec Coherence
 
 Status: shipped; maintain continuously.
