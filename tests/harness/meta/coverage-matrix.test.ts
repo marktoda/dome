@@ -58,6 +58,7 @@ import "../scenarios/cli-surface/rebuild-projection.scenario.test";
 import "../scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test";
 import "../scenarios/cli-surface/view-command-failure.scenario.test";
 import "../scenarios/cli-surface/today-task-view.scenario.test";
+import "../scenarios/cli-surface/prep-view.scenario.test";
 import "../scenarios/cli-surface/export-context.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";

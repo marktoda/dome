@@ -14,6 +14,7 @@ import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
+import { runPrep } from "./commands/prep";
 import { runQuery } from "./commands/query";
 import { runRebuild } from "./commands/rebuild";
 import { runRun } from "./commands/run";
@@ -258,6 +259,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("prep")
+    .description("Render source-backed planning context for a day.")
+    .option("--date <YYYY-MM-DD>", "Date to prep (defaults to local today).")
+    .option(
+      "--limit <n>",
+      "Maximum items per prep section.",
+      parsePositiveIntegerOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: PrepCliOptions) => {
+      setExitCode(
+        await runPrep({
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("rebuild")
     .description("Rebuild projection.db from the adopted commit.")
     .option("--json", "Emit JSON.")
@@ -384,6 +409,14 @@ type ExportContextCliOptions = {
 
 type TodayCliOptions = {
   readonly date?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type PrepCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

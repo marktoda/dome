@@ -379,6 +379,7 @@ git commit -m "describe the vault change"
 - \`dome sync\` - one-shot catch-up when no compiler host is running or when the
   user wants to wait for adoption.
 - \`dome today\` - source-backed open tasks, followups, and questions for today.
+- \`dome prep\` - source-backed planning packet for a day.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome lint\` - adopted-state hygiene report over diagnostics and lint checks.
 - \`dome export-context <topic>\` - portable source-backed context packet for

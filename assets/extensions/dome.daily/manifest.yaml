@@ -46,6 +46,17 @@ processors:
         paths: ["wiki/**/*.md"]
     module: processors/today.ts
 
+  - id: dome.daily.prep
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: prep
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md"]
+    module: processors/prep.ts
+
   - id: dome.daily.carry-forward
     version: 0.1.0
     phase: garden

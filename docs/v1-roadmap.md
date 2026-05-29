@@ -92,15 +92,15 @@ V1 capability ledger:
       probe-only `dome doctor`, and first-party outbox retry/abandon
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
-      task/followup fact indexing, capture extraction, and the `today` view
-      are shipped; `prep` remains.
+      task/followup fact indexing, and the `today` / `prep` views are shipped;
+      raw-capture extraction remains.
 - [ ] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering are shipped; daily budget enforcement and production provider
       packaging remain.
 - [ ] LLM garden/intake processors with provenance and source-backed writes.
-- [ ] User-value views: `dome today`, `dome lint`, and
-      `dome export-context` are shipped; `dome prep` remains.
+- [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
+      `dome export-context` are shipped.
 - [ ] V1 end-to-end acceptance harness and real-vault dogfood run.
 
 ## Milestone 0 - Plan and Spec Coherence
@@ -325,7 +325,7 @@ Work:
 - [x] Ask questions for ambiguous writes instead of silently guessing.
 - [x] Add `dome today` once deterministic task/followup data is useful enough
       to render.
-- [ ] Add `dome prep` once there is enough planning context to render.
+- [x] Add `dome prep` once there is enough planning context to render.
 
 Decision:
 
@@ -400,7 +400,8 @@ Acceptance:
 
 ## Milestone 8 - User-Value Views
 
-Status: mostly missing.
+Status: shipped for deterministic v1 views; future aliases can be added as
+needed.
 
 Goal: user and Claude can ask for useful views without spelunking sqlite or
 remembering internal processors.
@@ -412,8 +413,8 @@ Work:
 - [x] Implement `dome lint` as a report over diagnostics plus deterministic
       checks.
 - [x] Implement `dome today` once daily/task data is strong enough.
-- [ ] Implement `dome prep` once planning context is strong enough.
-- [ ] Keep `dome run` as a dev escape hatch, not the primary user-facing
+- [x] Implement `dome prep` once planning context is strong enough.
+- [x] Keep `dome run` as a dev escape hatch, not the primary user-facing
       command family.
 
 Acceptance:
@@ -423,7 +424,7 @@ Acceptance:
 - [x] Lint report is stable and exits nonzero only on defined severity
       thresholds.
 - [x] Today view renders useful daily/task data.
-- [ ] Prep view renders useful planning data.
+- [x] Prep view renders useful planning data.
 
 ## Milestone 9 - V1 Release Hardening
 
@@ -461,7 +462,7 @@ Required for daily value:
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, and `dome today` shipped; raw-capture compilation and prep view remain |
+| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; raw-capture compilation remains |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 
 Optional or conditional:

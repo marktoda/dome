@@ -209,7 +209,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, stale `updated:` dates, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
-| `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today | Creates daily notes, carries unfinished markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders today's action surface. |
+| `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today, prep | Creates daily notes, carries unfinished markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains the FTS5 projection; answers adopted-state query and context-packet requests. |
 

@@ -38,7 +38,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 |---|---|---|---|---|---|
 | "What did I decide about X" | shipped | `dome.search.query` | view (command via `dome query`) | none (FTS; narrative rendering remains planned) | ViewEffect (structured adopted-state matches) |
 | "What's on the agenda with [person]" | planned | `dome.daily.agenda-with` | view (command) | `assets/extensions/dome.daily/processors/agenda-with.prompt.md` | ViewEffect (agenda markdown) |
-| "Prep for tomorrow" | planned | `dome.daily.prep` | view (command, often invoked manually) | `assets/extensions/dome.daily/processors/prep.prompt.md` | ViewEffect (prep markdown) |
+| "Prep for tomorrow" | shipped deterministic | `dome.daily.prep` | view (command via `dome prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
 | "Week in review" | planned | `dome.daily.week-review` | view (cron + command) | `assets/extensions/dome.daily/processors/week-review.prompt.md` | ViewEffect (review markdown), optionally PatchEffect (write the review to wiki/syntheses/) |
 | "Export context for cross-AI handoff" | shipped | `dome.search.export-context` | view (command via `dome export-context <topic>`) | none (FTS + facts; narrative rendering remains planned) | ViewEffect (portable context packet) |
 

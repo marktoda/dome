@@ -1,4 +1,4 @@
-// cli/commands/today: first-class wrapper for the dome.daily.today view.
+// cli/commands/prep: first-class wrapper for the dome.daily.prep view.
 
 import { formatJson } from "../format";
 import {
@@ -11,30 +11,36 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 
-export type TodayCommandOptions = {
+export type PrepCommandOptions = {
   readonly date?: string | undefined;
+  readonly limit?: number | undefined;
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
 };
 
-export async function runToday(
-  options: TodayCommandOptions = {},
+const DEFAULT_LIMIT = 12;
+
+export async function runPrep(
+  options: PrepCommandOptions = {},
 ): Promise<number> {
   const date = options.date ?? defaultLocalDateString();
-  if (!validateDateOption("dome today", date)) return 64;
+  if (!validateDateOption("dome prep", date)) return 64;
 
   try {
     const run = await runStructuredViewCommand({
-      commandLabel: "dome today",
-      commandName: "today",
-      commandArgs: Object.freeze({ date }),
+      commandLabel: "dome prep",
+      commandName: "prep",
+      commandArgs: Object.freeze({
+        date,
+        limit: options.limit ?? DEFAULT_LIMIT,
+      }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
       notFoundMessage:
-        "dome today: dome.daily is not installed or no today processor is enabled.",
+        "dome prep: dome.daily is not installed or no prep processor is enabled.",
       noStructuredResultMessage:
-        "dome today: today processor returned no structured result.",
+        "dome prep: prep processor returned no structured result.",
     });
 
     if (run.kind === "error") {
@@ -42,23 +48,23 @@ export async function runToday(
       return run.exitCode;
     }
     printViewCommandMessages(
-      structuredViewBrokerMessages("dome today", run.brokerDiagnostics),
+      structuredViewBrokerMessages("dome prep", run.brokerDiagnostics),
     );
 
     if (options.json === true) {
       console.log(formatJson(run.data));
     } else {
-      console.log(formatTodayResult(run.data));
+      console.log(formatPrepResult(run.data));
     }
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome today: failed: ${msg}`);
+    console.error(`dome prep: failed: ${msg}`);
     return 1;
   }
 }
 
-type TodayData = {
+type PrepData = {
   readonly date: string;
   readonly daily: {
     readonly path: string;
@@ -69,65 +75,39 @@ type TodayData = {
     readonly followups: number;
     readonly questions: number;
   };
-  readonly openTasks: ReadonlyArray<TodayTask>;
-  readonly followups: ReadonlyArray<TodayTask>;
-  readonly questions: ReadonlyArray<TodayQuestion>;
+  readonly planningItems: ReadonlyArray<PrepItem>;
+  readonly markdown: string;
 };
 
-type TodayTask = {
+type PrepItem = {
+  readonly kind: string;
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
-  readonly followup: boolean;
 };
 
-type TodayQuestion = {
-  readonly question: string;
-  readonly path: string;
-  readonly line: number | null;
-};
+function formatPrepResult(data: unknown): string {
+  const prep = parsePrepData(data);
+  if (prep.markdown.trim().length > 0) return prep.markdown;
 
-function formatTodayResult(data: unknown): string {
-  const today = parseTodayData(data);
   const lines = [
-    `DOME today ${today.date}`,
-    `daily    ${today.daily.path} | ${today.daily.exists ? "exists" : "missing"}`,
-    `tasks    ${today.counts.openTasks} open | ${today.counts.followups} followups | ${today.counts.questions} questions`,
+    `DOME prep ${prep.date}`,
+    `daily    ${prep.daily.path} | ${prep.daily.exists ? "exists" : "missing"}`,
+    `counts   ${prep.counts.openTasks} open tasks | ${prep.counts.followups} followups | ${prep.counts.questions} questions`,
+    "",
+    "Start Here",
   ];
-
-  lines.push("");
-  lines.push("Open tasks");
-  if (today.openTasks.length === 0) {
+  if (prep.planningItems.length === 0) {
     lines.push("  none");
   } else {
-    for (const task of today.openTasks) {
-      const marker = task.followup ? " [followup]" : "";
-      lines.push(`  - ${task.text}${marker} (${sourceLabel(task)})`);
+    for (const item of prep.planningItems) {
+      lines.push(`  - [${item.kind}] ${item.text} (${sourceLabel(item)})`);
     }
   }
-
-  lines.push("");
-  lines.push("Follow-ups");
-  if (today.followups.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const task of today.followups) {
-      lines.push(`  - ${task.text} (${sourceLabel(task)})`);
-    }
-  }
-
-  if (today.questions.length > 0) {
-    lines.push("");
-    lines.push("Questions");
-    for (const question of today.questions) {
-      lines.push(`  - ${question.question} (${sourceLabel(question)})`);
-    }
-  }
-
   return lines.join("\n");
 }
 
-function parseTodayData(data: unknown): TodayData {
+function parsePrepData(data: unknown): PrepData {
   const record = asRecord(data);
   const daily = asRecord(record.daily);
   const counts = asRecord(record.counts);
@@ -142,34 +122,19 @@ function parseTodayData(data: unknown): TodayData {
       followups: numberOrZero(counts.followups),
       questions: numberOrZero(counts.questions),
     }),
-    openTasks: Object.freeze(parseTasks(record.openTasks)),
-    followups: Object.freeze(parseTasks(record.followups)),
-    questions: Object.freeze(parseQuestions(record.questions)),
+    planningItems: Object.freeze(parseItems(record.planningItems)),
+    markdown: stringOrEmpty(record.markdown),
   });
 }
 
-function parseTasks(raw: unknown): ReadonlyArray<TodayTask> {
+function parseItems(raw: unknown): ReadonlyArray<PrepItem> {
   if (!Array.isArray(raw)) return Object.freeze([]);
   return Object.freeze(
     raw.map((item) => {
       const record = asRecord(item);
       return Object.freeze({
+        kind: stringOrEmpty(record.kind),
         text: stringOrEmpty(record.text),
-        path: stringOrEmpty(record.path),
-        line: nullableNumber(record.line),
-        followup: record.followup === true,
-      });
-    }),
-  );
-}
-
-function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
-  if (!Array.isArray(raw)) return Object.freeze([]);
-  return Object.freeze(
-    raw.map((item) => {
-      const record = asRecord(item);
-      return Object.freeze({
-        question: stringOrEmpty(record.question),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
       });
