@@ -324,6 +324,8 @@ extensions:
         - "wiki/generated/intake/*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
+      graph.write:
+        - "dome.intake.*"
       model.invoke:
         maxDailyCostUsd: 5
       question.ask: true

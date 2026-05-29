@@ -24,7 +24,7 @@ import {
 
 const lowConfidenceAnswer: Processor = defineProcessor({
   id: "dome.intake.low-confidence-answer",
-  version: "0.1.0",
+  version: "0.2.0",
   phase: "garden",
   triggers: [
     {
@@ -78,6 +78,7 @@ const lowConfidenceAnswer: Processor = defineProcessor({
       content,
       kind: target.kind,
       text: target.text,
+      confidence: target.confidence ?? 1,
     });
     if (next === content) return Object.freeze([]);
 

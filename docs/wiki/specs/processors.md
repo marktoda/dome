@@ -218,7 +218,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
 | `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today, prep | Creates daily notes, carries unfinished markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
-| `dome.intake` | garden: extract-capture, low-confidence-answer | Compiles `inbox/raw/*.md` captures into generated capture pages plus processed archives, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and feeds generated markdown into the daily task/followup index. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, low-confidence-answer | Compiles `inbox/raw/*.md` captures into generated capture pages plus processed archives, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and indexes confidence-carrying `dome.intake.*` facts from generated capture metadata. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains the FTS5 projection; answers adopted-state query and context-packet requests. |
 

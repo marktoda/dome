@@ -1,4 +1,5 @@
 extensions:
   - name: capture
     frontmatter_extras:
+      intake_items: optional
       processed_from: optional

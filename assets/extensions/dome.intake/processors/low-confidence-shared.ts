@@ -19,6 +19,7 @@ export type CaptureLowConfidenceTarget = {
   readonly path: string;
   readonly kind: CaptureLowConfidenceKind;
   readonly text: string;
+  readonly confidence?: number;
 };
 
 export function lowConfidenceQuestionKey(
@@ -30,6 +31,9 @@ export function lowConfidenceQuestionKey(
       path: target.path,
       kind: target.kind,
       text: target.text,
+      ...(target.confidence !== undefined
+        ? { confidence: target.confidence }
+        : {}),
     }),
   )}`;
 }
@@ -53,11 +57,22 @@ export function targetFromLowConfidenceQuestionKey(
   if (typeof record.text !== "string" || record.text.trim() === "") {
     return null;
   }
+  if (
+    record.confidence !== undefined &&
+    (typeof record.confidence !== "number" ||
+      record.confidence < 0 ||
+      record.confidence > 1)
+  ) {
+    return null;
+  }
   return Object.freeze({
     version: 1,
     path: record.path,
     kind: record.kind,
     text: record.text,
+    ...(record.confidence !== undefined
+      ? { confidence: record.confidence }
+      : {}),
   });
 }
 

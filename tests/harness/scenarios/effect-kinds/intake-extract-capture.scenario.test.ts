@@ -8,6 +8,7 @@ import {
   targetFromLowConfidenceQuestionKey,
 } from "../../../../assets/extensions/dome.intake/processors/low-confidence-shared";
 import { scenario } from "../../index";
+import type { Harness } from "../../types";
 
 const CAPTURE_PATH = "inbox/raw/day.md";
 const OUTPUT_PATH = outputPath(CAPTURE_PATH, "wiki/generated/intake");
@@ -26,6 +27,8 @@ extensions:
         - "wiki/generated/intake/*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
+      graph.write:
+        - "dome.intake.*"
       model.invoke:
         modelAllowlist: ["test-model"]
         maxDailyCostUsd: 1
@@ -139,6 +142,18 @@ scenario(
     await h
       .expectProjection()
       .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Send Ada the launch staffing note",
+      })
+      .toHaveCount(1);
+    expect(
+      factConfidence(h, "dome.intake.task", "Send Ada the launch staffing note"),
+    ).toBe(1);
+
+    await h
+      .expectProjection()
+      .facts({
         predicate: "dome.daily.open_task",
         subjectId: OUTPUT_PATH,
         objectString: "Send Ada the launch staffing note",
@@ -152,6 +167,20 @@ scenario(
         objectString: "#followup Ask Ben about hiring budget",
       })
       .toHaveCount(1);
+
+    const rebuild = await h.runCli(["rebuild", "--json"]);
+    expect(rebuild.exitCode).toBe(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Send Ada the launch staffing note",
+      })
+      .toHaveCount(1);
+    expect(
+      factConfidence(h, "dome.intake.task", "Send Ada the launch staffing note"),
+    ).toBe(1);
 
     const run = await h
       .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
@@ -308,6 +337,25 @@ scenario(
     await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
     await h.expectFile(OUTPUT_PATH).toNotContain("Ask Chris about launch staffing");
     await h.expectFile(OUTPUT_PATH).toNotContain("Check whether Dana needs");
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Send Ada the launch staffing note",
+      })
+      .toHaveCount(1);
+    expect(
+      factConfidence(h, "dome.intake.task", "Send Ada the launch staffing note"),
+    ).toBe(0.95);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Ask Chris about launch staffing",
+      })
+      .toHaveCount(0);
     await h.expectProjection().questions().toHaveCount(4);
     await h
       .expectProjection()
@@ -335,6 +383,7 @@ scenario(
       path: CAPTURE_PATH,
       kind: "task",
       text: "Ask Chris about launch staffing",
+      confidence: 0.45,
     });
     expect(targets).not.toContain(null);
   },
@@ -438,6 +487,17 @@ scenario(
     await h.expectFile(OUTPUT_PATH).toContain(
       "- [ ] Ask Chris about launch staffing",
     );
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Ask Chris about launch staffing",
+      })
+      .toHaveCount(1);
+    expect(
+      factConfidence(h, "dome.intake.task", "Ask Chris about launch staffing"),
+    ).toBe(0.45);
     await h
       .expectProjection()
       .facts({
@@ -566,4 +626,26 @@ function outputPath(path: string, dir: string): string {
     .slice(0, 64) || "capture";
   const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
   return `${dir}/${slug}-${digest}.md`;
+}
+
+function factConfidence(
+  h: Harness,
+  predicate: string,
+  objectString: string,
+): number | null {
+  const rows = h.projection.raw
+    .query<{ object_json: string; confidence: number | null }, [string, string]>(
+      "SELECT object_json, confidence FROM facts WHERE predicate = ? AND subject_id = ?",
+    )
+    .all(predicate, OUTPUT_PATH);
+  for (const row of rows) {
+    const object = JSON.parse(row.object_json) as {
+      readonly kind?: unknown;
+      readonly value?: unknown;
+    };
+    if (object.kind === "string" && object.value === objectString) {
+      return row.confidence;
+    }
+  }
+  return null;
 }

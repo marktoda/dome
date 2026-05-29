@@ -100,8 +100,9 @@ V1 capability ledger:
       ledgering plus daily budget enforcement are shipped; command provider
       packaging gives vaults a production path without SDK vendor dependencies.
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
-      first `dome.intake.extract-capture` slice and low-confidence capture
-      questions/answers shipped; richer fact namespaces and synthesis remain.
+      first `dome.intake.extract-capture` slice, low-confidence capture
+      questions/answers, and confidence-carrying intake fact namespaces
+      shipped; synthesis remains.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
 - [x] V1 end-to-end acceptance harness.
@@ -397,7 +398,7 @@ Work:
 - [x] Emit low-confidence capture questions instead of committing uncertain
       model items as tasks, followups, decisions, or entities.
 - [x] Add answer handling for low-confidence capture questions.
-- [ ] Emit richer intake fact namespaces with confidence.
+- [x] Emit richer intake fact namespaces with confidence.
 - [ ] Implement first synthesis processor only after intake has provenance and
       budget gates.
 
@@ -412,6 +413,9 @@ Acceptance:
       pages until the user answers a question.
 - [x] Answering `track` for a low-confidence item patches the generated
       capture page through a garden sub-Proposal and downstream task facts.
+- [x] Generated capture pages carry tracked item confidence in frontmatter,
+      and deterministic adoption indexing emits `dome.intake.*` facts that
+      survive projection rebuild.
 
 ## Milestone 8 - User-Value Views
 
@@ -478,7 +482,7 @@ Required for daily value:
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
-| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, and downstream task/followup facts shipped; richer fact namespaces and synthesis remain |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, and confidence-carrying `dome.intake.*` fact namespaces shipped; synthesis remains |
 
 Optional or conditional:
 

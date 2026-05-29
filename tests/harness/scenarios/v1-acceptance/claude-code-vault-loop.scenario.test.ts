@@ -285,14 +285,18 @@ extensions:
   dome.intake:
     enabled: true
     grant:
-      read: ["inbox/raw/*.md"]
+      read:
+        - "inbox/raw/*.md"
+        - "wiki/generated/intake/*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
+      graph.write: ["dome.intake.*"]
       model.invoke:
         modelAllowlist: ["test-model"]
         maxDailyCostUsd: 1
+      question.ask: true
   dome.lint:
     enabled: true
     grant:

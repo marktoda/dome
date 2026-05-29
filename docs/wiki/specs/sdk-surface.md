@@ -196,8 +196,28 @@ description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
 
 processors:
-  - id: dome.intake.extract-capture
+  - id: dome.intake.capture-index
     version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/generated/intake/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/generated/intake/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.intake.*"]
+    module: processors/capture-index.ts
+
+  - id: dome.intake.extract-capture
+    version: 0.3.0
     phase: garden
     triggers:
       - kind: signal
@@ -221,7 +241,7 @@ processors:
     module: processors/extract-capture.ts
 
   - id: dome.intake.low-confidence-answer
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: answer

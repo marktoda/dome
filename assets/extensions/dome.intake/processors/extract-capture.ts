@@ -12,7 +12,12 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
-import { captureOutputPaths } from "./capture-page";
+import {
+  captureOutputPaths,
+  renderIntakeItemsFrontmatter,
+  type CapturePageItem,
+  type CapturePageItemKind,
+} from "./capture-page";
 import {
   LOW_CONFIDENCE_QUESTION_OPTIONS,
   lowConfidenceQuestionKey,
@@ -67,7 +72,7 @@ const CaptureExtractionSchema = z
 
 const extractCapture: Processor = defineProcessor({
   id: "dome.intake.extract-capture",
-  version: "0.2.0",
+  version: "0.3.0",
   phase: "garden",
   triggers: [
     { kind: "signal", name: "file.created", pathPattern: "inbox/raw/*.md" },
@@ -225,15 +230,26 @@ function renderGeneratedCapture(input: {
   readonly extraction: CaptureExtraction;
 }): string {
   const { extraction } = input;
-  const tasks = highConfidenceItems(extraction.tasks);
-  const followups = highConfidenceItems(extraction.followups);
-  const decisions = highConfidenceItems(extraction.decisions);
-  const entities = highConfidenceItems(extraction.entities);
-  const sourceQuotes = highConfidenceItems(extraction.sourceQuotes);
+  const tasks = highConfidenceItems("task", extraction.tasks);
+  const followups = highConfidenceItems("followup", extraction.followups);
+  const decisions = highConfidenceItems("decision", extraction.decisions);
+  const entities = highConfidenceItems("entity", extraction.entities);
+  const sourceQuotes = highConfidenceItems(
+    "source_quote",
+    extraction.sourceQuotes,
+  );
+  const intakeItems = [
+    ...tasks,
+    ...followups,
+    ...decisions,
+    ...entities,
+    ...sourceQuotes,
+  ];
   const lines: string[] = [
     "---",
     "type: capture",
     `sources: [${yamlString(`[[${input.archivePath}]]`)}]`,
+    ...renderIntakeItemsFrontmatter(intakeItems),
     `processed_from: ${yamlString(input.sourcePath)}`,
     "---",
     "",
@@ -242,30 +258,49 @@ function renderGeneratedCapture(input: {
     extraction.summary,
     "",
   ];
-  appendListSection(lines, "## Tasks", tasks, (item) => `- [ ] ${item}`);
+  appendListSection(lines, "## Tasks", tasks, (item) => `- [ ] ${item.text}`);
   appendListSection(
     lines,
     "## Follow-ups",
     followups,
-    (item) => `- [ ] #followup ${item}`,
+    (item) => `- [ ] #followup ${item.text}`,
   );
-  appendListSection(lines, "## Decisions", decisions, (item) => `- ${item}`);
-  appendListSection(lines, "## Entities", entities, (item) => `- [[${item}]]`);
+  appendListSection(
+    lines,
+    "## Decisions",
+    decisions,
+    (item) => `- ${item.text}`,
+  );
+  appendListSection(
+    lines,
+    "## Entities",
+    entities,
+    (item) => `- [[${item.text}]]`,
+  );
   appendListSection(
     lines,
     "## Source Quotes",
     sourceQuotes,
-    (item) => `> ${item}`,
+    (item) => `> ${item.text}`,
   );
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
 function highConfidenceItems(
+  kind: CapturePageItemKind,
   items: ReadonlyArray<ExtractedItem>,
-): ReadonlyArray<string> {
-  return items
-    .filter((item) => item.confidence >= CONFIDENCE_THRESHOLD)
-    .map((item) => item.text);
+): ReadonlyArray<CapturePageItem> {
+  return Object.freeze(
+    items
+      .filter((item) => item.confidence >= CONFIDENCE_THRESHOLD)
+      .map((item) =>
+        Object.freeze({
+          kind,
+          text: item.text,
+          confidence: item.confidence,
+        }),
+      ),
+  );
 }
 
 function lowConfidenceQuestions(input: {
@@ -315,6 +350,7 @@ function lowConfidenceQuestions(input: {
           sourceRef: input.sourceRef,
           kind: group.kind,
           text: item.text,
+          confidence: item.confidence,
           question: group.question(item.text),
         }),
       ),
@@ -333,6 +369,7 @@ function lowConfidenceQuestion(input: {
   readonly sourceRef: SourceRef;
   readonly kind: CaptureLowConfidenceKind;
   readonly text: string;
+  readonly confidence: number;
   readonly question: string;
 }): Effect {
   return questionEffect({
@@ -344,6 +381,7 @@ function lowConfidenceQuestion(input: {
       path: input.path,
       kind: input.kind,
       text: input.text,
+      confidence: input.confidence,
     }),
   });
 }
@@ -366,8 +404,8 @@ function renderArchive(input: {
 function appendListSection(
   lines: string[],
   heading: string,
-  items: ReadonlyArray<string>,
-  render: (item: string) => string,
+  items: ReadonlyArray<CapturePageItem>,
+  render: (item: CapturePageItem) => string,
 ): void {
   if (items.length === 0) return;
   lines.push(heading, "", ...items.map(render), "");

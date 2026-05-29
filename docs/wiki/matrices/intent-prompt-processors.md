@@ -15,7 +15,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
-| "Quick-capture a thought" | partially shipped | `dome.intake.extract-capture`, `dome.intake.low-confidence-answer` | garden | inline prompt in `assets/extensions/dome.intake/processors/extract-capture.ts` | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), QuestionEffect for low-confidence extracted items, answer-triggered PatchEffect for accepted items, downstream FactEffect via `dome.daily.task-index` |
+| "Quick-capture a thought" | partially shipped | `dome.intake.extract-capture`, `dome.intake.low-confidence-answer`, `dome.intake.capture-index` | garden + adoption | inline prompt in `assets/extensions/dome.intake/processors/extract-capture.ts` | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), QuestionEffect for low-confidence extracted items, answer-triggered PatchEffect for accepted items, deterministic FactEffect under `dome.intake.*`, downstream FactEffect via `dome.daily.task-index` |
 | "Voice-capture a meeting" | planned | `dome.intake.extract-capture` (with voice frontmatter type) | garden | same | same |
 | "Drop a research clip" | planned | `dome.intake.extract-capture` (with research frontmatter type) | garden | same | same |
 | "Add a follow-up to a daily" | planned | `dome.daily.append-followup` | garden | `assets/extensions/dome.daily/processors/append-followup.prompt.md` | PatchEffect (insert into daily's followups section) |
