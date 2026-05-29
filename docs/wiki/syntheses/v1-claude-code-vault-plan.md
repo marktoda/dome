@@ -1,15 +1,19 @@
 ---
 type: synthesis
-created: 2026-05-28
-updated: 2026-05-29
+tags:
+  - plan
+  - v1
+  - claude-code
+  - roadmap
+created: 2026-05-28T00:00:00.000Z
+updated: 2026-05-29T00:00:00.000Z
 sources:
-  - "[[wiki/specs/harnesses]]"
-  - "[[wiki/specs/cli]]"
-  - "[[wiki/specs/processors]]"
-  - "[[wiki/specs/processor-execution]]"
-  - "[[wiki/matrices/intent-prompt-processors]]"
+  - '[[wiki/specs/harnesses]]'
+  - '[[wiki/specs/cli]]'
+  - '[[wiki/specs/processors]]'
+  - '[[wiki/specs/processor-execution]]'
+  - '[[wiki/matrices/intent-prompt-processors]]'
 status: draft
-tags: ["plan", "v1", "claude-code", "roadmap"]
 ---
 
 # v1 Claude Code vault plan
