@@ -353,6 +353,13 @@ async function runGardenPhaseInner(opts: {
   const spawnCountByProcessor = new Map<string, number>();
 
   for (const result of runnerResults) {
+    const emittedDiagnostics = result.effects.filter(
+      (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
+    );
+    const diagnosticsForResolution: DiagnosticEffect[] = [
+      ...emittedDiagnostics,
+    ];
+
     if (
       result.executionStatus === "succeeded" &&
       sinks.resolveFacts !== undefined
@@ -384,6 +391,7 @@ async function runGardenPhaseInner(opts: {
         });
         if (routed.kind === "dropped") {
           allDiagnostics.push(...routed.diagnostics);
+          diagnosticsForResolution.push(...routed.diagnostics);
           if (routed.rejected) {
             totalRejectedPatches += 1;
           }
@@ -391,6 +399,7 @@ async function runGardenPhaseInner(opts: {
         }
         if (routed.diagnostics.length > 0) {
           allDiagnostics.push(...routed.diagnostics);
+          diagnosticsForResolution.push(...routed.diagnostics);
         }
         spawnQueue.push({
           patch: routed.patch,
@@ -419,6 +428,7 @@ async function runGardenPhaseInner(opts: {
 
       if (applied.diagnostics.length > 0) {
         allDiagnostics.push(...applied.diagnostics);
+        diagnosticsForResolution.push(...applied.diagnostics);
       }
 
       recordEffectCapabilityUse({
@@ -438,10 +448,7 @@ async function runGardenPhaseInner(opts: {
         processorId: result.processorId,
         runId: result.runId,
         inspectedPaths: result.inspectedPaths,
-        emittedDiagnostics: result.effects.filter(
-          (effect): effect is DiagnosticEffect =>
-            effect.kind === "diagnostic",
-        ),
+        emittedDiagnostics: diagnosticsForResolution,
       });
     }
 

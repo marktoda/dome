@@ -258,9 +258,10 @@ export function resolveDiagnostic(
 
 /**
  * Resolve stale diagnostics for a processor after it re-checks a bounded set
- * of paths. Any unresolved diagnostic from the same processor whose source
- * refs touch an inspected path is kept only when this run re-emitted the same
- * `(code, subject_hash)` key; otherwise it is marked resolved.
+ * of paths. Path-scoped diagnostics are considered only when their source refs
+ * touch an inspected path. Source-less diagnostics are processor-run scoped
+ * rather than path-scoped, so any later successful run of the same processor
+ * may resolve them when it does not re-emit the same `(code, subject_hash)`.
  *
  * This is intentionally projection-owned. Processors remain pure effect
  * producers; they don't need to remember or mutate their prior rows.
@@ -269,7 +270,6 @@ export function resolveStaleDiagnostics(
   db: ProjectionDb,
   opts: ResolveStaleDiagnosticsOpts,
 ): number {
-  if (opts.inspectedPaths.length === 0) return 0;
   const inspected = new Set(opts.inspectedPaths);
   const keep = new Set(
     opts.emittedDiagnostics.map(
@@ -284,7 +284,7 @@ export function resolveStaleDiagnostics(
   const now = new Date().toISOString();
   const stmt = db.raw.query(RESOLVE_BY_ID_SQL);
   for (const row of rows) {
-    if (!diagnosticTouchesAnyPath(row.source_refs, inspected)) continue;
+    if (!diagnosticIsInResolvedScope(row.source_refs, inspected)) continue;
     if (keep.has(`${row.code}\0${row.subject_hash}`)) continue;
     stmt.run(now, row.id);
     resolved += 1;
@@ -304,7 +304,7 @@ function rowToDiagnostic(row: DiagnosticRow): DiagnosticEffect {
   });
 }
 
-function diagnosticTouchesAnyPath(
+function diagnosticIsInResolvedScope(
   sourceRefsJson: string,
   paths: ReadonlySet<string>,
 ): boolean {
@@ -314,5 +314,6 @@ function diagnosticTouchesAnyPath(
   } catch {
     return false;
   }
+  if (refs.length === 0) return true;
   return refs.some((ref) => paths.has(ref.path as string));
 }

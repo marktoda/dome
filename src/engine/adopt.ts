@@ -374,6 +374,9 @@ export async function adopt(opts: {
       const emittedDiagnostics = effects.filter(
         (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
       );
+      const diagnosticsForResolution: DiagnosticEffect[] = [
+        ...emittedDiagnostics,
+      ];
       const emittedQuestions = effects.filter(
         (effect): effect is QuestionEffect => effect.kind === "question",
       );
@@ -421,6 +424,7 @@ export async function adopt(opts: {
         // outcome and accumulate so the severity check below sees them.
         if (applied.diagnostics.length > 0) {
           allDiagnostics.push(...applied.diagnostics);
+          diagnosticsForResolution.push(...applied.diagnostics);
         }
 
         if (applied.appliedEffect !== null) {
@@ -460,7 +464,7 @@ export async function adopt(opts: {
           processorId,
           runId,
           inspectedPaths,
-          emittedDiagnostics,
+          emittedDiagnostics: diagnosticsForResolution,
         });
       }
       if (

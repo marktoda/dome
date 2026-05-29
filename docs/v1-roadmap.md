@@ -626,6 +626,9 @@ Work:
 - [x] Add spawned `bin/dome` process smoke coverage for executable init /
       sync / status and foreground `serve` SIGTERM shutdown, so the packaged
       CLI path is covered in addition to in-process handler tests.
+- [x] Resolve stale source-less processor diagnostics after a later clean
+      processor rerun, so historical broker blocks do not survive forever
+      after grants or code paths are fixed.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
