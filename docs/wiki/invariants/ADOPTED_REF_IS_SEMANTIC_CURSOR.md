@@ -2,10 +2,11 @@
 type: invariant
 created: 2026-05-27
 updated: 2026-05-27
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
-tier: axiom
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
 enforced_at: src/engine/adopt.ts
+tier: axiom
 ---
 
 # ADOPTED_REF_IS_SEMANTIC_CURSOR
