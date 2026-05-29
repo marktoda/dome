@@ -69,12 +69,22 @@ scenario(
       .facts({ predicate: "dome.graph.links_to" })
       .toHaveCount(1);
 
+    h.projection.raw.run(
+      "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",
+    );
+    h.projection.raw.run("DELETE FROM facts");
+
     // Step 3: invoke `dome run orphan-pages --json` via the harness's
     // runCli helper. The command exits 0 on success and prints the
-    // ViewEffect's payload to stdout.
+    // ViewEffect's payload to stdout. The command also repairs projection
+    // cache-key drift before the view reads link facts.
     const cli = await h.runCli(["run", "orphan-pages", "--json"]);
     expect(cli.exitCode).toBe(0);
     expect(cli.stderr).toBe("");
+    await h
+      .expectProjection()
+      .facts({ predicate: "dome.graph.links_to" })
+      .toHaveCount(1);
 
     // Step 4: parse the JSON output. The command emits a single
     // ViewEffect, so the top-level value is a single render object

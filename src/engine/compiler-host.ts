@@ -59,6 +59,7 @@ import { deriveExtensionId } from "../extensions/id-helpers";
 import {
   markProjectionBuilt,
   projectionCacheKeysChanged,
+  projectionRequiresRebuild,
 } from "../projections/db";
 import { buildSqliteSinks } from "../projections/sinks";
 import type { QuestionRecord } from "../projections/questions";
@@ -409,7 +410,7 @@ export async function runOperationalWorkForAdopted(opts: {
   const now = opts.now ?? ((): Date => new Date());
   const cursor = opts.cursor ?? { current: opts.adopted };
   if (opts.branch !== undefined) {
-    await rebuildProjectionIfCacheKeysChanged({
+    await rebuildProjectionIfStale({
       runtime: opts.runtime,
       adopted: cursor.current,
       branch: opts.branch,
@@ -514,7 +515,31 @@ export async function runAnswerHandlersForQuestion(opts: {
   });
 }
 
-export async function rebuildProjectionIfCacheKeysChanged(opts: {
+export async function rebuildProjectionIfStale(opts: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly branch: string;
+  readonly now?: () => Date;
+}): Promise<ProjectionRebuildResult | null> {
+  if (
+    !projectionRequiresRebuild(opts.runtime.projectionDb, {
+      adoptedCommit: opts.adopted,
+      extensionSet: opts.runtime.extensions,
+      processorVersions: opts.runtime.processorVersions,
+    })
+  ) {
+    return null;
+  }
+
+  return rebuildProjection({
+    runtime: opts.runtime,
+    adopted: opts.adopted,
+    branch: opts.branch,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
+}
+
+async function rebuildProjectionIfCacheKeysChanged(opts: {
   readonly runtime: VaultRuntime;
   readonly adopted: CommitOid;
   readonly branch: string;

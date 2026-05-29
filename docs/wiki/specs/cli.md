@@ -193,7 +193,10 @@ reports. Use `dome inspect diagnostics`, `dome inspect questions`,
 
 Invokes the `dome.search.query` view-phase processor against adopted-state
 projections. The processor reads FTS rows and related facts through
-`ctx.projection`; it does not read the working tree. Output (text mode):
+`ctx.projection`; it does not read the working tree. Before dispatch, the
+shared view-command boundary resolves the adopted commit and rebuilds
+`projection.db` if the stored adopted commit, extension-set hash, or
+processor-version hash is stale. Output (text mode):
 
 ```text
 dome query: 4 matches for "platform ownership"
@@ -457,7 +460,7 @@ The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding
 3. **A Commander binding** in `src/cli/index.ts` (`program.command("<name>")...action(...)`) that routes to a typed command handler or to `AbstractSurface.commands[<name>].invoke(args)`.
 4. **An end-to-end test** at `tests/integration/cli-<command>.test.ts` exercising the CLI invocation against a fixture vault.
 
-The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly.
+The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly. Both dedicated view commands and generic `dome run` use the same shared dispatch boundary, so they inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
 
 The substrate scaffold catches missing pieces:
 - `tests/integration/cli-shell-shape.test.ts` enumerates command-triggered processors in `assets/extensions/dome.*/processors/` and asserts each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.

@@ -45,18 +45,8 @@
 //     (`src/cli/index.ts`) calls `process.exit(code)`.
 //   - Console output goes through `console.log` / `console.error`.
 
-import { resolve } from "node:path";
-
-import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import { commitOid } from "../../core/source-ref";
-import { runViewCommand } from "../../engine/commands";
-import { openVaultRuntime } from "../../engine/vault-runtime";
-import { buildSqliteSinks } from "../../projections/sinks";
-
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { runSharedViewCommand } from "./view-shared";
 import { formatJson } from "../format";
-
-import type { ApplyEffectSinks } from "../../engine/apply-effect";
 import type { ViewEffect } from "../../core/effect";
 
 // ----- runRun ---------------------------------------------------------------
@@ -99,140 +89,73 @@ export async function runRun(
     return 64;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  // ----- 2. Build commandArgs from non-meta flags -----------------------
+  // View-phase processors that care about CLI flags inspect
+  // `ctx.input.commandArgs.flags`. The envelope shape is opaque to
+  // the engine — `runViewCommand` passes it through verbatim.
+  const flags: Record<string, string | boolean> = {
+    ...(options.commandFlags ?? {}),
+  };
+  const commandArgs = Object.freeze({
+    flags: Object.freeze(flags),
+  });
 
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
-
-  // ----- 2. Resolve the snapshot commit -----------------------------------
-  // View-phase processors read the *adopted* snapshot, not HEAD. The
-  // adopted ref is the trusted state — running a view against unstable
-  // working-tree HEAD would surface stale or contradictory data. If the
-  // adopted ref isn't initialized (the vault has never synced), refuse
-  // with a usage error and a clear remediation.
-  const branch = await getCurrentBranch(vaultPath);
-  if (branch === null) {
-    console.error(
-      "dome run: HEAD is detached. The view-phase substrate requires a branch. Check out a branch and retry.",
-    );
-    return 64;
-  }
-  const adoptedSha = await getAdoptedRef(vaultPath, branch);
-  if (adoptedSha === null) {
-    console.error(
-      `dome run: vault has no adopted ref for branch '${branch}'. Run \`dome sync\` first to initialize.`,
-    );
-    return 64;
-  }
-  const adopted = commitOid(adoptedSha);
-
-  // ----- 3. Open the runtime ----------------------------------------------
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
-  if (!runtimeResult.ok) {
-    console.error(
-      `dome run: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
-    );
+  // ----- 3. Dispatch via shared view-command boundary -------------------
+  let run;
+  try {
+    run = await runSharedViewCommand({
+      commandLabel: "dome run",
+      commandName,
+      commandArgs,
+      vault: options.vault,
+      bundlesRoot: options.bundlesRoot,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`dome run: view command failed: ${msg}`);
     return 1;
   }
-  const runtime = runtimeResult.value;
 
-  try {
-    // ----- 4. Build commandArgs from non-meta flags -----------------------
-    // View-phase processors that care about CLI flags inspect
-    // `ctx.input.commandArgs.flags`. The envelope shape is opaque to
-    // the engine — `runViewCommand` passes it through verbatim.
-    const flags: Record<string, string | boolean> = {
-      ...(options.commandFlags ?? {}),
-    };
-    const commandArgs = Object.freeze({
-      flags: Object.freeze(flags),
-    });
-
-    // ----- 5. Build the sinks ---------------------------------------------
-    // View-phase emissions are filtered into a captured array; non-View
-    // effects route through the standard projection sinks (where the
-    // broker's phase-mismatch check rejects them — `runViewCommand`
-    // surfaces those rejections via `brokerDiagnostics`). We use the
-    // standard SQLite sinks so even on the (rare) downgrade path the
-    // emitted effect lands in the right place.
-    const capturedViews: ViewEffect[] = [];
-    const captureView: ApplyEffectSinks["captureView"] = async ({
-      effect,
-    }) => {
-      capturedViews.push(effect);
-    };
-    // `applyPatch` should never be invoked under view-phase routing
-    // (the broker rejects PatchEffect as phase-mismatch). Provide a
-    // defensive placeholder that drops the patch + returns null.
-    const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
-    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-      async () => undefined;
-    const sinks = buildSqliteSinks({
-      projectionDb: runtime.projectionDb,
-      outboxDb: runtime.outboxDb,
-      adoptedCommit: adopted,
-      captureView,
-      applyPatch,
-      externalHandlers: runtime.externalHandlers,
-      recoverQuarantine,
-    });
-
-    // ----- 6. Dispatch via runViewCommand ---------------------------------
-    const vault = Object.freeze({
-      path: vaultPath,
-      config: Object.freeze({
-        git: Object.freeze({ auto_commit_workflows: false }),
-      }),
-    });
-
-    let result;
-    try {
-      result = await runViewCommand({
-        vault,
-        adopted,
-        commandName,
-        commandArgs,
-        viewRunner: runtime.processorRuntime.viewRunner,
-        sinks,
-        ledger: runtime.ledgerDb,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`dome run: runViewCommand threw: ${msg}`);
-      return 1;
-    }
-
-    // ----- 7. Handle not-found --------------------------------------------
-    if (result.kind === "not-found") {
-      console.error(
-        `dome run: unknown command '${result.commandName}'. No view-phase processor declares a matching command trigger.`,
-      );
-      return 64;
-    }
-
-    // ----- 8. Surface broker diagnostics ----------------------------------
-    // Phase-mismatch + capability-deny diagnostics from the broker land
-    // here. They indicate processor misbehavior (e.g., a view processor
-    // emitting a FactEffect) — non-fatal but worth surfacing for the
-    // operator's diagnostic surface.
-    for (const d of result.brokerDiagnostics) {
-      console.error(
-        `dome run: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-      );
-    }
-
-    // ----- 9. Render the captured ViewEffects -----------------------------
-    // Prefer the captured-via-sink array (the sink is the canonical
-    // delivery surface per ApplyEffectSinks's contract). `runViewCommand`
-    // also returns `result.effects`; both should agree.
-    const viewEffects =
-      capturedViews.length > 0 ? capturedViews : [...result.effects];
-
-    const rendered = await Promise.all(viewEffects.map(renderView));
-    console.log(formatJson(rendered.length === 1 ? rendered[0] : rendered));
-    return 0;
-  } finally {
-    await runtime.close();
+  if (run.kind === "usage-error") {
+    console.error(run.message);
+    return 64;
   }
+  if (run.kind === "runtime-error") {
+    console.error(run.message);
+    return 1;
+  }
+
+  const result = run.result;
+
+  // ----- 4. Handle not-found --------------------------------------------
+  if (result.kind === "not-found") {
+    console.error(
+      `dome run: unknown command '${result.commandName}'. No view-phase processor declares a matching command trigger.`,
+    );
+    return 64;
+  }
+
+  // ----- 5. Surface broker diagnostics ----------------------------------
+  // Phase-mismatch + capability-deny diagnostics from the broker land
+  // here. They indicate processor misbehavior (e.g., a view processor
+  // emitting a FactEffect) — non-fatal but worth surfacing for the
+  // operator's diagnostic surface.
+  for (const d of result.brokerDiagnostics) {
+    console.error(
+      `dome run: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+    );
+  }
+
+  // ----- 6. Render the captured ViewEffects -----------------------------
+  // Prefer the captured-via-sink array (the sink is the canonical
+  // delivery surface per ApplyEffectSinks's contract). `runViewCommand`
+  // also returns `result.effects`; both should agree.
+  const viewEffects =
+    run.capturedViews.length > 0 ? run.capturedViews : [...result.effects];
+
+  const rendered = await Promise.all(viewEffects.map(renderView));
+  console.log(formatJson(rendered.length === 1 ? rendered[0] : rendered));
+  return 0;
 }
 
 // ----- internals ------------------------------------------------------------

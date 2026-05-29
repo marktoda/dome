@@ -18,6 +18,7 @@ import {
   markProjectionBuilt,
   openProjectionDb,
   projectionCacheKeysChanged,
+  projectionRequiresRebuild,
   resetProjectionDb,
   type OpenProjectionDbResult,
   type ProjectionDb,
@@ -247,6 +248,56 @@ describe("openProjectionDb", () => {
       projectionCacheKeysChanged(r.value.db, {
         extensionSet: [{ name: "ext.a", version: "2.0.0" }],
         processorVersions: procs,
+      }),
+    ).toBe(true);
+  });
+
+  it("projectionRequiresRebuild treats unbuilt, commit drift, and cache drift as stale", async () => {
+    const exts = [{ name: "ext.a", version: "1.0.0" }];
+    const procs = [{ id: "proc.a", version: "1.0.0" }];
+    const adopted = commitOid("def4560000000000000000000000000000000000");
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: exts,
+      processorVersions: procs,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+
+    expect(
+      projectionRequiresRebuild(r.value.db, {
+        adoptedCommit: adopted,
+        extensionSet: exts,
+        processorVersions: procs,
+      }),
+    ).toBe(true);
+
+    markProjectionBuilt(r.value.db, {
+      adoptedCommit: adopted,
+      extensionSet: exts,
+      processorVersions: procs,
+      builtAt: new Date("2026-05-28T00:00:00.000Z"),
+    });
+    expect(
+      projectionRequiresRebuild(r.value.db, {
+        adoptedCommit: adopted,
+        extensionSet: exts,
+        processorVersions: procs,
+      }),
+    ).toBe(false);
+    expect(
+      projectionRequiresRebuild(r.value.db, {
+        adoptedCommit: commitOid("abc1230000000000000000000000000000000000"),
+        extensionSet: exts,
+        processorVersions: procs,
+      }),
+    ).toBe(true);
+    expect(
+      projectionRequiresRebuild(r.value.db, {
+        adoptedCommit: adopted,
+        extensionSet: exts,
+        processorVersions: [{ id: "proc.a", version: "1.1.0" }],
       }),
     ).toBe(true);
   });

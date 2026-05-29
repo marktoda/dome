@@ -72,6 +72,29 @@ scenario(
     expect(match?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
 
+    h.projection.raw.run(
+      "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",
+    );
+    h.projection.raw.run("DELETE FROM fts_documents");
+
+    const afterCacheDrift = await h.runCli(["query", "alpha launch", "--json"]);
+    expect(afterCacheDrift.exitCode).toBe(0);
+    expect(afterCacheDrift.stderr).toBe("");
+    const driftPayload = JSON.parse(afterCacheDrift.stdout) as {
+      readonly matches: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(driftPayload.matches.map((m) => m.path)).toContain(
+      "wiki/project-alpha.md",
+    );
+
+    const meta = h.projection.raw
+      .query<{ processor_versions_hash: string | null }, []>(
+        "SELECT processor_versions_hash FROM projection_meta",
+      )
+      .get();
+    expect(meta?.processor_versions_hash).not.toBe("stale-version-hash");
+    expect(typeof meta?.processor_versions_hash).toBe("string");
+
     await h.userCommit({
       files: { "wiki/project-alpha.md": null },
       message: "remove project note",

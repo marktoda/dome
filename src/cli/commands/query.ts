@@ -4,19 +4,8 @@
 // view-phase processor named `query`. The processor owns retrieval behavior;
 // this file owns CLI ergonomics and rendering.
 
-import { resolve } from "node:path";
-
-import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import { commitOid } from "../../core/source-ref";
-import { runViewCommand } from "../../engine/commands";
-import { openVaultRuntime } from "../../engine/vault-runtime";
-import { buildSqliteSinks } from "../../projections/sinks";
-
-import { resolveShippedBundlesRoot } from "./sync-shared";
+import { runSharedViewCommand } from "./view-shared";
 import { formatJson } from "../format";
-
-import type { ApplyEffectSinks } from "../../engine/apply-effect";
-import type { ViewEffect } from "../../core/effect";
 
 export type QueryCommandOptions = {
   readonly text?: string | undefined;
@@ -37,58 +26,9 @@ export async function runQuery(
     return 64;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
-  const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
-
-  const branch = await getCurrentBranch(vaultPath);
-  if (branch === null) {
-    console.error(
-      "dome query: HEAD is detached. Check out a branch and retry.",
-    );
-    return 64;
-  }
-  const adoptedSha = await getAdoptedRef(vaultPath, branch);
-  if (adoptedSha === null) {
-    console.error(
-      `dome query: vault has no adopted ref for branch '${branch}'. Run \`dome sync\` first to initialize.`,
-    );
-    return 64;
-  }
-  const adopted = commitOid(adoptedSha);
-
-  const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
-  if (!runtimeResult.ok) {
-    console.error(
-      `dome query: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
-    );
-    return 1;
-  }
-  const runtime = runtimeResult.value;
-
   try {
-    const capturedViews: ViewEffect[] = [];
-    const captureView: ApplyEffectSinks["captureView"] = async ({ effect }) => {
-      capturedViews.push(effect);
-    };
-    const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
-    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-      async () => undefined;
-    const sinks = buildSqliteSinks({
-      projectionDb: runtime.projectionDb,
-      outboxDb: runtime.outboxDb,
-      adoptedCommit: adopted,
-      captureView,
-      applyPatch,
-      externalHandlers: runtime.externalHandlers,
-      recoverQuarantine,
-    });
-
-    const result = await runViewCommand({
-      vault: {
-        path: vaultPath,
-        config: { git: { auto_commit_workflows: false } },
-      },
-      adopted,
+    const run = await runSharedViewCommand({
+      commandLabel: "dome query",
       commandName: "query",
       commandArgs: Object.freeze({
         text,
@@ -96,11 +36,20 @@ export async function runQuery(
         ...(options.type !== undefined ? { type: options.type } : {}),
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
       }),
-      viewRunner: runtime.processorRuntime.viewRunner,
-      sinks,
-      ledger: runtime.ledgerDb,
+      vault: options.vault,
+      bundlesRoot: options.bundlesRoot,
     });
 
+    if (run.kind === "usage-error") {
+      console.error(run.message);
+      return 64;
+    }
+    if (run.kind === "runtime-error") {
+      console.error(run.message);
+      return 1;
+    }
+
+    const result = run.result;
     if (result.kind === "not-found") {
       console.error(
         "dome query: dome.search is not installed or no query processor is enabled.",
@@ -114,7 +63,7 @@ export async function runQuery(
       );
     }
 
-    const view = capturedViews[0] ?? result.effects[0];
+    const view = run.capturedViews[0] ?? result.effects[0];
     if (view === undefined || view.content.kind !== "structured") {
       console.error("dome query: query processor returned no structured result.");
       return 1;
@@ -130,8 +79,6 @@ export async function runQuery(
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`dome query: failed: ${msg}`);
     return 1;
-  } finally {
-    await runtime.close();
   }
 }
 

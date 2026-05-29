@@ -304,6 +304,10 @@ export type ProjectionCacheKeyOpts = {
   }>;
 };
 
+export type ProjectionFreshnessOpts = ProjectionCacheKeyOpts & {
+  readonly adoptedCommit: CommitOid;
+};
+
 export type OpenProjectionDbOpts = {
   /**
    * Absolute filesystem path to the projection.db file. Caller computes
@@ -640,6 +644,28 @@ export function projectionCacheKeysChanged(
     return false;
   }
 
+  return (
+    meta.extensionSetHash !== computeExtensionSetHash(opts.extensionSet) ||
+    meta.processorVersionsHash !==
+      computeProcessorVersionsHash(opts.processorVersions)
+  );
+}
+
+/**
+ * Return true when projection rows must be re-derived before a caller reads
+ * them. Unlike `projectionCacheKeysChanged`, this treats missing/unbuilt meta
+ * and adopted-commit drift as stale too. Host boundaries use this guard before
+ * operational and view work consumes projection rows.
+ */
+export function projectionRequiresRebuild(
+  db: ProjectionDb,
+  opts: ProjectionFreshnessOpts,
+): boolean {
+  const meta = readMetaRow(db.raw);
+  if (meta === null) return true;
+  if (meta.adoptedCommit !== opts.adoptedCommit) return true;
+  if (meta.extensionSetHash === null) return true;
+  if (meta.processorVersionsHash === null) return true;
   return (
     meta.extensionSetHash !== computeExtensionSetHash(opts.extensionSet) ||
     meta.processorVersionsHash !==
