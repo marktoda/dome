@@ -68,6 +68,26 @@ process.exit(17);
       }),
     ).rejects.toThrow("provider unavailable");
   });
+
+  test("validates response shape before returning", async () => {
+    const providerPath = writeProvider(`
+console.log(JSON.stringify({ text: 42 }));
+`);
+    const provider = buildCommandModelProvider({
+      kind: "command",
+      command: [process.execPath, providerPath],
+    });
+
+    await expect(
+      provider({
+        prompt: "Summarize this",
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toMatchObject({
+      code: "model.invoke.provider-failed",
+      retryable: true,
+    });
+  });
 });
 
 function writeProvider(source: string): string {

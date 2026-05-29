@@ -1,8 +1,9 @@
 import type { CommandModelProviderConfig } from "./capability-policy";
-import type {
-  ModelProvider,
-  ModelProviderRequest,
-  ModelProviderResponse,
+import {
+  parseModelProviderResponse,
+  type ModelProvider,
+  type ModelProviderRequest,
+  type ModelProviderResponse,
 } from "./model-invoke";
 
 const REQUEST_SCHEMA = "dome.model-provider.request/v1";
@@ -85,7 +86,7 @@ function parseProviderResponse(stdout: string): ModelProviderResponse {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("model provider command response must be a JSON object");
   }
-  return parsed as ModelProviderResponse;
+  return parseModelProviderResponse(parsed);
 }
 
 function formatStderr(stderr: string): string {

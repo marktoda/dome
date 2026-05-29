@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type {
   Capability,
   ModelInvokeFn,
@@ -37,6 +39,12 @@ export type ModelProviderResponse = {
 export type ModelProvider = (
   request: ModelProviderRequest,
 ) => Promise<ModelProviderResponse>;
+
+const ModelProviderResponseSchema = z.object({
+  text: z.string(),
+  model: z.string().optional(),
+  costUsd: z.number().finite().nonnegative().optional(),
+});
 
 export type ModelInvokeCapabilityUse = {
   readonly capability: "model.invoke";
@@ -247,7 +255,7 @@ async function callProviderWithTimeout(opts: {
       timeoutPromise,
       abortPromise,
     ]);
-    return validateProviderResponse(response);
+    return parseModelProviderResponse(response);
   } catch (e) {
     if (isModelExecutionError(e)) throw e;
     throw modelError(
@@ -299,41 +307,27 @@ function shouldRetryProviderFailure(
   );
 }
 
-function validateProviderResponse(response: unknown): ModelProviderResponse {
-  if (typeof response !== "object" || response === null) {
-    throw invalidProviderResponse("expected an object response.");
+export function parseModelProviderResponse(
+  response: unknown,
+): ModelProviderResponse {
+  const parsed = ModelProviderResponseSchema.safeParse(response);
+  if (!parsed.success) {
+    throw invalidProviderResponse(modelProviderResponseError(parsed.error));
   }
-  const text = (response as { readonly text?: unknown }).text;
-  if (typeof text !== "string") {
-    throw invalidProviderResponse("expected response.text to be a string.");
-  }
-
-  const costUsd = (response as { readonly costUsd?: unknown }).costUsd;
-  if (costUsd !== undefined) {
-    if (typeof costUsd !== "number" || !Number.isFinite(costUsd) || costUsd < 0) {
-      throw invalidProviderResponse(
-        "expected response.costUsd to be a finite non-negative number.",
-      );
-    }
-  }
-
+  const value = parsed.data;
   return Object.freeze({
-    text,
-    ...(costUsd !== undefined ? { costUsd } : {}),
-    ...copyOptionalString(response, "model"),
+    text: value.text,
+    ...(value.model !== undefined ? { model: value.model } : {}),
+    ...(value.costUsd !== undefined ? { costUsd: value.costUsd } : {}),
   });
 }
 
-function copyOptionalString(
-  response: object,
-  key: "model",
-): { readonly model?: string } {
-  const value = (response as { readonly model?: unknown })[key];
-  if (value === undefined) return Object.freeze({});
-  if (typeof value !== "string") {
-    throw invalidProviderResponse(`expected response.${key} to be a string.`);
-  }
-  return Object.freeze({ [key]: value });
+function modelProviderResponseError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (issue === undefined) return "response did not match provider schema.";
+  const path =
+    issue.path.length === 0 ? "response" : `response.${issue.path.join(".")}`;
+  return `${path}: ${issue.message}.`;
 }
 
 function invalidProviderResponse(message: string): Error & {

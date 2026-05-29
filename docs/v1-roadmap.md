@@ -679,6 +679,9 @@ Work:
 - [x] Add agent-facing `attention_required` / `attention` reason codes to
       `dome status --json` and `dome sync --json`, so Claude Code can branch
       from stable status instead of inferring action from counters.
+- [x] Tighten the model-provider protocol parser with the existing Zod
+      boundary so command-provider JSON cannot bypass the same response shape
+      validation used by injected providers.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
