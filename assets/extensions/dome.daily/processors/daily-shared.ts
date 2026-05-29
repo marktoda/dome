@@ -22,6 +22,18 @@ export type OpenTask = {
   readonly followup: boolean;
 };
 
+export type DailyActionItem = {
+  readonly line: number;
+  readonly text: string;
+  readonly body: string;
+  readonly followup: boolean;
+};
+
+export type AmbiguousFollowup = {
+  readonly line: number;
+  readonly text: string;
+};
+
 export function localDateParts(date: Date): DailyDate {
   return Object.freeze({
     yyyy: String(date.getFullYear()).padStart(4, "0"),
@@ -67,17 +79,55 @@ export function openTasksFromMarkdown(content: string): ReadonlyArray<OpenTask> 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     if (!isOpenCheckboxLine(line)) continue;
-    tasks.push(
+    tasks.push(openTaskFromLine(line, i + 1));
+  }
+  return Object.freeze(tasks);
+}
+
+export function actionItemsFromMarkdown(
+  content: string,
+): ReadonlyArray<DailyActionItem> {
+  const items: DailyActionItem[] = [];
+  const lines = content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (isOpenCheckboxLine(line)) {
+      const task = openTaskFromLine(line, i + 1);
+      items.push(
+        Object.freeze({
+          line: task.line,
+          text: task.text,
+          body: task.body,
+          followup: task.followup,
+        }),
+      );
+      continue;
+    }
+
+    const directive = directiveActionItemFromLine(line, i + 1);
+    if (directive !== null) items.push(directive);
+  }
+  return Object.freeze(items);
+}
+
+export function ambiguousFollowupsFromMarkdown(
+  content: string,
+): ReadonlyArray<AmbiguousFollowup> {
+  const items: AmbiguousFollowup[] = [];
+  const lines = content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (isOpenCheckboxLine(line)) continue;
+    if (directiveActionItemFromLine(line, i + 1) !== null) continue;
+    if (!looksLikeAmbiguousFollowup(line)) continue;
+    items.push(
       Object.freeze({
         line: i + 1,
-        text: stripCarryForwardSource(line),
-        sourcePath: carryForwardSourcePath(line),
-        body: taskBodyFromCheckboxLine(line),
-        followup: isExplicitFollowup(line),
+        text: line.trim(),
       }),
     );
   }
-  return Object.freeze(tasks);
+  return Object.freeze(items);
 }
 
 export function renderDailySkeleton(input: {
@@ -150,6 +200,38 @@ function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
 }
 
+function openTaskFromLine(line: string, lineNumber: number): OpenTask {
+  return Object.freeze({
+    line: lineNumber,
+    text: stripCarryForwardSource(line),
+    sourcePath: carryForwardSourcePath(line),
+    body: taskBodyFromCheckboxLine(line),
+    followup: isExplicitFollowup(line),
+  });
+}
+
+function directiveActionItemFromLine(
+  line: string,
+  lineNumber: number,
+): DailyActionItem | null {
+  const match = /^\s*(?:[-*]\s+)?(todo|follow[- ]?up)\s*:\s*(\S.*)$/i.exec(
+    line,
+  );
+  if (match === null) return null;
+  const marker = match[1]?.toLowerCase().replace(/\s+/g, "-") ?? "";
+  const body = match[2]?.trim();
+  if (body === undefined || body.length === 0) return null;
+  return Object.freeze({
+    line: lineNumber,
+    text: line.trim(),
+    body,
+    followup:
+      marker === "follow-up" ||
+      marker === "followup" ||
+      isExplicitFollowup(body),
+  });
+}
+
 function taskBodyFromCheckboxLine(line: string): string {
   return stripCarryForwardSource(line)
     .replace(/^\s*[-*]\s+\[ \]\s+/, "")
@@ -158,6 +240,13 @@ function taskBodyFromCheckboxLine(line: string): string {
 
 function isExplicitFollowup(line: string): boolean {
   return /(^|\s)#follow-?up(\s|$)/i.test(line);
+}
+
+function looksLikeAmbiguousFollowup(line: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.startsWith("#")) return false;
+  return /\bfollow\s+up\s+with\b/i.test(trimmed);
 }
 
 function stripCarryForwardSource(line: string): string {

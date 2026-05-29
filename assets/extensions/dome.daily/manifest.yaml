@@ -32,6 +32,7 @@ processors:
         paths: ["wiki/dailies/*.md"]
       - kind: graph.write
         namespaces: ["dome.daily.*"]
+      - kind: question.ask
     module: processors/task-index.ts
 
   - id: dome.daily.carry-forward

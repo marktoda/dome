@@ -28,6 +28,7 @@ extensions:
       read: ["wiki/dailies/*.md"]
       patch.auto: ["wiki/dailies/*.md"]
       graph.write: ["dome.daily.*"]
+      question.ask: true
   dome.markdown:
     enabled: true
     grant:

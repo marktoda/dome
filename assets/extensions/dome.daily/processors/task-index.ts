@@ -1,7 +1,10 @@
 // dome.daily.task-index — project explicit daily checkboxes into page facts.
 
+import { createHash } from "node:crypto";
+
 import {
   factEffect,
+  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import {
@@ -11,7 +14,8 @@ import {
 } from "../../../../src/core/processor";
 
 import {
-  openTasksFromMarkdown,
+  actionItemsFromMarkdown,
+  ambiguousFollowupsFromMarkdown,
   parseDailyPath,
 } from "./daily-shared";
 
@@ -42,6 +46,7 @@ const taskIndex: Processor = defineProcessor({
   capabilities: [
     { kind: "read", paths: ["wiki/dailies/*.md"] },
     { kind: "graph.write", namespaces: ["dome.daily.*"] },
+    { kind: "question.ask" },
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: Effect[] = [];
@@ -51,11 +56,8 @@ const taskIndex: Processor = defineProcessor({
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
-      for (const task of openTasksFromMarkdown(content)) {
-        const ref = ctx.sourceRef(path, {
-          startLine: task.line,
-          endLine: task.line,
-        });
+      for (const task of actionItemsFromMarkdown(content)) {
+        const ref = ctx.sourceRef(path, lineRange(task.line));
         effects.push(
           factEffect({
             subject: { kind: "page", path },
@@ -77,9 +79,32 @@ const taskIndex: Processor = defineProcessor({
           );
         }
       }
+      for (const ambiguous of ambiguousFollowupsFromMarkdown(content)) {
+        effects.push(
+          questionEffect({
+            question:
+              `Possible follow-up in ${path}:${ambiguous.line}: ` +
+              `"${ambiguous.text}". Should Dome track this as a follow-up?`,
+            options: ["track", "ignore"],
+            sourceRefs: [ctx.sourceRef(path, lineRange(ambiguous.line))],
+            idempotencyKey:
+              `dome.daily.ambiguous-followup:${sha256(`${path}:${ambiguous.line}:${ambiguous.text}`)}`,
+          }),
+        );
+      }
     }
     return Object.freeze(effects);
   },
 });
 
 export default taskIndex;
+
+function lineRange(
+  line: number,
+): { readonly startLine: number; readonly endLine: number } {
+  return { startLine: line, endLine: line };
+}
+
+function sha256(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}

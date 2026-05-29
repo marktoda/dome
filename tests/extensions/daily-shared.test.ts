@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  actionItemsFromMarkdown,
+  ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
   dailyPath,
   openTasksFromMarkdown,
@@ -92,6 +94,49 @@ describe("dome.daily shared date helpers", () => {
         sourcePath: null,
         body: "Follow up with Ben",
         followup: false,
+      },
+    ]);
+  });
+
+  test("actionItemsFromMarkdown extracts deterministic TODO and follow-up directives", () => {
+    expect(
+      actionItemsFromMarkdown(
+        [
+          "TODO: Send budget update",
+          "- Follow up: Confirm Q3 plan with Eli",
+          "We should follow up with Sam about hiring",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        line: 1,
+        text: "TODO: Send budget update",
+        body: "Send budget update",
+        followup: false,
+      },
+      {
+        line: 2,
+        text: "- Follow up: Confirm Q3 plan with Eli",
+        body: "Confirm Q3 plan with Eli",
+        followup: true,
+      },
+    ]);
+  });
+
+  test("ambiguousFollowupsFromMarkdown asks only for prose follow-up guesses", () => {
+    expect(
+      ambiguousFollowupsFromMarkdown(
+        [
+          "TODO: Send budget update",
+          "- [ ] #followup Explicit checkbox",
+          "- Follow up: Explicit directive",
+          "We should follow up with Sam about hiring",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        line: 4,
+        text: "We should follow up with Sam about hiring",
       },
     ]);
   });

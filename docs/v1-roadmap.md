@@ -309,13 +309,19 @@ Work:
 - [x] Index explicit open daily checkboxes as source-ref-backed
       `dome.daily.open_task` facts, and explicit `#followup` / `#follow-up`
       checkboxes as `dome.daily.followup` facts.
-- [ ] Decide whether v1 needs stable task identities, or whether page-scoped
+- [x] Decide whether v1 needs stable task identities, or whether page-scoped
       daily task observations are enough until a richer task model lands.
-- [ ] Implement deterministic followup/todo extraction from daily notes where
+- [x] Implement deterministic followup/todo extraction from daily notes where
       possible beyond explicit checkbox markers.
-- [ ] Ask questions for ambiguous writes instead of silently guessing.
+- [x] Ask questions for ambiguous writes instead of silently guessing.
 - [ ] Add `dome today` and `dome prep` only once they have useful data to
       render.
+
+Decision:
+
+- [x] V1 task identity is page/source-ref scoped. Stable cross-page task ids
+      are deferred until there is a richer task model with user-visible task
+      lifecycle semantics.
 
 Acceptance:
 
@@ -323,8 +329,10 @@ Acceptance:
       carried-forward tasks.
 - [x] Explicit daily checkbox tasks and followup markers yield
       source-ref-backed facts.
-- [ ] Capture text yields source-ref-backed followups.
-- [ ] Ambiguous task extraction asks a question instead of mutating silently.
+- [x] Daily note TODO/follow-up directive text yields source-ref-backed tasks
+      and followups.
+- [x] Ambiguous task extraction asks a question instead of mutating silently.
+- [ ] Capture text outside daily notes yields source-ref-backed followups.
 - [ ] Real-vault dogfood against `~/vaults/work` or `docs/`.
 
 ## Milestone 6 - modelInvoke Substrate

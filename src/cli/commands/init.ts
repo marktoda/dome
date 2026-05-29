@@ -298,6 +298,7 @@ extensions:
         - "wiki/dailies/*.md"
       graph.write:
         - "dome.daily.*"
+      question.ask: true
 
   dome.search:
     enabled: true
