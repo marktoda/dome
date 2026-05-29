@@ -548,6 +548,9 @@ Work:
 - [x] Bound outbox handler execution with per-attempt timeouts and an
       engine-owned cancellation signal, while preserving pending rows and retry
       budget on explicit dispatch cancellation.
+- [x] Thread foreground host shutdown cancellation into operational outbox
+      dispatch so `dome serve` can stop retryable external work promptly
+      without marking rows failed or burning attempts.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

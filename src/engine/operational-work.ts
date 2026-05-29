@@ -64,6 +64,7 @@ export async function runOperationalWork(opts: {
     cascadeDepth: number,
   ) => Promise<AdoptionResult>;
   readonly currentAdopted?: () => CommitOid;
+  readonly signal?: AbortSignal;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -139,6 +140,7 @@ export async function runOperationalWork(opts: {
     handlers: opts.externalHandlers,
     enqueuedBefore: outboxDrainCutoff,
     now: outboxNow,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
   return Object.freeze({

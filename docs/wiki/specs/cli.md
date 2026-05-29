@@ -562,7 +562,9 @@ Composition (v1.0):
 5. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 6. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
 7. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
-8. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime
+8. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
+   outbox handler attempts receive the host cancellation signal and remain
+   pending without consuming retry budget, then the host closes the runtime
    (releases the projection, answers, ledger, and outbox SQLite handles) and
    exits 0.
 

@@ -175,6 +175,7 @@ type CompilerHostTickCommonOptions = {
   readonly runtime: VaultRuntime;
   readonly now?: () => Date;
   readonly runOperationalWhenInSync?: boolean;
+  readonly signal?: AbortSignal;
   readonly onEvent?: (event: AdoptEvent) => void;
 };
 
@@ -339,6 +340,7 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
         adopted: drift.head,
         branch: drift.branch,
         now,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
     }
     return Object.freeze({
@@ -358,6 +360,7 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
     runtime: opts.runtime,
     drift: drift.info,
     now,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
   });
 
@@ -393,6 +396,7 @@ function commonTickOptions(
     ...(opts.runOperationalWhenInSync !== undefined
       ? { runOperationalWhenInSync: opts.runOperationalWhenInSync }
       : {}),
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
   };
 }
@@ -440,6 +444,7 @@ async function runAdoptionCycle(opts: {
   readonly runtime: VaultRuntime;
   readonly drift: DriftInfo;
   readonly now?: () => Date;
+  readonly signal?: AbortSignal;
   readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<CompilerHostAdoptionCycleResult> {
   const { runtime, drift, onEvent } = opts;
@@ -527,6 +532,7 @@ async function runAdoptionCycle(opts: {
       now,
       adoptSubProposal,
       cursor,
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
 
     if (cursor.current !== adoptionResult.adoptedRef) {
@@ -566,6 +572,7 @@ export async function runOperationalWorkForAdopted(opts: {
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cursor?: AdoptedCursor;
+  readonly signal?: AbortSignal;
 }): Promise<OperationalWorkResult> {
   const now = opts.now ?? ((): Date => new Date());
   const cursor = opts.cursor ?? { current: opts.adopted };
@@ -613,6 +620,7 @@ export async function runOperationalWorkForAdopted(opts: {
     externalHandlers: opts.runtime.externalHandlers,
     adoptSubProposal,
     currentAdopted: () => cursor.current,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
   if (opts.branch !== undefined && cursor.current !== beforeOperational) {

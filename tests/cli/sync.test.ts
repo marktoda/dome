@@ -167,6 +167,13 @@ afterEach(async () => {
   }
 });
 
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 // ----- Test 1: empty-diff init ----------------------------------------------
 
 describe("runSync empty-diff init", () => {
@@ -425,6 +432,94 @@ describe("runSync idempotent", () => {
       expect(rows.length).toBe(1);
       expect(rows[0]?.status).toBe("failed");
       expect(rows[0]?.lastError).toContain("No external handler registered");
+    } finally {
+      outbox2.value.db.close();
+    }
+  }, 10_000);
+
+  test("compiler-host cancellation reaches in-sync operational outbox dispatch", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
+    const code1 = await runSync(options);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
+    const outbox1 = await openOutboxDb({ path: outboxPath });
+    if (!outbox1.ok) throw new Error(`could not open outbox: ${outbox1.error.kind}`);
+    try {
+      insertPending(outbox1.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "sync-in-sync-cancel",
+          payload: { event: "x" },
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        runId: "run-test",
+        now: new Date(Date.now() - 1),
+      });
+    } finally {
+      outbox1.value.db.close();
+    }
+
+    const controller = new AbortController();
+    let started: (() => void) | undefined;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let handlerSignal: AbortSignal | undefined;
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      externalHandlers: {
+        "calendar.write": async ({ signal }) => {
+          handlerSignal = signal;
+          started?.();
+          await waitForAbort(signal);
+          return { externalId: "should-not-send" };
+        },
+      },
+    });
+    if (!runtimeResult.ok) {
+      throw new Error(`openVaultRuntime failed: ${runtimeResult.error.kind}`);
+    }
+    try {
+      const drift = await detectDrift(f.vaultPath);
+      expect(drift.kind).toBe("in-sync");
+      const tickPromise = runCompilerHostTick({
+        runtime: runtimeResult.value,
+        drift,
+        signal: controller.signal,
+      });
+
+      await startedPromise;
+      expect(handlerSignal?.aborted).toBe(false);
+      controller.abort();
+
+      const tick = await tickPromise;
+      expect(tick.kind).toBe("in-sync");
+      if (tick.kind !== "in-sync") return;
+      expect(tick.operational?.outbox[0]?.kind).toBe("cancelled");
+      expect(handlerSignal?.aborted).toBe(true);
+    } finally {
+      await runtimeResult.value.close();
+    }
+
+    const outbox2 = await openOutboxDb({ path: outboxPath });
+    if (!outbox2.ok) throw new Error(`could not reopen outbox: ${outbox2.error.kind}`);
+    try {
+      const row = queryOutbox(outbox2.value.db)[0];
+      expect(row?.status).toBe("pending");
+      expect(row?.attempts).toBe(0);
+      expect(row?.lastError).toBeNull();
     } finally {
       outbox2.value.db.close();
     }

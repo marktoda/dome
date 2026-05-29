@@ -21,14 +21,14 @@ Shipped in the current v1 runtime:
 - `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
 - `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, answer handlers, durable JobEffect drains, and deterministic projection rebuild processors.
-- `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
+- `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync and threads shutdown cancellation into retryable outbox dispatch attempts.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
 - `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, retries one runtime-classified provider failure, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
-- Vendor SDK adapters, wiring runtime-close cancellation through in-flight
-  outbox dispatch, and a public `drainProcessors()` SDK method are target
-  surfaces described here for the completed architecture; they are not fully
-  implemented yet.
+- Vendor SDK adapters, runtime-close cancellation for operational work outside
+  the `dome serve` host loop, and a public `drainProcessors()` SDK method are
+  target surfaces described here for the completed architecture; they are not
+  fully implemented yet.
 
 ## Run state machine
 
@@ -201,11 +201,12 @@ preserves adoption atomicity: a running adoption processor finishes, times out,
 or is cancelled by an explicit caller-supplied signal under the normal adoption
 loop contract before close proceeds.
 
-The still-planned public `drainProcessors()` surface will make the same
-lifecycle operation addressable before full runtime close, and will also wire
-that runtime lifecycle signal through in-flight outbox dispatch attempts. The
-outbox dispatcher already gives each handler attempt an engine-owned signal and
-timeout; the remaining work is connecting that to runtime shutdown.
+The `dome serve` host threads shutdown cancellation into the operational pump,
+so in-flight outbox handler attempts abort promptly and leave their rows
+pending without burning retry budget. The still-planned public
+`drainProcessors()` surface will make the same lifecycle operation addressable
+before full runtime close and generalize operational-work cancellation beyond
+the foreground host loop.
 
 `drainProcessors()` waits for queued and running garden/view work to settle up to the configured drain timeout. It does not start new schedule-triggered work while draining. On graceful shutdown:
 
@@ -261,8 +262,8 @@ Already pinned:
 Pending:
 
 - Public `drainProcessors()` and closed-Vault typed error tests.
-- Runtime-close tests for in-flight outbox dispatch once operational drain
-  accepts the runtime lifecycle signal.
+- Runtime-close tests for in-flight outbox dispatch once public drain
+  generalizes the foreground-host cancellation path.
 
 ## Related
 

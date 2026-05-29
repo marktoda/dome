@@ -242,9 +242,10 @@ export async function runServe(
  *   3. If in-sync and the operational cadence is due, drain scheduler/jobs/outbox.
  *   4. Sleep for `pollIntervalMs` (cancellable).
  *
- * Each iteration runs to completion (adoption is not interrupted mid-run)
- * — `cancel` is only honored at the sleep boundary or the start of the
- * next iteration.
+ * Adoption still runs to completion once started. Operational outbox handler
+ * attempts receive `cancel` so shutdown can abort retryable external work
+ * instead of waiting for the full handler timeout; the next host run will
+ * retry any pending row from durable state.
  *
  * Mid-run state changes (e.g., the user `git checkout`s a detached HEAD
  * while the daemon is sleeping) surface as a non-`drift` `detectDrift`
@@ -294,6 +295,7 @@ async function pollLoop(input: {
         drift,
         runOperationalWhenInSync:
           drift.kind === "drift" || nowMs >= nextOperationalAtMs,
+        cancel,
         verbose,
         quiet,
         ...(filterProcessor !== undefined ? { filterProcessor } : {}),
@@ -341,6 +343,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
   readonly runtime: VaultRuntime;
   readonly drift: DriftResult;
   readonly runOperationalWhenInSync: boolean;
+  readonly cancel: AbortSignal;
   readonly verbose: boolean;
   readonly quiet: boolean;
   readonly filterProcessor?: string | undefined;
@@ -350,6 +353,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
     runtime,
     drift,
     runOperationalWhenInSync,
+    cancel,
     verbose,
     quiet,
     filterProcessor,
@@ -361,6 +365,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
       runtime,
       drift,
       runOperationalWhenInSync,
+      signal: cancel,
       ...(verbose && !quiet
         ? {
             onEvent: (e) => {
