@@ -207,6 +207,8 @@ extensions:
 
 With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
+Grant blocks are validated fail-loudly when the runtime opens the vault: unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set.
+
 Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted reads and auto-patches for `wiki/dailies/*.md`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` needs no grants today. Third-party bundles default to inactive until the user explicitly opts in.
 
 ## Enforcement chokepoint

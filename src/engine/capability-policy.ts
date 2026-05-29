@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
-import type { Capability } from "../core/processor";
+import { CapabilitySchema, type Capability } from "../core/processor";
 import { err, ok, type Result } from "../types";
 
 export type CapabilityPolicy = {
@@ -51,18 +51,42 @@ export async function loadCapabilityPolicy(
 
   const grants = new Map<string, ReadonlyArray<Capability>>();
   const enabled = new Set<string>();
-  const extensions = asRecord(root.extensions);
-  if (extensions !== null) {
+  if (root.extensions !== undefined) {
+    const extensions = asRecord(root.extensions);
+    if (extensions === null) {
+      return err(`${path} extensions must be a YAML mapping`);
+    }
     for (const [extensionId, rawExtension] of Object.entries(extensions)) {
       const extension = asRecord(rawExtension);
-      if (extension === null) continue;
+      const extensionPath = `extensions.${extensionId}`;
+      if (extension === null) {
+        return err(`${path} ${extensionPath} must be a YAML mapping`);
+      }
+      if (
+        extension.enabled !== undefined &&
+        typeof extension.enabled !== "boolean"
+      ) {
+        return err(`${path} ${extensionPath}.enabled must be a boolean`);
+      }
       if (extension.enabled !== true) {
         grants.set(extensionId, Object.freeze([]));
         continue;
       }
       enabled.add(extensionId);
-      const rawGrant = extension.grant ?? extension.grants;
-      grants.set(extensionId, parseGrantBlock(rawGrant));
+      if (hasOwn(extension, "grant") && hasOwn(extension, "grants")) {
+        return err(`${path} ${extensionPath} must use grant or grants, not both`);
+      }
+      const rawGrant = hasOwn(extension, "grant")
+        ? extension.grant
+        : extension.grants;
+      const grantLabel = hasOwn(extension, "grant")
+        ? `${extensionPath}.grant`
+        : `${extensionPath}.grants`;
+      const parsedGrant = parseGrantBlock(rawGrant, grantLabel);
+      if (!parsedGrant.ok) {
+        return err(`${path} ${parsedGrant.error}`);
+      }
+      grants.set(extensionId, parsedGrant.value);
     }
   }
 
@@ -86,190 +110,293 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   });
 }
 
-function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
+const GRANT_KEYS = new Set([
+  "read",
+  "patch.propose",
+  "patch.auto",
+  "owns.path",
+  "search.write",
+  "owns.region",
+  "graph.write",
+  "question.ask",
+  "job.enqueue",
+  "model.invoke",
+  "external",
+  "outbox.read",
+  "outbox.recover",
+  "quarantine.read",
+  "quarantine.recover",
+  "run.read",
+  "run.recover",
+]);
+
+const OUTBOX_STATUSES = ["pending", "sent", "failed", "abandoned"] as const;
+const OUTBOX_RECOVERY_ACTIONS = ["retry", "abandon"] as const;
+const QUARANTINE_RECOVERY_ACTIONS = ["reset"] as const;
+const RUN_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "timed_out",
+  "cancelled",
+] as const;
+const RUN_RECOVERY_ACTIONS = ["fail"] as const;
+
+function parseGrantBlock(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyArray<Capability>, string> {
+  if (raw === undefined) return ok(Object.freeze([]));
+
   const grant = asRecord(raw);
-  if (grant === null) return Object.freeze([]);
+  if (grant === null) return err(`${label} must be a YAML mapping`);
+
+  for (const key of Object.keys(grant)) {
+    if (!GRANT_KEYS.has(key)) {
+      return err(`${label}.${key} is not a known capability grant`);
+    }
+  }
 
   const capabilities: Capability[] = [];
-  pushPathCapability(capabilities, "read", grant.read);
-  pushPathCapability(capabilities, "patch.propose", grant["patch.propose"]);
-  pushPathCapability(capabilities, "patch.auto", grant["patch.auto"]);
-  pushPathCapability(capabilities, "owns.path", grant["owns.path"]);
-  pushPathCapability(capabilities, "search.write", grant["search.write"]);
-  pushRegionCapability(capabilities, grant["owns.region"]);
-  pushGraphWriteCapability(capabilities, grant["graph.write"]);
-  pushQuestionAskCapability(capabilities, grant["question.ask"]);
-  pushJobEnqueueCapability(capabilities, grant["job.enqueue"]);
-  pushModelInvokeCapability(capabilities, grant["model.invoke"]);
-  pushExternalCapability(capabilities, grant.external);
-  pushOutboxReadCapability(capabilities, grant["outbox.read"]);
-  pushOutboxRecoverCapability(capabilities, grant["outbox.recover"]);
-  pushQuarantineReadCapability(capabilities, grant["quarantine.read"]);
-  pushQuarantineRecoverCapability(capabilities, grant["quarantine.recover"]);
-  pushRunReadCapability(capabilities, grant["run.read"]);
-  pushRunRecoverCapability(capabilities, grant["run.recover"]);
-  return Object.freeze(capabilities);
+  for (const [key, value] of Object.entries(grant)) {
+    const normalized = normalizeGrantEntry(key, value, `${label}.${key}`);
+    if (!normalized.ok) return normalized;
+
+    for (const candidate of normalized.value) {
+      const parsed = CapabilitySchema.safeParse(candidate);
+      if (!parsed.success) {
+        const message = parsed.error.issues[0]?.message ?? "is malformed";
+        return err(`${label}.${key} ${message}`);
+      }
+      capabilities.push(parsed.data as Capability);
+    }
+  }
+
+  return ok(Object.freeze(capabilities));
 }
 
-function pushPathCapability(
-  out: Capability[],
-  kind: "read" | "patch.propose" | "patch.auto" | "owns.path" | "search.write",
+const STRING_LIST_GRANTS: Record<
+  string,
+  {
+    readonly kind:
+      | "read"
+      | "patch.propose"
+      | "patch.auto"
+      | "owns.path"
+      | "search.write"
+      | "owns.region"
+      | "graph.write"
+      | "job.enqueue";
+    readonly field: "paths" | "regionIds" | "namespaces" | "processors";
+  }
+> = {
+  read: { kind: "read", field: "paths" },
+  "patch.propose": { kind: "patch.propose", field: "paths" },
+  "patch.auto": { kind: "patch.auto", field: "paths" },
+  "owns.path": { kind: "owns.path", field: "paths" },
+  "search.write": { kind: "search.write", field: "paths" },
+  "owns.region": { kind: "owns.region", field: "regionIds" },
+  "graph.write": { kind: "graph.write", field: "namespaces" },
+  "job.enqueue": { kind: "job.enqueue", field: "processors" },
+};
+
+function normalizeGrantEntry(
+  key: string,
   raw: unknown,
-): void {
-  const paths = stringArray(raw);
-  if (paths === null) return;
-  out.push({ kind, paths });
-}
-
-function pushRegionCapability(out: Capability[], raw: unknown): void {
-  const regionIds = stringArray(raw);
-  if (regionIds === null) return;
-  out.push({ kind: "owns.region", regionIds });
-}
-
-function pushGraphWriteCapability(out: Capability[], raw: unknown): void {
-  const namespaces = stringArray(raw);
-  if (namespaces === null) return;
-  out.push({ kind: "graph.write", namespaces });
-}
-
-function pushQuestionAskCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "question.ask" });
-    return;
+  label: string,
+): Result<ReadonlyArray<unknown>, string> {
+  const listGrant = STRING_LIST_GRANTS[key];
+  if (listGrant !== undefined) {
+    const values = readRequiredStringList(raw, label);
+    if (!values.ok) return values;
+    return ok([{ kind: listGrant.kind, [listGrant.field]: values.value }]);
   }
-  const namespaces = stringArray(raw);
-  if (namespaces === null) return;
-  out.push({ kind: "question.ask", namespaces });
-}
 
-function pushJobEnqueueCapability(out: Capability[], raw: unknown): void {
-  const processors = stringArray(raw);
-  if (processors === null) return;
-  out.push({ kind: "job.enqueue", processors });
-}
-
-function pushModelInvokeCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "model.invoke" });
-    return;
+  switch (key) {
+    case "question.ask":
+      return normalizeQuestionAsk(raw, label);
+    case "model.invoke":
+      return normalizeModelInvoke(raw, label);
+    case "external":
+      return normalizeExternal(raw, label);
+    case "outbox.read":
+      return normalizeEnumCapability(
+        raw,
+        label,
+        "outbox.read",
+        "statuses",
+        OUTBOX_STATUSES,
+      );
+    case "outbox.recover":
+      return normalizeEnumCapability(
+        raw,
+        label,
+        "outbox.recover",
+        "actions",
+        OUTBOX_RECOVERY_ACTIONS,
+      );
+    case "quarantine.read":
+      if (raw !== true) return err(`${label} must be true`);
+      return ok([{ kind: "quarantine.read" }]);
+    case "quarantine.recover":
+      return normalizeEnumCapability(
+        raw,
+        label,
+        "quarantine.recover",
+        "actions",
+        QUARANTINE_RECOVERY_ACTIONS,
+      );
+    case "run.read":
+      return normalizeEnumCapability(
+        raw,
+        label,
+        "run.read",
+        "statuses",
+        RUN_STATUSES,
+      );
+    case "run.recover":
+      return normalizeEnumCapability(
+        raw,
+        label,
+        "run.recover",
+        "actions",
+        RUN_RECOVERY_ACTIONS,
+      );
+    default:
+      return err(`${label} is not a known capability grant`);
   }
+}
+
+function normalizeQuestionAsk(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyArray<unknown>, string> {
+  if (raw === true) return ok([{ kind: "question.ask" }]);
+  const namespaces = readRequiredStringList(raw, label);
+  if (!namespaces.ok) return namespaces;
+  return ok([{ kind: "question.ask", namespaces: namespaces.value }]);
+}
+
+function normalizeModelInvoke(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyArray<unknown>, string> {
+  if (raw === true) return ok([{ kind: "model.invoke" }]);
+
   const grant = asRecord(raw);
-  if (grant === null) return;
+  if (grant === null) return err(`${label} must be true or a YAML mapping`);
+  for (const key of Object.keys(grant)) {
+    if (key !== "maxDailyCostUsd" && key !== "modelAllowlist") {
+      return err(`${label}.${key} is not a known model.invoke grant field`);
+    }
+  }
   const built: {
     kind: "model.invoke";
     maxDailyCostUsd?: number;
     modelAllowlist?: ReadonlyArray<string>;
   } = { kind: "model.invoke" };
-  if (typeof grant.maxDailyCostUsd === "number") {
+
+  if (grant.maxDailyCostUsd !== undefined) {
+    if (
+      typeof grant.maxDailyCostUsd !== "number" ||
+      !Number.isFinite(grant.maxDailyCostUsd) ||
+      grant.maxDailyCostUsd < 0
+    ) {
+      return err(`${label}.maxDailyCostUsd must be a non-negative number`);
+    }
     built.maxDailyCostUsd = grant.maxDailyCostUsd;
   }
-  const modelAllowlist = stringArray(grant.modelAllowlist);
-  if (modelAllowlist !== null) {
-    built.modelAllowlist = modelAllowlist;
+
+  const modelAllowlist =
+    grant.modelAllowlist === undefined
+      ? ok(undefined)
+      : readRequiredStringList(grant.modelAllowlist, `${label}.modelAllowlist`);
+  if (!modelAllowlist.ok) return modelAllowlist;
+  if (modelAllowlist.value !== undefined) {
+    built.modelAllowlist = modelAllowlist.value;
   }
-  out.push(built);
+
+  return ok([built]);
 }
 
-function pushExternalCapability(out: Capability[], raw: unknown): void {
-  const capabilities = stringArray(raw);
-  if (capabilities === null) return;
-  for (const capability of capabilities) {
-    out.push({ kind: "external", capability });
-  }
-}
-
-function pushOutboxReadCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "outbox.read" });
-    return;
-  }
-  const statuses = stringArray(raw)?.filter(
-    (status): status is "pending" | "sent" | "failed" | "abandoned" =>
-      status === "pending" ||
-      status === "sent" ||
-      status === "failed" ||
-      status === "abandoned",
+function normalizeExternal(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyArray<unknown>, string> {
+  const capabilities = readRequiredStringList(raw, label);
+  if (!capabilities.ok) return capabilities;
+  return ok(
+    capabilities.value.map((capability) => ({
+      kind: "external",
+      capability,
+    })),
   );
-  if (statuses === undefined || statuses.length === 0) return;
-  out.push({ kind: "outbox.read", statuses });
 }
 
-function pushOutboxRecoverCapability(out: Capability[], raw: unknown): void {
+function normalizeEnumCapability<Allowed extends readonly string[]>(
+  raw: unknown,
+  label: string,
+  kind:
+    | "outbox.read"
+    | "outbox.recover"
+    | "quarantine.recover"
+    | "run.read"
+    | "run.recover",
+  field: "statuses" | "actions",
+  allowed: Allowed,
+): Result<ReadonlyArray<unknown>, string> {
   if (raw === true) {
-    out.push({ kind: "outbox.recover", actions: ["retry", "abandon"] });
-    return;
+    if (field === "statuses") return ok([{ kind }]);
+    return ok([{ kind, [field]: [...allowed] }]);
   }
-  const actions = stringArray(raw)?.filter(
-    (action): action is "retry" | "abandon" =>
-      action === "retry" || action === "abandon",
-  );
-  if (actions === undefined || actions.length === 0) return;
-  out.push({ kind: "outbox.recover", actions });
+  const values = readRequiredEnumList(raw, allowed, label);
+  if (!values.ok) return values;
+  return ok([{ kind, [field]: values.value }]);
 }
 
-function pushQuarantineReadCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) out.push({ kind: "quarantine.read" });
-}
-
-function pushQuarantineRecoverCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "quarantine.recover", actions: ["reset"] });
-    return;
+function readRequiredStringList(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyArray<string>, string> {
+  if (typeof raw === "string") {
+    if (raw.trim().length === 0) {
+      return err(`${label} must not be an empty string`);
+    }
+    return ok(Object.freeze([raw]));
   }
-  const actions = stringArray(raw)?.filter(
-    (action): action is "reset" => action === "reset",
-  );
-  if (actions === undefined || actions.length === 0) return;
-  out.push({ kind: "quarantine.recover", actions });
-}
-
-function pushRunReadCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "run.read" });
-    return;
+  if (!Array.isArray(raw)) {
+    return err(`${label} must be a string or non-empty string array`);
   }
-  const statuses = stringArray(raw)?.filter(
-    (
-      status,
-    ): status is
-      | "queued"
-      | "running"
-      | "succeeded"
-      | "failed"
-      | "skipped"
-      | "timed_out"
-      | "cancelled" =>
-      status === "queued" ||
-      status === "running" ||
-      status === "succeeded" ||
-      status === "failed" ||
-      status === "skipped" ||
-      status === "timed_out" ||
-      status === "cancelled",
-  );
-  if (statuses === undefined || statuses.length === 0) return;
-  out.push({ kind: "run.read", statuses });
-}
-
-function pushRunRecoverCapability(out: Capability[], raw: unknown): void {
-  if (raw === true) {
-    out.push({ kind: "run.recover", actions: ["fail"] });
-    return;
+  if (raw.length === 0) {
+    return err(`${label} must be a non-empty string array`);
   }
-  const actions = stringArray(raw)?.filter(
-    (action): action is "fail" => action === "fail",
-  );
-  if (actions === undefined || actions.length === 0) return;
-  out.push({ kind: "run.recover", actions });
+  const values: string[] = [];
+  for (const [index, value] of raw.entries()) {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return err(`${label}[${index}] must be a non-empty string`);
+    }
+    values.push(value);
+  }
+  return ok(Object.freeze(values));
 }
 
-function stringArray(raw: unknown): ReadonlyArray<string> | null {
-  if (typeof raw === "string") return Object.freeze([raw]);
-  if (!Array.isArray(raw)) return null;
-  const values = raw.filter((value): value is string => typeof value === "string");
-  if (values.length === 0) return null;
-  return Object.freeze(values);
+function readRequiredEnumList<Allowed extends readonly string[]>(
+  raw: unknown,
+  allowed: Allowed,
+  label: string,
+): Result<ReadonlyArray<Allowed[number]>, string> {
+  const values = readRequiredStringList(raw, label);
+  if (!values.ok) return values;
+  for (const [index, value] of values.value.entries()) {
+    if (!allowed.includes(value)) {
+      return err(
+        `${label}[${index}] must be one of ${allowed.map((s) => `"${s}"`).join(", ")}`,
+      );
+    }
+  }
+  return ok(Object.freeze(values.value as ReadonlyArray<Allowed[number]>));
 }
 
 function asRecord(raw: unknown): Record<string, unknown> | null {
@@ -277,6 +404,10 @@ function asRecord(raw: unknown): Record<string, unknown> | null {
     return null;
   }
   return raw as Record<string, unknown>;
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 function isMissingFile(e: unknown): boolean {

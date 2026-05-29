@@ -58,10 +58,6 @@ extensions:
   omitted-enabled.bundle:
     grant:
       patch.auto: ["**"]
-  malformed-enabled.bundle:
-    enabled: "true"
-    grant:
-      patch.auto: ["**"]
 `,
       "utf8",
     );
@@ -109,13 +105,134 @@ extensions:
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("omitted-enabled.bundle")).toEqual([]);
-    expect(result.value.grantsForExtension("malformed-enabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);
     expect(result.value.enabledExtensionIds).toEqual(["dome.markdown"]);
     expect(result.value.isExtensionEnabled("dome.markdown")).toBe(true);
     expect(result.value.isExtensionEnabled("disabled.bundle")).toBe(false);
     expect(result.value.isExtensionEnabled("omitted-enabled.bundle")).toBe(false);
-    expect(result.value.isExtensionEnabled("malformed-enabled.bundle")).toBe(false);
     expect(result.value.isExtensionEnabled("missing.bundle")).toBe(false);
+  });
+
+  test("rejects malformed extension activation", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  malformed-enabled.bundle:
+    enabled: "true"
+    grant:
+      patch.auto: ["**"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.malformed-enabled.bundle.enabled must be a boolean",
+    );
+  });
+
+  test("rejects ambiguous grant aliases", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant: {}
+    grants: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("must use grant or grants, not both");
+  });
+
+  test("rejects unknown grant keys", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      patch.autoo: ["**"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.grant.patch.autoo is not a known capability grant",
+    );
+  });
+
+  test("rejects malformed grant values instead of dropping them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read: ["**/*.md", 123]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.grant.read[1] must be a non-empty string",
+    );
+  });
+
+  test("rejects invalid operational grant enum values", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.health:
+    enabled: true
+    grant:
+      outbox.read: ["retry"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      'extensions.dome.health.grant.outbox.read[0] must be one of "pending"',
+    );
   });
 });
