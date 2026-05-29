@@ -8,7 +8,11 @@ sources:
 
 # Built-in extensions × phase matrix
 
-The dense map of first-party `dome.*` bundles × the three processor phases. Rows marked `planned` are product-pressure references, not shipped assets.
+The dense map of first-party `dome.*` bundles × the three processor phases.
+Rows marked `shipped` are present in `assets/extensions/` and lockstep-tested
+against their manifests. Cells may also name `planned` processors as explicit
+future pressure; those entries are non-normative until promoted to shipped
+assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 ## The matrix
 
@@ -17,19 +21,19 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates` | — | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
-| **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
-| **`dome.lint`** | partially shipped | — | — | shipped: `report`; planned: `apply-finding` |
-| **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
+| **`dome.daily`** | shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
+| **`dome.lint`** | shipped | — | — | shipped: `report`; planned: `apply-finding` |
+| **`dome.search`** | shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
-| **`dome.intake`** | partially shipped | shipped: `capture-index` | shipped: `extract-capture`, `inbox-stale-check`, `low-confidence-answer`, `synthesize-capture`, `synthesize-rollup` | — |
+| **`dome.intake`** | shipped | shipped: `capture-index` | shipped: `extract-capture`, `inbox-stale-check`, `low-confidence-answer`, `synthesize-capture`, `synthesize-rollup` | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts
 
 - **Shipped processors:** 31 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
-- **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
+- **Planned processors:** listed as `planned` above; they are future pressure inside otherwise shipped bundles and do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
 

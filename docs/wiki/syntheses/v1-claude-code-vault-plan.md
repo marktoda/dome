@@ -169,8 +169,10 @@ Shipped and strong:
 Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle cut is now narrower than the older aspirational
-  matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and
+- The first-party bundle cut is narrower than the older aspirational plan.
+  The matrices may still name explicit future processors, but their shipped
+  cells now match the manifest-backed v1 bundle cut. `dome.search` ships
+  deterministic FTS indexing, `dome query`, and
   `dome export-context`; `dome.health` ships failed-outbox retry/abandon,
   quarantined-processor reset, and orphan-run recovery; `dome.daily` ships
   deterministic daily creation, task carry-forward, source-ref-backed

@@ -642,10 +642,11 @@ Acceptance:
 
 ## V1 Remaining Gate
 
-The only remaining V1 release gate is real use: run Dome against the daily
-management vault for one week, with `dome serve` or regular `dome sync`, and
-fix any issue that requires manual sqlite/JSON edits, loses garden patches,
-leaves unexplained stuck state, or makes recovery confusing.
+Canonical gate: see **Active Release Gate** above. The remaining release
+decision is still real use: run Dome against the daily management vault for one
+week, with `dome serve` or regular `dome sync`, and fix any issue that
+requires manual sqlite/JSON edits, loses garden patches, leaves unexplained
+stuck state, or makes recovery confusing.
 
 ## V1 Bundle Cut
 

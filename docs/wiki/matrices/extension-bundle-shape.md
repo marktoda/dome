@@ -14,8 +14,7 @@ The canonical map of "what an extension bundle contributes to a vault." Rows are
 
 | `Status` value | Location convention | Lockstep behavior |
 |---|---|---|
-| `shipped` | `assets/extensions/<bundle>/` in the SDK package (resolved at runtime; not copied into vaults) | Iterate; assert each named filename exists. |
-| `partially shipped` | `assets/extensions/<bundle>/` in the SDK package, with future cells called out explicitly | Iterate only over shipped filenames; future items are non-normative until promoted. |
+| `shipped` | `assets/extensions/<bundle>/` in the SDK package (resolved at runtime; not copied into vaults) | Iterate; assert each shipped filename exists. Cells may include `future:` notes, which are non-normative until promoted with assets and tests. |
 | `test-fixture` | `tests/harness/fixtures/bundles/<bundle>/` (only in the SDK repo, never shipped or installed) | Iterate; assert each named filename exists. |
 | `anticipated` | n/a (documentation-of-intent for future-pressure bundles) | Skip — rows with this status are non-normative future pressure. |
 
@@ -43,10 +42,10 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 | **`dome.index`** *(first-party)* | `anticipated` | — | — | `update-index.ts` | — | `read: wiki/**`; `owns.path: ["index.md"]`; `patch.auto: ["index.md"]` |
 | **`dome.log`** *(first-party)* | `anticipated` | — | — | `append-log.ts` | — | `owns.path: ["log.md"]`; `patch.auto: ["log.md"]` |
 | **`dome.links`** *(first-party)* | `anticipated` | — | `preamble.md` | `cross-reference.ts` | — | `read: wiki/**`; `patch.propose: ["wiki/**"]` |
-| **`dome.intake`** *(first-party)* | `partially shipped` | `capture` | —; future: `preamble.md` | `capture-index.ts`, `extract-capture.ts`, `inbox-stale-check.ts`, `low-confidence-answer.ts`, `synthesize-capture.ts`, `synthesize-rollup.ts` | — | `read: ["inbox/**/*.md", "wiki/generated/intake/*.md"]`; `patch.auto: ["wiki/generated/intake/*.md", "wiki/syntheses/intake-*.md", "inbox/processed/*.md", "inbox/raw/*.md"]`; `graph.write: ["dome.intake.*"]`; `model.invoke: { maxDailyCostUsd: 5 }`; `question.ask: true`; future: follow-on jobs |
-| **`dome.daily`** *(first-party)* | `partially shipped` | `daily`; future: `weekly` | — | `agenda-with.ts`, `carry-forward.ts`, `create-daily.ts`, `prep.ts`, `task-index.ts`, `today.ts`; future: `create-weekly.ts`, `week-review.ts`, `append-followup.ts` | — | `read: ["wiki/**/*.md"]`; `patch.auto: ["wiki/dailies/*.md"]`; `graph.write: ["dome.daily.*"]`; `question.ask: true` |
-| **`dome.lint`** *(first-party)* | `partially shipped` | — | — | `report.ts`; future: `apply-finding.ts` | — | `read: ["**/*.md"]`; future: `patch.propose: ["**"]` |
-| **`dome.search`** *(first-party)* | `partially shipped` | — | — | `index-text.ts`, `query.ts`, `export-context.ts` | — | `read: ["**/*.md"]`; `search.write: ["**/*.md"]` |
+| **`dome.intake`** *(first-party)* | `shipped` | `capture` | —; future: `preamble.md` | `capture-index.ts`, `extract-capture.ts`, `inbox-stale-check.ts`, `low-confidence-answer.ts`, `synthesize-capture.ts`, `synthesize-rollup.ts` | — | `read: ["inbox/**/*.md", "wiki/generated/intake/*.md"]`; `patch.auto: ["wiki/generated/intake/*.md", "wiki/syntheses/intake-*.md", "inbox/processed/*.md", "inbox/raw/*.md"]`; `graph.write: ["dome.intake.*"]`; `model.invoke: { maxDailyCostUsd: 5 }`; `question.ask: true`; future: follow-on jobs |
+| **`dome.daily`** *(first-party)* | `shipped` | `daily`; future: `weekly` | — | `agenda-with.ts`, `carry-forward.ts`, `create-daily.ts`, `prep.ts`, `task-index.ts`, `today.ts`; future: `create-weekly.ts`, `week-review.ts`, `append-followup.ts` | — | `read: ["wiki/**/*.md"]`; `patch.auto: ["wiki/dailies/*.md"]`; `graph.write: ["dome.daily.*"]`; `question.ask: true` |
+| **`dome.lint`** *(first-party)* | `shipped` | — | — | `report.ts`; future: `apply-finding.ts` | — | `read: ["**/*.md"]`; future: `patch.propose: ["**"]` |
+| **`dome.search`** *(first-party)* | `shipped` | — | — | `index-text.ts`, `query.ts`, `export-context.ts` | — | `read: ["**/*.md"]`; `search.write: ["**/*.md"]` |
 | **`dome.migrate`** *(first-party)* | `anticipated` | — | — | `migrate-vault.ts` | — | `read: ["**"]`; `patch.auto: ["**"]` (migrations need broad reach by design) |
 | **`hello-world`** *(test fixture)* | `test-fixture` | `hello` | `preamble.md` | `say-hello.ts` | — | `read: wiki/**`; `patch.auto: ["wiki/hellos/**"]` |
 | **`acme.calendar-sync`** *(third-party — anticipated)* | `anticipated` | — | `preamble.md` | `sync-events.ts`, `event-to-task.ts` | `calendar.write.ts`, `calendar.read.ts` | `read: wiki/**`; `external: ["calendar.write", "calendar.read"]`; `patch.propose: ["wiki/dailies/**"]` |
