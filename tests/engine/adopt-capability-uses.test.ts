@@ -101,6 +101,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         executionStatus: "succeeded",
         declared: [propose],
         granted: [propose],
+        inspectedPaths: [],
         effects: [
           patchEffect({
             mode: "propose",
@@ -156,6 +157,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         executionStatus: "succeeded",
         declared: [propose],
         granted: [propose],
+        inspectedPaths: [],
         effects: [
           patchEffect({
             mode: "auto",
@@ -210,6 +212,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         executionStatus: "succeeded",
         declared: [],
         granted: [],
+        inspectedPaths: [],
         effects: [
           patchEffect({
             mode: "auto",
@@ -262,6 +265,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
         executionStatus: "succeeded",
         declared: [propose],
         granted: [propose],
+        inspectedPaths: [],
         effects: [
           patchEffect({
             mode: "propose",

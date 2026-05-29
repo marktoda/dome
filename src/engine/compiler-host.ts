@@ -725,6 +725,7 @@ function makeAdoptSubProposal(opts: {
       runAdoptionProcessors: typeof opts.runtime.processorRuntime.adoptionRunner;
       sinks: ApplyEffectSinks;
       ledger: typeof opts.runtime.ledgerDb;
+      maxIterations: number;
       onEvent?: (event: AdoptEvent) => void;
     } = {
       vault: opts.vault,
@@ -732,6 +733,7 @@ function makeAdoptSubProposal(opts: {
       runAdoptionProcessors: opts.runtime.processorRuntime.adoptionRunner,
       sinks: subSinks,
       ledger: opts.runtime.ledgerDb,
+      maxIterations: opts.runtime.config.engine.maxIterations,
     };
     if (opts.onEvent !== undefined) subAdoptOpts.onEvent = opts.onEvent;
     const subResult = await adopt(subAdoptOpts);

@@ -241,5 +241,11 @@ export type RunnerResult = {
   readonly executionError?: RunnerError;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
+  /**
+   * Paths this processor was allowed to inspect for this dispatch. The runtime
+   * computes this as `changedPaths ∩ effective read grants`; projection
+   * maintenance uses it when clearing stale page-scoped facts/diagnostics.
+   */
+  readonly inspectedPaths: ReadonlyArray<string>;
   readonly effects: ReadonlyArray<Effect>;
 };

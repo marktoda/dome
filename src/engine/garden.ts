@@ -354,7 +354,7 @@ async function runGardenPhaseInner(opts: {
       await sinks.resolveFacts({
         processorId: result.processorId,
         runId: result.runId,
-        inspectedPaths: changedPaths,
+        inspectedPaths: result.inspectedPaths,
       });
     }
 

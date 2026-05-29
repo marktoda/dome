@@ -103,6 +103,7 @@ describe("adopt fixed-point loop", () => {
         executionStatus: "succeeded",
         declared: [],
         granted: [],
+        inspectedPaths: [],
         effects: [
           diagnosticEffect({
             severity: "block",
@@ -153,6 +154,7 @@ describe("adopt fixed-point loop", () => {
         executionStatus: "succeeded",
         declared: [auto],
         granted: [auto],
+        inspectedPaths: [],
         effects: [
           patchEffect({
             mode: "auto",
@@ -191,5 +193,63 @@ describe("adopt fixed-point loop", () => {
         proposalId: "prop_1_aaaaaa",
       },
     ]);
+  });
+
+  test("projection cleanup uses runner inspectedPaths, not full changedPaths", async () => {
+    const f = await makeMinimalGitVault();
+    fixtures.push(f);
+    await writeFile(join(f.vault.path, "wiki", "visible.md"), "visible\n");
+    await mkdir(join(f.vault.path, "secret"), { recursive: true });
+    await writeFile(join(f.vault.path, "secret", "hidden.md"), "hidden\n");
+    const head = await commit({
+      path: f.vault.path,
+      message: "mixed visible and hidden changes\n",
+      files: ["wiki/visible.md", "secret/hidden.md"],
+    });
+    const proposal = makeManualProposal({
+      id: "prop_inspected_paths",
+      base: commitOid(f.baseSha),
+      head: commitOid(head),
+      branch: "main",
+    });
+    const inspectedPaths = Object.freeze(["wiki/visible.md"]);
+    const runner: AdoptionPhaseRunner = async (input) => {
+      expect([...input.changedPaths].sort()).toEqual([
+        "secret/hidden.md",
+        "wiki/visible.md",
+      ]);
+      return [
+        {
+          runId: "run_test_inspected" as RunId,
+          processorId: "test.inspected",
+          executionStatus: "succeeded",
+          declared: [],
+          granted: [],
+          inspectedPaths,
+          effects: [],
+        },
+      ];
+    };
+    const resolvedFacts: ReadonlyArray<string>[] = [];
+    const resolvedDiagnostics: ReadonlyArray<string>[] = [];
+
+    const r = await adopt({
+      vault: f.vault,
+      proposal,
+      runAdoptionProcessors: runner,
+      sinks: {
+        ...noopSinks(),
+        resolveFacts: async (input) => {
+          resolvedFacts.push(input.inspectedPaths);
+        },
+        resolveDiagnostics: async (input) => {
+          resolvedDiagnostics.push(input.inspectedPaths);
+        },
+      },
+    });
+
+    expect(r.adopted).toBe(true);
+    expect(resolvedFacts).toEqual([["wiki/visible.md"]]);
+    expect(resolvedDiagnostics).toEqual([["wiki/visible.md"]]);
   });
 });

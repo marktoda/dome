@@ -35,7 +35,12 @@ import type { CommitOid } from "../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import type { LedgerDb } from "../ledger/db";
 import { recordEffectCapabilityUse } from "./effect-capability-use";
-import type { RunId, ViewPhaseRunner } from "./runner-contract";
+import type {
+  RunnerError,
+  RunnerExecutionStatus,
+  RunId,
+  ViewPhaseRunner,
+} from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
 // ----- RunCommandResult -----------------------------------------------------
@@ -47,6 +52,11 @@ import type { EngineVault } from "./vault-shape";
  *                             `effects` holds the collected ViewEffects
  *                             (typically one; some processors may emit
  *                             multiple chunks of a streaming view).
+ *   - `kind: "failed"`       — a matching processor ran but the execution
+ *                             boundary failed, timed out, cancelled, or
+ *                             rejected invalid output. Diagnostics are
+ *                             routed and returned; callers should treat this
+ *                             as an unsuccessful command invocation.
  *   - `kind: "not-found"`    — no view-phase processor declared a
  *                             `command: <name>` trigger matching the
  *                             supplied name.
@@ -62,6 +72,15 @@ export type RunCommandResult =
       readonly runId: RunId;
       readonly processorId: string;
       readonly effects: ReadonlyArray<ViewEffect>;
+      readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
+    }
+  | {
+      readonly kind: "failed";
+      readonly runId: RunId;
+      readonly processorId: string;
+      readonly executionStatus: Exclude<RunnerExecutionStatus, "succeeded">;
+      readonly executionError?: RunnerError;
+      readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     }
   | {
@@ -83,9 +102,10 @@ export type RunCommandResult =
  * "processor misbehaved" detail (the run still completes; the misbehaving
  * processor is a substrate-discovery moment, not a hard failure).
  *
- * Returns `kind: "not-found"` when no view-phase processor declares a
- * matching `command:` trigger. The caller (CLI / MCP / etc.) typically
- * surfaces this as an "unknown command" error.
+ * Returns `kind: "failed"` when the processor execution boundary fails before
+ * producing a valid view, and `kind: "not-found"` when no view-phase processor
+ * declares a matching `command:` trigger. The caller (CLI / MCP / etc.)
+ * typically surfaces these as unsuccessful command invocations.
  */
 export async function runViewCommand(opts: {
   readonly vault: EngineVault;
@@ -127,6 +147,7 @@ export async function runViewCommand(opts: {
   // separately so the caller can distinguish "the view that was
   // rendered" from "broker noise about misbehavior."
   const viewEffects: ViewEffect[] = [];
+  const executionDiagnostics: DiagnosticEffect[] = [];
   const brokerDiagnostics: DiagnosticEffect[] = [];
 
   for (const effect of result.effects) {
@@ -166,6 +187,26 @@ export async function runViewCommand(opts: {
     ) {
       viewEffects.push(applied.appliedEffect);
     }
+    if (
+      applied.appliedEffect !== null &&
+      applied.appliedEffect.kind === "diagnostic"
+    ) {
+      executionDiagnostics.push(applied.appliedEffect);
+    }
+  }
+
+  if (result.executionStatus !== "succeeded") {
+    return Object.freeze({
+      kind: "failed" as const,
+      runId: result.runId,
+      processorId: result.processorId,
+      executionStatus: result.executionStatus,
+      ...(result.executionError !== undefined
+        ? { executionError: result.executionError }
+        : {}),
+      diagnostics: Object.freeze([...executionDiagnostics]),
+      brokerDiagnostics: Object.freeze([...brokerDiagnostics]),
+    });
   }
 
   return Object.freeze({

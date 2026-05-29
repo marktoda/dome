@@ -1,0 +1,28 @@
+id: test.subproposal-max-iterations
+version: 0.1.0
+processors:
+  - id: test.subproposal-max-iterations.emit-garden-patch
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/trigger.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/emit-garden-patch.ts
+  - id: test.subproposal-max-iterations.diverge
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: path
+        pattern: wiki/from-garden.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/diverge.ts

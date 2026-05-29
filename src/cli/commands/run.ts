@@ -134,6 +134,22 @@ export async function runRun(
     );
     return 64;
   }
+  if (result.kind === "failed") {
+    console.error(
+      `dome run: processor '${result.processorId}' finished with ${result.executionStatus}.`,
+    );
+    if (result.executionError !== undefined) {
+      console.error(
+        `dome run: ${result.executionError.code}: ${result.executionError.message}`,
+      );
+    }
+    for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
+      console.error(
+        `dome run: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+      );
+    }
+    return 1;
+  }
 
   // ----- 5. Surface broker diagnostics ----------------------------------
   // Phase-mismatch + capability-deny diagnostics from the broker land

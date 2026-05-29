@@ -56,6 +56,22 @@ export async function runQuery(
       );
       return 64;
     }
+    if (result.kind === "failed") {
+      console.error(
+        `dome query: processor '${result.processorId}' finished with ${result.executionStatus}.`,
+      );
+      if (result.executionError !== undefined) {
+        console.error(
+          `dome query: ${result.executionError.code}: ${result.executionError.message}`,
+        );
+      }
+      for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
+        console.error(
+          `dome query: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+        );
+      }
+      return 1;
+    }
 
     for (const d of result.brokerDiagnostics) {
       console.error(

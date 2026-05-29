@@ -1,0 +1,11 @@
+id: test.throwing-view
+version: 0.1.0
+processors:
+  - id: test.throwing-view.throw
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: throw-view
+    capabilities: []
+    module: processors/throw.ts

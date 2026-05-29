@@ -592,6 +592,7 @@ type DispatchFrame = {
   readonly runId: RunId;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
+  readonly inspectedPaths: ReadonlyArray<string>;
   readonly startedAt: Date;
   readonly ledger?: LedgerDb;
 };
@@ -675,6 +676,7 @@ function beginDispatch<TEnvelope>(
     runId,
     declared,
     granted,
+    inspectedPaths: filterReadablePaths(opts.changedPaths, declared, granted),
     startedAt,
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
   };
@@ -770,6 +772,7 @@ function returnSkippedRun(opts: {
     executionError: opts.error,
     declared: opts.frame.declared,
     granted: opts.frame.granted,
+    inspectedPaths: opts.frame.inspectedPaths,
     effects: Object.freeze([
       diagnosticEffect({
         severity: opts.severity,
@@ -813,7 +816,7 @@ function buildExecutionContext<TEnvelope>(
 
       const ctxInput: ProcessorContextInput<TEnvelope> = {
         snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
-        changedPaths: scopeChangedPathsForProcessor(opts.changedPaths, frame),
+        changedPaths: frame.inspectedPaths,
         proposal: opts.proposal,
         runId: frame.runId,
         input: scopeEnvelopeForProcessor(opts.envelope, frame),
@@ -1006,13 +1009,6 @@ function scopeSnapshotForProcessor(
   });
 }
 
-function scopeChangedPathsForProcessor(
-  changedPaths: ReadonlyArray<string>,
-  frame: DispatchFrame,
-): ReadonlyArray<string> {
-  return filterReadablePaths(changedPaths, frame.declared, frame.granted);
-}
-
 function scopeEnvelopeForProcessor<TEnvelope>(
   envelope: TEnvelope,
   frame: DispatchFrame,
@@ -1114,6 +1110,7 @@ function runnerResultForExecution(
     ...(executionError !== undefined ? { executionError } : {}),
     declared: frame.declared,
     granted: frame.granted,
+    inspectedPaths: frame.inspectedPaths,
     effects:
       execution.status === "succeeded"
         ? execution.effects

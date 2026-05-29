@@ -135,6 +135,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
         executionStatus: "succeeded",
         declared: [],
         granted: [],
+        inspectedPaths: [],
         effects: [
           diagnosticEffect({
             severity: "info",

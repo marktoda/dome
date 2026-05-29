@@ -336,6 +336,7 @@ export async function adopt(opts: {
       executionStatus,
       declared,
       granted,
+      inspectedPaths,
       effects,
     } of runnerResults) {
       // A run "contributes" to the closure commit iff at least one of its
@@ -370,7 +371,7 @@ export async function adopt(opts: {
         await routingSinks.resolveFacts({
           processorId,
           runId,
-          inspectedPaths: compiled.changedPaths,
+          inspectedPaths,
         });
       }
       for (const effect of effects) {
@@ -445,7 +446,7 @@ export async function adopt(opts: {
         await routingSinks.resolveDiagnostics({
           processorId,
           runId,
-          inspectedPaths: compiled.changedPaths,
+          inspectedPaths,
           emittedDiagnostics,
         });
       }
