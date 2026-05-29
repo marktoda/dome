@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27T00:00:00.000Z
-updated: 2026-05-27T00:00:00.000Z
+updated: 2026-05-29T00:00:00.000Z
 sources:
   - '[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]'
 tier: axiom

@@ -11,11 +11,11 @@ extensions:
     enabled: true
     grant:
       read:
-        - "**/*.md"
+        - "wiki/**/*.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
       patch.auto:
-        - "**/*.md"
+        - "wiki/**/*.md"
       question.ask: true
 
   dome.graph:

@@ -24,9 +24,15 @@ extensions:
     frontmatter_extras:
       tier: axiom | shipped-default | opt-in
       severity: required | recommended
+      coverage: off-matrix | matrix | deferred
+      enforced_at: <path>
+      enforced_at_status: shipped | implemented | partial | deferred
   - name: matrix  # behavior matrices (tool × invariant, intent × prompt, event × payload)
     frontmatter_extras: {}
   - name: gotcha  # design gotchas / scars / failure modes
     frontmatter_extras:
+      coverage: off-matrix | matrix | deferred
+      enforced_at: <path>
+      enforced_at_status: shipped | implemented | partial | deferred
       first_observed: <date>
       severity: low | medium | high
