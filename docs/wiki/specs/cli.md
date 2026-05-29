@@ -183,11 +183,15 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
-For `"in-sync"`, `diagnostics` contains diagnostics produced by the operational-work pump, if any; no adoption diagnostics are synthesized because no adoption ran.
+`garden` summarizes post-adoption garden PatchEffects that spawned
+sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
+the scheduled/job/outbox pump. `diagnostics` contains adoption diagnostics plus
+garden and operational diagnostics; for `"in-sync"`, it can contain only
+operational diagnostics because no adoption ran.
 
 `--quiet` suppresses non-error human-readable text for adopted / in-sync
 outcomes. It does not suppress `--json`, usage errors, blocked-adoption

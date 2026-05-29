@@ -617,6 +617,9 @@ Work:
 - [x] Thread foreground host shutdown cancellation into operational outbox
       dispatch so `dome serve` can stop retryable external work promptly
       without marking rows failed or burning attempts.
+- [x] Surface garden sub-Proposals, garden diagnostics, and operational pump
+      work in `dome sync --json` and foreground `dome serve` follow-up lines,
+      so successful adoption does not hide follow-on maintenance trouble.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

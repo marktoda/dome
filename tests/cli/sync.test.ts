@@ -58,6 +58,7 @@ import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const FIXTURE_BUNDLES_ROOT = join(REPO_ROOT, "tests", "harness", "fixtures", "bundles");
 const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
 const SYNC_JSON_KEYS = Object.freeze([
   "status",
@@ -67,9 +68,22 @@ const SYNC_JSON_KEYS = Object.freeze([
   "adoptedRef",
   "iterations",
   "closureCommit",
+  "garden",
+  "operational",
   "diagnostics",
 ]);
 const SYNC_ERROR_JSON_KEYS = Object.freeze([...SYNC_JSON_KEYS, "error"]);
+const EMPTY_GARDEN_SUMMARY = Object.freeze({
+  subProposalCount: 0,
+  rejectedPatchCount: 0,
+  diagnosticCount: 0,
+});
+const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
+  scheduledCount: 0,
+  jobCount: 0,
+  outboxCount: 0,
+  diagnosticCount: 0,
+});
 
 // ----- Console capture ------------------------------------------------------
 
@@ -219,6 +233,8 @@ describe("runSync empty-diff init", () => {
     expect(parsed["adoptedRef"]).toBe(f.initialSha);
     expect(parsed["iterations"]).toBe(1);
     expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
+    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -381,6 +397,84 @@ describe("runSync idempotent", () => {
     expect(parsed["adoptedRef"]).toBe(f.initialSha);
     expect(parsed["iterations"]).toBe(0);
     expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
+    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["diagnostics"]).toEqual([]);
+  }, 10_000);
+
+  test("garden follow-up summaries surface sub-Proposals in text and JSON", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      `
+extensions:
+  test.garden-patch-emitter:
+    enabled: true
+    grant:
+      read: ["wiki/**"]
+      patch.auto: ["wiki/**"]
+`,
+    );
+    const options = {
+      vault: f.vaultPath,
+      bundlesRoot: FIXTURE_BUNDLES_ROOT,
+    };
+
+    expect(await runSync(options)).toBe(0);
+
+    await rm(join(f.vaultPath, "wiki", "seed.md"));
+    await commit({
+      path: f.vaultPath,
+      message: "delete seed\n",
+      files: ["wiki/seed.md"],
+    });
+    expect(await runSync(options)).toBe(0);
+
+    await writeFile(join(f.vaultPath, "wiki", "seed.md"), "# Seed\n");
+    const userHead = await commit({
+      path: f.vaultPath,
+      message: "recreate seed\n",
+      files: ["wiki/seed.md"],
+    });
+    captured.out = [];
+    captured.err = [];
+    expect(await runSync(options)).toBe(0);
+    expect(captured.out.join("\n")).toContain(
+      "garden follow-up (1 sub-proposal",
+    );
+    const afterText = await getAdoptedRef(f.vaultPath, "main");
+    expect(afterText).not.toBeNull();
+    expect(afterText).not.toBe(userHead);
+
+    await rm(join(f.vaultPath, "wiki", "seed.md"));
+    await rm(join(f.vaultPath, "wiki", "garden-emitted.md"));
+    await commit({
+      path: f.vaultPath,
+      message: "delete seed and garden output\n",
+      files: ["wiki/seed.md", "wiki/garden-emitted.md"],
+    });
+    expect(await runSync(options)).toBe(0);
+
+    await writeFile(join(f.vaultPath, "wiki", "seed.md"), "# Seed again\n");
+    const jsonHead = await commit({
+      path: f.vaultPath,
+      message: "recreate seed again\n",
+      files: ["wiki/seed.md"],
+    });
+    captured.out = [];
+    captured.err = [];
+    expect(await runSync({ ...options, json: true })).toBe(0);
+    const parsed = parseSingleJsonObject();
+    expect(parsed["head"]).toBe(jsonHead);
+    expect(parsed["adoptedRef"]).not.toBe(jsonHead);
+    expect(parsed["garden"]).toEqual({
+      subProposalCount: 1,
+      rejectedPatchCount: 0,
+      diagnosticCount: 0,
+    });
+    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -560,6 +654,8 @@ describe("runSync idempotent", () => {
     expect(Object.keys(parsed)).toEqual([...SYNC_ERROR_JSON_KEYS]);
     expect(parsed["status"]).toBe("busy");
     expect(parsed["branch"]).toBe("main");
+    expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
+    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
     expect(parsed["error"]).toBe("compiler-host-busy");
 
     releaseLock?.();
@@ -808,6 +904,8 @@ describe("runSync detached HEAD", () => {
     expect(parsed["adoptedRef"]).toBeNull();
     expect(parsed["iterations"]).toBe(0);
     expect(parsed["closureCommit"]).toBeNull();
+    expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
+    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
     expect(parsed["diagnostics"]).toEqual([]);
     expect(parsed["error"]).toBe("detached-head");
   }, 5_000);

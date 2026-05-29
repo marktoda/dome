@@ -52,6 +52,7 @@ import {
 } from "../../engine/compiler-host-heartbeat";
 import {
   formatFilteredAdoptEvent,
+  printHostFollowupLines,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { parsePositiveIntegerValue } from "../parse-options";
@@ -484,9 +485,7 @@ function printTickLine(
           `dome serve: rebuilt projection cache (${tick.projectionRebuild.fileCount} files, ${tick.projectionRebuild.effectCount} effects)`,
         );
       }
-      if (opts.verbose && tick.operational !== null) {
-        printOperationalLine(tick.operational);
-      }
+      printHostFollowupLines("dome serve", tick.garden, tick.operational);
     }
     return;
   }

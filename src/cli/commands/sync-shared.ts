@@ -7,6 +7,8 @@
 import { fileURLToPath } from "node:url";
 
 import type { AdoptEvent } from "../../engine/compiler-host";
+import type { GardenPhaseResult } from "../../engine/garden";
+import type { OperationalWorkResult } from "../../engine/operational-work";
 
 const processorGlobCache = new Map<string, Bun.Glob>();
 
@@ -73,6 +75,50 @@ export function formatFilteredAdoptEvent(
     if (!processorIdMatches(filter, event.processorId)) return null;
   }
   return formatAdoptEvent(event, { command: opts.command });
+}
+
+export function printHostFollowupLines(
+  command: "dome serve" | "dome sync",
+  garden: GardenPhaseResult | null,
+  operational: OperationalWorkResult | null,
+): void {
+  if (
+    garden !== null &&
+    (garden.subProposalCount > 0 ||
+      garden.rejectedPatchCount > 0 ||
+      garden.diagnostics.length > 0)
+  ) {
+    const line =
+      `${command}: garden follow-up (` +
+      `${garden.subProposalCount} sub-proposal${garden.subProposalCount === 1 ? "" : "s"}, ` +
+      `${garden.rejectedPatchCount} rejected patch${garden.rejectedPatchCount === 1 ? "" : "es"}, ` +
+      `${garden.diagnostics.length} diagnostic${garden.diagnostics.length === 1 ? "" : "s"})`;
+    if (garden.rejectedPatchCount > 0 || garden.diagnostics.length > 0) {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
+  }
+
+  if (
+    operational !== null &&
+    (operational.scheduler.fired.length > 0 ||
+      operational.jobs.drained.length > 0 ||
+      operational.outbox.length > 0 ||
+      operational.diagnostics.length > 0)
+  ) {
+    const line =
+      `${command}: operational work (` +
+      `${operational.scheduler.fired.length} scheduled, ` +
+      `${operational.jobs.drained.length} jobs, ` +
+      `${operational.outbox.length} outbox, ` +
+      `${operational.diagnostics.length} diagnostic${operational.diagnostics.length === 1 ? "" : "s"})`;
+    if (operational.diagnostics.length > 0) {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
+  }
 }
 
 function processorIdMatches(pattern: string, processorId: string): boolean {

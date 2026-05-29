@@ -42,8 +42,11 @@ import {
   runCompilerHostTick,
   type CompilerHostTickResult,
 } from "../../engine/compiler-host";
+import type { GardenPhaseResult } from "../../engine/garden";
+import type { OperationalWorkResult } from "../../engine/operational-work";
 import {
   formatFilteredAdoptEvent,
+  printHostFollowupLines,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { formatJson } from "../format";
@@ -75,12 +78,27 @@ type SyncJsonResult = {
   readonly adoptedRef: string | null;
   readonly iterations: number;
   readonly closureCommit: string | null;
+  readonly garden: SyncGardenSummary;
+  readonly operational: SyncOperationalSummary;
   readonly diagnostics: ReadonlyArray<{
     readonly severity: string;
     readonly code: string;
     readonly message: string;
   }>;
   readonly error?: string;
+};
+
+type SyncGardenSummary = {
+  readonly subProposalCount: number;
+  readonly rejectedPatchCount: number;
+  readonly diagnosticCount: number;
+};
+
+type SyncOperationalSummary = {
+  readonly scheduledCount: number;
+  readonly jobCount: number;
+  readonly outboxCount: number;
+  readonly diagnosticCount: number;
 };
 
 export type RunSyncOptions = {
@@ -227,6 +245,7 @@ function printTickLines(
         `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
         `${iters} iteration${iters === 1 ? "" : "s"})`,
     );
+    printHostFollowupLines("dome sync", tick.garden, tick.operational);
     return;
   }
 
@@ -273,6 +292,8 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       adoptedRef: null,
       iterations: 0,
       closureCommit: null,
+      garden: emptyGardenSummary(),
+      operational: emptyOperationalSummary(),
       diagnostics: [],
       error: "compiler-host-busy",
     };
@@ -286,6 +307,8 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       adoptedRef: tick.adopted,
       iterations: 0,
       closureCommit: null,
+      garden: emptyGardenSummary(),
+      operational: emptyOperationalSummary(),
       diagnostics: [
         {
           severity: "error",
@@ -307,6 +330,8 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       adoptedRef: tick.finalAdoptedRef,
       iterations: 0,
       closureCommit: null,
+      garden: emptyGardenSummary(),
+      operational: summarizeOperational(tick.operational),
       diagnostics: diagnosticsJson(tick.operational?.diagnostics ?? []),
     };
   }
@@ -319,8 +344,11 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
     adoptedRef: tick.finalAdoptedRef,
     iterations: result.iterations,
     closureCommit: result.closureCommitOid,
+    garden: summarizeGarden(tick.garden),
+    operational: summarizeOperational(tick.operational),
     diagnostics: diagnosticsJson([
       ...result.diagnostics,
+      ...(tick.garden?.diagnostics ?? []),
       ...(tick.operational?.diagnostics ?? []),
     ]),
   };
@@ -348,9 +376,51 @@ function errorPayload(input: {
     adoptedRef: null,
     iterations: 0,
     closureCommit: null,
+    garden: emptyGardenSummary(),
+    operational: emptyOperationalSummary(),
     diagnostics: [],
     error: input.error,
   };
+}
+
+function summarizeGarden(
+  garden: GardenPhaseResult | null,
+): SyncGardenSummary {
+  if (garden === null) return emptyGardenSummary();
+  return Object.freeze({
+    subProposalCount: garden.subProposalCount,
+    rejectedPatchCount: garden.rejectedPatchCount,
+    diagnosticCount: garden.diagnostics.length,
+  });
+}
+
+function summarizeOperational(
+  operational: OperationalWorkResult | null,
+): SyncOperationalSummary {
+  if (operational === null) return emptyOperationalSummary();
+  return Object.freeze({
+    scheduledCount: operational.scheduler.fired.length,
+    jobCount: operational.jobs.drained.length,
+    outboxCount: operational.outbox.length,
+    diagnosticCount: operational.diagnostics.length,
+  });
+}
+
+function emptyGardenSummary(): SyncGardenSummary {
+  return Object.freeze({
+    subProposalCount: 0,
+    rejectedPatchCount: 0,
+    diagnosticCount: 0,
+  });
+}
+
+function emptyOperationalSummary(): SyncOperationalSummary {
+  return Object.freeze({
+    scheduledCount: 0,
+    jobCount: 0,
+    outboxCount: 0,
+    diagnosticCount: 0,
+  });
 }
 
 /**
@@ -371,6 +441,8 @@ function emitErrorJson(input: {
     adoptedRef: null,
     iterations: 0,
     closureCommit: null,
+    garden: emptyGardenSummary(),
+    operational: emptyOperationalSummary(),
     diagnostics: [],
     error: input.error,
   };
