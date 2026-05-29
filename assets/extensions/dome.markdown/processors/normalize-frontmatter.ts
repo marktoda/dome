@@ -17,9 +17,8 @@
 // the adoption loop would diverge (iteration N+1 would emit a new patch
 // every time). The contract is upheld by:
 //   1. Reading the canonical key order from a module-level constant.
-//   2. Round-tripping through gray-matter's parser + serializer, which is
-//      a stable point under composition (parse∘stringify == identity for
-//      already-normalized inputs).
+//   2. Parsing with gray-matter, normalizing parser-coerced scalars such as
+//      date-only timestamps, and serializing with `yaml` in a stable key order.
 // Test #6 in tests/extensions/normalize-frontmatter.test.ts verifies the
 // contract explicitly: re-running on the processor's own output produces
 // no further patches.
@@ -47,6 +46,7 @@
 // runtime dep of @dome/sdk per package.json).
 
 import matter from "gray-matter";
+import YAML from "yaml";
 
 import {
   patchEffect,
@@ -193,19 +193,9 @@ function normalizeContent(content: string): string | null {
     return null;
   }
 
-  const reordered = reorderKeys(parsed.data);
+  const reordered = reorderKeys(normalizeYamlScalars(parsed.data));
 
-  // Pass `parsed.content` (the body sans frontmatter) rather than the
-  // original `content` to `matter.stringify`. If we passed the original
-  // content, gray-matter would re-parse it and `Object.assign({},
-  // file.data, data)` inside `stringify.js` would copy the ORIGINAL
-  // (wrongly-ordered) keys first and then overlay the reordered data on
-  // top — but `Object.assign` doesn't reorder existing keys, so the
-  // serialized YAML would carry the original key order. Stripping the
-  // frontmatter up-front by using `parsed.content` makes the merge a
-  // no-op (the parsed file's data is `{}`), and the reordered object's
-  // insertion order is preserved through to the YAML output.
-  return matter.stringify(parsed.content, reordered);
+  return stringifyFrontmatter(parsed.content, reordered);
 }
 
 function matterFileIsEmpty(file: matter.GrayMatterFile<string>): boolean {
@@ -247,4 +237,55 @@ function reorderKeys(data: Record<string, unknown>): Record<string, unknown> {
   }
 
   return out;
+}
+
+function stringifyFrontmatter(
+  body: string,
+  data: Record<string, unknown>,
+): string {
+  const yaml = YAML.stringify(data).trimEnd();
+  return `---\n${yaml}\n---\n${body}`;
+}
+
+function normalizeYamlScalars(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    out[key] = normalizeYamlScalar(value);
+  }
+  return out;
+}
+
+function normalizeYamlScalar(value: unknown): unknown {
+  if (value instanceof Date) return formatYamlDate(value);
+  if (Array.isArray(value)) return value.map((item) => normalizeYamlScalar(item));
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      out[key] = normalizeYamlScalar(nested);
+    }
+    return out;
+  }
+  return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function formatYamlDate(value: Date): string {
+  if (
+    value.getUTCHours() === 0 &&
+    value.getUTCMinutes() === 0 &&
+    value.getUTCSeconds() === 0 &&
+    value.getUTCMilliseconds() === 0
+  ) {
+    return value.toISOString().slice(0, 10);
+  }
+  return value.toISOString();
 }

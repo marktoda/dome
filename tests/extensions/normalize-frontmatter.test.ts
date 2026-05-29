@@ -420,4 +420,35 @@ describe("dome.markdown.normalize-frontmatter", () => {
     // own output. If this fires, the fixed-point loop would not converge.
     expect(effects2.length).toBe(0);
   });
+
+  test("date-only frontmatter stays date-only after key normalization", async () => {
+    const wrongOrder = withFrontmatter(
+      "updated: 2026-05-28\ncreated: 2026-05-27\ntype: note\n",
+      "# Dated note\n",
+    );
+    const f = await makeVaultWithFiles([
+      { path: "wiki/dated.md", content: wrongOrder },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/dated.md"],
+      proposal: null,
+      runId: "run-nfm-date",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    const patch = expectPatch(effects, 0);
+    const write = expectWrite(patch.changes, 0);
+
+    expect(write.content).toContain("created: 2026-05-27\n");
+    expect(write.content).toContain("updated: 2026-05-28\n");
+    expect(write.content).not.toContain("T00:00:00.000Z");
+    expect(write.content).not.toContain("'2026-05-27'");
+  });
 });

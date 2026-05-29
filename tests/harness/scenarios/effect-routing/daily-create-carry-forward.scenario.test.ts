@@ -68,7 +68,7 @@ recurrence: 2026-01-01
       .toContain("updated: 2026-01-02");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("recurrence: '2026-01-02'");
+      .toContain("recurrence: 2026-01-02");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("<!-- dome.daily:carried-forward:start -->");

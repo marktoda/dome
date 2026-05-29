@@ -715,7 +715,7 @@ Future work should use milestone names, not old phase numbers.
 
 Fold these into nearby milestone work when they are on-path:
 
-- `gray-matter` date coercion: unquoted ISO dates parse to JS `Date` and can
+- [x] `gray-matter` date coercion: unquoted ISO dates parse to JS `Date` and can
   reserialize noisily.
 - [x] `serve --exclusive`: PID-file or lock so a second host does not race the
   first. V1 uses an always-on per-branch compiler-host lock instead of an
