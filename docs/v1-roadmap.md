@@ -471,7 +471,8 @@ Work:
 
 - [x] Add one top-level acceptance scenario matching the Claude Code vault
       plan end to end.
-- [ ] Add host-on and host-off live harness fixtures.
+- [x] Add host-off `sync` and host-on compiler-tick harness fixtures.
+      `serve` daemon pickup remains covered by the lower-level CLI E2E suite.
 - [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
 - [x] Add status/doctor/query/export JSON fixtures.
