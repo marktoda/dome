@@ -1021,20 +1021,21 @@ function makeAdoptSubProposal(opts: {
   return adoptSubProposal;
 }
 
-// ----- Placeholder sinks (v1.0) ---------------------------------------------
+// ----- View-effect guard -----------------------------------------------------
 
 /**
- * `captureView` placeholder for v1.0. Logs + drops the effect; does NOT
- * throw. View-phase processors don't run inside the adoption loop in
- * v1.0, so this path only fires if an adoption-phase processor mis-
- * declares a ViewEffect (the broker rejects it via phase-mismatch
- * before reaching the sink, in practice).
+ * Compiler-host ticks do not render view output. Command-triggered view
+ * processors run through `src/engine/view-command.ts`, where their
+ * ViewEffects are captured and returned to the surface adapter. This sink is
+ * a defensive guard for any ViewEffect that somehow reaches adoption, garden,
+ * answer, job, or operational routing; phase compatibility should reject those
+ * effects before the sink is called.
  */
 const captureViewPlaceholder: ApplyEffectSinks["captureView"] = async ({
   processorId,
 }) => {
   console.warn(
-    `dome: ViewEffect from ${processorId} dropped — captureView ` +
-      `not yet wired in v1.0. View-effect delivery to CLI/MCP lands in v1.1.`,
+    `dome: ViewEffect from ${processorId} dropped — compiler-host ` +
+      "routes do not render view output.",
   );
 };
