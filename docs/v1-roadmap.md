@@ -232,8 +232,9 @@ Work:
 - [x] Move answer records out of rebuildable projection state into
       `answers.db` and rehydrate answered question rows during projection
       rebuild.
-- [ ] Make answer-handler dispatch retryable after partial failure; today a
-      recorded answer is not re-dispatched by re-running `dome answer`.
+- [x] Make answer-handler dispatch retryable after partial failure by
+      keeping handler status in `answers.db` and re-dispatching unanswered
+      handler work when `dome answer` is re-run.
 - [x] Implement probe-only health checks for failed outbox rows, orphan
       running rows, and quarantined processors.
 - [ ] Add health probes for schema skew, instruction drift, adopted-ref

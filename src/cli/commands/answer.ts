@@ -6,8 +6,15 @@
 
 import { resolve } from "node:path";
 
+import {
+  answerHandlersNeedDispatch,
+  getQuestionAnswer,
+  markAnswerHandlerAttempt,
+  markAnswerHandlersFailed,
+  markAnswerHandlersHandled,
+} from "../../answers/question-answers";
 import { answerQuestionDurably } from "../../engine/question-answering";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import {
   getQuestionRecord,
   type AnswerQuestionResult,
@@ -74,8 +81,8 @@ export async function runAnswer(
       answer: rawValue,
     });
     const handlerResult =
-      result.kind === "answered"
-        ? await runAnswerHandlersForQuestion({
+      result.kind === "answered" || result.kind === "already-answered"
+        ? await runAnswerHandlersIfNeeded({
             runtime,
             question: result.record,
           })
@@ -88,6 +95,52 @@ export async function runAnswer(
   } finally {
     await runtime.close();
   }
+}
+
+async function runAnswerHandlersIfNeeded(opts: {
+  readonly runtime: VaultRuntime;
+  readonly question: QuestionRecord;
+}): Promise<AnswerHandlersForQuestionResult | null> {
+  const durable = getQuestionAnswer(
+    opts.runtime.answersDb,
+    opts.question.effect.idempotencyKey,
+  );
+  if (durable !== null && !answerHandlersNeedDispatch(durable)) {
+    return null;
+  }
+
+  markAnswerHandlerAttempt(
+    opts.runtime.answersDb,
+    opts.question.effect.idempotencyKey,
+    new Date().toISOString(),
+  );
+  const result = await runAnswerHandlersForQuestion(opts);
+  if (result.kind === "skipped") {
+    markAnswerHandlersFailed(opts.runtime.answersDb, {
+      idempotencyKey: opts.question.effect.idempotencyKey,
+      status: "skipped",
+      error: result.reason,
+    });
+    return result;
+  }
+
+  const crash = result.result.diagnostics.find(
+    (diagnostic) => diagnostic.code === "answer.dispatch-crashed",
+  );
+  if (crash !== undefined) {
+    markAnswerHandlersFailed(opts.runtime.answersDb, {
+      idempotencyKey: opts.question.effect.idempotencyKey,
+      status: "failed",
+      error: crash.message,
+    });
+    return result;
+  }
+
+  markAnswerHandlersHandled(opts.runtime.answersDb, {
+    idempotencyKey: opts.question.effect.idempotencyKey,
+    handledAt: new Date().toISOString(),
+  });
+  return result;
 }
 
 function printAnswerResult(
@@ -105,11 +158,19 @@ function printAnswerResult(
           formatJson({
             status: "already-answered",
             question: recordToJson(result.record),
+            handlers:
+              handlerResult === null ? null : handlerResultToJson(handlerResult),
           }),
         );
       } else {
+        const suffix =
+          handlerResult?.kind === "handled"
+            ? ` | handlers ${handlerResult.result.runs.length}`
+            : handlerResult?.kind === "skipped"
+              ? ` | handlers skipped (${handlerResult.reason})`
+              : "";
         console.log(
-          `question ${result.record.id} is already answered: ${result.record.answer ?? ""}`,
+          `question ${result.record.id} is already answered: ${result.record.answer ?? ""}${suffix}`,
         );
       }
       return 0;

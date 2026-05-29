@@ -14,7 +14,14 @@ export type QuestionAnswerRecord = {
   readonly question: string;
   readonly processorId: string;
   readonly adoptedCommit: string;
+  readonly handlerStatus: AnswerHandlerStatus;
+  readonly handlerAttempts: number;
+  readonly lastHandlerAttemptAt: string | null;
+  readonly handledAt: string | null;
+  readonly lastHandlerError: string | null;
 };
+
+export type AnswerHandlerStatus = "pending" | "handled" | "failed" | "skipped";
 
 export type RecordQuestionAnswerOpts = {
   readonly idempotencyKey: string;
@@ -42,9 +49,44 @@ ON CONFLICT(idempotency_key) DO UPDATE SET
 
 const QUERY_ALL_SQL = `
 SELECT idempotency_key, answer, answered_at, question_id,
-       question, processor_id, adopted_commit
+       question, processor_id, adopted_commit,
+       handler_status, handler_attempts, last_handler_attempt_at,
+       handled_at, last_handler_error
 FROM question_answers
 ORDER BY answered_at, idempotency_key
+`.trim();
+
+const QUERY_BY_KEY_SQL = `
+SELECT idempotency_key, answer, answered_at, question_id,
+       question, processor_id, adopted_commit,
+       handler_status, handler_attempts, last_handler_attempt_at,
+       handled_at, last_handler_error
+FROM question_answers
+WHERE idempotency_key = ?
+`.trim();
+
+const MARK_ATTEMPT_SQL = `
+UPDATE question_answers
+SET handler_attempts = handler_attempts + 1,
+    last_handler_attempt_at = ?,
+    handler_status = 'pending',
+    last_handler_error = NULL
+WHERE idempotency_key = ?
+`.trim();
+
+const MARK_HANDLED_SQL = `
+UPDATE question_answers
+SET handler_status = 'handled',
+    handled_at = ?,
+    last_handler_error = NULL
+WHERE idempotency_key = ?
+`.trim();
+
+const MARK_FAILED_SQL = `
+UPDATE question_answers
+SET handler_status = ?,
+    last_handler_error = ?
+WHERE idempotency_key = ?
 `.trim();
 
 export function recordQuestionAnswer(
@@ -68,7 +110,22 @@ export function recordQuestionAnswer(
     question: opts.question,
     processorId: opts.processorId,
     adoptedCommit: opts.adoptedCommit,
+    handlerStatus: "pending",
+    handlerAttempts: 0,
+    lastHandlerAttemptAt: null,
+    handledAt: null,
+    lastHandlerError: null,
   });
+}
+
+export function getQuestionAnswer(
+  db: AnswersDb,
+  idempotencyKey: string,
+): QuestionAnswerRecord | null {
+  const row = db.raw
+    .query<QuestionAnswerRow, [string]>(QUERY_BY_KEY_SQL)
+    .get(idempotencyKey);
+  return row === null ? null : rowToRecord(row);
 }
 
 export function queryQuestionAnswers(
@@ -76,6 +133,43 @@ export function queryQuestionAnswers(
 ): ReadonlyArray<QuestionAnswerRecord> {
   const rows = db.raw.query<QuestionAnswerRow, []>(QUERY_ALL_SQL).all();
   return Object.freeze(rows.map(rowToRecord));
+}
+
+export function answerHandlersNeedDispatch(record: QuestionAnswerRecord): boolean {
+  return record.handlerStatus !== "handled";
+}
+
+export function markAnswerHandlerAttempt(
+  db: AnswersDb,
+  idempotencyKey: string,
+  attemptedAt: string,
+): void {
+  db.raw.query(MARK_ATTEMPT_SQL).run(attemptedAt, idempotencyKey);
+}
+
+export function markAnswerHandlersHandled(
+  db: AnswersDb,
+  opts: {
+    readonly idempotencyKey: string;
+    readonly handledAt: string;
+  },
+): void {
+  db.raw.query(MARK_HANDLED_SQL).run(opts.handledAt, opts.idempotencyKey);
+}
+
+export function markAnswerHandlersFailed(
+  db: AnswersDb,
+  opts: {
+    readonly idempotencyKey: string;
+    readonly status: Exclude<AnswerHandlerStatus, "pending" | "handled">;
+    readonly error: string;
+  },
+): void {
+  db.raw.query(MARK_FAILED_SQL).run(
+    opts.status,
+    opts.error,
+    opts.idempotencyKey,
+  );
 }
 
 type QuestionAnswerRow = {
@@ -86,6 +180,11 @@ type QuestionAnswerRow = {
   readonly question: string;
   readonly processor_id: string;
   readonly adopted_commit: string;
+  readonly handler_status: string;
+  readonly handler_attempts: number;
+  readonly last_handler_attempt_at: string | null;
+  readonly handled_at: string | null;
+  readonly last_handler_error: string | null;
 };
 
 function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
@@ -97,5 +196,22 @@ function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
     question: row.question,
     processorId: row.processor_id,
     adoptedCommit: row.adopted_commit,
+    handlerStatus: parseHandlerStatus(row.handler_status),
+    handlerAttempts: row.handler_attempts,
+    lastHandlerAttemptAt: row.last_handler_attempt_at,
+    handledAt: row.handled_at,
+    lastHandlerError: row.last_handler_error,
   });
+}
+
+function parseHandlerStatus(value: string): AnswerHandlerStatus {
+  if (
+    value === "pending" ||
+    value === "handled" ||
+    value === "failed" ||
+    value === "skipped"
+  ) {
+    return value;
+  }
+  return "failed";
 }

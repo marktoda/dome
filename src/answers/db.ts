@@ -24,10 +24,17 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "question_id INTEGER,"
     + "question TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
-    + "adopted_commit TEXT NOT NULL"
+    + "adopted_commit TEXT NOT NULL,"
+    + "handler_status TEXT NOT NULL DEFAULT 'pending',"
+    + "handler_attempts INTEGER NOT NULL DEFAULT 0,"
+    + "last_handler_attempt_at TEXT,"
+    + "handled_at TEXT,"
+    + "last_handler_error TEXT"
     + ")",
   "CREATE INDEX IF NOT EXISTS question_answers_by_answered_at "
     + "ON question_answers(answered_at)",
+  "CREATE INDEX IF NOT EXISTS question_answers_by_handler_status "
+    + "ON question_answers(handler_status, answered_at)",
 ]);
 
 const sha256 = (s: string): string =>

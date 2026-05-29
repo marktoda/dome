@@ -178,9 +178,10 @@ facts. `projection.db.questions.answer` is a denormalized view of the current
 answer for inspect/query ergonomics; the durable source of truth is
 `answers.db.question_answers`, keyed by `QuestionEffect.idempotencyKey`.
 Projection rebuild resets and replays `QuestionEffect` rows, then reapplies
-matching durable answers from `answers.db`. Answer-handler dispatch retry
-remains separate operational work: the CLI records the durable answer before
-dispatching matching handlers.
+matching durable answers from `answers.db`. The same durable row carries
+answer-handler dispatch state (`pending`, `handled`, `failed`, `skipped`) so a
+crash after recording the answer but before completing handler dispatch can be
+retried by re-running `dome answer <id> <value>`.
 
 ### `scheduled_jobs`
 

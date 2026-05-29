@@ -112,6 +112,16 @@ scenario(
       )
       .get();
     expect(ledgerRow?.trigger_kind).toBe("answer");
+    const durableAnswer = h.answers.raw
+      .query<{
+        handler_status: string;
+        handler_attempts: number;
+      }, []>(
+        "SELECT handler_status, handler_attempts FROM question_answers",
+      )
+      .get();
+    expect(durableAnswer?.handler_status).toBe("handled");
+    expect(durableAnswer?.handler_attempts).toBe(1);
 
     const adopted = await h.refs.adopted();
     expect(adopted).not.toBeNull();
@@ -142,5 +152,28 @@ scenario(
     expect(rebuiltRows[0]?.idempotency_key).toBe(rows[0]?.idempotency_key);
     expect(rebuiltRows[0]?.status).toBe("answered");
     expect(rebuiltRows[0]?.answer).toBe("keep separate");
+
+    h.answers.raw.run(
+      "UPDATE question_answers SET handler_status = 'skipped', handled_at = NULL",
+    );
+    const retry = await h.runCli([
+      "answer",
+      String(questionId),
+      "keep separate",
+      "--json",
+    ]);
+    expect(retry.exitCode).toBe(0);
+    const retried = JSON.parse(retry.stdout) as {
+      readonly status: string;
+      readonly handlers: { readonly status: string } | null;
+    };
+    expect(retried.status).toBe("already-answered");
+    expect(retried.handlers?.status).toBe("handled");
+    const answerHandlerRuns = h.ledger.raw
+      .query<{ count: number }, []>(
+        "SELECT COUNT(*) AS count FROM runs WHERE processor_id = 'test.answer-handler.record-duplicate-answer'",
+      )
+      .get();
+    expect(answerHandlerRuns?.count).toBe(2);
   },
 );

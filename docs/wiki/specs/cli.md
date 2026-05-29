@@ -396,11 +396,12 @@ are present, records the answer, and dispatches matching garden-phase answer
 handlers. Duplicate-detection content questions plus a fixture answer handler
 are covered end-to-end by the harness.
 
-Answer-handler retry is still incomplete: if dispatch fails after the durable
-answer is recorded, re-running `dome answer` reports the already answered row
-and does not re-dispatch handlers. Projection rebuild does preserve the
-answered state by replaying `answers.db.question_answers` onto rebuilt
-question rows.
+Answer-handler dispatch is retryable from the durable answer record. The CLI
+records the answer before dispatching handlers, marks handler dispatch
+`handled` only after the handler pass completes, and re-dispatches an already
+answered question when `answers.db.question_answers.handler_status` is not
+`handled`. Projection rebuild preserves the answered state by replaying
+`answers.db.question_answers` onto rebuilt question rows.
 
 Until `dome.health` ships, no first-party processor emits operational
 QuestionEffects for outbox/quarantine/orphan-run recovery; those recovery
