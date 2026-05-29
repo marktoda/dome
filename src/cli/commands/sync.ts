@@ -210,6 +210,7 @@ async function runInSyncOperationalWork(opts: {
     const operational = await runOperationalWorkForAdopted({
       runtime,
       adopted: opts.drift.head,
+      branch: opts.drift.branch,
     });
     operationalDiagnostics = operational.diagnostics.map((d) => ({
       severity: d.severity,

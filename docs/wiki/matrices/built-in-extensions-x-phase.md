@@ -21,7 +21,7 @@ The dense map of the nine first-party `dome.*` bundles × the three processor ph
 | **`dome.intake`** | `inbox-stale-check` (per-sync; emits `DiagnosticEffect` for files older than `engine.inbox_stale_age_hours`) | `extract-capture` (on `signal:file.created` for `inbox/raw/**`, calls LLM to compile capture into wiki updates; emits `PatchEffect` and `FactEffect`); `process-questions` (on `signal:document.changed` for pages with unanswered questions) | — |
 | **`dome.daily`** | — | `create-daily` (cron `0 6 * * *`); `create-weekly` (cron `0 6 * * MON`); `carry-forward` (on `signal:file.created` for `wiki/dailies/**`); `append-followup` (on `signal:document.changed` for `wiki/dailies/**` when a followup line is added) | `today` (command `dome today`); `week-review` (command and cron); `agenda-with` (command `dome query agenda-with <person>`); `prep` (command `dome prep <topic>`) |
 | **`dome.lint`** | — | — | `lint-report` (command `dome lint` and cron `0 7 * * MON`); `apply-finding` (command `dome lint --apply <id>`) |
-| **`dome.search`** | `index-text` (on `signal:document.changed`, updates `fts_documents` in `projection.db`); `index-embeddings` (on `signal:document.changed`, updates the embeddings table) | `refresh-embeddings` (cron `0 4 * * *`, re-embeds pages whose content changed recently) | `semantic-search` (command `dome query`); `export-context` (command `dome export-context <topic>`) |
+| **`dome.search`** | `index-text` (on `signal:document.changed`, `signal:file.created`, and `signal:file.deleted`, emits SearchDocumentEffect for `fts_documents`) | future: embeddings / refresh jobs | `query` (command `dome query`); future: `export-context` |
 | **`dome.migrate`** | — | — | `migrate-vault` (command `dome migrate`) |
 
 ## Counts
@@ -29,7 +29,7 @@ The dense map of the nine first-party `dome.*` bundles × the three processor ph
 - **Total processors:** ~25 across the nine bundles.
 - **Adoption-phase processors:** 7 (parse, validate-wikilinks, validate-frontmatter, update-index, append-log, inbox-stale-check, index-text, index-embeddings).
 - **Garden-phase processors:** 8 (cross-reference, extract-capture, process-questions, create-daily, create-weekly, carry-forward, append-followup, refresh-embeddings).
-- **View-phase processors:** ~10 (today, week-review, agenda-with, prep, lint-report, apply-finding, semantic-search, export-context, migrate-vault, + cli adapter for the same).
+- **View-phase processors:** ~10 planned (today, week-review, agenda-with, prep, lint-report, apply-finding, query, export-context, migrate-vault, + cli adapter for the same).
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
 
@@ -39,7 +39,7 @@ A new bundle author looking at this matrix sees:
 
 - **Adoption-phase is sparse.** Most of the action is in garden + view. The author can register an adoption-phase processor only when they need merge-time validation (rare).
 - **Schedule-driven processors are explicit.** Each cron-driven processor's schedule is visible — the author can avoid overlapping with existing schedules.
-- **View processors are dominantly LLM-driven.** `today`, `week-review`, `agenda-with`, `prep`, `lint-report`, `semantic-search`, `export-context` — most use `model.invoke`. The author considering a view processor should plan for LLM-cost budget.
+- **View processors are dominantly LLM-driven in the future plan.** `today`, `week-review`, `agenda-with`, `prep`, `lint-report`, `export-context` — most use `model.invoke`. The shipped `dome.search.query` path is deterministic FTS first.
 
 ## Adding to the matrix
 

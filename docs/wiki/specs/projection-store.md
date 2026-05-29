@@ -44,17 +44,18 @@ Every row in `projection.db` is keyed (in addition to its table-specific primary
 
 - `adoptedCommit` — the SHA of `refs/dome/adopted/<branch>` when the row was written.
 - `extensionSetHash` — sha256 of the sorted list of installed bundle names + versions. Adding or removing a bundle invalidates everything.
-- `processorVersionsHash` — sha256 of the sorted list of `(processorId, version)` for every loaded processor. Bumping a processor version invalidates its rows.
+- `processorVersionsHash` — sha256 of the sorted list of `(processorId, version)` for every loaded processor. Bumping a processor version invalidates the projection cache.
 
-When any of the three change, the engine considers cached rows stale and re-derives them. The cache key triple is stored in a `projection_meta` table:
+When any of the three change, the engine considers cached rows stale and re-derives them from the adopted commit before operational or view work reads projection rows. V1 uses full projection rebuild for cache-key drift; per-processor invalidation is an optimization, not the correctness boundary. The cache key triple is stored in a `projection_meta` table:
 
 ```sql
 CREATE TABLE projection_meta (
+  schema_hash             TEXT NOT NULL,
   adopted_commit          TEXT NOT NULL,
   extension_set_hash      TEXT NOT NULL,
   processor_versions_hash TEXT NOT NULL,
   built_at                TEXT NOT NULL,  -- ISO-8601
-  PRIMARY KEY (adopted_commit, extension_set_hash, processor_versions_hash)
+  PRIMARY KEY (schema_hash)
 );
 ```
 
@@ -99,12 +100,16 @@ CREATE VIRTUAL TABLE fts_documents USING fts5(
   type UNINDEXED,
   title,
   body,
+  source_refs UNINDEXED,
   adopted_commit UNINDEXED,
   tokenize = 'porter unicode61'
 );
 ```
 
-Updated incrementally on `document.changed` signals during adoption.
+Updated incrementally by SearchDocumentEffect on `document.changed`,
+`file.created`, and `file.deleted` signals during adoption. Upsert replaces
+the row for `path`; delete removes it. `source_refs` is JSON provenance used by
+`dome query` results.
 
 ### `diagnostics`
 
@@ -159,6 +164,22 @@ CREATE TABLE questions (
   answer          TEXT                  -- nullable; user's response
 );
 ```
+
+The processor-facing QueryView exposes only Effect-level questions:
+`questions(filter)` returns `QuestionEffect[]`. CLI/recovery code uses the
+row-record accessor, which additionally exposes `id`, `processor_id`,
+`adopted_commit`, `asked_at`, `answered_at`, and `answer`. `dome inspect
+questions` prints those row records; `dome answer <id> <value>` validates the
+answer and sets `answered_at` / `answer`.
+
+Design note: answer values are user input, not rebuildable markdown-derived
+facts. In the current implementation they live in `projection.db.questions`
+because that is where QuestionEffects already land. The complete recovery loop
+must either materialize answers immediately through answer-handler processors or
+move question/answer records into durable operational state before treating
+answers as long-lived source-of-truth. That same work should make answer
+handler dispatch retryable after partial failure; the current CLI records the
+answer before dispatching matching handlers.
 
 ### `scheduled_jobs`
 
@@ -245,8 +266,7 @@ dome rebuild
   → recreate schema
   → walk wiki/, raw/, inbox/, notes/ at the current adopted commit
     → for each file, synthesize the trigger payload and fire the relevant adoption-phase processors
-    → write resulting FactEffect / DiagnosticEffect to facts / diagnostics
-    → write fts_documents rows
+    → write resulting FactEffect / DiagnosticEffect / SearchDocumentEffect rows
   → re-run deterministic garden-phase fact/question emitters only
   → emit `engine.projection.rebuilt` event
 ```
@@ -272,12 +292,23 @@ This is what [[wiki/gotchas/projection-schema-skew]] documents — and the autom
 View-phase processors read from the projection store via the query API exposed in `ProcessorContext`:
 
 ```ts
-interface ProjectionQuery {
-  searchDocuments(input: { query: string; filters?: SearchFilters }): Promise<SearchMatch[]>;
-  factsBySubject(subject: NodeRef): Promise<FactEffect[]>;
-  factsByPredicate(namespace: string, predicate: string): Promise<FactEffect[]>;
-  diagnostics(filter?: { severity?: DiagnosticSeverity; processorId?: string }): Promise<DiagnosticEffect[]>;
-  questions(filter?: { resolved?: boolean }): Promise<QuestionEffect[]>;
+interface ProjectionQueryView {
+  searchDocuments(input: {
+    query: string;
+    category?: string;
+    type?: string;
+    limit?: number;
+  }): ReadonlyArray<SearchMatch>;
+  facts(filter?: {
+    predicate?: string;
+    subjectKind?: "page" | "task" | "entity";
+    subjectId?: string;
+  }): ReadonlyArray<FactEffect>;
+  diagnostics(filter?: {
+    severity?: "info" | "warning" | "error" | "block";
+    processorId?: string;
+  }): ReadonlyArray<DiagnosticEffect>;
+  questions(filter?: { resolved?: boolean }): ReadonlyArray<QuestionEffect>;
 }
 ```
 

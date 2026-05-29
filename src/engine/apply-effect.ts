@@ -2,7 +2,7 @@
 //
 // Every Effect emitted by a processor flows through this router. It performs
 // two checks in order — (1) phase compatibility, (2) capability enforcement —
-// and then dispatches to one of seven injected sinks via an exhaustive
+// and then dispatches to one of eight injected sinks via an exhaustive
 // `switch` on `Effect.kind`. The router itself is pure: it owns no I/O and
 // holds no state; the wired sinks (projection store, ledger, outbox, etc.)
 // live in Phase 4 + Phase 8. Garden-phase PatchEffects are the one route
@@ -15,7 +15,7 @@
 //   - docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER.md
 //
 // Structural fence: TypeScript's `never`-type exhaustiveness check on the
-// `switch (effect.kind)` makes "adding an eighth Effect kind without a route"
+// `switch (effect.kind)` makes "adding a ninth Effect kind without a route"
 // a compile error here for the generic sink routes. The capability broker
 // (`./capability-broker`) is also called by `garden-patch-router.ts` for
 // garden PatchEffects; both call sites are inside the engine routing layer.
@@ -61,6 +61,7 @@ import type {
   JobEffect,
   PatchEffect,
   QuestionEffect,
+  SearchDocumentEffect,
   ViewEffect,
 } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
@@ -134,6 +135,13 @@ export type ApplyEffectSinks = {
   /** FactEffect — written to `projection_store.facts`. */
   readonly recordFact: (input: {
     readonly effect: FactEffect;
+    readonly processorId: string;
+    readonly runId: RunId;
+  }) => Promise<void>;
+
+  /** SearchDocumentEffect — written to `projection_store.fts_documents`. */
+  readonly recordSearchDocument: (input: {
+    readonly effect: SearchDocumentEffect;
     readonly processorId: string;
     readonly runId: RunId;
   }) => Promise<void>;
@@ -261,6 +269,7 @@ export function noopSinks(): ApplyEffectSinks {
     applyPatch: async () => null,
     recordDiagnostic: async () => undefined,
     recordFact: async () => undefined,
+    recordSearchDocument: async () => undefined,
     recordQuestion: async () => undefined,
     enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
@@ -431,7 +440,8 @@ function capabilityUseField(
  *   - adoption: JobEffect, ExternalActionEffect, ViewEffect
  *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
- *               FactEffect, QuestionEffect, JobEffect, ExternalActionEffect
+ *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
+ *               ExternalActionEffect
  *
  * Every other (kind, phase) pair is routed normally.
  */
@@ -449,6 +459,7 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
       if (
         effect.kind === "patch" ||
         effect.kind === "fact" ||
+        effect.kind === "search-document" ||
         effect.kind === "question" ||
         effect.kind === "job" ||
         effect.kind === "external"
@@ -485,7 +496,7 @@ function rejectedByPhase(
 /**
  * Exhaustive `switch` on `Effect.kind` — the structural fence behind
  * [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]. The `never`-typed
- * `_exhaustive` makes adding an eighth Effect kind here a compile error
+ * `_exhaustive` makes adding a ninth Effect kind here a compile error
  * until every kind has a route.
  */
 async function routeToSink(
@@ -523,6 +534,13 @@ async function routeToSink(
         runId: opts.runId,
       });
       return { newCandidate: null };
+    case "search-document":
+      await opts.sinks.recordSearchDocument({
+        effect,
+        processorId: opts.processorId,
+        runId: opts.runId,
+      });
+      return { newCandidate: null };
     case "question":
       await opts.sinks.recordQuestion({
         effect,
@@ -553,7 +571,7 @@ async function routeToSink(
       return { newCandidate: null };
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
-  // Adding an eighth Effect kind here is a compile error until every branch
+  // Adding a ninth Effect kind here is a compile error until every branch
   // above is updated.
   const _exhaustive: never = effect;
   return _exhaustive;

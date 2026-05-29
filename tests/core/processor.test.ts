@@ -81,6 +81,14 @@ describe("TriggerSchema (discriminated union)", () => {
     expect(t.kind).toBe("schedule");
   });
 
+  test("parses an AnswerTrigger", () => {
+    const t = TriggerSchema.parse({
+      kind: "answer",
+      idempotencyKeyPrefix: "dome.intake.",
+    });
+    expect(t.kind).toBe("answer");
+  });
+
   test("parses a CommandTrigger", () => {
     const t = TriggerSchema.parse({ kind: "command", name: "doctor" });
     expect(t.kind).toBe("command");

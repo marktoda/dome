@@ -1,0 +1,13 @@
+id: test.answer-handler
+version: 0.1.0
+processors:
+  - id: test.answer-handler.record-duplicate-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "dome.markdown.duplicate-detection:"
+    capabilities:
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/record-answer.ts

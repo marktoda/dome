@@ -1,26 +1,25 @@
-// cli/commands/sync-shared: drift detection + one-shot adoption invocation.
+// cli/commands/sync-shared: CLI host operations over an open VaultRuntime.
 //
-// Shared by `dome serve` (Phase 11b compiler host — calls these in a poll loop)
-// and `dome sync` (Phase 11c catch-up — calls them exactly once). Both
-// commands surface the same underlying operation:
+// `dome serve` and `dome sync` share the drift/adoption path:
 //
 //   1. Compare working-tree HEAD to `refs/dome/adopted/<branch>`.
 //   2. If drift is present, construct a `manual`-source Proposal and run
 //      `adopt()` against the open `VaultRuntime`.
 //
-// Extracting this here keeps the two callers structurally aligned — the
-// host's per-tick body and the one-shot command's body are the same
-// function call, just invoked under different lifecycles. Refactoring
-// invariants:
+// `dome answer` also uses this module for the same runtime-host wiring:
+// frame-aware SQLite sinks, adopted-ref resolution, and garden sub-Proposal
+// adoption. Keeping those operations together prevents each CLI verb from
+// hand-rolling a slightly different engine host.
+//
+// Refactoring invariants:
 //
 //   - **Behavior preservation.** The daemon must continue to exhibit the
 //     same per-tick semantics it had pre-extraction: detect drift,
 //     synthesize the (HEAD, HEAD) empty-diff init when the adopted ref is
 //     null, build the Proposal, run adopt, print a one-line summary.
-//   - **No new substrate.** Same sinks (`buildSqliteSinks` against the
-//     runtime's open DBs), same placeholder `applyPatch` / `captureView`
-//     (log + drop — the candidate-tree mutator + view-effect delivery
-//     wiring lands in v1.1).
+//   - **Single host boundary.** Runtime-backed commands use the same sinks
+//     (`buildSqliteSinks` against the runtime's open DBs), patch applier,
+//     ledger, and sub-Proposal recursion.
 //
 // House-style notes (matches src/cli/commands/serve.ts):
 //   - `type X = { ... }` aliases, every field `readonly`.
@@ -37,6 +36,10 @@ import { adopt, type AdoptEvent } from "../../engine/adopt";
 import { applyPatchToCandidate } from "../../engine/apply-patch";
 import { compileRange } from "../../engine/compile-range";
 import {
+  rebuildProjection,
+  type ProjectionRebuildResult,
+} from "../../engine/projection-rebuild";
+import {
   runGardenPhase,
   type AdoptSubProposalFn,
 } from "../../engine/garden";
@@ -45,11 +48,20 @@ import {
   type OperationalWorkResult,
 } from "../../engine/operational-work";
 import {
+  runAnswerHandlers,
+  type AnswerHandlerResult,
+} from "../../engine/answers";
+import {
   makeResolveTree,
   type VaultRuntime,
 } from "../../engine/vault-runtime";
 import { deriveExtensionId } from "../../extensions/id-helpers";
+import {
+  markProjectionBuilt,
+  projectionCacheKeysChanged,
+} from "../../projections/db";
 import { buildSqliteSinks } from "../../projections/sinks";
+import type { QuestionRecord } from "../../projections/questions";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { currentSha } from "../../git";
 
@@ -276,6 +288,13 @@ export async function runOneAdoption(opts: {
   const adoptionResult = await adopt(adoptOpts);
 
   if (adoptionResult.adopted) {
+    await rebuildProjectionIfCacheKeysChanged({
+      runtime,
+      adopted: adoptionResult.adoptedRef,
+      branch: drift.branch,
+      now,
+    });
+
     const adoptSubProposal = makeAdoptSubProposal({
       runtime,
       vault: adoptOpts.vault,
@@ -307,6 +326,13 @@ export async function runOneAdoption(opts: {
       sinks,
       adoptSubProposal,
     });
+
+    markProjectionBuilt(runtime.projectionDb, {
+      adoptedCommit: adoptionResult.adoptedRef,
+      extensionSet: runtime.extensions,
+      processorVersions: runtime.processorVersions,
+      builtAt: now(),
+    });
   }
 
   return adoptionResult;
@@ -315,11 +341,20 @@ export async function runOneAdoption(opts: {
 export async function runOperationalWorkForAdopted(opts: {
   readonly runtime: VaultRuntime;
   readonly adopted: CommitOid;
+  readonly branch?: string;
   readonly now?: () => Date;
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
 }): Promise<OperationalWorkResult> {
   const now = opts.now ?? ((): Date => new Date());
+  if (opts.branch !== undefined) {
+    await rebuildProjectionIfCacheKeysChanged({
+      runtime: opts.runtime,
+      adopted: opts.adopted,
+      branch: opts.branch,
+      now,
+    });
+  }
   const vault = runtimeVault(opts.runtime);
   const sinksFor = sinksForRuntime(opts.runtime);
   const sinks =
@@ -350,6 +385,87 @@ export async function runOperationalWorkForAdopted(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     externalHandlers: opts.runtime.externalHandlers,
     adoptSubProposal,
+  });
+}
+
+export type AnswerHandlersForQuestionResult =
+  | {
+      readonly kind: "handled";
+      readonly adopted: CommitOid;
+      readonly result: AnswerHandlerResult;
+    }
+  | {
+      readonly kind: "skipped";
+      readonly reason: "detached-head" | "no-adopted-ref";
+    };
+
+export async function runAnswerHandlersForQuestion(opts: {
+  readonly runtime: VaultRuntime;
+  readonly question: QuestionRecord;
+}): Promise<AnswerHandlersForQuestionResult> {
+  const branch = await getCurrentBranch(opts.runtime.path);
+  if (branch === null) {
+    return Object.freeze({ kind: "skipped" as const, reason: "detached-head" });
+  }
+  const adoptedRaw = await getAdoptedRef(opts.runtime.path, branch);
+  if (adoptedRaw === null) {
+    return Object.freeze({ kind: "skipped" as const, reason: "no-adopted-ref" });
+  }
+
+  const adopted = commitOid(adoptedRaw);
+  const vault = runtimeVault(opts.runtime);
+  const sinksFor = sinksForRuntime(opts.runtime);
+  const sinks = sinksFor({ base: adopted, head: adopted });
+  const adoptSubProposal = makeAdoptSubProposal({
+    runtime: opts.runtime,
+    vault,
+    sinksFor,
+  });
+
+  const result = await runAnswerHandlers({
+    vault,
+    adopted,
+    registry: opts.runtime.registry,
+    question: opts.question,
+    sinks,
+    resolveTree: makeResolveTree(opts.runtime.path),
+    resolveGrants: opts.runtime.resolveGrants,
+    extensionIdFor: opts.runtime.extensionIdFor,
+    ledger: opts.runtime.ledgerDb,
+    executionState: opts.runtime.processorRuntime.executionState,
+    ...(opts.runtime.modelProvider !== undefined
+      ? { modelProvider: opts.runtime.modelProvider }
+      : {}),
+    adoptSubProposal,
+  });
+
+  return Object.freeze({
+    kind: "handled" as const,
+    adopted,
+    result,
+  });
+}
+
+export async function rebuildProjectionIfCacheKeysChanged(opts: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly branch: string;
+  readonly now?: () => Date;
+}): Promise<ProjectionRebuildResult | null> {
+  if (
+    !projectionCacheKeysChanged(opts.runtime.projectionDb, {
+      extensionSet: opts.runtime.extensions,
+      processorVersions: opts.runtime.processorVersions,
+    })
+  ) {
+    return null;
+  }
+
+  return rebuildProjection({
+    runtime: opts.runtime,
+    adopted: opts.adopted,
+    branch: opts.branch,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 }
 

@@ -15,6 +15,7 @@ export type PathCapabilityKind =
   | "patch.auto"
   | "patch.propose"
   | "owns.path"
+  | "search.write"
   | "read";
 
 export function pathCapabilityEffectiveFor(
@@ -91,6 +92,7 @@ function isPathCapability(
     cap.kind === "patch.auto" ||
     cap.kind === "patch.propose" ||
     cap.kind === "owns.path" ||
+    cap.kind === "search.write" ||
     cap.kind === "read"
   );
 }

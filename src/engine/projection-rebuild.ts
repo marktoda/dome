@@ -152,6 +152,7 @@ function isProjectionRebuildEffect(effect: Effect): boolean {
   return (
     effect.kind === "diagnostic" ||
     effect.kind === "fact" ||
+    effect.kind === "search-document" ||
     effect.kind === "question"
   );
 }

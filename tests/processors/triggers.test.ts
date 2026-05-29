@@ -86,6 +86,14 @@ describe("matchTriggers — schedule + command no-ops (Phase 3 scope limit)", ()
     const r = matchTriggers(triggers, events);
     expect(r.length).toBe(0);
   });
+
+  test("answer trigger returns no match — answer dispatcher owns answer dispatch", () => {
+    const triggers: ReadonlyArray<Trigger> = [
+      { kind: "answer", idempotencyKeyPrefix: "dome.intake." },
+    ];
+    const r = matchTriggers(triggers, events);
+    expect(r.length).toBe(0);
+  });
 });
 
 describe("matchTriggers — composition + invariants", () => {

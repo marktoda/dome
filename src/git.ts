@@ -132,8 +132,14 @@ export async function commit(opts: {
       try {
         await git.add({ fs, dir: root, filepath: fullpath });
       } catch {
-        // Ignore add-failure for paths that may have been deleted; the
-        // commit will still capture deletions present in the index.
+        // `git.add` fails for deleted paths. Stage the removal explicitly so
+        // callers can pass a path list that contains both writes and deletes.
+        try {
+          await git.remove({ fs, dir: root, filepath: fullpath });
+        } catch {
+          // If the path was neither present in the working tree nor tracked in
+          // the index, there is nothing to stage.
+        }
       }
     }
   }

@@ -462,7 +462,8 @@ async function runGardenPhaseInner(opts: {
       });
     } else {
       // Spawn sub-Proposals for each authorized patch through the shared
-      // conversion boundary used by garden, scheduler, and queued jobs.
+      // conversion boundary used by garden, scheduler, queued jobs, and
+      // answer handlers.
       for (const req of spawnQueue) {
         const spawned = await spawnGardenSubProposal({
           vault,

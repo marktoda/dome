@@ -33,6 +33,12 @@ export function capabilityUseForEffect(
         outcome,
       });
     }
+    case "search-document":
+      return Object.freeze({
+        capability: "search.write",
+        resource: effect.path,
+        outcome,
+      });
     case "question":
       return Object.freeze({
         capability: "question.ask",

@@ -17,6 +17,7 @@ import {
   computeSchemaHash,
   markProjectionBuilt,
   openProjectionDb,
+  projectionCacheKeysChanged,
   resetProjectionDb,
   type OpenProjectionDbResult,
   type ProjectionDb,
@@ -203,6 +204,51 @@ describe("openProjectionDb", () => {
       computeProcessorVersionsHash(procs),
     );
     expect(meta?.built_at).toBe("2026-05-28T00:00:00.000Z");
+  });
+
+  it("projectionCacheKeysChanged reports only populated cache-key drift", async () => {
+    const exts = [{ name: "ext.a", version: "1.0.0" }];
+    const procs = [{ id: "proc.a", version: "1.0.0" }];
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: exts,
+      processorVersions: procs,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+
+    expect(
+      projectionCacheKeysChanged(r.value.db, {
+        extensionSet: exts,
+        processorVersions: procs,
+      }),
+    ).toBe(false);
+
+    markProjectionBuilt(r.value.db, {
+      adoptedCommit: commitOid("def4560000000000000000000000000000000000"),
+      extensionSet: exts,
+      processorVersions: procs,
+      builtAt: new Date("2026-05-28T00:00:00.000Z"),
+    });
+    expect(
+      projectionCacheKeysChanged(r.value.db, {
+        extensionSet: exts,
+        processorVersions: procs,
+      }),
+    ).toBe(false);
+    expect(
+      projectionCacheKeysChanged(r.value.db, {
+        extensionSet: exts,
+        processorVersions: [{ id: "proc.a", version: "1.1.0" }],
+      }),
+    ).toBe(true);
+    expect(
+      projectionCacheKeysChanged(r.value.db, {
+        extensionSet: [{ name: "ext.a", version: "2.0.0" }],
+        processorVersions: procs,
+      }),
+    ).toBe(true);
   });
 
   it("close() releases the handle", async () => {

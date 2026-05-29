@@ -12,6 +12,44 @@ const baseProcessor = {
 };
 
 describe("parseManifest — execution metadata", () => {
+  test("accepts garden answer triggers", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          triggers: [{ kind: "answer", idempotencyKeyPrefix: "test." }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.processors[0]?.triggers[0]?.kind).toBe("answer");
+  });
+
+  test("rejects view answer triggers", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          phase: "view",
+          triggers: [{ kind: "answer" }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("phase-trigger-mismatch");
+    if (result.error.kind !== "phase-trigger-mismatch") return;
+    expect(result.error.phase).toBe("view");
+    expect(result.error.trigger).toBe("answer");
+  });
+
   test("accepts garden llm execution metadata", () => {
     const result = parseManifest({
       id: "test.bundle",

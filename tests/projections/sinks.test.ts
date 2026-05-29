@@ -93,6 +93,7 @@ describe("buildSqliteSinks shape", () => {
     expect(typeof sinks.recordDiagnostic).toBe("function");
     expect(typeof sinks.resolveDiagnostics).toBe("function");
     expect(typeof sinks.recordFact).toBe("function");
+    expect(typeof sinks.recordSearchDocument).toBe("function");
     expect(typeof sinks.recordQuestion).toBe("function");
     expect(typeof sinks.enqueueJob).toBe("function");
     expect(typeof sinks.dispatchExternal).toBe("function");

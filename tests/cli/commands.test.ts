@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runInit } from "../../src/cli/commands/init";
+import { runAnswer } from "../../src/cli/commands/answer";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runInspect } from "../../src/cli/commands/inspect";
 import { runStatus } from "../../src/cli/commands/status";
@@ -57,7 +58,10 @@ import {
   insertDiagnostic,
   queryDiagnostics,
 } from "../../src/projections/diagnostics";
-import { insertQuestion } from "../../src/projections/questions";
+import {
+  insertQuestion,
+  queryQuestionRecords,
+} from "../../src/projections/questions";
 
 // ----- Console capture ------------------------------------------------------
 //
@@ -150,6 +154,75 @@ afterEach(async () => {
   }
 });
 
+async function seedUnhealthyOperationalState(f: Fixture): Promise<void> {
+  const adoptedCommit = commitOid(f.headSha);
+  const ref = sourceRef({
+    commit: adoptedCommit,
+    path: "wiki/seed.md",
+  });
+
+  const outbox = await openOutboxDb({
+    path: join(f.vaultPath, ".dome", "state", "outbox.db"),
+  });
+  if (!outbox.ok) {
+    throw new Error(`outbox open failed: ${outbox.error.kind}`);
+  }
+  try {
+    insertPending(outbox.value.db, {
+      effect: externalActionEffect({
+        capability: "calendar.write",
+        idempotencyKey: "doctor-failed",
+        payload: { event: "failed" },
+        sourceRefs: [ref],
+      }),
+      runId: "run-doctor-outbox",
+    });
+    markOutboxFailed(outbox.value.db, "doctor-failed", "terminal failure");
+  } finally {
+    outbox.value.db.close();
+  }
+
+  const ledger = await openLedgerDb({
+    path: join(f.vaultPath, ".dome", "state", "runs.db"),
+  });
+  if (!ledger.ok) {
+    throw new Error(`ledger open failed: ${ledger.error.kind}`);
+  }
+  try {
+    const runId = newRunId(new Date(0), () => "doctor");
+    insertQueued(ledger.value.db, {
+      id: runId,
+      proposalId: null,
+      processorId: "test.doctor",
+      processorVersion: "0.0.1",
+      phase: "garden",
+      inputCommit: adoptedCommit,
+      triggerKind: "schedule",
+      triggerPayload: { test: true },
+      startedAt: new Date(0),
+    });
+    markRunning(ledger.value.db, runId, new Date(1));
+  } finally {
+    ledger.value.db.close();
+  }
+
+  const quarantine = openQuarantineStore({
+    path: join(f.vaultPath, ".dome", "state", "quarantined.json"),
+    quarantineThreshold: 2,
+  });
+  if (!quarantine.ok) {
+    throw new Error(`quarantine open failed: ${quarantine.error.kind}`);
+  }
+  const key = Object.freeze({
+    phase: "garden" as const,
+    processorId: "test.doctor",
+    processorVersion: "0.0.1",
+    triggerHash: "doctor-trigger",
+  });
+  quarantine.value.recordRetryableTerminalFailure(key, "first");
+  quarantine.value.recordRetryableTerminalFailure(key, "second");
+}
+
 // ----- runInit --------------------------------------------------------------
 
 describe("runInit", () => {
@@ -187,8 +260,16 @@ describe("runInit", () => {
       expect(existsSync(agentsPath)).toBe(true);
       const agentsBody = await readFile(agentsPath, "utf8");
       expect(agentsBody).toContain("This is a Dome vault");
+      expect(agentsBody).toContain("## Daily loop");
+      expect(agentsBody).toContain("Commit each coherent unit of work");
+      expect(agentsBody).toContain("Dome works at the git commit boundary");
+      expect(agentsBody).toContain("dome inspect questions");
+      expect(agentsBody).toContain("dome answer <id> <value>");
+      expect(agentsBody).toContain("dome rebuild");
+      expect(agentsBody).toContain("Do not edit or commit it");
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
       expect(agentsBody).toContain("<!-- END user-prose -->");
+      expect(agentsBody).not.toContain("git worktree add");
 
       const claudePath = join(target, "CLAUDE.md");
       expect(existsSync(claudePath)).toBe(true);
@@ -471,23 +552,166 @@ describe("runInspect", () => {
   });
 });
 
-// ----- runDoctor (v1.0 stub) ------------------------------------------------
-//
-// `dome doctor` is reserved for the v1.x health-check verb per
-// [[wiki/specs/cli]] §"dome doctor". v1.0 ships a stub that prints the
-// reserved-for-v1.x notice; `--repair` exits 64 (not implemented).
+// ----- runAnswer ------------------------------------------------------------
 
-describe("runDoctor (v1.0 stub)", () => {
-  test("without flags: exits 0 with the reserved-for-v1.x notice", async () => {
-    const code = await runDoctor();
+describe("runAnswer", () => {
+  test("records an answer by question row id", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    const adopted = commitOid(f.headSha);
+    const effect = questionEffect({
+      question: "Are these duplicates?",
+      sourceRefs: [sourceRef({ commit: adopted, path: "wiki/new.md" })],
+      idempotencyKey: "cli-question-1",
+      options: ["merge", "keep"],
+    });
+    insertQuestion(projection.value.db, {
+      effect,
+      processorId: "test.cli",
+      adoptedCommit: adopted,
+    });
+    const id = queryQuestionRecords(projection.value.db)[0]?.id;
+    projection.value.db.close();
+    expect(id).toBeGreaterThan(0);
+    if (id === undefined) return;
+
+    const code = await runAnswer({
+      id,
+      value: "keep",
+      vault: f.vaultPath,
+      json: true,
+    });
     expect(code).toBe(0);
-    expect(captured.out.join("\n")).toContain("reserved for v1.x");
+
+    const after = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    try {
+      const record = queryQuestionRecords(after.value.db)[0];
+      expect(record?.answer).toBe("keep");
+      expect(record?.answeredAt).not.toBeNull();
+    } finally {
+      after.value.db.close();
+    }
   });
 
-  test("with --repair: exits 64 (not implemented in v1.0)", async () => {
+  test("rejects invalid options without answering", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    const adopted = commitOid(f.headSha);
+    insertQuestion(projection.value.db, {
+      effect: questionEffect({
+        question: "Pick one",
+        sourceRefs: [sourceRef({ commit: adopted, path: "wiki/new.md" })],
+        idempotencyKey: "cli-question-2",
+        options: ["yes", "no"],
+      }),
+      processorId: "test.cli",
+      adoptedCommit: adopted,
+    });
+    const id = queryQuestionRecords(projection.value.db)[0]?.id;
+    projection.value.db.close();
+    expect(id).toBeGreaterThan(0);
+    if (id === undefined) return;
+
+    const code = await runAnswer({
+      id,
+      value: "maybe",
+      vault: f.vaultPath,
+    });
+    expect(code).toBe(64);
+
+    const after = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    try {
+      const record = queryQuestionRecords(after.value.db)[0];
+      expect(record?.answer).toBeNull();
+      expect(record?.answeredAt).toBeNull();
+    } finally {
+      after.value.db.close();
+    }
+  });
+});
+
+// ----- runDoctor ------------------------------------------------------------
+
+describe("runDoctor", () => {
+  test("clean vault reports ok", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const code = await runDoctor({ vault: f.vaultPath });
+    expect(code).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("DOME doctor");
+    expect(out).toContain("health    ok");
+  });
+
+  test("--json reports failed outbox, orphan runs, and quarantines", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await seedUnhealthyOperationalState(f);
+
+    const code = await runDoctor({
+      vault: f.vaultPath,
+      json: true,
+      orphanThresholdMs: 0,
+    });
+    expect(code).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: {
+        readonly findingCount: number;
+        readonly failedOutbox: number;
+        readonly orphanRuns: number;
+        readonly quarantinedProcessors: number;
+      };
+      readonly findings: ReadonlyArray<{ readonly code: string }>;
+    };
+    expect(parsed.status).toBe("unhealthy");
+    expect(parsed.summary.findingCount).toBe(3);
+    expect(parsed.summary.failedOutbox).toBe(1);
+    expect(parsed.summary.orphanRuns).toBe(1);
+    expect(parsed.summary.quarantinedProcessors).toBe(1);
+    expect(parsed.findings.map((finding) => finding.code)).toEqual([
+      "outbox.failed",
+      "run.orphan",
+      "processor.quarantined",
+    ]);
+  });
+
+  test("with --repair: exits 64 (not implemented yet)", async () => {
     const code = await runDoctor({ repair: true });
     expect(code).toBe(64);
-    expect(captured.err.join("\n")).toContain("not implemented in v1.0");
+    expect(captured.err.join("\n")).toContain("not implemented yet");
   });
 });
 

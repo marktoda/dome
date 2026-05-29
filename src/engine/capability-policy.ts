@@ -87,6 +87,7 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
   pushPathCapability(capabilities, "patch.propose", grant["patch.propose"]);
   pushPathCapability(capabilities, "patch.auto", grant["patch.auto"]);
   pushPathCapability(capabilities, "owns.path", grant["owns.path"]);
+  pushPathCapability(capabilities, "search.write", grant["search.write"]);
   pushRegionCapability(capabilities, grant["owns.region"]);
   pushGraphWriteCapability(capabilities, grant["graph.write"]);
   pushQuestionAskCapability(capabilities, grant["question.ask"]);
@@ -98,7 +99,7 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
 
 function pushPathCapability(
   out: Capability[],
-  kind: "read" | "patch.propose" | "patch.auto" | "owns.path",
+  kind: "read" | "patch.propose" | "patch.auto" | "owns.path" | "search.write",
   raw: unknown,
 ): void {
   const paths = stringArray(raw);

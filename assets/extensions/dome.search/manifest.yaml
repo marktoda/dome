@@ -1,0 +1,28 @@
+id: dome.search
+version: 0.1.0
+processors:
+  - id: dome.search.index-text
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+      - kind: signal
+        name: file.deleted
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: search.write
+        paths: ["**/*.md"]
+    module: processors/index-text.ts
+
+  - id: dome.search.query
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: query
+    capabilities: []
+    module: processors/query.ts

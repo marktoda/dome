@@ -41,7 +41,7 @@
 //   - Optional fields use `field?: T` (not `T | undefined`) for
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - Exhaustive `switch` on `Effect.kind` with a `never`-typed catch-all
-//     so adding an eighth Effect kind is a compile error here.
+//     so adding a ninth Effect kind is a compile error here.
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating broker outputs.
 //   - Imports limited to pure types from `../core/` plus the
@@ -55,6 +55,7 @@ import type {
   FactEffect,
   JobEffect,
   PatchEffect,
+  SearchDocumentEffect,
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
@@ -113,6 +114,7 @@ const downgrade = (
  *   - patch      → `patch.auto` (with auto→propose downgrade) / `patch.propose`
  *   - diagnostic → always allow
  *   - fact       → `graph.write` matching the predicate's namespace
+ *   - search-document → `search.write` matching the document path
  *   - question   → `question.ask`
  *   - job        → `job.enqueue` matching the target processor id
  *   - external   → `external:<capability>` matching effect's `capability`
@@ -130,6 +132,8 @@ export function enforceCapability(
       return allow();
     case "fact":
       return enforceFact(effect, declared, granted);
+    case "search-document":
+      return enforceSearchDocument(effect, declared, granted);
     case "question":
       return enforceQuestion(declared, granted);
     case "job":
@@ -140,7 +144,7 @@ export function enforceCapability(
       return allow();
   }
   // Exhaustive switch — TS verifies via the `never` exhaustiveness check.
-  // Adding an eighth Effect kind here is a compile error until every
+  // Adding a ninth Effect kind here is a compile error until every
   // branch above is updated.
   const _exhaustive: never = effect;
   return _exhaustive;
@@ -316,6 +320,31 @@ function enforceFact(
       severity: "error",
       code: "capability-deny-graph-write",
       message: `FactEffect denied: predicate '${effect.predicate}' (namespace '${namespace}') has no effective 'graph.write' grant. Declare 'graph.write' with namespace '${namespace}' in the manifest and grant it in config.yaml.`,
+      sourceRefs: [],
+    }),
+  );
+}
+
+// ----- SearchDocumentEffect enforcement ------------------------------------
+
+/**
+ * SearchDocumentEffect requires a `search.write` grant matching the indexed
+ * document path. This keeps FTS rows behind path-scoped capability
+ * discipline instead of letting search processors write SQLite directly.
+ */
+function enforceSearchDocument(
+  effect: SearchDocumentEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  if (pathCapabilityEffectiveFor("search.write", effect.path, declared, granted)) {
+    return allow();
+  }
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: "capability-deny-search-write",
+      message: `SearchDocumentEffect denied: path '${effect.path}' has no effective 'search.write' grant. Declare 'search.write' for indexed paths in the manifest and grant it in config.yaml.`,
       sourceRefs: [],
     }),
   );

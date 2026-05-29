@@ -14,7 +14,7 @@ Per-table map of which extension is authorized to write to each table in `<vault
 | Database | Table | Writers (extensions) | Schema authority | Capability gate |
 |---|---|---|---|---|
 | `projection.db` | `facts` | `dome.graph` (namespace: `dome.graph`); `dome.intake` (namespaces: `dome.tasks`, `dome.people`); `dome.search` (namespace: `dome.search`); third-party bundles per their `graph.write` grants | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
-| `projection.db` | `fts_documents` | `dome.search` exclusively | [[wiki/specs/projection-store]] §"Tables — fts_documents" | Internal to `dome.search.index-text`; not directly grantable to other extensions |
+| `projection.db` | `fts_documents` | processors that emit `SearchDocumentEffect` for granted paths; shipped writer is `dome.search.index-text` | [[wiki/specs/projection-store]] §"Tables — fts_documents" | `search.write:<path-glob>` |
 | `projection.db` | `diagnostics` | every processor that emits `DiagnosticEffect` | [[wiki/specs/projection-store]] §"Tables — diagnostics" | (none — every processor may emit) |
 | `projection.db` | `questions` | every processor that emits `QuestionEffect` subject to `question.ask` | [[wiki/specs/projection-store]] §"Tables — questions" | `question.ask:<namespace>` |
 | `projection.db` | `scheduled_jobs` | engine writes on authorized `JobEffect` emission; processors do not write directly | [[wiki/specs/projection-store]] §"Tables — scheduled_jobs" | `job.enqueue:<processor-id-or-glob>` |
@@ -30,14 +30,19 @@ Per-table map of which extension is authorized to write to each table in `<vault
 - **Processor-written tables** (`facts`, `diagnostics`, `questions`, `fts_documents`) are written by the engine on behalf of a processor that emitted the corresponding Effect, scoped by the processor's declared capabilities.
 - **No table is multi-writer without namespace scoping.** `facts` allows multiple extensions to write, but each is scoped to its `graph.write` namespace; two extensions cannot write rows under the same namespace. Cross-namespace contention is prevented by construction.
 
-## Why `fts_documents` is single-writer
+## Why `fts_documents` uses `SearchDocumentEffect`
 
-`dome.search.index-text` is the only authorized writer for `fts_documents`. The table maintains an FTS5 index over markdown bodies; multiple writers would race on the index updates. The single-writer constraint is enforced by:
+`fts_documents` is a shared projection table, but processors still never write
+SQLite directly. `dome.search.index-text` emits `SearchDocumentEffect` values;
+the engine checks `search.write` for the document path and the projection sink
+owns the FTS5 upsert/delete SQL. This gives Dome a narrow extension boundary:
+future bundles can request path-scoped indexing authority without receiving a
+generic projection-row writer.
 
-1. `dome.search.index-text` declares an implicit capability the broker recognizes — `internal:fts_documents.write`. The broker grants it only to `dome.search`.
-2. A third-party bundle that wants its own FTS index registers its own table (e.g., `community.synonyms.fts_synonyms`) rather than writing to `fts_documents`.
-
-This is the projection-table analogue of `owns.path` — exclusive write authority for the table.
+The v1 shipped writer remains `dome.search.index-text`, granted over
+`**/*.md`. A third-party bundle that wants a separate specialized index should
+ship its own effect/table pair in a future substrate extension rather than
+overloading `fts_documents` with unrelated semantics.
 
 ## Cross-namespace facts read
 

@@ -42,6 +42,7 @@ import { getCurrentBranch } from "../../adopted-ref";
 import {
   detectDrift,
   formatAdoptEvent,
+  rebuildProjectionIfCacheKeysChanged,
   resolveShippedBundlesRoot,
   runOneAdoption,
   runOperationalWorkForAdopted,
@@ -279,6 +280,7 @@ async function pollLoop(input: {
         await runOperationalWorkWithErrorHandling({
           runtime,
           adopted: drift.head,
+          branch: drift.branch,
           verbose,
         });
         nextOperationalAtMs = nowMs + operationalIntervalMs;
@@ -301,10 +303,21 @@ async function pollLoop(input: {
 async function runOperationalWorkWithErrorHandling(input: {
   readonly runtime: VaultRuntime;
   readonly adopted: CommitOid;
+  readonly branch: string;
   readonly verbose: boolean;
 }): Promise<void> {
-  const { runtime, adopted, verbose } = input;
+  const { runtime, adopted, branch, verbose } = input;
   try {
+    const rebuilt = await rebuildProjectionIfCacheKeysChanged({
+      runtime,
+      adopted,
+      branch,
+    });
+    if (verbose && rebuilt !== null) {
+      console.log(
+        `dome serve: rebuilt projection cache (${rebuilt.fileCount} files, ${rebuilt.effectCount} effects)`,
+      );
+    }
     const result = await runOperationalWorkForAdopted({
       runtime,
       adopted,

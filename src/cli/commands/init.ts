@@ -13,7 +13,7 @@
 //   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
 // The vault does NOT carry the first-party extension bundles
-// (`dome.graph`, `dome.lint`, `dome.markdown`). They live with the SDK at
+// (`dome.graph`, `dome.lint`, `dome.markdown`, `dome.search`). They live with the SDK at
 // `<SDK>/assets/extensions/` and are resolved at runtime by the bundle
 // loader (`resolveShippedBundlesRoot` in `./sync-shared.ts`). This
 // matches the v1.md model: "Core features are just built-in extensions"
@@ -255,7 +255,7 @@ const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
 # grants. The shipped first-party bundles (\`dome.graph\`, \`dome.lint\`,
-# \`dome.markdown\`) live with the SDK — the CLI's default
+# \`dome.markdown\`, \`dome.search\`) live with the SDK — the CLI's default
 # \`--bundles-root\` resolves to the SDK's \`assets/extensions/\` directory.
 # To install a third-party bundle,
 # create \`.dome/extensions/<bundle-id>/\` here and pass
@@ -287,6 +287,14 @@ extensions:
       graph.write:
         - "dome.graph.*"
 
+  dome.search:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+      search.write:
+        - "**/*.md"
+
 engine:
   # Maximum iterations of the fixed-point adoption loop per Proposal.
   # Hitting this cap is a programmer error (processors not idempotent
@@ -316,88 +324,61 @@ git:
 
 const AGENTS_MD_TEMPLATE = `# This is a Dome vault.
 
-This directory is a Git-backed markdown vault managed by Dome v1.0 (\`@dome/sdk\`).
+This directory is a git-backed markdown vault managed by Dome. Claude Code can
+work here using normal file, search, shell, and git tools; Dome watches committed
+changes and compiles them into adopted vault state.
 
-## How writes work
+## Daily loop
 
-You write markdown files normally — use your harness's native write tools
-(\`Write\` / \`Edit\` in Claude Code, \`:w\` in vim, the OS file API in Obsidian).
-Commit your changes to \`main\`:
+1. Talk with the user and edit markdown normally.
+2. Keep changes in ordinary vault files, usually under \`wiki/\`.
+3. Commit each coherent unit of work with git.
+4. If \`dome serve\` is running, let it adopt the commit in the background.
+5. If the user wants to wait for Dome, run \`dome sync\`.
+6. Use \`dome status\` or \`dome inspect <subject>\` only for health, adoption
+   status, and recovery.
 
-\`\`\`bash
-git add . && git commit -m "your message"
-\`\`\`
-
-**Commit per logical change.** The compiler host treats each commit as a Proposal —
-one commit triggers one adoption cycle. Many small commits give you
-per-change diagnostic feedback and a clean \`git blame\`; one mega-commit
-bundles all diagnostics together and is harder to revert selectively. When
-you finish a coherent unit of work (one entity updated, one source ingested,
-one section rewritten), commit it.
-
-For experimental work — a structural rewrite, a directory rename, a
-many-pages refactor you might discard — use a git worktree to isolate it
-from \`main\` until you're sure:
+Good commit shape:
 
 \`\`\`bash
-git worktree add .Codex/worktrees/experiment-restructure -b experiment/restructure
-cd .Codex/worktrees/experiment-restructure
-# ...experimental edits + commits land on experiment/restructure...
-# merge back to main when ready, or rm -rf and discard
+git add .
+git commit -m "describe the vault change"
 \`\`\`
 
-The compiler host watches \`refs/heads/main\` only, so worktree commits don't get
-adopted until you merge them back. That's the point of using a worktree:
-the experiment is invisible to the engine until you decide it's worth
-keeping.
+## Dome commands
 
-A compiler host (\`dome serve\`) watches for new commits. It can run in a
-foreground terminal like an LSP/watch process or under a local background
-service. On each commit, the engine runs adoption: lint markdown, validate
-wikilinks, update projections, advance \`refs/dome/adopted/main\`. You see
-nothing on the happy path. If a processor surfaces a warning, it lands in
-the diagnostic projection.
+- \`dome status\` - branch, HEAD, adopted ref, content counts, and health counts.
+- \`dome sync\` - one-shot catch-up when no compiler host is running or when the
+  user wants to wait for adoption.
+- \`dome query <text>\` - search adopted markdown and related extracted facts.
+- \`dome inspect diagnostics\` - current markdown and engine diagnostics.
+- \`dome inspect questions\` - open questions that need human input.
+- \`dome answer <id> <value>\` - answer a question from \`dome inspect questions\`.
+- \`dome inspect runs\` - recent processor runs and failures.
+- \`dome inspect outbox\` - pending or failed external actions.
+- \`dome rebuild\` - rebuild projection state from adopted markdown when recovery
+  requires it.
 
-If the compiler host isn't running, run \`dome sync\` once after your commits to
-catch up.
-
-## What you can ask the system
-
-- \`dome status\` — what branch you're on, adopted ref, last sync time,
-  pending runs.
-- \`dome inspect diagnostics\` — broken wikilinks, lint warnings,
-  unresolved questions.
-- \`dome inspect runs\` — recent processor invocations + outcomes.
-- \`dome inspect outbox\` — pending external actions.
+Do not call Dome after every edit. Dome works at the git commit boundary.
 
 ## Vault conventions
 
-- \`wiki/\` — your main markdown content. Pages link via \`[[wikilinks]]\`.
-  Use bare names (\`[[danny]]\`) for vault-wide search; use paths
-  (\`[[people/danny]]\`) for explicit references.
-- \`.dome/extensions/\` — optional directory for vault-local third-party
-  extension bundles. The shipped first-party bundles (\`dome.graph\`,
-  \`dome.lint\`, \`dome.markdown\`) live with the SDK and don't need to be
-  copied here.
-  To install a third-party bundle, place its directory under
-  \`.dome/extensions/<bundle-id>/\` and pass
-  \`--bundles-root .dome/extensions\` to the CLI commands.
-- \`.dome/state/\` — SQLite databases for projections, outbox, and run
-  ledger. Don't edit by hand; projection state is rebuildable via \`dome rebuild\`.
-- \`.dome/config.yaml\` — extension activation and engine config.
+- \`wiki/\` is the main markdown knowledge base. Pages can link with
+  \`[[wikilinks]]\`.
+- \`.dome/config.yaml\` controls enabled extension bundles and grants.
+- \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
+  run ledger. Do not edit or commit it.
+- \`.dome/extensions/\` is optional vault-local extension code. The shipped
+  first-party bundles live with the SDK and do not need to be copied here.
 
-## Invariants you should know about
+## Load-bearing rules
 
-- **Markdown is the source of truth.** Anything in \`.dome/state/\` is
-  derived and rebuildable from the git history + the projection-store
-  cache keys.
-- **The engine is the only thing that applies effects.** Processors
-  return Effects; the engine routes them. No processor mutates state
-  directly.
-- **Every processor run is ledgered.** Even failed runs leave a row in
-  \`.dome/state/runs.db\` for forensics.
-- **Engine commits carry four \`Dome-*\` trailers.** \`git log --grep="Dome-Run:"\`
-  yields the engine history; reverting an engine commit is safe.
+- Markdown plus git history are the source of truth.
+- Every trusted mutation goes through a Proposal and the adoption loop.
+- Processors return Effects; the engine is the only applier.
+- Every effect is capability-checked before it lands.
+- Projection state is rebuildable from adopted markdown.
+- Engine commits carry \`Dome-*\` trailers for auditability.
 
 <!-- BEGIN user-prose -->
 
@@ -416,10 +397,10 @@ const CLAUDE_MD_TEMPLATE = `@AGENTS.md
 
 ## Claude Code
 
-Use the Dome vault workflow described in AGENTS.md. Edit markdown normally,
-commit coherent changes with git, and use \`dome status\`, \`dome sync\`, and
-\`dome inspect <subject>\` only when the user wants adoption status or recovery
-details.
+Use the Dome vault workflow in AGENTS.md. Edit markdown normally, commit
+coherent changes with git, and only use \`dome status\`, \`dome sync\`, or
+\`dome inspect <subject>\` when the user wants adoption status, recovery detail,
+or an explicit health check.
 `;
 
 const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold
@@ -430,9 +411,9 @@ Includes:
 - .gitignore (ignores .dome/state/)
 - .dome/config.yaml (extension activation + engine settings)
 
-The first-party extension bundles (dome.graph, dome.lint, dome.markdown)
-live with the SDK at <SDK>/assets/extensions/ and are resolved at runtime
-— the vault doesn't carry copies.
+The first-party extension bundles (dome.graph, dome.lint, dome.markdown,
+dome.search) live with the SDK at <SDK>/assets/extensions/ and are resolved
+at runtime — the vault doesn't carry copies.
 
 Generated by \`dome init\` v1.0
 `;

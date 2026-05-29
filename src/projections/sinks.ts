@@ -1,13 +1,14 @@
-// projection-sinks: assembles the seven-sink `ApplyEffectSinks` shape against
+// projection-sinks: assembles the eight-sink `ApplyEffectSinks` shape against
 // the projection database, the outbox database, and two engine-layer
 // injections (`applyPatch`, `captureView`). This is the Phase 4 wiring layer
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Five sinks are owned here (delegating to the per-table accessors):
+// Six sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
 //   - recordFact       → src/projections/facts.ts:       insertFact
+//   - recordSearchDocument → src/projections/search.ts:  applySearchDocumentEffect
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
@@ -57,6 +58,7 @@ import type { OutboxDb } from "../outbox/db";
 
 import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
 import { insertFact } from "./facts";
+import { applySearchDocumentEffect } from "./search";
 import { insertQuestion } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
 import {
@@ -103,8 +105,8 @@ export type BuildSqliteSinksOpts = {
 // ----- buildSqliteSinks -----------------------------------------------------
 
 /**
- * Assemble the seven-sink `ApplyEffectSinks` object the engine's
- * `applyEffect` router calls into. Five sinks delegate to the per-table
+ * Assemble the eight-sink `ApplyEffectSinks` object the engine's
+ * `applyEffect` router calls into. Six sinks delegate to the per-table
  * projection accessors + the outbox dispatcher; two are pass-through
  * injections from the engine layer (`applyPatch`, `captureView`).
  *
@@ -143,6 +145,13 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       insertFact(opts.projectionDb, {
         effect,
         processorId,
+        adoptedCommit: opts.adoptedCommit,
+      });
+    },
+
+    recordSearchDocument: async ({ effect }) => {
+      applySearchDocumentEffect(opts.projectionDb, {
+        effect,
         adoptedCommit: opts.adoptedCommit,
       });
     },

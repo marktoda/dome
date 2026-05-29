@@ -35,8 +35,11 @@ import {
   resolveStaleDiagnostics,
 } from "../../src/projections/diagnostics";
 import {
+  answerQuestionById,
+  getQuestionRecord,
   answerQuestion,
   insertQuestion,
+  queryQuestionRecords,
   queryQuestions,
 } from "../../src/projections/questions";
 import {
@@ -514,6 +517,55 @@ describe("questions accessor", () => {
     expect(queryQuestions(db, { resolved: true }).length).toBe(0);
     answerQuestion(db, { idempotencyKey: "q-1", answer: "the answer" });
     expect(queryQuestions(db, { resolved: true }).length).toBe(1);
+  });
+
+  it("queryQuestionRecords exposes stable row ids and answer metadata", () => {
+    const effect = questionEffect({
+      question: "choose?",
+      sourceRefs: [REF],
+      idempotencyKey: "q-row",
+      options: ["yes", "no"],
+    });
+    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+
+    const records = queryQuestionRecords(db);
+    expect(records.length).toBe(1);
+    const record = records[0];
+    expect(record?.id).toBeGreaterThan(0);
+    expect(record?.processorId).toBe("p1");
+    expect(record?.adoptedCommit).toBe(ADOPTED);
+    expect(record?.answeredAt).toBeNull();
+    expect(record?.answer).toBeNull();
+    expect(record?.effect.options).toEqual(["yes", "no"]);
+  });
+
+  it("answerQuestionById validates options and records the answer", () => {
+    const effect = questionEffect({
+      question: "choose?",
+      sourceRefs: [REF],
+      idempotencyKey: "q-choice",
+      options: ["keep", "merge"],
+    });
+    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    const record = queryQuestionRecords(db)[0];
+    expect(record).toBeDefined();
+    if (record === undefined) return;
+
+    const invalid = answerQuestionById(db, {
+      id: record.id,
+      answer: "delete",
+    });
+    expect(invalid.kind).toBe("invalid-option");
+    expect(getQuestionRecord(db, record.id)?.answeredAt).toBeNull();
+
+    const answered = answerQuestionById(db, {
+      id: record.id,
+      answer: "keep",
+    });
+    expect(answered.kind).toBe("answered");
+    const after = getQuestionRecord(db, record.id);
+    expect(after?.answer).toBe("keep");
+    expect(after?.answeredAt).not.toBeNull();
   });
 });
 

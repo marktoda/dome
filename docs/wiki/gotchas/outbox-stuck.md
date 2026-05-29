@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 severity: medium
 coverage: off-matrix
 enforced_at: src/outbox/dispatch.ts
@@ -24,11 +24,15 @@ The outbox is **never** silently discarded — every emitted `ExternalActionEffe
 2. **`dome.health.outbox-failure-question` (garden-phase, v1.x, in the deferred `dome.health` bundle) subscribes to the signal** and emits a `QuestionEffect` with options `["retry", "abandon", "wait"]`, `idempotencyKey` set to the underlying row's key, and `sourceRefs` pointing at the failed row.
 3. **User inspects:** `dome inspect outbox` lists pending and failed entries with their last error message; `dome inspect questions` lists the open recovery questions.
 4. **User answers:** `dome answer <question-id> retry` re-queues the entry; the dispatcher retries. `dome answer <question-id> abandon` marks the row `status: "abandoned"`. `dome answer <question-id> wait` defers re-asking until a configurable cooldown elapses.
-5. **`dome.health.outbox-answer-handler` (garden-phase, v1.x)** subscribes to `engine.question.answered` for outbox-class questions and applies the mutation, closing the loop without a per-substrate CLI verb.
+5. **`dome.health.outbox-answer-handler` (garden-phase, v1.x)** declares an `answer` trigger for outbox-class questions and applies the mutation, closing the loop without a per-substrate CLI verb.
 
 The per-CLI-verb shape (`dome doctor --outbox-replay`, `dome doctor --outbox-abandon`) that earlier specs proposed is **retired in favor of the engine-asks model**: the engine raises Questions; the user answers via the universal `dome answer` channel; the `dome.health` bundle's answer-handler processors apply the mutation. This collapses every substrate-mutation verb-noun command into the existing Effect taxonomy.
 
-**v1.0 status.** The `dome.health` bundle and `dome answer` surface are deferred to v1.x per [[wiki/specs/cli]] §`dome doctor` / §`dome answer`. In v1.0, terminal outbox failures land as `status: "failed"` and are visible via `dome inspect outbox`; recovery requires manual sqlite-level update or `dome rebuild` (which doesn't touch outbox.db). The recovery loop's full shape ships with `dome.health`.
+**Current status.** `dome answer` and answer-trigger dispatch ship, but the
+first-party `dome.health` outbox question/handler processors are still
+deferred. Terminal outbox failures land as `status: "failed"` and are visible
+via `dome inspect outbox`; productized recovery still awaits the `dome.health`
+bundle.
 
 **Specific scenarios:**
 

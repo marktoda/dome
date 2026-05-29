@@ -1,4 +1,4 @@
-// The seven-kind Effect union: the only value a Processor returns.
+// The eight-kind Effect union: the only value a Processor returns.
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
@@ -167,6 +167,50 @@ export type FactEffectInput = Omit<
 };
 
 /**
+ * A full-text-search document projection update. Search rows are durable,
+ * rebuildable projections over adopted markdown; processors describe the
+ * document shape here, and the engine-owned projection sink performs the
+ * SQLite FTS write after `search.write` capability enforcement.
+ *
+ * `operation: "upsert"` replaces any existing row for `path`. `operation:
+ * "delete"` removes the row for deleted or unreadable paths. `sourceRefs` is
+ * mandatory and non-empty so search results can point back to evidence.
+ */
+export type SearchDocumentEffect =
+  | {
+      readonly kind: "search-document";
+      readonly operation: "upsert";
+      readonly path: VaultPath;
+      readonly category: string;
+      readonly type?: string;
+      readonly title: string;
+      readonly body: string;
+      readonly sourceRefs: ReadonlyArray<SourceRef>;
+    }
+  | {
+      readonly kind: "search-document";
+      readonly operation: "delete";
+      readonly path: VaultPath;
+      readonly sourceRefs: ReadonlyArray<SourceRef>;
+    };
+
+export type SearchDocumentEffectInput =
+  | {
+      readonly operation: "upsert";
+      readonly path: string | VaultPath;
+      readonly category: string;
+      readonly type?: string;
+      readonly title: string;
+      readonly body: string;
+      readonly sourceRefs: ReadonlyArray<SourceRef>;
+    }
+  | {
+      readonly operation: "delete";
+      readonly path: string | VaultPath;
+      readonly sourceRefs: ReadonlyArray<SourceRef>;
+    };
+
+/**
  * A question the processor wants to ask the user. `options`, when present,
  * constrains the answer to a multiple-choice pick; absent means free-form.
  * `idempotencyKey` de-dupes the question row on processor retries.
@@ -223,13 +267,14 @@ export type ViewEffect = {
 /**
  * The closed Effect union. The engine's `apply-effect.ts` uses an
  * exhaustive `switch` on `kind` (TypeScript `never`-type exhaustiveness)
- * to guarantee every kind has a route. Adding an eighth kind requires a
+ * to guarantee every kind has a route. Adding a ninth kind requires a
  * spec change; the codebase fails to compile until every route is added.
  */
 export type Effect =
   | PatchEffect
   | DiagnosticEffect
   | FactEffect
+  | SearchDocumentEffect
   | QuestionEffect
   | JobEffect
   | ExternalActionEffect
@@ -373,6 +418,65 @@ export const FactEffectSchema = FactEffectObjectSchema.superRefine(
   factEffectRefinements,
 );
 
+const SearchDocumentEffectObjectSchema = z
+  .object({
+    kind: z.literal("search-document"),
+    operation: z.enum(["upsert", "delete"]),
+    path: VaultPathSchema,
+    category: z.string().min(1).optional(),
+    type: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+    body: z.string().optional(),
+    sourceRefs: z.array(SourceRefSchema),
+  })
+  .strict();
+
+function searchDocumentEffectRefinements(
+  v: {
+    readonly operation: "upsert" | "delete";
+    readonly category?: string | undefined;
+    readonly title?: string | undefined;
+    readonly body?: string | undefined;
+    readonly sourceRefs: ReadonlyArray<unknown>;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (v.sourceRefs.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "SearchDocumentEffect.sourceRefs must be non-empty (search results need evidence)",
+      path: ["sourceRefs"],
+    });
+  }
+  if (v.operation === "upsert") {
+    if (v.category === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "SearchDocumentEffect.category is required for upsert",
+        path: ["category"],
+      });
+    }
+    if (v.title === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "SearchDocumentEffect.title is required for upsert",
+        path: ["title"],
+      });
+    }
+    if (v.body === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "SearchDocumentEffect.body is required for upsert",
+        path: ["body"],
+      });
+    }
+  }
+}
+
+export const SearchDocumentEffectSchema =
+  SearchDocumentEffectObjectSchema.superRefine(searchDocumentEffectRefinements);
+
 export const QuestionEffectSchema = z
   .object({
     kind: z.literal("question"),
@@ -414,7 +518,7 @@ export const ViewEffectSchema = z
   .strict();
 
 /**
- * Discriminated union over the seven effect kinds. Use this at engine
+ * Discriminated union over the eight effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
  * preserve `exactOptionalPropertyTypes` semantics.
@@ -428,6 +532,7 @@ export const EffectSchema = z
     PatchEffectSchema,
     DiagnosticEffectSchema,
     FactEffectObjectSchema,
+    SearchDocumentEffectObjectSchema,
     QuestionEffectSchema,
     JobEffectSchema,
     ExternalActionEffectSchema,
@@ -436,6 +541,7 @@ export const EffectSchema = z
   .superRefine((v, ctx) => {
     // Extension point: when adding refinements to other kinds, layer them here. Per-kind helpers stay separate so `<Kind>EffectSchema.parse(...)` validates the same constraints as `EffectSchema.parse(...)`.
     if (v.kind === "fact") factEffectRefinements(v, ctx);
+    if (v.kind === "search-document") searchDocumentEffectRefinements(v, ctx);
   });
 
 // ----- Constructor helpers --------------------------------------------------
@@ -484,6 +590,41 @@ export function factEffect(input: FactEffectInput): FactEffect {
     sourceRefs: input.sourceRefs,
   };
   if (input.confidence !== undefined) e.confidence = input.confidence;
+  return Object.freeze(e);
+}
+
+export function searchDocumentEffect(
+  input: SearchDocumentEffectInput,
+): SearchDocumentEffect {
+  if (input.operation === "upsert") {
+    const e: {
+      -readonly [K in keyof Extract<
+        SearchDocumentEffect,
+        { readonly operation: "upsert" }
+      >]: Extract<SearchDocumentEffect, { readonly operation: "upsert" }>[K];
+    } = {
+      kind: "search-document",
+      operation: "upsert",
+      path: requireVaultPath(input.path, "SearchDocumentEffect.path"),
+      category: input.category,
+      title: input.title,
+      body: input.body,
+      sourceRefs: input.sourceRefs,
+    };
+    if (input.type !== undefined) e.type = input.type;
+    return Object.freeze(e);
+  }
+  const e: {
+    -readonly [K in keyof Extract<
+      SearchDocumentEffect,
+      { readonly operation: "delete" }
+    >]: Extract<SearchDocumentEffect, { readonly operation: "delete" }>[K];
+  } = {
+    kind: "search-document",
+    operation: "delete",
+    path: requireVaultPath(input.path, "SearchDocumentEffect.path"),
+    sourceRefs: input.sourceRefs,
+  };
   return Object.freeze(e);
 }
 

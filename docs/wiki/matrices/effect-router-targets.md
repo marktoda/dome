@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -18,6 +18,7 @@ The canonical mapping from Effect kind × processor phase → engine routing des
 | **DiagnosticEffect (severity: "block")** | Blocks adoption; emits `engine.adoption.blocked` | Recorded in `projection.db.diagnostics` as severity `error` (garden can't block adoption — it ran *after*); surfaced via `dome inspect diagnostics` | Rejected: `phase-mismatch` — view processors have no merge gate; block-severity from view phase is a programming error, surfaced as a diagnostic naming the offending processor. |
 | **DiagnosticEffect (severity: "error" \| "warning" \| "info")** | Recorded in `projection.db.diagnostics`; non-blocking | Same | Same |
 | **FactEffect** | Recorded in `projection.db.facts` (namespace-scoped per `graph.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors don't extract facts) |
+| **SearchDocumentEffect** | Upserts/deletes `projection.db.fts_documents` rows (path-scoped per `search.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors query search; they do not mutate it) |
 | **QuestionEffect** | Recorded in `projection.db.questions`; surfaced via `dome inspect questions` and `dome query --questions`; resolved via `dome answer <question-id>` per [[wiki/specs/cli]] §"dome answer" | Same | Rejected: `phase-mismatch` diagnostic |
 | **JobEffect** | Rejected: adoption-phase processors can't enqueue follow-on work (would re-trigger inside same loop iteration) | Enqueued in `projection.db.scheduled_jobs`; runs after `runAfter?` elapses or immediately if absent | Rejected: `phase-mismatch` diagnostic |
 | **ExternalActionEffect** | Rejected: adoption-phase processors can't touch the outside world (would race with the merge gate) | Inserted into `outbox.db`; dispatched to the registered external handler; status tracked per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] | Rejected: `phase-mismatch` diagnostic |
@@ -62,7 +63,7 @@ Three properties hold:
 
 ## Related
 
-- [[wiki/specs/effects]] — the seven kinds
+- [[wiki/specs/effects]] — the eight kinds
 - [[wiki/specs/processors]] — phase semantics
 - [[wiki/specs/adoption]] — the fixed-point loop
 - [[wiki/specs/projection-store]] — where Facts / Diagnostics / Questions / Jobs land

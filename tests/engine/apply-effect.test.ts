@@ -10,6 +10,7 @@ import {
   jobEffect,
   patchEffect,
   questionEffect,
+  searchDocumentEffect,
   viewEffect,
 } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
@@ -93,6 +94,22 @@ describe("phase-mismatch rejections", () => {
         mode: "auto",
         changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
         reason: "x",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("rejected-by-phase");
+  });
+
+  test("SearchDocumentEffect in view phase", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "view",
+      effect: searchDocumentEffect({
+        operation: "upsert",
+        path: "wiki/x.md",
+        category: "wiki",
+        title: "x",
+        body: "x",
         sourceRefs: [ref],
       }),
     });
@@ -220,6 +237,27 @@ describe("successful routes (noopSinks)", () => {
     expect(r.capabilityUse?.capability).toBe("question.ask");
   });
 
+  test("SearchDocumentEffect in adoption phase with search.write granted → applied", async () => {
+    const write: Capability = { kind: "search.write", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [write],
+      granted: [write],
+      phase: "adoption",
+      effect: searchDocumentEffect({
+        operation: "upsert",
+        path: "wiki/x.md",
+        category: "wiki",
+        title: "x",
+        body: "x",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("search.write");
+    expect(r.capabilityUse?.resource).toBe("wiki/x.md");
+  });
+
   test("JobEffect in garden phase with job.enqueue granted → applied", async () => {
     const enqueue: Capability = {
       kind: "job.enqueue",
@@ -272,6 +310,25 @@ describe("capability denial flows through", () => {
     expect(r.outcome).toBe("denied");
     expect(r.diagnostics[0]?.code).toBe("capability-deny-question-ask");
     expect(r.capabilityUse?.capability).toBe("question.ask");
+    expect(r.capabilityUse?.outcome).toBe("denied");
+  });
+
+  test("SearchDocumentEffect with no search.write grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "adoption",
+      effect: searchDocumentEffect({
+        operation: "upsert",
+        path: "wiki/x.md",
+        category: "wiki",
+        title: "x",
+        body: "x",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-search-write");
+    expect(r.capabilityUse?.capability).toBe("search.write");
     expect(r.capabilityUse?.outcome).toBe("denied");
   });
 

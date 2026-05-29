@@ -14,8 +14,8 @@
 // Structural fences this file upholds:
 //   - docs/wiki/invariants/PROJECTIONS_ARE_REBUILDABLE.md — the schema-hash
 //     mismatch path wipes and recreates the tables; cache-key mismatch is
-//     surfaced for per-table invalidation. Both rely on the projection
-//     store being safely re-derivable from markdown + processors.
+//     surfaced so the engine/CLI can rebuild projections from adopted
+//     markdown before stale rows are read.
 //   - docs/wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH.md — `.dome/state/`
 //     is explicitly derived; this file's whole concern is cache management.
 //
@@ -23,22 +23,18 @@
 //   - docs/wiki/gotchas/projection-schema-skew.md — auto-rebuild on
 //     schema-hash mismatch (the `"schema-changed"` migration result).
 //   - docs/wiki/gotchas/processor-version-drift.md — cache invalidation
-//     when extension-set or processor-versions hashes change (the
-//     `"cache-keys-changed"` migration result; per-table invalidation is
-//     deferred to the caller, future Phase 4.5+).
+//     when extension-set or processor-versions hashes change.
 //
 // v1 Phase 4 scope:
 //   - Schema migrations are *the rebuild* (per spec §"Schema migrations").
 //     This file does not implement incremental column-add migrations; it
 //     wipes and recreates on schema-hash change. The DDL uses
 //     `CREATE ... IF NOT EXISTS` so a fresh open on a missing file is safe.
-//   - Cache-key invalidation (extension-set, processor-versions) is *not*
-//     applied in this file. The caller receives `"cache-keys-changed"`
-//     in the migration result and decides whether to do a full rebuild
-//     or a per-processor invalidation pass (the lightweight path described
-//     in processor-version-drift.md). Phase 4 v1 surfaces the signal;
-//     Phase 4.5+ adds the per-processor invalidation pass that walks
-//     `facts` / `diagnostics` and deletes by `processor_id`.
+//   - Cache-key invalidation (extension-set, processor-versions) is detected
+//     here but applied by the engine/CLI boundary. The v1 behavior is a full
+//     projection rebuild from the adopted commit before stale rows can drive
+//     operational or view work. Per-processor invalidation can be added later
+//     as an optimization without changing the correctness contract.
 //
 // Imports (tight by design — projections are the SQLite boundary):
 //   - `bun:sqlite` for the `Database` handle (the only I/O dependency).
@@ -125,6 +121,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
 
   // 3. fts_documents — FTS5 virtual table for markdown body search.
   //    `path`, `category`, `type`, `adopted_commit` are UNINDEXED metadata;
+  //    `source_refs` is UNINDEXED provenance JSON for result evidence;
   //    `title` and `body` carry the full-text content with porter+unicode61
   //    tokenization.
   "CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5("
@@ -133,6 +130,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "type UNINDEXED,"
     + "title,"
     + "body,"
+    + "source_refs UNINDEXED,"
     + "adopted_commit UNINDEXED,"
     + "tokenize = 'porter unicode61'"
     + ")",
@@ -295,6 +293,17 @@ export type MarkProjectionBuiltOpts = {
   readonly builtAt?: Date;
 };
 
+export type ProjectionCacheKeyOpts = {
+  readonly extensionSet: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
+};
+
 export type OpenProjectionDbOpts = {
   /**
    * Absolute filesystem path to the projection.db file. Caller computes
@@ -337,12 +346,10 @@ export type OpenProjectionDbOpts = {
  *                            full rebuild.
  * - `"cache-keys-changed"` — schema OK but extensionSetHash or
  *                            processorVersionsHash differs from stored
- *                            values. Tables NOT wiped — invalidation is
- *                            per-table and the caller decides whether to
- *                            do a full rebuild or a partial per-processor
- *                            invalidation pass. (v1 Phase 4 surfaces the
- *                            signal; Phase 4.5+ adds the per-processor
- *                            invalidation pass.)
+ *                            values. Tables are not wiped by the opener;
+ *                            the engine/CLI boundary rebuilds projections
+ *                            from the adopted commit before stale rows are
+ *                            consumed.
  */
 export type ProjectionMigration =
   | "fresh"
@@ -589,9 +596,11 @@ export function resetProjectionDb(db: ProjectionDb): void {
 }
 
 /**
- * Stamp the cache-key triple after a successful rebuild pass. This is the
- * durable marker `openProjectionDb` compares on the next open to decide
- * whether projection rows are current for the loaded bundle set.
+ * Stamp the cache-key triple after successful projection derivation: either
+ * a full rebuild pass or an incremental adoption that brought projections
+ * current for its changed range. This is the durable marker
+ * `openProjectionDb` compares on the next open to decide whether projection
+ * rows are current for the loaded bundle set.
  */
 export function markProjectionBuilt(
   db: ProjectionDb,
@@ -609,6 +618,33 @@ export function markProjectionBuilt(
       (opts.builtAt ?? new Date()).toISOString(),
       computeSchemaHash(),
     );
+}
+
+/**
+ * Return true when the live `projection_meta` row has populated cache keys
+ * and either the extension-set or processor-version hash differs from the
+ * currently loaded runtime. Fresh/unbuilt databases return false here:
+ * callers use this as a stale-row invalidation signal, not as the first
+ * build trigger for an empty projection.
+ */
+export function projectionCacheKeysChanged(
+  db: ProjectionDb,
+  opts: ProjectionCacheKeyOpts,
+): boolean {
+  const meta = readMetaRow(db.raw);
+  if (
+    meta === null ||
+    meta.extensionSetHash === null ||
+    meta.processorVersionsHash === null
+  ) {
+    return false;
+  }
+
+  return (
+    meta.extensionSetHash !== computeExtensionSetHash(opts.extensionSet) ||
+    meta.processorVersionsHash !==
+      computeProcessorVersionsHash(opts.processorVersions)
+  );
 }
 
 // ----- internals ------------------------------------------------------------

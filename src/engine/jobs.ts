@@ -8,7 +8,6 @@
 import {
   diagnosticEffect,
   type DiagnosticEffect,
-  type PatchEffect,
 } from "../core/effect";
 import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
@@ -37,8 +36,7 @@ import {
   type ApplyPatchInput,
 } from "./apply-patch";
 import { recordDiagnosticsViaSink } from "./diagnostics";
-import { routeGardenPatchForSubProposal } from "./garden-patch-router";
-import { spawnGardenSubProposal } from "./garden-sub-proposals";
+import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
 import { recordEffectCapabilityUse } from "./effect-capability-use";
 import type { RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
@@ -199,12 +197,13 @@ async function runOneJob(opts: {
 
   for (const effect of result.effects) {
     if (effect.kind === "patch") {
-      await routeJobGardenPatch({
+      await dispatchGardenPatchEffect({
         effect,
         vault: opts.vault,
         adopted: opts.adopted,
         processorId: result.processorId,
         runId: result.runId,
+        proposalId: null,
         declared: result.declared,
         granted: result.granted,
         sinks: opts.sinks,
@@ -215,6 +214,13 @@ async function runOneJob(opts: {
         ...(opts.adoptSubProposal !== undefined
           ? { adoptSubProposal: opts.adoptSubProposal }
           : {}),
+        disabledDiagnostic: {
+          code: "jobs.garden-sub-proposal-spawn-disabled",
+          message:
+            `Queued job processor ${result.processorId} emitted an authorized ` +
+            `PatchEffect, but no adoptSubProposal callback was wired; ` +
+            `patch dropped.`,
+        },
       });
       continue;
     }
@@ -342,72 +348,6 @@ async function recoverCrashedClaimedJob(opts: {
     proposalId: null,
   });
   return summary;
-}
-
-async function routeJobGardenPatch(opts: {
-  readonly effect: PatchEffect;
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
-  readonly processorId: string;
-  readonly runId: RunId;
-  readonly declared: ReadonlyArray<Capability>;
-  readonly granted: ReadonlyArray<Capability>;
-  readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
-  readonly diagnostics: DiagnosticEffect[];
-  readonly adoptSubProposal?: AdoptJobSubProposalFn;
-  readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
-  readonly extensionId: string;
-}): Promise<void> {
-  const routed = await routeGardenPatchForSubProposal({
-    effect: opts.effect,
-    processorId: opts.processorId,
-    runId: opts.runId,
-    proposalId: null,
-    declared: opts.declared,
-    granted: opts.granted,
-    sinks: opts.sinks,
-  });
-  recordEffectCapabilityUse({
-    ledger: opts.ledger,
-    runId: opts.runId,
-    ...(routed.capabilityUse !== undefined
-      ? { capabilityUse: routed.capabilityUse }
-      : {}),
-  });
-  opts.diagnostics.push(...routed.diagnostics);
-  if (routed.kind === "dropped") return;
-  if (opts.adoptSubProposal === undefined) {
-    const drop = diagnosticEffect({
-      severity: "info",
-      code: "jobs.garden-sub-proposal-spawn-disabled",
-      message:
-        `Queued job processor ${opts.processorId} emitted an authorized ` +
-        `PatchEffect, but no adoptSubProposal callback was wired; patch dropped.`,
-      sourceRefs: [],
-    });
-    opts.diagnostics.push(drop);
-    await opts.sinks.recordDiagnostic({
-      effect: drop,
-      processorId: opts.processorId,
-      runId: opts.runId,
-      proposalId: null,
-    });
-    return;
-  }
-
-  await spawnGardenSubProposal({
-    vault: opts.vault,
-    base: opts.adopted,
-    sourceHead: opts.adopted,
-    patch: routed.patch,
-    processorId: opts.processorId,
-    runId: opts.runId,
-    extensionId: opts.extensionId,
-    cascadeDepth: 1,
-    applyPatch: opts.applyGardenPatch,
-    adoptSubProposal: opts.adoptSubProposal,
-  });
 }
 
 function retryDelayMs(attemptsAfterRun: number): number {

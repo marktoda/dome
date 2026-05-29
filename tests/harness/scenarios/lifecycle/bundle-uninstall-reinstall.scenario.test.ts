@@ -1,9 +1,9 @@
 // scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test.ts
 //
 // Bundle install / uninstall mechanics: when a bundle is uninstalled, its
-// processors stop firing — new commits during the uninstall window do not
-// produce diagnostics from that bundle. Reinstalling the bundle resumes
-// processing for future commits.
+// processors stop firing and projection cache-key drift invalidates rows
+// owned by the old processor set. Reinstalling the bundle rebuilds
+// projections against the current adopted commit.
 //
 // The point of this scenario is the install/uninstall plumbing (runtime
 // reopen, processor-registry refresh) round-trips without crashing or
@@ -61,25 +61,31 @@ scenario(
     const ledgerCountAfterStep3 = countLedger(h);
     expect(ledgerCountAfterStep3).toBe(ledgerCountAfterStep1);
 
-    // Still exactly one diagnostic — the second file's broken link was
-    // not scanned.
+    // Extension-set cache-key drift invalidates the old projection rows.
+    // With no markdown processor loaded, the rebuild emits no replacement
+    // diagnostics.
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.broken-wikilink" })
-      .toHaveCount(1);
+      .toHaveCount(0);
 
     // Step 4: reinstall the bundle. The runtime reopens with the
     // processors loaded again.
     await h.install(["dome.markdown"]);
 
     // Step 5: a tick at this point sees in-sync (the refs already
-    // advanced through the uninstall window) — no new commits to process.
-    // The install/uninstall mechanics didn't crash; that's the point.
+    // advanced through the uninstall window), but extension-set cache-key
+    // drift rebuilds projections from the adopted commit. Both existing
+    // broken-link files are visible again.
     const postReinstall = await h.tick();
     expect(postReinstall.hadDrift).toBe(false);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(2);
 
-    // Step 6: commit a third broken-link file. With the bundle back,
-    // it gets diagnosed.
+    // Step 6: commit a third broken-link file. With the bundle back, it
+    // gets diagnosed incrementally on top of the rebuilt rows.
     await h.userCommit({
       files: { "wiki/third.md": "[[missing-three]]\n" },
       message: "third broken",
@@ -88,7 +94,7 @@ scenario(
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.broken-wikilink" })
-      .toHaveCount(2);
+      .toHaveCount(3);
   },
 );
 

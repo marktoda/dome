@@ -205,10 +205,9 @@ export type ViewPhaseRunner = (input: {
  *     routes it through `adopt()` recursively. Sub-Proposal recursion is
  *     bounded by a cascade-depth cap (see Phase 4a's planning notes).
  *
- * Schedule triggers do not fire here (Phase 4c wires the scheduler);
- * `signal:` and `path:` triggers are the entry points for v1 garden
- * processors. The runtime's trigger matcher returns no candidates for
- * schedule/command triggers in garden phase until Phase 4c.
+ * Schedule triggers do not fire through this signal/path runner; the
+ * scheduler owns due cron dispatch. Answer triggers likewise fire through
+ * the answer dispatcher after `dome answer` records a row.
  */
 export type GardenPhaseRunner = (input: {
   readonly vault: EngineVault;

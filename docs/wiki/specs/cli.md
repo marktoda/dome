@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -15,7 +15,7 @@ This spec is normative for Dome's command-line interface. The CLI is **one proto
 dome init [path]                Initialize a new vault.
 dome sync [--force-advance]     Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
-dome query <text> [--filter ...] [--require-evidence]
+dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome lint [--apply <id>] [--report-only]
                                 Run dome.lint; write report; optionally apply a finding.
@@ -24,8 +24,9 @@ dome stats                      Vault size / processor counts / ledger summary.
 dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox.
-dome doctor [--repair]          Run engine-substrate health checks; emit
-                                Diagnostics; --repair applies safe mitigations.
+dome doctor [--json] [--repair]
+                                Run engine-substrate health checks; --repair is
+                                reserved for answer-mediated mitigations.
 dome answer <question-id> [<value>]
                                 Resolve an engine-raised QuestionEffect from
                                 the user-decision channel.
@@ -43,7 +44,7 @@ The CLI is the user-facing primary surface in v1. Every command above maps to on
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
 - **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current minimal implementation still stubs `dome doctor` / lacks `dome answer`; the complete Claude Code v1 plan treats both as required recovery surfaces because `QuestionEffect` and operational failures otherwise have no humane resolution path. See [[wiki/syntheses/v1-claude-code-vault-plan]].
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, and renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors. Complete recovery still needs first-party answer handlers for repair. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
@@ -188,9 +189,11 @@ reports. Use `dome inspect diagnostics`, `dome inspect questions`,
 `dome inspect outbox`, or `dome inspect runs` for details. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing.
 
-### `dome query <text> [--filter category=<c>] [--filter type=<t>] [--require-evidence] [--json]`
+### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
 
-Runs `AbstractSurface.query` with the supplied text and filters. Output (text mode):
+Invokes the `dome.search.query` view-phase processor against adopted-state
+projections. The processor reads FTS rows and related facts through
+`ctx.projection`; it does not read the working tree. Output (text mode):
 
 ```text
 dome query: 4 matches for "platform ownership"
@@ -206,7 +209,8 @@ dome query: 4 matches for "platform ownership"
 (further matches truncated; --limit to show all)
 ```
 
-`--json` emits structured `QueryResult`. `--require-evidence` filters to results carrying SourceRefs.
+`--json` emits the structured `dome.search.query/v1` payload. Every match
+carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
 
 ### `dome lint [--apply <id>] [--report-only]`
 
@@ -261,7 +265,8 @@ Subjects (v1.0):
 
 - `runs` — recent processor runs from `runs.db`.
 - `diagnostics` — current unresolved diagnostics from `projection.db.diagnostics`.
-- `questions` — open questions from `projection.db.questions`.
+- `questions` — durable questions from `projection.db.questions`, including
+  row id, status, options, answer, timestamps, and idempotency key.
 - `outbox` — pending / failed external actions from `outbox.db`.
 
 `--limit <n>` caps the row count (default 20). `--json` emits structured
@@ -286,11 +291,11 @@ Future subjects (v1.x): `cost`, `orphan-runs`, `recent-activity`,
 `recent-processor-divergence`. Adding a subject is one new query
 function + one case in the dispatcher; no new CLI surface per subject.
 
-### `dome doctor [--repair]` *(currently stubbed; required for complete v1 recovery)*
+### `dome doctor [--json] [--repair]`
 
-Engine-substrate **health check** verb. The current minimal implementation
-reserves the name and ships no checks; complete Claude Code v1 implements
-the surface.
+Engine-substrate **health check** verb. The current implementation is
+probe-only and read-only: it reports failed outbox rows, orphan running rows,
+and quarantined processor triggers from `src/engine/health.ts`.
 
 **Design (complete v1).** `dome doctor` (no flags) runs a closed set of
 health-check probes against the engine substrate — orphan runs,
@@ -313,9 +318,12 @@ audit trail.
 processors for any pending `dome.health.*` questions and triggering
 garden-phase repair processors (e.g., AGENTS.md template re-merge).
 
-**Current placeholder behavior.** `dome doctor` prints a one-line notice
-("`dome doctor`: no health checks ship yet — see `wiki/specs/cli.md`
-§`dome doctor`") and exits 0. `--repair` exits 64 with the same pointer.
+**Current behavior.** `dome doctor` opens the runtime, collects a
+`HealthReport`, prints a compact text report, and exits 0. `--json` emits the
+same report with `status`, `summary`, and `findings`. `--repair` exits 64
+because recovery mutations still belong to the answer-handler loop. The report
+is not yet persisted as DiagnosticEffects, and it does not yet probe schema
+skew, instruction drift, adopted-ref divergence, or stuck-pending outbox rows.
 
 **Why this isn't a kitchen-sink admin command.** Pre-recut, the spec
 described `dome doctor` as a single verb covering reads (`--show`),
@@ -360,10 +368,10 @@ adopted ref), the natural pattern is:
    and `sourceRefs` pointing at the substrate row.
 3. **User runs `dome inspect questions`** to see pending questions.
 4. **User runs `dome answer <question-id> retry`** to resolve.
-5. **A second garden-phase processor in `dome.health`** subscribes to
-   the `question.answered` signal, looks up the question's
-   `idempotencyKey` → outbox-id, and emits the appropriate effect to
-   mutate the outbox row.
+5. **A second garden-phase processor in `dome.health`** declares an
+   `answer` trigger, receives `{ question, answer }`, looks up the
+   question's `idempotencyKey` → outbox-id, and emits the appropriate
+   effect to mutate the outbox row.
 
 The CLI surface is one verb (`dome answer`); the per-substrate logic
 lives in the `dome.health` bundle's answer-handler processors. Adding
@@ -377,16 +385,25 @@ Without `<value>`, `dome answer <question-id>` prints the question
 and its options.
 
 Answering writes to `projection.db.questions` (sets `answered_at` +
-`answer`) and emits an `engine.question.answered` signal. The
-relevant garden-phase answer-handler processor catches the signal
-and applies the mutation.
+`answer`) and dispatches garden-phase processors with `answer` triggers.
+The relevant answer-handler processor catches the answer event and applies
+the mutation through normal Effect routing.
 
-**Current placeholder behavior.** `dome answer` is not implemented yet.
-Until `dome.health` ships, no processor in the substrate emits operational QuestionEffects;
-the only Questions on the table today are content-questions written
-back to the originating page via `dome.intake` per
-[[wiki/specs/effects]] §"QuestionEffect" (also pending the `dome.intake`
-shipping date).
+**Current behavior.** `dome answer` looks up the row id, prints the question
+when `<value>` is omitted, validates `<value>` against `options` when options
+are present, records the answer, and dispatches matching garden-phase answer
+handlers. Duplicate-detection content questions plus a fixture answer handler
+are covered end-to-end by the harness.
+
+Answer-handler retry/durability is still incomplete: if dispatch fails after
+the answer row is recorded, re-running `dome answer` reports the already
+answered row and does not re-dispatch handlers. The durable recovery milestone
+tracks moving this to a retryable operational event or otherwise materializing
+the answer before it can be lost by projection rebuild.
+
+Until `dome.health` ships, no first-party processor emits operational
+QuestionEffects for outbox/quarantine/orphan-run recovery; those recovery
+mutations remain planned work rather than hidden per-substrate CLI verbs.
 
 ### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 

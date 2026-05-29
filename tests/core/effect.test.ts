@@ -1,4 +1,4 @@
-// Smoke tests for src/core/effect.ts: the seven-kind Effect union — each
+// Smoke tests for src/core/effect.ts: the eight-kind Effect union — each
 // kind's per-schema parse, the discriminated-union EffectSchema parse, the
 // FactEffect semantic refinements, and the constructor freeze + kind-stamp
 // invariants.
@@ -13,6 +13,7 @@ import {
   jobEffect,
   patchEffect,
   questionEffect,
+  searchDocumentEffect,
   viewEffect,
   type Effect,
 } from "../../src/core/effect";
@@ -46,6 +47,15 @@ const minEffects = {
       predicate: "dome.tasks.dueDate",
       object: { kind: "string", value: "2026-01-01" },
       assertion: "explicit",
+      sourceRefs: refs,
+    }),
+  "search-document": () =>
+    searchDocumentEffect({
+      operation: "upsert",
+      path: "wiki/x.md",
+      category: "wiki",
+      title: "x",
+      body: "hello",
       sourceRefs: refs,
     }),
   question: () =>
@@ -114,6 +124,11 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
   test("FactEffect", () => {
     const e = minEffects.fact();
     expect(EffectSchema.parse(e).kind).toBe("fact");
+  });
+
+  test("SearchDocumentEffect", () => {
+    const e = minEffects["search-document"]();
+    expect(EffectSchema.parse(e).kind).toBe("search-document");
   });
 
   test("FactEffect rejects invalid page NodeRef paths", () => {
@@ -208,6 +223,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(Object.isFrozen(minEffects.patch())).toBe(true);
     expect(Object.isFrozen(minEffects.diagnostic())).toBe(true);
     expect(Object.isFrozen(minEffects.fact())).toBe(true);
+    expect(Object.isFrozen(minEffects["search-document"]())).toBe(true);
     expect(Object.isFrozen(minEffects.question())).toBe(true);
     expect(Object.isFrozen(minEffects.job())).toBe(true);
     expect(Object.isFrozen(minEffects.external())).toBe(true);
@@ -218,6 +234,7 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(minEffects.patch().kind).toBe("patch");
     expect(minEffects.diagnostic().kind).toBe("diagnostic");
     expect(minEffects.fact().kind).toBe("fact");
+    expect(minEffects["search-document"]().kind).toBe("search-document");
     expect(minEffects.question().kind).toBe("question");
     expect(minEffects.job().kind).toBe("job");
     expect(minEffects.external().kind).toBe("external");
@@ -246,6 +263,16 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(fact.object.kind).toBe("page");
     if (fact.object.kind !== "page") return;
     expect(fact.object.path as string).toBe("wiki/y.md");
+
+    const search = searchDocumentEffect({
+      operation: "upsert",
+      path: "wiki//x.md",
+      category: "wiki",
+      title: "x",
+      body: "hello",
+      sourceRefs: refs,
+    });
+    expect(search.path as string).toBe("wiki/x.md");
   });
 
   test("path-bearing constructors reject path traversal", () => {
@@ -266,6 +293,7 @@ describe("exhaustive-routing self-test", () => {
       "patch",
       "diagnostic",
       "fact",
+      "search-document",
       "question",
       "job",
       "external",

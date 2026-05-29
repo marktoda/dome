@@ -48,7 +48,12 @@ import "../scenarios/basic-adoption/multi-file-commit.scenario.test";
 import "../scenarios/convergence/normalize-frontmatter-idempotency.scenario.test";
 import "../scenarios/convergence/validate-wikilinks-no-duplicate-diagnostics.scenario.test";
 import "../scenarios/convergence/diagnostics-auto-resolve.scenario.test";
+import "../scenarios/cli-surface/init-claude-boot.scenario.test";
+import "../scenarios/cli-surface/answer-question.scenario.test";
+import "../scenarios/cli-surface/doctor-health.scenario.test";
+import "../scenarios/cli-surface/query-adopted-state.scenario.test";
 import "../scenarios/cli-surface/rebuild-projection.scenario.test";
+import "../scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
@@ -170,6 +175,7 @@ const EFFECT_KINDS_ALL: ReadonlyArray<EffectKind> = [
   "patch",
   "diagnostic",
   "fact",
+  "search-document",
   "question",
   "job",
   "external",
@@ -180,6 +186,7 @@ const TRIGGER_KINDS_ALL: ReadonlyArray<TriggerKind> = [
   "signal",
   "path",
   "schedule",
+  "answer",
   "command",
 ];
 
@@ -190,6 +197,7 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "owns.region",
   "owns.path",
   "graph.write",
+  "search.write",
   "question.ask",
   "job.enqueue",
   "model.invoke",
@@ -217,6 +225,7 @@ const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
 const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
   // Phase 13a unblocked: command (`dome run orphan-pages`).
   // Harness operational-work coverage unblocked: schedule.
+  // CLI-surface recovery coverage unblocked: answer.
   "path",      // No shipped processor uses path triggers (signal triggers cover today's needs)
 ]);
 

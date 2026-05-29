@@ -5,11 +5,11 @@
 // query API", processors do NOT touch the SQLite handle directly — they
 // consume this typed surface. View-phase processors that need to read
 // facts (e.g., `dome.markdown.orphan-pages` reading every `links_to` row to
-// compute incoming-link counts) call `ctx.projection.facts({ predicate })`
+// compute incoming-link counts) or search documents call the typed query API
 // rather than the raw `factsByPredicate` accessor.
 //
 // Composition layer only — no I/O, no validation. Delegates to the per-
-// table accessor files (`./facts`, `./diagnostics`, `./questions`) and
+// table accessor files (`./facts`, `./diagnostics`, `./questions`, `./search`) and
 // wraps them in a frozen handle. The accessor files own the SQL + the
 // row → effect deserialization; this file just narrows the read surface
 // to the four shapes view-phase processors need.
@@ -36,13 +36,15 @@ import type { ProjectionDb } from "./db";
 import { queryDiagnostics } from "./diagnostics";
 import { factsBySubject, factsByPredicate } from "./facts";
 import { queryQuestions } from "./questions";
+import { searchDocuments } from "./search";
 
 // ----- buildProjectionQueryView ---------------------------------------------
 
 /**
  * Build a frozen `ProjectionQueryView` over an open `ProjectionDb`. The
- * returned handle exposes three accessors — facts, diagnostics, questions
- * — each delegating to the matching per-table accessor.
+ * returned handle exposes table-shaped accessors — facts, diagnostics,
+ * questions, searchDocuments — each delegating to the matching per-table
+ * accessor.
  *
  * Filter handling:
  *   - `facts({ predicate, subjectKind?, subjectId? })`:
@@ -62,6 +64,7 @@ export function buildProjectionQueryView(
     facts: (filter) => readFacts(db, filter ?? {}),
     diagnostics: (filter) => queryDiagnostics(db, filter ?? {}),
     questions: (filter) => queryQuestions(db, filter ?? {}),
+    searchDocuments: (filter) => searchDocuments(db, filter),
   });
 }
 

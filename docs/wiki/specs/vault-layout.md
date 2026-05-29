@@ -153,7 +153,7 @@ extensions:
   dome.intake:   { enabled: true,  grants: { model.invoke: true, patch.auto: ["wiki/generated/**", "inbox/processed/**"], question.ask: ["dome.intake"], job.enqueue: ["dome.daily.*"] } }
   dome.daily:    { enabled: true,  grants: { patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"], question.ask: ["dome.daily"] } }
   dome.lint:     { enabled: true,  grants: { patch.propose: ["**"] } }
-  dome.search:   { enabled: true,  grants: { graph.write: ["dome.search"] } }
+  dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }
   dome.migrate:  { enabled: true,  grants: { patch.auto: ["**"] } }
 
 engine:

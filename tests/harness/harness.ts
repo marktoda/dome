@@ -308,6 +308,7 @@ export class HarnessImpl implements Harness {
       await runOperationalWorkForAdopted({
         runtime: this.runtime,
         adopted: drift.head,
+        branch: drift.branch,
         now: () => this.clock.now(),
       });
       await runAllAlwaysTrue(this, "tick (in-sync operational drain)");
@@ -362,6 +363,7 @@ export class HarnessImpl implements Harness {
     const result = await runOperationalWorkForAdopted({
       runtime: this.runtime,
       adopted: commitOid(adopted),
+      branch: this.branch,
       now: () => this.clock.now(),
     });
     await runAllAlwaysTrue(this, "drainOperationalWork");

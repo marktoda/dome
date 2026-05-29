@@ -17,7 +17,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Ten tiers cover every effect a processor can emit:
+Capabilities are about **effect power**, not arbitrary trust labels. Eleven tiers cover every effect a processor can emit:
 
 ```ts
 type Capability =
@@ -27,6 +27,7 @@ type Capability =
   | { kind: "owns.region";   regionIds: string[] }              // exclusive ownership of marker regions
   | { kind: "owns.path";     paths: string[] }                  // exclusive ownership of paths (e.g., index.md)
   | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
+  | { kind: "search.write";  paths: string[] }                  // SearchDocumentEffect paths
   | { kind: "question.ask";  namespaces?: string[] }            // QuestionEffect namespaces / channels
   | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
@@ -66,6 +67,14 @@ Path ownership replaces v0.5's `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` invariant �
 Permits writing FactEffects for the named namespaces. A namespace is the dotted prefix before the predicate (`dome.tasks.dueDate` → namespace `dome.tasks`).
 
 A processor with `graph.write: ["dome.tasks.*"]` can emit FactEffects with `predicate: "dome.tasks.dueDate"`, `predicate: "dome.tasks.priority"`, etc. — but not `predicate: "dome.people.attendee"`. Cross-namespace writes are isolation-by-construction.
+
+### `search.write`
+
+Permits writing SearchDocumentEffects for paths matching the listed globs.
+This is the only processor-facing authority for the shared FTS projection:
+`dome.search.index-text` can index `**/*.md`, but it cannot write arbitrary
+SQLite rows or index paths outside its grant. The projection sink owns the
+FTS5 upsert/delete SQL.
 
 ### `question.ask`
 
@@ -157,7 +166,7 @@ extensions:
 
 The broker enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`). A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): currently shipped first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.lint` needs no grants today. Third-party bundles default to `enabled: false` until the user explicitly opts in.
 
 ## Enforcement chokepoint
 
@@ -185,13 +194,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why ten tiers, not more
+## Why eleven tiers, not more
 
-The ten cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
+The eleven cover every effect kind and the one non-effect power (`model.invoke`). Three properties drive the closed set:
 
 1. **Effect coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]]. Adding capabilities beyond the ten would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Ten cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Eleven cases in `enforceCapability` is auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

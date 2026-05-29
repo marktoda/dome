@@ -9,7 +9,7 @@
 //
 //   - `runs`        → `queryRuns(ledger, { limit })`
 //   - `diagnostics` → `queryDiagnostics(projection)`
-//   - `questions`   → `queryQuestions(projection)`
+//   - `questions`   → `queryQuestionRecords(projection)`
 //   - `outbox`      → `queryOutbox(outbox)`
 //
 // Exit codes:
@@ -34,7 +34,7 @@ import { resolve } from "node:path";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
 import { queryDiagnostics } from "../../projections/diagnostics";
-import { queryQuestions } from "../../projections/questions";
+import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
 
 import { resolveShippedBundlesRoot } from "./sync-shared";
@@ -167,11 +167,16 @@ function collectRows(
       }));
     }
     case "questions": {
-      const all = queryQuestions(runtime.projectionDb);
+      const all = queryQuestionRecords(runtime.projectionDb);
       return all.slice(0, limit).map((q) => ({
-        idempotency_key: q.idempotencyKey,
-        question: q.question,
-        options: q.options ?? "-",
+        id: q.id,
+        status: q.answeredAt === null ? "open" : "answered",
+        question: q.effect.question,
+        options: q.effect.options ?? "-",
+        answer: q.answer ?? "-",
+        asked_at: q.askedAt,
+        answered_at: q.answeredAt ?? "-",
+        idempotency_key: q.effect.idempotencyKey,
       }));
     }
     case "outbox": {

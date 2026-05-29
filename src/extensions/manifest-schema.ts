@@ -114,7 +114,7 @@ export type ManifestError =
     };
 
 /** Closed set of trigger discriminators — the surface the matrix gates on. */
-export type TriggerKind = "signal" | "path" | "schedule" | "command";
+export type TriggerKind = "signal" | "path" | "schedule" | "answer" | "command";
 
 // ----- Zod schemas ----------------------------------------------------------
 //
@@ -148,12 +148,12 @@ export const ManifestSchema = z
 // consults. Adding a phase or trigger kind requires updating both surfaces.
 //
 //   adoption: signal/path allowed; schedule/command rejected
-//   garden:   signal/path/schedule allowed; command rejected
+//   garden:   signal/path/schedule/answer allowed; command rejected
 //   view:     schedule/command allowed; signal/path rejected
 
 const ALLOWED_TRIGGERS_BY_PHASE: Readonly<Record<ProcessorPhase, ReadonlySet<TriggerKind>>> = {
   adoption: new Set<TriggerKind>(["signal", "path"]),
-  garden: new Set<TriggerKind>(["signal", "path", "schedule"]),
+  garden: new Set<TriggerKind>(["signal", "path", "schedule", "answer"]),
   view: new Set<TriggerKind>(["schedule", "command"]),
 };
 

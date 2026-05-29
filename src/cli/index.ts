@@ -8,9 +8,11 @@
 
 import { Command, CommanderError } from "commander";
 
+import { runAnswer } from "./commands/answer";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
+import { runQuery } from "./commands/query";
 import { runRebuild } from "./commands/rebuild";
 import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
@@ -94,10 +96,49 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("doctor")
-    .description("(reserved for v1.x) Engine-substrate health checks.")
+    .description("Run engine-substrate health checks.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .option(
+      "--orphan-threshold-ms <n>",
+      "Age before a running row is reported as orphaned.",
+    )
     .option("--repair", "Apply safe mitigations when implemented.")
     .action(async (options: DoctorCliOptions) => {
-      setExitCode(await runDoctor({ repair: options.repair }));
+      setExitCode(
+        await runDoctor({
+          repair: options.repair,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          orphanThresholdMs: options.orphanThresholdMs,
+        }),
+      );
+    });
+
+  program
+    .command("answer")
+    .description("Resolve an engine-raised question.")
+    .argument("<question-id>", "Question row id from `dome inspect questions`.")
+    .argument("[value...]", "Answer value. Omit to print the question.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (
+      id: string,
+      value: string[] | undefined,
+      options: AnswerCliOptions,
+    ) => {
+      setExitCode(
+        await runAnswer({
+          id,
+          value: value?.join(" "),
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
     });
 
   program
@@ -117,6 +158,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           json: options.json,
           commandFlags: parseProcessorFlags(processorArgs(command.args)),
+        }),
+      );
+    });
+
+  program
+    .command("query")
+    .description("Search adopted vault state.")
+    .argument("<text...>", "Query text.")
+    .option("--category <category>", "Filter by document category.")
+    .option("--type <type>", "Filter by page type.")
+    .option("--limit <n>", "Maximum matches to show.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (text: string[], options: QueryCliOptions) => {
+      setExitCode(
+        await runQuery({
+          text: text.join(" "),
+          category: options.category,
+          type: options.type,
+          limit: parsePositiveIntegerOption(options.limit),
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
         }),
       );
     });
@@ -201,9 +266,28 @@ type InspectCliOptions = {
 
 type DoctorCliOptions = {
   readonly repair?: boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+  readonly orphanThresholdMs?: string;
+};
+
+type AnswerCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
 };
 
 type RunCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type QueryCliOptions = {
+  readonly category?: string;
+  readonly type?: string;
+  readonly limit?: string;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -268,6 +352,12 @@ function parseProcessorFlags(
     }
   }
   return flags;
+}
+
+function parsePositiveIntegerOption(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function writeConsole(write: (text: string) => void, text: string): void {

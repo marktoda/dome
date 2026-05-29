@@ -129,12 +129,18 @@ export type RunStatus =
 // ----- Trigger kind --------------------------------------------------------
 
 /**
- * The four trigger kinds per spec §"Tables — runs" `trigger_kind` column.
+ * The trigger kinds per spec §"Tables — runs" `trigger_kind` column.
  * Mirrors the `kind` discriminator of `Trigger` in `src/core/processor.ts`;
  * stored as a plain string in SQLite (the full Trigger payload is captured
  * separately via `trigger_payload_json`).
  */
-export type TriggerKind = "signal" | "path" | "schedule" | "command" | "job";
+export type TriggerKind =
+  | "signal"
+  | "path"
+  | "schedule"
+  | "answer"
+  | "command"
+  | "job";
 
 // ----- newRunId -------------------------------------------------------------
 
@@ -712,6 +718,7 @@ function narrowTriggerKind(s: string): TriggerKind {
     case "signal":
     case "path":
     case "schedule":
+    case "answer":
     case "command":
     case "job":
       return s;

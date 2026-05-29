@@ -21,6 +21,9 @@
 //     triggers so a processor whose only trigger is `schedule` does not fire
 //     from a signal dispatch. Schedule-driven dispatch enters the runtime via
 //     a different call site that passes the due-trigger decision explicitly.
+//   - `answer`   triggers: NOT matched here. Answer dispatch is invoked by
+//     the engine after a user answers a QuestionEffect; the runtime receives
+//     the answered question through a dedicated entry point.
 //   - `command`  triggers: NOT matched here. Command dispatch is invoked by
 //     the CLI/MCP layer (not the adoption-phase signal flow); the runtime
 //     resolves `command.name` against the invoking command at that call site.
@@ -122,9 +125,10 @@ function matchedSignalsFor(
     case "path":
       return collectPathMatches(trigger.pattern, signals);
     case "schedule":
+    case "answer":
     case "command":
       // Owned by the runtime's clock-cursor / CLI-dispatch layers; this
-      // matcher never fires schedule or command triggers from a signal
+      // matcher never fires schedule, answer, or command triggers from a signal
       // dispatch. See file banner.
       return [];
   }

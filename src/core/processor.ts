@@ -39,6 +39,7 @@ import type {
   Effect,
   FactEffect,
   QuestionEffect,
+  SearchDocumentEffect,
 } from "./effect";
 import type { PageTypeRegistry } from "../page-types";
 import type { Proposal } from "./proposal";
@@ -140,7 +141,8 @@ export type Signal =
  * runtime fires the processor when any trigger matches. `signal` listens on
  * an engine-synthesized signal (optionally narrowed by a path glob); `path`
  * fires on any change to paths matching a glob; `schedule` fires on a cron
- * expression (garden phase only); `command` fires on a user-invoked CLI /
+ * expression (garden phase only); `answer` fires when a user answers a
+ * QuestionEffect (garden phase only); `command` fires on a user-invoked CLI /
  * UI command (view phase only). Phase × trigger compatibility is at
  * docs/wiki/matrices/processor-phase-x-trigger.
  */
@@ -157,6 +159,10 @@ export type ScheduleTrigger = {
   readonly kind: "schedule";
   readonly cron: string;
 };
+export type AnswerTrigger = {
+  readonly kind: "answer";
+  readonly idempotencyKeyPrefix?: string;
+};
 export type CommandTrigger = {
   readonly kind: "command";
   readonly name: string;
@@ -166,6 +172,7 @@ export type Trigger =
   | SignalTrigger
   | PathTrigger
   | ScheduleTrigger
+  | AnswerTrigger
   | CommandTrigger;
 
 // ----- Capability -----------------------------------------------------------
@@ -182,6 +189,7 @@ export type Trigger =
  *   - `owns.region`   — exclusive write ownership of marker-delimited regions.
  *   - `owns.path`     — exclusive write ownership of whole files.
  *   - `graph.write`   — emit FactEffect under named namespaces.
+ *   - `search.write`  — emit SearchDocumentEffect for indexed markdown paths.
  *   - `question.ask`  — emit QuestionEffect.
  *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
@@ -211,6 +219,10 @@ export type GraphWriteCapability = {
   readonly kind: "graph.write";
   readonly namespaces: ReadonlyArray<string>;
 };
+export type SearchWriteCapability = {
+  readonly kind: "search.write";
+  readonly paths: ReadonlyArray<string>;
+};
 export type QuestionAskCapability = {
   readonly kind: "question.ask";
   readonly namespaces?: ReadonlyArray<string>;
@@ -236,6 +248,7 @@ export type Capability =
   | OwnsRegionCapability
   | OwnsPathCapability
   | GraphWriteCapability
+  | SearchWriteCapability
   | QuestionAskCapability
   | JobEnqueueCapability
   | ModelInvokeCapability
@@ -283,7 +296,7 @@ export type ModelInvokeFn = {
 
 /**
  * The read-only query surface a view-phase processor uses to read from
- * the projection store (facts, diagnostics, questions). Per
+ * the projection store (facts, diagnostics, questions, search documents). Per
  * docs/wiki/matrices/projection-table-x-owner.md §"Read access via the
  * query API", processors do NOT touch the SQLite handle directly —
  * they consume this typed surface.
@@ -294,9 +307,8 @@ export type ModelInvokeFn = {
  * projection field — they answer queries by joining facts, diagnostics,
  * and committed markdown content.
  *
- * v1.0 scope is minimal — three accessors with light filters. Richer
- * shapes (FTS search, aggregate queries) land in later phases as
- * view-phase processors demand them.
+ * v1.0 scope is minimal and typed: table-shaped accessors with light filters.
+ * Richer aggregate queries land only as view-phase processors demand them.
  */
 export type ProjectionQueryView = {
   /**
@@ -327,6 +339,29 @@ export type ProjectionQueryView = {
   readonly questions: (filter?: {
     readonly resolved?: boolean;
   }) => ReadonlyArray<QuestionEffect>;
+
+  /**
+   * Search adopted markdown documents through the FTS projection. The result
+   * shape intentionally mirrors the SearchDocumentEffect evidence boundary:
+   * every match can be rendered with a title/snippet and traced back through
+   * sourceRefs.
+   */
+  readonly searchDocuments: (filter: {
+    readonly query: string;
+    readonly category?: string;
+    readonly type?: string;
+    readonly limit?: number;
+  }) => ReadonlyArray<SearchDocumentResult>;
+};
+
+export type SearchDocumentResult = {
+  readonly path: string;
+  readonly category: string;
+  readonly type: string | null;
+  readonly title: string;
+  readonly snippet: string;
+  readonly rank: number;
+  readonly sourceRefs: SearchDocumentEffect["sourceRefs"];
 };
 
 // ----- ProcessorContext -----------------------------------------------------
@@ -444,6 +479,13 @@ export const ScheduleTriggerSchema = z
   })
   .strict();
 
+export const AnswerTriggerSchema = z
+  .object({
+    kind: z.literal("answer"),
+    idempotencyKeyPrefix: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const CommandTriggerSchema = z
   .object({
     kind: z.literal("command"),
@@ -455,6 +497,7 @@ export const TriggerSchema = z.discriminatedUnion("kind", [
   SignalTriggerSchema,
   PathTriggerSchema,
   ScheduleTriggerSchema,
+  AnswerTriggerSchema,
   CommandTriggerSchema,
 ]);
 
@@ -500,6 +543,13 @@ export const GraphWriteCapabilitySchema = z
   })
   .strict();
 
+export const SearchWriteCapabilitySchema = z
+  .object({
+    kind: z.literal("search.write"),
+    paths: z.array(z.string().min(1)),
+  })
+  .strict();
+
 export const QuestionAskCapabilitySchema = z
   .object({
     kind: z.literal("question.ask"),
@@ -536,6 +586,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OwnsRegionCapabilitySchema,
   OwnsPathCapabilitySchema,
   GraphWriteCapabilitySchema,
+  SearchWriteCapabilitySchema,
   QuestionAskCapabilitySchema,
   JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,

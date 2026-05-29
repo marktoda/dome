@@ -1,15 +1,15 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # Effects
 
-This spec is normative for the seven-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, or rendering a view.
+This spec is normative for the eight-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, or rendering a view.
 
-The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the seven existing kinds within their declared capabilities.
+The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the eight existing kinds within their declared capabilities.
 
 ## The Effect union
 
@@ -18,6 +18,7 @@ type Effect =
   | PatchEffect
   | DiagnosticEffect
   | FactEffect
+  | SearchDocumentEffect
   | QuestionEffect
   | JobEffect
   | ExternalActionEffect
@@ -26,7 +27,7 @@ type Effect =
 
 Effects are immutable values. Once returned from a processor, they are routed by the engine but never modified. Effect validation (Zod schemas at the engine boundary) rejects malformed effects before routing.
 
-The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-router.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding an 8th effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-router.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding a 9th effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 ## PatchEffect
 
@@ -113,6 +114,41 @@ type Literal =
 **Routing:** the engine writes the fact to `projection.db.facts` under the processor's declared `graph.write` namespace (the part of `predicate` before the first dot, e.g., `dome.tasks.*` → namespace `dome.tasks`). If the namespace is not granted, the effect is rejected with a capability diagnostic. Pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
 **Mandatory sourceRefs:** facts without `sourceRefs.length > 0` are rejected at validation. The "no evidence, no durable claim" property ([[wiki/specs/proposals]] introduction) is structurally enforced here.
+
+## SearchDocumentEffect
+
+A full-text-search projection update for adopted markdown.
+
+```ts
+type SearchDocumentEffect =
+  | {
+      readonly kind: "search-document";
+      readonly operation: "upsert";
+      readonly path: string;
+      readonly category: string;      // wiki | notes | inbox | raw | other
+      readonly type?: string;         // page type/frontmatter type when present
+      readonly title: string;
+      readonly body: string;
+      readonly sourceRefs: SourceRef[]; // mandatory evidence for query results
+    }
+  | {
+      readonly kind: "search-document";
+      readonly operation: "delete";
+      readonly path: string;
+      readonly sourceRefs: SourceRef[];
+    };
+```
+
+**Routing:** the engine writes/deletes rows in `projection.db.fts_documents`
+when the processor holds `search.write` for `path`. This is intentionally a
+first-class effect/capability rather than direct SQLite access by
+`dome.search`: processors stay pure, the projection store remains rebuildable,
+and third-party search-like bundles can request their own path-scoped authority
+without escaping the broker.
+
+**Idempotency requirement:** upsert replaces the row for `path`; delete removes
+the row. A rebuild replays SearchDocumentEffects from adopted markdown and
+reconstructs the same FTS state.
 
 ## QuestionEffect
 
@@ -224,6 +260,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | PatchEffect (mode: "propose") | `patch.propose` for every path the patch touches |
 | DiagnosticEffect | (none — every processor may emit) |
 | FactEffect | `graph.write` for the namespace prefix of `predicate` |
+| SearchDocumentEffect | `search.write` for the indexed document path |
 | QuestionEffect | `question.ask` for the question namespace/channel |
 | JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
@@ -235,14 +272,14 @@ Three properties depend on the union being closed:
 
 1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
-3. **Substrate stability.** The seven kinds cover the operations Dome's design needs (patch, validate, extract facts, ask, enqueue work, touch the world, render). A new kind is a *design move*, not a plugin's convenience.
+3. **Substrate stability.** The eight kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, render). A new kind is a *design move*, not a plugin's convenience.
 
 ## Related
 
 - [[wiki/specs/processors]] — what emits effects
 - [[wiki/specs/adoption]] — how effects route during the fixed-point loop
 - [[wiki/specs/capabilities]] — what gates effect emission
-- [[wiki/specs/projection-store]] — where FactEffect / DiagnosticEffect / QuestionEffect / ExternalActionEffect land
+- [[wiki/specs/projection-store]] — where FactEffect / SearchDocumentEffect / DiagnosticEffect / QuestionEffect / ExternalActionEffect land
 - [[wiki/matrices/effect-router-targets]] — per-kind routing destinations
 - [[wiki/matrices/effect-x-capability]] — per-kind capability requirements
 - [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — the structural fence

@@ -252,7 +252,7 @@ The SDK ships nine `dome.*` bundles under `assets/extensions/`:
 | `dome.intake` | garden: extract-capture (LLM) | On `inbox/raw/*` creation, compiles the capture into wiki updates. |
 | `dome.daily` | garden: create-daily (cron), carry-forward; view: today, week-review | Daily/weekly notes + agenda views. |
 | `dome.lint` | view: lint-report (cron + command) | Walks the wiki; emits diagnostics; writes the report to `inbox/review/`. |
-| `dome.search` | adoption: index-text; view: semantic-search | Maintains FTS5 + embeddings; answers query requests. |
+| `dome.search` | adoption: index-text; view: query | Maintains FTS5 adopted-state search; answers `dome query` requests. Embeddings/export-context remain future work. |
 | `dome.migrate` | view: migrate-vault (command) | Migrates a vault between SDK schema versions. |
 
 The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].

@@ -55,7 +55,6 @@
 import {
   diagnosticEffect,
   type DiagnosticEffect,
-  type PatchEffect,
 } from "../core/effect";
 import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
@@ -65,7 +64,7 @@ import {
   type ApplyPatchInput,
 } from "./apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
-import { routeGardenPatchForSubProposal } from "./garden-patch-router";
+import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
 import type { EngineVault } from "./vault-shape";
 import {
   getCursor,
@@ -83,8 +82,6 @@ import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ModelProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import { recordDiagnosticsViaSink } from "./diagnostics";
-import type { RunId } from "./runner-contract";
-import { spawnGardenSubProposal } from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "./effect-capability-use";
 
 type AdoptScheduledSubProposalFn = (
@@ -341,7 +338,7 @@ async function runSchedulerInner(opts: {
       // through the generic applyPatch sink.
       for (const effect of result.effects) {
         if (phase === "garden" && effect.kind === "patch") {
-          await routeScheduledGardenPatch({
+          await dispatchGardenPatchEffect({
             effect,
             vault,
             adopted,
@@ -356,6 +353,13 @@ async function runSchedulerInner(opts: {
             extensionId: extensionIdFor(result.processorId),
             ...(ledger !== undefined ? { ledger } : {}),
             ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
+            disabledDiagnostic: {
+              code: "scheduler.garden-sub-proposal-spawn-disabled",
+              message:
+                `Scheduled garden processor ${result.processorId} emitted ` +
+                `an authorized PatchEffect, but no adoptSubProposal ` +
+                `callback was wired; patch dropped.`,
+            },
           });
           continue;
         }
@@ -436,76 +440,6 @@ async function runSchedulerInner(opts: {
     fired: Object.freeze(fired),
     skipped: Object.freeze(skipped),
     diagnostics: Object.freeze(diagnostics),
-  });
-}
-
-async function routeScheduledGardenPatch(opts: {
-  readonly effect: PatchEffect;
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
-  readonly processorId: string;
-  readonly runId: RunId;
-  readonly proposalId: string | null;
-  readonly declared: ReadonlyArray<Capability>;
-  readonly granted: ReadonlyArray<Capability>;
-  readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
-  readonly diagnostics: DiagnosticEffect[];
-  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
-  readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
-  readonly extensionId: string;
-}): Promise<void> {
-  const routed = await routeGardenPatchForSubProposal({
-    effect: opts.effect,
-    processorId: opts.processorId,
-    runId: opts.runId,
-    proposalId: opts.proposalId,
-    declared: opts.declared,
-    granted: opts.granted,
-    sinks: opts.sinks,
-  });
-  recordEffectCapabilityUse({
-    ledger: opts.ledger,
-    runId: opts.runId,
-    ...(routed.capabilityUse !== undefined
-      ? { capabilityUse: routed.capabilityUse }
-      : {}),
-  });
-  opts.diagnostics.push(...routed.diagnostics);
-  if (routed.kind === "dropped") {
-    return;
-  }
-
-  if (opts.adoptSubProposal === undefined) {
-    const drop = diagnosticEffect({
-      severity: "info",
-      code: "scheduler.garden-sub-proposal-spawn-disabled",
-      message:
-        `Scheduled garden processor ${opts.processorId} emitted an authorized ` +
-        `PatchEffect, but no adoptSubProposal callback was wired; patch dropped.`,
-      sourceRefs: [],
-    });
-    opts.diagnostics.push(drop);
-    await opts.sinks.recordDiagnostic({
-      effect: drop,
-      processorId: opts.processorId,
-      runId: opts.runId,
-      proposalId: opts.proposalId,
-    });
-    return;
-  }
-
-  await spawnGardenSubProposal({
-    vault: opts.vault,
-    base: opts.adopted,
-    sourceHead: opts.adopted,
-    patch: routed.patch,
-    processorId: opts.processorId,
-    runId: opts.runId,
-    extensionId: opts.extensionId,
-    cascadeDepth: 1,
-    applyPatch: opts.applyGardenPatch,
-    adoptSubProposal: opts.adoptSubProposal,
   });
 }
 

@@ -18,7 +18,7 @@ interface Processor<TInput = unknown> {
   readonly id: string;              // canonical identifier; e.g., "dome.index.update", "acme.calendar.sync"
   readonly version: string;         // semver; participates in projection cache keys
   readonly phase: ProcessorPhase;   // "adoption" | "garden" | "view"
-  readonly triggers: Trigger[];     // signal / path / schedule / command
+  readonly triggers: Trigger[];     // signal / path / schedule / answer / command
   readonly capabilities: Capability[];  // declared in manifest; enforced at effect-emission time
   run(ctx: ProcessorContext<TInput>): Promise<Effect[]>;
 }
@@ -67,6 +67,12 @@ interface ProjectionQueryView {
     processorId?: string;
   }): ReadonlyArray<DiagnosticEffect>;
   questions(filter?: { resolved?: boolean }): ReadonlyArray<QuestionEffect>;
+  searchDocuments(filter: {
+    query: string;
+    category?: string;
+    type?: string;
+    limit?: number;
+  }): ReadonlyArray<SearchDocumentResult>;
 }
 ```
 
@@ -200,7 +206,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.intake` | garden: extract-capture | On `inbox/raw/*` creation, calls the LLM to compile the capture into wiki updates. |
 | `dome.daily` | garden: create-daily, carry-forward; view: today, week-review | Creates daily/weekly notes; carries unfinished tasks forward; renders agenda views. |
 | `dome.lint` | view: lint-report | Walks the wiki, emits DiagnosticEffect for each finding, renders the report. |
-| `dome.search` | adoption: index-text; view: semantic-search | Maintains the FTS5 + embedding projection; answers query requests. |
+| `dome.search` | adoption: index-text; view: query | Maintains the FTS5 projection; answers adopted-state query requests. |
 
 The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].
 
@@ -227,7 +233,8 @@ The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engi
 | Garden-phase runner | `gardenRunner` fires post-adoption garden-phase processors against signal + path triggers; the engine constructs sub-Proposals from garden-emitted PatchEffects with a depth cap (`garden.cascade-cap` diagnostic on hit) | **Shipped** (Phases 4a + 4a') |
 | View-phase runner | `viewRunner` (`src/processors/runtime.ts`) + `runViewCommand` dispatcher (`src/engine/commands.ts`) — command-driven view processors fire; non-View effect emissions are phase-rejected | **Shipped** (Phase 4b) |
 | Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table; minimal in-tree cron evaluator (`src/engine/cron.ts`); clock injection via `runOneAdoption({ now })` for deterministic harness testing | **Shipped** (Phase 4c) |
-| Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) + the `answer` trigger kind | Phase 4d |
+| Answer-trigger dispatch | `dome answer` records a QuestionEffect answer, then garden-phase processors with `answer` triggers run through normal effect routing | **Shipped** |
+| Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) | Phase 4d |
 | JobEffect runtime | `scheduled_jobs` table + `runQueuedJobs` dispatcher firing due jobs as garden-phase work with retry/backoff | **Shipped** (Phase 4e) |
 
 See the brainstorm doc for the full plan including dependencies, tests, and the question-answer surface.

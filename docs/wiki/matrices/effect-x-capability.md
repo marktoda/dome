@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-28
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -19,6 +19,7 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **PatchEffect (touching owned path)** | `owns.path` for each modified path, OR the patch must touch only non-owned paths | per-path check against `owns.path` grants in vault config | Denied unless the emitting processor is the path's owner |
 | **DiagnosticEffect (any severity)** | (none — every processor may emit diagnostics) | — | (n/a — no denial path) |
 | **FactEffect** | `graph.write` matching the namespace prefix of `predicate` | predicate `<namespace>.<key>` → namespace must be in the grant list | Denied; diagnostic with `code: capability-deny-graph-write`; effect discarded |
+| **SearchDocumentEffect** | `search.write` | indexed/deleted document path must match the grant's glob list | Denied; diagnostic with `code: capability-deny-search-write`; effect discarded |
 | **QuestionEffect** | `question.ask` | question namespace / channel (defaults to emitting bundle namespace when omitted) | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
 | **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
