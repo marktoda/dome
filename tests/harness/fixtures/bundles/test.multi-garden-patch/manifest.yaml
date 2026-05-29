@@ -9,6 +9,8 @@ processors:
         name: file.created
         pathPattern: wiki/seed.md
     capabilities:
+      - kind: read
+        paths: ["wiki/**"]
       - kind: patch.auto
         paths: ["wiki/**"]
     module: processors/first.ts
@@ -20,6 +22,8 @@ processors:
         name: file.created
         pathPattern: wiki/seed.md
     capabilities:
+      - kind: read
+        paths: ["wiki/**"]
       - kind: patch.auto
         paths: ["wiki/**"]
     module: processors/second.ts

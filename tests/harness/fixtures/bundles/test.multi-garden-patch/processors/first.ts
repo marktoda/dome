@@ -14,7 +14,10 @@ const processor: Processor = defineProcessor({
   triggers: [
     { kind: "signal", name: "file.created", pathPattern: "wiki/seed.md" },
   ],
-  capabilities: [{ kind: "patch.auto", paths: ["wiki/**"] }],
+  capabilities: [
+    { kind: "read", paths: ["wiki/**"] },
+    { kind: "patch.auto", paths: ["wiki/**"] },
+  ],
   run: async (): Promise<ReadonlyArray<Effect>> => [
     patchEffect({
       mode: "auto",

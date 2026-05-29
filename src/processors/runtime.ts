@@ -91,6 +91,7 @@ import type {
   RunnerResult,
   ViewPhaseRunner,
 } from "../engine/runner-contract";
+import type { SignalEvent } from "../engine/compile-range";
 import type { LedgerDb } from "../ledger/db";
 import {
   executeProcessor,
@@ -322,7 +323,12 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 
     const results: RunnerResult[] = [];
     for (const processor of adoptionProcessors) {
-      const matches = matchTriggers(processor.triggers, input.signals);
+      const readableSignals = readableSignalsForProcessor({
+        processor,
+        signals: input.signals,
+        resolveGrants,
+      });
+      const matches = matchTriggers(processor.triggers, readableSignals);
       if (matches.length === 0) continue;
 
       const result = await dispatchOneProcessor({
@@ -367,7 +373,12 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 
     const results: RunnerResult[] = [];
     for (const processor of gardenProcessors) {
-      const matches = matchTriggers(processor.triggers, input.signals);
+      const readableSignals = readableSignalsForProcessor({
+        processor,
+        signals: input.signals,
+        resolveGrants,
+      });
+      const matches = matchTriggers(processor.triggers, readableSignals);
       if (matches.length === 0) continue;
 
       const result = await dispatchOneProcessor({
@@ -949,6 +960,20 @@ function runReadStatuses(
   statuses: ReadonlyArray<OperationalRunStatus> | undefined,
 ): ReadonlySet<OperationalRunStatus> {
   return statuses === undefined ? ALL_RUN_STATUSES : new Set(statuses);
+}
+
+function readableSignalsForProcessor(opts: {
+  readonly processor: Processor<unknown>;
+  readonly signals: ReadonlyArray<SignalEvent>;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+}): ReadonlyArray<SignalEvent> {
+  const granted = opts.resolveGrants(opts.processor.id);
+  return Object.freeze(
+    opts.signals.filter(
+      (event) =>
+        readablePath(event.path, opts.processor.capabilities, granted) !== null,
+    ),
+  );
 }
 
 function scopeSnapshotForProcessor(

@@ -116,6 +116,17 @@ async function installThrowingBundle(h: Harness): Promise<void> {
   await mkdir(join(bundleDir, "processors"), { recursive: true });
 
   await writeFile(
+    join(h.vaultPath, ".dome", "config.yaml"),
+    `extensions:
+  test.throwing:
+    enabled: true
+    grant:
+      read: ["wiki/**"]
+`,
+    "utf8",
+  );
+
+  await writeFile(
     join(bundleDir, "manifest.yaml"),
     `id: test.throwing
 version: 0.1.0
@@ -128,7 +139,9 @@ processors:
         name: document.changed
       - kind: signal
         name: file.created
-    capabilities: []
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
     module: processors/throw.ts
 `,
     "utf8",
@@ -159,7 +172,7 @@ const processor = {
     { kind: "signal" as const, name: "document.changed" as const },
     { kind: "signal" as const, name: "file.created" as const },
   ],
-  capabilities: [] as const,
+  capabilities: [{ kind: "read" as const, paths: ["wiki/**"] as const }] as const,
   run: async (): Promise<readonly never[]> => {
     throw new Error("intentional test failure");
   },

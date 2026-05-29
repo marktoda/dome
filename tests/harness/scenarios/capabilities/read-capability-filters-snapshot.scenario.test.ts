@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { join } from "node:path";
 
 import { scenario } from "../../index";
+import type { Harness } from "../../types";
 
 const FIXTURE_BUNDLE = join(
   import.meta.dir,
@@ -61,5 +62,27 @@ extensions:
     await h
       .expectLedger({ processorId: "test.read-capability-gate.probe" })
       .toHaveAtLeastOne();
+
+    const runsAfterReadableCommit = probeRunCount(h);
+
+    await h.userCommit({
+      message: "add denied-only markdown",
+      files: {
+        "secret/second-denied.md": "# Second denied\n\nhidden\n",
+      },
+    });
+
+    const deniedOnly = await h.tick();
+    expect(deniedOnly.adopted).toBe(true);
+    expect(probeRunCount(h)).toBe(runsAfterReadableCommit);
   },
 );
+
+function probeRunCount(h: Harness): number {
+  const row = h.ledger.raw
+    .query<{ count: number }, []>(
+      "SELECT COUNT(*) AS count FROM runs WHERE processor_id = 'test.read-capability-gate.probe'",
+    )
+    .get();
+  return row?.count ?? 0;
+}

@@ -28,6 +28,7 @@ extensions:
   test.multi-garden-patch:
     enabled: true
     grant:
+      read: ["wiki/**"]
       patch.auto: ["wiki/**"]
 `,
       },

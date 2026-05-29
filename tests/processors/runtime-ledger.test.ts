@@ -61,6 +61,11 @@ const SIGNAL_CREATED: SignalEvent = Object.freeze({
   path: "wiki/a.md",
 });
 
+const READ_WIKI: Capability = Object.freeze({
+  kind: "read",
+  paths: ["wiki/**"],
+});
+
 function makeFixtureProcessor(opts: {
   id: string;
   phase: ProcessorPhase;
@@ -75,7 +80,7 @@ function makeFixtureProcessor(opts: {
     version: "0.0.1",
     phase: opts.phase,
     triggers: opts.triggers,
-    capabilities: opts.capabilities ?? [],
+    capabilities: opts.capabilities ?? [READ_WIKI],
     ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
     run:
       opts.run !== undefined
@@ -96,7 +101,7 @@ function buildRuntimeFor(
   if (!reg.ok) throw new Error(`registry build failed: ${reg.error.kind}`);
   return buildRuntime({
     registry: reg.value,
-    resolveGrants: overrides?.resolveGrants ?? (() => []),
+    resolveGrants: overrides?.resolveGrants ?? (() => [READ_WIKI]),
     extensionIdFor: (id) => id,
     resolveTree: async () => TREE,
     ledger,
@@ -408,7 +413,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       id: "test.ledger.model-json",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: [READ_WIKI, cap],
       execution: { class: "llm" },
       run: async (ctx) => {
         if (ctx.modelInvoke === undefined) {
@@ -423,7 +428,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       },
     });
     const rt = buildRuntimeFor([p], ledger, {
-      resolveGrants: () => [cap],
+      resolveGrants: () => [READ_WIKI, cap],
       modelProvider: async () => ({
         text: "not-json",
         costUsd: 0.125,
@@ -459,7 +464,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       id: "test.ledger.model-timeout",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: [READ_WIKI, cap],
       execution: { class: "llm", timeoutMs: 50, modelCallTimeoutMs: 5 },
       run: async (ctx) => {
         if (ctx.modelInvoke === undefined) {
@@ -470,7 +475,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       },
     });
     const rt = buildRuntimeFor([p], ledger, {
-      resolveGrants: () => [cap],
+      resolveGrants: () => [READ_WIKI, cap],
       modelProvider: async (request) => {
         providerCalls += 1;
         await waitForAbort(request.signal);
@@ -532,7 +537,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     if (!reg.ok) throw new Error(`registry build failed: ${reg.error.kind}`);
     const rt = buildRuntime({
       registry: reg.value,
-      resolveGrants: () => [],
+      resolveGrants: () => [READ_WIKI],
       extensionIdFor: (id) => id,
       resolveTree: async () => TREE,
       // ledger intentionally absent

@@ -54,6 +54,14 @@ const proposal = makeManualProposal({
   branch: "main",
 });
 
+const READ_WIKI: Capability = { kind: "read", paths: ["wiki/**"] };
+
+function withRead(
+  ...capabilities: ReadonlyArray<Capability>
+): ReadonlyArray<Capability> {
+  return Object.freeze([READ_WIKI, ...capabilities]);
+}
+
 function makeFixtureProcessor(opts: {
   id: string;
   phase: ProcessorPhase;
@@ -68,7 +76,7 @@ function makeFixtureProcessor(opts: {
     version: "0.0.1",
     phase: opts.phase,
     triggers: opts.triggers,
-    capabilities: opts.capabilities ?? [],
+    capabilities: opts.capabilities ?? [READ_WIKI],
     ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
     run:
       opts.run !== undefined
@@ -91,7 +99,7 @@ function buildRuntimeFor(
   if (!reg.ok) throw new Error(`registry build failed: ${reg.error.kind}`);
   return buildRuntime({
     registry: reg.value,
-    resolveGrants: overrides?.resolveGrants ?? (() => []),
+    resolveGrants: overrides?.resolveGrants ?? (() => [READ_WIKI]),
     extensionIdFor: overrides?.extensionIdFor ?? ((id) => id),
     resolveTree: overrides?.resolveTree ?? (async () => TREE),
     ...(overrides?.modelProvider !== undefined
@@ -106,6 +114,10 @@ function buildRuntimeFor(
 const SIGNAL_CREATED: SignalEvent = Object.freeze({
   signal: "file.created",
   path: "wiki/a.md",
+});
+const SIGNAL_SECRET_CREATED: SignalEvent = Object.freeze({
+  signal: "file.created",
+  path: "secret/a.md",
 });
 
 describe("buildRuntime — shape", () => {
@@ -180,6 +192,32 @@ describe("adoptionRunner — dispatch + match filtering", () => {
     });
 
     expect(results).toEqual([]);
+  });
+
+  test("unreadable-only signals do not invoke a matching processor", async () => {
+    let invocations = 0;
+    const p = makeFixtureProcessor({
+      id: "test.unreadable-only",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        invocations += 1;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const results = await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["secret/a.md"],
+      signals: [SIGNAL_SECRET_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    expect(results).toEqual([]);
+    expect(invocations).toBe(0);
   });
 
   test("garden + view phase processors are NOT invoked by adoptionRunner", async () => {
@@ -406,7 +444,7 @@ describe("gardenRunner — executor diagnostics", () => {
       id: "test.garden.model",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: withRead(cap),
       execution: { class: "llm", modelCallTimeoutMs: 500 },
       run: async (ctx) => {
         if (ctx.modelInvoke === undefined) {
@@ -427,7 +465,7 @@ describe("gardenRunner — executor diagnostics", () => {
       },
     });
     const rt = buildRuntimeFor([p], {
-      resolveGrants: () => [cap],
+      resolveGrants: () => withRead(cap),
       modelProvider: async (request) => {
         providerPrompt = request.prompt;
         return { text: "model result" };
@@ -499,7 +537,7 @@ describe("gardenRunner — executor diagnostics", () => {
       id: "test.garden.operational",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: withRead(cap),
       run: async (ctx) => {
         seen.granted =
           ctx.operational?.outbox().map((row) => row.idempotencyKey) ?? [];
@@ -509,7 +547,7 @@ describe("gardenRunner — executor diagnostics", () => {
       },
     });
     const rt = buildRuntimeFor([p], {
-      resolveGrants: () => [cap],
+      resolveGrants: () => withRead(cap),
       operational,
     });
 
@@ -550,7 +588,7 @@ describe("gardenRunner — executor diagnostics", () => {
       id: "test.garden.quarantine-read.allowed",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: withRead(cap),
       run: async (ctx) => {
         seen.allowed =
           ctx.operational?.quarantines().map((q) => q.processorId) ?? [];
@@ -561,7 +599,7 @@ describe("gardenRunner — executor diagnostics", () => {
       id: "test.garden.quarantine-read.denied",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: withRead(cap),
       run: async (ctx) => {
         seen.denied = ctx.operational === undefined;
         return [];
@@ -569,7 +607,7 @@ describe("gardenRunner — executor diagnostics", () => {
     });
     const rt = buildRuntimeFor([allowed, denied], {
       resolveGrants: (processorId) =>
-        processorId === allowed.id ? [cap] : [],
+        processorId === allowed.id ? withRead(cap) : [READ_WIKI],
       operational,
     });
 
@@ -591,7 +629,7 @@ describe("gardenRunner — executor diagnostics", () => {
       id: "test.garden.model-json",
       phase: "garden",
       triggers: [{ kind: "signal", name: "file.created" }],
-      capabilities: [cap],
+      capabilities: withRead(cap),
       execution: { class: "llm" },
       run: async (ctx) => {
         await ctx.modelInvoke?.structured({
@@ -603,7 +641,7 @@ describe("gardenRunner — executor diagnostics", () => {
       },
     });
     const rt = buildRuntimeFor([p], {
-      resolveGrants: () => [cap],
+      resolveGrants: () => withRead(cap),
       modelProvider: async () => ({ text: "not-json" }),
     });
 
