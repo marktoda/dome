@@ -349,8 +349,7 @@ function grantRecord(
 }
 
 function cloneYamlValue(value: unknown): unknown {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value)) as unknown;
+  return structuredClone(value);
 }
 
 function recordFromYaml(value: unknown): Record<string, unknown> | null {

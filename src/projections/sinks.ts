@@ -5,7 +5,7 @@
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Eight sinks are owned here (delegating to the per-table accessors):
+// Nine sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
 //   - resolveFacts     → src/projections/facts.ts:       resolveStalePageFacts
@@ -128,8 +128,8 @@ export type BuildSqliteSinksOpts = {
 
 /**
  * Assemble the `ApplyEffectSinks` object the engine calls while routing
- * effects and maintaining projection rows. Eight sinks delegate to the
- * per-table projection accessors + the outbox dispatcher; two are
+ * effects and maintaining projection rows. The projection/outbox sinks
+ * delegate to the per-table accessors + the outbox dispatcher; four are
  * pass-through injections from the engine layer (`applyPatch`, `captureView`,
  * `recoverQuarantine`, `recoverRun`).
  *

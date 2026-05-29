@@ -26,8 +26,8 @@
 //   - `type X = { ... }` aliases, every field `readonly`.
 //   - Not re-exported from `src/index.ts`; this is engine host machinery,
 //     not SDK application surface.
-//   - The placeholder captureView sink lives here so all background host
-//     paths share one v1 behavior.
+//   - The host wires view capture explicitly; protocol-specific command
+//     runners use their own capture sinks when they need to return views.
 
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../core/proposal";
@@ -360,10 +360,10 @@ function commonTickOptions(
 /**
  * Execute one adoption cycle: construct a `manual`-source Proposal from
  * the supplied drift, compose `buildSqliteSinks` against the runtime's
- * open DBs (wired to the v1.0 placeholder `applyPatch` / `captureView`
- * sinks), and call `adopt()`. Returns the `AdoptionResult` so the caller
- * can render it (one-line summary for serve, full result for sync) and
- * decide its exit code.
+ * open DBs (wired to the real candidate patch applier and host-level view
+ * capture sink), and call `adopt()`. Returns the `AdoptionResult` so the
+ * caller can render it (one-line summary for serve, full result for sync)
+ * and decide its exit code.
  *
  * Errors from `adopt()` are NOT caught here — the engine's contract is
  * that structured failures land on `AdoptionResult.diagnostics` with
