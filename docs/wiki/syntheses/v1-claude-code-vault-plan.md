@@ -169,7 +169,7 @@ Shipped, but still needs release hardening:
 
 Not yet at v1:
 
-- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, deterministic `dome agenda`, production model-provider packaging, raw inbox capture compilation, source-backed capture synthesis, low-confidence capture question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics. Remaining v1 work is real-vault dogfood and richer cross-capture synthesis.
+- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, deterministic `dome agenda`, production model-provider packaging, raw inbox capture compilation, source-backed per-capture synthesis, source-backed recent-capture rollup synthesis, low-confidence capture question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics. Remaining v1 work is real-vault dogfood and richer long-horizon synthesis.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
