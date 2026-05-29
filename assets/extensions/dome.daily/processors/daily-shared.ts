@@ -84,6 +84,8 @@ export function renderDailySkeleton(input: {
   const lines: string[] = [
     "---",
     "type: daily",
+    `created: ${today}`,
+    `updated: ${today}`,
     `recurrence: "${today}"`,
   ];
   if (input.yesterday !== null) {

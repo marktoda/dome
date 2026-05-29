@@ -59,6 +59,12 @@ recurrence: 2026-01-01
     await h.expectFile("wiki/dailies/2026-01-02.md").toContain("type: daily");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("created: 2026-01-02");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("updated: 2026-01-02");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("recurrence: '2026-01-02'");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
