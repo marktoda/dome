@@ -352,7 +352,7 @@ Acceptance:
 
 ## Milestone 6 - modelInvoke Substrate
 
-Status: partially shipped; not productized.
+Status: shipped for v1; keep vendor-specific adapters outside the SDK core.
 
 Goal: LLM processors can run without corrupting state, hiding costs, or
 creating retry chaos.
