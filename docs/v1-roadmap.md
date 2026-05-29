@@ -93,15 +93,16 @@ V1 capability ledger:
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
       task/followup fact indexing, `today` / `prep` views, and first raw
-      inbox capture extraction are shipped; richer capture questions and
+      inbox capture extraction are shipped; richer capture answer handling and
       synthesis remain.
 - [x] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
       packaging gives vaults a production path without SDK vendor dependencies.
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
-      first `dome.intake.extract-capture` slice shipped; low-confidence
-      questions and synthesis remain.
+      first `dome.intake.extract-capture` slice and low-confidence capture
+      questions shipped; richer fact namespaces, answer handling, and synthesis
+      remain.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
 - [x] V1 end-to-end acceptance harness.
@@ -394,7 +395,10 @@ Work:
       generated capture page.
 - [x] File processed captures into durable archive pages and owned generated
       regions.
-- [ ] Emit facts and questions where confidence is low.
+- [x] Emit low-confidence capture questions instead of committing uncertain
+      model items as tasks, followups, decisions, or entities.
+- [ ] Emit richer intake fact namespaces with confidence.
+- [ ] Add answer handling for low-confidence capture questions.
 - [ ] Implement first synthesis processor only after intake has provenance and
       budget gates.
 
@@ -405,6 +409,8 @@ Acceptance:
 - [x] Bad model output leaves the capture intact and emits a recoverable
       diagnostic.
 - [x] Processor cannot mutate outside capability-scoped paths.
+- [x] Low-confidence extracted items are not written into generated capture
+      pages until the user answers a question.
 
 ## Milestone 8 - User-Value Views
 
@@ -471,7 +477,7 @@ Required for daily value:
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
-| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, and downstream task/followup facts shipped; low-confidence questions, richer fact namespaces, and synthesis remain |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions, and downstream task/followup facts shipped; low-confidence answer handling, richer fact namespaces, and synthesis remain |
 
 Optional or conditional:
 

@@ -2,44 +2,68 @@
 
 import { createHash } from "node:crypto";
 
-import { patchEffect, type Effect } from "../../../../src/core/effect";
+import {
+  patchEffect,
+  questionEffect,
+  type Effect,
+} from "../../../../src/core/effect";
 import {
   defineProcessor,
   type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
 
 type CaptureExtraction = {
   readonly title: string;
   readonly summary: string;
-  readonly tasks: ReadonlyArray<string>;
-  readonly followups: ReadonlyArray<string>;
-  readonly decisions: ReadonlyArray<string>;
-  readonly entities: ReadonlyArray<string>;
-  readonly sourceQuotes: ReadonlyArray<string>;
+  readonly tasks: ReadonlyArray<ExtractedItem>;
+  readonly followups: ReadonlyArray<ExtractedItem>;
+  readonly decisions: ReadonlyArray<ExtractedItem>;
+  readonly entities: ReadonlyArray<ExtractedItem>;
+  readonly sourceQuotes: ReadonlyArray<ExtractedItem>;
 };
 
-const MODEL_SCHEMA = "dome.intake.extract-capture/v1";
+type ExtractedItem = {
+  readonly text: string;
+  readonly confidence: number;
+};
+
+const MODEL_SCHEMA = "dome.intake.extract-capture/v2";
+const CONFIDENCE_THRESHOLD = 0.82;
 const NonEmptyTrimmedString = z
   .string()
   .transform((value) => value.trim())
   .refine((value) => value.length > 0, "expected non-empty string");
+const ExtractedItemSchema = z.union([
+  NonEmptyTrimmedString.transform((text) => ({ text, confidence: 1 })),
+  z
+    .object({
+      text: NonEmptyTrimmedString,
+      confidence: z.number().min(0).max(1).optional(),
+    })
+    .strict()
+    .transform((item) => ({
+      text: item.text,
+      confidence: item.confidence ?? 1,
+    })),
+]);
 const CaptureExtractionSchema = z
   .object({
     title: NonEmptyTrimmedString,
     summary: NonEmptyTrimmedString,
-    tasks: z.array(NonEmptyTrimmedString),
-    followups: z.array(NonEmptyTrimmedString),
-    decisions: z.array(NonEmptyTrimmedString),
-    entities: z.array(NonEmptyTrimmedString),
-    sourceQuotes: z.array(NonEmptyTrimmedString),
+    tasks: z.array(ExtractedItemSchema),
+    followups: z.array(ExtractedItemSchema),
+    decisions: z.array(ExtractedItemSchema),
+    entities: z.array(ExtractedItemSchema),
+    sourceQuotes: z.array(ExtractedItemSchema),
   })
   .strict();
 
 const extractCapture: Processor = defineProcessor({
   id: "dome.intake.extract-capture",
-  version: "0.1.0",
+  version: "0.2.0",
   phase: "garden",
   triggers: [
     { kind: "signal", name: "file.created", pathPattern: "inbox/raw/*.md" },
@@ -55,6 +79,7 @@ const extractCapture: Processor = defineProcessor({
       ],
     },
     { kind: "model.invoke", maxDailyCostUsd: 5 },
+    { kind: "question.ask" },
   ],
   execution: {
     class: "llm",
@@ -106,6 +131,11 @@ const extractCapture: Processor = defineProcessor({
           reason: `dome.intake: extract capture ${path}`,
           sourceRefs: [ctx.sourceRef(path)],
         }),
+        ...lowConfidenceQuestions({
+          path,
+          sourceRef: ctx.sourceRef(path),
+          extraction,
+        }),
       );
     }
     return Object.freeze(effects);
@@ -122,7 +152,9 @@ function promptForCapture(path: string, capture: string): string {
   return [
     "Extract a Dome capture into strict JSON.",
     "Return only JSON with keys:",
-    "title:string, summary:string, tasks:string[], followups:string[], decisions:string[], entities:string[], sourceQuotes:string[].",
+    "title:string, summary:string, tasks:item[], followups:item[], decisions:item[], entities:item[], sourceQuotes:item[].",
+    "Each item may be a string for high confidence or {text:string, confidence:number}.",
+    `Use confidence below ${CONFIDENCE_THRESHOLD} when the item is plausible but uncertain.`,
     "Tasks should be concrete open action items.",
     "Followups should be people/project follow-up actions.",
     "Decisions should be explicit decisions from the capture.",
@@ -153,21 +185,34 @@ function parseCaptureExtraction(value: unknown): CaptureExtraction {
 function deepFreezeExtraction(input: {
   readonly title: string;
   readonly summary: string;
-  readonly tasks: ReadonlyArray<string>;
-  readonly followups: ReadonlyArray<string>;
-  readonly decisions: ReadonlyArray<string>;
-  readonly entities: ReadonlyArray<string>;
-  readonly sourceQuotes: ReadonlyArray<string>;
+  readonly tasks: ReadonlyArray<ExtractedItem>;
+  readonly followups: ReadonlyArray<ExtractedItem>;
+  readonly decisions: ReadonlyArray<ExtractedItem>;
+  readonly entities: ReadonlyArray<ExtractedItem>;
+  readonly sourceQuotes: ReadonlyArray<ExtractedItem>;
 }): CaptureExtraction {
   return Object.freeze({
     title: input.title,
     summary: input.summary,
-    tasks: Object.freeze([...input.tasks]),
-    followups: Object.freeze([...input.followups]),
-    decisions: Object.freeze([...input.decisions]),
-    entities: Object.freeze([...input.entities]),
-    sourceQuotes: Object.freeze([...input.sourceQuotes]),
+    tasks: freezeItems(input.tasks),
+    followups: freezeItems(input.followups),
+    decisions: freezeItems(input.decisions),
+    entities: freezeItems(input.entities),
+    sourceQuotes: freezeItems(input.sourceQuotes),
   });
+}
+
+function freezeItems(
+  items: ReadonlyArray<ExtractedItem>,
+): ReadonlyArray<ExtractedItem> {
+  return Object.freeze(
+    items.map((item) =>
+      Object.freeze({
+        text: item.text,
+        confidence: item.confidence,
+      }),
+    ),
+  );
 }
 
 function outputPaths(path: string): {
@@ -191,6 +236,11 @@ function renderGeneratedCapture(input: {
   readonly extraction: CaptureExtraction;
 }): string {
   const { extraction } = input;
+  const tasks = highConfidenceItems(extraction.tasks);
+  const followups = highConfidenceItems(extraction.followups);
+  const decisions = highConfidenceItems(extraction.decisions);
+  const entities = highConfidenceItems(extraction.entities);
+  const sourceQuotes = highConfidenceItems(extraction.sourceQuotes);
   const lines: string[] = [
     "---",
     "type: capture",
@@ -203,22 +253,102 @@ function renderGeneratedCapture(input: {
     extraction.summary,
     "",
   ];
-  appendListSection(lines, "## Tasks", extraction.tasks, (item) => `- [ ] ${item}`);
+  appendListSection(lines, "## Tasks", tasks, (item) => `- [ ] ${item}`);
   appendListSection(
     lines,
     "## Follow-ups",
-    extraction.followups,
+    followups,
     (item) => `- [ ] #followup ${item}`,
   );
-  appendListSection(lines, "## Decisions", extraction.decisions, (item) => `- ${item}`);
-  appendListSection(lines, "## Entities", extraction.entities, (item) => `- [[${item}]]`);
+  appendListSection(lines, "## Decisions", decisions, (item) => `- ${item}`);
+  appendListSection(lines, "## Entities", entities, (item) => `- [[${item}]]`);
   appendListSection(
     lines,
     "## Source Quotes",
-    extraction.sourceQuotes,
+    sourceQuotes,
     (item) => `> ${item}`,
   );
   return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function highConfidenceItems(
+  items: ReadonlyArray<ExtractedItem>,
+): ReadonlyArray<string> {
+  return items
+    .filter((item) => item.confidence >= CONFIDENCE_THRESHOLD)
+    .map((item) => item.text);
+}
+
+function lowConfidenceQuestions(input: {
+  readonly path: string;
+  readonly sourceRef: SourceRef;
+  readonly extraction: CaptureExtraction;
+}): ReadonlyArray<Effect> {
+  const groups = [
+    {
+      kind: "task",
+      items: input.extraction.tasks,
+      question: (text: string) =>
+        `Low-confidence task from ${input.path}: "${text}". ` +
+        "Should Dome track this as an open task?",
+    },
+    {
+      kind: "followup",
+      items: input.extraction.followups,
+      question: (text: string) =>
+        `Low-confidence follow-up from ${input.path}: "${text}". ` +
+        "Should Dome track this as a follow-up?",
+    },
+    {
+      kind: "decision",
+      items: input.extraction.decisions,
+      question: (text: string) =>
+        `Low-confidence decision from ${input.path}: "${text}". ` +
+        "Should Dome keep this as a decision?",
+    },
+    {
+      kind: "entity",
+      items: input.extraction.entities,
+      question: (text: string) =>
+        `Low-confidence entity from ${input.path}: "${text}". ` +
+        "Should Dome keep this entity mention?",
+    },
+  ] as const;
+  return Object.freeze(
+    groups.flatMap((group) =>
+      lowConfidenceItems(group.items).map((item) =>
+        lowConfidenceQuestion({
+          path: input.path,
+          sourceRef: input.sourceRef,
+          kind: group.kind,
+          text: item.text,
+          question: group.question(item.text),
+        }),
+      ),
+    ),
+  );
+}
+
+function lowConfidenceItems(
+  items: ReadonlyArray<ExtractedItem>,
+): ReadonlyArray<ExtractedItem> {
+  return items.filter((item) => item.confidence < CONFIDENCE_THRESHOLD);
+}
+
+function lowConfidenceQuestion(input: {
+  readonly path: string;
+  readonly sourceRef: SourceRef;
+  readonly kind: string;
+  readonly text: string;
+  readonly question: string;
+}): Effect {
+  return questionEffect({
+    question: input.question,
+    options: ["track", "ignore"],
+    sourceRefs: [input.sourceRef],
+    idempotencyKey:
+      `dome.intake.low-confidence:${sha256(`${input.path}:${input.kind}:${input.text}`)}`,
+  });
 }
 
 function renderArchive(input: {
@@ -256,4 +386,8 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+}
+
+function sha256(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
 }

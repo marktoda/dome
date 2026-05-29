@@ -213,6 +213,7 @@ processors:
           - "inbox/raw/*.md"
       - kind: model.invoke
         maxDailyCostUsd: 5
+      - kind: question.ask
     execution:
       class: llm
       timeoutMs: 600000

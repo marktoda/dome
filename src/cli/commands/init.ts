@@ -325,6 +325,7 @@ extensions:
         - "inbox/raw/*.md"
       model.invoke:
         maxDailyCostUsd: 5
+      question.ask: true
 
   dome.search:
     enabled: true

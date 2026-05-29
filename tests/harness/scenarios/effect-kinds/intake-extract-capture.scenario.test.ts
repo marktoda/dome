@@ -24,6 +24,7 @@ extensions:
       model.invoke:
         modelAllowlist: ["test-model"]
         maxDailyCostUsd: 1
+      question.ask: true
   dome.daily:
     enabled: true
     grant:
@@ -231,6 +232,90 @@ scenario(
       )
       .get(run.id);
     expect(cost?.cost_usd).toBe(0.2);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake asks before tracking low-confidence capture items",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "question" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async () => ({
+        text: JSON.stringify({
+          title: "Launch follow-up",
+          summary: "Ada needs a staffing note; Chris may need a check-in.",
+          tasks: [
+            { text: "Send Ada the launch staffing note", confidence: 0.95 },
+            { text: "Ask Chris about launch staffing", confidence: 0.45 },
+          ],
+          followups: [
+            { text: "Ask Ben about hiring budget", confidence: 0.92 },
+            { text: "Check whether Dana needs a status note", confidence: 0.5 },
+          ],
+          decisions: [
+            { text: "Keep launch staffing review this week", confidence: 0.93 },
+            { text: "Move all reviews to Friday", confidence: 0.4 },
+          ],
+          entities: [
+            { text: "Ada", confidence: 0.99 },
+            { text: "Project Phoenix", confidence: 0.35 },
+          ],
+          sourceQuotes: ["Ask Ben about hiring budget"],
+        }),
+      }),
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [CAPTURE_PATH]: [
+          "# Capture",
+          "",
+          "Need to send Ada the launch staffing note.",
+          "Ask Ben about hiring budget.",
+          "Maybe Chris or Dana need something for Phoenix?",
+          "",
+        ].join("\n"),
+      },
+      message: "capture uncertain day",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h.expectFile(OUTPUT_PATH).toContain("- [ ] Send Ada the launch staffing note");
+    await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
+    await h.expectFile(OUTPUT_PATH).toNotContain("Ask Chris about launch staffing");
+    await h.expectFile(OUTPUT_PATH).toNotContain("Check whether Dana needs");
+    await h.expectProjection().questions().toHaveCount(4);
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Low-confidence task");
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Ask Chris about launch staffing");
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Project Phoenix");
   },
 );
 

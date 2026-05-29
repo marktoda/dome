@@ -13,7 +13,7 @@ Per-table map of which extension is authorized to write to each table in `<vault
 
 | Database | Table | Writers (extensions) | Schema authority | Capability gate |
 |---|---|---|---|---|
-| `projection.db` | `facts` | `dome.graph` (namespace: `dome.graph`); `dome.intake` (namespaces: `dome.tasks`, `dome.people`); `dome.search` (namespace: `dome.search`); third-party bundles per their `graph.write` grants | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
+| `projection.db` | `facts` | processors with `graph.write` grants; shipped writers are `dome.graph.*` and `dome.daily.task-index`; future `dome.intake` fact namespaces remain planned | [[wiki/specs/projection-store]] §"Tables — facts" | `graph.write:<namespace>` |
 | `projection.db` | `fts_documents` | processors that emit `SearchDocumentEffect` for granted paths; shipped writer is `dome.search.index-text` | [[wiki/specs/projection-store]] §"Tables — fts_documents" | `search.write:<path-glob>` |
 | `projection.db` | `diagnostics` | every processor that emits `DiagnosticEffect` | [[wiki/specs/projection-store]] §"Tables — diagnostics" | (none — every processor may emit) |
 | `projection.db` | `questions` | every processor that emits `QuestionEffect` subject to `question.ask` | [[wiki/specs/projection-store]] §"Tables — questions" | `question.ask` |
