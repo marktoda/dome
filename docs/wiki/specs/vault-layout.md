@@ -151,7 +151,7 @@ extensions:
       dome.markdown.validate-wikilinks:
         grants: { read: ["**/*.md"] }
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
-  dome.daily:    { enabled: true,  grants: { read: ["wiki/**/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"], question.ask: true } }
+  dome.daily:    { enabled: true,  grants: { read: ["wiki/**/*.md"], patch.auto: ["wiki/**/*.md"], graph.write: ["dome.daily.*"], question.ask: true } }
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
   dome.lint:     { enabled: true,  grants: { read: ["**/*.md"] } }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }
@@ -231,11 +231,10 @@ The capability broker enforces ownership. Default rules:
 | `index.md` | planned `dome.index` (via `owns.path`) |
 | `log.md` | planned `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
-| `wiki/dailies/*.md` | `dome.daily` (via `patch.auto`) |
+| `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
 | `wiki/syntheses/intake-*.md` | `dome.intake` (via `patch.auto`, source-backed capture synthesis) |
 | `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
-| `wiki/<type>/**` (general) | open — any processor with `patch.auto: ["wiki/**"]` |
 | `notes/**` | user only — engine never writes here |
 
 Plugin / third-party bundles should not grant themselves `owns.path` on shipped-default reserved paths (`index.md`, `log.md`). The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.

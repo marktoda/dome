@@ -35,6 +35,20 @@ processors:
       - kind: question.ask
     module: processors/task-index.ts
 
+  - id: dome.daily.ambiguous-followup-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.daily.task-index
+        idempotencyKeyPrefix: "dome.daily.ambiguous-followup:"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md"]
+    module: processors/ambiguous-followup-answer.ts
+
   - id: dome.daily.today
     version: 0.1.0
     phase: view

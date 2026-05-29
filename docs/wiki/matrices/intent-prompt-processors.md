@@ -32,7 +32,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Cross-reference new entity mentions" | planned | `dome.links.cross-reference` | garden | none (rule-based, no LLM) | PatchEffect (insert wikilinks) |
 | "Update the index" | planned | `dome.index.update-index` | adoption | none | PatchEffect (rewrite index.md) |
 | "Append run records to log.md" | planned | `dome.log.append-log` | adoption | none | PatchEffect (append log.md row) |
-| "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index` | adoption | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups |
+| "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index`, `dome.daily.ambiguous-followup-answer` | adoption + garden answer | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups, answer-triggered PatchEffect to write accepted prose follow-ups back into markdown |
 | "Show today's action surface" | shipped | `dome.daily.today` | view (command via `dome today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
 | "Lint the wiki for issues" | shipped | `dome.lint.report` | view (command via `dome lint`) | none (projection diagnostics + deterministic adopted-state checks) | ViewEffect (structured lint report) |
 | "Apply a lint finding" | planned | `dome.lint.apply-finding` | view (command) | `assets/extensions/dome.lint/processors/apply-finding.prompt.md` | PatchEffect (the proposed fix) |

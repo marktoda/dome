@@ -482,7 +482,7 @@ extensions:
       read:
         - "wiki/**/*.md"
       patch.auto:
-        - "wiki/dailies/*.md"
+        - "wiki/**/*.md"
       graph.write:
         - "dome.daily.*"
       question.ask: true

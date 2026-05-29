@@ -285,7 +285,7 @@ extensions:
       read:
         - "wiki/**/*.md"
         - "wiki/dailies/*.md"
-      patch.auto: ["wiki/dailies/*.md"]
+      patch.auto: ["wiki/**/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
   dome.health:

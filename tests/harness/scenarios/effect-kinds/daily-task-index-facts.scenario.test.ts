@@ -16,7 +16,7 @@ extensions:
     enabled: true
     grant:
       read: ["wiki/**/*.md"]
-      patch.auto: ["wiki/dailies/*.md"]
+      patch.auto: ["wiki/**/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
 `;
@@ -426,6 +426,144 @@ scenario(
         subjectId: path,
       })
       .toHaveCount(0);
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.daily tracks accepted ambiguous followup answers",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "fact" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "garden" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "answer" },
+      { kind: "route", route: "garden-answer" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": CONFIG,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const path = "wiki/projects/alpha.md";
+    await h.userCommit({
+      files: {
+        [path]: [
+          "---",
+          "type: project",
+          "title: Alpha",
+          "---",
+          "",
+          "# Alpha",
+          "",
+          "We should follow up with Sam about hiring",
+          "",
+        ].join("\n"),
+      },
+      message: "add ambiguous project followup",
+    });
+    const created = await h.tick();
+    expect(created.adopted).toBe(true);
+
+    const questions = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<{
+      readonly id: number;
+      readonly status: string;
+      readonly idempotency_key: string;
+    }>;
+    expect(questions).toHaveLength(1);
+    const question = questions[0];
+    expect(question?.status).toBe("open");
+    expect(
+      question?.idempotency_key.startsWith("dome.daily.ambiguous-followup:"),
+    ).toBe(true);
+    if (question === undefined) return;
+
+    const answer = await h.runCli([
+      "answer",
+      String(question.id),
+      "track",
+      "--json",
+    ]);
+    expect(answer.exitCode).toBe(0);
+    const payload = JSON.parse(answer.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<{ readonly processor_id: string }>;
+        readonly sub_proposals: number;
+      };
+    };
+    expect(payload.handlers.status).toBe("handled");
+    expect(payload.handlers.runs.map((run) => run.processor_id)).toEqual([
+      "dome.daily.ambiguous-followup-answer",
+    ]);
+    expect(payload.handlers.sub_proposals).toBe(1);
+
+    const adopted = await h.refs.adopted();
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+    await h.expectFile(path, { atCommit: adopted }).toContain(
+      "<!-- dome.daily:tracked-followups:start -->",
+    );
+    await h.expectFile(path, { atCommit: adopted }).toContain(
+      "- [ ] #followup Follow up with Sam about hiring",
+    );
+
+    const afterQuestions = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<{
+      readonly id: number;
+      readonly status: string;
+      readonly answer: string | null;
+    }>;
+    expect(afterQuestions).toEqual([
+      expect.objectContaining({
+        id: question.id,
+        status: "answered",
+        answer: "track",
+      }),
+    ]);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: path,
+        objectString: "#followup Follow up with Sam about hiring",
+      })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+        objectString: "#followup Follow up with Sam about hiring",
+      })
+      .toHaveCount(1);
+
+    const rebuild = await h.runCli(["rebuild", "--json"]);
+    expect(rebuild.exitCode).toBe(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+        objectString: "#followup Follow up with Sam about hiring",
+      })
+      .toHaveCount(1);
   },
 );
 

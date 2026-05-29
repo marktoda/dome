@@ -465,7 +465,7 @@ describe("runInit", () => {
         .toEqual(["dome.graph.*"]);
       expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
-        .toEqual(["wiki/dailies/*.md"]);
+        .toEqual(["wiki/**/*.md"]);
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
       expect(refreshed.extensions["dome.intake"]?.enabled).toBe(false);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();

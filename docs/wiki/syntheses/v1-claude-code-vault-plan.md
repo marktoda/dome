@@ -176,8 +176,9 @@ Shipped, but still needs release hardening:
   `dome export-context`; `dome.health` ships failed-outbox retry/abandon,
   quarantined-processor reset, and orphan-run recovery; `dome.daily` ships
   deterministic daily creation, task carry-forward, source-ref-backed
-  task/followup fact indexing across wiki pages, `dome today`, `dome prep`,
-  and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction
+  task/followup fact indexing across wiki pages, answer-triggered tracking for
+  accepted ambiguous follow-ups, `dome today`, `dome prep`, and `dome agenda`;
+  `dome.intake` ships opt-in raw inbox capture extraction
   into generated capture pages, processed archives, low-confidence
   question/answer handling, confidence-carrying `dome.intake.*` fact
   indexing, stale-inbox diagnostics, source-backed capture synthesis pages,
@@ -358,7 +359,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
 | `dome.graph` | link/tag substrate for recall | wikilink and tag facts; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain post-v1 |
-| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
+| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, ask about ambiguous followups, patch accepted answers into markdown, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, source-backed per-capture synthesis, recent-capture rollup synthesis, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer long-horizon synthesis remains |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
 

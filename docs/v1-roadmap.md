@@ -73,7 +73,7 @@ Shipped:
       `dome.graph` (2),
       `dome.search` (3),
       `dome.health` (6),
-      `dome.daily` (6),
+      `dome.daily` (7),
       `dome.lint` (1), and
       `dome.intake` (6).
 - [x] Page-type schema substrate.
@@ -422,9 +422,14 @@ Work:
       daily task observations are enough until a richer task model lands.
 - [x] Implement deterministic followup/todo extraction from daily notes where
       possible beyond explicit checkbox markers.
-- [x] Extend deterministic task/followup extraction to non-daily wiki pages
-      without widening `dome.daily`'s auto-patch authority.
+- [x] Extend deterministic task/followup extraction to non-daily wiki pages;
+      only the answer-triggered ambiguity handler carries wiki-wide patch
+      authority, and it writes accepted follow-ups into an owned generated
+      section.
 - [x] Ask questions for ambiguous writes instead of silently guessing.
+- [x] Handle accepted ambiguous follow-up answers through a first-party
+      answer-triggered processor that patches source markdown, so tracked
+      follow-ups are durable and rebuildable.
 - [x] Add `dome today` once deterministic task/followup data is useful enough
       to render.
 - [x] Add `dome prep` once there is enough planning context to render.
@@ -445,6 +450,8 @@ Acceptance:
 - [x] Daily note TODO/follow-up directive text yields source-ref-backed tasks
       and followups.
 - [x] Ambiguous task extraction asks a question instead of mutating silently.
+- [x] Answering `track` for an ambiguous follow-up patches the source page
+      through a garden sub-Proposal and downstream task/followup facts.
 - [x] Capture text outside daily notes yields source-ref-backed followups.
 - [x] `dome today` renders source-backed daily/task/followup/question data.
 - [x] `dome agenda <person>` renders source-backed matching tasks, followups,
@@ -661,7 +668,7 @@ Required for daily value:
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
 | `dome.health` | v1 shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | v1 shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, `dome prep`, and `dome agenda`; generated intake captures feed the same task index |
+| `dome.daily` | v1 shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions and accepted-answer patching, `dome today`, `dome prep`, and `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | v1 shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, stale-inbox diagnostics, source-backed per-capture synthesis, and source-backed recent-capture rollup; richer long-horizon synthesis remains post-v1 |
 
 Optional or conditional:

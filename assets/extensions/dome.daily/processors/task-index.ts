@@ -1,7 +1,5 @@
 // dome.daily.task-index — project explicit markdown action items into facts.
 
-import { createHash } from "node:crypto";
-
 import {
   factEffect,
   questionEffect,
@@ -17,6 +15,10 @@ import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
 } from "./daily-shared";
+import {
+  AMBIGUOUS_FOLLOWUP_OPTIONS,
+  ambiguousFollowupQuestionKey,
+} from "./ambiguous-followup-shared";
 
 const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 const FOLLOWUP_PREDICATE = "dome.daily.followup";
@@ -82,10 +84,14 @@ const taskIndex: Processor = defineProcessor({
             question:
               `Possible follow-up in ${path}:${ambiguous.line}: ` +
               `"${ambiguous.text}". Should Dome track this as a follow-up?`,
-            options: ["track", "ignore"],
+            options: AMBIGUOUS_FOLLOWUP_OPTIONS,
             sourceRefs: [ctx.sourceRef(path, lineRange(ambiguous.line))],
-            idempotencyKey:
-              `dome.daily.ambiguous-followup:${sha256(`${path}:${ambiguous.line}:${ambiguous.text}`)}`,
+            idempotencyKey: ambiguousFollowupQuestionKey({
+              version: 1,
+              path,
+              line: ambiguous.line,
+              text: ambiguous.text,
+            }),
           }),
         );
       }
@@ -100,8 +106,4 @@ function lineRange(
   line: number,
 ): { readonly startLine: number; readonly endLine: number } {
   return { startLine: line, endLine: line };
-}
-
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
 }
