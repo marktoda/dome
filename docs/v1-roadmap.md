@@ -399,6 +399,7 @@ Work:
       model items as tasks, followups, decisions, or entities.
 - [x] Add answer handling for low-confidence capture questions.
 - [x] Emit richer intake fact namespaces with confidence.
+- [x] Emit stale-inbox diagnostics for lingering unprocessed inbox files.
 - [ ] Implement first synthesis processor only after intake has provenance and
       budget gates.
 
@@ -416,6 +417,8 @@ Acceptance:
 - [x] Generated capture pages carry tracked item confidence in frontmatter,
       and deterministic adoption indexing emits `dome.intake.*` facts that
       survive projection rebuild.
+- [x] Stale files under intake inbox buckets emit `inbox.stale` diagnostics
+      and resolve when the file is removed or refreshed.
 
 ## Milestone 8 - User-Value Views
 
@@ -482,7 +485,7 @@ Required for daily value:
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
-| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, and confidence-carrying `dome.intake.*` fact namespaces shipped; synthesis remains |
+| `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, and stale-inbox diagnostics shipped; synthesis remains |
 
 Optional or conditional:
 

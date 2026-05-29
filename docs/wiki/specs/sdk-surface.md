@@ -240,6 +240,26 @@ processors:
       modelCallTimeoutMs: 180000
     module: processors/extract-capture.ts
 
+  - id: dome.intake.inbox-stale-check
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 * * * *"
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "inbox/**/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/**/*.md"]
+    module: processors/inbox-stale-check.ts
+
   - id: dome.intake.low-confidence-answer
     version: 0.2.0
     phase: garden
@@ -298,6 +318,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer | Compiles raw captures, routes low-confidence items through questions, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].

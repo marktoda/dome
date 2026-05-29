@@ -95,7 +95,7 @@ inbox/
   processed/   # where dome.intake archives successfully-processed captures
 ```
 
-Files in `inbox/<bucket>/` (except `inbox/review/`) are the trigger surface for that bucket's intake processor via `signal:file.created` + a bucket path pattern. The shipped `dome.intake.extract-capture` processor handles `inbox/raw/*.md` and archives processed captures under `inbox/processed/` while writing generated pages under `wiki/generated/intake/`. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — intake files are expected to move out or surface a recoverable diagnostic; lingering-file diagnostics are planned hardening.
+Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's intake processor via `signal:file.created` + a bucket path pattern. The shipped `dome.intake.extract-capture` processor handles `inbox/raw/*.md` and archives processed captures under `inbox/processed/` while writing generated pages under `wiki/generated/intake/`. The shipped `dome.intake.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — intake files are expected to move out or surface a recoverable diagnostic.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
 

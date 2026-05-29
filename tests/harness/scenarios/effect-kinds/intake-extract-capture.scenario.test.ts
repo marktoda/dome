@@ -75,6 +75,12 @@ console.log(JSON.stringify({
 }));
 `;
 
+const OLD_CAPTURE_AUTHOR = {
+  name: "Dome Test",
+  email: "dome-test@example.com",
+  timestamp: Date.parse("2025-12-20T00:00:00.000Z") / 1000,
+};
+
 scenario(
   {
     name: "effect-kinds: dome.intake extracts raw capture into generated markdown and task facts",
@@ -506,6 +512,74 @@ scenario(
         objectString: "Ask Chris about launch staffing",
       })
       .toHaveCount(1);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake warns on stale inbox files",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "capability", capability: "read" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "schedule" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-schedule" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.intake:
+    enabled: true
+    grant:
+      read: ["inbox/**/*.md"]
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "inbox/clip/old.md": "# Old clip\n\nStill here.\n",
+        "inbox/review/old.md": "# Review output\n",
+        "inbox/processed/old.md": "# Processed capture\n",
+      },
+      message: "old inbox files",
+      author: OLD_CAPTURE_AUTHOR,
+      committer: OLD_CAPTURE_AUTHOR,
+    });
+
+    const stale = await h.tick();
+    expect(stale.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "inbox.stale", severity: "warning" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "inbox.stale", severity: "warning" })
+      .toContainMessage("inbox/clip/old.md");
+
+    await h.userCommit({
+      files: {
+        "inbox/clip/old.md": null,
+      },
+      message: "delete stale clip",
+    });
+
+    const resolved = await h.tick();
+    expect(resolved.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "inbox.stale", severity: "warning" })
+      .toHaveCount(0);
   },
 );
 

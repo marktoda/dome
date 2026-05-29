@@ -45,6 +45,26 @@ processors:
       modelCallTimeoutMs: 180000
     module: processors/extract-capture.ts
 
+  - id: dome.intake.inbox-stale-check
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 * * * *"
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "inbox/**/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/**/*.md"]
+    module: processors/inbox-stale-check.ts
+
   - id: dome.intake.low-confidence-answer
     version: 0.2.0
     phase: garden

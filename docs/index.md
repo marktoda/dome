@@ -42,7 +42,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — *(shipped default)* Every processor invocation writes one RunRecord row, regardless of phase or outcome.
 - [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — *(axiom)* `Processor.run(ctx)` returns `Promise<Effect[]>`; no direct mutation surface.
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
-- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default target)* Intake bucket files should move/delete on processing; stale-inbox diagnostics remain planned.
+- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files should move/delete on processing; stale-inbox diagnostics surface lingering files.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by `dome.log`'s append-only adoption processor.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.

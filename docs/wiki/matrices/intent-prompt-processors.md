@@ -15,7 +15,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
-| "Quick-capture a thought" | partially shipped | `dome.intake.extract-capture`, `dome.intake.low-confidence-answer`, `dome.intake.capture-index` | garden + adoption | inline prompt in `assets/extensions/dome.intake/processors/extract-capture.ts` | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), QuestionEffect for low-confidence extracted items, answer-triggered PatchEffect for accepted items, deterministic FactEffect under `dome.intake.*`, downstream FactEffect via `dome.daily.task-index` |
+| "Quick-capture a thought" | partially shipped | `dome.intake.extract-capture`, `dome.intake.low-confidence-answer`, `dome.intake.capture-index`, `dome.intake.inbox-stale-check` | garden + adoption | inline prompt in `assets/extensions/dome.intake/processors/extract-capture.ts` for extraction; none for deterministic indexing/staleness | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), QuestionEffect for low-confidence extracted items, answer-triggered PatchEffect for accepted items, deterministic FactEffect under `dome.intake.*`, DiagnosticEffect for stale inbox files, downstream FactEffect via `dome.daily.task-index` |
 | "Voice-capture a meeting" | planned | `dome.intake.extract-capture` (with voice frontmatter type) | garden | same | same |
 | "Drop a research clip" | planned | `dome.intake.extract-capture` (with research frontmatter type) | garden | same | same |
 | "Add a follow-up to a daily" | planned | `dome.daily.append-followup` | garden | `assets/extensions/dome.daily/processors/append-followup.prompt.md` | PatchEffect (insert into daily's followups section) |
@@ -50,7 +50,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Carry forward unfinished tasks" | shipped | `dome.daily.carry-forward` | garden | signal `file.created` on `wiki/dailies/*` | PatchEffect (copy unfinished tasks from prior daily) |
 | "Create this week's weekly" | planned | `dome.daily.create-weekly` | garden | cron `0 6 * * MON` | PatchEffect (create wiki/weeklies/YYYY-Www.md) |
 | "Auto-lint weekly" | planned | `dome.lint.report` | view (cron) | cron `0 7 * * MON` | ViewEffect (scheduled lint report) |
-| "Inbox staleness check" | planned | `dome.intake.inbox-stale-check` | adoption | per-sync | DiagnosticEffect (warning for files older than threshold) |
+| "Inbox staleness check" | shipped | `dome.intake.inbox-stale-check` | garden | hourly schedule plus inbox path signals | DiagnosticEffect (`inbox.stale` warning for files older than 168 hours) |
 
 ## Why this matrix exists
 
