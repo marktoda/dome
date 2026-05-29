@@ -7,7 +7,7 @@ import {
 } from "../../src/processors/execution-policy";
 
 describe("resolveExecutionPolicy", () => {
-  test("adoption resolves to deterministic 2s default", () => {
+  test("adoption resolves to deterministic 10s default", () => {
     const result = resolveExecutionPolicy({
       phase: "adoption",
       request: undefined,
@@ -17,7 +17,7 @@ describe("resolveExecutionPolicy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.class).toBe("deterministic");
-    expect(result.value.timeoutMs).toBe(2000);
+    expect(result.value.timeoutMs).toBe(10_000);
     expect(result.value.lateEffectBehavior).toBe("discard");
   });
 
@@ -78,7 +78,7 @@ describe("resolveExecutionPolicy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.class).toBe("deterministic");
-    expect(result.value.timeoutMs).toBe(2_000);
+    expect(result.value.timeoutMs).toBe(10_000);
   });
 
   test("adoption deterministic timeout still respects tighter vault cap", () => {

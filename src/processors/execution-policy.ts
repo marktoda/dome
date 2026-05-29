@@ -31,7 +31,7 @@ export const DEFAULT_EXECUTION_POLICY_BY_CLASS: Readonly<
 > = Object.freeze({
   deterministic: Object.freeze({
     class: "deterministic",
-    timeoutMs: 2_000,
+    timeoutMs: 10_000,
     lateEffectBehavior: "discard",
   }),
   interactive: Object.freeze({

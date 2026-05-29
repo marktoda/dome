@@ -31,7 +31,8 @@ export async function runLint(
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
       notFoundMessage:
-        "dome lint: dome.lint is not installed or no lint processor is enabled.",
+        "dome lint: dome.lint is not installed or no lint processor is enabled. " +
+        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
       noStructuredResultMessage:
         "dome lint: lint processor returned no structured result.",
     });

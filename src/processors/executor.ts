@@ -19,7 +19,7 @@ import {
   type ProcessorTimeoutExecutionError,
 } from "./execution-error";
 
-export const MAX_EFFECTS_PER_INVOCATION = 10_000;
+export const MAX_EFFECTS_PER_INVOCATION = 100_000;
 
 export type ProcessorOutputPolicy = {
   readonly requireSourceBackedPatchEffects: boolean;

@@ -112,3 +112,50 @@ scenario(
       .toAllHaveStatus("succeeded");
   },
 );
+
+scenario(
+  {
+    name: "effect-kinds: dome.graph.links handles real-vault link volume",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "fact" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.graph"] },
+    timeoutMs: 30_000,
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const linkCount = 10_025;
+    const body = Array.from(
+      { length: linkCount },
+      (_, i) => `- [[target-${i}]]`,
+    ).join("\n");
+
+    await h.userCommit({
+      files: {
+        "wiki/dense-links.md": `# dense links\n\n${body}\n`,
+      },
+      message: "add dense wikilink page",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.graph.links_to",
+        subjectId: "wiki/dense-links.md",
+      })
+      .toHaveCount(linkCount);
+
+    await h
+      .expectLedger({ processorId: "dome.graph.links" })
+      .toAllHaveStatus("succeeded");
+  },
+);

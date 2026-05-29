@@ -43,8 +43,10 @@
 //   - `git init` is already idempotent.
 //   - Directory creation uses `mkdir({recursive: true})`.
 //   - `config.yaml`: skip if exists, unless `--refresh-config` is set. That
-//     opt-in path fills missing first-party default grant keys for already
-//     enabled first-party bundles without changing existing grant values.
+//     opt-in path adds missing first-party default bundle stanzas and fills
+//     missing default grant keys for enabled first-party bundles without
+//     changing existing grant values or re-enabling explicitly disabled
+//     bundles.
 //   - `.gitignore`: skip if exists.
 //   - `AGENTS.md`: skip if exists, unless `--refresh-instructions` is set.
 //     The refresh path adds the managed user-prose delimiter if an old
@@ -133,7 +135,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
 
     // 4. Write `.dome/config.yaml` (first-write-only by default). Existing
     //    vaults may explicitly opt into reconciling missing first-party
-    //    default grant keys with `--refresh-config`.
+    //    default bundle stanzas and grant keys with `--refresh-config`.
     const configPath = join(vaultPath, ".dome", "config.yaml");
     const configOutcome = await ensureConfigYaml({
       path: configPath,
@@ -251,7 +253,7 @@ async function ensureConfigYaml(opts: {
     throw new Error("internal default config template is not a YAML mapping");
   }
 
-  const changed = refreshEnabledDefaultGrants(root, defaults);
+  const changed = refreshFirstPartyDefaultConfig(root, defaults);
   if (!changed) return "skipped (already present)";
   await writeFile(opts.path, stringifyYaml(root), "utf8");
   return "updated";
@@ -302,7 +304,7 @@ function hasManagedUserProseDelimiters(body: string): boolean {
   return body.includes(USER_PROSE_BEGIN) && body.includes(USER_PROSE_END);
 }
 
-function refreshEnabledDefaultGrants(
+function refreshFirstPartyDefaultConfig(
   root: Record<string, unknown>,
   defaults: Record<string, unknown>,
 ): boolean {
@@ -311,10 +313,17 @@ function refreshEnabledDefaultGrants(
   if (extensions === null || defaultExtensions === null) return false;
 
   let changed = false;
-  for (const extensionId of Object.keys(extensions).sort()) {
-    const extension = recordFromYaml(extensions[extensionId]);
+  for (const extensionId of Object.keys(defaultExtensions).sort()) {
     const defaultExtension = recordFromYaml(defaultExtensions[extensionId]);
-    if (extension === null || defaultExtension === null) continue;
+    if (defaultExtension === null) continue;
+    if (!hasOwn(extensions, extensionId)) {
+      extensions[extensionId] = cloneYamlValue(defaultExtension);
+      changed = true;
+      continue;
+    }
+
+    const extension = recordFromYaml(extensions[extensionId]);
+    if (extension === null) continue;
     if (extension.enabled !== true) continue;
 
     const defaultGrant = grantRecord(defaultExtension);

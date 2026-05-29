@@ -15,7 +15,10 @@ import {
   modelInvokeForProcessor,
   type ModelProvider,
 } from "../../src/engine/model-invoke";
-import { executeProcessor } from "../../src/processors/executor";
+import {
+  MAX_EFFECTS_PER_INVOCATION,
+  executeProcessor,
+} from "../../src/processors/executor";
 
 const RUN_ID = "run_test_executor" as RunId;
 
@@ -509,7 +512,7 @@ describe("executeProcessor", () => {
   test("huge output array length fails invalid-output before iteration", async () => {
     const hostileOutput = new Proxy([validEffect()] as Array<unknown>, {
       get(target, prop, receiver) {
-        if (prop === "length") return 10_001;
+        if (prop === "length") return MAX_EFFECTS_PER_INVOCATION + 1;
         return Reflect.get(target, prop, receiver);
       },
     });

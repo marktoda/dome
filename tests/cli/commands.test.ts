@@ -391,7 +391,7 @@ describe("runInit", () => {
     }
   });
 
-  test("--refresh-config fills missing first-party default grant keys", async () => {
+  test("--refresh-config adds missing first-party bundles and fills default grant keys", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-"));
     try {
       await mkdir(join(target, ".dome"), { recursive: true });
@@ -411,6 +411,8 @@ describe("runInit", () => {
           "    grants:\n" +
           "      read:\n" +
           "        - \"wiki/**/*.md\"\n" +
+          "  dome.health:\n" +
+          "    enabled: false\n" +
           "  custom.local:\n" +
           "    enabled: true\n" +
           "engine:\n" +
@@ -421,6 +423,7 @@ describe("runInit", () => {
       expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
       const refreshed = parseYaml(await readFile(configPath, "utf8")) as {
         readonly extensions: Record<string, {
+          readonly enabled?: boolean;
           readonly grant?: Record<string, unknown>;
           readonly grants?: Record<string, unknown>;
         }>;
@@ -442,6 +445,13 @@ describe("runInit", () => {
       ]);
       expect(refreshed.extensions["dome.search"]?.grants?.["search.write"])
         .toEqual(["**/*.md"]);
+      expect(refreshed.extensions["dome.graph"]?.grant?.["graph.write"])
+        .toEqual(["dome.graph.*"]);
+      expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
+        .toEqual(["wiki/dailies/*.md"]);
+      expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
+      expect(refreshed.extensions["dome.intake"]?.enabled).toBe(false);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);
 

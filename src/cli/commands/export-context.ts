@@ -39,7 +39,8 @@ export async function runExportContext(
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
       notFoundMessage:
-        "dome export-context: dome.search is not installed or no export-context processor is enabled.",
+        "dome export-context: dome.search is not installed or no export-context processor is enabled. " +
+        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
       noStructuredResultMessage:
         "dome export-context: processor returned no structured result.",
     });

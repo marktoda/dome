@@ -79,7 +79,7 @@ Timeout defaults by execution class:
 
 | Class | Default timeout | Model-call timeout |
 |---|---:|---:|
-| `deterministic` | 2s | n/a |
+| `deterministic` | 10s | n/a |
 | `interactive` | 30s | n/a |
 | `background` | 120s | n/a |
 | `llm` | 600s | 180s |
@@ -126,7 +126,8 @@ The executor boundary validates returned values before routing:
 2. Each array element must match one of the eleven Effect schemas in [[wiki/specs/effects]].
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
 4. Runtime output policy is checked before routing. Today that policy requires non-adoption processors with an effective `model.invoke` grant to include at least one SourceRef on every PatchEffect.
-5. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
+5. A bounded runaway guard rejects a single invocation that returns more than 100,000 effects. This protects the engine from accidental unbounded output while leaving deterministic indexers enough room for real-vault scale.
+6. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
 
 Validation failure returns `status: "failed"` with `code: "processor.invalid-output"` and emits a diagnostic naming the offending processor and effect index. `processor.invalid-output` is executor-created from returned output; a processor-thrown object that happens to carry this code is still classified as `processor.threw`. No effects from that executor result are routed. This all-or-nothing rule prevents partial application of a processor that returned a mixed valid/invalid effect list.
 

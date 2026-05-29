@@ -155,8 +155,9 @@ Work:
       `.dome/state/`.
 - [x] Preserve user prose when re-running init.
 - [x] Add explicit `dome init --refresh-config` recovery for old first-party
-      configs with missing default grant keys, without clobbering custom
-      grant values or enabling missing bundles.
+      configs with missing default bundle stanzas or missing default grant
+      keys, without clobbering custom grant values or re-enabling explicitly
+      disabled bundles.
 - [x] Add explicit `dome init --refresh-instructions` recovery for old
       AGENTS/CLAUDE orientation shims, preserving existing vault guidance.
 

@@ -116,11 +116,12 @@ The shipped initialization steps:
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
    activation + engine settings). First-write-only by default.
    `--refresh-config` is an explicit maintenance path for old or hand-edited
-   first-party configs: it fills missing first-party default grant keys for
-   already enabled first-party bundles while preserving existing grant values,
-   disabled bundles, missing bundles, and third-party bundle config. When it
-   changes the file, it rewrites the YAML into normalized form so stale comments
-   from older generated configs do not contradict the active grants.
+   first-party configs: it adds missing first-party default bundle stanzas and
+   fills missing first-party default grant keys for already enabled first-party
+   bundles while preserving existing grant values, explicitly disabled bundles,
+   and third-party bundle config. When it changes the file, it rewrites the YAML
+   into normalized form so stale comments from older generated configs do not
+   contradict the active grants.
 4. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 5. Writes `<vault>/AGENTS.md` from the shipped orientation template

@@ -34,7 +34,8 @@ export async function runToday(
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
       notFoundMessage:
-        "dome today: dome.daily is not installed or no today processor is enabled.",
+        "dome today: dome.daily is not installed or no today processor is enabled. " +
+        "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.",
       noStructuredResultMessage:
         "dome today: today processor returned no structured result.",
     });
