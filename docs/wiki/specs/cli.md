@@ -92,7 +92,7 @@ the processor's own view payloads without imposing a first-party schema.
 
 ## Per-command specs
 
-### `dome init [path]`
+### `dome init [path] [--refresh-config]`
 
 Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
 hotfix: `dome init` no longer copies the shipped first-party bundles
@@ -114,7 +114,13 @@ The shipped initialization steps:
    created — the shipped bundles live with the SDK; users wanting
    vault-local third-party bundles create the directory themselves.)
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
-   activation + engine settings). First-write-only.
+   activation + engine settings). First-write-only by default.
+   `--refresh-config` is an explicit maintenance path for old or hand-edited
+   first-party configs: it fills missing first-party default grant keys for
+   already enabled first-party bundles while preserving existing grant values,
+   disabled bundles, missing bundles, and third-party bundle config. When it
+   changes the file, it rewrites the YAML into normalized form so stale comments
+   from older generated configs do not contradict the active grants.
 4. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 5. Writes `<vault>/AGENTS.md` from the shipped orientation template

@@ -6,7 +6,7 @@
 
 import { expect } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,6 +78,53 @@ scenario(
       expect(payload.status === "adopted" || payload.status === "in-sync").toBe(
         true,
       );
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome init refreshes stale first-party grants",
+    tags: [{ kind: "group", group: "cli-surface" }],
+  },
+  async () => {
+    const target = mkdtempSync(join(tmpdir(), "dome-init-refresh-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      await writeFile(
+        join(target, ".dome", "config.yaml"),
+        "extensions:\n" +
+          "  dome.lint:\n" +
+          "    enabled: true\n" +
+          "  dome.markdown:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          "        - \"**/*.md\"\n",
+        "utf8",
+      );
+
+      const init = await runCliCaptured(["init", target, "--refresh-config"]);
+      expect(init.exitCode).toBe(0);
+      expect(init.stderr).toBe("");
+      expect(init.stdout).toContain(".dome/config.yaml:       updated");
+
+      const doctor = await runCliCaptured([
+        "doctor",
+        "--vault",
+        target,
+        "--json",
+      ]);
+      expect(doctor.exitCode).toBe(0);
+      expect(doctor.stderr).toBe("");
+      const report = JSON.parse(doctor.stdout) as {
+        readonly status: string;
+        readonly summary: { readonly capabilityGrantGaps: number };
+      };
+      expect(report.status).toBe("ok");
+      expect(report.summary.capabilityGrantGaps).toBe(0);
     } finally {
       await rm(target, { recursive: true, force: true });
     }

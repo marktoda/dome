@@ -154,12 +154,17 @@ Work:
       commit meaningful changes, use `serve`/`sync`, inspect health, avoid
       `.dome/state/`.
 - [x] Preserve user prose when re-running init.
+- [x] Add explicit `dome init --refresh-config` recovery for old first-party
+      configs with missing default grant keys, without clobbering custom
+      grant values or enabling missing bundles.
 
 Acceptance:
 
 - [x] E2E harness scenario for fresh init, generated files, git state, and
       first sync.
 - [x] CLI tests assert generated `AGENTS.md` / `CLAUDE.md` content.
+- [x] E2E harness scenario for refreshing stale first-party grant keys and
+      clearing doctor grant-gap findings.
 - [ ] Release-hardening smoke against `docs/` or `~/vaults/work` where safe.
 
 ## Milestone 2 - Compiler Host Spine

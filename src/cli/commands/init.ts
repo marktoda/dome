@@ -42,7 +42,9 @@
 // a no-op):
 //   - `git init` is already idempotent.
 //   - Directory creation uses `mkdir({recursive: true})`.
-//   - `config.yaml`: skip if exists.
+//   - `config.yaml`: skip if exists, unless `--refresh-config` is set. That
+//     opt-in path fills missing first-party default grant keys for already
+//     enabled first-party bundles without changing existing grant values.
 //   - `.gitignore`: skip if exists.
 //   - `AGENTS.md`: skip if exists. (Per
 //     [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]], the file has a
@@ -60,9 +62,11 @@
 //   - 64 (EX_USAGE) if the `path` arg is malformed (unused in v1.0 — any
 //     non-empty string is accepted; tracked here for the future spec).
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 
@@ -70,13 +74,14 @@ import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 
 export type RunInitOptions = {
   readonly path?: string | undefined;
+  readonly refreshConfig?: boolean | undefined;
 };
 
 /**
  * One-line audit trail of what `runInit` did (or skipped) for each step.
  * Module-private; the CLI prints these as a small block via `printSummary`.
  */
-type StepOutcome = "created" | "skipped (already present)";
+type StepOutcome = "created" | "updated" | "skipped (already present)";
 
 type InitSummary = {
   readonly vaultPath: string;
@@ -127,9 +132,14 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     const wikiOutcome = await ensureDir(wikiDir);
     const stateOutcome = await ensureDir(stateDir);
 
-    // 4. Write `.dome/config.yaml` (first-write-only).
+    // 4. Write `.dome/config.yaml` (first-write-only by default). Existing
+    //    vaults may explicitly opt into reconciling missing first-party
+    //    default grant keys with `--refresh-config`.
     const configPath = join(vaultPath, ".dome", "config.yaml");
-    const configOutcome = await writeIfMissing(configPath, DEFAULT_CONFIG_YAML);
+    const configOutcome = await ensureConfigYaml({
+      path: configPath,
+      refresh: options.refreshConfig === true,
+    });
 
     // 5. Write `.gitignore` so `.dome/state/` (derived operational
     //    state — sqlite databases, marker files) is never committed.
@@ -214,6 +224,94 @@ async function writeIfMissing(path: string, content: string): Promise<StepOutcom
   if (existsSync(path)) return "skipped (already present)";
   await writeFile(path, content, "utf8");
   return "created";
+}
+
+async function ensureConfigYaml(opts: {
+  readonly path: string;
+  readonly refresh: boolean;
+}): Promise<StepOutcome> {
+  if (!existsSync(opts.path)) {
+    await writeFile(opts.path, DEFAULT_CONFIG_YAML, "utf8");
+    return "created";
+  }
+  if (!opts.refresh) return "skipped (already present)";
+
+  const body = await readFile(opts.path, "utf8");
+  const root = recordFromYaml(parseYaml(body));
+  if (root === null) {
+    throw new Error(".dome/config.yaml must be a YAML mapping");
+  }
+  const defaults = recordFromYaml(parseYaml(DEFAULT_CONFIG_YAML));
+  if (defaults === null) {
+    throw new Error("internal default config template is not a YAML mapping");
+  }
+
+  const changed = refreshEnabledDefaultGrants(root, defaults);
+  if (!changed) return "skipped (already present)";
+  await writeFile(opts.path, stringifyYaml(root), "utf8");
+  return "updated";
+}
+
+function refreshEnabledDefaultGrants(
+  root: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): boolean {
+  const extensions = recordFromYaml(root.extensions);
+  const defaultExtensions = recordFromYaml(defaults.extensions);
+  if (extensions === null || defaultExtensions === null) return false;
+
+  let changed = false;
+  for (const extensionId of Object.keys(extensions).sort()) {
+    const extension = recordFromYaml(extensions[extensionId]);
+    const defaultExtension = recordFromYaml(defaultExtensions[extensionId]);
+    if (extension === null || defaultExtension === null) continue;
+    if (extension.enabled !== true) continue;
+
+    const defaultGrant = grantRecord(defaultExtension);
+    if (defaultGrant === null) continue;
+    const grantKey = grantKeyFor(extension);
+    const grant = grantRecord(extension) ?? {};
+    if (!hasOwn(extension, grantKey)) {
+      extension[grantKey] = grant;
+      changed = true;
+    }
+
+    for (const key of Object.keys(defaultGrant).sort()) {
+      if (hasOwn(grant, key)) continue;
+      grant[key] = cloneYamlValue(defaultGrant[key]);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function grantKeyFor(extension: Record<string, unknown>): "grant" | "grants" {
+  return hasOwn(extension, "grants") && !hasOwn(extension, "grant")
+    ? "grants"
+    : "grant";
+}
+
+function grantRecord(
+  extension: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const raw = hasOwn(extension, "grant") ? extension.grant : extension.grants;
+  return recordFromYaml(raw);
+}
+
+function cloneYamlValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
+function recordFromYaml(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 /**

@@ -79,8 +79,17 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("init")
     .description("Initialize a vault.")
     .argument("[path]", "Vault path (defaults to current directory).")
-    .action(async (path: string | undefined) => {
-      setExitCode(await runInit({ path }));
+    .option(
+      "--refresh-config",
+      "Fill missing first-party default grant keys in an existing config.",
+    )
+    .action(async (path: string | undefined, options: InitCliOptions) => {
+      setExitCode(
+        await runInit({
+          path,
+          refreshConfig: options.refreshConfig,
+        }),
+      );
     });
 
   program
@@ -409,6 +418,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   return program;
 }
+
+type InitCliOptions = {
+  readonly refreshConfig?: boolean;
+};
 
 type InspectCliOptions = {
   readonly limit?: number;

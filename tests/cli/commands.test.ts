@@ -24,6 +24,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { parse as parseYaml } from "yaml";
+
 import { runInit } from "../../src/cli/commands/init";
 import { runAnswer } from "../../src/cli/commands/answer";
 import { runDoctor } from "../../src/cli/commands/doctor";
@@ -384,6 +386,68 @@ describe("runInit", () => {
       expect(secondClaude).toBe(mutatedClaude);
       expect(secondConfig).toBe(firstConfig);
       expect(secondHead).toBe(firstHead);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-config fills missing first-party default grant keys", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(
+        configPath,
+        "extensions:\n" +
+          "  dome.lint:\n" +
+          "    enabled: true\n" +
+          "  dome.markdown:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          "        - \"notes/**/*.md\"\n" +
+          "  dome.search:\n" +
+          "    enabled: true\n" +
+          "    grants:\n" +
+          "      read:\n" +
+          "        - \"wiki/**/*.md\"\n" +
+          "  custom.local:\n" +
+          "    enabled: true\n" +
+          "engine:\n" +
+          "  max_iterations: 25\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      const refreshed = parseYaml(await readFile(configPath, "utf8")) as {
+        readonly extensions: Record<string, {
+          readonly grant?: Record<string, unknown>;
+          readonly grants?: Record<string, unknown>;
+        }>;
+        readonly engine: { readonly max_iterations: number };
+      };
+
+      expect(refreshed.extensions["dome.lint"]?.grant?.read).toEqual([
+        "**/*.md",
+      ]);
+      expect(refreshed.extensions["dome.markdown"]?.grant?.read).toEqual([
+        "notes/**/*.md",
+      ]);
+      expect(refreshed.extensions["dome.markdown"]?.grant?.["patch.auto"])
+        .toEqual(["**/*.md"]);
+      expect(refreshed.extensions["dome.markdown"]?.grant?.["question.ask"])
+        .toBe(true);
+      expect(refreshed.extensions["dome.search"]?.grants?.read).toEqual([
+        "wiki/**/*.md",
+      ]);
+      expect(refreshed.extensions["dome.search"]?.grants?.["search.write"])
+        .toEqual(["**/*.md"]);
+      expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
+      expect(refreshed.engine.max_iterations).toBe(25);
+
+      const firstRefresh = await readFile(configPath, "utf8");
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      expect(await readFile(configPath, "utf8")).toBe(firstRefresh);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
