@@ -645,6 +645,9 @@ Work:
 - [x] Tighten planned `owns.region` support so v1 manifests/configs reject
       it and broker-level direct calls deny it until parser-backed region
       enforcement exists.
+- [x] Split command-triggered view execution into a reusable open-runtime
+      boundary so CLI, MCP, HTTP, or embedded surfaces can share adopted-ref
+      resolution, projection freshness, view sinks, and command dispatch.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

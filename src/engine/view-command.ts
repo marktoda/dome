@@ -12,7 +12,7 @@ import { commitOid, type CommitOid } from "../core/source-ref";
 import type { ApplyEffectSinks } from "./apply-effect";
 import { runViewCommand, type RunCommandResult } from "./commands";
 import { rebuildProjectionIfStale } from "./compiler-host";
-import { openVaultRuntime } from "./vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "./vault-runtime";
 import { buildSqliteSinks } from "../projections/sinks";
 
 export type RuntimeViewCommandOptions = {
@@ -39,23 +39,26 @@ export type RuntimeViewCommandResult =
       readonly capturedViews: ReadonlyArray<ViewEffect>;
     };
 
+export type OpenRuntimeViewCommandOptions = {
+  readonly runtime: VaultRuntime;
+  readonly commandName: string;
+  readonly commandArgs?: unknown;
+  /**
+   * Optional adopted cursor for callers that already resolved it. When omitted,
+   * the helper reads the current branch/adopted ref from the runtime's vault.
+   */
+  readonly adopted?: CommitOid;
+  readonly branch?: string;
+};
+
+export type OpenRuntimeViewCommandResult = Exclude<
+  RuntimeViewCommandResult,
+  { readonly kind: "runtime-open-failed" }
+>;
+
 export async function runRuntimeViewCommand(
   opts: RuntimeViewCommandOptions,
 ): Promise<RuntimeViewCommandResult> {
-  const branch = await getCurrentBranch(opts.vaultPath);
-  if (branch === null) {
-    return Object.freeze({ kind: "detached-head" as const });
-  }
-
-  const adoptedSha = await getAdoptedRef(opts.vaultPath, branch);
-  if (adoptedSha === null) {
-    return Object.freeze({
-      kind: "missing-adopted-ref" as const,
-      branch,
-    });
-  }
-  const adopted = commitOid(adoptedSha);
-
   const runtimeResult = await openVaultRuntime({
     vaultPath: opts.vaultPath,
     bundlesRoot: opts.bundlesRoot,
@@ -69,51 +72,98 @@ export async function runRuntimeViewCommand(
 
   const runtime = runtimeResult.value;
   try {
-    await rebuildProjectionIfStale({
+    return await runViewCommandWithRuntime({
       runtime,
-      adopted,
-      branch,
-    });
-
-    const capturedViews: ViewEffect[] = [];
-    const captureView: ApplyEffectSinks["captureView"] = async ({ effect }) => {
-      capturedViews.push(effect);
-    };
-    const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
-    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-      async () => undefined;
-    const recoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
-    const sinks = buildSqliteSinks({
-      projectionDb: runtime.projectionDb,
-      outboxDb: runtime.outboxDb,
-      adoptedCommit: adopted,
-      captureView,
-      applyPatch,
-      externalHandlers: runtime.externalHandlers,
-      recoverQuarantine,
-      recoverRun,
-    });
-
-    const result = await runViewCommand({
-      vault: {
-        path: opts.vaultPath,
-        config: { git: { auto_commit_workflows: false } },
-      },
-      adopted,
       commandName: opts.commandName,
       commandArgs: opts.commandArgs ?? null,
-      viewRunner: runtime.processorRuntime.viewRunner,
-      sinks,
-      ledger: runtime.ledgerDb,
-    });
-
-    return Object.freeze({
-      kind: "ok" as const,
-      adopted,
-      result,
-      capturedViews: Object.freeze([...capturedViews]),
     });
   } finally {
     await runtime.close();
   }
+}
+
+export async function runViewCommandWithRuntime(
+  opts: OpenRuntimeViewCommandOptions,
+): Promise<OpenRuntimeViewCommandResult> {
+  const branch = opts.branch ?? await getCurrentBranch(opts.runtime.path);
+  if (branch === null) {
+    return Object.freeze({ kind: "detached-head" as const });
+  }
+
+  const adopted = opts.adopted ?? await adoptedForBranch({
+    vaultPath: opts.runtime.path,
+    branch,
+  });
+  if (adopted === null) {
+    return Object.freeze({
+      kind: "missing-adopted-ref" as const,
+      branch,
+    });
+  }
+
+  await rebuildProjectionIfStale({
+    runtime: opts.runtime,
+    adopted,
+    branch,
+  });
+
+  const capturedViews: ViewEffect[] = [];
+  const sinks = buildViewCommandSinks({
+    runtime: opts.runtime,
+    adopted,
+    capturedViews,
+  });
+
+  const result = await runViewCommand({
+    vault: {
+      path: opts.runtime.path,
+      config: opts.runtime.config,
+    },
+    adopted,
+    commandName: opts.commandName,
+    commandArgs: opts.commandArgs ?? null,
+    viewRunner: opts.runtime.processorRuntime.viewRunner,
+    sinks,
+    ledger: opts.runtime.ledgerDb,
+  });
+
+  return Object.freeze({
+    kind: "ok" as const,
+    adopted,
+    result,
+    capturedViews: Object.freeze([...capturedViews]),
+  });
+}
+
+async function adoptedForBranch(opts: {
+  readonly vaultPath: string;
+  readonly branch: string;
+}): Promise<CommitOid | null> {
+  const adoptedSha = await getAdoptedRef(opts.vaultPath, opts.branch);
+  return adoptedSha === null ? null : commitOid(adoptedSha);
+}
+
+function buildViewCommandSinks(opts: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly capturedViews: ViewEffect[];
+}): ApplyEffectSinks {
+  const captureView: ApplyEffectSinks["captureView"] = async ({ effect }) => {
+    opts.capturedViews.push(effect);
+  };
+  const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
+  const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
+    async () => undefined;
+  const recoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
+
+  return buildSqliteSinks({
+    projectionDb: opts.runtime.projectionDb,
+    outboxDb: opts.runtime.outboxDb,
+    adoptedCommit: opts.adopted,
+    captureView,
+    applyPatch,
+    externalHandlers: opts.runtime.externalHandlers,
+    recoverQuarantine,
+    recoverRun,
+  });
 }
