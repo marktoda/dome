@@ -63,6 +63,7 @@ beforeEach(async () => {
     path: projectionPath,
     extensionSet: [],
     processorVersions: [],
+    capabilityPolicyHash: "test-policy",
   });
   if (!p.ok) throw new Error(`openProjectionDb failed: ${JSON.stringify(p.error)}`);
   projectionDb = p.value.db;

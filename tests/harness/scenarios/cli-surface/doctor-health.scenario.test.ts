@@ -93,9 +93,10 @@ scenario(
 
     h.projection.raw
       .query(
-        "UPDATE projection_meta SET extension_set_hash = ?, processor_versions_hash = ?",
+        "UPDATE projection_meta SET extension_set_hash = ?, "
+          + "processor_versions_hash = ?, capability_policy_hash = ?",
       )
-      .run("stale-extension-set", "stale-processor-versions");
+      .run("stale-extension-set", "stale-processor-versions", "stale-policy");
     await writeFile(join(h.vaultPath, ".dome", "config.yaml"), "extensions: {}\n");
     await writeFile(
       join(h.vaultPath, "AGENTS.md"),

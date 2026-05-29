@@ -1,0 +1,6 @@
+# Dome — derived operational state. Rebuildable from markdown + git.
+.dome/state/
+
+# OS metadata
+.DS_Store
+Thumbs.db

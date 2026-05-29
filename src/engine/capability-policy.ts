@@ -10,6 +10,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 import { parse as parseYaml } from "yaml";
 
@@ -44,6 +45,24 @@ export type CommandModelProviderConfig = {
   readonly kind: "command";
   readonly command: ReadonlyArray<string>;
 };
+
+export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
+  const extensionIds = [...policy.enabledExtensionIds].sort();
+  const extensionGrants = extensionIds.map((extensionId) => {
+    const grants = [...policy.grantsForExtension(extensionId)]
+      .map(stableJsonStringify)
+      .sort()
+      .map((serialized) => JSON.parse(serialized) as unknown);
+    return { extensionId, grants };
+  });
+  return sha256(
+    stableJsonStringify({
+      foundConfig: policy.foundConfig,
+      runtime: policy.runtime,
+      extensions: extensionGrants,
+    }),
+  );
+}
 
 export async function loadCapabilityPolicy(
   vaultPath: string,
@@ -148,6 +167,28 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
     grantsForExtension: () => Object.freeze([]),
   });
 }
+
+function stableJsonStringify(value: unknown): string {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stableJsonValue);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    out[key] = stableJsonValue(record[key]);
+  }
+  return out;
+}
+
+const sha256 = (s: string): string =>
+  createHash("sha256").update(s).digest("hex");
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   engine: Object.freeze({

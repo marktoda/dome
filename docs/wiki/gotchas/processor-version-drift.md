@@ -18,7 +18,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 **Structural mitigation:** **Auto-rebuild projections from adopted state on cache-key drift.**
 
-The projection store's three-part cache key per [[wiki/specs/projection-store]] §"Cache key" includes `processorVersionsHash`. On `openVault`:
+The projection store's cache key per [[wiki/specs/projection-store]] §"Cache key" includes `processorVersionsHash` alongside adopted commit, extension set, and capability policy hashes. On `openVault`:
 
 1. The engine computes the current `processorVersionsHash` from `Object.entries(loadedProcessors).map(p => `${p.id}:${p.version}`).sort()`.
 2. Compares to `projection_meta.processor_versions_hash` in the existing `projection.db`.

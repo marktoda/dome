@@ -73,6 +73,7 @@ async function openFresh(): Promise<ProjectionDb> {
     path,
     extensionSet: [],
     processorVersions: [],
+    capabilityPolicyHash: "test-policy",
   });
   if (!r.ok) throw new Error(`openProjectionDb failed: ${JSON.stringify(r.error)}`);
   return r.value.db;

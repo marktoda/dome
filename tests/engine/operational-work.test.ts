@@ -31,6 +31,7 @@ describe("runOperationalWork", () => {
       path: join(root, "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     if (!projection.ok) {
       throw new Error(`projection open failed: ${projection.error.kind}`);

@@ -1,7 +1,7 @@
 // scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test.ts
 //
 // Projection cache-key drift must not leave stale or missing projection
-// rows behind. When the loaded processor-version hash no longer matches
+// rows behind. When any loaded runtime cache-key hash no longer matches
 // `projection_meta`, `dome sync` rebuilds projection state from the adopted
 // commit even when HEAD is already in sync.
 
@@ -41,7 +41,8 @@ scenario(
       .toHaveCount(1);
 
     h.projection.raw.run(
-      "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",
+      "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash', "
+        + "capability_policy_hash = 'stale-policy-hash'",
     );
     h.projection.raw.run("DELETE FROM facts");
     await h
@@ -60,11 +61,16 @@ scenario(
       .toHaveCount(1);
 
     const meta = h.projection.raw
-      .query<{ processor_versions_hash: string | null }, []>(
-        "SELECT processor_versions_hash FROM projection_meta",
+      .query<{
+        processor_versions_hash: string | null;
+        capability_policy_hash: string | null;
+      }, []>(
+        "SELECT processor_versions_hash, capability_policy_hash FROM projection_meta",
       )
       .get();
     expect(meta?.processor_versions_hash).not.toBe("stale-version-hash");
     expect(typeof meta?.processor_versions_hash).toBe("string");
+    expect(meta?.capability_policy_hash).not.toBe("stale-policy-hash");
+    expect(typeof meta?.capability_policy_hash).toBe("string");
   },
 );

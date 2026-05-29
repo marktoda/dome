@@ -84,6 +84,7 @@ export async function runDoctor(
       executionState: runtime.processorRuntime.executionState,
       extensions: runtime.extensions,
       processorVersions: runtime.processorVersions,
+      capabilityPolicyHash: runtime.capabilityPolicyHash,
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {

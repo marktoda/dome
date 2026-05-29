@@ -448,6 +448,7 @@ describe("runInit", () => {
             { id: "dome.lint.report", version: "0.1.0" },
             { id: "dome.markdown.validate-wikilinks", version: "0.1.0" },
           ],
+          capabilityPolicyHash: "test-policy",
         });
         expect(projectionResult.ok).toBe(true);
         if (!projectionResult.ok) return;
@@ -516,6 +517,7 @@ describe("runInspect", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     expect(projection.ok).toBe(true);
     if (!projection.ok) return;
@@ -643,6 +645,7 @@ describe("runAnswer", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     expect(projection.ok).toBe(true);
     if (!projection.ok) return;
@@ -675,6 +678,7 @@ describe("runAnswer", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     expect(after.ok).toBe(true);
     if (!after.ok) return;
@@ -695,6 +699,7 @@ describe("runAnswer", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     expect(projection.ok).toBe(true);
     if (!projection.ok) return;
@@ -725,6 +730,7 @@ describe("runAnswer", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     expect(after.ok).toBe(true);
     if (!after.ok) return;
@@ -984,6 +990,7 @@ describe("runStatus", () => {
       path: join(f.vaultPath, ".dome", "state", "projection.db"),
       extensionSet: [],
       processorVersions: [],
+      capabilityPolicyHash: "test-policy",
     });
     if (!projection.ok) {
       throw new Error(`projection open failed: ${projection.error.kind}`);

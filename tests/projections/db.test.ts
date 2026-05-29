@@ -29,6 +29,8 @@ const EMPTY_EXT: ReadonlyArray<{ readonly name: string; readonly version: string
   [];
 const EMPTY_PROCS: ReadonlyArray<{ readonly id: string; readonly version: string }> =
   [];
+const POLICY_A = "policy-a";
+const POLICY_B = "policy-b";
 
 describe("openProjectionDb", () => {
   let root: string;
@@ -57,6 +59,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: EMPTY_EXT,
       processorVersions: EMPTY_PROCS,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -69,6 +72,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: EMPTY_EXT,
       processorVersions: EMPTY_PROCS,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -93,6 +97,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
@@ -104,6 +109,7 @@ describe("openProjectionDb", () => {
       adoptedCommit: commitOid("abc1230000000000000000000000000000000000"),
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
       builtAt: new Date("2026-05-28T00:00:00.000Z"),
     });
     firstResult.db.close();
@@ -113,6 +119,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(second.ok).toBe(true);
     if (!second.ok) return;
@@ -130,6 +137,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -142,12 +150,14 @@ describe("openProjectionDb", () => {
           adopted_commit: string | null;
           extension_set_hash: string | null;
           processor_versions_hash: string | null;
+          capability_policy_hash: string | null;
           built_at: string | null;
         },
         []
       >(
         "SELECT schema_hash, adopted_commit, extension_set_hash, "
-          + "processor_versions_hash, built_at FROM projection_meta",
+          + "processor_versions_hash, capability_policy_hash, built_at "
+          + "FROM projection_meta",
       )
       .all();
     expect(rows.length).toBe(1);
@@ -160,6 +170,7 @@ describe("openProjectionDb", () => {
     expect(row.adopted_commit).toBeNull();
     expect(row.extension_set_hash).toBeNull();
     expect(row.processor_versions_hash).toBeNull();
+    expect(row.capability_policy_hash).toBeNull();
     expect(row.built_at).toBeNull();
   });
 
@@ -171,6 +182,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -199,6 +211,7 @@ describe("openProjectionDb", () => {
       adoptedCommit: adopted,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
       builtAt: new Date("2026-05-28T00:00:00.000Z"),
     });
     const meta = r.value.db.raw
@@ -207,11 +220,13 @@ describe("openProjectionDb", () => {
           adopted_commit: string | null;
           extension_set_hash: string | null;
           processor_versions_hash: string | null;
+          capability_policy_hash: string | null;
           built_at: string | null;
         },
         []
       >(
-        "SELECT adopted_commit, extension_set_hash, processor_versions_hash, built_at FROM projection_meta",
+        "SELECT adopted_commit, extension_set_hash, processor_versions_hash, "
+          + "capability_policy_hash, built_at FROM projection_meta",
       )
       .get();
     expect(meta?.adopted_commit).toBe(adopted);
@@ -219,6 +234,7 @@ describe("openProjectionDb", () => {
     expect(meta?.processor_versions_hash).toBe(
       computeProcessorVersionsHash(procs),
     );
+    expect(meta?.capability_policy_hash).toBe(POLICY_A);
     expect(meta?.built_at).toBe("2026-05-28T00:00:00.000Z");
   });
 
@@ -229,6 +245,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -238,6 +255,7 @@ describe("openProjectionDb", () => {
       projectionCacheKeysChanged(r.value.db, {
         extensionSet: exts,
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(false);
 
@@ -245,24 +263,35 @@ describe("openProjectionDb", () => {
       adoptedCommit: commitOid("def4560000000000000000000000000000000000"),
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
       builtAt: new Date("2026-05-28T00:00:00.000Z"),
     });
     expect(
       projectionCacheKeysChanged(r.value.db, {
         extensionSet: exts,
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(false);
     expect(
       projectionCacheKeysChanged(r.value.db, {
         extensionSet: exts,
         processorVersions: [{ id: "proc.a", version: "1.1.0" }],
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(true);
     expect(
       projectionCacheKeysChanged(r.value.db, {
         extensionSet: [{ name: "ext.a", version: "2.0.0" }],
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
+      }),
+    ).toBe(true);
+    expect(
+      projectionCacheKeysChanged(r.value.db, {
+        extensionSet: exts,
+        processorVersions: procs,
+        capabilityPolicyHash: POLICY_B,
       }),
     ).toBe(true);
   });
@@ -275,6 +304,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -285,6 +315,7 @@ describe("openProjectionDb", () => {
         adoptedCommit: adopted,
         extensionSet: exts,
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(true);
 
@@ -292,6 +323,7 @@ describe("openProjectionDb", () => {
       adoptedCommit: adopted,
       extensionSet: exts,
       processorVersions: procs,
+      capabilityPolicyHash: POLICY_A,
       builtAt: new Date("2026-05-28T00:00:00.000Z"),
     });
     expect(
@@ -299,6 +331,7 @@ describe("openProjectionDb", () => {
         adoptedCommit: adopted,
         extensionSet: exts,
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(false);
     expect(
@@ -306,6 +339,7 @@ describe("openProjectionDb", () => {
         adoptedCommit: commitOid("abc1230000000000000000000000000000000000"),
         extensionSet: exts,
         processorVersions: procs,
+        capabilityPolicyHash: POLICY_A,
       }),
     ).toBe(true);
     expect(
@@ -313,6 +347,15 @@ describe("openProjectionDb", () => {
         adoptedCommit: adopted,
         extensionSet: exts,
         processorVersions: [{ id: "proc.a", version: "1.1.0" }],
+        capabilityPolicyHash: POLICY_A,
+      }),
+    ).toBe(true);
+    expect(
+      projectionRequiresRebuild(r.value.db, {
+        adoptedCommit: adopted,
+        extensionSet: exts,
+        processorVersions: procs,
+        capabilityPolicyHash: POLICY_B,
       }),
     ).toBe(true);
   });
@@ -322,6 +365,7 @@ describe("openProjectionDb", () => {
       path: dbPath,
       extensionSet: EMPTY_EXT,
       processorVersions: EMPTY_PROCS,
+      capabilityPolicyHash: POLICY_A,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;

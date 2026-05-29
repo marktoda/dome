@@ -40,14 +40,15 @@ All four files are gitignored ([[wiki/specs/vault-layout]] §"Derived operationa
 Every row in `projection.db` is keyed (in addition to its table-specific primary key) by:
 
 ```
-(adoptedCommit, extensionSetHash, processorVersionsHash)
+(adoptedCommit, extensionSetHash, processorVersionsHash, capabilityPolicyHash)
 ```
 
 - `adoptedCommit` — the SHA of `refs/dome/adopted/<branch>` when the row was written.
 - `extensionSetHash` — sha256 of the sorted list of installed bundle names + versions. Adding or removing a bundle invalidates everything.
 - `processorVersionsHash` — sha256 of the sorted list of `(processorId, version)` for every loaded processor. Bumping a processor version invalidates the projection cache.
+- `capabilityPolicyHash` — sha256 of the effective vault runtime policy and enabled-extension grants. Changing `.dome/config.yaml` in a way that alters processor visibility, activation, or runtime limits invalidates the projection cache.
 
-When any of the three change, the engine considers cached rows stale and re-derives them from the adopted commit before operational or view work reads projection rows. V1 uses full projection rebuild for cache-key drift; per-processor invalidation is an optimization, not the correctness boundary. The cache key triple is stored in a `projection_meta` table:
+When any of these change, the engine considers cached rows stale and re-derives them from the adopted commit before operational or view work reads projection rows. V1 uses full projection rebuild for cache-key drift; per-processor invalidation is an optimization, not the correctness boundary. The cache key tuple is stored in a `projection_meta` table:
 
 ```sql
 CREATE TABLE projection_meta (
@@ -55,6 +56,7 @@ CREATE TABLE projection_meta (
   adopted_commit          TEXT,
   extension_set_hash      TEXT,
   processor_versions_hash TEXT,
+  capability_policy_hash  TEXT,
   built_at                TEXT,  -- ISO-8601
   PRIMARY KEY (schema_hash)
 );
@@ -62,7 +64,7 @@ CREATE TABLE projection_meta (
 
 The cache-key fields are nullable on first open, before the first successful
 projection rebuild stamps adopted state. Once a rebuild completes, the engine
-fills all four cache-key columns.
+fills the cache-key columns.
 
 This is the structural fence behind [[wiki/gotchas/processor-version-drift]] and [[wiki/gotchas/projection-schema-skew]].
 

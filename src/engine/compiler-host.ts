@@ -482,6 +482,7 @@ async function runAdoptionCycle(opts: {
       adoptedCommit: cursor.current,
       extensionSet: runtime.extensions,
       processorVersions: runtime.processorVersions,
+      capabilityPolicyHash: runtime.capabilityPolicyHash,
       builtAt: now(),
     });
   }
@@ -638,6 +639,7 @@ export async function rebuildProjectionIfStale(opts: {
       adoptedCommit: opts.adopted,
       extensionSet: opts.runtime.extensions,
       processorVersions: opts.runtime.processorVersions,
+      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
     })
   ) {
     return null;
@@ -663,6 +665,7 @@ async function rebuildProjectionAfterAdoption(opts: {
     !projectionCacheKeysChanged(opts.runtime.projectionDb, {
       extensionSet: opts.runtime.extensions,
       processorVersions: opts.runtime.processorVersions,
+      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
     })
   ) {
     return null;

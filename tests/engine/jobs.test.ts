@@ -372,6 +372,7 @@ async function makeFixture(): Promise<Fixture> {
     path: join(root, ".dome", "state", "projection.db"),
     extensionSet: [],
     processorVersions: [],
+    capabilityPolicyHash: "test-policy",
   });
   if (!projectionResult.ok) {
     throw new Error(

@@ -173,6 +173,7 @@ export async function collectHealthReport(opts: {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly capabilityPolicyHash: string;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -190,6 +191,7 @@ export async function collectHealthReport(opts: {
   const projectionDrift = projectionCacheKeysChanged(opts.projection, {
     extensionSet: opts.extensions,
     processorVersions: opts.processorVersions,
+    capabilityPolicyHash: opts.capabilityPolicyHash,
   })
     ? [projectionCacheDriftFinding()]
     : [];

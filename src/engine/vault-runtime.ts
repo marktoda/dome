@@ -62,6 +62,7 @@ import {
   type TreeOid,
 } from "../core/processor";
 import {
+  computeCapabilityPolicyHash,
   loadCapabilityPolicy,
   type CapabilityPolicy,
   type RuntimeConfig,
@@ -130,6 +131,7 @@ export type VaultRuntime = {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly capabilityPolicyHash: string;
   readonly registry: ProcessorRegistry;
   readonly processorRuntime: ProcessorRuntime;
   readonly pageTypes: PageTypeRegistry;
@@ -324,6 +326,7 @@ export async function openVaultRuntime(
   const resolveGrants = policy.foundConfig
     ? resolveGrantsFromPolicy(registry, policy, processorExtensionIds)
     : defaultResolveGrants(registry);
+  const capabilityPolicyHash = computeCapabilityPolicyHash(policy);
   const extensionIdFor = extensionIdForProcessor(processorExtensionIds);
   const externalHandlers = opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS;
   const modelProvider =
@@ -350,6 +353,7 @@ export async function openVaultRuntime(
     path: projectionPath,
     extensionSet: extensions,
     processorVersions,
+    capabilityPolicyHash,
   });
   if (!projectionResult.ok) {
     return err({
@@ -434,6 +438,7 @@ export async function openVaultRuntime(
     ledgerDb,
     extensions,
     processorVersions,
+    capabilityPolicyHash,
     registry,
     processorRuntime,
     pageTypes,

@@ -119,12 +119,15 @@ scenario(
         adopted_commit: string | null;
         extension_set_hash: string | null;
         processor_versions_hash: string | null;
+        capability_policy_hash: string | null;
       }, []>(
-        "SELECT adopted_commit, extension_set_hash, processor_versions_hash FROM projection_meta",
+        "SELECT adopted_commit, extension_set_hash, processor_versions_hash, "
+          + "capability_policy_hash FROM projection_meta",
       )
       .get();
     expect(meta?.adopted_commit).toBe(adoptedRef);
     expect(typeof meta?.extension_set_hash).toBe("string");
     expect(typeof meta?.processor_versions_hash).toBe("string");
+    expect(typeof meta?.capability_policy_hash).toBe("string");
   },
 );

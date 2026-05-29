@@ -136,6 +136,7 @@ export async function rebuildProjection(opts: {
     adoptedCommit: opts.adopted,
     extensionSet: opts.runtime.extensions,
     processorVersions: opts.runtime.processorVersions,
+    capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
     builtAt: now(),
   });
 

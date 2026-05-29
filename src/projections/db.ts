@@ -23,18 +23,20 @@
 //   - docs/wiki/gotchas/projection-schema-skew.md — auto-rebuild on
 //     schema-hash mismatch (the `"schema-changed"` migration result).
 //   - docs/wiki/gotchas/processor-version-drift.md — cache invalidation
-//     when extension-set or processor-versions hashes change.
+//     when extension-set, processor-versions, or effective capability-policy
+//     hashes change.
 //
 // v1 Phase 4 scope:
 //   - Schema migrations are *the rebuild* (per spec §"Schema migrations").
 //     This file does not implement incremental column-add migrations; it
 //     wipes and recreates on schema-hash change. The DDL uses
 //     `CREATE ... IF NOT EXISTS` so a fresh open on a missing file is safe.
-//   - Cache-key invalidation (extension-set, processor-versions) is detected
-//     here but applied by the engine/CLI boundary. The v1 behavior is a full
-//     projection rebuild from the adopted commit before stale rows can drive
-//     operational or view work. Per-processor invalidation can be added later
-//     as an optimization without changing the correctness contract.
+//   - Cache-key invalidation (extension-set, processor-versions, capability
+//     policy) is detected here but applied by the engine/CLI boundary. The v1
+//     behavior is a full projection rebuild from the adopted commit before
+//     stale rows can drive operational or view work. Per-processor
+//     invalidation can be added later as an optimization without changing the
+//     correctness contract.
 //
 // Imports (tight by design — projections are the SQLite boundary):
 //   - `bun:sqlite` for the `Database` handle (the only I/O dependency).
@@ -88,7 +90,7 @@ const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 // canonical strings match.
 
 const DDL: ReadonlyArray<string> = Object.freeze([
-  // 1. projection_meta — the cache-key triple + schema version.
+  // 1. projection_meta — the cache-key tuple + schema version.
   //    PRIMARY KEY (schema_hash) because the table holds at most one row;
   //    the schema_hash uniquely identifies the schema generation.
   "CREATE TABLE IF NOT EXISTS projection_meta ("
@@ -96,6 +98,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "adopted_commit TEXT,"
     + "extension_set_hash TEXT,"
     + "processor_versions_hash TEXT,"
+    + "capability_policy_hash TEXT,"
     + "built_at TEXT,"
     + "PRIMARY KEY (schema_hash)"
     + ")",
@@ -247,8 +250,8 @@ const sha256 = (s: string): string =>
 // ----- Public types ---------------------------------------------------------
 
 /**
- * The cache-key triple + schema-version + build timestamp stored in the
- * `projection_meta` table. All four cache fields are nullable (vs. the
+ * The cache-key tuple + schema-version + build timestamp stored in the
+ * `projection_meta` table. All cache fields are nullable (vs. the
  * spec's NOT NULL constraints) because a fresh-init projection.db has the
  * row inserted with `schema_hash` populated but the rest left null until
  * the first successful rebuild writes them. Callers that need a populated
@@ -259,6 +262,7 @@ export type ProjectionMeta = {
   readonly adoptedCommit: CommitOid | null;
   readonly extensionSetHash: string | null;
   readonly processorVersionsHash: string | null;
+  readonly capabilityPolicyHash: string | null;
   readonly builtAt: string | null;
 };
 
@@ -292,6 +296,7 @@ export type MarkProjectionBuiltOpts = {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly capabilityPolicyHash: string;
   readonly builtAt?: Date;
 };
 
@@ -304,6 +309,7 @@ export type ProjectionCacheKeyOpts = {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly capabilityPolicyHash: string;
 };
 
 export type ProjectionFreshnessOpts = ProjectionCacheKeyOpts & {
@@ -335,6 +341,7 @@ export type OpenProjectionDbOpts = {
     readonly id: string;
     readonly version: string;
   }>;
+  readonly capabilityPolicyHash: string;
 };
 
 /**
@@ -350,12 +357,11 @@ export type OpenProjectionDbOpts = {
  *                            Tables wiped and recreated; meta row reset
  *                            (cache keys NULL). Caller should trigger a
  *                            full rebuild.
- * - `"cache-keys-changed"` — schema OK but extensionSetHash or
- *                            processorVersionsHash differs from stored
- *                            values. Tables are not wiped by the opener;
- *                            the engine/CLI boundary rebuilds projections
- *                            from the adopted commit before stale rows are
- *                            consumed.
+ * - `"cache-keys-changed"` — schema OK but at least one cache-key hash
+ *                            differs from stored values. Tables are not
+ *                            wiped by the opener; the engine/CLI boundary
+ *                            rebuilds projections from the adopted commit
+ *                            before stale rows are consumed.
  */
 export type ProjectionMigration =
   | "fresh"
@@ -429,7 +435,7 @@ export function computeProcessorVersionsHash(
 /**
  * Open (or create) the projection database at `opts.path`. Ensures the
  * parent directory exists, applies the schema if missing, and computes the
- * migration state by comparing the stored cache-key triple against the
+ * migration state by comparing the stored cache-key tuple against the
  * caller's current values.
  *
  * The function never throws on expected I/O failures — the four conditions
@@ -534,6 +540,7 @@ export async function openProjectionDb(
   const currentProcessorVersionsHash = computeProcessorVersionsHash(
     opts.processorVersions,
   );
+  const currentCapabilityPolicyHash = opts.capabilityPolicyHash;
 
   let migration: ProjectionMigration;
   if (isFresh) {
@@ -546,13 +553,16 @@ export async function openProjectionDb(
   } else if (
     priorMeta.extensionSetHash !== null &&
     priorMeta.processorVersionsHash !== null &&
+    priorMeta.capabilityPolicyHash !== null &&
     (priorMeta.extensionSetHash !== currentExtensionSetHash ||
-      priorMeta.processorVersionsHash !== currentProcessorVersionsHash)
+      priorMeta.processorVersionsHash !== currentProcessorVersionsHash ||
+      priorMeta.capabilityPolicyHash !== currentCapabilityPolicyHash)
   ) {
     migration = "cache-keys-changed";
   } else if (
     priorMeta.extensionSetHash === null ||
-    priorMeta.processorVersionsHash === null
+    priorMeta.processorVersionsHash === null ||
+    priorMeta.capabilityPolicyHash === null
   ) {
     // Prior open didn't write cache keys (rebuild incomplete). Treat as
     // fresh — the caller should do a rebuild to populate. Better signal
@@ -572,6 +582,7 @@ export async function openProjectionDb(
           adoptedCommit: null,
           extensionSetHash: null,
           processorVersionsHash: null,
+          capabilityPolicyHash: null,
           builtAt: null,
         })
       : Object.freeze({
@@ -579,6 +590,7 @@ export async function openProjectionDb(
           adoptedCommit: priorMeta.adoptedCommit,
           extensionSetHash: priorMeta.extensionSetHash,
           processorVersionsHash: priorMeta.processorVersionsHash,
+          capabilityPolicyHash: priorMeta.capabilityPolicyHash,
           builtAt: priorMeta.builtAt,
         });
 
@@ -605,7 +617,7 @@ export function resetProjectionDb(db: ProjectionDb): void {
 }
 
 /**
- * Stamp the cache-key triple after successful projection derivation: either
+ * Stamp the cache-key tuple after successful projection derivation: either
  * a full rebuild pass or an incremental adoption that brought projections
  * current for its changed range. This is the durable marker
  * `openProjectionDb` compares on the next open to decide whether projection
@@ -618,12 +630,14 @@ export function markProjectionBuilt(
   db.raw
     .query(
       "UPDATE projection_meta SET adopted_commit = ?, extension_set_hash = ?, "
-        + "processor_versions_hash = ?, built_at = ? WHERE schema_hash = ?",
+        + "processor_versions_hash = ?, capability_policy_hash = ?, "
+        + "built_at = ? WHERE schema_hash = ?",
     )
     .run(
       opts.adoptedCommit,
       computeExtensionSetHash(opts.extensionSet),
       computeProcessorVersionsHash(opts.processorVersions),
+      opts.capabilityPolicyHash,
       (opts.builtAt ?? new Date()).toISOString(),
       computeSchemaHash(),
     );
@@ -631,8 +645,8 @@ export function markProjectionBuilt(
 
 /**
  * Return true when the live `projection_meta` row has populated cache keys
- * and either the extension-set or processor-version hash differs from the
- * currently loaded runtime. Fresh/unbuilt databases return false here:
+ * and at least one cache-key hash differs from the currently loaded runtime.
+ * Fresh/unbuilt databases return false here:
  * callers use this as a stale-row invalidation signal, not as the first
  * build trigger for an empty projection.
  */
@@ -644,7 +658,8 @@ export function projectionCacheKeysChanged(
   if (
     meta === null ||
     meta.extensionSetHash === null ||
-    meta.processorVersionsHash === null
+    meta.processorVersionsHash === null ||
+    meta.capabilityPolicyHash === null
   ) {
     return false;
   }
@@ -652,7 +667,8 @@ export function projectionCacheKeysChanged(
   return (
     meta.extensionSetHash !== computeExtensionSetHash(opts.extensionSet) ||
     meta.processorVersionsHash !==
-      computeProcessorVersionsHash(opts.processorVersions)
+      computeProcessorVersionsHash(opts.processorVersions) ||
+    meta.capabilityPolicyHash !== opts.capabilityPolicyHash
   );
 }
 
@@ -671,10 +687,12 @@ export function projectionRequiresRebuild(
   if (meta.adoptedCommit !== opts.adoptedCommit) return true;
   if (meta.extensionSetHash === null) return true;
   if (meta.processorVersionsHash === null) return true;
+  if (meta.capabilityPolicyHash === null) return true;
   return (
     meta.extensionSetHash !== computeExtensionSetHash(opts.extensionSet) ||
     meta.processorVersionsHash !==
-      computeProcessorVersionsHash(opts.processorVersions)
+      computeProcessorVersionsHash(opts.processorVersions) ||
+    meta.capabilityPolicyHash !== opts.capabilityPolicyHash
   );
 }
 
@@ -770,6 +788,7 @@ type MetaRow = {
   readonly adopted_commit: string | null;
   readonly extension_set_hash: string | null;
   readonly processor_versions_hash: string | null;
+  readonly capability_policy_hash: string | null;
   readonly built_at: string | null;
 };
 
@@ -781,7 +800,8 @@ function readMetaRow(db: Database): ProjectionMeta | null {
   const rows = db
     .query<MetaRow, []>(
       "SELECT schema_hash, adopted_commit, extension_set_hash, "
-        + "processor_versions_hash, built_at FROM projection_meta LIMIT 1",
+        + "processor_versions_hash, capability_policy_hash, built_at "
+        + "FROM projection_meta LIMIT 1",
     )
     .all();
   const r = rows[0];
@@ -796,6 +816,7 @@ function readMetaRow(db: Database): ProjectionMeta | null {
       r.adopted_commit === null ? null : commitOid(r.adopted_commit),
     extensionSetHash: r.extension_set_hash,
     processorVersionsHash: r.processor_versions_hash,
+    capabilityPolicyHash: r.capability_policy_hash,
     builtAt: r.built_at,
   };
 }
@@ -811,7 +832,8 @@ function insertFreshMetaRow(db: Database, schemaHash: string): void {
   db.run(
     "INSERT OR REPLACE INTO projection_meta "
       + "(schema_hash, adopted_commit, extension_set_hash, "
-      + "processor_versions_hash, built_at) VALUES (?, NULL, NULL, NULL, NULL)",
+      + "processor_versions_hash, capability_policy_hash, built_at) "
+      + "VALUES (?, NULL, NULL, NULL, NULL, NULL)",
     [schemaHash],
   );
 }
