@@ -99,6 +99,8 @@ scenario(
     const refs = await h.refs.current();
     expect(refs.head).not.toBe(userCommitSha);
     expect(refs.adopted).toBe(refs.head);
+    if (refs.adopted === null) throw new Error("expected adopted ref");
+    expect(result.adoptedAfter).toBe(refs.adopted);
 
     // Step 4: the closure commit at `refs.head` carries the four
     // canonical trailers (existing test guarantee, kept as a regression

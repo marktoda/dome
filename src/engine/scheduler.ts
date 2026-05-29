@@ -153,6 +153,7 @@ export async function runScheduler(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -205,6 +206,7 @@ async function runSchedulerInner(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -224,6 +226,7 @@ async function runSchedulerInner(opts: {
     resolveGrants,
     extensionIdFor,
     adoptSubProposal,
+    currentAdopted,
   } = opts;
   const applyGardenPatch =
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
@@ -351,6 +354,7 @@ async function runSchedulerInner(opts: {
             effect,
             vault,
             adopted,
+            ...(currentAdopted !== undefined ? { currentAdopted } : {}),
             processorId: result.processorId,
             runId: result.runId,
             proposalId: null,

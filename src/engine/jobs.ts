@@ -81,6 +81,7 @@ export async function runQueuedJobs(opts: {
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -166,6 +167,7 @@ async function runOneJob(opts: {
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly job: ScheduledJobRow;
   readonly processor: Processor<unknown>;
   readonly diagnostics: DiagnosticEffect[];
@@ -209,6 +211,9 @@ async function runOneJob(opts: {
         effect,
         vault: opts.vault,
         adopted: opts.adopted,
+        ...(opts.currentAdopted !== undefined
+          ? { currentAdopted: opts.currentAdopted }
+          : {}),
         processorId: result.processorId,
         runId: result.runId,
         proposalId: null,

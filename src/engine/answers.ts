@@ -89,6 +89,7 @@ export async function runAnswerHandlers(opts: {
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -143,6 +144,7 @@ async function runAnswerHandlersInner(opts: {
   readonly modelProvider?: ModelProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -216,6 +218,9 @@ async function runAnswerHandlersInner(opts: {
           effect,
           vault: opts.vault,
           adopted: opts.adopted,
+          ...(opts.currentAdopted !== undefined
+            ? { currentAdopted: opts.currentAdopted }
+            : {}),
           processorId: result.processorId,
           runId: result.runId,
           proposalId: null,

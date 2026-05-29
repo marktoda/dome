@@ -35,6 +35,7 @@ export async function dispatchGardenPatchEffect(opts: {
   readonly effect: PatchEffect;
   readonly vault: EngineVault;
   readonly adopted: CommitOid;
+  readonly currentAdopted?: () => CommitOid;
   readonly processorId: string;
   readonly runId: RunId;
   readonly proposalId: string | null;
@@ -98,10 +99,11 @@ export async function dispatchGardenPatchEffect(opts: {
     });
   }
 
+  const adopted = opts.currentAdopted?.() ?? opts.adopted;
   const spawned = await spawnGardenSubProposal({
     vault: opts.vault,
-    base: opts.adopted,
-    sourceHead: opts.adopted,
+    base: adopted,
+    sourceHead: adopted,
     patch: routed.patch,
     processorId: opts.processorId,
     runId: opts.runId,

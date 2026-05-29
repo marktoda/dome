@@ -164,6 +164,8 @@ Work:
       drain between `serve`, `sync`, and the harness.
 - [x] Move background compiler-host orchestration out of CLI glue into the
       engine layer (`src/engine/compiler-host.ts`).
+- [x] Add a single compiler-host tick result boundary for `serve`, `sync`, and
+      the harness, including the final adopted ref after sub-Proposals.
 - [x] Drain operational work even when HEAD/adopted are already in sync.
 - [x] Preserve the pretty text `status` dashboard.
 - [x] Keep `sync --json` available for agent consumption.

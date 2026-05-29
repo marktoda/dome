@@ -41,6 +41,7 @@ import {
 import {
   runGardenPhase,
   type AdoptSubProposalFn,
+  type GardenPhaseResult,
 } from "./garden";
 import {
   runOperationalWork,
@@ -106,6 +107,41 @@ export type DriftResult =
   | { readonly kind: "detached-head" }
   | { readonly kind: "no-commits" };
 
+export type CompilerHostAdoptionCycleResult = {
+  /** Primary user-drift adoption result. Garden/operational sub-Proposals may advance refs after this. */
+  readonly adoption: AdoptionResult;
+  readonly garden: GardenPhaseResult | null;
+  readonly operational: OperationalWorkResult | null;
+  /** Latest adopted ref after garden and operational sub-Proposals have had a chance to run. */
+  readonly finalAdoptedRef: CommitOid;
+  readonly projectionRebuild: ProjectionRebuildResult | null;
+};
+
+export type CompilerHostTickResult =
+  | { readonly kind: "detached-head" }
+  | { readonly kind: "no-commits" }
+  | {
+      readonly kind: "in-sync";
+      readonly branch: string;
+      readonly head: CommitOid;
+      readonly operational: OperationalWorkResult | null;
+      readonly finalAdoptedRef: CommitOid;
+    }
+  | {
+      readonly kind: "adopted" | "blocked";
+      readonly branch: string;
+      readonly drift: DriftInfo;
+      readonly adoption: AdoptionResult;
+      readonly garden: GardenPhaseResult | null;
+      readonly operational: OperationalWorkResult | null;
+      readonly finalAdoptedRef: CommitOid;
+      readonly projectionRebuild: ProjectionRebuildResult | null;
+    };
+
+export type AdoptedCursor = {
+  current: CommitOid;
+};
+
 // ----- detectDrift ----------------------------------------------------------
 
 /**
@@ -157,6 +193,70 @@ export async function detectDrift(vaultPath: string): Promise<DriftResult> {
 
 export type { AdoptEvent };
 
+/**
+ * Run one compiler-host tick: detect/refuse unworkable git states, adopt
+ * branch drift when present, and optionally drain operational work when the
+ * branch is already in sync. This is the shared semantic boundary for
+ * `dome sync`, `dome serve`, and the harness; callers decide only when to
+ * invoke it and how to render the returned result.
+ */
+export async function runCompilerHostTick(opts: {
+  readonly runtime: VaultRuntime;
+  readonly drift?: DriftResult;
+  readonly now?: () => Date;
+  readonly runOperationalWhenInSync?: boolean;
+  readonly onEvent?: (event: AdoptEvent) => void;
+}): Promise<CompilerHostTickResult> {
+  const drift = opts.drift ?? await detectDrift(opts.runtime.path);
+  const now = opts.now ?? ((): Date => new Date());
+
+  if (drift.kind === "detached-head" || drift.kind === "no-commits") {
+    return Object.freeze({ kind: drift.kind });
+  }
+
+  if (drift.kind === "in-sync") {
+    let operational: OperationalWorkResult | null = null;
+    if (opts.runOperationalWhenInSync !== false) {
+      operational = await runOperationalWorkForAdopted({
+        runtime: opts.runtime,
+        adopted: drift.head,
+        branch: drift.branch,
+        now,
+      });
+    }
+    return Object.freeze({
+      kind: "in-sync" as const,
+      branch: drift.branch,
+      head: drift.head,
+      operational,
+      finalAdoptedRef: await latestAdoptedOr(
+        opts.runtime.path,
+        drift.branch,
+        drift.head,
+      ),
+    });
+  }
+
+  const cycle = await runAdoptionCycle({
+    runtime: opts.runtime,
+    drift: drift.info,
+    now,
+    ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+  });
+
+  const kind = cycle.adoption.adopted ? "adopted" as const : "blocked" as const;
+  return Object.freeze({
+    kind,
+    branch: drift.info.branch,
+    drift: drift.info,
+    adoption: cycle.adoption,
+    garden: cycle.garden,
+    operational: cycle.operational,
+    finalAdoptedRef: cycle.finalAdoptedRef,
+    projectionRebuild: cycle.projectionRebuild,
+  });
+}
+
 // ----- runOneAdoption -------------------------------------------------------
 
 /**
@@ -193,6 +293,15 @@ export async function runOneAdoption(opts: {
    */
   readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<AdoptionResult> {
+  return (await runAdoptionCycle(opts)).adoption;
+}
+
+async function runAdoptionCycle(opts: {
+  readonly runtime: VaultRuntime;
+  readonly drift: DriftInfo;
+  readonly now?: () => Date;
+  readonly onEvent?: (event: AdoptEvent) => void;
+}): Promise<CompilerHostAdoptionCycleResult> {
   const { runtime, drift, onEvent } = opts;
   const now = opts.now ?? ((): Date => new Date());
 
@@ -224,8 +333,13 @@ export async function runOneAdoption(opts: {
   if (onEvent !== undefined) adoptOpts.onEvent = onEvent;
   const adoptionResult = await adopt(adoptOpts);
 
+  let garden: GardenPhaseResult | null = null;
+  let operational: OperationalWorkResult | null = null;
+  let projectionRebuild: ProjectionRebuildResult | null = null;
+  const cursor: AdoptedCursor = { current: adoptionResult.adoptedRef };
+
   if (adoptionResult.adopted) {
-    await rebuildProjectionIfCacheKeysChanged({
+    projectionRebuild = await rebuildProjectionIfCacheKeysChanged({
       runtime,
       adopted: adoptionResult.adoptedRef,
       branch: drift.branch,
@@ -236,6 +350,7 @@ export async function runOneAdoption(opts: {
       runtime,
       vault: adoptOpts.vault,
       sinksFor,
+      cursor,
       ...(onEvent !== undefined ? { onEvent } : {}),
     });
     const gardenCompiled = await compileRange({
@@ -243,7 +358,7 @@ export async function runOneAdoption(opts: {
       base: drift.base,
       head: adoptionResult.adoptedRef,
     });
-    await runGardenPhase({
+    garden = await runGardenPhase({
       vault: adoptOpts.vault,
       proposal,
       adopted: adoptionResult.adoptedRef,
@@ -256,23 +371,29 @@ export async function runOneAdoption(opts: {
       cascadeDepth: 0,
     });
 
-    await runOperationalWorkForAdopted({
+    operational = await runOperationalWorkForAdopted({
       runtime,
-      adopted: adoptionResult.adoptedRef,
+      adopted: cursor.current,
       now,
-      sinks,
       adoptSubProposal,
+      cursor,
     });
 
     markProjectionBuilt(runtime.projectionDb, {
-      adoptedCommit: adoptionResult.adoptedRef,
+      adoptedCommit: cursor.current,
       extensionSet: runtime.extensions,
       processorVersions: runtime.processorVersions,
       builtAt: now(),
     });
   }
 
-  return adoptionResult;
+  return Object.freeze({
+    adoption: adoptionResult,
+    garden,
+    operational,
+    finalAdoptedRef: cursor.current,
+    projectionRebuild,
+  });
 }
 
 export async function runOperationalWorkForAdopted(opts: {
@@ -282,12 +403,14 @@ export async function runOperationalWorkForAdopted(opts: {
   readonly now?: () => Date;
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
+  readonly cursor?: AdoptedCursor;
 }): Promise<OperationalWorkResult> {
   const now = opts.now ?? ((): Date => new Date());
+  const cursor = opts.cursor ?? { current: opts.adopted };
   if (opts.branch !== undefined) {
     await rebuildProjectionIfCacheKeysChanged({
       runtime: opts.runtime,
-      adopted: opts.adopted,
+      adopted: cursor.current,
       branch: opts.branch,
       now,
     });
@@ -295,18 +418,19 @@ export async function runOperationalWorkForAdopted(opts: {
   const vault = runtimeVault(opts.runtime);
   const sinksFor = sinksForRuntime(opts.runtime);
   const sinks =
-    opts.sinks ?? sinksFor({ base: opts.adopted, head: opts.adopted });
+    opts.sinks ?? sinksFor({ base: cursor.current, head: cursor.current });
   const adoptSubProposal =
     opts.adoptSubProposal ??
     makeAdoptSubProposal({
       runtime: opts.runtime,
       vault,
       sinksFor,
+      cursor,
     });
 
   return runOperationalWork({
     vault,
-    adopted: opts.adopted,
+    adopted: cursor.current,
     registry: opts.runtime.registry,
     projection: opts.runtime.projectionDb,
     outbox: opts.runtime.outboxDb,
@@ -323,6 +447,7 @@ export async function runOperationalWorkForAdopted(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     externalHandlers: opts.runtime.externalHandlers,
     adoptSubProposal,
+    currentAdopted: () => cursor.current,
   });
 }
 
@@ -354,10 +479,12 @@ export async function runAnswerHandlersForQuestion(opts: {
   const vault = runtimeVault(opts.runtime);
   const sinksFor = sinksForRuntime(opts.runtime);
   const sinks = sinksFor({ base: adopted, head: adopted });
+  const cursor: AdoptedCursor = { current: adopted };
   const adoptSubProposal = makeAdoptSubProposal({
     runtime: opts.runtime,
     vault,
     sinksFor,
+    cursor,
   });
 
   const result = await runAnswerHandlers({
@@ -376,11 +503,12 @@ export async function runAnswerHandlersForQuestion(opts: {
       ? { modelProvider: opts.runtime.modelProvider }
       : {}),
     adoptSubProposal,
+    currentAdopted: () => cursor.current,
   });
 
   return Object.freeze({
     kind: "handled" as const,
-    adopted,
+    adopted: cursor.current,
     result,
   });
 }
@@ -406,6 +534,15 @@ export async function rebuildProjectionIfCacheKeysChanged(opts: {
     branch: opts.branch,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
+}
+
+async function latestAdoptedOr(
+  vaultPath: string,
+  branch: string,
+  fallback: CommitOid,
+): Promise<CommitOid> {
+  const raw = await getAdoptedRef(vaultPath, branch);
+  return raw === null ? fallback : commitOid(raw);
 }
 
 function runtimeVault(runtime: VaultRuntime): {
@@ -480,6 +617,7 @@ function makeAdoptSubProposal(opts: {
   readonly runtime: VaultRuntime;
   readonly vault: ReturnType<typeof runtimeVault>;
   readonly sinksFor: ReturnType<typeof sinksForRuntime>;
+  readonly cursor?: AdoptedCursor;
   readonly onEvent?: (event: AdoptEvent) => void;
 }): AdoptSubProposalFn {
   const adoptSubProposal: AdoptSubProposalFn = async (
@@ -507,6 +645,9 @@ function makeAdoptSubProposal(opts: {
     if (opts.onEvent !== undefined) subAdoptOpts.onEvent = opts.onEvent;
     const subResult = await adopt(subAdoptOpts);
     if (subResult.adopted) {
+      if (opts.cursor !== undefined) {
+        opts.cursor.current = subResult.adoptedRef;
+      }
       const subCompiled = await compileRange({
         vaultPath: opts.runtime.path,
         base: subProposal.base,

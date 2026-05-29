@@ -61,6 +61,7 @@ export async function runOperationalWork(opts: {
     proposal: Proposal,
     cascadeDepth: number,
   ) => Promise<AdoptionResult>;
+  readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
@@ -89,6 +90,9 @@ export async function runOperationalWork(opts: {
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
       : {}),
+    ...(opts.currentAdopted !== undefined
+      ? { currentAdopted: opts.currentAdopted }
+      : {}),
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
       : {}),
@@ -114,6 +118,9 @@ export async function runOperationalWork(opts: {
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
+      : {}),
+    ...(opts.currentAdopted !== undefined
+      ? { currentAdopted: opts.currentAdopted }
       : {}),
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }

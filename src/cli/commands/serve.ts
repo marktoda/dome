@@ -35,16 +35,14 @@
 import { resolve } from "node:path";
 
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
-import type { AdoptionResult } from "../../core/proposal";
-import type { CommitOid } from "../../core/source-ref";
+import type { OperationalWorkResult } from "../../engine/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
 
 import {
   detectDrift,
-  rebuildProjectionIfCacheKeysChanged,
-  runOneAdoption,
-  runOperationalWorkForAdopted,
-  type DriftInfo,
+  runCompilerHostTick,
+  type CompilerHostTickResult,
+  type DriftResult,
 } from "../../engine/compiler-host";
 import {
   formatAdoptEvent,
@@ -264,27 +262,23 @@ async function pollLoop(input: {
 
   while (!cancel.aborted) {
     const drift = await detectDrift(vaultPath);
-    if (drift.kind === "drift") {
+    if (drift.kind === "drift" || drift.kind === "in-sync") {
       if (verbose) {
-        console.log(
-          `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
-        );
+        if (drift.kind === "drift") {
+          console.log(
+            `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
+          );
+        }
       }
-      await runOneAdoptionWithErrorHandling({
+      const nowMs = Date.now();
+      await runCompilerHostTickWithErrorHandling({
         runtime,
-        drift: drift.info,
+        drift,
+        runOperationalWhenInSync:
+          drift.kind === "drift" || nowMs >= nextOperationalAtMs,
         verbose,
       });
-      nextOperationalAtMs = Date.now() + operationalIntervalMs;
-    } else if (drift.kind === "in-sync") {
-      const nowMs = Date.now();
-      if (nowMs >= nextOperationalAtMs) {
-        await runOperationalWorkWithErrorHandling({
-          runtime,
-          adopted: drift.head,
-          branch: drift.branch,
-          verbose,
-        });
+      if (drift.kind === "drift" || nowMs >= nextOperationalAtMs) {
         nextOperationalAtMs = nowMs + operationalIntervalMs;
       }
     } else if (drift.kind === "detached-head" && lastKind !== "detached-head") {
@@ -302,71 +296,34 @@ async function pollLoop(input: {
   }
 }
 
-async function runOperationalWorkWithErrorHandling(input: {
-  readonly runtime: VaultRuntime;
-  readonly adopted: CommitOid;
-  readonly branch: string;
-  readonly verbose: boolean;
-}): Promise<void> {
-  const { runtime, adopted, branch, verbose } = input;
-  try {
-    const rebuilt = await rebuildProjectionIfCacheKeysChanged({
-      runtime,
-      adopted,
-      branch,
-    });
-    if (verbose && rebuilt !== null) {
-      console.log(
-        `dome serve: rebuilt projection cache (${rebuilt.fileCount} files, ${rebuilt.effectCount} effects)`,
-      );
-    }
-    const result = await runOperationalWorkForAdopted({
-      runtime,
-      adopted,
-    });
-    if (verbose) {
-      const scheduled = result.scheduler.fired.length;
-      const jobs = result.jobs.drained.length;
-      const outbox = result.outbox.length;
-      const diagnostics = result.diagnostics.length;
-      if (scheduled + jobs + outbox + diagnostics > 0) {
-        console.log(
-          `dome serve: operational work (${scheduled} scheduled, ${jobs} jobs, ${outbox} outbox, ${diagnostics} diagnostics)`,
-        );
-      }
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome serve: operational work threw: ${msg}`);
-  }
-}
-
 /**
- * One adoption cycle wrapper: call the shared `runOneAdoption`, print
- * the one-line summary, swallow throws.
+ * One compiler host tick wrapper: call the shared engine tick, print
+ * summaries, swallow throws.
  *
- * Errors from `adopt()` (an unhandled throw from the engine, processor
+ * Errors from the tick (an unhandled throw from the engine, processor
  * runtime, or projection sink) are caught here so a single bad commit
  * does not crash the daemon. The error surfaces on stderr; the loop
  * continues to the next iteration.
  */
-async function runOneAdoptionWithErrorHandling(input: {
+async function runCompilerHostTickWithErrorHandling(input: {
   readonly runtime: VaultRuntime;
-  readonly drift: DriftInfo;
+  readonly drift: DriftResult;
+  readonly runOperationalWhenInSync: boolean;
   readonly verbose: boolean;
 }): Promise<void> {
-  const { runtime, drift, verbose } = input;
+  const { runtime, drift, runOperationalWhenInSync, verbose } = input;
 
   try {
-    const result = await runOneAdoption({
+    const tick = await runCompilerHostTick({
       runtime,
       drift,
+      runOperationalWhenInSync,
       ...(verbose ? { onEvent: (e) => console.log(formatAdoptEvent(e)) } : {}),
     });
-    printAdoptionLine(drift.branch, result);
+    printTickLine(tick, verbose);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome serve: adoption threw: ${msg}`);
+    console.error(`dome serve: tick threw: ${msg}`);
   }
 }
 
@@ -381,23 +338,52 @@ async function runOneAdoptionWithErrorHandling(input: {
  * is appended for the blocked case so the operator sees what to fix
  * without reaching for `dome inspect diagnostics`.
  */
-function printAdoptionLine(branch: string, result: AdoptionResult): void {
+function printTickLine(tick: CompilerHostTickResult, verbose: boolean): void {
+  if (tick.kind === "in-sync") {
+    if (verbose && tick.operational !== null) {
+      printOperationalLine(tick.operational);
+    }
+    return;
+  }
+  if (tick.kind === "detached-head" || tick.kind === "no-commits") return;
+
+  const result = tick.adoption;
   const diagCount = result.diagnostics.length;
   const iters = result.iterations;
   if (result.adopted) {
     console.log(
-      `dome serve: adopted ${branch} ${result.adoptedRef.slice(0, 7)} ` +
+      `dome serve: adopted ${tick.branch} ${tick.finalAdoptedRef.slice(0, 7)} ` +
         `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
         `${iters} iteration${iters === 1 ? "" : "s"})`,
     );
+    if (verbose && tick.projectionRebuild !== null) {
+      console.log(
+        `dome serve: rebuilt projection cache (${tick.projectionRebuild.fileCount} files, ${tick.projectionRebuild.effectCount} effects)`,
+      );
+    }
+    if (verbose && tick.operational !== null) {
+      printOperationalLine(tick.operational);
+    }
     return;
   }
 
   const blocker = result.diagnostics.find((d) => d.severity === "block");
   const blockerMsg = blocker !== undefined ? ` — ${blocker.message}` : "";
   console.error(
-    `dome serve: blocked ${branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"}${blockerMsg}`,
+    `dome serve: blocked ${tick.branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"}${blockerMsg}`,
   );
+}
+
+function printOperationalLine(result: OperationalWorkResult): void {
+  const scheduled = result.scheduler.fired.length;
+  const jobs = result.jobs.drained.length;
+  const outbox = result.outbox.length;
+  const diagnostics = result.diagnostics.length;
+  if (scheduled + jobs + outbox + diagnostics > 0) {
+    console.log(
+      `dome serve: operational work (${scheduled} scheduled, ${jobs} jobs, ${outbox} outbox, ${diagnostics} diagnostics)`,
+    );
+  }
 }
 
 /**

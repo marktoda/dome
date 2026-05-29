@@ -1,15 +1,15 @@
 // cli/commands/sync: the `dome sync` command — Phase 11c of v1.0.
 //
-// Runs adoption exactly once for the current HEAD vs the adopted ref,
-// prints the AdoptionResult, exits. This is the manual trigger for users
-// who don't want a `dome serve` compiler host running continuously.
+// Runs one compiler-host tick for the current HEAD vs the adopted ref,
+// prints the result, exits. This is the manual trigger for users who
+// don't want a `dome serve` compiler host running continuously.
 //
 // Per docs/wiki/specs/cli.md §"dome sync" + docs/wiki/specs/adoption.md
 // §"dome sync":
 //
 //   - Construct a Proposal from `adopted..HEAD` (or the empty-diff init
 //     when the adopted ref is uninitialized).
-//   - Run it through the engine's adoption loop.
+//   - Run it through the engine's compiler-host tick.
 //   - Print a one-line summary (or a `--json` structured object).
 //   - Exit.
 //
@@ -39,8 +39,8 @@ import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
 import {
   detectDrift,
-  runOneAdoption,
-  runOperationalWorkForAdopted,
+  runCompilerHostTick,
+  type CompilerHostTickResult,
   type DriftResult,
 } from "../../engine/compiler-host";
 import {
@@ -160,21 +160,21 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   }
   const runtime = runtimeResult.value;
 
-  // ----- 4. Run one adoption cycle ------------------------------------------
+  // ----- 4. Run one compiler-host tick --------------------------------------
   try {
-    const result = await runOneAdoption({
+    const tick = await runCompilerHostTick({
       runtime,
-      drift: drift.info,
+      drift,
       ...(verbose && !jsonMode
         ? { onEvent: (e) => console.log(formatAdoptEvent(e)) }
         : {}),
     });
     if (jsonMode) {
-      console.log(formatJson(adoptionResultJson(drift.info.branch, drift.info, result)));
+      console.log(formatJson(tickResultJson(tick)));
     } else {
-      printAdoptionLines(drift.info.branch, drift.info, result);
+      printTickLines(tick);
     }
-    return result.adopted ? 0 : 1;
+    return tick.kind === "blocked" ? 1 : 0;
   } finally {
     await runtime.close();
   }
@@ -206,38 +206,20 @@ async function runInSyncOperationalWork(opts: {
     return 1;
   }
   const runtime = runtimeResult.value;
-  let operationalDiagnostics: SyncJsonResult["diagnostics"] = [];
+  let tick: CompilerHostTickResult;
   try {
-    const operational = await runOperationalWorkForAdopted({
+    tick = await runCompilerHostTick({
       runtime,
-      adopted: opts.drift.head,
-      branch: opts.drift.branch,
+      drift: opts.drift,
     });
-    operationalDiagnostics = operational.diagnostics.map((d) => ({
-      severity: d.severity,
-      code: d.code,
-      message: d.message,
-    }));
   } finally {
     await runtime.close();
   }
 
   if (opts.jsonMode) {
-    const payload: SyncJsonResult = {
-      status: "in-sync",
-      branch: opts.drift.branch,
-      base: opts.drift.head,
-      head: opts.drift.head,
-      adoptedRef: opts.drift.head,
-      iterations: 0,
-      closureCommit: null,
-      diagnostics: operationalDiagnostics,
-    };
-    console.log(formatJson(payload));
+    console.log(formatJson(tickResultJson(tick)));
   } else {
-    console.log(
-      `dome sync: already in sync (${opts.drift.head.slice(0, 7)} on ${opts.drift.branch})`,
-    );
+    printTickLines(tick);
   }
   return 0;
 }
@@ -253,21 +235,26 @@ async function runInSyncOperationalWork(opts: {
  * On block: lists the first blocking diagnostic's code + message and
  * notes the total count.
  */
-function printAdoptionLines(
-  branch: string,
-  drift: { readonly base: string; readonly head: string },
-  result: AdoptionResult,
-): void {
+function printTickLines(tick: CompilerHostTickResult): void {
+  if (tick.kind === "in-sync") {
+    console.log(
+      `dome sync: already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
+    );
+    return;
+  }
+  if (tick.kind === "detached-head" || tick.kind === "no-commits") return;
+
+  const result = tick.adoption;
   const diagCount = result.diagnostics.length;
   const iters = result.iterations;
 
   if (result.adopted) {
     const range =
-      drift.base === drift.head
-        ? drift.head.slice(0, 7)
-        : `${drift.base.slice(0, 7)}..${drift.head.slice(0, 7)}`;
+      tick.drift.base === tick.drift.head
+        ? tick.drift.head.slice(0, 7)
+        : `${tick.drift.base.slice(0, 7)}..${tick.drift.head.slice(0, 7)}`;
     console.log(
-      `dome sync: adopted ${branch}: ${range} ` +
+      `dome sync: adopted ${tick.branch}: ${range} ` +
         `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
         `${iters} iteration${iters === 1 ? "" : "s"})`,
     );
@@ -275,7 +262,7 @@ function printAdoptionLines(
   }
 
   console.error(
-    `dome sync: blocked ${branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"} ` +
+    `dome sync: blocked ${tick.branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"} ` +
       `(adopted ref unchanged at ${result.adoptedRef.slice(0, 7)})`,
   );
   const blockers = result.diagnostics.filter((d) => d.severity === "block");
@@ -294,24 +281,65 @@ function printAdoptionLines(
  * the rest of the DiagnosticEffect (sourceRefs are tied to internal
  * commit/blob OIDs that aren't useful to a CLI consumer in v1.0).
  */
-function adoptionResultJson(
-  branch: string,
-  drift: { readonly base: string; readonly head: string },
-  result: AdoptionResult,
-): SyncJsonResult {
+function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
+  if (tick.kind === "detached-head") {
+    return errorPayload({ branch: null, error: "detached-head" });
+  }
+  if (tick.kind === "no-commits") {
+    return errorPayload({ branch: null, error: "no-commits" });
+  }
+  if (tick.kind === "in-sync") {
+    return {
+      status: "in-sync",
+      branch: tick.branch,
+      base: tick.head,
+      head: tick.head,
+      adoptedRef: tick.finalAdoptedRef,
+      iterations: 0,
+      closureCommit: null,
+      diagnostics: diagnosticsJson(tick.operational?.diagnostics ?? []),
+    };
+  }
+  const result = tick.adoption;
   return {
     status: result.adopted ? "adopted" : "blocked",
-    branch,
-    base: drift.base,
-    head: drift.head,
-    adoptedRef: result.adoptedRef,
+    branch: tick.branch,
+    base: tick.drift.base,
+    head: tick.drift.head,
+    adoptedRef: tick.finalAdoptedRef,
     iterations: result.iterations,
     closureCommit: result.closureCommitOid,
-    diagnostics: result.diagnostics.map((d) => ({
-      severity: d.severity,
-      code: d.code,
-      message: d.message,
-    })),
+    diagnostics: diagnosticsJson([
+      ...result.diagnostics,
+      ...(tick.operational?.diagnostics ?? []),
+    ]),
+  };
+}
+
+function diagnosticsJson(
+  diagnostics: ReadonlyArray<AdoptionResult["diagnostics"][number]>,
+): SyncJsonResult["diagnostics"] {
+  return diagnostics.map((d) => ({
+    severity: d.severity,
+    code: d.code,
+    message: d.message,
+  }));
+}
+
+function errorPayload(input: {
+  readonly branch: string | null;
+  readonly error: string;
+}): SyncJsonResult {
+  return {
+    status: "error",
+    branch: input.branch,
+    base: null,
+    head: null,
+    adoptedRef: null,
+    iterations: 0,
+    closureCommit: null,
+    diagnostics: [],
+    error: input.error,
   };
 }
 

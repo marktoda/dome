@@ -57,6 +57,9 @@ extensions:
     await h.expectFile("wiki/job-output.md").toContain(
       "Created by a queued garden worker.",
     );
+    const refs = await h.refs.current();
+    if (refs.adopted === null) throw new Error("expected adopted ref");
+    expect(result.adoptedAfter).toBe(refs.adopted);
 
     const enqueuerRun = await h
       .expectLedger({

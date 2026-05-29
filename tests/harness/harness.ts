@@ -10,9 +10,9 @@
 //   - No mocks at the boundary. Every read goes through the same code paths
 //     a real vault uses: `currentSha` / `readBlob` / `getAdoptedRef` /
 //     `queryRuns` / etc.
-//   - `tick()` reuses `detectDrift` + `runOneAdoption` from the engine
-//     compiler host so a scenario's tick is byte-for-byte identical to one
-//     `dome sync` invocation against the same vault.
+//   - `tick()` reuses `runCompilerHostTick` from the engine compiler host
+//     so a scenario's tick is byte-for-byte identical to one `dome sync`
+//     invocation against the same vault.
 //   - `install()` symlinks the shipped bundle directory into
 //     `.dome/extensions/<id>/` and reopens the runtime so the new
 //     processor registry is picked up. We symlink (not copy) so the
@@ -41,8 +41,8 @@ import { runCli as runCliDispatch } from "../../src/cli/index";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   detectDrift,
+  runCompilerHostTick,
   runOperationalWorkForAdopted,
-  runOneAdoption,
 } from "../../src/engine/compiler-host";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import {
@@ -305,35 +305,27 @@ export class HarnessImpl implements Harness {
     if (drift.kind === "detached-head" || drift.kind === "no-commits") {
       throw new Error(`harness.tick: unworkable state '${drift.kind}'`);
     }
-    if (drift.kind === "in-sync") {
-      await runOperationalWorkForAdopted({
-        runtime: this.runtime,
-        adopted: drift.head,
-        branch: drift.branch,
-        now: () => this.clock.now(),
-      });
+    const tick = await runCompilerHostTick({
+      runtime: this.runtime,
+      drift,
+      now: () => this.clock.now(),
+    });
+    if (tick.kind === "detached-head" || tick.kind === "no-commits") {
+      throw new Error(`harness.tick: unworkable state '${tick.kind}'`);
+    }
+    if (tick.kind === "in-sync") {
       await runAllAlwaysTrue(this, "tick (in-sync operational drain)");
       return {
         hadDrift: false,
-        diagnosticCount: 0,
+        diagnosticCount: tick.operational?.diagnostics.length ?? 0,
         iterations: 0,
         adopted: true,
         closureCommitOid: null,
       };
     }
     // drift.kind === "drift"
-    const adoptedBefore = drift.info.base;
-    const adoptedTargetBefore = drift.info.head;
-    // Phase 4c: thread the TestClock through to the scheduler so
-    // schedule triggers fire deterministically against simulated time.
-    // CLI callers default to `() => new Date()` (real time); harness
-    // scenarios advance time via `h.clock.advance(ms)` and the scheduler
-    // sees the advanced value.
-    const result = await runOneAdoption({
-      runtime: this.runtime,
-      drift: drift.info,
-      now: () => this.clock.now(),
-    });
+    const adoptedBefore = tick.drift.base;
+    const adoptedTargetBefore = tick.drift.head;
     await runAllAlwaysTrue(
       this,
       `tick (${adoptedBefore.slice(0, 7)}..${adoptedTargetBefore.slice(0, 7)})`,
@@ -341,11 +333,13 @@ export class HarnessImpl implements Harness {
     return {
       hadDrift: true,
       adoptedBefore,
-      adoptedAfter: result.adoptedRef,
-      diagnosticCount: result.diagnostics.length,
-      iterations: result.iterations,
-      adopted: result.adopted,
-      closureCommitOid: result.closureCommitOid,
+      adoptedAfter: tick.finalAdoptedRef,
+      diagnosticCount:
+        tick.adoption.diagnostics.length +
+        (tick.operational?.diagnostics.length ?? 0),
+      iterations: tick.adoption.iterations,
+      adopted: tick.adoption.adopted,
+      closureCommitOid: tick.adoption.closureCommitOid,
     };
   }
 
