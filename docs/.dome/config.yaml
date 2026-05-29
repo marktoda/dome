@@ -6,6 +6,9 @@
 extensions:
   dome.lint:
     enabled: true
+    grant:
+      read:
+        - "**/*.md"
 
   dome.markdown:
     enabled: true
