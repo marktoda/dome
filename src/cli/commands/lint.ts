@@ -23,6 +23,8 @@ export async function runLint(
     const run = await runStructuredViewCommand({
       commandLabel: "dome lint",
       commandName: "lint",
+      expectedViewName: "dome.lint.report",
+      expectedSchema: "dome.lint.report/v1",
       commandArgs: Object.freeze({
         ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
       }),

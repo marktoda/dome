@@ -34,6 +34,8 @@ export async function runQuery(
     const run = await runStructuredViewCommand({
       commandLabel: "dome query",
       commandName: "query",
+      expectedViewName: "dome.search.query",
+      expectedSchema: "dome.search.query/v1",
       commandArgs: Object.freeze({
         text,
         ...(options.category !== undefined ? { category: options.category } : {}),

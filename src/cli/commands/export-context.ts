@@ -30,6 +30,8 @@ export async function runExportContext(
     const run = await runStructuredViewCommand({
       commandLabel: "dome export-context",
       commandName: "export-context",
+      expectedViewName: "dome.search.export-context",
+      expectedSchema: "dome.search.export-context/v1",
       commandArgs: Object.freeze({
         topic,
         ...(options.limit !== undefined ? { limit: options.limit } : {}),

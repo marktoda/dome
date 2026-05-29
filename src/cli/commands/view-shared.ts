@@ -8,7 +8,11 @@
 import { resolve } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import type { DiagnosticEffect, ViewEffect } from "../../core/effect";
+import type {
+  DiagnosticEffect,
+  ViewContent,
+  ViewEffect,
+} from "../../core/effect";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import type { ApplyEffectSinks } from "../../engine/apply-effect";
 import { runViewCommand, type RunCommandResult } from "../../engine/commands";
@@ -44,6 +48,8 @@ export type ViewCommandRunResult =
     };
 
 export type StructuredViewCommandOptions = ViewCommandOptions & {
+  readonly expectedViewName: string;
+  readonly expectedSchema: string;
   readonly notFoundMessage: string;
   readonly noStructuredResultMessage: string;
 };
@@ -52,7 +58,7 @@ export type StructuredViewCommandResult =
   | {
       readonly kind: "ok";
       readonly data: unknown;
-      readonly view: ViewEffect;
+      readonly view: StructuredViewEffect;
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     }
   | {
@@ -180,10 +186,14 @@ export async function runStructuredViewCommand(
       return structuredError(1, messages);
     }
 
-    const view = run.capturedViews[0] ?? result.effects[0];
-    if (view === undefined || view.content.kind !== "structured") {
-      return structuredError(1, [opts.noStructuredResultMessage]);
-    }
+    const viewResult = validateStructuredViewResult({
+      opts,
+      capturedViews: run.capturedViews,
+      result,
+    });
+    if (viewResult.kind === "error") return viewResult;
+
+    const view = viewResult.view;
 
     return Object.freeze({
       kind: "ok" as const,
@@ -195,6 +205,61 @@ export async function runStructuredViewCommand(
     const msg = e instanceof Error ? e.message : String(e);
     return structuredError(1, [`${opts.commandLabel}: failed: ${msg}`]);
   }
+}
+
+type StructuredViewEffect = ViewEffect & {
+  readonly content: Extract<ViewContent, { readonly kind: "structured" }>;
+};
+
+function validateStructuredViewResult(
+  input: {
+    readonly opts: StructuredViewCommandOptions;
+    readonly capturedViews: ReadonlyArray<ViewEffect>;
+    readonly result: Extract<RunCommandResult, { readonly kind: "found" }>;
+  },
+):
+  | {
+      readonly kind: "ok";
+      readonly view: StructuredViewEffect;
+    }
+  | Extract<StructuredViewCommandResult, { readonly kind: "error" }> {
+  const { opts } = input;
+  const views = input.capturedViews.length > 0
+    ? input.capturedViews
+    : input.result.effects;
+  if (views.length === 0) {
+    return structuredError(1, [opts.noStructuredResultMessage]);
+  }
+  if (views.length !== 1) {
+    return structuredError(1, [
+      `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${views.length}.`,
+    ]);
+  }
+
+  const view = views[0];
+  if (view === undefined) {
+    return structuredError(1, [opts.noStructuredResultMessage]);
+  }
+  if (view.name !== opts.expectedViewName) {
+    return structuredError(1, [
+      `${opts.commandLabel}: expected view '${opts.expectedViewName}', got '${view.name}'.`,
+    ]);
+  }
+  const content = view.content;
+  if (content.kind !== "structured") {
+    return structuredError(1, [opts.noStructuredResultMessage]);
+  }
+  if (content.schema !== opts.expectedSchema) {
+    return structuredError(1, [
+      `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${content.schema}'.`,
+    ]);
+  }
+
+  const structuredView: StructuredViewEffect = Object.freeze({
+    ...view,
+    content,
+  });
+  return Object.freeze({ kind: "ok" as const, view: structuredView });
 }
 
 export function structuredViewBrokerMessages(

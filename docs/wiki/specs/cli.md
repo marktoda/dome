@@ -17,7 +17,8 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 
 ```text
 dome init [path]                Initialize a new vault.
-dome sync [--json]              Catch-up: construct Proposal from working-tree HEAD; adopt.
+dome sync [--json] [-v|--verbose]
+                                Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
 dome today [--date <YYYY-MM-DD>] [--json]
                                 Source-backed daily task/followup surface.
@@ -35,13 +36,13 @@ dome rebuild                    Wipe and rebuild projection store from adopted c
 dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox, quarantine.
-dome doctor [--json] [--repair]
+dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
                                 Run engine-substrate health checks; --repair is
                                 reserved for answer-mediated mitigations.
 dome answer <question-id> [<value>]
                                 Resolve an engine-raised QuestionEffect from
                                 the user-decision channel.
-dome serve [--vault <path>] [--poll-interval-ms <n>]
+dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
 ```
@@ -76,6 +77,13 @@ specific command arguments that the core CLI cannot know ahead of time.
 The Commander binding for `dome run` allows unknown options and passes
 those opaque flags through to `ctx.input.commandArgs.flags`; all shipped
 first-party commands should prefer explicit Commander options.
+
+Dedicated wrappers over shipped view processors (`dome query`, `dome lint`,
+`dome export-context`, `dome today`, and `dome prep`) also validate the
+returned `ViewEffect` boundary. Each wrapper expects exactly one view with
+the canonical effect `name` and structured `schema` for that command before
+rendering. `dome run` remains the generic extension escape hatch and renders
+the processor's own view payloads without imposing a first-party schema.
 
 ## Per-command specs
 

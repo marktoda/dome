@@ -31,6 +31,8 @@ export async function runPrep(
     const run = await runStructuredViewCommand({
       commandLabel: "dome prep",
       commandName: "prep",
+      expectedViewName: "dome.daily.prep",
+      expectedSchema: "dome.daily.prep/v1",
       commandArgs: Object.freeze({
         date,
         limit: options.limit ?? DEFAULT_LIMIT,

@@ -28,6 +28,8 @@ export async function runToday(
     const run = await runStructuredViewCommand({
       commandLabel: "dome today",
       commandName: "today",
+      expectedViewName: "dome.daily.today",
+      expectedSchema: "dome.daily.today/v1",
       commandArgs: Object.freeze({ date }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,

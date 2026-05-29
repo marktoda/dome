@@ -1,0 +1,13 @@
+id: test.bad-query-view
+version: 0.1.0
+processors:
+  - id: test.bad-query-view.query
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: query
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/query.ts
