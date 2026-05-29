@@ -284,7 +284,9 @@ function capabilityGrantFindings(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
 }): ReadonlyArray<HealthFinding> {
   const findings: HealthFinding[] = [];
-  for (const processor of opts.registry.all()) {
+  for (const processor of [...opts.registry.all()].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )) {
     const declaredKinds = capabilityKinds(processor.capabilities);
     if (declaredKinds.size === 0) continue;
     const grantedKinds = capabilityKinds(opts.resolveGrants(processor.id));
