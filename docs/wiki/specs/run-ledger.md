@@ -84,7 +84,7 @@ CREATE TABLE capability_uses (
 CREATE INDEX capability_uses_by_run ON capability_uses(run_id);
 ```
 
-Capability uses are written by the broker (per [[wiki/specs/capabilities]] §"Enforcement chokepoint") at the moment of effect application. The broker writes one row per effect attempted; the union of rows joined to a run gives the full "what did this processor reach" picture.
+Capability uses are written by the broker (per [[wiki/specs/capabilities]] §"Enforcement chokepoint") at the moment of effect application, and by runtime-only capability boundaries such as `model.invoke` when a processor reaches a privileged context function. The broker writes one row per effect attempted; `model.invoke` writes one row per model-call attempt with the resolved model as `resource` when known. The union of rows joined to a run gives the full "what did this processor reach" picture.
 
 ## Run lifecycle
 

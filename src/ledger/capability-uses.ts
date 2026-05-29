@@ -1,21 +1,23 @@
 // ledger-capability-uses: per-row insert + read for the `capability_uses`
-// table. Owns the broker → ledger boundary: every time the capability
-// broker evaluates an effect against the processor's declared grant set,
-// it writes one row here describing the capability, the resource touched,
-// and the outcome ("allowed" | "downgraded" | "denied").
+// table. Owns the privileged-runtime/effect → ledger boundary: every time
+// the capability broker evaluates an effect, or the runtime evaluates a
+// non-effect capability such as `model.invoke`, it writes one row here
+// describing the capability, the resource touched, and the outcome
+// ("allowed" | "downgraded" | "denied").
 //
 // Normative references:
 //   - docs/wiki/specs/run-ledger.md §"Tables — capability_uses" (column
 //     shape + outcome enum + the join-by-`run_id` audit pattern).
 //   - docs/wiki/specs/capabilities.md §"Enforcement chokepoint" — the
-//     broker writes one row per effect attempted; the union of rows
-//     joined to a run gives "what did this processor reach."
+//     broker writes one row per effect attempted; runtime-only powers such
+//     as `model.invoke` write rows at their context boundary. The union of
+//     rows joined to a run gives "what did this processor reach."
 //
 // Structural fences this file upholds:
 //   - docs/wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED.md §"Structural
 //     enforcement" §2: "The applier writes `capability_uses` rows per
 //     effect. Joined to the RunRecord by `run_id`." This file owns the
-//     SQL that lands those rows.
+//     SQL that lands those rows, plus equivalent runtime-capability rows.
 //
 // House-style notes (mirrors src/projections/diagnostics.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
@@ -99,9 +101,9 @@ type CapabilityUseRawRow = {
 
 /**
  * Insert one capability_use row. The capability broker calls this once
- * per effect-evaluation attempt — multiple rows per run are normal (a
- * processor that emits 5 patches and 2 facts produces 7 rows, all joined
- * to the run by `run_id`).
+ * per effect-evaluation attempt, and the runtime calls it for non-effect
+ * privileged context actions such as model.invoke. Multiple rows per run
+ * are normal.
  *
  * Throws on SQLite-level failure (disk full, schema-mismatch, etc.).
  */

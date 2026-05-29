@@ -56,7 +56,7 @@ Per-call cost is sub-millisecond; the broker is not the engine's bottleneck.
 
 ## Why `model.invoke` is missing from this matrix
 
-`model.invoke` is checked at a different chokepoint — when a processor calls `ctx.modelInvoke(...)`, the model-invoke shim consults the broker for the processor capability plus the bundle-level per-day spend cap. It is not gated on Effect emission because LLM calls happen *during* a processor's `run()`, before any Effect is returned.
+`model.invoke` is checked at a different chokepoint — when a processor calls `ctx.modelInvoke(...)`, the model-invoke shim consults the effective processor capability plus the bundle-level per-day spend cap and records the decision in `capability_uses`. It is not gated on Effect emission because LLM calls happen *during* a processor's `run()`, before any Effect is returned.
 
 The cap-enforcement scenario at `tests/harness/scenarios/capabilities/model-invoke-scheduled.scenario.test.ts` exercises this path.
 

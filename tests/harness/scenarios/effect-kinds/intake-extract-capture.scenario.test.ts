@@ -131,6 +131,11 @@ scenario(
     expect(cost?.cost_usd).toBe(0.1);
     expect(capabilityUsesByRun(h.ledger, run.id as RunId)).toEqual([
       expect.objectContaining({
+        capability: "model.invoke",
+        resource: "test-model",
+        outcome: "allowed",
+      }),
+      expect.objectContaining({
         capability: "patch.auto",
         resource: `${OUTPUT_PATH},${ARCHIVE_PATH},${CAPTURE_PATH}`,
         outcome: "allowed",

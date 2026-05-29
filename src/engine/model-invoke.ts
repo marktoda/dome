@@ -37,6 +37,12 @@ export type ModelProvider = (
   request: ModelProviderRequest,
 ) => Promise<ModelProviderResponse>;
 
+export type ModelInvokeCapabilityUse = {
+  readonly capability: "model.invoke";
+  readonly resource: string | null;
+  readonly outcome: "allowed" | "denied";
+};
+
 export function modelInvokeForProcessor(opts: {
   readonly phase: ProcessorPhase;
   readonly processorId: string;
@@ -46,6 +52,7 @@ export function modelInvokeForProcessor(opts: {
   readonly signal: AbortSignal;
   readonly provider?: ModelProvider;
   readonly onCost?: (costUsd: number) => void;
+  readonly onCapabilityUse?: (use: ModelInvokeCapabilityUse) => void;
   readonly spentUsdToday?: () => number;
 }): ModelInvokeFn | undefined {
   if (opts.phase === "adoption") return undefined;
@@ -55,9 +62,22 @@ export function modelInvokeForProcessor(opts: {
   const invokeText = async (
     input: ModelInvokeTextInput,
   ): Promise<string> => {
-    const request = normalizeRequest(input, modelPolicy);
-    enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
+    let request: Omit<ModelProviderRequest, "signal">;
+    try {
+      request = normalizeRequest(input, modelPolicy);
+      enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
+    } catch (error) {
+      recordModelCapabilityUse(opts.onCapabilityUse, {
+        resource: input.model ?? null,
+        outcome: "denied",
+      });
+      throw error;
+    }
     if (opts.provider === undefined) {
+      recordModelCapabilityUse(opts.onCapabilityUse, {
+        resource: request.model ?? null,
+        outcome: "denied",
+      });
       throw modelError(
         "model.invoke.denied",
         `${opts.processorId}: model.invoke is granted but no model provider is configured.`,
@@ -65,6 +85,10 @@ export function modelInvokeForProcessor(opts: {
       );
     }
 
+    recordModelCapabilityUse(opts.onCapabilityUse, {
+      resource: request.model ?? null,
+      outcome: "allowed",
+    });
     const response = await callProviderWithTimeout({
       provider: opts.provider,
       request,
@@ -90,6 +114,17 @@ export function modelInvokeForProcessor(opts: {
     enumerable: true,
   });
   return Object.freeze(fn);
+}
+
+function recordModelCapabilityUse(
+  callback: ((use: ModelInvokeCapabilityUse) => void) | undefined,
+  use: Omit<ModelInvokeCapabilityUse, "capability">,
+): void {
+  callback?.({
+    capability: "model.invoke",
+    resource: use.resource,
+    outcome: use.outcome,
+  });
 }
 
 type EffectiveModelPolicy = {

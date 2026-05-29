@@ -161,7 +161,8 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE INDEX IF NOT EXISTS runs_by_status ON runs(status, started_at)",
 
   // 6. capability_uses — one row per capability-attempt recorded by the
-  //    broker. Per the spec §"Tables — capability_uses":
+  //    broker or by runtime-only capability boundaries such as
+  //    `model.invoke`. Per the spec §"Tables — capability_uses":
   //    - `run_id` REFERENCES runs(id). Foreign-key enforcement is not
   //      enabled in v1 (PRAGMA foreign_keys defaults to off in SQLite);
   //      the schema documents the relationship for human readers and for

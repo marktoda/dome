@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 
+import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
+import type { RunId } from "../../../../src/ledger/runs";
 import { scenario } from "../../index";
 
 const FIXTURE_BUNDLE = join(
@@ -129,6 +131,23 @@ extensions:
       { status: "succeeded", cost_usd: 0.25 },
       { status: "succeeded", cost_usd: 0.25 },
     ]);
+
+    const runIds = h.ledger.raw
+      .query<{ id: string }, [string]>(
+        `
+        SELECT id
+        FROM runs
+        WHERE processor_id = ?
+        ORDER BY started_at ASC
+        `.trim(),
+      )
+      .all(PROCESSOR_ID);
+    const usesByRun = runIds.map((row) =>
+      capabilityUsesByRun(h.ledger, row.id as RunId),
+    );
+    expectOnlyModelInvokeUse(usesByRun[0] ?? [], "allowed");
+    expectOnlyModelInvokeUse(usesByRun[1] ?? [], "allowed");
+    expectOnlyModelInvokeUse(usesByRun[2] ?? [], "allowed");
   },
 );
 
@@ -204,5 +223,33 @@ extensions:
       { status: "succeeded", cost_usd: 0.25 },
       { status: "failed", cost_usd: null },
     ]);
+
+    const runIds = h.ledger.raw
+      .query<{ id: string }, [string]>(
+        `
+        SELECT id
+        FROM runs
+        WHERE processor_id = ?
+        ORDER BY started_at ASC
+        `.trim(),
+      )
+      .all(PROCESSOR_ID);
+    const usesByRun = runIds.map((row) =>
+      capabilityUsesByRun(h.ledger, row.id as RunId),
+    );
+    expectOnlyModelInvokeUse(usesByRun[0] ?? [], "allowed");
+    expectOnlyModelInvokeUse(usesByRun[1] ?? [], "denied");
   },
 );
+
+function expectOnlyModelInvokeUse(
+  rows: ReadonlyArray<unknown>,
+  outcome: "allowed" | "denied",
+): void {
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toEqual(expect.objectContaining({
+    capability: "model.invoke",
+    resource: "test-model",
+    outcome,
+  }));
+}

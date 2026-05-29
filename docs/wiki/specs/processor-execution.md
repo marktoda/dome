@@ -21,8 +21,8 @@ Shipped in the current v1 runtime:
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
-- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, and captures run-local cost.
-- Provider adapters, provider-transient retry policy, vault-level timeout caps, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
+- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
+- Provider adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
 
 ## Run state machine
 
@@ -116,6 +116,7 @@ The `ctx.modelInvoke` runtime boundary has these guarantees:
 
 - Checks the processor's effective `model.invoke` grant and model allowlist before the call.
 - Fails with `model.invoke.denied` when no provider is configured, the prompt is empty, the requested model is outside the effective allowlist, or the bundle's effective daily cost budget is spent.
+- Records a `capability_uses` row for each model-call attempt: `allowed` when the provider call is authorized, `denied` when the model call is rejected before provider invocation.
 - Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
 - Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.

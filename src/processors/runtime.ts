@@ -93,6 +93,7 @@ import type {
 } from "../engine/runner-contract";
 import type { SignalEvent } from "../engine/compile-range";
 import type { LedgerDb } from "../ledger/db";
+import { recordCapabilityUse } from "../ledger/capability-uses";
 import {
   executeProcessor,
   type ProcessorExecutionResult,
@@ -854,6 +855,16 @@ function buildExecutionContext<TEnvelope>(
           : {}),
         onCost: (cost) => {
           costUsd += cost;
+        },
+        onCapabilityUse: (use) => {
+          if (frame.ledger === undefined) return;
+          recordCapabilityUse(frame.ledger, {
+            runId: frame.runId,
+            capability: use.capability,
+            resource: use.resource,
+            outcome: use.outcome,
+            recordedAt: new Date(),
+          });
         },
         spentUsdToday: () =>
           modelSpendForToday({

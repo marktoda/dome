@@ -38,7 +38,8 @@ import type { EngineVault } from "../../src/engine/vault-shape";
 import type { ModelProvider } from "../../src/engine/model-invoke";
 import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
-import { queryRuns } from "../../src/ledger/runs";
+import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
+import { queryRuns, type RunId } from "../../src/ledger/runs";
 
 // Stub EngineVault — the runtime never touches it.
 const STUB_VAULT: EngineVault = {
@@ -532,6 +533,13 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(row.costUsd).toBe(0.125);
     const parsed = JSON.parse(row.error ?? "{}");
     expect(parsed.code).toBe("model.output.invalid-json");
+    expect(capabilityUsesByRun(ledger, row.id as RunId)).toEqual([
+      expect.objectContaining({
+        capability: "model.invoke",
+        resource: null,
+        outcome: "allowed",
+      }),
+    ]);
   });
 
   test("model provider timeout is retryable and can quarantine a garden trigger", async () => {
