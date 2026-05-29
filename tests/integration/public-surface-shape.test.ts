@@ -30,6 +30,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
 
   // Processor types + helpers.
   "defineProcessor",
+  "defineProcessorImplementation",
   "treeOid",
   "transientProcessorError",
 

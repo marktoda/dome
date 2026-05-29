@@ -17,7 +17,7 @@ tier: axiom
 **Structural enforcement:**
 
 1. **`ProcessorContext` interface has no mutation surface.** TypeScript's structural typing makes a `Processor.run` body that tries to `ctx.write(...)` or `ctx.git.commit(...)` fail compilation — the methods don't exist on the type.
-2. **`defineProcessor(...)` is the only construction path.** The function freezes the returned object; reassigning `processor.run` after definition fails.
+2. **Processor constructors freeze the executable surface.** `defineProcessorImplementation(...)` freezes implementation exports; legacy `defineProcessor(...)` freezes full Processor exports. Reassigning `run` after definition fails.
 3. **The engine never gives a processor a writer reference.** `ProcessorContext` carries `snapshot` (read-only), `changedPaths` (read-only), `capabilities` (an opaque token), `modelInvoke?` (an LLM-call function), `sourceRef` (a helper) — no `writer`, no `db`, no `git`.
 4. **The semantic linter `processor-purity`** ([[wiki/linters/processor-purity]]) statically inspects every file under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` for imports of mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git`, etc.). Imports outside an allowlist (Zod, type-only imports from `@dome/sdk`) fail the lint.
 
@@ -35,8 +35,10 @@ fences are current v1 behavior.
   `changedPaths`, `proposal`, `runId`, `input`, optional `modelInvoke`, and
   SourceRef helpers. It does not expose writers, git, SQLite, or filesystem
   handles.
-- **`defineProcessor(...)` is the freeze-locked construction path.** Processor
-  static metadata and `run` are frozen after definition.
+- **Processor implementation exports are freeze-locked.** New bundle modules
+  use `defineProcessorImplementation(...)`; legacy full-Processor modules may
+  still use `defineProcessor(...)`. In both cases `run` is frozen after
+  definition, while manifest metadata remains the reviewable source of truth.
 - **`run` returns `Promise<Effect[]>`.** The Effect union is closed at eleven
   kinds and `src/engine/apply-effect.ts` exhaustively routes them.
 - **Effect schemas validate at the executor boundary.** Invalid processor

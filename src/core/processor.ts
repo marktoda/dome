@@ -5,14 +5,13 @@
 //
 // See docs/wiki/specs/processors.md for the normative contract (the Processor
 // type, the three phases, triggers and signals, capability tiers, idempotency,
-// registration via `defineProcessor`). Capability tier shapes are normative in
-// docs/wiki/specs/capabilities.md §"Capability tiers".
+// registration via bundle manifests + implementation exports). Capability tier
+// shapes are normative in docs/wiki/specs/capabilities.md §"Capability tiers".
 //
 // Pure type definitions + Zod boundary schemas for static-data fields (triggers,
-// capabilities, phase enum, signal enum, snapshot) + the `defineProcessor`
-// type-narrowing identity helper. No runtime — the engine + processor runtime
-// (Phase 2-3) implement against this type contract. No filesystem, sqlite, or
-// git access.
+// capabilities, phase enum, signal enum, snapshot) + processor-authoring
+// type-narrowing helpers. No runtime — the engine + processor runtime implement
+// against this type contract. No filesystem, sqlite, or git access.
 //
 // House-style notes (matches src/core/source-ref.ts, src/core/effect.ts, and
 // src/core/proposal.ts):
@@ -536,12 +535,22 @@ export type Processor<TInput = unknown> = {
   readonly run: (ctx: ProcessorContext<TInput>) => Promise<ReadonlyArray<Effect>>;
 };
 
+/**
+ * The executable part of a processor module. Bundle manifests are the
+ * reviewable source of truth for id/version/phase/triggers/capabilities/
+ * execution; modules can export just this implementation shape and let the
+ * loader bind the manifest metadata into a full Processor.
+ */
+export type ProcessorImplementation<TInput = unknown> = {
+  readonly run: (ctx: ProcessorContext<TInput>) => Promise<ReadonlyArray<Effect>>;
+};
+
 // ----- Zod schemas ----------------------------------------------------------
 // Boundary validation only — used by the bundle-manifest loader (Phase 3+)
 // to validate processor declarations read from `manifest.yaml`. Function-
 // bearing types (Processor, ProcessorContext) intentionally omitted: the
-// engine constructs ProcessorContext at runtime, and the loader validates
-// Processor's static-data fields via the per-field schemas exported here.
+// engine constructs ProcessorContext at runtime, and the manifest loader
+// validates static declarations via the per-field schemas exported here.
 //
 // Not annotated as `z.ZodType<T>` because zod's `.optional()` emits
 // `key?: T | undefined`, which collides with exactOptionalPropertyTypes.
@@ -792,9 +801,8 @@ export const SnapshotSchema = z
 // ----- defineProcessor ------------------------------------------------------
 
 /**
- * The canonical processor constructor. A type-narrowing identity function so
- * type inference works correctly at the call site (the generic `TInput`
- * threads through `ctx.input` in the user's `run`).
+ * Legacy full-Processor constructor. Prefer `defineProcessorImplementation`
+ * for bundle modules whose manifest owns static metadata.
  *
  * Object.freeze chosen over `as const` so misbehaving processors fail loudly
  * at runtime rather than silently corrupting facts.
@@ -803,4 +811,15 @@ export function defineProcessor<TInput = unknown>(
   processor: Processor<TInput>,
 ): Processor<TInput> {
   return Object.freeze(processor);
+}
+
+/**
+ * Canonical bundle-module constructor. A type-narrowing identity function so
+ * `TInput` threads through `ctx.input` while avoiding duplicate manifest
+ * metadata in processor source files.
+ */
+export function defineProcessorImplementation<TInput = unknown>(
+  implementation: ProcessorImplementation<TInput>,
+): ProcessorImplementation<TInput> {
+  return Object.freeze(implementation);
 }

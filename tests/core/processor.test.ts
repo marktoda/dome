@@ -1,6 +1,6 @@
 // Smoke tests for src/core/processor.ts: the static-data boundary schemas
 // (TriggerSchema, CapabilitySchema, ProcessorPhaseSchema, SignalSchema) and
-// the `defineProcessor` type-narrowing identity helper.
+// the processor authoring type-narrowing identity helpers.
 
 import { describe, test, expect } from "bun:test";
 import {
@@ -10,6 +10,7 @@ import {
   SignalSchema,
   TriggerSchema,
   defineProcessor,
+  defineProcessorImplementation,
   type Processor,
 } from "../../src/core/processor";
 
@@ -58,6 +59,16 @@ describe("defineProcessor", () => {
 
     expect(p.execution?.class).toBe("llm");
     expect(p.execution?.timeoutMs).toBe(600_000);
+  });
+});
+
+describe("defineProcessorImplementation", () => {
+  test("returns a frozen implementation", () => {
+    const implementation = defineProcessorImplementation({
+      run: async () => [],
+    });
+    expect(Object.isFrozen(implementation)).toBe(true);
+    expect(typeof implementation.run).toBe("function");
   });
 });
 

@@ -173,33 +173,14 @@ Every invocation is wrapped by the runtime contract in [[wiki/specs/processor-ex
 
 ## Registration
 
-Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A bundle's `processors/` directory contains TypeScript files exporting Processor objects. The runtime loads them at `openVault` time.
+Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A bundle's `manifest.yaml` owns static metadata: id, version, phase, triggers, capabilities, execution policy, and module path. A bundle's `processors/` directory contains TypeScript files exporting implementation objects with a `run(ctx)` function. The loader binds manifest metadata onto each implementation at `openVault` time.
 
 ```ts
 // assets/extensions/dome.intake/processors/extract-capture.ts
-import { defineProcessor } from "@dome/sdk";
+import { defineProcessorImplementation } from "@dome/sdk";
 import type { Effect } from "@dome/sdk";
 
-export default defineProcessor({
-  id: "dome.intake.extract-capture",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    { kind: "signal", name: "file.created", pathPattern: "inbox/raw/*.md" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["inbox/raw/*.md"] },
-    {
-      kind: "patch.auto",
-      paths: [
-        "wiki/generated/intake/*.md",
-        "inbox/processed/*.md",
-        "inbox/raw/*.md",
-      ],
-    },
-    { kind: "model.invoke", maxDailyCostUsd: 5 },
-    { kind: "question.ask" },
-  ],
+export default defineProcessorImplementation({
   async run(ctx): Promise<Effect[]> {
     // read the new capture file from ctx.snapshot
     // call ctx.modelInvoke to compile it to generated capture markdown
@@ -208,7 +189,7 @@ export default defineProcessor({
 });
 ```
 
-`defineProcessor` is a type-narrowing identity function. Adding a new processor is one file edit (in the bundle's `processors/` directory) plus a row in the bundle's `manifest.yaml`'s `processors:` block.
+`defineProcessorImplementation` is a type-narrowing identity function. Adding a new processor is one implementation file in the bundle's `processors/` directory plus a row in the bundle's `manifest.yaml` `processors:` block. Legacy modules that export a full `Processor` are still accepted, but new bundle code should not duplicate manifest metadata.
 
 ## First-party processors (the `dome.*` bundles)
 
@@ -220,7 +201,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
 | `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today, prep | Creates daily notes, carries unfinished markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture | Compiles `inbox/raw/*.md` captures into generated capture pages plus processed archives, writes source-linked synthesis pages from generated captures, warns on stale inbox files, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and indexes confidence-carrying `dome.intake.*` facts from generated capture metadata. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles `inbox/raw/*.md` captures into generated capture pages plus processed archives, writes source-linked synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and indexes confidence-carrying `dome.intake.*` facts from generated capture metadata. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains the FTS5 projection; answers adopted-state query and context-packet requests. |
 

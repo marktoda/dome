@@ -8,8 +8,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -27,31 +26,7 @@ const PREDICATE_BY_KIND = Object.freeze({
   source_quote: "dome.intake.source_quote",
 });
 
-const captureIndex: Processor = defineProcessor({
-  id: "dome.intake.capture-index",
-  version: "0.1.0",
-  phase: "adoption",
-  triggers: [
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "wiki/generated/intake/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "wiki/generated/intake/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "wiki/generated/intake/*.md",
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["wiki/generated/intake/*.md"] },
-    { kind: "graph.write", namespaces: ["dome.intake.*"] },
-  ],
+const captureIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: Effect[] = [];
     for (const path of ctx.changedPaths.filter(isGeneratedCapturePath).sort()) {

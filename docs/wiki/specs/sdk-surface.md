@@ -181,7 +181,7 @@ An **extension bundle** is a directory under a configured bundles root: `assets/
   manifest.yaml             # bundle identity + processor declarations + capability requests
   page-types.yaml           # optional — extension page types
   preamble.md               # optional — fragment threaded into AGENTS.md
-  processors/               # TypeScript files exporting defineProcessor(...)
+  processors/               # TypeScript files exporting defineProcessorImplementation(...)
     *.ts
   external-handlers/        # optional — TypeScript files registering ExternalActionEffect handlers
     *.ts
@@ -302,7 +302,7 @@ processors:
     module: processors/low-confidence-answer.ts
 ```
 
-The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor; the module supplies the `run` function and must agree on id / version / phase.
+The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: id, version, phase, triggers, capabilities, and execution policy are bound from the manifest onto the loaded processor. New modules supply only the `run` implementation via `defineProcessorImplementation({ run })`; implementation exports with stray manifest-owned metadata fail the load. Legacy modules that export full `Processor` objects are still accepted for migration compatibility, but manifest values win for triggers, capabilities, and execution, and the legacy id/version/phase must agree with the manifest.
 
 #### Bundle-loader error taxonomy
 
@@ -312,7 +312,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `manifest-read-failed` | A bundle has neither readable `manifest.yaml` nor `manifest.json`, or the manifest cannot be parsed. |
 | `manifest-invalid` | Zod validation fails (missing `id:`, malformed `version:`, etc.) or a phase × trigger / phase × execution / phase × capability matrix check rejects the declaration. |
 | `processor-module-path-invalid` | A manifest `module:` path is absolute, escapes the bundle root, bypasses `<bundle>/processors/`, or does not point at a `.ts` file. |
-| `processor-module-load-failed` | A `<bundle>/processors/<name>.ts` fails to import, has identity drift against the manifest, or default-exports an object without a `run` function. |
+| `processor-module-load-failed` | A `<bundle>/processors/<name>.ts` fails to import, default-exports an object without a `run` function, carries partial manifest-owned metadata, or has legacy identity drift against the manifest. |
 | `processor-missing-default-export` | A processor module imports but does not default-export an object. |
 | `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids, duplicate command triggers, empty triggers, or invalid phases. |
 | `page-type-collision` | Two bundles declare the same page-type name; the loader fails before opening the runtime. Vault-local collisions with bundle/default page types are surfaced by `dome.markdown.lint-frontmatter` from the candidate snapshot. |
@@ -343,7 +343,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture | Compiles raw captures, routes low-confidence items through questions, writes source-backed synthesis pages from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures, routes low-confidence items through questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
@@ -354,8 +354,8 @@ Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles i
 
 Four file edits, paralleling the v0.5 "Adding a Tool" recipe:
 
-1. **The processor file** at `assets/extensions/<bundle>/processors/<name>.ts` (or `<vault>/.dome/extensions/<bundle>/processors/<name>.ts` for vault-local). Exports `defineProcessor({ id, version, phase, triggers, capabilities, run })`.
-2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities.
+1. **The processor file** at `assets/extensions/<bundle>/processors/<name>.ts` (or `<vault>/.dome/extensions/<bundle>/processors/<name>.ts` for vault-local). Exports `defineProcessorImplementation({ run })`.
+2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities / execution.
 3. **The shipped default grants** in `src/cli/commands/init.ts`'s `DEFAULT_CONFIG_YAML` block (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`; if one processor in a bundle needs a narrower or broader scope than the rest of the bundle, use `extensions.<bundle>.processors.<processor-id>.grant` as a replacement grant.
 4. **The test** at `tests/processors/<bundle-id>-<processor-id>.test.ts` asserting the processor runs against a representative input and emits the expected effects.
 

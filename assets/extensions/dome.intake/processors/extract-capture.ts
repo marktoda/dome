@@ -6,8 +6,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -70,31 +69,7 @@ const CaptureExtractionSchema = z
   })
   .strict();
 
-const extractCapture: Processor = defineProcessor({
-  id: "dome.intake.extract-capture",
-  version: "0.3.0",
-  phase: "garden",
-  triggers: [
-    { kind: "signal", name: "file.created", pathPattern: "inbox/raw/*.md" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["inbox/raw/*.md"] },
-    {
-      kind: "patch.auto",
-      paths: [
-        "wiki/generated/intake/*.md",
-        "inbox/processed/*.md",
-        "inbox/raw/*.md",
-      ],
-    },
-    { kind: "model.invoke", maxDailyCostUsd: 5 },
-    { kind: "question.ask" },
-  ],
-  execution: {
-    class: "llm",
-    timeoutMs: 600_000,
-    modelCallTimeoutMs: 180_000,
-  },
+const extractCapture = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.modelInvoke === undefined) {
       throw new Error("dome.intake.extract-capture requires model.invoke");

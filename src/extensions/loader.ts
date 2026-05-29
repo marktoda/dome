@@ -19,11 +19,12 @@
 //     [[wiki/specs/sdk-surface]] §"`manifest.yaml` schema"; JSON support
 //     exists for v1-era simplicity.
 //   - Dynamic-imports each processor's `module:` path. The module's
-//     default export must be a `Processor` whose (id, version, phase)
-//     matches the manifest declaration. Manifest `module:` paths are
-//     confined to TypeScript files under `<bundle>/processors/`; path
-//     escapes fail before import. A mismatch fails the load with
-//     `processor-module-load-failed`.
+//     default export must be a `ProcessorImplementation` (`{ run }`) or a
+//     legacy full `Processor` whose manifest-owned metadata shape is complete
+//     and whose (id, version, phase) matches the manifest declaration.
+//     Manifest `module:` paths are confined to TypeScript files under
+//     `<bundle>/processors/`; path escapes fail before import. A mismatch
+//     fails the load with `processor-module-load-failed`.
 //   - Returns `Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>` —
 //     never throws on expected I/O failures. Programmer errors (the bundle
 //     directory layout itself is unreadable) propagate.
@@ -51,7 +52,7 @@ import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import { err, ok, type Result } from "../types";
-import type { Processor } from "../core/processor";
+import type { Processor, ProcessorImplementation } from "../core/processor";
 import {
   mergePageTypeDeclarations,
   parsePageTypesYaml,
@@ -93,10 +94,11 @@ export type LoadedBundle = {
  *     disagree. Bundle activation keys address directory names before
  *     import, so drift here must fail loudly.
  *   - `processor-module-load-failed`: a dynamic import threw, OR the
- *     imported module's default export's `(id, version, phase)` didn't
- *     match the manifest declaration. The `cause` field carries the
- *     thrown message (for import failures) or a structured "manifest
- *     declared X; module exported Y" string (for mismatches).
+ *     imported module's default export had no `run`, had incomplete
+ *     manifest-owned metadata, or its legacy full-Processor `(id, version,
+ *     phase)` didn't match the manifest declaration. The `cause` field
+ *     carries the thrown message (for import failures) or a structured
+ *     mismatch string.
  *   - `processor-module-path-invalid`: a manifest `module:` path was
  *     absolute, escaped the bundle root, bypassed `processors/`, or did
  *     not point at a TypeScript module.
@@ -435,11 +437,12 @@ async function tryReadFile(p: string): Promise<Result<string, string>> {
  * handling is bun-supported but the explicit `file://` URL is robust to
  * future shells / runners).
  *
- * The declared (id, version, phase) must match the module's exported
- * (id, version, phase). The cross-check defends against a refactor that
- * renamed a processor but left the manifest stale — without it, a
- * mismatched processor would silently run under the manifest's declared
- * capabilities while exposing a different observable id.
+ * New modules should export a `ProcessorImplementation` (`{ run }`) and keep
+ * all static metadata in the manifest. Legacy full Processor exports remain
+ * supported; when a module exports any manifest-owned metadata, it must be a
+ * complete legacy shape and its id/version/phase values must match the
+ * manifest so stale bundles fail loudly instead of running under surprising
+ * names.
  */
 async function loadProcessorModule(
   bundlePath: string,
@@ -476,22 +479,9 @@ async function loadProcessorModule(
     });
   }
 
-  // Structural validation of the imported object's identity and executable
-  // body against the manifest declaration. The manifest remains the
-  // authoritative source for routing/security/execution metadata; the module
-  // supplies the `run` function and must agree on id/version/phase so stale
-  // bundles fail loudly instead of running under surprising names.
-  const processor = defaultExport as Processor<unknown>;
-  const mismatch = checkProcessorIdentity(decl, processor);
-  if (mismatch !== null) {
-    return err({
-      kind: "processor-module-load-failed",
-      bundleId,
-      modulePath: decl.module,
-      cause: mismatch,
-    });
-  }
-  if (typeof processor.run !== "function") {
+  const implementation =
+    defaultExport as Partial<ProcessorImplementation<unknown>>;
+  if (typeof implementation.run !== "function") {
     return err({
       kind: "processor-module-load-failed",
       bundleId,
@@ -500,7 +490,22 @@ async function loadProcessorModule(
     });
   }
 
-  return ok(bindProcessorDeclaration(decl, processor));
+  const mismatch = checkProcessorMetadataBoundary(decl, defaultExport);
+  if (mismatch !== null) {
+    return err({
+      kind: "processor-module-load-failed",
+      bundleId,
+      modulePath: decl.module,
+      cause: mismatch,
+    });
+  }
+
+  return ok(
+    bindProcessorDeclaration(
+      decl,
+      implementation as ProcessorImplementation<unknown>,
+    ),
+  );
 }
 
 function resolveProcessorModulePath(
@@ -555,14 +560,26 @@ function isWithin(root: string, child: string): boolean {
 }
 
 /**
- * Verify the module's exported processor matches the manifest declaration
- * on the three identity fields. Returns null on match; a human-readable
- * mismatch message on drift.
+ * Verify manifest-owned metadata stays on one side of the boundary.
+ * Implementation-only exports intentionally carry no static metadata. Legacy
+ * full-Processor exports may carry metadata, but then the identity fields must
+ * be present and agree with the manifest. Partial hybrid shapes fail loudly
+ * rather than silently ignoring stale triggers/capabilities/execution fields.
  */
-function checkProcessorIdentity(
+function checkProcessorMetadataBoundary(
   decl: ProcessorDeclaration,
-  processor: Processor<unknown>,
+  exported: object,
 ): string | null {
+  const processor = exported as Partial<Processor<unknown>>;
+  const metadataKeys = manifestMetadataKeys(exported);
+  if (metadataKeys.length === 0) return null;
+  if (
+    !hasOwn(exported, "id") ||
+    !hasOwn(exported, "version") ||
+    !hasOwn(exported, "phase")
+  ) {
+    return `manifest declared processor '${decl.id}'; module exported manifest-owned metadata (${metadataKeys.join(", ")}) without complete legacy identity fields`;
+  }
   if (processor.id !== decl.id) {
     return `manifest declared id '${decl.id}'; module exported id '${processor.id}'`;
   }
@@ -575,6 +592,22 @@ function checkProcessorIdentity(
   return null;
 }
 
+function manifestMetadataKeys(exported: object): ReadonlyArray<string> {
+  const keys = [
+    "id",
+    "version",
+    "phase",
+    "triggers",
+    "capabilities",
+    "execution",
+  ];
+  return keys.filter((key) => hasOwn(exported, key));
+}
+
+function hasOwn(obj: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 /**
  * Bind manifest-reviewed metadata onto the executable processor. This keeps
  * the manifest as the reviewable source of truth for triggers, capabilities,
@@ -582,7 +615,7 @@ function checkProcessorIdentity(
  */
 function bindProcessorDeclaration(
   decl: ProcessorDeclaration,
-  processor: Processor<unknown>,
+  implementation: ProcessorImplementation<unknown>,
 ): Processor<unknown> {
   const base = {
     id: decl.id,
@@ -590,7 +623,7 @@ function bindProcessorDeclaration(
     phase: decl.phase,
     triggers: Object.freeze([...decl.triggers]),
     capabilities: Object.freeze([...decl.capabilities]),
-    run: processor.run,
+    run: implementation.run,
   } satisfies Omit<Processor<unknown>, "execution">;
 
   if (decl.execution === undefined) {

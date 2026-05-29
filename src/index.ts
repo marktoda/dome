@@ -9,7 +9,8 @@
 // What this surface exposes:
 //   - The four-concept core types (Vault / Proposal / Processor / Effect).
 //   - Effect constructors (for processor authors).
-//   - Processor authoring helpers (`defineProcessor`).
+//   - Processor authoring helpers (`defineProcessorImplementation`, plus
+//     legacy `defineProcessor` for full-Processor modules).
 //   - The adopted-ref read accessors.
 //   - The bundle loader (for the daemon and for tests).
 //
@@ -71,6 +72,7 @@ export {
 export type {
   Capability,
   Processor,
+  ProcessorImplementation,
   ProcessorContext,
   ProcessorPhase,
   Trigger,
@@ -79,7 +81,11 @@ export type {
   ModelInvokeTextInput,
   ModelInvokeStructuredInput,
 } from "./core/processor";
-export { defineProcessor, treeOid } from "./core/processor";
+export {
+  defineProcessor,
+  defineProcessorImplementation,
+  treeOid,
+} from "./core/processor";
 export type { TransientProcessorError } from "./core/processor-error";
 export { transientProcessorError } from "./core/processor-error";
 

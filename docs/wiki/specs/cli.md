@@ -597,8 +597,8 @@ Until these aliases ship, command-triggered view processors are invoked via
 
 The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding a processor" — CLI commands are command-triggered view-phase processors. A generic `dome run <name>` command needs three edits:
 
-1. **The processor file** at `assets/extensions/<bundle>/processors/<command-name>.ts` exporting a Processor with `phase: "view"` and `triggers: [{ kind: "command", name: "<command-name>" }]`.
-2. **The manifest entry** in the bundle's `manifest.yaml` declaring the processor.
+1. **The processor file** at `assets/extensions/<bundle>/processors/<command-name>.ts` exporting `defineProcessorImplementation({ run })`.
+2. **The manifest entry** in the bundle's `manifest.yaml` declaring `phase: "view"` and `triggers: [{ kind: "command", name: "<command-name>" }]`.
 3. **An end-to-end test** at `tests/harness/scenarios/cli-surface/<command>.scenario.test.ts` exercising `dome run <command-name>` against a fixture vault.
 
 A dedicated `dome <name>` Commander binding is a fourth edit when the command

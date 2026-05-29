@@ -6,8 +6,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -15,21 +14,7 @@ const STALE_INBOX_CODE = "inbox.stale";
 const DEFAULT_STALE_AGE_HOURS = 168;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
-const inboxStaleCheck: Processor = defineProcessor({
-  id: "dome.intake.inbox-stale-check",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    { kind: "schedule", cron: "0 * * * *" },
-    { kind: "signal", name: "file.created", pathPattern: "inbox/**/*.md" },
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "inbox/**/*.md",
-    },
-    { kind: "signal", name: "file.deleted", pathPattern: "inbox/**/*.md" },
-  ],
-  capabilities: [{ kind: "read", paths: ["inbox/**/*.md"] }],
+const inboxStaleCheck = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const now = nowFromInput(ctx.input) ?? new Date();
     const paths =

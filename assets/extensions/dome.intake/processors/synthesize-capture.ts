@@ -9,8 +9,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -37,32 +36,7 @@ const CaptureSynthesisSchema = z
   })
   .strict();
 
-const synthesizeCapture: Processor = defineProcessor({
-  id: "dome.intake.synthesize-capture",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "wiki/generated/intake/*.md",
-    },
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "wiki/generated/intake/*.md",
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["wiki/generated/intake/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/syntheses/intake-*.md"] },
-    { kind: "model.invoke", maxDailyCostUsd: 5 },
-  ],
-  execution: {
-    class: "llm",
-    timeoutMs: 600_000,
-    modelCallTimeoutMs: 180_000,
-  },
+const synthesizeCapture = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.modelInvoke === undefined) {
       throw new Error("dome.intake.synthesize-capture requires model.invoke");

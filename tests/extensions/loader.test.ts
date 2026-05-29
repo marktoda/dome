@@ -12,6 +12,8 @@
 //   - Root-not-found rejection.
 //   - `flattenBundleProcessors` flattens correctly.
 //   - Manifest module paths are confined under `<bundle>/processors/`.
+//   - Manifest metadata is bound onto implementation-only processor modules,
+//     while legacy full-Processor exports are identity-checked.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -169,6 +171,56 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(proc.execution?.modelCallTimeoutMs).toBe(180_000);
     expect(proc.triggers.length).toBe(1);
     expect(proc.capabilities.length).toBe(1);
+  });
+
+  test("binds manifest metadata onto implementation-only processor modules", async () => {
+    const root = makeTmpRoot("loader-implementation-only-");
+    const bundleDir = join(root, "test.impl");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.impl",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.impl.proc",
+            version: "0.2.0",
+            phase: "garden",
+            triggers: [{ kind: "schedule", cron: "0 6 * * *" }],
+            capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(processorsDir, "proc.ts"),
+      `
+        import { defineProcessorImplementation } from "${REPO_ROOT}/src/core/processor.ts";
+
+        export default defineProcessorImplementation({
+          async run() {
+            return [];
+          },
+        });
+      `,
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const proc = result.value[0]?.processors[0];
+    if (proc === undefined) throw new Error("expected one processor");
+    expect(proc.id).toBe("test.impl.proc");
+    expect(proc.version).toBe("0.2.0");
+    expect(proc.phase).toBe("garden");
+    expect(proc.triggers).toEqual([{ kind: "schedule", cron: "0 6 * * *" }]);
+    expect(proc.capabilities).toEqual([
+      { kind: "read", paths: ["wiki/**/*.md"] },
+    ]);
   });
 
   test("activeBundleIds filters before manifest reads and processor imports", async () => {
@@ -340,6 +392,129 @@ describe("loadBundles — error variants", () => {
     expect(result.error.kind).toBe("manifest-read-failed");
     if (result.error.kind !== "manifest-read-failed") return;
     expect(result.error.bundleId).toBe("naked-bundle");
+  });
+
+  test("processor-module-load-failed when default export has no run function", async () => {
+    const root = makeTmpRoot("loader-no-run-");
+    const bundleDir = join(root, "test.no-run");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.no-run",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.no-run.proc",
+            version: "0.1.0",
+            phase: "view",
+            triggers: [{ kind: "command", name: "no-run" }],
+            capabilities: [],
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(join(processorsDir, "proc.ts"), "export default {};\n");
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-load-failed");
+    if (result.error.kind !== "processor-module-load-failed") return;
+    expect(result.error.cause).toContain("has no run function");
+  });
+
+  test("processor-module-load-failed when implementation export carries partial manifest metadata", async () => {
+    const root = makeTmpRoot("loader-partial-metadata-");
+    const bundleDir = join(root, "test.partial");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.partial",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.partial.proc",
+            version: "0.1.0",
+            phase: "view",
+            triggers: [{ kind: "command", name: "partial" }],
+            capabilities: [],
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(processorsDir, "proc.ts"),
+      `
+        export default {
+          triggers: [{ kind: "command", name: "partial" }],
+          async run() {
+            return [];
+          },
+        };
+      `,
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-load-failed");
+    if (result.error.kind !== "processor-module-load-failed") return;
+    expect(result.error.cause).toContain("manifest-owned metadata");
+    expect(result.error.cause).toContain("without complete legacy identity");
+  });
+
+  test("processor-module-load-failed when legacy processor identity drifts from manifest", async () => {
+    const root = makeTmpRoot("loader-legacy-identity-drift-");
+    const bundleDir = join(root, "test.legacy");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.legacy",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.legacy.proc",
+            version: "0.1.0",
+            phase: "view",
+            triggers: [{ kind: "command", name: "legacy" }],
+            capabilities: [],
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(processorsDir, "proc.ts"),
+      `
+        export default {
+          id: "test.legacy.other",
+          version: "0.1.0",
+          phase: "view",
+          triggers: [{ kind: "command", name: "legacy" }],
+          capabilities: [],
+          async run() {
+            return [];
+          },
+        };
+      `,
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-load-failed");
+    if (result.error.kind !== "processor-module-load-failed") return;
+    expect(result.error.cause).toContain(
+      "manifest declared id 'test.legacy.proc'",
+    );
   });
 
   test("processor-module-path-invalid when module escapes the bundle root", async () => {

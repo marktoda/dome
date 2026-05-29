@@ -5,7 +5,7 @@
 // its identity (id, version) plus a list of processor declarations. Each
 // declaration carries the processor's id, version, phase, triggers,
 // capabilities, and the relative `module:` path of the TypeScript file
-// exporting the `Processor`.
+// exporting the processor implementation.
 //
 // This file provides:
 //   - The `Manifest` / `ProcessorDeclaration` types (boundary shapes — the
@@ -63,8 +63,9 @@ export type Manifest = {
 
 /**
  * A single processor declaration inside a manifest. `module` is the path of
- * the TypeScript file exporting the `Processor` as the default export,
- * relative to the bundle root.
+ * the TypeScript file default-exporting the implementation object, relative
+ * to the bundle root. The loader also accepts legacy full-Processor exports
+ * for migration compatibility.
  */
 export type ProcessorDeclaration = {
   readonly id: string;

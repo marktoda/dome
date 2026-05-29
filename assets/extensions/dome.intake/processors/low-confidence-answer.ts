@@ -7,8 +7,7 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -17,26 +16,11 @@ import {
   insertTrackedCaptureItem,
 } from "./capture-page";
 import {
-  LOW_CONFIDENCE_QUESTION_PREFIX,
   parseLowConfidenceAnswer,
   targetFromLowConfidenceQuestionKey,
 } from "./low-confidence-shared";
 
-const lowConfidenceAnswer: Processor = defineProcessor({
-  id: "dome.intake.low-confidence-answer",
-  version: "0.2.0",
-  phase: "garden",
-  triggers: [
-    {
-      kind: "answer",
-      questionProcessorId: "dome.intake.extract-capture",
-      idempotencyKeyPrefix: LOW_CONFIDENCE_QUESTION_PREFIX,
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["inbox/raw/*.md", "wiki/generated/intake/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/generated/intake/*.md"] },
-  ],
+const lowConfidenceAnswer = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseAnswerInput(ctx.input);
     if (input === null) {

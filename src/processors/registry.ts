@@ -26,13 +26,12 @@
 //   - Convention (not enforced here): manifest ids are fully qualified
 //     with the bundle namespace (e.g., `dome.intake.extract-capture`).
 //     This file treats ids as opaque strings and only enforces uniqueness.
-//   - Validation is structural, not Zod. `Processor`'s static-data fields
-//     are already shape-checked at construction via `defineProcessor` +
-//     the per-field Zod schemas exported from `../core/processor`. The
-//     registry's checks are runtime checks for properties TypeScript
-//     cannot catch from the type alone: duplicate ids, duplicate command
-//     triggers, empty trigger arrays, and (defensively) phase-enum values
-//     outside the closed `ProcessorPhase` union.
+//   - Validation is structural, not Zod. Manifest-owned static fields are
+//     already shape-checked by `parseManifest`; the registry's checks cover
+//     whole-set properties TypeScript and per-manifest validation cannot
+//     catch: duplicate ids, duplicate command triggers, empty trigger arrays,
+//     and (defensively) phase-enum values outside the closed `ProcessorPhase`
+//     union.
 //
 // House-style notes (matches src/core/source-ref.ts, src/core/effect.ts,
 // src/engine/capability-broker.ts, src/engine/compile-range.ts,
@@ -78,9 +77,7 @@ import { type Result, ok, err } from "../types";
  *                                    closed `ProcessorPhase` union. The
  *                                    static type already forbids invalid
  *                                    values; this fires only if a
- *                                    loader fed in an untyped value
- *                                    (e.g., a manifest-deserialized
- *                                    object that bypassed `defineProcessor`).
+ *                                    loader fed in an untyped value.
  */
 export type RegistryError =
   | {
@@ -138,9 +135,8 @@ export type ProcessorRegistry = {
 /**
  * Closed set of `ProcessorPhase` literal values. The static type already
  * forbids other strings; this runtime check defends against untyped
- * inputs from a manifest-deserialization path that bypassed
- * `defineProcessor` (e.g., a third-party loader handing the registry
- * raw `JSON.parse` output cast to `Processor<unknown>`).
+ * inputs from a third-party loader handing the registry an untyped object
+ * cast to `Processor<unknown>`.
  */
 const VALID_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([
   "adoption",
