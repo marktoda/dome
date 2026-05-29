@@ -231,10 +231,10 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`.
-3. **Preamble fragment** is captured for `AGENTS.md`'s `## Extension conventions` section (refreshed via the templated-section merge mechanism — today on `dome init` re-runs, v1.x via the reserved `dome doctor --repair` verb plus the planned `dome.health.agents-md-template-drift` garden-phase processor).
+3. **Preamble fragment** loading is planned. Bundle-local `preamble.md` files are part of the intended extension shape, but the current loader does not yet merge them into `AGENTS.md`.
 4. **Processors register** into the engine's processor registry under id `<bundle>:<processor-id>`.
 5. **Capabilities register** with the broker.
-6. **External-handlers register** into the engine's outbox dispatcher.
+6. **External-handler discovery** is planned. The outbox dispatcher supports injected handler registries today; scanning bundle `external-handlers/` directories is a future loader extension.
 
 The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` with a `bundle-load-failure` `ToolError`.
 
@@ -261,7 +261,7 @@ Four file edits, paralleling the v0.5 "Adding a Tool" recipe:
 
 1. **The processor file** at `assets/extensions/<bundle>/processors/<name>.ts` (or `<vault>/.dome/extensions/<bundle>/processors/<name>.ts` for vault-local). Exports `defineProcessor({ id, version, phase, triggers, capabilities, run })`.
 2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities.
-3. **The vault grants** in `assets/dome-init/.dome/config.yaml`'s `extensions.<bundle>.grants:` block (if the processor needs capabilities not on the shipped-default grants set).
+3. **The shipped default grants** in `src/cli/commands/init.ts`'s `DEFAULT_CONFIG_YAML` block (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`.
 4. **The test** at `tests/processors/<bundle-id>-<processor-id>.test.ts` asserting the processor runs against a representative input and emits the expected effects.
 
 The substrate scaffold catches the missing pieces:
@@ -291,7 +291,7 @@ Five kinds; one registration path (extension bundle):
 | Page type | `assets/extensions/dome.*/page-types.yaml` and SDK shipped-defaults | `<vault>/.dome/page-types.yaml` extensions block |
 | Preamble fragment | `assets/extensions/dome.*/preamble.md` | `<vault>/.dome/extensions/<bundle>/preamble.md` |
 | External handler | `assets/extensions/dome.*/external-handlers/` | `<vault>/.dome/extensions/<bundle>/external-handlers/*.ts` |
-| Capability grant | `assets/dome-init/.dome/config.yaml` shipped-defaults | `<vault>/.dome/config.yaml` |
+| Capability grant | `src/cli/commands/init.ts` `DEFAULT_CONFIG_YAML` shipped-defaults | `<vault>/.dome/config.yaml` |
 
 There is no "Tool," "Hook," "Workflow," or "CLI command" as separate registration kinds. CLI commands are processors with `triggers: [{ kind: "command", name: "..." }]` — the bundle's `processors/` directory is the single registration surface.
 

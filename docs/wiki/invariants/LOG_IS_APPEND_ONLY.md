@@ -12,18 +12,20 @@ tier: axiom
 
 **Statement:** `<vault>/log.md` is a projection of the run ledger. The only processor authorized to write to it is `dome.log.append-log` (the adoption-phase processor in the `dome.log` first-party bundle, granted `owns.path: ["log.md"]` in shipped-default vault config). It only appends new entries to the end of the file; entries are never modified or deleted in place.
 
+**Implementation status:** Axiom target, not shipped in current v1. The run ledger and git trailers are shipped audit surfaces, but the `dome.log` bundle, `dome.log.append-log` processor, and default `owns.path: ["log.md"]` grant are still planned. Treat the enforcement description below as the implementation plan for the future markdown log projection.
+
 **Why:** The log is the audit trail's human-readable surface. Operations on the vault are reconstructable from the log alone, without the run ledger SQLite file. If entries could be rewritten, the history-of-record property dissolves and trust falls.
 
-**Structural enforcement:** Two layers:
+**Target structural enforcement:** Two layers:
 
 1. **`owns.path` capability for `dome.log`.** The shipped-default `.dome/config.yaml` grants `dome.log` an `owns.path: ["log.md"]` capability (per [[wiki/specs/capabilities]] §"owns.path"). Any other processor's PatchEffect touching `log.md` is rejected by the broker with `code: "capability-deny-owns-path"`.
 2. **The `dome.log.append-log` processor's `run()` body only emits append-shaped patches.** The patch's unified-diff payload always shows additions at end-of-file; the processor's idempotency contract (per [[wiki/specs/processors]] §"Idempotency") means re-running it against the same RunRecord input produces no patch (the row is already appended).
 
 Together: no other processor can write `log.md` (capability fence); the authorized processor cannot rewrite existing content (append-only patch shape, enforced by the processor's structure and exercised by its test).
 
-**Counter-example:** A "log compaction" extension decides `log.md` is too large and wants to rewrite it with summarized entries. The extension's bundle manifest requests `owns.path: ["log.md"]`. The bundle loader rejects this grant at startup with `bundle-load-failure: capability-handler-collision` (`log.md` already owned by `dome.log`). The right design: a separate adoption-phase processor with `patch.auto: ["log-archive/**"]` capability that writes frozen rollups to `log-archive/YYYY-MM.md`; the original `log.md` is never mutated in place.
+**Counter-example:** A "log compaction" extension decides `log.md` is too large and wants to rewrite it with summarized entries. The extension's bundle manifest requests `owns.path: ["log.md"]`. Once `dome.log` ships, the ownership boundary should reject this overlap before the processor can mutate `log.md` directly. The right design: a separate adoption-phase processor with `patch.auto: ["log-archive/**"]` capability that writes frozen rollups to `log-archive/YYYY-MM.md`; the original `log.md` is never mutated in place.
 
-**Test guarantee:** `tests/invariants/log-is-append-only.test.ts` — runs a representative ingest sequence through the engine, captures the post-run `log.md` byte length, runs more operations, asserts the post-op-N `log.md` byte-prefix matches the pre-op-N content unchanged. Also asserts that no Effect outside the `dome.log` bundle results in a `log.md` mutation (verified by enumerating `runs.db` rows with `output_commit` touching `log.md` and asserting `processor_id` starts with `dome.log:`).
+**Required test guarantee:** `tests/invariants/log-is-append-only.test.ts` should run a representative ingest sequence through the engine once `dome.log` ships, capture the post-run `log.md` byte length, run more operations, and assert the post-op-N `log.md` byte-prefix matches the pre-op-N content unchanged. It should also assert that no Effect outside the `dome.log` bundle results in a `log.md` mutation. The current test is only an AC3 doc-existence stub.
 
 ## Why not just `git log`?
 

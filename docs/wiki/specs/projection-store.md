@@ -52,13 +52,17 @@ When any of the three change, the engine considers cached rows stale and re-deri
 ```sql
 CREATE TABLE projection_meta (
   schema_hash             TEXT NOT NULL,
-  adopted_commit          TEXT NOT NULL,
-  extension_set_hash      TEXT NOT NULL,
-  processor_versions_hash TEXT NOT NULL,
-  built_at                TEXT NOT NULL,  -- ISO-8601
+  adopted_commit          TEXT,
+  extension_set_hash      TEXT,
+  processor_versions_hash TEXT,
+  built_at                TEXT,  -- ISO-8601
   PRIMARY KEY (schema_hash)
 );
 ```
+
+The cache-key fields are nullable on first open, before the first successful
+projection rebuild stamps adopted state. Once a rebuild completes, the engine
+fills all four cache-key columns.
 
 This is the structural fence behind [[wiki/gotchas/processor-version-drift]] and [[wiki/gotchas/projection-schema-skew]].
 

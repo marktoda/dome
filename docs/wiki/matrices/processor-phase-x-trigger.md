@@ -53,30 +53,32 @@ function validateProcessorDeclaration(decl: ProcessorDeclaration): Result<void, 
 }
 ```
 
-The `ALLOWED` constant is derived from this matrix at module-load time (or from a hardcoded mirror that's lockstep-checked against this doc in `tests/integration/processor-phase-x-trigger-coverage.test.ts`).
+The implementation uses a hardcoded mirror in `src/extensions/manifest-schema.ts`
+(`ALLOWED_TRIGGERS_BY_PHASE`) and loader/manifest tests cover representative
+rejections. A future doc-driven lockstep test should compare that mirror
+against this matrix directly.
 
 ## Implementation status
 
 **As of the current v1 roadmap work:**
 
-The phase × trigger matrix is **the canonical contract** that the manifest validator will enforce. The type-system fences at the `Trigger` and `ProcessorPhase` level are real today; the per-processor declaration check at bundle load ships with Phase 6.
+The phase × trigger matrix is **the canonical contract** that the manifest validator enforces. The type-system fences at the `Trigger` and `ProcessorPhase` level are real, and `src/extensions/manifest-schema.ts` rejects incompatible per-processor declarations during bundle load.
 
 - Structurally true now:
   - The closed `Trigger` discriminated union in `src/core/processor.ts` enforces the five trigger kinds at the type system level, including `{ kind: "answer"; questionProcessorId?: string; idempotencyKeyPrefix?: string }`.
   - The closed `ProcessorPhase` literal-union enforces the three phases.
   - `src/processors/triggers.ts:matchTriggers` consumes `signal` and `path` triggers; `schedule`, `answer`, and `command` triggers return no match because each has a dedicated dispatcher.
   - **Adoption-phase runner** (`adoptionRunner` in `src/processors/runtime.ts`) — operational since Phase 3.
-  - **Garden-phase runner** (`gardenRunner` in `src/processors/runtime.ts`) — operational as of Phase 4a. Fires garden-phase processors against post-adoption signals + paths. Engine signal triggers (`signal: "engine.*"`) ship in Phase 4d.
+  - **Garden-phase runner** (`gardenRunner` in `src/processors/runtime.ts`) — operational as of Phase 4a. Fires garden-phase processors against post-adoption signals + paths.
   - **Garden-emitted PatchEffect → sub-Proposal spawn** (`src/engine/garden.ts`) — operational as of Phase 4a'. Auto-mode PatchEffects from garden-phase processors go through broker enforcement, then spawn sub-Proposals routed through `adopt()` recursively. Cascade depth capped at `DEFAULT_MAX_CASCADE_DEPTH` (10); cap-hit emits `garden.cascade-cap` DiagnosticEffect via the sinks. Propose-mode patches log+drop in v1.0 pending the lint-review surface.
   - **View-phase runner** (`viewRunner` in `src/processors/runtime.ts` + `runViewCommand` in `src/engine/commands.ts`) — operational as of Phase 4b. Command-triggered view-phase processors fire on `runViewCommand(name, args)` invocation; the runner finds the at-most-one matching processor (collisions rejected at bundle load per `cli-command-collision`), builds a read-only snapshot at the adopted commit, and routes emitted ViewEffects through `applyEffect({ phase: "view" })`. Non-View effect emissions surface as `phase-mismatch` diagnostics in the result's `brokerDiagnostics` field.
   - **Scheduler** (`runScheduler` in `src/engine/scheduler.ts` + minimal cron evaluator in `src/engine/cron.ts`) — operational as of Phase 4c. Schedule-triggered garden + view processors fire when due per their cron expression, against `projection.db.schedule_cursors`. The scheduler runs once per top-level adoption attempt (not per sub-Proposal). Cursor lifecycle: new processor fires on first tick; cron change resets the cursor; missed intervals collapse (at-most-once-per-sync clamp per [[wiki/gotchas/scheduled-hook-idempotency]]). Clock injection via `runOneAdoption({ now })` lets the harness's `TestClock` drive deterministic schedule testing.
   - **Answer-trigger dispatch** (`src/engine/answers.ts`) — operational. Garden-phase answer handlers match answered QuestionEffect rows by optional originating `questionProcessorId` plus optional `idempotencyKeyPrefix`.
   - **Answer dispatcher** (`runAnswerHandlers` in `src/engine/answers.ts`) — operational. `dome answer` records the answer row, then dispatches matching garden-phase answer handlers against the adopted snapshot. Handler effects route through normal garden effect routing; PatchEffects become garden sub-Proposals.
 
-- Forward-looking (subsequent Phase 4 phases):
-  - **Engine signal pub/sub** (Phase 4d) — extends `Signal` to include `engine.<name>` namespace.
-  - The `validateProcessorDeclaration` function shown above does not exist yet. `src/extensions/manifest-schema.ts` today validates only bundle-level fields (`name`, `version`, `deps`) for the Phase 0a bundle loader; the per-processor (phase, trigger) cross-field check that rejects incompatible declarations at registration time ships with the first-party `dome.*` bundle migrations (Phase 6).
-  - `tests/integration/processor-phase-x-trigger-coverage.test.ts` is the lockstep that ships with the validator.
+- Forward-looking:
+  - **Engine signal pub/sub** — a future extension of the signal namespace. The current closed `Signal` union does not include `engine.<name>` signals.
+  - A doc-driven lockstep test that derives the allowed matrix directly from this file is still planned; current coverage lives in manifest-schema and bundle-loader tests.
 
 ## Edge: command-triggered view processors that schedule
 

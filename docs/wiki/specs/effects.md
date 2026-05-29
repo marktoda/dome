@@ -54,7 +54,7 @@ type FileChange =
 
 **Routing:**
 - **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic; the proposed patch then follows the blocking review path below.
-- **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes; the user reviews via `dome lint --apply` (per [[wiki/specs/cli]] §"dome lint").
+- **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes. The review/apply surface is planned; no shipped v1 CLI command applies the proposed patch directly yet.
 - **Garden phase, `mode: "auto"`:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
 - **Garden phase, `mode: "propose"`:** v1.0 records the allowed `patch.propose` capability use, emits `garden.patch-propose-review-unavailable`, and drops the patch because the garden review queue is not wired yet. v1.x will route this to a PR/review queue rather than applying inline.
 - **View phase:** rejected — view processors cannot emit patches.

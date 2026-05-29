@@ -144,13 +144,15 @@ The full mapping is at [[wiki/matrices/processor-phase-x-trigger]]. Summary:
 
 - **Adoption-phase processors** subscribe to `signal:*`, `path:*`. Not `schedule:*`, `answer:*`, or `command:*` — adoption is per-Proposal, not periodic, answer-mediated, or user-invoked.
 - **Garden-phase processors** subscribe to `signal:*`, `path:*`, `schedule:*`, and `answer:*`. Answer triggers may bind to the processor that originally asked the question, so privileged answer handlers cannot be invoked by a forged idempotency-key prefix from another bundle.
-- **View-phase processors** subscribe to `command:*` only. Views render on demand, not on signal.
+- **View-phase processors** subscribe to `command:*` and may also subscribe to
+  `schedule:*` for periodic rendered deliverables. Views never react directly
+  to vault-write signals or answer events.
 
 ## Capabilities
 
 A processor declares its triggers, capabilities, and optional execution policy in its bundle's `manifest.yaml` ([[wiki/specs/capabilities]] §"Manifest schema"). The loader binds that manifest-reviewed metadata onto the loaded processor; the runtime resolves the grant against the vault's `config.yaml` policy; the broker enforces at effect-emission time.
 
-Adoption-phase processors get a restricted capability set by default — no `model.invoke`, no `network`, narrow `patch.auto` paths. Garden-phase processors may be granted `model.invoke` and broader `patch.propose`. View-phase processors get only `read` (within declared paths) and `graph.read` (within declared namespaces). See [[wiki/specs/capabilities]] §"Capability tiers" for the full set.
+Adoption-phase processors get a restricted capability set by default — no `model.invoke`, no network, narrow `patch.auto` paths. Garden-phase processors may be granted `model.invoke`, broader `patch.propose`, and operational recovery reads. View-phase processors are read-only at the effect boundary: they may render `ViewEffect` values, and any source refs they return must be covered by effective `read` grants. See [[wiki/specs/capabilities]] §"Capability tiers" for the full set.
 
 ## Idempotency
 
@@ -200,6 +202,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | Bundle | Phase × processors | What it does |
 |---|---|---|
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, stale `updated:` dates, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
+| `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
 | `dome.daily` | garden: create-daily, carry-forward | Creates daily notes and carries unfinished markdown checkbox tasks forward. |
 | `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply behavior remains planned. |

@@ -14,7 +14,12 @@ tier: shipped-default
 
 **Why:** The inbox-as-drop-zone pattern (a phone widget writes raw markdown to `inbox/raw/`; a share-sheet writes to `inbox/clip/`; the `dome.intake` garden-phase processor compiles them into wiki updates) only works if files don't accumulate. Persistent inbox files indicate either: (a) the intake processor is broken or quarantined; (b) the LLM failed to compile a low-confidence capture and the user needs to triage; (c) the bucket is wrong for the captured content. All three deserve visibility.
 
-**Structural enforcement:**
+**Implementation status:** Shipped-default target, not shipped in current v1. The core
+diagnostic, question/answer, quarantine, and recovery mechanisms exist, but
+`dome.intake`, stale-inbox diagnostics, and the lint/apply disposition surface
+remain planned.
+
+**Target structural enforcement:**
 
 1. **`dome.intake.inbox-stale-check`** is an adoption-phase processor that walks `inbox/<bucket>/*` (excluding `inbox/review/` and `inbox/processed/`) on every sync and emits a `DiagnosticEffect { severity: "warning", code: "inbox.stale" }` for each file older than `engine.inbox_stale_age_hours`.
 2. **`dome lint` includes inbox-stale findings.** A lint report names every stale file with a finding id; `dome lint --apply <id>` invokes the user-selected disposition (re-attempt compile via `dome.intake`, archive to `inbox/processed/`, delete).

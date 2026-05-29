@@ -20,7 +20,7 @@
 // (`./capability-broker`) is also called by `garden-patch-dispatch.ts` for
 // garden PatchEffects; both call sites are inside the engine routing layer.
 //
-// v1 Phase 2 scope:
+// v1 scope:
 //   - This file is the pure routing layer. The sinks are *injected* via the
 //     `ApplyEffectSinks` shape; `noopSinks()` returns a no-op implementation
 //     suitable for unit tests and Phase 2 standalone validation.
@@ -28,12 +28,10 @@
 //     through `sinks.recordDiagnostic` before return. Callers still inspect
 //     the returned array for control flow, but they do not need to remember a
 //     second persistence step.
-//   - The garden-phase PatchEffect → "spawn a new Proposal" semantics
-//     (matrix §"Garden-emitted Proposals") is the responsibility of the
-//     `applyPatch` sink, not this router. The router calls `sinks.applyPatch`
-//     for both adoption- and garden-phase patches; the sink (or `adopt.ts`)
-//     decides whether to apply to a candidate tree (adoption) or spawn a new
-//     Proposal (garden). This keeps the router a pure dispatcher.
+//   - Garden-phase PatchEffects are rejected here with `phase-mismatch`.
+//     Callers that accept garden patches must route them through
+//     `garden-patch-dispatch.ts`, where broker authorization, capability-use
+//     ledgering, and sub-Proposal spawning stay explicit.
 //   - In the adoption phase, a DiagnosticEffect with `severity: "block"` is
 //     *recorded* via `sinks.recordDiagnostic` and the router returns
 //     `outcome: "applied"`. The blocking itself happens one layer up, in

@@ -36,7 +36,7 @@ describe("EVERY_EFFECT_IS_CAPABILITY_CHECKED (off-matrix)", () => {
 
 The dynamic `import()` runs the linked test file's describe/test blocks; a regression in capability enforcement fails the lockstep stub.
 
-**Counter-example:** A processor declares `patch.auto: ["wiki/**"]` but is granted only `patch.auto: ["wiki/generated/**"]` in vault config. The processor emits a PatchEffect touching `wiki/entities/danny.md` (outside the grant). The broker returns `downgrade`: the effect is rewritten to `patch.propose`, a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic is emitted, the patch lands as a proposal for the user to review via `dome lint --apply`.
+**Counter-example:** A processor declares `patch.auto: ["wiki/**"]` but is granted only `patch.auto: ["wiki/generated/**"]` in vault config. The processor emits a PatchEffect touching `wiki/entities/danny.md` (outside the grant). The broker returns `downgrade`: the effect is rewritten to `patch.propose`, a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic is emitted, and adoption blocks until a review/apply surface is available or the user changes the grant/code.
 
 **Test guarantee:** `tests/invariants/every-effect-is-capability-checked.test.ts` delegates per the convention above. The canonical enforcement test is `tests/integration/capability-enforcement.test.ts`.
 

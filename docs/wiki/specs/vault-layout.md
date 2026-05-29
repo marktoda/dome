@@ -133,19 +133,11 @@ Once `dome.index` ships, it should be rebuildable through `dome rebuild` when st
 
 ### `config.yaml`
 
-The single config file:
+The single config file. The accepted top-level keys are `extensions`,
+`engine`, and `git`; unknown top-level keys fail runtime open rather than
+being silently ignored.
 
 ```yaml
-vault:
-  mode: local              # v1; "hosted" reserved for v1.5
-  branch: main             # active source branch
-
-invariants:
-  RAW_IS_IMMUTABLE: enabled         # axioms always enabled; declaration is informational
-  ALL_MUTATION_GOES_THROUGH_ADOPTION: enabled
-  INBOX_IS_EPHEMERAL: enabled
-  # ... full list per src/types.ts INVARIANTS
-
 extensions:
   dome.markdown: { enabled: true,  grants: { read: ["**/*.md"], patch.auto: ["**/*.md"], question.ask: true } }
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
@@ -160,11 +152,13 @@ engine:
 
 git:
   auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
-
-ledger:
-  retention_days: null            # null = forever; set a number to enable pruning
-  retention_failed_runs_days: null
 ```
+
+Vault identity is currently git-native (`HEAD`, current branch, and
+`refs/dome/adopted/<branch>`), not a `vault:` config block. Axiom-tier
+invariants are not user-toggleable. Ledger retention is not configurable in
+v1; operational databases are preserved unless the user explicitly removes
+them.
 
 ### `page-types.yaml`
 

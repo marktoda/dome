@@ -150,6 +150,7 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
       "triggers",
       "capabilities",
       "lifecycle",
+      "cli-surface",
       "garden-cascade",
       "regression",
     ];
