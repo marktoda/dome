@@ -1,0 +1,13 @@
+id: test.projection-read-scope
+version: 0.1.0
+processors:
+  - id: test.projection-read-scope.leaky-view
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: projection-read-scope
+    capabilities:
+      - kind: read
+        paths: ["public/**"]
+    module: processors/leaky-view.ts

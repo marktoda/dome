@@ -135,6 +135,7 @@ import {
   filterReadablePaths,
   readablePath,
 } from "../engine/path-capabilities";
+import { scopeProjectionQueryView } from "./projection-scope";
 
 // ----- AdoptionRunInput -----------------------------------------------------
 
@@ -821,7 +822,13 @@ function buildExecutionContext<TEnvelope>(
         canSourceRefPath: (path) =>
           readablePath(path, frame.declared, frame.granted) !== null,
         ...(frame.phase === "view" && opts.projection !== undefined
-          ? { projection: opts.projection }
+          ? {
+              projection: scopeProjectionQueryView(
+                opts.projection,
+                (path) =>
+                  readablePath(path, frame.declared, frame.granted) !== null,
+              ),
+            }
           : {}),
         ...operationalContextField(frame, opts.operational),
         ...(opts.pageTypes !== undefined ? { pageTypes: opts.pageTypes } : {}),
