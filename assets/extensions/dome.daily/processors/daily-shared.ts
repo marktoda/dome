@@ -261,7 +261,7 @@ function carryForwardSourcePath(line: string): string | null {
   return CARRY_FORWARD_RE.exec(line)?.[1] ?? null;
 }
 
-function isValidDailyDate(date: DailyDate): boolean {
+export function isValidDailyDate(date: DailyDate): boolean {
   const normalized = localDateParts(
     new Date(Number(date.yyyy), Number(date.mm) - 1, Number(date.dd)),
   );

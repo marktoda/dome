@@ -45,6 +45,19 @@ describe("runCli", () => {
     expect(out).not.toContain("DOME status");
   });
 
+  test("today help exposes date and json options", async () => {
+    expect(await runCli(["today", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("Usage: dome today");
+    expect(out).toContain("--date <YYYY-MM-DD>");
+    expect(out).toContain("--json");
+  });
+
+  test("today rejects invalid dates before opening a vault", async () => {
+    expect(await runCli(["today", "--date", "2026-99-99"])).toBe(64);
+    expect(captured.err.join("\n")).toContain("invalid --date");
+  });
+
   test("inspect help names every shipped subject", async () => {
     expect(await runCli(["inspect", "-h"])).toBe(0);
     const out = captured.out.join("\n");

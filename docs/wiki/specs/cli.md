@@ -19,6 +19,8 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 dome init [path]                Initialize a new vault.
 dome sync [--json]              Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
+dome today [--date <YYYY-MM-DD>] [--json]
+                                Source-backed daily task/followup surface.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome run <name> [--json] [-- <processor flags>]
@@ -41,8 +43,8 @@ dome serve [--vault <path>] [--poll-interval-ms <n>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through the shipped view-command boundary today and should map to `AbstractSurface.query` once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` — command-triggered view-phase processors invoked through the shared view-command boundary.
+- **Recall and dashboards:** `dome query`, `dome today`, `dome status`, `dome inspect` — read paths. `dome query` and `dome today` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
@@ -233,6 +235,23 @@ their own option shapes without changing the core CLI parser.
 
 Exit codes: 0 on success; 64 when no matching view processor exists or the
 vault has no usable adopted ref; 1 on runtime or dispatch failure.
+
+### `dome today [--date <YYYY-MM-DD>] [--json]`
+
+Dedicated wrapper for the `dome.daily.today` view processor. The shared
+view-command boundary validates the adopted ref, refreshes stale projections,
+then invokes the extension-owned command trigger `today`.
+
+Default text output renders:
+
+- the target date and expected daily-note path,
+- whether that daily note exists at the adopted ref,
+- source-backed open tasks and followups from `dome.daily.open_task` /
+  `dome.daily.followup` facts,
+- unresolved `dome.daily.*` questions.
+
+`--json` emits the structured `dome.daily.today/v1` payload. `--date` is for
+reviewing another day and for deterministic tests; omitted means local today.
 
 ### `dome rebuild`
 

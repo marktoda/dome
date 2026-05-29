@@ -35,6 +35,17 @@ processors:
       - kind: question.ask
     module: processors/task-index.ts
 
+  - id: dome.daily.today
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: today
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md"]
+    module: processors/today.ts
+
   - id: dome.daily.carry-forward
     version: 0.1.0
     phase: garden

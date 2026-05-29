@@ -18,6 +18,7 @@ import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
+import { runToday } from "./commands/today";
 import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
@@ -195,6 +196,24 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("today")
+    .description("Render today's source-backed task surface.")
+    .option("--date <YYYY-MM-DD>", "Date to render (defaults to local today).")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: TodayCliOptions) => {
+      setExitCode(
+        await runToday({
+          date: options.date,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("rebuild")
     .description("Rebuild projection.db from the adopted commit.")
     .option("--json", "Emit JSON.")
@@ -300,6 +319,13 @@ type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
   readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type TodayCliOptions = {
+  readonly date?: string;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

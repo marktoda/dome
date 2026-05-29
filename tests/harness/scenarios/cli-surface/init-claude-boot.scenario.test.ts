@@ -43,6 +43,7 @@ scenario(
       expect(agents).toContain("Dome works at the git commit boundary");
       expect(agents).toContain("dome status");
       expect(agents).toContain("dome sync");
+      expect(agents).toContain("dome today");
       expect(agents).toContain("dome inspect questions");
       expect(agents).toContain("dome answer <id> <value>");
       expect(agents).toContain("dome rebuild");

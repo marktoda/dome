@@ -377,6 +377,7 @@ git commit -m "describe the vault change"
 - \`dome status\` - branch, HEAD, adopted ref, content counts, and health counts.
 - \`dome sync\` - one-shot catch-up when no compiler host is running or when the
   user wants to wait for adoption.
+- \`dome today\` - source-backed open tasks, followups, and questions for today.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome inspect diagnostics\` - current markdown and engine diagnostics.
 - \`dome inspect questions\` - open questions that need human input.
