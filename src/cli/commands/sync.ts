@@ -22,6 +22,7 @@
 //   - 1   on blocked adoption (the engine reported `adopted: false` with
 //         block-severity diagnostics; the operator addresses the blocks
 //         and re-runs sync).
+//   - 75  when another Dome compiler host already holds the branch lock.
 //   - 64  (EX_USAGE) on detached HEAD or no commits — the adopted-ref
 //         substrate cannot operate in either state. Clear error message
 //         to stderr.
@@ -53,7 +54,7 @@ import { formatJson } from "../format";
 
 /**
  * The shape `dome sync --json` emits on stdout. Stable across runs;
- * downstream tooling reads it. `status` discriminates the four outcomes
+ * downstream tooling reads it. `status` discriminates the five outcomes
  * the command can report.
  *
  *   - `adopted`     — adoption succeeded; the adopted ref advanced (or
@@ -63,11 +64,13 @@ import { formatJson } from "../format";
  *                     reflects the working-tree HEAD that was attempted.
  *   - `in-sync`     — HEAD already equals the adopted ref; no adoption
  *                     work ran. Due operational queues may still drain.
+ *   - `busy`        — another Dome compiler host already holds the branch
+ *                     lock; retry after that host finishes.
  *   - `error`       — detached HEAD or no commits; the substrate cannot
  *                     operate. `branch` is null in this case.
  */
 type SyncJsonResult = {
-  readonly status: "adopted" | "blocked" | "in-sync" | "error";
+  readonly status: "adopted" | "blocked" | "in-sync" | "busy" | "error";
   readonly branch: string | null;
   readonly base: string | null;
   readonly head: string | null;
@@ -177,6 +180,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     } else {
       printTickLines(tick);
     }
+    if (tick.kind === "busy") return 75;
     return tick.kind === "blocked" ? 1 : 0;
   } finally {
     await runtime.close();
@@ -224,7 +228,7 @@ async function runInSyncOperationalWork(opts: {
   } else {
     printTickLines(tick);
   }
-  return 0;
+  return tick.kind === "busy" ? 75 : 0;
 }
 
 /**
@@ -239,6 +243,12 @@ async function runInSyncOperationalWork(opts: {
  * notes the total count.
  */
 function printTickLines(tick: CompilerHostTickResult): void {
+  if (tick.kind === "busy") {
+    console.error(
+      `dome sync: branch ${tick.branch} is already being processed by another Dome host.`,
+    );
+    return;
+  }
   if (tick.kind === "in-sync") {
     console.log(
       `dome sync: already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
@@ -290,6 +300,19 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
   }
   if (tick.kind === "no-commits") {
     return errorPayload({ branch: null, error: "no-commits" });
+  }
+  if (tick.kind === "busy") {
+    return {
+      status: "busy",
+      branch: tick.branch,
+      base: null,
+      head: null,
+      adoptedRef: null,
+      iterations: 0,
+      closureCommit: null,
+      diagnostics: [],
+      error: "compiler-host-busy",
+    };
   }
   if (tick.kind === "in-sync") {
     return {

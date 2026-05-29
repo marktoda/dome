@@ -52,6 +52,10 @@ import {
   type AnswerHandlerResult,
 } from "./answers";
 import {
+  withCompilerHostBranchLock,
+  type CompilerHostLockBusy,
+} from "./compiler-host-lock";
+import {
   makeResolveTree,
   type VaultRuntime,
 } from "./vault-runtime";
@@ -123,6 +127,7 @@ export type CompilerHostAdoptionCycleResult = {
 export type CompilerHostTickResult =
   | { readonly kind: "detached-head" }
   | { readonly kind: "no-commits" }
+  | CompilerHostLockBusy
   | {
       readonly kind: "in-sync";
       readonly branch: string;
@@ -211,11 +216,32 @@ export async function runCompilerHostTick(opts: {
   readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<CompilerHostTickResult> {
   const drift = opts.drift ?? await detectDrift(opts.runtime.path);
-  const now = opts.now ?? ((): Date => new Date());
 
   if (drift.kind === "detached-head" || drift.kind === "no-commits") {
     return Object.freeze({ kind: drift.kind });
   }
+
+  const branch = drift.kind === "in-sync" ? drift.branch : drift.info.branch;
+  const locked = await withCompilerHostBranchLock(
+    {
+      vaultPath: opts.runtime.path,
+      branch,
+      command: "compiler-host-tick",
+    },
+    () => runCompilerHostTickUnlocked({ ...opts, drift }),
+  );
+  return locked.kind === "busy" ? locked : locked.value;
+}
+
+async function runCompilerHostTickUnlocked(opts: {
+  readonly runtime: VaultRuntime;
+  readonly drift: Extract<DriftResult, { readonly kind: "drift" | "in-sync" }>;
+  readonly now?: () => Date;
+  readonly runOperationalWhenInSync?: boolean;
+  readonly onEvent?: (event: AdoptEvent) => void;
+}): Promise<CompilerHostTickResult> {
+  const now = opts.now ?? ((): Date => new Date());
+  const { drift } = opts;
 
   if (drift.kind === "in-sync") {
     let operational: OperationalWorkResult | null = null;

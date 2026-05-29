@@ -36,6 +36,7 @@ import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
+import { withCompilerHostBranchLock } from "../../src/engine/compiler-host-lock";
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
@@ -349,6 +350,48 @@ describe("runSync idempotent", () => {
       outbox2.value.db.close();
     }
   }, 10_000);
+
+  test("reports busy when another compiler host holds the branch lock", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    let releaseLock: (() => void) | undefined;
+    let acquired = false;
+    const heldLock = withCompilerHostBranchLock(
+      {
+        vaultPath: f.vaultPath,
+        branch: "main",
+        command: "test",
+      },
+      async () => {
+        acquired = true;
+        await new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        });
+      },
+    );
+    await waitFor(() => Promise.resolve(acquired), 1000);
+
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
+    const textCode = await runSync(options);
+    expect(textCode).toBe(75);
+    expect(captured.err.join("\n")).toContain("already being processed");
+
+    captured.out = [];
+    captured.err = [];
+    const jsonCode = await runSync({ ...options, json: true });
+    expect(jsonCode).toBe(75);
+    const parsed = parseSingleJsonObject();
+    expect(Object.keys(parsed)).toEqual([...SYNC_ERROR_JSON_KEYS]);
+    expect(parsed["status"]).toBe("busy");
+    expect(parsed["branch"]).toBe("main");
+    expect(parsed["error"]).toBe("compiler-host-busy");
+
+    releaseLock?.();
+    const lockResult = await heldLock;
+    expect(lockResult.kind).toBe("acquired");
+  }, 10_000);
 });
 
 // ----- Test 3: drift adoption -----------------------------------------------
@@ -468,4 +511,16 @@ function parseSingleJsonObject(opts: {
   }
   expect(captured.out.length).toBe(1);
   return JSON.parse(captured.out[0] ?? "{}") as Record<string, unknown>;
+}
+
+async function waitFor(
+  predicate: () => Promise<boolean>,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
 }

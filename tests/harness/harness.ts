@@ -313,6 +313,9 @@ export class HarnessImpl implements Harness {
     if (tick.kind === "detached-head" || tick.kind === "no-commits") {
       throw new Error(`harness.tick: unworkable state '${tick.kind}'`);
     }
+    if (tick.kind === "busy") {
+      throw new Error(`harness.tick: compiler host busy for '${tick.branch}'`);
+    }
     if (tick.kind === "in-sync") {
       await runAllAlwaysTrue(this, "tick (in-sync operational drain)");
       return {

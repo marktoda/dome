@@ -142,8 +142,9 @@ Composition (v1.0):
 3. Branch on drift outcome:
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
-   - **in-sync** → open the runtime, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, exit 0.
-   - **drift** → open the runtime, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, exit 0.
+   - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
+   - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
 
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
@@ -152,12 +153,12 @@ Composition (v1.0):
 {"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"diagnostics":[]}
 ```
 
-`status` is one of `"adopted" | "blocked" | "in-sync" | "error"`. The `error` field is only present on the usage-error variant.
+`status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and the usage-error variant.
 For `"in-sync"`, `diagnostics` contains diagnostics produced by the operational-work pump, if any; no adoption diagnostics are synthesized because no adoption ran.
 
 The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD surfaces as a blocking diagnostic from `setAdoptedRef` and the operator resolves manually.
 
-Exit codes: 0 on adopted / in-sync; 1 on blocked or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits.
+Exit codes: 0 on adopted / in-sync; 1 on blocked or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits; 75 (EX_TEMPFAIL) when another compiler host holds the branch lock.
 
 See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
@@ -425,12 +426,14 @@ Composition (v1.0):
    - If HEAD equals the adopted ref: no adoption work; quiet in-sync ticks may still run due operational work on the host's internal cadence.
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
 4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
-5. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
-6. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
+5. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
+6. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
+7. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+8. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime (releases the three sqlite handles) and exits 0.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
 
-The scheduled-trigger dispatcher for garden/view processors is wired through the same runtime grant resolver as adoption. The `--mcp` toggle remains deferred to v1.1.
+The scheduled-trigger dispatcher for garden/view processors is wired through the same runtime grant resolver as adoption. There is no separate `serve --exclusive` flag in v1 because branch-level locking is always on. The `--mcp` toggle remains deferred to v1.1.
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 

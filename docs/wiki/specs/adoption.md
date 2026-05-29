@@ -156,13 +156,14 @@ cd ~/vaults/work && dome sync --json
 cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD (v1.1 — see below)
 ```
 
-`dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/compiler-host.ts`).
+`dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/compiler-host.ts`). The shared tick acquires a branch-level compiler-host lock before adoption or operational patch work, so `sync`, `serve`, and future host surfaces do not run the same branch concurrently.
 
 The four outcomes:
 
 - **adopted** — adoption succeeded; the adopted ref advanced to HEAD. Exit 0.
 - **blocked** — adoption ran but block-severity diagnostics prevented the adopted ref from advancing. Exit 1; stderr lists the first five blockers.
 - **in-sync** — HEAD already equals the adopted ref; no work done. Exit 0.
+- **busy** — another compiler host holds the branch lock. Exit 75 (EX_TEMPFAIL); retry after that host finishes.
 - **error** — detached HEAD or no commits; the adopted-ref substrate cannot operate. Exit 64 (EX_USAGE).
 
 Output (text mode):

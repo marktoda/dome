@@ -1,0 +1,13 @@
+id: test.slow-adoption
+version: 0.1.0
+processors:
+  - id: test.slow-adoption.sleep
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: path
+        pattern: wiki/slow.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+    module: processors/sleep.ts

@@ -272,15 +272,21 @@ async function pollLoop(input: {
         }
       }
       const nowMs = Date.now();
-      await runCompilerHostTickWithErrorHandling({
+      const tick = await runCompilerHostTickWithErrorHandling({
         runtime,
         drift,
         runOperationalWhenInSync:
           drift.kind === "drift" || nowMs >= nextOperationalAtMs,
         verbose,
+        suppressBusyLine: lastKind === "busy",
       });
       if (drift.kind === "drift" || nowMs >= nextOperationalAtMs) {
         nextOperationalAtMs = nowMs + operationalIntervalMs;
+      }
+      lastKind = tick?.kind ?? "tick-error";
+      if (tick?.kind === "adopted" && !cancel.aborted) {
+        const nextDrift = await detectDrift(vaultPath);
+        if (nextDrift.kind === "drift") continue;
       }
     } else if (drift.kind === "detached-head" && lastKind !== "detached-head") {
       // Operator detached HEAD mid-run. Log once on transition and keep
@@ -290,7 +296,9 @@ async function pollLoop(input: {
       );
     }
     // `in-sync` and `no-commits` are quiet steady states; no log spam.
-    lastKind = drift.kind;
+    if (drift.kind !== "drift" && drift.kind !== "in-sync") {
+      lastKind = drift.kind;
+    }
 
     if (cancel.aborted) break;
     await sleep(pollIntervalMs, cancel);
@@ -311,8 +319,15 @@ async function runCompilerHostTickWithErrorHandling(input: {
   readonly drift: DriftResult;
   readonly runOperationalWhenInSync: boolean;
   readonly verbose: boolean;
-}): Promise<void> {
-  const { runtime, drift, runOperationalWhenInSync, verbose } = input;
+  readonly suppressBusyLine: boolean;
+}): Promise<CompilerHostTickResult | null> {
+  const {
+    runtime,
+    drift,
+    runOperationalWhenInSync,
+    verbose,
+    suppressBusyLine,
+  } = input;
 
   try {
     const tick = await runCompilerHostTick({
@@ -326,10 +341,13 @@ async function runCompilerHostTickWithErrorHandling(input: {
           }
         : {}),
     });
+    if (tick.kind === "busy" && suppressBusyLine) return tick;
     printTickLine(tick, verbose);
+    return tick;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`dome serve: tick threw: ${msg}`);
+    return null;
   }
 }
 
@@ -345,6 +363,12 @@ async function runCompilerHostTickWithErrorHandling(input: {
  * without reaching for `dome inspect diagnostics`.
  */
 function printTickLine(tick: CompilerHostTickResult, verbose: boolean): void {
+  if (tick.kind === "busy") {
+    console.error(
+      `dome serve: branch ${tick.branch} is already being processed by another Dome host; waiting.`,
+    );
+    return;
+  }
   if (tick.kind === "in-sync") {
     if (verbose && tick.operational !== null) {
       printOperationalLine(tick.operational);

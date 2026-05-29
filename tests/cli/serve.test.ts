@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { runServe } from "../../src/cli/commands/serve";
 import { runStatus } from "../../src/cli/commands/status";
+import { runSync } from "../../src/cli/commands/sync";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -43,6 +44,7 @@ import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const TEST_BUNDLES_ROOT = join(REPO_ROOT, "tests", "harness", "fixtures", "bundles");
 const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
 
 // ----- Console capture ------------------------------------------------------
@@ -94,7 +96,12 @@ type Fixture = {
  * The daemon opens the SDK's shipped first-party bundles through
  * `bundlesRoot`; the test makes additional commits during the run.
  */
-async function makeFixture(): Promise<Fixture> {
+async function makeFixture(
+  opts: {
+    readonly bundlesRoot?: string;
+    readonly configYaml?: string;
+  } = {},
+): Promise<Fixture> {
   const vaultPath = mkdtempSync(join(tmpdir(), "serve-test-"));
   await initRepo(vaultPath);
   await mkdir(join(vaultPath, "wiki"), { recursive: true });
@@ -109,7 +116,8 @@ async function makeFixture(): Promise<Fixture> {
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
   await writeFile(
     join(vaultPath, ".dome", "config.yaml"),
-    `
+    opts.configYaml ??
+      `
 extensions:
   dome.markdown:
     enabled: true
@@ -124,7 +132,7 @@ extensions:
 
   return {
     vaultPath,
-    bundlesRoot: SHIPPED_BUNDLES_ROOT,
+    bundlesRoot: opts.bundlesRoot ?? SHIPPED_BUNDLES_ROOT,
     initialSha,
     cleanup: async () => {
       await rm(vaultPath, { recursive: true, force: true });
@@ -298,6 +306,70 @@ describe("runServe smoke", () => {
     const code = await servePromise;
     expect(code).toBe(0);
   }, 10_000);
+
+  test("coalesces HEAD movement that happens while adoption is active", async () => {
+    const f = await makeFixture({
+      bundlesRoot: TEST_BUNDLES_ROOT,
+      configYaml: `
+extensions:
+  test.slow-adoption:
+    enabled: true
+    grant:
+      read: ["wiki/**"]
+`,
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(initCode).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    await writeFile(join(f.vaultPath, "wiki/slow.md"), "# Slow\n");
+    await commit({
+      path: f.vaultPath,
+      message: "slow adoption trigger\n",
+      files: ["wiki/slow.md"],
+    });
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 5000,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 5000,
+      },
+    );
+
+    await waitForRunningProcessor(
+      f,
+      "test.slow-adoption.sleep",
+      2000,
+    );
+
+    await writeFile(join(f.vaultPath, "wiki/after.md"), "# After\n");
+    const finalSha = await commit({
+      path: f.vaultPath,
+      message: "commit while adoption runs\n",
+      files: ["wiki/after.md"],
+    });
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === finalSha,
+      2500,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+  }, 10_000);
 });
 
 // ----- Test 2: detached HEAD ------------------------------------------------
@@ -357,4 +429,23 @@ async function waitFor(
     await new Promise<void>((r) => setTimeout(r, 25));
   }
   throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
+}
+
+async function waitForRunningProcessor(
+  fixture: Fixture,
+  processorId: string,
+  timeoutMs: number,
+): Promise<void> {
+  await waitFor(async () => {
+    const ledgerPath = join(fixture.vaultPath, ".dome", "state", "runs.db");
+    const ledger = await openLedgerDb({ path: ledgerPath });
+    if (!ledger.ok) return false;
+    try {
+      return queryRuns(ledger.value.db, { status: "running" }).some(
+        (row) => row.processorId === processorId,
+      );
+    } finally {
+      ledger.value.db.close();
+    }
+  }, timeoutMs);
 }

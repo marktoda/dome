@@ -176,10 +176,12 @@ Work:
 - [x] Add host-on `serve` E2E coverage: commit while `serve` runs, adopted ref
       catches up, status reports healthy.
 - [x] Stabilize `sync --json` and `status --json` fixture schemas.
-- [ ] Coalesce branch movement while adoption is active.
-- [ ] Ensure only one adoption runs per branch at a time.
-- [ ] Add explicit quiet/verbose output modes and decide whether
-      `serve --exclusive` belongs in v1.
+- [x] Coalesce branch movement while adoption is active.
+- [x] Ensure only one compiler-host tick runs per branch at a time.
+- [x] Add explicit verbose output mode.
+- [x] Decide whether `serve --exclusive` belongs in v1: no separate flag for
+      v1; branch-level compiler-host locking is always on.
+- [ ] Add explicit quiet output mode.
 
 Acceptance:
 
@@ -478,24 +480,25 @@ Fold these into nearby milestone work when they are on-path:
 
 - `gray-matter` date coercion: unquoted ISO dates parse to JS `Date` and can
   reserialize noisily.
-- `serve --exclusive`: PID-file or lock so a second host does not race the
-  first.
-- Per-processor verbose logging:
+- [x] `serve --exclusive`: PID-file or lock so a second host does not race the
+  first. V1 uses an always-on per-branch compiler-host lock instead of an
+  opt-in flag.
+- [ ] Per-processor verbose logging:
   `dome serve --verbose --filter-processor dome.markdown.*`.
-- `status --json`: add per-processor recent-run summary once the status schema
+- [ ] `status --json`: add per-processor recent-run summary once the status schema
   is stable.
-- SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
-- Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
+- [ ] SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
+- [ ] Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
   docs/matrices agree.
-- Command-trigger uniqueness: reject duplicate view command names at
+- [x] Command-trigger uniqueness: reject duplicate view command names at
   registry/load time instead of letting runtime dispatch pick the first match.
-- Bundle module confinement: reject processor `module:` paths that are
+- [x] Bundle module confinement: reject processor `module:` paths that are
   absolute, escape the bundle root, or bypass `processors/`.
-- Route-level harness coverage: add scenario/matrix dimensions for
+- [ ] Route-level harness coverage: add scenario/matrix dimensions for
   adoption, garden-signal, garden-schedule, garden-job, garden-answer, and
   view-command routes so fact invalidation, capability-use ledgering, and
   patch semantics are proven per dispatcher.
-- Fact invalidation generalization: before non-signal garden processors emit
+- [x] Fact invalidation generalization: before non-signal garden processors emit
   page facts, make inspected paths explicit in runner results or effects so
   stale fact replacement is not coupled to trigger `changedPaths`.
 
