@@ -661,6 +661,9 @@ Work:
       policy-derived settings, operational state handles, and runtime-handle
       assembly, keeping the public runtime constructor stable while making
       extension/runtime wiring easier to audit.
+- [x] Add CLI shell-shape lockstep coverage so every shipped command-triggered
+      view processor has either a dedicated Commander binding or a documented
+      `dome run <command>` path.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

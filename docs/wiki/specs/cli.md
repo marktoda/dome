@@ -618,7 +618,8 @@ bindings. The intended shape is:
   current open-time SQLite migration and projection rebuild paths.
 
 Until these aliases ship, command-triggered view processors are invoked via
-`dome run <command-name>`.
+`dome run <command-name>`. The shipped run-only first-party view command is
+`dome run orphan-pages`.
 
 ## Adding a new command
 
@@ -634,8 +635,10 @@ rendering.
 
 The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor and invoke it via `dome run <command-name>`. A future `AbstractSurface` adapter should reuse the same shared dispatch boundary so dedicated view commands and generic command invocations inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
 
-Planned substrate scaffold:
-- A future CLI-shell-shape test should enumerate command-triggered processors in `assets/extensions/dome.*/processors/` and assert each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.
+The CLI shell-shape lockstep test enumerates command-triggered processors in
+`assets/extensions/dome.*/manifest.yaml` and asserts each has either a
+Commander binding in `src/cli/index.ts` or a documented `dome run` invocation
+in this spec.
 
 ## Why the CLI surface is rich (not minimal)
 
