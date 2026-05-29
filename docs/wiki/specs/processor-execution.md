@@ -24,8 +24,8 @@ Shipped in the current v1 runtime:
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
-- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
-- Vendor SDK adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
+- `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, retries one runtime-classified provider failure, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
+- Vendor SDK adapters and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
 
 ## Run state machine
 
@@ -144,6 +144,7 @@ The `ctx.modelInvoke` runtime boundary has these guarantees:
 - Records a `capability_uses` row for each model-call attempt: `allowed` when the provider call is authorized, `denied` when the model call is rejected before provider invocation.
 - Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
 - Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
+- Retries one retryable `model.invoke.provider-failed` provider attempt inside the same invocation. `model.invoke.timeout` is not retried inside the call; the processor timeout remains the outer cap.
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.
 - Aborts provider calls when the processor invocation times out or is cancelled.
 - Validates provider responses before returning them to processors: `text` must be a string; optional `model` must be a string; optional `costUsd` must be a finite non-negative number.
@@ -159,8 +160,8 @@ Dome does not perform generic immediate whole-processor retries for adoption,
 garden, schedule, or command dispatch. `executeProcessor` remains a
 single-attempt boundary for timeout/cancellation/output validation. Durable
 whole-run retries belong to JobEffect rows in `scheduled_jobs`; model-provider
-transient retries belong inside the future `ctx.modelInvoke` boundary while
-still respecting the run timeout.
+transient retries belong inside the `ctx.modelInvoke` boundary while still
+respecting the run timeout.
 
 The target runtime classifies run failures:
 
@@ -229,7 +230,7 @@ Already pinned:
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, garden timeout discards late output while recording `timed_out`, and runner cancellation records `cancelled` without leaving orphan `running` rows.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
-- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
+- Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, one retry for retryable provider failures, no retry for model-call timeouts, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
 - Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, explicit `drainOperationalWork()`, source-backed model PatchEffect routing/rejection, and vault-level timeout caps on scheduled and answer-triggered dispatch.
 
 Pending:

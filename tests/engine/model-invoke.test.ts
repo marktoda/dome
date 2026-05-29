@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   modelInvokeForProcessor,
+  type ModelInvokeCapabilityUse,
   type ModelProvider,
 } from "../../src/engine/model-invoke";
 import type { Capability } from "../../src/core/processor";
@@ -26,18 +27,23 @@ function buildInvoke(opts?: {
   readonly onCost?: (costUsd: number) => void;
   readonly spentUsdToday?: () => number;
   readonly signal?: AbortSignal;
+  readonly policy?: ResolvedExecutionPolicy;
+  readonly onCapabilityUse?: (use: ModelInvokeCapabilityUse) => void;
 }) {
   return modelInvokeForProcessor({
     phase: "garden",
     processorId: "test.model",
     declared: opts?.declared ?? [MODEL_CAP],
     granted: opts?.granted ?? [MODEL_CAP],
-    policy: POLICY,
+    policy: opts?.policy ?? POLICY,
     signal: opts?.signal ?? new AbortController().signal,
     ...(opts?.provider !== undefined ? { provider: opts.provider } : {}),
     ...(opts?.onCost !== undefined ? { onCost: opts.onCost } : {}),
     ...(opts?.spentUsdToday !== undefined
       ? { spentUsdToday: opts.spentUsdToday }
+      : {}),
+    ...(opts?.onCapabilityUse !== undefined
+      ? { onCapabilityUse: opts.onCapabilityUse }
       : {}),
   });
 }
@@ -261,6 +267,54 @@ describe("modelInvokeForProcessor", () => {
       code: "model.invoke.provider-failed",
       retryable: true,
     });
+  });
+
+  test("retries transient provider failures once inside the model boundary", async () => {
+    let calls = 0;
+    const uses: ModelInvokeCapabilityUse[] = [];
+    const invoke = buildInvoke({
+      onCapabilityUse: (use) => uses.push(use),
+      provider: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("429 rate limited");
+        return { text: "ok" };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    expect(await invoke({ prompt: "hello" })).toBe("ok");
+    expect(calls).toBe(2);
+    expect(uses).toEqual([
+      { capability: "model.invoke", resource: "fast", outcome: "allowed" },
+      { capability: "model.invoke", resource: "fast", outcome: "allowed" },
+    ]);
+  });
+
+  test("does not retry model-call timeouts", async () => {
+    let calls = 0;
+    const invoke = buildInvoke({
+      policy: {
+        ...POLICY,
+        timeoutMs: 20,
+        modelCallTimeoutMs: 5,
+      },
+      provider: async (request) => {
+        calls += 1;
+        await new Promise<void>((resolve) => {
+          request.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
+        });
+        return { text: "late" };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.timeout",
+      retryable: true,
+    });
+    expect(calls).toBe(1);
   });
 
   test("pre-aborted processor signal prevents provider invocation", async () => {

@@ -412,6 +412,9 @@ Work:
 - [x] Validate structured outputs at the boundary.
 - [x] Treat model parse/schema failures as nominal processor failures.
 - [x] Ensure structured-output retries are bounded.
+- [x] Retry one retryable provider failure inside `modelInvoke` while leaving
+      model-call timeouts single-attempt so long LLM calls do not silently
+      double their worst-case duration.
 - [x] Keep LLM write effects capability-scoped and SourceRef-backed.
 - [x] Package a production provider path; vaults can configure a command
       provider and the CLI/harness path exercises it without runtime injection.
@@ -589,8 +592,8 @@ them natural:
   patches pushed onto proposal branches, conflict routing, and auto-merge only
   after adoption plus required checks pass;
 - provider adapters: AI SDK / Anthropic SDK packages outside `@dome/sdk` core,
-  plus clearer transient retry/backoff policy if soak shows provider failures
-  are common;
+  plus richer adapter-owned backoff/classification if soak shows provider
+  failures are common;
 - richer protocol adapters: MCP, HTTP, WebSocket, mobile, or voice surfaces
   over the same compiler-host and view boundaries, without privileged write
   APIs;

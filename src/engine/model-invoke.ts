@@ -9,6 +9,7 @@ import type { ResolvedExecutionPolicy } from "../processors/execution-policy";
 import type { ProcessorExecutionErrorCode } from "./runner-contract";
 
 const MODEL_EXECUTION_ERRORS = new WeakSet<object>();
+const PROVIDER_MAX_ATTEMPTS = 2;
 
 export type ModelExecutionErrorCode = Extract<
   ProcessorExecutionErrorCode,
@@ -85,15 +86,17 @@ export function modelInvokeForProcessor(opts: {
       );
     }
 
-    recordModelCapabilityUse(opts.onCapabilityUse, {
-      resource: request.model ?? null,
-      outcome: "allowed",
-    });
-    const response = await callProviderWithTimeout({
+    const response = await callProviderWithRetry({
       provider: opts.provider,
       request,
       signal: opts.signal,
       timeoutMs: opts.policy.modelCallTimeoutMs ?? opts.policy.timeoutMs,
+      onAttempt: () => {
+        recordModelCapabilityUse(opts.onCapabilityUse, {
+          resource: request.model ?? null,
+          outcome: "allowed",
+        });
+      },
     });
     if (
       response.costUsd !== undefined &&
@@ -258,6 +261,42 @@ async function callProviderWithTimeout(opts: {
       opts.signal.removeEventListener("abort", abort);
     }
   }
+}
+
+async function callProviderWithRetry(opts: {
+  readonly provider: ModelProvider;
+  readonly request: Omit<ModelProviderRequest, "signal">;
+  readonly signal: AbortSignal;
+  readonly timeoutMs: number;
+  readonly onAttempt?: () => void;
+}): Promise<ModelProviderResponse> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= PROVIDER_MAX_ATTEMPTS; attempt += 1) {
+    opts.onAttempt?.();
+    try {
+      return await callProviderWithTimeout(opts);
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryProviderFailure(error, attempt, opts.signal)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+}
+
+function shouldRetryProviderFailure(
+  error: unknown,
+  attempt: number,
+  signal: AbortSignal,
+): boolean {
+  return (
+    attempt < PROVIDER_MAX_ATTEMPTS &&
+    !signal.aborted &&
+    isModelExecutionError(error) &&
+    error.retryable &&
+    error.code === "model.invoke.provider-failed"
+  );
 }
 
 function validateProviderResponse(response: unknown): ModelProviderResponse {
