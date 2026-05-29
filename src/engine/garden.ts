@@ -427,6 +427,21 @@ async function runGardenPhaseInner(opts: {
 
     if (
       result.executionStatus === "succeeded" &&
+      sinks.resolveDiagnostics !== undefined
+    ) {
+      await sinks.resolveDiagnostics({
+        processorId: result.processorId,
+        runId: result.runId,
+        inspectedPaths: result.inspectedPaths,
+        emittedDiagnostics: result.effects.filter(
+          (effect): effect is DiagnosticEffect =>
+            effect.kind === "diagnostic",
+        ),
+      });
+    }
+
+    if (
+      result.executionStatus === "succeeded" &&
       sinks.resolveQuestions !== undefined
     ) {
       await sinks.resolveQuestions({

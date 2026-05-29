@@ -81,7 +81,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("inspect")
     .description("Read operational substrate rows.")
-    .argument("<subject>", "runs, diagnostics, questions, or outbox.")
+    .argument(
+      "<subject>",
+      "runs, diagnostics, questions, outbox, or quarantine.",
+    )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")

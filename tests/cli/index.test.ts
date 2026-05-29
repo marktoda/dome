@@ -45,6 +45,12 @@ describe("runCli", () => {
     expect(out).not.toContain("DOME status");
   });
 
+  test("inspect help names every shipped subject", async () => {
+    expect(await runCli(["inspect", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("runs, diagnostics, questions, outbox, or quarantine");
+  });
+
   test("unknown command exits 64 with Commander usage", async () => {
     expect(await runCli(["bogus"])).toBe(64);
     const err = captured.err.join("\n");
