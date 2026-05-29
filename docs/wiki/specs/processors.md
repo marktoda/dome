@@ -149,9 +149,9 @@ The full mapping is at [[wiki/matrices/processor-phase-x-trigger]]. Summary:
 
 - **Adoption-phase processors** subscribe to `signal:*`, `path:*`. Not `schedule:*`, `answer:*`, or `command:*` — adoption is per-Proposal, not periodic, answer-mediated, or user-invoked.
 - **Garden-phase processors** subscribe to `signal:*`, `path:*`, `schedule:*`, and `answer:*`. Answer triggers may bind to the processor that originally asked the question, so privileged answer handlers cannot be invoked by a forged idempotency-key prefix from another bundle.
-- **View-phase processors** subscribe to `command:*` and may also subscribe to
-  `schedule:*` for periodic rendered deliverables. Views never react directly
-  to vault-write signals or answer events.
+- **View-phase processors** subscribe to `command:*`. Views never react
+  directly to vault-write signals, schedules, or answer events. Periodic work
+  belongs in garden so its effects have a durable route.
 
 ## Capabilities
 
@@ -230,7 +230,7 @@ The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` does not
 
 - **Mutate state directly.** No filesystem writes, no git calls, no SQLite writes. The engine is the only applier. Pinned by [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 - **Emit effects beyond its declared capabilities.** Every effect passes through `enforceCapability(effect, processor.capabilities)` at the engine boundary. Pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
-- **Run outside its declared phase.** An adoption-phase processor cannot be triggered by a `schedule:` cron; a view-phase processor cannot emit a `PatchEffect`. Phase × effect compatibility is enforced at registration time and re-checked at effect-emission time.
+- **Run outside its declared phase.** An adoption-phase processor cannot be triggered by a `schedule:` cron; a view-phase processor cannot be triggered by cron or emit a `PatchEffect`. Phase × trigger compatibility is enforced at registration time, and phase × effect compatibility is re-checked at effect-emission time.
 - **Call other processors directly.** Processors emit effects; the engine may dispatch follow-on processors based on effects, but a processor cannot synchronously invoke another. This is what keeps the snapshot-in-effects-out boundary clean.
 
 ## Run ledger

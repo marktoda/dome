@@ -38,7 +38,7 @@ An attempted scheduled fire consumes the interval even when the processor fails 
 
 - A third-party `acme.nightly-export` processor with `triggers: [{ kind: "schedule", cron: "0 2 * * *" }]` and `external: ["network.post"]` capability. A user off for a week syncs, the processor fires once (per clamp), one nightly-export attempt lands in the outbox per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]]. The other six nights' exports are lost — which is fine because exports are non-idempotent side effects that shouldn't be silently re-fired against external systems.
 
-- A processor author writes a `weekly-rollup` view-phase processor with `triggers: [{ kind: "schedule", cron: "0 18 * * 0" }]` and forgets the internal "does the rollup already exist" guard. A user syncs after two weeks offline; the processor fires once (per clamp), emits a PatchEffect writing the rollup for the most-recent week, the prior week is missed. The author notices and either adds the guard (idempotency per [[wiki/specs/processors]] §"Idempotency") or accepts the lossy-on-catch-up semantic.
+- A processor author writes a `weekly-rollup` garden-phase processor with `triggers: [{ kind: "schedule", cron: "0 18 * * 0" }]` and forgets the internal "does the rollup already exist" guard. A user syncs after two weeks offline; the processor fires once (per clamp), emits a PatchEffect writing the rollup for the most-recent week, the prior week is missed. The author notices and either adds the guard (idempotency per [[wiki/specs/processors]] §"Idempotency") or accepts the lossy-on-catch-up semantic.
 
 **Related:**
 

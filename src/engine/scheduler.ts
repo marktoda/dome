@@ -131,13 +131,10 @@ export type SchedulerResult = {
  * Returns the aggregated `SchedulerResult`; never throws. Substrate
  * failures synthesize a `scheduler.crashed` diagnostic.
  *
- * Phase 4c v1 dispatches via the injected `gardenRunner` /
- * `viewRunner`. Garden-phase scheduled fires don't currently emit
- * sub-Proposal-spawning patches in any shipped bundle, but the
- * orchestrator routes their non-Patch effects through `applyEffect`
- * with the right phase so any future garden-scheduled patch path
- * would route correctly (the sub-Proposal cascade lives one layer
- * up in `compiler-host.ts`).
+ * Phase 4c v1 dispatches garden-phase schedule triggers only. View-phase
+ * work is command-driven because scheduled ViewEffects have no caller-owned
+ * delivery surface in v1; periodic work that should write or queue durable
+ * state belongs in garden.
  */
 export async function runScheduler(opts: {
   readonly vault: EngineVault;
@@ -240,19 +237,20 @@ async function runSchedulerInner(opts: {
   const skipped: { processorId: string; reason: string }[] = [];
   const diagnostics: DiagnosticEffect[] = [];
 
-  // Walk garden + view phase processors; only those with a schedule
-  // trigger are candidates. Adoption-phase processors with schedule
-  // triggers are rejected at bundle-load time per the phase × trigger
-  // matrix at [[wiki/matrices/processor-phase-x-trigger]].
-  const candidates: { processor: Processor<unknown>; phase: "garden" | "view"; cron: string }[] = [];
-  for (const phase of ["garden", "view"] as const) {
-    for (const p of registry.byPhase(phase)) {
-      for (const t of p.triggers) {
-        if (t.kind === "schedule") {
-          candidates.push({ processor: p, phase, cron: t.cron });
-          break; // one entry per processor — multiple schedule triggers per
-          // processor are unusual; if needed in v1.x, expand here.
-        }
+  // Walk garden-phase processors with schedule triggers. Adoption/view
+  // schedule triggers are rejected at bundle-load time per the phase ×
+  // trigger matrix at [[wiki/matrices/processor-phase-x-trigger]].
+  const candidates: {
+    readonly processor: Processor<unknown>;
+    readonly phase: "garden";
+    readonly cron: string;
+  }[] = [];
+  for (const p of registry.byPhase("garden")) {
+    for (const t of p.triggers) {
+      if (t.kind === "schedule") {
+        candidates.push({ processor: p, phase: "garden", cron: t.cron });
+        break; // one entry per processor — multiple schedule triggers per
+        // processor are unusual; if needed in v1.x, expand here.
       }
     }
   }
@@ -362,7 +360,7 @@ async function runSchedulerInner(opts: {
       // signal-triggered garden semantics instead of mutating a candidate
       // through the generic applyPatch sink.
       for (const effect of result.effects) {
-        if (phase === "garden" && effect.kind === "patch") {
+        if (effect.kind === "patch") {
           await dispatchGardenPatchEffect({
             effect,
             vault,

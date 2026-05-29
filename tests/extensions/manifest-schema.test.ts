@@ -50,6 +50,45 @@ describe("parseManifest — execution metadata", () => {
     expect(result.error.trigger).toBe("answer");
   });
 
+  test("rejects view schedule triggers", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          phase: "view",
+          triggers: [{ kind: "schedule", cron: "0 7 * * MON" }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("phase-trigger-mismatch");
+    if (result.error.kind !== "phase-trigger-mismatch") return;
+    expect(result.error.phase).toBe("view");
+    expect(result.error.trigger).toBe("schedule");
+  });
+
+  test("accepts view command triggers", () => {
+    const result = parseManifest({
+      id: "test.bundle",
+      version: "0.0.1",
+      processors: [
+        {
+          ...baseProcessor,
+          phase: "view",
+          triggers: [{ kind: "command", name: "report" }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.processors[0]?.triggers[0]?.kind).toBe("command");
+  });
+
   test("accepts garden llm execution metadata", () => {
     const result = parseManifest({
       id: "test.bundle",

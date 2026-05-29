@@ -512,6 +512,9 @@ Work:
       branch/worktree materialization for engine-created commits.
 - [x] Dogfood `dome doctor --vault ~/vaults/work --json`; this uncovered and
       fixed missing-grant drift reporting for old first-party config.
+- [x] Narrow unsupported scheduled view processors out of the v1 manifest
+      contract; scheduled work is garden-only until a scheduled view delivery
+      surface exists.
 - [ ] Dogfood against `docs/` and `~/vaults/work`.
 
 Acceptance:

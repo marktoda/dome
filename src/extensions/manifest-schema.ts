@@ -149,12 +149,12 @@ export const ManifestSchema = z
 //
 //   adoption: signal/path allowed; schedule/command rejected
 //   garden:   signal/path/schedule/answer allowed; command rejected
-//   view:     schedule/command allowed; signal/path rejected
+//   view:     command allowed; signal/path/schedule/answer rejected
 
 const ALLOWED_TRIGGERS_BY_PHASE: Readonly<Record<ProcessorPhase, ReadonlySet<TriggerKind>>> = {
   adoption: new Set<TriggerKind>(["signal", "path"]),
   garden: new Set<TriggerKind>(["signal", "path", "schedule", "answer"]),
-  view: new Set<TriggerKind>(["schedule", "command"]),
+  view: new Set<TriggerKind>(["command"]),
 };
 
 /**

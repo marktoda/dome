@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[wiki/specs/processors]]", "[[wiki/specs/run-ledger]]", "[[wiki/specs/effects]]"]
 ---
 
@@ -20,7 +20,7 @@ Shipped in the current v1 runtime:
 - `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, answer handlers, durable JobEffect drains, and deterministic projection rebuild processors.
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
-- `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
+- `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
 - `src/engine/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
 - Vendor SDK adapters, provider-transient retry policy, and graceful drain/close integration are target surfaces described here for the completed architecture; they are not fully implemented yet.
 
@@ -173,7 +173,7 @@ that nominal SDK-created error and records the run as `processor.threw` with
 `retryable: true`. A plain thrown object with a `retryable: true` property is
 not trusted by shape and remains a non-retryable `processor.threw`.
 
-Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. When a key enters quarantine, the runtime assigns a durable `quarantineId` generation token. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user approves a `dome.health` recovery question whose answer handler emits `QuarantineRecoveryEffect` for the current generation.
+Garden runs, including schedule-triggered garden runs, maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. When a key enters quarantine, the runtime assigns a durable `quarantineId` generation token. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user approves a `dome.health` recovery question whose answer handler emits `QuarantineRecoveryEffect` for the current generation.
 
 Adoption-phase processors are never quarantined automatically. If an adoption processor fails, adoption blocks: trusted state cannot advance while the deterministic gate is unhealthy.
 

@@ -117,7 +117,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
 
   // 2. runs — one row per Processor.run() invocation. Per the spec:
   //    - `id` is the run id (format: `run_<unix-ms>_<6-char-rand>`).
-  //    - `proposal_id` is nullable for view-phase / scheduled-cron-only runs.
+  //    - `proposal_id` is nullable for view-phase / scheduled garden runs.
   //    - `output_commit` is nullable; set when the run contributed to a
   //      closure commit. The `Dome-Run` trailer on that commit equals
   //      `runs.id` (the dual-surface join key).

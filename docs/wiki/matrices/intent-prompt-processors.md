@@ -40,7 +40,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "What did I decide about X" | shipped | `dome.search.query` | view (command via `dome query`) | none (FTS; narrative rendering remains planned) | ViewEffect (structured adopted-state matches) |
 | "What's on the agenda with [person]" | shipped deterministic | `dome.daily.agenda-with` | view (command via `dome agenda`) | none | ViewEffect (source-backed agenda markdown + structured payload) |
 | "Prep for tomorrow" | shipped deterministic | `dome.daily.prep` | view (command via `dome prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
-| "Week in review" | planned | `dome.daily.week-review` | view (cron + command) | `assets/extensions/dome.daily/processors/week-review.prompt.md` | ViewEffect (review markdown), optionally PatchEffect (write the review to wiki/syntheses/) |
+| "Week in review" | planned | `dome.daily.week-review`, future `dome.daily.create-week-review` | view command + garden schedule | `assets/extensions/dome.daily/processors/week-review.prompt.md` | ViewEffect (interactive review markdown); scheduled garden PatchEffect can write a review to `wiki/syntheses/` |
 | "Export context for cross-AI handoff" | shipped | `dome.search.export-context` | view (command via `dome export-context <topic>`) | none (FTS + facts; narrative rendering remains planned) | ViewEffect (portable context packet) |
 
 ## Scheduled intents
@@ -50,7 +50,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Create today's daily note" | shipped | `dome.daily.create-daily` | garden | cron `0 6 * * *` | PatchEffect (create wiki/dailies/YYYY-MM-DD.md from template) |
 | "Carry forward unfinished tasks" | shipped | `dome.daily.carry-forward` | garden | signal `file.created` on `wiki/dailies/*` | PatchEffect (copy unfinished tasks from prior daily) |
 | "Create this week's weekly" | planned | `dome.daily.create-weekly` | garden | cron `0 6 * * MON` | PatchEffect (create wiki/weeklies/YYYY-Www.md) |
-| "Auto-lint weekly" | planned | `dome.lint.report` | view (cron) | cron `0 7 * * MON` | ViewEffect (scheduled lint report) |
+| "Auto-lint weekly" | planned | future `dome.lint.scheduled-report` | garden (cron) | cron `0 7 * * MON` | DiagnosticEffect or PatchEffect for a durable scheduled lint report |
 | "Inbox staleness check" | shipped | `dome.intake.inbox-stale-check` | garden | hourly schedule plus inbox path signals | DiagnosticEffect (`inbox.stale` warning for files older than 168 hours) |
 
 ## Why this matrix exists

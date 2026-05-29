@@ -293,6 +293,41 @@ describe("loadBundles — error variants", () => {
     expect(result.error.cause.trigger).toBe("signal");
   });
 
+  test("manifest-invalid (phase-trigger-mismatch) when a view-phase processor declares a schedule trigger", async () => {
+    const root = makeTmpRoot("loader-view-schedule-mismatch-");
+    const bundleDir = join(root, "test.bad");
+    await mkdir(bundleDir, { recursive: true });
+    const manifest = {
+      id: "test.bad",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "test.bad.proc",
+          version: "0.1.0",
+          phase: "view",
+          triggers: [{ kind: "schedule", cron: "0 7 * * MON" }],
+          capabilities: [],
+          module: "processors/x.ts",
+        },
+      ],
+    };
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify(manifest),
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("manifest-invalid");
+    if (result.error.kind !== "manifest-invalid") return;
+    expect(result.error.cause.kind).toBe("phase-trigger-mismatch");
+    if (result.error.cause.kind !== "phase-trigger-mismatch") return;
+    expect(result.error.cause.processorId).toBe("test.bad.proc");
+    expect(result.error.cause.phase).toBe("view");
+    expect(result.error.cause.trigger).toBe("schedule");
+  });
+
   test("manifest-read-failed when neither manifest.yaml nor manifest.json exists", async () => {
     const root = makeTmpRoot("loader-no-manifest-");
     const bundleDir = join(root, "naked-bundle");

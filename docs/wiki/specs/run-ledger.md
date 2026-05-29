@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -49,7 +49,7 @@ explicit migration without losing rows.
 ```sql
 CREATE TABLE runs (
   id                   TEXT PRIMARY KEY,         -- run_<unix-ms>_<6-char-rand>
-  proposal_id          TEXT,                     -- nullable; null for view-phase / scheduled-cron-only runs
+  proposal_id          TEXT,                     -- nullable; null for view-phase / scheduled garden runs
   processor_id         TEXT NOT NULL,
   processor_version    TEXT NOT NULL,
   phase                TEXT NOT NULL,            -- "adoption" | "garden" | "view"
