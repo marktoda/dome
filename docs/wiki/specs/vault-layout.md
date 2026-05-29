@@ -141,7 +141,7 @@ being silently ignored.
 extensions:
   dome.markdown: { enabled: true,  grants: { read: ["**/*.md"], patch.auto: ["**/*.md"], question.ask: true } }
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
-  dome.daily:    { enabled: true,  grants: { read: ["wiki/dailies/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"] } }
+  dome.daily:    { enabled: true,  grants: { read: ["wiki/**/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"], question.ask: true } }
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
   dome.lint:     { enabled: true,  grants: {} }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }

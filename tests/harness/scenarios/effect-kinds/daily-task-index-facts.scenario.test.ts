@@ -1,9 +1,9 @@
 // scenarios/effect-kinds/daily-task-index-facts.scenario.test.ts
 //
-// dome.daily.task-index projects explicit daily checkbox observations into
+// dome.daily.task-index projects explicit markdown action observations into
 // page-scoped facts. The processor intentionally does not assign stable task
-// identities yet; this scenario locks the current projection lifecycle:
-// re-inspecting a changed/deleted daily replaces stale facts for that page.
+// identities yet; these scenarios lock the current projection lifecycle:
+// re-inspecting a changed/deleted page replaces stale facts for that page.
 
 import { expect } from "bun:test";
 
@@ -15,7 +15,7 @@ extensions:
   dome.daily:
     enabled: true
     grant:
-      read: ["wiki/dailies/*.md"]
+      read: ["wiki/**/*.md"]
       patch.auto: ["wiki/dailies/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
@@ -286,6 +286,146 @@ scenario(
         objectString: "Check in with Sam about hiring",
       })
       .toHaveCount(1);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.daily.task-index extracts source-ref-backed capture followups",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "question" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": CONFIG,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const path = "wiki/captures/2026-01-05.md";
+    await h.userCommit({
+      files: {
+        [path]: [
+          "---",
+          "type: source",
+          "title: 2026-01-05 capture",
+          "---",
+          "",
+          "# 2026-01-05 capture",
+          "",
+          "TODO: Send Ada the launch staffing note",
+          "Follow up: Ask Ben about hiring budget",
+          "We should follow up with Cy about review timing",
+          "",
+        ].join("\n"),
+      },
+      message: "add capture followups",
+    });
+    const created = await h.tick();
+    expect(created.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: path,
+      })
+      .toHaveCount(2);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+        objectString: "Ask Ben about hiring budget",
+      })
+      .toHaveCount(1);
+    await h.expectProjection().questions().toHaveCount(1);
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("We should follow up with Cy about review timing");
+
+    expect(
+      sourceRefRowsForFacts(h, {
+        predicate: "dome.daily.open_task",
+        subjectId: path,
+      }).every((refs) => hasSourceRef(refs, path)),
+    ).toBe(true);
+    expect(
+      sourceRefRowsForFacts(h, {
+        predicate: "dome.daily.followup",
+        subjectId: path,
+      }).every((refs) => hasSourceRef(refs, path)),
+    ).toBe(true);
+    expect(
+      sourceRefRowsForQuestions(h).every((refs) => hasSourceRef(refs, path)),
+    ).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [path]: [
+          "---",
+          "type: source",
+          "title: 2026-01-05 capture",
+          "---",
+          "",
+          "# 2026-01-05 capture",
+          "",
+          "TODO: Send Ada the launch staffing note",
+          "Follow up: Ask Ben about hiring budget",
+          "Follow up: Check with Cy about review timing",
+          "",
+        ].join("\n"),
+      },
+      message: "clarify capture followup",
+    });
+    const clarified = await h.tick();
+    expect(clarified.adopted).toBe(true);
+
+    await h.expectProjection().questions().toHaveCount(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+        objectString: "Check with Cy about review timing",
+      })
+      .toHaveCount(1);
+
+    await h.userCommit({
+      files: {
+        [path]: null,
+      },
+      message: "delete capture",
+    });
+    const deleted = await h.tick();
+    expect(deleted.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: path,
+      })
+      .toHaveCount(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+      })
+      .toHaveCount(0);
   },
 );
 

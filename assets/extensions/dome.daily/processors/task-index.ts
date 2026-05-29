@@ -1,4 +1,4 @@
-// dome.daily.task-index — project explicit daily action items into facts.
+// dome.daily.task-index — project explicit markdown action items into facts.
 
 import { createHash } from "node:crypto";
 
@@ -16,7 +16,6 @@ import {
 import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
-  parseDailyPath,
 } from "./daily-shared";
 
 const OPEN_TASK_PREDICATE = "dome.daily.open_task";
@@ -30,29 +29,27 @@ const taskIndex: Processor = defineProcessor({
     {
       kind: "signal",
       name: "document.changed",
-      pathPattern: "wiki/dailies/*.md",
+      pathPattern: "wiki/**/*.md",
     },
     {
       kind: "signal",
       name: "file.created",
-      pathPattern: "wiki/dailies/*.md",
+      pathPattern: "wiki/**/*.md",
     },
     {
       kind: "signal",
       name: "file.deleted",
-      pathPattern: "wiki/dailies/*.md",
+      pathPattern: "wiki/**/*.md",
     },
   ],
   capabilities: [
-    { kind: "read", paths: ["wiki/dailies/*.md"] },
+    { kind: "read", paths: ["wiki/**/*.md"] },
     { kind: "graph.write", namespaces: ["dome.daily.*"] },
     { kind: "question.ask" },
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: Effect[] = [];
     for (const path of ctx.changedPaths) {
-      if (parseDailyPath(path) === null) continue;
-
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 

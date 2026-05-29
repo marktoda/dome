@@ -293,7 +293,7 @@ extensions:
     enabled: true
     grant:
       read:
-        - "wiki/dailies/*.md"
+        - "wiki/**/*.md"
       patch.auto:
         - "wiki/dailies/*.md"
       graph.write:

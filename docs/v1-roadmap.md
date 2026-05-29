@@ -319,6 +319,8 @@ Work:
       daily task observations are enough until a richer task model lands.
 - [x] Implement deterministic followup/todo extraction from daily notes where
       possible beyond explicit checkbox markers.
+- [x] Extend deterministic task/followup extraction to non-daily wiki pages
+      without widening `dome.daily`'s auto-patch authority.
 - [x] Ask questions for ambiguous writes instead of silently guessing.
 - [ ] Add `dome today` and `dome prep` only once they have useful data to
       render.
@@ -338,7 +340,7 @@ Acceptance:
 - [x] Daily note TODO/follow-up directive text yields source-ref-backed tasks
       and followups.
 - [x] Ambiguous task extraction asks a question instead of mutating silently.
-- [ ] Capture text outside daily notes yields source-ref-backed followups.
+- [x] Capture text outside daily notes yields source-ref-backed followups.
 - [ ] Real-vault dogfood against `~/vaults/work` or `docs/`.
 
 ## Milestone 6 - modelInvoke Substrate
@@ -455,7 +457,7 @@ Required for daily value:
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | partially shipped | daily creation, task carry-forward, and explicit daily task/followup fact indexing shipped; capture extraction and today/prep views remain |
+| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, and ambiguity questions shipped; raw-capture compilation and today/prep views remain |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 
 Optional or conditional:

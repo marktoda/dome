@@ -27,7 +27,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Cross-reference new entity mentions" | planned | `dome.links.cross-reference` | garden | none (rule-based, no LLM) | PatchEffect (insert wikilinks) |
 | "Update the index" | planned | `dome.index.update-index` | adoption | none | PatchEffect (rewrite index.md) |
 | "Append run records to log.md" | planned | `dome.log.append-log` | adoption | none | PatchEffect (append log.md row) |
-| "Index explicit daily tasks/followups" | shipped | `dome.daily.task-index` | adoption | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`) |
+| "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index` | adoption | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups |
 | "Lint the wiki for issues" | planned | `dome.lint.lint-report` | view (cron + command) | `assets/extensions/dome.lint/processors/lint-report.prompt.md` (LLM for narrative findings; rule-based for structural findings) | DiagnosticEffect (per finding), ViewEffect (report markdown) |
 | "Apply a lint finding" | planned | `dome.lint.apply-finding` | view (command) | `assets/extensions/dome.lint/processors/apply-finding.prompt.md` | PatchEffect (the proposed fix) |
 

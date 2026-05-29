@@ -20,16 +20,16 @@ processors:
     triggers:
       - kind: signal
         name: document.changed
-        pathPattern: "wiki/dailies/*.md"
+        pathPattern: "wiki/**/*.md"
       - kind: signal
         name: file.created
-        pathPattern: "wiki/dailies/*.md"
+        pathPattern: "wiki/**/*.md"
       - kind: signal
         name: file.deleted
-        pathPattern: "wiki/dailies/*.md"
+        pathPattern: "wiki/**/*.md"
     capabilities:
       - kind: read
-        paths: ["wiki/dailies/*.md"]
+        paths: ["wiki/**/*.md"]
       - kind: graph.write
         namespaces: ["dome.daily.*"]
       - kind: question.ask
