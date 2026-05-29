@@ -142,6 +142,14 @@ export type TriggerKind = Trigger["kind"];
 
 export type CapabilityKind = Capability["kind"];
 
+export type RouteKind =
+  | "adoption"
+  | "garden-signal"
+  | "garden-schedule"
+  | "garden-job"
+  | "garden-answer"
+  | "view-command";
+
 export type ScenarioGroup =
   | "basic-adoption"
   | "convergence"
@@ -177,6 +185,7 @@ export type ScenarioTag =
   | { readonly kind: "phase"; readonly phase: ProcessorPhase }
   | { readonly kind: "trigger"; readonly trigger: TriggerKind }
   | { readonly kind: "capability"; readonly capability: CapabilityKind }
+  | { readonly kind: "route"; readonly route: RouteKind }
   | { readonly kind: "lifecycle"; readonly event: LifecycleEvent }
   | { readonly kind: "group"; readonly group: ScenarioGroup };
 

@@ -51,6 +51,7 @@ scenario(
       { kind: "capability", capability: "patch.auto" },
       { kind: "phase", phase: "garden" },
       { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
     ],
     harness: {
       bundles: ["dome.intake", "dome.daily", "dome.markdown"],

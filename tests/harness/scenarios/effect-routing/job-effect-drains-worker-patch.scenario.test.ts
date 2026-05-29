@@ -25,6 +25,7 @@ scenario(
       { kind: "capability", capability: "patch.auto" },
       { kind: "phase", phase: "garden" },
       { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-job" },
     ],
     harness: {
       bundles: [{ id: "test.job-patch-flow", root: FIXTURE_BUNDLE }],

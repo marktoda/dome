@@ -3,12 +3,12 @@
 //
 // H1 surfaced the registry shape + verified the registration plumbing.
 // H2 extended with two coverage-light sanity checks. H3 enforces the
-// full effect/trigger/phase/capability matrix: every union member in the
+// full effect/trigger/phase/capability/route matrix: every union member in the
 // closed-set source-of-truth arrays below must have a covering scenario
 // OR be listed in the matching DEFERRED set with a written justification.
 //
-// Adding a new EffectKind / TriggerKind / Capability / ProcessorPhase in
-// `src/core/*` requires either:
+// Adding a new EffectKind / TriggerKind / Capability / ProcessorPhase /
+// RouteKind requires either:
 //   - Adding a scenario tagged with the new value, OR
 //   - Adding the value to the appropriate DEFERRED set below, with a
 //     comment naming the phase that will remove the deferral.
@@ -34,6 +34,7 @@ import { getRegistry } from "../index";
 import type {
   CapabilityKind,
   EffectKind,
+  RouteKind,
   ScenarioRegistryEntry,
   TriggerKind,
 } from "../types";
@@ -243,6 +244,15 @@ const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [
   "view",
 ];
 
+const ROUTES_ALL: ReadonlyArray<RouteKind> = [
+  "adoption",
+  "garden-signal",
+  "garden-schedule",
+  "garden-job",
+  "garden-answer",
+  "view-command",
+];
+
 // Deferred sets. Each entry is a value that no shipped processor exercises
 // today; the comment names the phase that will remove the deferral.
 // REMOVING an entry from these sets requires adding a scenario that
@@ -340,6 +350,21 @@ describe("coverage matrix (Phase H3 enforcement)", () => {
         tagged.length > 0,
         `No scenario tagged phase='${phase}'. Add one in tests/harness/scenarios/.\n` +
           `If this phase is genuinely deferred, document the reason in DEFERRED_PHASES.`,
+      ).toBe(true);
+    });
+  }
+
+  // ----- Engine routes ---------------------------------------------------
+
+  for (const route of ROUTES_ALL) {
+    test(`engine route '${route}' has at least one scenario`, () => {
+      const tagged = getRegistry().filter((e) =>
+        hasTag(e, (t) => t.kind === "route" && t.route === route),
+      );
+      expect(
+        tagged.length > 0,
+        `No scenario tagged route='${route}'. Add one in tests/harness/scenarios/.\n` +
+          `Route tags distinguish dispatcher paths that may share the same processor phase.`,
       ).toBe(true);
     });
   }
@@ -448,6 +473,12 @@ type _AssertPhasesExhaustive = Exclude<
 > extends never
   ? true
   : never;
+type _AssertRoutesExhaustive = Exclude<
+  RouteKind,
+  (typeof ROUTES_ALL)[number]
+> extends never
+  ? true
+  : never;
 
 // Force the type checker to use the assertions above (no-op consts that
 // hold the asserted types — if any union variant is missing, the const
@@ -456,8 +487,10 @@ const _effectsExhaustive: _AssertEffectsExhaustive = true;
 const _triggersExhaustive: _AssertTriggersExhaustive = true;
 const _capabilitiesExhaustive: _AssertCapabilitiesExhaustive = true;
 const _phasesExhaustive: _AssertPhasesExhaustive = true;
+const _routesExhaustive: _AssertRoutesExhaustive = true;
 // Touch the names to satisfy noUnusedLocals.
 void _effectsExhaustive;
 void _triggersExhaustive;
 void _capabilitiesExhaustive;
 void _phasesExhaustive;
+void _routesExhaustive;

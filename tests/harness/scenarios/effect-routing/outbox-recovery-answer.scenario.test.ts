@@ -45,6 +45,7 @@ scenario(
       { kind: "capability", capability: "question.ask" },
       { kind: "capability", capability: "outbox.recover" },
       { kind: "trigger", trigger: "answer" },
+      { kind: "route", route: "garden-answer" },
     ],
     harness: {
       bundles: [{ id: "test.outbox-recovery", root: FIXTURE_BUNDLE }],

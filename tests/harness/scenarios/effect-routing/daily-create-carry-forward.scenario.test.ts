@@ -15,6 +15,7 @@ scenario(
       { kind: "phase", phase: "garden" },
       { kind: "trigger", trigger: "schedule" },
       { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-schedule" },
     ],
     harness: {
       clock: new TestClock("2026-01-02T15:00:00.000Z"),

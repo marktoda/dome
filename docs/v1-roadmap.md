@@ -523,7 +523,7 @@ Fold these into nearby milestone work when they are on-path:
   registry/load time instead of letting runtime dispatch pick the first match.
 - [x] Bundle module confinement: reject processor `module:` paths that are
   absolute, escape the bundle root, or bypass `processors/`.
-- [ ] Route-level harness coverage: add scenario/matrix dimensions for
+- [x] Route-level harness coverage: add scenario/matrix dimensions for
   adoption, garden-signal, garden-schedule, garden-job, garden-answer, and
   view-command routes so fact invalidation, capability-use ledgering, and
   patch semantics are proven per dispatcher.

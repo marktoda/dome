@@ -16,6 +16,7 @@ scenario(
     tags: [
       { kind: "group", group: "basic-adoption" },
       { kind: "phase", phase: "adoption" },
+      { kind: "route", route: "adoption" },
     ],
   },
   async (h) => {

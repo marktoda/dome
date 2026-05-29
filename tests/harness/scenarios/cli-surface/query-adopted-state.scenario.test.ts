@@ -22,6 +22,7 @@ scenario(
       { kind: "capability", capability: "search.write" },
       { kind: "trigger", trigger: "signal" },
       { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
     ],
     harness: { bundles: ["dome.markdown", "dome.graph", "dome.search"] },
   },
