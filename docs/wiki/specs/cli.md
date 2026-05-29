@@ -294,8 +294,9 @@ function + one case in the dispatcher; no new CLI surface per subject.
 ### `dome doctor [--json] [--repair]`
 
 Engine-substrate **health check** verb. The current implementation is
-probe-only and read-only: it reports failed outbox rows, orphan running rows,
-and quarantined processor triggers from `src/engine/health.ts`.
+probe-only and read-only: it reports failed/stuck outbox rows, orphan running
+rows, quarantined processor triggers, projection cache drift, adopted-ref
+divergence, and instruction drift from `src/engine/health.ts`.
 
 **Design (complete v1).** `dome doctor` (no flags) runs a closed set of
 health-check probes against the engine substrate — orphan runs,
@@ -322,8 +323,7 @@ garden-phase repair processors (e.g., AGENTS.md template re-merge).
 `HealthReport`, prints a compact text report, and exits 0. `--json` emits the
 same report with `status`, `summary`, and `findings`. `--repair` exits 64
 because recovery mutations still belong to the answer-handler loop. The report
-is not yet persisted as DiagnosticEffects, and it does not yet probe schema
-skew, instruction drift, adopted-ref divergence, or stuck-pending outbox rows.
+is not yet persisted as DiagnosticEffects.
 
 **Why this isn't a kitchen-sink admin command.** Pre-recut, the spec
 described `dome doctor` as a single verb covering reads (`--show`),

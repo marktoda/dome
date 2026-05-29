@@ -5,16 +5,24 @@
 // no mutation. Repairs still flow through the engine-asks model: findings
 // become questions/answers and answer handlers apply the requested mutation.
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { LedgerDb } from "../ledger/db";
 import { orphanRuns, type RunRow } from "../ledger/runs";
 import type { OutboxDb } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
+import type { ProjectionDb } from "../projections/db";
+import { projectionCacheKeysChanged } from "../projections/db";
 import type {
   ProcessorExecutionState,
   ProcessorQuarantineSnapshot,
 } from "../processors/execution-state";
+import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
+import { currentSha, isAncestor } from "../git";
 
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
+export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
 
 export type HealthFinding =
   | {
@@ -68,6 +76,47 @@ export type HealthFinding =
         readonly quarantinedAt: string;
         readonly reason: string;
       };
+    }
+  | {
+      readonly code: "outbox.pending-stuck";
+      readonly severity: "warning";
+      readonly subject: "outbox";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly outbox: Pick<
+        OutboxRow,
+        "id" | "capability" | "idempotencyKey" | "attempts" | "nextAttemptAt"
+      >;
+    }
+  | {
+      readonly code: "projection.cache-key-drift";
+      readonly severity: "warning";
+      readonly subject: "projection";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+    }
+  | {
+      readonly code: "adopted-ref.diverged";
+      readonly severity: "error";
+      readonly subject: "git";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly git: {
+        readonly branch: string;
+        readonly head: string;
+        readonly adopted: string;
+      };
+    }
+  | {
+      readonly code: "instructions.drift";
+      readonly severity: "warning";
+      readonly subject: "instructions";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
     };
 
 export type HealthSummary = {
@@ -75,8 +124,12 @@ export type HealthSummary = {
   readonly errorCount: number;
   readonly warningCount: number;
   readonly failedOutbox: number;
+  readonly stuckPendingOutbox: number;
   readonly orphanRuns: number;
   readonly quarantinedProcessors: number;
+  readonly projectionCacheDrift: number;
+  readonly adoptedRefDivergence: number;
+  readonly instructionDrift: number;
 };
 
 export type HealthReport = {
@@ -86,24 +139,51 @@ export type HealthReport = {
   readonly findings: ReadonlyArray<HealthFinding>;
 };
 
-export function collectHealthReport(opts: {
+export async function collectHealthReport(opts: {
+  readonly vaultPath: string;
+  readonly projection: ProjectionDb;
   readonly ledger: LedgerDb;
   readonly outbox: OutboxDb;
   readonly executionState: ProcessorExecutionState;
+  readonly extensions: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
-}): HealthReport {
+  readonly pendingOutboxThresholdMs?: number;
+}): Promise<HealthReport> {
   const now = opts.now ?? new Date();
   const orphanRunThresholdMs =
     opts.orphanRunThresholdMs ?? DEFAULT_ORPHAN_RUN_THRESHOLD_MS;
+  const pendingOutboxThresholdMs =
+    opts.pendingOutboxThresholdMs ?? DEFAULT_PENDING_OUTBOX_THRESHOLD_MS;
   const failedOutbox = queryOutbox(opts.outbox, { status: "failed" });
+  const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
+    .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
   const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now);
   const quarantined = opts.executionState.quarantines();
+  const projectionDrift = projectionCacheKeysChanged(opts.projection, {
+    extensionSet: opts.extensions,
+    processorVersions: opts.processorVersions,
+  })
+    ? [projectionCacheDriftFinding()]
+    : [];
+  const adoptedDivergence = await adoptedRefDivergenceFinding(opts.vaultPath);
+  const instructionDrift = instructionDriftFindings(opts.vaultPath);
 
   const findings: HealthFinding[] = [
     ...failedOutbox.map(outboxFinding),
+    ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
     ...quarantined.map(quarantineFinding),
+    ...projectionDrift,
+    ...(adoptedDivergence === null ? [] : [adoptedDivergence]),
+    ...instructionDrift,
   ];
   const errorCount = findings.filter((f) => f.severity === "error").length;
   const warningCount = findings.filter((f) => f.severity === "warning").length;
@@ -116,11 +196,26 @@ export function collectHealthReport(opts: {
       errorCount,
       warningCount,
       failedOutbox: failedOutbox.length,
+      stuckPendingOutbox: stuckPendingOutbox.length,
       orphanRuns: orphaned.length,
       quarantinedProcessors: quarantined.length,
+      projectionCacheDrift: projectionDrift.length,
+      adoptedRefDivergence: adoptedDivergence === null ? 0 : 1,
+      instructionDrift: instructionDrift.length,
     }),
     findings: Object.freeze(findings),
   });
+}
+
+function isStuckPendingOutbox(
+  row: OutboxRow,
+  now: Date,
+  thresholdMs: number,
+): boolean {
+  const enqueued = Date.parse(row.enqueuedAt);
+  const nextAttempt = Date.parse(row.nextAttemptAt);
+  if (!Number.isFinite(enqueued) || !Number.isFinite(nextAttempt)) return true;
+  return nextAttempt <= now.getTime() && now.getTime() - enqueued >= thresholdMs;
 }
 
 function outboxFinding(row: OutboxRow): HealthFinding {
@@ -147,6 +242,28 @@ function outboxFinding(row: OutboxRow): HealthFinding {
   });
 }
 
+function stuckPendingOutboxFinding(row: OutboxRow): HealthFinding {
+  return Object.freeze({
+    code: "outbox.pending-stuck" as const,
+    severity: "warning" as const,
+    subject: "outbox" as const,
+    id: row.idempotencyKey,
+    message:
+      `Outbox row ${row.id} (${row.capability}) is pending and due ` +
+      `for retry since ${row.nextAttemptAt}.`,
+    recovery:
+      "Run `dome sync` or `dome serve` to drain due outbox work; if it " +
+      "keeps returning, inspect with `dome inspect outbox`.",
+    outbox: Object.freeze({
+      id: row.id,
+      capability: row.capability,
+      idempotencyKey: row.idempotencyKey,
+      attempts: row.attempts,
+      nextAttemptAt: row.nextAttemptAt,
+    }),
+  });
+}
+
 function orphanFinding(row: RunRow): HealthFinding {
   return Object.freeze({
     code: "run.orphan" as const,
@@ -167,6 +284,104 @@ function orphanFinding(row: RunRow): HealthFinding {
       triggerKind: row.triggerKind,
       startedAt: row.startedAt,
     }),
+  });
+}
+
+function projectionCacheDriftFinding(): HealthFinding {
+  return Object.freeze({
+    code: "projection.cache-key-drift" as const,
+    severity: "warning" as const,
+    subject: "projection" as const,
+    id: "projection-cache-key",
+    message:
+      "Projection cache keys differ from the loaded extension/processor set.",
+    recovery:
+      "Run `dome rebuild` or `dome sync`; the host normally rebuilds this " +
+      "automatically before operational work.",
+  });
+}
+
+async function adoptedRefDivergenceFinding(
+  vaultPath: string,
+): Promise<HealthFinding | null> {
+  const branch = await getCurrentBranch(vaultPath);
+  if (branch === null) return null;
+  let head: string | null;
+  try {
+    head = await currentSha(vaultPath);
+  } catch {
+    return null;
+  }
+  if (head === null) return null;
+  const adopted = await getAdoptedRef(vaultPath, branch);
+  if (adopted === null || adopted === head) return null;
+  const ok = await isAncestor({
+    path: vaultPath,
+    ancestor: adopted,
+    descendant: head,
+  });
+  if (ok) return null;
+  return Object.freeze({
+    code: "adopted-ref.diverged" as const,
+    severity: "error" as const,
+    subject: "git" as const,
+    id: `refs/dome/adopted/${branch}`,
+    message:
+      `Adopted ref for ${branch} (${adopted.slice(0, 7)}) is not an ` +
+      `ancestor of HEAD (${head.slice(0, 7)}).`,
+    recovery:
+      "Inspect git history before syncing; this usually means the branch " +
+      "was rebased, reset, or force-updated.",
+    git: Object.freeze({ branch, head, adopted }),
+  });
+}
+
+function instructionDriftFindings(vaultPath: string): ReadonlyArray<HealthFinding> {
+  if (!existsSync(join(vaultPath, ".dome", "config.yaml"))) {
+    return Object.freeze([]);
+  }
+  const findings: HealthFinding[] = [];
+  const agentsPath = join(vaultPath, "AGENTS.md");
+  const claudePath = join(vaultPath, "CLAUDE.md");
+  if (!existsSync(agentsPath)) {
+    findings.push(instructionDriftFinding("AGENTS.md", "AGENTS.md is missing."));
+  } else {
+    const agents = readFileSync(agentsPath, "utf8");
+    if (!agents.includes("<!-- BEGIN user-prose -->")) {
+      findings.push(
+        instructionDriftFinding(
+          "AGENTS.md",
+          "AGENTS.md is missing the managed user-prose delimiter.",
+        ),
+      );
+    }
+  }
+  if (!existsSync(claudePath)) {
+    findings.push(instructionDriftFinding("CLAUDE.md", "CLAUDE.md is missing."));
+  } else {
+    const claude = readFileSync(claudePath, "utf8");
+    if (!claude.includes("@AGENTS.md")) {
+      findings.push(
+        instructionDriftFinding(
+          "CLAUDE.md",
+          "CLAUDE.md does not import AGENTS.md.",
+        ),
+      );
+    }
+  }
+  return Object.freeze(findings);
+}
+
+function instructionDriftFinding(id: string, message: string): HealthFinding {
+  return Object.freeze({
+    code: "instructions.drift" as const,
+    severity: "warning" as const,
+    subject: "instructions" as const,
+    id,
+    message,
+    recovery:
+      "Re-run `dome init` to restore missing orientation files without " +
+      "overwriting user prose.",
   });
 }
 

@@ -63,10 +63,14 @@ export async function runDoctor(
   const runtime = runtimeResult.value;
 
   try {
-    const report = collectHealthReport({
+    const report = await collectHealthReport({
+      vaultPath: runtime.path,
+      projection: runtime.projectionDb,
       ledger: runtime.ledgerDb,
       outbox: runtime.outboxDb,
       executionState: runtime.processorRuntime.executionState,
+      extensions: runtime.extensions,
+      processorVersions: runtime.processorVersions,
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {
@@ -94,8 +98,12 @@ function printDoctorText(report: HealthReport): void {
   );
   console.log(
     `findings  outbox ${report.summary.failedOutbox} failed | ` +
+      `${report.summary.stuckPendingOutbox} stuck | ` +
       `orphans ${report.summary.orphanRuns} | ` +
-      `quarantine ${report.summary.quarantinedProcessors}`,
+      `quarantine ${report.summary.quarantinedProcessors} | ` +
+      `projection ${report.summary.projectionCacheDrift} | ` +
+      `git ${report.summary.adoptedRefDivergence} | ` +
+      `instructions ${report.summary.instructionDrift}`,
   );
   for (const finding of report.findings) {
     console.log(formatFinding(finding));

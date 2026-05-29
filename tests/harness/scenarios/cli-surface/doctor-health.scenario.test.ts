@@ -6,6 +6,7 @@
 // persisted processor quarantines.
 
 import { expect } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { externalActionEffect } from "../../../../src/core/effect";
@@ -49,6 +50,16 @@ scenario(
       "doctor-scenario-failed",
       "terminal failure",
     );
+    insertPending(h.outbox, {
+      effect: externalActionEffect({
+        capability: "calendar.write",
+        idempotencyKey: "doctor-scenario-stuck",
+        payload: { event: "stuck" },
+        sourceRefs: [ref],
+      }),
+      runId: "run-doctor-scenario-stuck",
+      now: new Date(0),
+    });
 
     const runId = newRunId(h.clock.now(), () => "doctor");
     insertQueued(h.ledger, {
@@ -80,6 +91,18 @@ scenario(
     quarantine.value.recordRetryableTerminalFailure(key, "first");
     quarantine.value.recordRetryableTerminalFailure(key, "second");
 
+    h.projection.raw
+      .query(
+        "UPDATE projection_meta SET extension_set_hash = ?, processor_versions_hash = ?",
+      )
+      .run("stale-extension-set", "stale-processor-versions");
+    await writeFile(join(h.vaultPath, ".dome", "config.yaml"), "extensions: {}\n");
+    await writeFile(
+      join(h.vaultPath, "AGENTS.md"),
+      "# This is a Dome vault.\n\n<!-- BEGIN user-prose -->\n<!-- END user-prose -->\n",
+    );
+    await writeFile(join(h.vaultPath, "CLAUDE.md"), "Missing AGENTS import\n");
+
     const doctor = await h.runCli([
       "doctor",
       "--json",
@@ -92,19 +115,28 @@ scenario(
       readonly status: string;
       readonly summary: {
         readonly failedOutbox: number;
+        readonly stuckPendingOutbox: number;
         readonly orphanRuns: number;
         readonly quarantinedProcessors: number;
+        readonly projectionCacheDrift: number;
+        readonly instructionDrift: number;
       };
       readonly findings: ReadonlyArray<{ readonly code: string }>;
     };
     expect(report.status).toBe("unhealthy");
     expect(report.summary.failedOutbox).toBe(1);
+    expect(report.summary.stuckPendingOutbox).toBe(1);
     expect(report.summary.orphanRuns).toBe(1);
     expect(report.summary.quarantinedProcessors).toBe(1);
+    expect(report.summary.projectionCacheDrift).toBe(1);
+    expect(report.summary.instructionDrift).toBe(1);
     expect(report.findings.map((finding) => finding.code)).toEqual([
       "outbox.failed",
+      "outbox.pending-stuck",
       "run.orphan",
       "processor.quarantined",
+      "projection.cache-key-drift",
+      "instructions.drift",
     ]);
   },
 );
