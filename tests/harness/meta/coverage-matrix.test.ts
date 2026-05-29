@@ -65,6 +65,7 @@ import "../scenarios/cli-surface/export-context.scenario.test";
 import "../scenarios/cli-surface/json-fixtures.scenario.test";
 import "../scenarios/v1-acceptance/claude-code-vault-loop.scenario.test";
 import "../scenarios/v1-acceptance/compiler-host-modes.scenario.test";
+import "../scenarios/v1-acceptance/recovery-gauntlet.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";

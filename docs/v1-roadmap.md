@@ -100,6 +100,8 @@ V1 capability ledger:
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
       packaging gives vaults a production path without SDK vendor dependencies.
+      Maintained-library adapters such as AI SDK or Anthropic SDK wrappers are
+      optional provider packages, not core SDK dependencies.
 - [x] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice, low-confidence capture
       questions/answers, confidence-carrying intake fact namespaces, and
@@ -400,9 +402,10 @@ creating retry chaos.
 
 Work:
 
-- [x] Define the stable `modelInvoke` provider boundary. Prefer a maintained
-      library such as AI SDK if it keeps the boundary simpler than a
-      hand-rolled client.
+- [x] Define the stable `modelInvoke` provider boundary. Core ships a
+      provider-neutral function contract plus command-provider adapter; prefer
+      maintained library adapters such as AI SDK outside the core package when
+      they simplify real provider integration.
 - [x] Enforce per-bundle daily cost budgets.
 - [x] Enforce effective model allowlists before provider calls.
 - [x] Ledger provider-reported run-local cost.
@@ -501,7 +504,7 @@ Acceptance:
 
 ## Milestone 9 - V1 Release Hardening
 
-Status: release gate shipped; week-long real-vault soak remains.
+Status: release-gate harness shipped; week-long real-vault soak remains.
 
 Goal: Dome can run against a real daily vault for a week without manual state
 edits, lost garden patches, or silent processor failure.
@@ -516,6 +519,9 @@ Work:
       intake management workflow through the configured command model provider,
       materializes generated capture/archive files, and exits with clean
       operational status.
+- [x] Add a top-level recovery gauntlet where status, doctor, inspect,
+      first-party health questions, and `dome answer` recover failed outbox,
+      quarantine, and orphan-run state through the normal operational surface.
 - [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
 - [x] Add status/doctor/query/export JSON fixtures.
@@ -544,6 +550,13 @@ Acceptance:
 - [ ] Week-long real-vault soak exits without manual `.dome/state` edits or
       unexplained stuck state.
 
+## V1 Remaining Gate
+
+The only remaining V1 release gate is real use: run Dome against the daily
+management vault for one week, with `dome serve` or regular `dome sync`, and
+fix any issue that requires manual sqlite/JSON edits, loses garden patches,
+leaves unexplained stuck state, or makes recovery confusing.
+
 ## V1 Bundle Cut
 
 Required for daily value:
@@ -566,6 +579,26 @@ Optional or conditional:
 | `dome.log` | Defer unless humans actually read markdown engine history; the run ledger already records engine events. |
 | `dome.migrate` | Ship when schema/version churn requires explicit user-facing migration. |
 | `dome.people` / `dome.synthesis` | Post-substrate LLM bundles; do not block deterministic v1. |
+
+## Post-v1 / V1.5 Runway
+
+These are explicitly not V1 blockers, but the V1 architecture should keep
+them natural:
+
+- hosted queue: remote proposal refs, synthetic merge candidates, engine
+  patches pushed onto proposal branches, conflict routing, and auto-merge only
+  after adoption plus required checks pass;
+- provider adapters: AI SDK / Anthropic SDK packages outside `@dome/sdk` core,
+  plus clearer transient retry/backoff policy if soak shows provider failures
+  are common;
+- richer protocol adapters: MCP, HTTP, WebSocket, mobile, or voice surfaces
+  over the same compiler-host and view boundaries, without privileged write
+  APIs;
+- richer quarantine storage: move the current JSON-backed quarantine state
+  into operational DB storage only if it improves observability or reliability
+  beyond the shipped inspect/reset flow;
+- post-substrate LLM bundles: people/project/synthesis processors once the
+  deterministic local loop is boring.
 
 ## Historical Phase Ledger
 

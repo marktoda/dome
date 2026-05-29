@@ -13,7 +13,7 @@ sources:
   - '[[wiki/specs/processors]]'
   - '[[wiki/specs/processor-execution]]'
   - '[[wiki/matrices/intent-prompt-processors]]'
-status: draft
+status: accepted
 ---
 
 # v1 Claude Code vault plan
@@ -196,7 +196,7 @@ Still before a v1 release:
   diagnostics. Remaining v1 release work is week-long real-vault soak and
   any fixes that soak uncovers; richer long-horizon synthesis can follow
   after the local loop is dependable.
-- Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
+- Quarantine exists and is inspectable/resettable through first-party `dome.health` questions. V1 deliberately accepts the current JSON-backed store; moving quarantine into the richer operational database is post-v1 hardening unless soak shows the JSON store is a real reliability problem.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
 ## v1 acceptance scenario
