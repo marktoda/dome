@@ -141,6 +141,24 @@ describe("phase-mismatch rejections", () => {
     expect(r.outcome).toBe("rejected-by-phase");
   });
 
+  test("PatchEffect in garden phase is not routed by the generic router", async () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [auto],
+      granted: [auto],
+      phase: "garden",
+      effect: patchEffect({
+        mode: "auto",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+        reason: "x",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("rejected-by-phase");
+    expect(r.diagnostics[0]?.message).toContain("garden-patch-dispatch");
+  });
+
   test("PatchEffect in view phase", async () => {
     const r = await applyEffect({
       ...baseOpts,

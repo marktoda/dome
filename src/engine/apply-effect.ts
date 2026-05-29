@@ -482,7 +482,7 @@ function capabilityUseField(
  *
  *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect,
  *               QuarantineRecoveryEffect, RunRecoveryEffect, ViewEffect
- *   - garden:   ViewEffect
+ *   - garden:   PatchEffect, ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
  *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
  *               ExternalActionEffect, OutboxRecoveryEffect,
@@ -502,7 +502,7 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind !== "view"
       );
     case "garden":
-      return effect.kind !== "view";
+      return effect.kind !== "patch" && effect.kind !== "view";
     case "view":
       if (
         effect.kind === "patch" ||
@@ -528,6 +528,10 @@ function rejectedByPhase(
   effect: Effect,
   phase: ProcessorPhase,
 ): ApplyEffectResult {
+  const message =
+    phase === "garden" && effect.kind === "patch"
+      ? "Garden PatchEffects must route through garden-patch-dispatch as sub-Proposals, not the generic effect router."
+      : `Processor in phase '${phase}' cannot emit effect of kind '${effect.kind}'`;
   return frozen({
     outcome: "rejected-by-phase",
     appliedEffect: null,
@@ -535,7 +539,7 @@ function rejectedByPhase(
       diagnosticEffect({
         severity: "error",
         code: "phase-mismatch",
-        message: `Processor in phase '${phase}' cannot emit effect of kind '${effect.kind}'`,
+        message,
         sourceRefs: [],
       }),
     ]),
