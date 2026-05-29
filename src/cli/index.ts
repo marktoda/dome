@@ -18,6 +18,10 @@ import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
+import {
+  parseNonNegativeIntegerOption,
+  parsePositiveIntegerOption,
+} from "./parse-options";
 
 const EX_USAGE = 64;
 
@@ -78,7 +82,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("inspect")
     .description("Read operational substrate rows.")
     .argument("<subject>", "runs, diagnostics, questions, or outbox.")
-    .option("--limit <n>", "Maximum rows to show.")
+    .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -103,6 +107,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option(
       "--orphan-threshold-ms <n>",
       "Age before a running row is reported as orphaned.",
+      parseNonNegativeIntegerOption,
     )
     .option("--repair", "Apply safe mitigations when implemented.")
     .action(async (options: DoctorCliOptions) => {
@@ -168,7 +173,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .argument("<text...>", "Query text.")
     .option("--category <category>", "Filter by document category.")
     .option("--type <type>", "Filter by page type.")
-    .option("--limit <n>", "Maximum matches to show.")
+    .option("--limit <n>", "Maximum matches to show.", parsePositiveIntegerOption)
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -178,7 +183,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           text: text.join(" "),
           category: options.category,
           type: options.type,
-          limit: parsePositiveIntegerOption(options.limit),
+          limit: options.limit,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -205,7 +210,11 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("serve")
     .description("Run the local compiler host.")
-    .option("--poll-interval-ms <n>", "Polling interval in milliseconds.")
+    .option(
+      "--poll-interval-ms <n>",
+      "Polling interval in milliseconds.",
+      parsePositiveIntegerOption,
+    )
     .option("-v, --verbose", "Print adoption progress events.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -258,7 +267,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 }
 
 type InspectCliOptions = {
-  readonly limit?: string;
+  readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -269,7 +278,7 @@ type DoctorCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
-  readonly orphanThresholdMs?: string;
+  readonly orphanThresholdMs?: number;
 };
 
 type AnswerCliOptions = {
@@ -287,7 +296,7 @@ type RunCliOptions = {
 type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
-  readonly limit?: string;
+  readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -300,7 +309,7 @@ type RebuildCliOptions = {
 };
 
 type ServeCliOptions = {
-  readonly pollIntervalMs?: string;
+  readonly pollIntervalMs?: number;
   readonly verbose?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -352,12 +361,6 @@ function parseProcessorFlags(
     }
   }
   return flags;
-}
-
-function parsePositiveIntegerOption(raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function writeConsole(write: (text: string) => void, text: string): void {

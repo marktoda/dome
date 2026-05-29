@@ -574,6 +574,13 @@ describe("runInspect", () => {
       await runInspect({ subject: "garbage", vault: f.vaultPath }),
     ).toBe(64);
   });
+
+  test("malformed --limit returns 64 before opening runtime", async () => {
+    expect(await runInspect({ subject: "runs", limit: "10x" })).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--limit must be a positive integer",
+    );
+  });
 });
 
 // ----- runAnswer ------------------------------------------------------------
@@ -783,6 +790,13 @@ describe("runDoctor", () => {
     const code = await runDoctor({ repair: true });
     expect(code).toBe(64);
     expect(captured.err.join("\n")).toContain("not implemented yet");
+  });
+
+  test("malformed --orphan-threshold-ms returns 64 before opening runtime", async () => {
+    expect(await runDoctor({ orphanThresholdMs: "10x" })).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--orphan-threshold-ms must be a non-negative integer",
+    );
   });
 });
 

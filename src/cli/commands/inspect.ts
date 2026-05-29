@@ -41,6 +41,7 @@ import { queryOutbox } from "../../outbox/dispatch";
 import { resolveShippedBundlesRoot } from "./sync-shared";
 
 import { formatJson, formatTable } from "../format";
+import { parsePositiveIntegerValue } from "../parse-options";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -220,10 +221,5 @@ function collectRows(
 function parseLimit(
   raw: string | number | boolean | undefined,
 ): number | null {
-  if (raw === undefined || raw === true) return DEFAULT_LIMIT;
-  if (raw === false) return null;
-  if (typeof raw === "number") return raw > 0 ? raw : null;
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n <= 0) return null;
-  return n;
+  return parsePositiveIntegerValue(raw, DEFAULT_LIMIT);
 }

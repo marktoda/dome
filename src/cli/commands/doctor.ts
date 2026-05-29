@@ -18,6 +18,7 @@ import {
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
 import { resolveShippedBundlesRoot } from "./sync-shared";
+import { parseNonNegativeIntegerValue } from "../parse-options";
 
 const EX_USAGE = 64;
 
@@ -137,7 +138,5 @@ function parseNonNegativeInteger(
   raw: string | number | undefined,
   fallback: number,
 ): number | null {
-  if (raw === undefined) return fallback;
-  const value = typeof raw === "number" ? raw : Number(raw);
-  return Number.isInteger(value) && value >= 0 ? value : null;
+  return parseNonNegativeIntegerValue(raw, fallback);
 }

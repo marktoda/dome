@@ -303,6 +303,16 @@ describe("runServe smoke", () => {
 // ----- Test 2: detached HEAD ------------------------------------------------
 
 describe("runServe detached HEAD", () => {
+  test("malformed --poll-interval-ms exits 1 before opening runtime", async () => {
+    silenceConsole();
+
+    const code = await runServe({ pollIntervalMs: "500x" });
+    expect(code).toBe(1);
+    expect(captured.err.join("\n")).toContain(
+      "--poll-interval-ms must be a positive integer",
+    );
+  });
+
   test("refuses to start when HEAD is detached; exit code 1", async () => {
     const f = await makeFixture();
     fixtures.push(f);

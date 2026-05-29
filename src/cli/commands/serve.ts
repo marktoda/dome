@@ -48,6 +48,7 @@ import {
   formatAdoptEvent,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
+import { parsePositiveIntegerValue } from "../parse-options";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -425,10 +426,5 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 function parsePollInterval(
   raw: string | number | boolean | undefined,
 ): number | null {
-  if (raw === undefined || raw === true) return DEFAULT_POLL_INTERVAL_MS;
-  if (raw === false) return null;
-  if (typeof raw === "number") return raw > 0 ? raw : null;
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n <= 0) return null;
-  return n;
+  return parsePositiveIntegerValue(raw, DEFAULT_POLL_INTERVAL_MS);
 }
