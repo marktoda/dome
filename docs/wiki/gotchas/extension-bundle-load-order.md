@@ -2,11 +2,12 @@
 type: gotcha
 created: 2026-05-27
 updated: 2026-05-29
-severity: medium
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
 enforced_at: tests/extensions/loader.test.ts
 first_observed: 2026-05-26 (v0.5 dailies-bundle phase)
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
+severity: medium
 ---
 
 # Extension bundle load order
