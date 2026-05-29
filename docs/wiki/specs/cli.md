@@ -209,15 +209,17 @@ shared view-command boundary resolves the adopted commit and rebuilds
 processor-version hash is stale. Output (text mode):
 
 ```text
-dome query: 4 matches for "platform ownership"
+4 adopted-state match(es) for "platform ownership"
 
-1. wiki/syntheses/platform-team-ownership.md (high relevance)
-   "Atlas owns runtime; platform owns infrastructure boundaries..."
-   sourceRef: wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
+1. Platform Team Ownership (wiki/syntheses/platform-team-ownership.md)
+   Atlas owns runtime; platform owns infrastructure boundaries...
+   SourceRefs:
+     - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
 
-2. wiki/dailies/2026-05-23.md
-   "Discussed platform ownership with Danny..."
-   sourceRef: wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
+2. 2026-05-23 (wiki/dailies/2026-05-23.md)
+   Discussed platform ownership with Danny...
+   SourceRefs:
+     - wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
 
 (further matches truncated; --limit to show all)
 ```

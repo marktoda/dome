@@ -47,6 +47,12 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
+    const text = await h.runCli(["query", "alpha launch"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("SourceRefs:");
+    expect(text.stdout).toContain("wiki/project-alpha.md");
+
     const cli = await h.runCli(["query", "alpha launch", "--json"]);
     expect(cli.exitCode).toBe(0);
     expect(cli.stderr).toBe("");

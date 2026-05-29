@@ -111,6 +111,12 @@ function formatQueryResult(data: unknown): string {
     if (match.snippet.length > 0) {
       lines.push(`   ${stripFtsMarkers(match.snippet)}`);
     }
+    if (match.sourceRefs.length > 0) {
+      lines.push("   SourceRefs:");
+      for (const ref of match.sourceRefs) {
+        lines.push(`     - ${formatSourceRef(ref)}`);
+      }
+    }
     if (match.facts.length > 0) {
       const facts = match.facts
         .slice(0, 5)
@@ -128,8 +134,18 @@ type QueryResultData = {
     readonly path: string;
     readonly title: string;
     readonly snippet: string;
+    readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
     readonly facts: ReadonlyArray<{ readonly predicate: string }>;
   }>;
+};
+
+type QuerySourceRef = {
+  readonly path: string;
+  readonly commit: string;
+  readonly range?: {
+    readonly startLine: number;
+    readonly endLine: number;
+  };
 };
 
 function parseQueryResult(data: unknown): QueryResultData {
@@ -149,6 +165,7 @@ function parseQueryResult(data: unknown): QueryResultData {
           path: stringOrEmpty(match.path),
           title: stringOrEmpty(match.title),
           snippet: stringOrEmpty(match.snippet),
+          sourceRefs: Object.freeze(parseSourceRefs(match.sourceRefs)),
           facts: Object.freeze(parseFacts(match.facts)),
         });
       }),
@@ -173,6 +190,53 @@ function parseFacts(raw: unknown): ReadonlyArray<{ readonly predicate: string }>
 
 function stringOrEmpty(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function parseSourceRefs(raw: unknown): ReadonlyArray<QuerySourceRef> {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(
+    raw
+      .map((item) => {
+        const record = item !== null && typeof item === "object"
+          ? item as Record<string, unknown>
+          : {};
+        const path = stringOrEmpty(record.path);
+        const commit = stringOrEmpty(record.commit);
+        if (path.length === 0 || commit.length === 0) return null;
+
+        const range = parseRange(record.range);
+        return Object.freeze({
+          path,
+          commit,
+          ...(range !== null ? { range } : {}),
+        });
+      })
+      .filter((item): item is QuerySourceRef => item !== null),
+  );
+}
+
+function parseRange(raw: unknown): QuerySourceRef["range"] | null {
+  const record = raw !== null && typeof raw === "object"
+    ? raw as Record<string, unknown>
+    : {};
+  const startLine = numberValue(record.startLine);
+  const endLine = numberValue(record.endLine);
+  return startLine === null || endLine === null
+    ? null
+    : Object.freeze({ startLine, endLine });
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : null;
+}
+
+function formatSourceRef(ref: QuerySourceRef): string {
+  const range = ref.range === undefined
+    ? ""
+    : `:${ref.range.startLine}-${ref.range.endLine}`;
+  return `${ref.path}${range} @ ${ref.commit.slice(0, 7)}`;
 }
 
 function stripFtsMarkers(snippet: string): string {
