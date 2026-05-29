@@ -68,6 +68,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "branch",
   "head",
   "adopted",
+  "sync_needed",
+  "pending_commits",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -857,6 +859,8 @@ describe("runStatus", () => {
 
     const out = captured.out.join("\n");
     expect(out).toContain("(uninitialized)"); // adopted ref
+    expect(out).toContain("sync needed");
+    expect(out).toContain("pending unknown");
     expect(out).toContain("(never)"); // last_sync
     expect(out).toContain("DOME status");
     expect(out).toContain("content   2 pages");
@@ -880,6 +884,8 @@ describe("runStatus", () => {
     expect(Object.keys(parsed)).toEqual([...STATUS_JSON_KEYS]);
     expect(parsed["vault"]).toBe(f.vaultPath);
     expect(parsed["branch"]).toBeDefined();
+    expect(parsed["sync_needed"]).toBe(true);
+    expect(parsed["pending_commits"]).toBeNull();
     expect(parsed["dirty_modified"]).toBe(0);
     expect(parsed["dirty_untracked"]).toBe(0);
     expect(parsed["content_pages"]).toBe(2);
@@ -896,6 +902,34 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json mode reports sync drift and pending commit count", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    const adopted = await currentSha(f.vaultPath);
+    captured.out = [];
+    captured.err = [];
+
+    await writeFile(join(f.vaultPath, "wiki/pending.md"), "pending\n", "utf8");
+    const head = await commit({
+      path: f.vaultPath,
+      message: "add pending page\n",
+      files: ["wiki/pending.md"],
+    });
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["head"]).toBe(head);
+    expect(parsed["adopted"]).toBe(adopted);
+    expect(parsed["sync_needed"]).toBe(true);
+    expect(parsed["pending_commits"]).toBe(1);
   });
 
   test("--json mode reports vault content analytics", async () => {

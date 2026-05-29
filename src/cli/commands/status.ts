@@ -7,6 +7,8 @@
 //   - branch:           the current git branch (`currentBranch`).
 //   - head:             the current HEAD commit OID (`currentSha`).
 //   - adopted:          `refs/dome/adopted/<branch>` value, or "(uninitialized)".
+//   - sync_needed:      true when HEAD and adopted differ.
+//   - pending_commits:  commit count from adopted..HEAD, or null when unknown.
 //   - dirty_modified:   working-tree paths modified/deleted/staged.
 //   - dirty_untracked:  working-tree paths not present at HEAD.
 //   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
@@ -39,7 +41,7 @@
 
 import { resolve } from "node:path";
 
-import { currentSha } from "../../git";
+import { countCommitsSince, currentSha } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
@@ -63,6 +65,8 @@ type StatusSnapshot = {
   readonly branch: string | null;
   readonly head: string | null;
   readonly adopted: string | null;
+  readonly sync_needed: boolean;
+  readonly pending_commits: number | null;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
   readonly content_pages: number;
@@ -103,6 +107,12 @@ export async function runStatus(
   const branch = await getCurrentBranch(vaultPath);
   const head = await currentSha(vaultPath);
   const adopted = branch === null ? null : await getAdoptedRef(vaultPath, branch);
+  const pendingCommits = await countPendingCommits({
+    vaultPath,
+    head,
+    adopted,
+  });
+  const syncNeeded = branch !== null && head !== null && head !== adopted;
 
   // Open the runtime to read the ledger. If the runtime can't open (no
   // .dome/extensions/, missing bundles), surface a useful error and exit
@@ -160,6 +170,8 @@ export async function runStatus(
       branch,
       head,
       adopted,
+      sync_needed: syncNeeded,
+      pending_commits: pendingCommits,
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
       content_pages: analytics.content_pages,
@@ -201,7 +213,7 @@ function printStatusText(s: StatusSnapshot): void {
   console.log("DOME status");
   console.log(`vault     ${s.vault}`);
   console.log(
-    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")}`,
+    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")} | sync ${s.sync_needed ? "needed" : "ok"} | pending ${formatPendingCommits(s.pending_commits)}`,
   );
   console.log(
     `draft     ${s.dirty_modified} modified | ${s.dirty_untracked} untracked`,
@@ -228,4 +240,22 @@ function formatBytes(bytes: number): string {
   const mib = kib / 1024;
   if (mib < 1024) return `${mib.toFixed(1)} MB`;
   return `${(mib / 1024).toFixed(1)} GB`;
+}
+
+async function countPendingCommits(opts: {
+  readonly vaultPath: string;
+  readonly head: string | null;
+  readonly adopted: string | null;
+}): Promise<number | null> {
+  if (opts.head === null) return null;
+  if (opts.adopted === null) return null;
+  return countCommitsSince({
+    path: opts.vaultPath,
+    ancestor: opts.adopted,
+    descendant: opts.head,
+  });
+}
+
+function formatPendingCommits(count: number | null): string {
+  return count === null ? "unknown" : String(count);
 }

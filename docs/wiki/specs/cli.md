@@ -181,7 +181,7 @@ commands. Text mode renders a compact dashboard:
 ```text
 DOME status
 vault     /Users/mark/vaults/work
-git       branch main | head 41a98c2 | adopted 41a98c2
+git       branch main | head 41a98c2 | adopted 41a98c2 | sync ok | pending 0
 draft     0 modified | 0 untracked
 content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
 engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0
@@ -191,13 +191,15 @@ health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
 occurrences in those markdown files; raw file count and bytes under
-`raw/`; and dirty working-tree counts excluding rebuildable
+`raw/`; sync drift and pending commit count for adopted..HEAD when the
+adopted ref is initialized and ancestral to HEAD; and dirty working-tree
+counts excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
 reports. Use `dome inspect diagnostics`, `dome inspect questions`,
 `dome inspect outbox`, or `dome inspect runs` for details. See

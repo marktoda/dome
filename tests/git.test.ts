@@ -4,7 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { commit, fileInfoAtCommit, initRepo } from "../src/git";
+import { commit, countCommitsSince, fileInfoAtCommit, initRepo } from "../src/git";
 
 describe("git boundary", () => {
   test("fileInfoAtCommit returns the commit that last changed a file", async () => {
@@ -54,6 +54,63 @@ describe("git boundary", () => {
         lastChangedCommit: third,
         lastChangedAt: "2026-05-03T12:00:00.000Z",
       });
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("countCommitsSince counts descendant commits and returns null off ancestry", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-count-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      const first = await commit({
+        path,
+        message: "first",
+        files: ["wiki/a.md"],
+      });
+      await write(path, "wiki/b.md", "two\n");
+      const second = await commit({
+        path,
+        message: "second",
+        files: ["wiki/b.md"],
+      });
+      await write(path, "wiki/c.md", "three\n");
+      const third = await commit({
+        path,
+        message: "third",
+        files: ["wiki/c.md"],
+      });
+
+      expect(
+        await countCommitsSince({
+          path,
+          ancestor: first,
+          descendant: third,
+        }),
+      ).toBe(2);
+      expect(
+        await countCommitsSince({
+          path,
+          ancestor: third,
+          descendant: third,
+        }),
+      ).toBe(0);
+      expect(
+        await countCommitsSince({
+          path,
+          ancestor: first,
+          descendant: third,
+          maxDepth: 1,
+        }),
+      ).toBeNull();
+      expect(
+        await countCommitsSince({
+          path,
+          ancestor: second,
+          descendant: first,
+        }),
+      ).toBeNull();
     } finally {
       await rm(path, { recursive: true, force: true });
     }

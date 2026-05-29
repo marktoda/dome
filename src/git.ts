@@ -312,6 +312,39 @@ export async function isAncestor(opts: {
 }
 
 /**
+ * Count commits reachable from `descendant` before `ancestor` is encountered.
+ * Returns null when the relationship cannot be proven from the local graph
+ * (unknown refs, divergent history, or a bounded walk that never finds the
+ * ancestor). This is the status/read-side companion to `isAncestor`.
+ */
+export async function countCommitsSince(opts: {
+  path: string;
+  ancestor: string;
+  descendant: string;
+  maxDepth?: number;
+}): Promise<number | null> {
+  if (opts.ancestor === opts.descendant) return 0;
+  try {
+    const { root } = await resolveGitContext(opts.path);
+    const commits = await git.log({
+      fs,
+      dir: root,
+      ref: opts.descendant,
+      force: true,
+      ...(opts.maxDepth !== undefined ? { depth: opts.maxDepth } : {}),
+    });
+    let count = 0;
+    for (const entry of commits) {
+      if (entry.oid === opts.ancestor) return count;
+      count += 1;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the current branch name (the symbolic ref `HEAD` points to).
  * Returns null when HEAD is detached (commit-OID-only HEAD; no branch
  * association). Vaults with detached HEAD cannot use the adopted-ref
