@@ -51,10 +51,11 @@ The dynamic `import()` runs the linked test file's describe/test blocks; a regre
   - **The end-to-end runtime path is wired.** `dome sync` / `dome serve` open the runtime via `openVaultRuntime`, construct a manual Proposal from git state, call `adopt()`, and route returned Effects through the engine routing layer. Every Effect a processor emits passes through the broker before it can mutate state or write projections.
   - **Capability-use rows land in the ledger.** The routing layer returns a structured `capabilityUse` field for every enforced effect attempt, and callers persist it through `recordEffectCapabilityUse`. The `capability_uses` table joins back to `runs` by `run_id`.
   - **Phase × kind compatibility check** runs upstream of the broker (`isPhaseCompatible` in `apply-effect.ts`); incompatible pairs produce a `phase-mismatch` diagnostic before the broker is consulted.
-
-- Forward-looking (v1.x):
-  - **Registration-time refusal of `model.invoke` on adoption-phase processors** — the Capability schemas exist and the phase × trigger matrix is checked at manifest-parse time, but the phase × capability cross-field check (e.g., "adoption phase MUST NOT declare `model.invoke`") is a v1.1 tightening.
-  - **`model.invoke` quota tracking** — `cost_usd` is a ledger column today; the `modelInvoke` wrapper that aggregates LLM token-cost across a run lands in v1.1.
+  - **Registration-time refusal of `model.invoke` on adoption-phase processors** is enforced by the manifest parser's phase × capability matrix; adoption stays deterministic and never receives `ctx.modelInvoke`.
+  - **`model.invoke` quota tracking** runs at the model boundary rather
+    than the Effect boundary. The runtime aggregates provider-reported
+    `cost_usd` by extension-id prefix and denies further calls when the
+    effective bundle-level daily cap is spent.
 
 **Related:**
 - [[wiki/specs/capabilities]]

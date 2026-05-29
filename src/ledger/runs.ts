@@ -288,6 +288,11 @@ export type RunsQueryFilter = {
   readonly limit?: number;
 };
 
+export type SumCostUsdByProcessorPrefixOpts = {
+  readonly processorIdPrefix: string;
+  readonly sinceIso: string;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_QUEUED_SQL = `
@@ -375,6 +380,14 @@ FROM runs
 
 const SELECT_BY_ID_SQL = `${SELECT_BASE_SQL} WHERE id = ?`;
 
+const SUM_COST_USD_BY_PROCESSOR_PREFIX_SQL = `
+SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd
+FROM runs
+WHERE started_at >= ?
+  AND cost_usd IS NOT NULL
+  AND (processor_id = ? OR substr(processor_id, 1, ?) = ?)
+`.trim();
+
 const ORPHAN_RUNS_SQL = `
 ${SELECT_BASE_SQL}
 WHERE status = 'running' AND started_at < ?
@@ -418,6 +431,10 @@ type RunRawRow = {
   readonly trigger_payload_json: string;
   readonly started_at: string;
   readonly finished_at: string | null;
+};
+
+type SumCostRawRow = {
+  readonly cost_usd: number | null;
 };
 
 // ----- Public functions -----------------------------------------------------
@@ -629,6 +646,31 @@ export function getRun(db: LedgerDb, id: RunId): RunRow | null {
   const first = rows[0];
   if (first === undefined) return null;
   return rowToRunRow(first);
+}
+
+/**
+ * Sum model costs for every processor in a bundle-prefix since a given
+ * timestamp. The runtime passes the extension id as the prefix, so
+ * `dome.intake` includes `dome.intake.extract-capture` and any sibling
+ * processors while avoiding unrelated bundles.
+ */
+export function sumCostUsdByProcessorPrefix(
+  db: LedgerDb,
+  opts: SumCostUsdByProcessorPrefixOpts,
+): number {
+  const childPrefix = `${opts.processorIdPrefix}.`;
+  const rows = db.raw
+    .query<SumCostRawRow, [string, string, number, string]>(
+      SUM_COST_USD_BY_PROCESSOR_PREFIX_SQL,
+    )
+    .all(
+      opts.sinceIso,
+      opts.processorIdPrefix,
+      childPrefix.length,
+      childPrefix,
+    );
+  const first = rows[0];
+  return first?.cost_usd ?? 0;
 }
 
 /**

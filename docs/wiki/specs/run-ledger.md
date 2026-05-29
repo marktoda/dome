@@ -102,9 +102,9 @@ The engine writes `queued` rows synchronously when enqueueing; updates to `runni
 
 ## Cost tracking
 
-`cost_usd` is populated by the `modelInvoke` wrapper when a processor calls an LLM provider that reports cost. The cost is summed across all invocations within the run and persisted even when the run fails later due to structured-output parsing or schema mismatch.
+`cost_usd` is populated by the `modelInvoke` wrapper when a processor calls an LLM provider that reports cost. The cost is summed across all invocations within the run and persisted even when the run fails later due to structured-output parsing, schema mismatch, or a post-call budget denial.
 
-The cost surface is the substrate for `model.invoke.maxDailyCostUsd` enforcement (per [[wiki/specs/capabilities]] §"model.invoke"). Daily cap enforcement is planned as a policy layer over `SUM(cost_usd) FROM runs WHERE processor_id = ? AND started_at >= today`; v1 currently records run-local provider-reported cost.
+The cost surface backs `model.invoke.maxDailyCostUsd` enforcement (per [[wiki/specs/capabilities]] §"model.invoke"). The runtime sums `cost_usd` for the processor's extension-id prefix since local midnight, adds the current run's in-memory cost, and denies further model calls once the bundle's effective daily cap is spent.
 
 ## Query surface (CLI)
 

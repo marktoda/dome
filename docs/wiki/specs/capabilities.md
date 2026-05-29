@@ -97,10 +97,14 @@ Permits emitting JobEffects. The `processors` list scopes which target processor
 Permits the processor to call LLMs via `ctx.modelInvoke`. Adoption-phase processors **never** get this capability — the loader rejects `model.invoke` in adoption manifests at registration time. Garden- and view-phase processors receive a model handle only when the capability is both declared and granted. The handle is provider-neutral: core receives an injected `ModelProvider`, not a direct import of a vendor SDK.
 
 Optional fields:
-- `maxDailyCostUsd: number` — cap on per-processor LLM spend per day. The run ledger already records provider-reported run-local cost; daily cap enforcement is the next policy layer.
+- `maxDailyCostUsd: number` — cap on bundle-level LLM spend per
+  local day. The runtime sums provider-reported `cost_usd` rows for the
+  processor's extension-id prefix since local midnight, adds the
+  current run's in-memory cost, and denies further calls with
+  `model.invoke.denied` once the effective cap is reached.
 - `modelAllowlist: string[]` — restrict to specific model identifiers (e.g., `["claude-3-5-sonnet"]`); default allows the harness's configured default.
 
-The runtime enforces the intersection of the declared and granted allowlists before any provider call. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape.
+The runtime enforces the intersection of the declared and granted allowlists before any provider call. It also enforces the stricter defined `maxDailyCostUsd` from declaration and grant: before a provider call it denies when the cap is already spent; after a provider-reported cost is recorded it denies the output if that call pushed spend over the cap. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape.
 
 ### `external`
 

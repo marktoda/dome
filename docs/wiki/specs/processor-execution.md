@@ -114,7 +114,7 @@ Processors should never import LLM SDKs directly. A non-adoption processor with 
 The `ctx.modelInvoke` runtime boundary has these guarantees:
 
 - Checks the processor's effective `model.invoke` grant and model allowlist before the call.
-- Fails with `model.invoke.denied` when no provider is configured, the prompt is empty, or the requested model is outside the effective allowlist.
+- Fails with `model.invoke.denied` when no provider is configured, the prompt is empty, the requested model is outside the effective allowlist, or the bundle's effective daily cost budget is spent.
 - Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
 - Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.

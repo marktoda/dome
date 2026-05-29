@@ -431,7 +431,7 @@ Acceptance:
 ### Milestone 6: modelInvoke substrate
 
 - Define the stable `modelInvoke` capability and provider boundary.
-- Enforce model allowlists and `maxDailyCostUsd`.
+- Enforce model allowlists and per-bundle `maxDailyCostUsd`.
 - Ledger token/cost data on every model attempt.
 - Validate structured outputs at the boundary.
 - Treat model parse/schema failures as nominal processor failures.
@@ -445,7 +445,8 @@ Acceptance:
 
 - Implement `dome.intake.extract-capture` for `inbox/raw/**`.
 - Implement task/followup extraction with structured output validation.
-- Enforce model allowlists and `maxDailyCostUsd`.
+- Consume the shipped model allowlist and per-bundle `maxDailyCostUsd`
+  enforcement.
 - Ensure all LLM processor failures are ledgered and recoverable.
 - Keep all LLM-generated patches behind capability-scoped paths and source refs.
 

@@ -117,6 +117,7 @@ import {
   markSucceeded,
   markTimedOut,
   newRunId,
+  sumCostUsdByProcessorPrefix,
   type RunId,
   type TriggerKind,
 } from "../ledger/runs";
@@ -590,6 +591,7 @@ type DispatchFrame = {
   readonly processor: Processor<unknown>;
   readonly phase: "adoption" | "garden" | "view";
   readonly runId: RunId;
+  readonly extensionId: string;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly inspectedPaths: ReadonlyArray<string>;
@@ -674,6 +676,7 @@ function beginDispatch<TEnvelope>(
     processor: opts.processor,
     phase: opts.phase,
     runId,
+    extensionId,
     declared,
     granted,
     inspectedPaths: filterReadablePaths(opts.changedPaths, declared, granted),
@@ -812,6 +815,12 @@ function buildExecutionContext<TEnvelope>(
         onCost: (cost) => {
           costUsd += cost;
         },
+        spentUsdToday: () =>
+          modelSpendForToday({
+            ledger: frame.ledger,
+            extensionId: frame.extensionId,
+            currentRunCostUsd: costUsd,
+          }),
       });
 
       const ctxInput: ProcessorContextInput<TEnvelope> = {
@@ -1171,6 +1180,24 @@ function updateExecutionStateAfterRun(opts: {
 
 function costUsdOrNull(costUsd: number): number | null {
   return costUsd > 0 ? costUsd : null;
+}
+
+function modelSpendForToday(opts: {
+  readonly ledger: LedgerDb | undefined;
+  readonly extensionId: string;
+  readonly currentRunCostUsd: number;
+}): number {
+  const persisted = opts.ledger === undefined
+    ? 0
+    : sumCostUsdByProcessorPrefix(opts.ledger, {
+        processorIdPrefix: opts.extensionId,
+        sinceIso: startOfLocalDay(new Date()).toISOString(),
+      });
+  return persisted + opts.currentRunCostUsd;
+}
+
+function startOfLocalDay(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
 /**

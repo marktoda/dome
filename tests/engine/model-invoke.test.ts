@@ -24,6 +24,7 @@ function buildInvoke(opts?: {
   readonly granted?: ReadonlyArray<Capability>;
   readonly provider?: ModelProvider;
   readonly onCost?: (costUsd: number) => void;
+  readonly spentUsdToday?: () => number;
   readonly signal?: AbortSignal;
 }) {
   return modelInvokeForProcessor({
@@ -35,6 +36,9 @@ function buildInvoke(opts?: {
     signal: opts?.signal ?? new AbortController().signal,
     ...(opts?.provider !== undefined ? { provider: opts.provider } : {}),
     ...(opts?.onCost !== undefined ? { onCost: opts.onCost } : {}),
+    ...(opts?.spentUsdToday !== undefined
+      ? { spentUsdToday: opts.spentUsdToday }
+      : {}),
   });
 }
 
@@ -92,6 +96,46 @@ describe("modelInvokeForProcessor", () => {
 
     expect(await invoke({ prompt: "hello", model: "fast" })).toBe("ok");
     expect(cost).toBe(0.25);
+  });
+
+  test("denies calls once the effective daily cost budget is spent", async () => {
+    let calls = 0;
+    const invoke = buildInvoke({
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+      spentUsdToday: () => 1,
+      provider: async () => {
+        calls += 1;
+        return { text: "ok", costUsd: 0.25 };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.denied",
+      retryable: false,
+    });
+    expect(calls).toBe(0);
+  });
+
+  test("records cost then denies output when a provider response exceeds budget", async () => {
+    let cost = 0;
+    const invoke = buildInvoke({
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 0.5 }],
+      spentUsdToday: () => cost,
+      onCost: (n) => {
+        cost += n;
+      },
+      provider: async () => ({ text: "ok", costUsd: 0.75 }),
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.denied",
+      retryable: false,
+    });
+    expect(cost).toBe(0.75);
   });
 
   test("structured parses valid JSON through caller schema parser", async () => {

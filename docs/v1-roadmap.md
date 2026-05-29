@@ -358,7 +358,7 @@ Work:
 - [x] Define the stable `modelInvoke` provider boundary. Prefer a maintained
       library such as AI SDK if it keeps the boundary simpler than a
       hand-rolled client.
-- [ ] Enforce per-bundle daily cost budgets.
+- [x] Enforce per-bundle daily cost budgets.
 - [x] Enforce effective model allowlists before provider calls.
 - [x] Ledger provider-reported run-local cost.
 - [x] Validate structured outputs at the boundary.
@@ -370,7 +370,7 @@ Acceptance:
 
 - [x] Model processor succeeds and records cost.
 - [x] Malformed model output becomes a diagnostic/run failure, not a patch.
-- [ ] Cost budget denial is visible and recoverable.
+- [x] Cost budget denial is visible and recoverable.
 - [ ] Timeout/cancellation does not leave orphan running rows.
 
 ## Milestone 7 - LLM Garden and Intake

@@ -46,6 +46,7 @@ export function modelInvokeForProcessor(opts: {
   readonly signal: AbortSignal;
   readonly provider?: ModelProvider;
   readonly onCost?: (costUsd: number) => void;
+  readonly spentUsdToday?: () => number;
 }): ModelInvokeFn | undefined {
   if (opts.phase === "adoption") return undefined;
   const modelPolicy = effectiveModelPolicy(opts.declared, opts.granted);
@@ -55,6 +56,7 @@ export function modelInvokeForProcessor(opts: {
     input: ModelInvokeTextInput,
   ): Promise<string> => {
     const request = normalizeRequest(input, modelPolicy);
+    enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
     if (opts.provider === undefined) {
       throw modelError(
         "model.invoke.denied",
@@ -75,6 +77,7 @@ export function modelInvokeForProcessor(opts: {
       response.costUsd > 0
     ) {
       opts.onCost?.(response.costUsd);
+      enforceBudgetAfterCall(modelPolicy, opts.spentUsdToday);
     }
     return response.text;
   };
@@ -91,6 +94,7 @@ export function modelInvokeForProcessor(opts: {
 
 type EffectiveModelPolicy = {
   readonly allowlist: ReadonlyArray<string> | null;
+  readonly maxDailyCostUsd: number | null;
 };
 
 function effectiveModelPolicy(
@@ -107,7 +111,11 @@ function effectiveModelPolicy(
     declaredModel.modelAllowlist,
     grantedModel.modelAllowlist,
   );
-  return Object.freeze({ allowlist });
+  const maxDailyCostUsd = minAllDefined(
+    declaredModel.maxDailyCostUsd,
+    grantedModel.maxDailyCostUsd,
+  );
+  return Object.freeze({ allowlist, maxDailyCostUsd });
 }
 
 function normalizeRequest(
@@ -324,6 +332,49 @@ function intersectAllDefined(
   if (b === undefined) return Object.freeze([...a]);
   const bSet = new Set(b);
   return Object.freeze(a.filter((model) => bSet.has(model)));
+}
+
+function minAllDefined(
+  a: number | undefined,
+  b: number | undefined,
+): number | null {
+  if (a === undefined && b === undefined) return null;
+  if (a === undefined) return b ?? null;
+  if (b === undefined) return a;
+  return Math.min(a, b);
+}
+
+function enforceBudgetBeforeCall(
+  policy: EffectiveModelPolicy,
+  spentUsdToday: (() => number) | undefined,
+): void {
+  if (policy.maxDailyCostUsd === null || spentUsdToday === undefined) return;
+  const spent = spentUsdToday();
+  if (spent >= policy.maxDailyCostUsd) {
+    throw budgetDenied(policy.maxDailyCostUsd, spent);
+  }
+}
+
+function enforceBudgetAfterCall(
+  policy: EffectiveModelPolicy,
+  spentUsdToday: (() => number) | undefined,
+): void {
+  if (policy.maxDailyCostUsd === null || spentUsdToday === undefined) return;
+  const spent = spentUsdToday();
+  if (spent > policy.maxDailyCostUsd) {
+    throw budgetDenied(policy.maxDailyCostUsd, spent);
+  }
+}
+
+function budgetDenied(
+  maxDailyCostUsd: number,
+  spentUsdToday: number,
+): ModelExecutionError {
+  return modelError(
+    "model.invoke.denied",
+    `model.invoke daily cost budget exceeded: spent $${spentUsdToday.toFixed(4)} of $${maxDailyCostUsd.toFixed(4)}.`,
+    false,
+  );
 }
 
 function modelError(
