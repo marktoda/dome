@@ -68,7 +68,7 @@ const synthesizeRollup: Processor = defineProcessor({
   ],
   capabilities: [
     { kind: "read", paths: ["wiki/generated/intake/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/syntheses/intake-*.md"] },
+    { kind: "patch.auto", paths: [OUTPUT_PATH] },
     { kind: "model.invoke", maxDailyCostUsd: 5 },
   ],
   execution: {
@@ -83,7 +83,21 @@ const synthesizeRollup: Processor = defineProcessor({
     if (!ctx.changedPaths.some(isGeneratedCapturePath)) return [];
 
     const captures = await recentGeneratedCaptures(ctx);
-    if (captures.length === 0) return [];
+    if (captures.length === 0) {
+      const sourceRefs = ctx.changedPaths
+        .filter(isGeneratedCapturePath)
+        .sort()
+        .map((path) => ctx.sourceRef(path));
+      if (sourceRefs.length === 0) return [];
+      return Object.freeze([
+        patchEffect({
+          mode: "auto",
+          changes: [{ kind: "delete", path: OUTPUT_PATH }],
+          reason: "dome.intake: remove empty recent captures rollup",
+          sourceRefs,
+        }),
+      ]);
+    }
 
     const rollup = await ctx.modelInvoke.structured({
       schemaName: MODEL_SCHEMA,

@@ -455,6 +455,21 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+
+    await h.userCommit({
+      files: {
+        "wiki/generated/intake/manager-day.md": null,
+        "wiki/generated/intake/project-day.md": null,
+      },
+      message: "delete generated captures",
+    });
+    const deleted = await h.tick();
+    expect(deleted.adopted).toBe(true);
+    await h.expectFile(rollupPath).toBeAbsent();
+
+    await h
+      .expectLedger({ processorId: "dome.intake.synthesize-rollup" })
+      .toAllHaveStatus("succeeded");
   },
 );
 

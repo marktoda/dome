@@ -105,7 +105,7 @@ processors:
       - kind: read
         paths: ["wiki/generated/intake/*.md"]
       - kind: patch.auto
-        paths: ["wiki/syntheses/intake-*.md"]
+        paths: ["wiki/syntheses/intake-rollup.md"]
       - kind: model.invoke
         maxDailyCostUsd: 5
     execution:
