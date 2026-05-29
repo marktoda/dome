@@ -656,7 +656,8 @@ describe("adoptionRunner — context wiring", () => {
     expect(resolveTreeCalls).toBe(1);
   });
 
-  test("processor sees ProcessorContext whose proposal === input.proposal and changedPaths === input.changedPaths", async () => {
+  test("processor sees ProcessorContext proposal and readable changedPaths", async () => {
+    const readCap: Capability = { kind: "read", paths: ["wiki/**"] };
     const observed: { proposal: unknown; changedPaths: ReadonlyArray<string> | null } = {
       proposal: undefined,
       changedPaths: null,
@@ -666,13 +667,14 @@ describe("adoptionRunner — context wiring", () => {
       id: "test.observer",
       phase: "adoption",
       triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [readCap],
       run: async (ctx) => {
         observed.proposal = ctx.proposal;
         observed.changedPaths = ctx.changedPaths;
         return [];
       },
     });
-    const rt = buildRuntimeFor([p]);
+    const rt = buildRuntimeFor([p], { resolveGrants: () => [readCap] });
 
     await rt.adoptionRunner({
       vault: STUB_VAULT,
@@ -684,7 +686,7 @@ describe("adoptionRunner — context wiring", () => {
     });
 
     expect(observed.proposal).toBe(proposal);
-    expect(observed.changedPaths).toBe(changedPaths);
+    expect(observed.changedPaths).toEqual(changedPaths);
   });
 
   test("processor sees its input envelope as { kind: 'adoption', matchedTriggers }", async () => {
@@ -716,18 +718,26 @@ describe("adoptionRunner — context wiring", () => {
 });
 
 describe("dispatchOneProcessor — scoped snapshot reads", () => {
-  test("readFile returns null and listMarkdownFiles filters outside effective read grants", async () => {
+  test("processor context hides paths outside effective read grants", async () => {
     const readCap: Capability = { kind: "read", paths: ["wiki/**"] };
     const observed: {
       allowed: string | null;
       denied: string | null;
       invalid: string | null;
       listed: ReadonlyArray<string>;
+      changedPaths: ReadonlyArray<string>;
+      matchedSignals: ReadonlyArray<string>;
+      allowedSourceRefPath: string | null;
+      deniedSourceRefError: string | null;
     } = {
       allowed: null,
       denied: null,
       invalid: null,
       listed: [],
+      changedPaths: [],
+      matchedSignals: [],
+      allowedSourceRefPath: null,
+      deniedSourceRefError: null,
     };
     const snapshot: Snapshot = Object.freeze({
       commit: CANDIDATE,
@@ -757,6 +767,17 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
         observed.denied = await ctx.snapshot.readFile("secret/denied.md");
         observed.invalid = await ctx.snapshot.readFile("../secret.md");
         observed.listed = await ctx.snapshot.listMarkdownFiles();
+        observed.changedPaths = ctx.changedPaths;
+        const input = ctx.input as AdoptionRunInput;
+        observed.matchedSignals =
+          input.matchedTriggers[0]?.matchedSignals.map((event) => event.path) ??
+          [];
+        observed.allowedSourceRefPath = ctx.sourceRef("wiki/allowed.md").path;
+        try {
+          ctx.sourceRef("secret/denied.md");
+        } catch (e) {
+          observed.deniedSourceRefError = e instanceof Error ? e.message : String(e);
+        }
         const info = await ctx.snapshot.getFileInfo("secret/denied.md");
         expect(info).toBeNull();
         return [];
@@ -766,12 +787,31 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
     const result = await dispatchOneProcessor({
       processor: p,
       phase: "adoption",
-      envelope: { kind: "adoption", matchedTriggers: [] },
+      envelope: {
+        kind: "adoption",
+        matchedTriggers: [
+          {
+            trigger: { kind: "signal", name: "file.created" },
+            matchedSignals: [
+              { signal: "file.created", path: "wiki/allowed.md" },
+              { signal: "file.created", path: "secret/denied.md" },
+            ],
+          },
+        ],
+      },
       snapshot,
-      changedPaths: [],
+      changedPaths: ["wiki/allowed.md", "secret/denied.md"],
       proposal,
       inputCommit: CANDIDATE,
-      matches: [],
+      matches: [
+        {
+          trigger: { kind: "signal", name: "file.created" },
+          matchedSignals: [
+            { signal: "file.created", path: "wiki/allowed.md" },
+            { signal: "file.created", path: "secret/denied.md" },
+          ],
+        },
+      ],
       resolveGrants: () => [readCap],
       extensionIdFor: (id) => id,
       ledger: undefined,
@@ -782,5 +822,9 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
     expect(observed.denied).toBeNull();
     expect(observed.invalid).toBeNull();
     expect(observed.listed).toEqual(["wiki/allowed.md"]);
+    expect(observed.changedPaths).toEqual(["wiki/allowed.md"]);
+    expect(observed.matchedSignals).toEqual(["wiki/allowed.md"]);
+    expect(observed.allowedSourceRefPath).toBe("wiki/allowed.md");
+    expect(observed.deniedSourceRefError).toContain("effective read grants");
   });
 });

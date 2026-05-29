@@ -21,6 +21,7 @@ const processor: Processor = defineProcessor({
     { kind: "signal", name: "file.created", pathPattern: SEED_PATH },
   ],
   capabilities: [
+    { kind: "read", paths: [SEED_PATH] },
     { kind: "job.enqueue", processors: [WORKER_ID] },
   ],
   run: async (

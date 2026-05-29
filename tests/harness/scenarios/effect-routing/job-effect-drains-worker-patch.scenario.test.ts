@@ -34,6 +34,7 @@ extensions:
   test.job-patch-flow:
     enabled: true
     grant:
+      read: ["wiki/seed.md"]
       job.enqueue: ["test.job-patch-flow.worker"]
       patch.auto: ["wiki/**"]
 `,

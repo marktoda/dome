@@ -9,6 +9,8 @@ processors:
         name: file.created
         pathPattern: wiki/seed.md
     capabilities:
+      - kind: read
+        paths: ["wiki/seed.md"]
       - kind: job.enqueue
         processors: ["test.job-patch-flow.worker"]
     module: processors/enqueue.ts

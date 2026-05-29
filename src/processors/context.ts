@@ -85,6 +85,7 @@ export type ProcessorContextInput<TInput> = {
   readonly runId: string;
   readonly input: TInput;
   readonly signal: AbortSignal;
+  readonly canSourceRefPath?: (path: string) => boolean;
   readonly modelInvoke?: ModelInvokeFn;
   readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
@@ -134,12 +135,16 @@ export function makeProcessorContext<TInput>(
   opts: ProcessorContextInput<TInput>,
 ): ProcessorContext<TInput> {
   const commit = opts.snapshot.commit;
-  const boundSourceRef = (path: string, range?: TextRange): SourceRef =>
-    sourceRef(
+  const boundSourceRef = (path: string, range?: TextRange): SourceRef => {
+    if (opts.canSourceRefPath?.(path) === false) {
+      throw new Error(`sourceRef path is outside effective read grants: ${path}`);
+    }
+    return sourceRef(
       range !== undefined
         ? { commit, path, range }
         : { commit, path },
     );
+  };
 
   const ctx: {
     -readonly [K in keyof ProcessorContext<TInput>]: ProcessorContext<TInput>[K];

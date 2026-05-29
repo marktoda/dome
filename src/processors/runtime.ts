@@ -802,11 +802,13 @@ function buildExecutionContext<TEnvelope>(
 
       const ctxInput: ProcessorContextInput<TEnvelope> = {
         snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
-        changedPaths: opts.changedPaths,
+        changedPaths: scopeChangedPathsForProcessor(opts.changedPaths, frame),
         proposal: opts.proposal,
         runId: frame.runId,
-        input: opts.envelope,
+        input: scopeEnvelopeForProcessor(opts.envelope, frame),
         signal,
+        canSourceRefPath: (path) =>
+          readablePath(path, frame.declared, frame.granted) !== null,
         ...(frame.phase === "view" && opts.projection !== undefined
           ? { projection: opts.projection }
           : {}),
@@ -971,6 +973,58 @@ function scopeSnapshotForProcessor(
       return snapshot.getFileInfo(readable);
     },
   });
+}
+
+function scopeChangedPathsForProcessor(
+  changedPaths: ReadonlyArray<string>,
+  frame: DispatchFrame,
+): ReadonlyArray<string> {
+  return filterReadablePaths(changedPaths, frame.declared, frame.granted);
+}
+
+function scopeEnvelopeForProcessor<TEnvelope>(
+  envelope: TEnvelope,
+  frame: DispatchFrame,
+): TEnvelope {
+  if (!hasMatchedTriggers(envelope)) return envelope;
+  return Object.freeze({
+    ...envelope,
+    matchedTriggers: scopeTriggerMatchesForProcessor(
+      envelope.matchedTriggers,
+      frame,
+    ),
+  }) as TEnvelope;
+}
+
+function hasMatchedTriggers(
+  envelope: unknown,
+): envelope is { readonly matchedTriggers: ReadonlyArray<TriggerMatch> } {
+  return (
+    typeof envelope === "object" &&
+    envelope !== null &&
+    Array.isArray(
+      (envelope as { readonly matchedTriggers?: unknown }).matchedTriggers,
+    )
+  );
+}
+
+function scopeTriggerMatchesForProcessor(
+  matches: ReadonlyArray<TriggerMatch>,
+  frame: DispatchFrame,
+): ReadonlyArray<TriggerMatch> {
+  return Object.freeze(
+    matches.map((match) =>
+      Object.freeze({
+        trigger: match.trigger,
+        matchedSignals: Object.freeze(
+          match.matchedSignals.filter(
+            (event) =>
+              readablePath(event.path, frame.declared, frame.granted) !== null,
+          ),
+        ),
+      }),
+    ),
+  );
 }
 
 function markDispatchTerminal(
