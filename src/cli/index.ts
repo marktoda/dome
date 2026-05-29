@@ -6,7 +6,7 @@
 // Command modules expose typed handler inputs so tests can call the handlers
 // directly without constructing Commander objects or spawning subprocesses.
 
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
@@ -307,6 +307,11 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       parsePositiveIntegerOption,
     )
     .option("-v, --verbose", "Print adoption progress events.")
+    .addOption(
+      new Option("-q, --quiet", "Suppress non-error text output.").conflicts(
+        "verbose",
+      ),
+    )
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
     .action(async (options: ServeCliOptions) => {
@@ -316,6 +321,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           pollIntervalMs: options.pollIntervalMs,
           verbose: options.verbose,
+          quiet: options.quiet,
         }),
       );
     });
@@ -341,6 +347,11 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("One-shot catch-up: adopt working-tree HEAD.")
     .option("--json", "Emit JSON.")
     .option("-v, --verbose", "Print adoption progress events.")
+    .addOption(
+      new Option("-q, --quiet", "Suppress non-error text output.").conflicts(
+        "verbose",
+      ),
+    )
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
     .action(async (options: SyncCliOptions) => {
@@ -350,6 +361,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           json: options.json,
           verbose: options.verbose,
+          quiet: options.quiet,
         }),
       );
     });
@@ -431,6 +443,7 @@ type RebuildCliOptions = {
 type ServeCliOptions = {
   readonly pollIntervalMs?: number;
   readonly verbose?: boolean;
+  readonly quiet?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };
@@ -444,6 +457,7 @@ type StatusCliOptions = {
 type SyncCliOptions = {
   readonly json?: boolean;
   readonly verbose?: boolean;
+  readonly quiet?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };

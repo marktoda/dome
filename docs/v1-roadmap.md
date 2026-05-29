@@ -187,7 +187,7 @@ Work:
 - [x] Add explicit verbose output mode.
 - [x] Decide whether `serve --exclusive` belongs in v1: no separate flag for
       v1; branch-level compiler-host locking is always on.
-- [ ] Add explicit quiet output mode.
+- [x] Add explicit quiet output mode.
 
 Acceptance:
 

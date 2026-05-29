@@ -307,6 +307,37 @@ describe("runServe smoke", () => {
     expect(code).toBe(0);
   }, 10_000);
 
+  test("--quiet suppresses banner, adoption, and shutdown chatter", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+        quiet: true,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+    expect(captured.out.join("\n")).toBe("");
+    expect(captured.err.join("\n")).toBe("");
+  }, 10_000);
+
   test("coalesces HEAD movement that happens while adoption is active", async () => {
     const f = await makeFixture({
       bundlesRoot: TEST_BUNDLES_ROOT,

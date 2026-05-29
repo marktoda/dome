@@ -73,6 +73,7 @@ export type RunServeOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly pollIntervalMs?: string | number | boolean | undefined;
   readonly verbose?: boolean | undefined;
+  readonly quiet?: boolean | undefined;
 };
 
 export type RunServeRuntimeOptions = {
@@ -132,6 +133,7 @@ export async function runServe(
   // one-line-per-commit summary; verbose adds 1-3 indented lines per
   // adoption cycle (iteration-start, processor-result(s), iteration-end).
   const verbose = options.verbose === true;
+  const quiet = options.quiet === true;
 
   // ----- 2. Resolve initial branch ------------------------------------------
   // A detached HEAD has no branch name; the adopted-ref substrate requires
@@ -169,9 +171,11 @@ export async function runServe(
       : startupDrift.kind === "drift"
         ? startupDrift.info.branch
         : ((await getCurrentBranch(vaultPath)) ?? "(unknown)");
-  console.log(
-    `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms${verbose ? ", verbose" : ""})`,
-  );
+  if (!quiet) {
+    console.log(
+      `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms${verbose ? ", verbose" : ""})`,
+    );
+  }
 
   // ----- 5. Register cancellation handlers ----------------------------------
   // A single `AbortController` unifies three cancel paths: SIGINT, SIGTERM,
@@ -202,6 +206,7 @@ export async function runServe(
         opts.operationalIntervalMs ?? DEFAULT_OPERATIONAL_INTERVAL_MS,
       cancel: controller.signal,
       verbose,
+      quiet,
     });
   } finally {
     // Detach signal handlers BEFORE closing the runtime, so a stray
@@ -216,7 +221,9 @@ export async function runServe(
     await runtime.close();
   }
 
-  console.log("dome serve: shutting down");
+  if (!quiet) {
+    console.log("dome serve: shutting down");
+  }
   return 0;
 }
 
@@ -245,6 +252,7 @@ async function pollLoop(input: {
   readonly operationalIntervalMs: number;
   readonly cancel: AbortSignal;
   readonly verbose: boolean;
+  readonly quiet: boolean;
 }): Promise<void> {
   const {
     runtime,
@@ -253,6 +261,7 @@ async function pollLoop(input: {
     operationalIntervalMs,
     cancel,
     verbose,
+    quiet,
   } = input;
 
   // `lastKind` suppresses repeated log lines when the daemon enters an
@@ -264,7 +273,7 @@ async function pollLoop(input: {
   while (!cancel.aborted) {
     const drift = await detectDrift(vaultPath);
     if (drift.kind === "drift" || drift.kind === "in-sync") {
-      if (verbose) {
+      if (verbose && !quiet) {
         if (drift.kind === "drift") {
           console.log(
             `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
@@ -278,6 +287,7 @@ async function pollLoop(input: {
         runOperationalWhenInSync:
           drift.kind === "drift" || nowMs >= nextOperationalAtMs,
         verbose,
+        quiet,
         suppressBusyLine: lastKind === "busy",
       });
       if (drift.kind === "drift" || nowMs >= nextOperationalAtMs) {
@@ -319,6 +329,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
   readonly drift: DriftResult;
   readonly runOperationalWhenInSync: boolean;
   readonly verbose: boolean;
+  readonly quiet: boolean;
   readonly suppressBusyLine: boolean;
 }): Promise<CompilerHostTickResult | null> {
   const {
@@ -326,6 +337,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
     drift,
     runOperationalWhenInSync,
     verbose,
+    quiet,
     suppressBusyLine,
   } = input;
 
@@ -334,7 +346,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
       runtime,
       drift,
       runOperationalWhenInSync,
-      ...(verbose
+      ...(verbose && !quiet
         ? {
             onEvent: (e) =>
               console.log(formatAdoptEvent(e, { command: "serve" })),
@@ -342,7 +354,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
         : {}),
     });
     if (tick.kind === "busy" && suppressBusyLine) return tick;
-    printTickLine(tick, verbose);
+    printTickLine(tick, { verbose, quiet });
     return tick;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -362,15 +374,19 @@ async function runCompilerHostTickWithErrorHandling(input: {
  * is appended for the blocked case so the operator sees what to fix
  * without reaching for `dome inspect diagnostics`.
  */
-function printTickLine(tick: CompilerHostTickResult, verbose: boolean): void {
+function printTickLine(
+  tick: CompilerHostTickResult,
+  opts: { readonly verbose: boolean; readonly quiet: boolean },
+): void {
   if (tick.kind === "busy") {
+    if (opts.quiet) return;
     console.error(
       `dome serve: branch ${tick.branch} is already being processed by another Dome host; waiting.`,
     );
     return;
   }
   if (tick.kind === "in-sync") {
-    if (verbose && tick.operational !== null) {
+    if (opts.verbose && !opts.quiet && tick.operational !== null) {
       printOperationalLine(tick.operational);
     }
     return;
@@ -381,18 +397,20 @@ function printTickLine(tick: CompilerHostTickResult, verbose: boolean): void {
   const diagCount = result.diagnostics.length;
   const iters = result.iterations;
   if (result.adopted) {
-    console.log(
-      `dome serve: adopted ${tick.branch} ${tick.finalAdoptedRef.slice(0, 7)} ` +
-        `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
-        `${iters} iteration${iters === 1 ? "" : "s"})`,
-    );
-    if (verbose && tick.projectionRebuild !== null) {
+    if (!opts.quiet) {
       console.log(
-        `dome serve: rebuilt projection cache (${tick.projectionRebuild.fileCount} files, ${tick.projectionRebuild.effectCount} effects)`,
+        `dome serve: adopted ${tick.branch} ${tick.finalAdoptedRef.slice(0, 7)} ` +
+          `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
+          `${iters} iteration${iters === 1 ? "" : "s"})`,
       );
-    }
-    if (verbose && tick.operational !== null) {
-      printOperationalLine(tick.operational);
+      if (opts.verbose && tick.projectionRebuild !== null) {
+        console.log(
+          `dome serve: rebuilt projection cache (${tick.projectionRebuild.fileCount} files, ${tick.projectionRebuild.effectCount} effects)`,
+        );
+      }
+      if (opts.verbose && tick.operational !== null) {
+        printOperationalLine(tick.operational);
+      }
     }
     return;
   }

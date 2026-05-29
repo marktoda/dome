@@ -17,7 +17,7 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 
 ```text
 dome init [path]                Initialize a new vault.
-dome sync [--json] [-v|--verbose]
+dome sync [--json] [-v|--verbose] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
 dome today [--date <YYYY-MM-DD>] [--json]
@@ -42,7 +42,7 @@ dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
 dome answer <question-id> [<value>]
                                 Resolve an engine-raised QuestionEffect from
                                 the user-decision channel.
-dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
+dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
 ```
@@ -147,7 +147,7 @@ present)`); idempotent re-runs surface as all-skipped no-ops.
 Exit codes: 0 on success (including idempotent re-runs); 1 on
 unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
 
-### `dome sync [--vault <path>] [--bundles-root <path>] [--json]`
+### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [-v|--verbose] [-q|--quiet]`
 
 The one-shot catch-up: detect drift between the working-tree HEAD and `refs/dome/adopted/<branch>`, construct a `manual`-source Proposal, run it through the engine's adoption loop, print the result, exit. This is the manual trigger for users who don't want a `dome serve` compiler host running continuously.
 
@@ -171,6 +171,11 @@ Composition (v1.0):
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and the usage-error variant.
 For `"in-sync"`, `diagnostics` contains diagnostics produced by the operational-work pump, if any; no adoption diagnostics are synthesized because no adoption ran.
+
+`--quiet` suppresses non-error human-readable text for adopted / in-sync
+outcomes. It does not suppress `--json`, usage errors, blocked-adoption
+diagnostics, or compiler-host busy messages. `--quiet` and `--verbose` are
+mutually exclusive.
 
 The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD surfaces as a blocking diagnostic from `setAdoptedRef` and the operator resolves manually.
 
@@ -494,7 +499,7 @@ processor reset loop, and orphan-run fail loop as first-party processors.
 All three use the same question/answer flow rather than hidden per-substrate
 CLI verbs.
 
-### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
+### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>] [-v|--verbose] [-q|--quiet]`
 
 Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the host catches up by adopting the new HEAD.
 
@@ -513,6 +518,11 @@ Composition (v1.0):
 8. Stays running until SIGINT / SIGTERM; on shutdown, closes the runtime
    (releases the projection, answers, ledger, and outbox SQLite handles) and
    exits 0.
+
+`--quiet` suppresses routine text output: startup banner, successful adoption
+summaries, operational-work summaries, and shutdown line. It still reports
+startup failures, detached-HEAD pauses, blocked adoption diagnostics, and
+unexpected tick errors. `--quiet` and `--verbose` are mutually exclusive.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
 

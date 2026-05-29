@@ -90,6 +90,7 @@ export type RunSyncOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
   readonly verbose?: boolean | undefined;
+  readonly quiet?: boolean | undefined;
 };
 
 // ----- runSync --------------------------------------------------------------
@@ -112,6 +113,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
 
   const jsonMode = options.json === true;
   const verbose = options.verbose === true;
+  const quiet = options.quiet === true && !jsonMode;
 
   // ----- 2. Detect drift ----------------------------------------------------
   // The shared helper short-circuits the unworkable states (detached
@@ -143,6 +145,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
       bundlesRoot,
       drift,
       jsonMode,
+      quiet,
     });
   }
 
@@ -168,7 +171,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     const tick = await runCompilerHostTick({
       runtime,
       drift,
-      ...(verbose && !jsonMode
+      ...(verbose && !quiet && !jsonMode
         ? {
             onEvent: (e) =>
               console.log(formatAdoptEvent(e, { command: "sync" })),
@@ -178,7 +181,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     if (jsonMode) {
       console.log(formatJson(tickResultJson(tick)));
     } else {
-      printTickLines(tick);
+      printTickLines(tick, { quiet });
     }
     if (tick.kind === "busy") return 75;
     return tick.kind === "blocked" ? 1 : 0;
@@ -194,6 +197,7 @@ async function runInSyncOperationalWork(opts: {
   readonly bundlesRoot: string;
   readonly drift: Extract<DriftResult, { readonly kind: "in-sync" }>;
   readonly jsonMode: boolean;
+  readonly quiet: boolean;
 }): Promise<number> {
   const runtimeResult = await openVaultRuntime({
     vaultPath: opts.vaultPath,
@@ -226,7 +230,7 @@ async function runInSyncOperationalWork(opts: {
   if (opts.jsonMode) {
     console.log(formatJson(tickResultJson(tick)));
   } else {
-    printTickLines(tick);
+    printTickLines(tick, { quiet: opts.quiet });
   }
   return tick.kind === "busy" ? 75 : 0;
 }
@@ -242,7 +246,10 @@ async function runInSyncOperationalWork(opts: {
  * On block: lists the first blocking diagnostic's code + message and
  * notes the total count.
  */
-function printTickLines(tick: CompilerHostTickResult): void {
+function printTickLines(
+  tick: CompilerHostTickResult,
+  opts: { readonly quiet: boolean },
+): void {
   if (tick.kind === "busy") {
     console.error(
       `dome sync: branch ${tick.branch} is already being processed by another Dome host.`,
@@ -250,6 +257,7 @@ function printTickLines(tick: CompilerHostTickResult): void {
     return;
   }
   if (tick.kind === "in-sync") {
+    if (opts.quiet) return;
     console.log(
       `dome sync: already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
     );
@@ -262,6 +270,7 @@ function printTickLines(tick: CompilerHostTickResult): void {
   const iters = result.iterations;
 
   if (result.adopted) {
+    if (opts.quiet) return;
     const range =
       tick.drift.base === tick.drift.head
         ? tick.drift.head.slice(0, 7)

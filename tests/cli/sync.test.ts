@@ -223,6 +223,40 @@ describe("runSync empty-diff init", () => {
     expect(outBlob).toContain("dome sync:   iteration");
     expect(outBlob).not.toContain("dome serve:   iteration");
   }, 10_000);
+
+  test("--quiet suppresses non-error text output without changing adoption", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      quiet: true,
+    });
+    expect(code).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+    expect(captured.out.join("\n")).toBe("");
+    expect(captured.err.join("\n")).toBe("");
+  }, 10_000);
+
+  test("--quiet does not suppress explicit JSON output", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      quiet: true,
+      json: true,
+    });
+    expect(code).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(parsed["status"]).toBe("adopted");
+    expect(parsed["branch"]).toBe("main");
+  }, 10_000);
 });
 
 // ----- Test 2: already in sync ----------------------------------------------

@@ -45,6 +45,14 @@ describe("runCli", () => {
     expect(out).not.toContain("DOME status");
   });
 
+  test("compiler host help exposes quiet output mode", async () => {
+    expect(await runCli(["sync", "-h"])).toBe(0);
+    expect(await runCli(["serve", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("-q, --quiet");
+    expect(out).toContain("Suppress non-error text output");
+  });
+
   test("today help exposes date and json options", async () => {
     expect(await runCli(["today", "-h"])).toBe(0);
     const out = captured.out.join("\n");
@@ -128,6 +136,13 @@ describe("runCli", () => {
     expect(err).toContain(
       "option '--poll-interval-ms <n>' argument '500x' is invalid",
     );
+  });
+
+  test("quiet and verbose are mutually exclusive compiler output modes", async () => {
+    expect(await runCli(["sync", "--quiet", "--verbose"])).toBe(64);
+    expect(await runCli(["serve", "--quiet", "--verbose"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain("option '-q, --quiet' cannot be used with option '-v, --verbose'");
   });
 
   test("missing command exits 64 with top-level usage", async () => {
