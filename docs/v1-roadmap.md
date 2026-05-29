@@ -166,6 +166,9 @@ Work:
       engine layer (`src/engine/compiler-host.ts`).
 - [x] Add a single compiler-host tick result boundary for `serve`, `sync`, and
       the harness, including the final adopted ref after sub-Proposals.
+- [x] Thread the latest adopted cursor through garden cascades and operational
+      processors so multiple patch-producing units in one tick chain on the
+      current ref instead of forking from a stale starting commit.
 - [x] Drain operational work even when HEAD/adopted are already in sync.
 - [x] Preserve the pretty text `status` dashboard.
 - [x] Keep `sync --json` available for agent consumption.

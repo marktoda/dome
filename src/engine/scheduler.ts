@@ -306,10 +306,11 @@ async function runSchedulerInner(opts: {
 
     let success: boolean;
     try {
+      const inputAdopted = currentAdopted?.() ?? adopted;
       // Build the snapshot once per fire — same shape adoptionRunner /
       // gardenRunner construct, just resolved against the adopted commit
       // (schedule fires see the post-adoption snapshot).
-      const snapshot = await makeSnapshot(vault.path, adopted, resolveTree);
+      const snapshot = await makeSnapshot(vault.path, inputAdopted, resolveTree);
 
       // Synthesize a TriggerMatch list for the schedule trigger. Empty
       // matchedSignals because schedule fires have no signal stream.
@@ -334,7 +335,7 @@ async function runSchedulerInner(opts: {
         // ledger records proposal_id = NULL; inputCommit records the adopted
         // snapshot the schedule fired against.
         proposal: null,
-        inputCommit: adopted,
+        inputCommit: inputAdopted,
         matches,
         resolveGrants,
         extensionIdFor,
@@ -353,7 +354,7 @@ async function runSchedulerInner(opts: {
           await dispatchGardenPatchEffect({
             effect,
             vault,
-            adopted,
+            adopted: inputAdopted,
             ...(currentAdopted !== undefined ? { currentAdopted } : {}),
             processorId: result.processorId,
             runId: result.runId,
@@ -386,7 +387,7 @@ async function runSchedulerInner(opts: {
           declared: result.declared,
           granted: result.granted,
           sinks,
-          candidate: adopted,
+          candidate: inputAdopted,
         });
         if (applied.diagnostics.length > 0) {
           diagnostics.push(...applied.diagnostics);

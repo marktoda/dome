@@ -208,6 +208,13 @@ export async function runGardenPhase(opts: {
   readonly sinks: ApplyEffectSinks;
   readonly ledger?: LedgerDb;
   /**
+   * Latest adopted ref inside a host tick. Top-level garden processors run
+   * against `adopted`, but multiple spawned sub-Proposals must apply
+   * sequentially to the latest adopted ref rather than all forking from the
+   * same starting commit.
+   */
+  readonly currentAdopted?: () => CommitOid;
+  /**
    * Optional sub-Proposal adoption callback. When absent, garden-emitted
    * PatchEffects log+drop (Phase 4a behavior). When present, they spawn
    * sub-Proposals routed through this callback (Phase 4a' behavior).
@@ -281,6 +288,7 @@ async function runGardenPhaseInner(opts: {
   readonly runGardenProcessors: GardenPhaseRunner;
   readonly sinks: ApplyEffectSinks;
   readonly ledger?: LedgerDb;
+  readonly currentAdopted?: () => CommitOid;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cascadeDepth?: number;
   readonly maxCascadeDepth?: number;
@@ -294,6 +302,7 @@ async function runGardenPhaseInner(opts: {
     runGardenProcessors,
     sinks,
     ledger,
+    currentAdopted,
     adoptSubProposal,
   } = opts;
   const cascadeDepth = opts.cascadeDepth ?? 0;
@@ -476,10 +485,11 @@ async function runGardenPhaseInner(opts: {
       // conversion boundary used by garden, scheduler, queued jobs, and
       // answer handlers.
       for (const req of spawnQueue) {
+        const base = currentAdopted?.() ?? adopted;
         const spawned = await spawnGardenSubProposal({
           vault,
-          base: adopted,
-          sourceHead: adopted,
+          base,
+          sourceHead: base,
           patch: req.patch,
           processorId: req.processorId,
           runId: req.runId,

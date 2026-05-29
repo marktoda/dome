@@ -170,11 +170,6 @@ async function runAnswerHandlersInner(opts: {
     });
   }
 
-  const snapshot = await makeSnapshot(
-    opts.vault.path,
-    opts.adopted,
-    opts.resolveTree,
-  );
   const diagnostics: DiagnosticEffect[] = [];
   const runs: AnswerHandlerRunSummary[] = [];
   let subProposalCount = 0;
@@ -183,6 +178,12 @@ async function runAnswerHandlersInner(opts: {
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
   for (const candidate of candidates) {
+    const inputAdopted = opts.currentAdopted?.() ?? opts.adopted;
+    const snapshot = await makeSnapshot(
+      opts.vault.path,
+      inputAdopted,
+      opts.resolveTree,
+    );
     const result = await dispatchOneProcessor<AnswerRunInput>({
       processor: candidate.processor,
       phase: "garden",
@@ -197,7 +198,7 @@ async function runAnswerHandlersInner(opts: {
       snapshot,
       changedPaths: Object.freeze([]),
       proposal: null,
-      inputCommit: opts.adopted,
+      inputCommit: inputAdopted,
       matches: candidate.matches,
       resolveGrants: opts.resolveGrants,
       extensionIdFor: opts.extensionIdFor,
@@ -217,7 +218,7 @@ async function runAnswerHandlersInner(opts: {
         const routed = await dispatchGardenPatchEffect({
           effect,
           vault: opts.vault,
-          adopted: opts.adopted,
+          adopted: inputAdopted,
           ...(opts.currentAdopted !== undefined
             ? { currentAdopted: opts.currentAdopted }
             : {}),
@@ -257,7 +258,7 @@ async function runAnswerHandlersInner(opts: {
         declared: result.declared,
         granted: result.granted,
         sinks: opts.sinks,
-        candidate: opts.adopted,
+        candidate: inputAdopted,
       });
       if (applied.diagnostics.length > 0) {
         diagnostics.push(...applied.diagnostics);

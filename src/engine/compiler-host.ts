@@ -368,6 +368,7 @@ async function runAdoptionCycle(opts: {
       sinks,
       ledger: runtime.ledgerDb,
       adoptSubProposal,
+      currentAdopted: () => cursor.current,
       cascadeDepth: 0,
     });
 
@@ -418,7 +419,7 @@ export async function runOperationalWorkForAdopted(opts: {
   const vault = runtimeVault(opts.runtime);
   const sinksFor = sinksForRuntime(opts.runtime);
   const sinks =
-    opts.sinks ?? sinksFor({ base: cursor.current, head: cursor.current });
+    opts.sinks ?? sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal =
     opts.adoptSubProposal ??
     makeAdoptSubProposal({
@@ -478,8 +479,8 @@ export async function runAnswerHandlersForQuestion(opts: {
   const adopted = commitOid(adoptedRaw);
   const vault = runtimeVault(opts.runtime);
   const sinksFor = sinksForRuntime(opts.runtime);
-  const sinks = sinksFor({ base: adopted, head: adopted });
   const cursor: AdoptedCursor = { current: adopted };
+  const sinks = sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal = makeAdoptSubProposal({
     runtime: opts.runtime,
     vault,
@@ -610,6 +611,30 @@ function sinksForRuntime(
   };
 }
 
+function sinksForCursor(opts: {
+  readonly sinksFor: ReturnType<typeof sinksForRuntime>;
+  readonly cursor: AdoptedCursor;
+}): ApplyEffectSinks {
+  const current = (): ApplyEffectSinks =>
+    opts.sinksFor({ base: opts.cursor.current, head: opts.cursor.current });
+
+  return Object.freeze({
+    applyPatch: async (input) => current().applyPatch(input),
+    captureView: async (input) => current().captureView(input),
+    recordDiagnostic: async (input) => current().recordDiagnostic(input),
+    resolveDiagnostics: async (input) =>
+      current().resolveDiagnostics?.(input),
+    resolveFacts: async (input) => current().resolveFacts?.(input),
+    recordFact: async (input) => current().recordFact(input),
+    recordSearchDocument: async (input) =>
+      current().recordSearchDocument(input),
+    recordQuestion: async (input) => current().recordQuestion(input),
+    enqueueJob: async (input) => current().enqueueJob(input),
+    dispatchExternal: async (input) => current().dispatchExternal(input),
+    recoverOutbox: async (input) => current().recoverOutbox(input),
+  });
+}
+
 // Garden patches can spawn sub-Proposals recursively. The closure is
 // shared by the primary garden phase, scheduled garden work, and queued
 // jobs so every patch route lands back on the same adoption boundary.
@@ -653,6 +678,9 @@ function makeAdoptSubProposal(opts: {
         base: subProposal.base,
         head: subResult.adoptedRef,
       });
+      const cursor = opts.cursor;
+      const currentAdopted =
+        cursor === undefined ? undefined : ((): CommitOid => cursor.current);
       await runGardenPhase({
         vault: subAdoptOpts.vault,
         proposal: subProposal,
@@ -663,6 +691,7 @@ function makeAdoptSubProposal(opts: {
         sinks: subSinks,
         ledger: opts.runtime.ledgerDb,
         adoptSubProposal,
+        ...(currentAdopted !== undefined ? { currentAdopted } : {}),
         cascadeDepth,
       });
     }

@@ -173,7 +173,12 @@ async function runOneJob(opts: {
   readonly diagnostics: DiagnosticEffect[];
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
 }): Promise<JobDrainSummary> {
-  const snapshot = await makeSnapshot(opts.vault.path, opts.adopted, opts.resolveTree);
+  const inputAdopted = opts.currentAdopted?.() ?? opts.adopted;
+  const snapshot = await makeSnapshot(
+    opts.vault.path,
+    inputAdopted,
+    opts.resolveTree,
+  );
   const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
     Object.freeze({
       trigger: Object.freeze({
@@ -191,7 +196,7 @@ async function runOneJob(opts: {
     snapshot,
     changedPaths: Object.freeze([]),
     proposal: null,
-    inputCommit: opts.adopted,
+    inputCommit: inputAdopted,
     matches,
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
@@ -210,7 +215,7 @@ async function runOneJob(opts: {
       await dispatchGardenPatchEffect({
         effect,
         vault: opts.vault,
-        adopted: opts.adopted,
+        adopted: inputAdopted,
         ...(opts.currentAdopted !== undefined
           ? { currentAdopted: opts.currentAdopted }
           : {}),
@@ -247,7 +252,7 @@ async function runOneJob(opts: {
       declared: result.declared,
       granted: result.granted,
       sinks: opts.sinks,
-      candidate: opts.adopted,
+      candidate: inputAdopted,
     });
     if (applied.diagnostics.length > 0) {
       opts.diagnostics.push(...applied.diagnostics);

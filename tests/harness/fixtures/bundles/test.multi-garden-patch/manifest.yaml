@@ -1,0 +1,25 @@
+id: test.multi-garden-patch
+version: 0.1.0
+processors:
+  - id: test.multi-garden-patch.first
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/seed.md
+    capabilities:
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/first.ts
+  - id: test.multi-garden-patch.second
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/seed.md
+    capabilities:
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/second.ts
