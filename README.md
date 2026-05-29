@@ -4,12 +4,15 @@
 
 `@dome/sdk` is the TypeScript SDK for Dome — a markdown-vault-shaped substrate that quietly keeps itself coherent over time. See [`docs/VISION.md`](docs/VISION.md) for the product framing.
 
-This package ships four entrypoints:
+This package currently ships two entrypoints:
 
-- `@dome/sdk` — core (Vault, Document, Tool, Hook + the seven Tools + AbstractSurface). No LLM or MCP dependencies.
-- `@dome/sdk/workflows` — LLM-driven workflow runner (`@ai-sdk/anthropic` + `ai`).
-- `@dome/sdk/mcp` — MCP server (`@modelcontextprotocol/sdk`).
-- `@dome/sdk/cli` — the `dome` CLI shell (`commander`).
+- `@dome/sdk` — core SDK surface for the four-concept model: Vault,
+  Proposal, Processor, Effect. No LLM or MCP dependencies.
+- `@dome/sdk/cli` — the Commander-based `dome` CLI dispatch surface.
+
+Planned companion entrypoints include MCP/protocol adapters and provider
+adapters for LLM-backed processors. They are not part of the current package
+exports.
 
 ## For contributors and agents
 

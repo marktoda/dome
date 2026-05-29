@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: axiom
 ---
@@ -10,7 +10,7 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** The `@dome/sdk` core entrypoint (engine, processors runtime, projection store, run ledger, outbox, capability broker, the four core types) does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`. Garden-phase LLM-backed processors and the MCP protocol adapter live in separate entrypoints (`@dome/sdk/workflows`, `@dome/sdk/mcp`) and ship those dependencies only when consumed.
+**Statement:** The `@dome/sdk` core entrypoint (engine, processors runtime, projection store, run ledger, outbox, capability broker, the four core types) does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`. Garden-phase LLM-backed processors and the MCP protocol adapter must live outside the core entrypoint and ship those dependencies only when consumed. Planned companion entrypoints may expose provider/MCP adapters, but they are not exported by the current package.
 
 This invariant replaces v0.5's `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`. The renaming is precise: in v1 the entrypoint is "the engine" — the four core types plus the adoption machinery — not "the SDK core entrypoint." The substrate fence is the same; the name now reflects what the boundary protects.
 
@@ -20,7 +20,7 @@ The same property protects test isolation: integration tests for the engine run 
 
 **Structural enforcement:**
 
-1. **`@dome/sdk` core's `package.json` `dependencies` list excludes `ai`, `@ai-sdk/anthropic`, and `@modelcontextprotocol/sdk`.** They live in `@dome/sdk/workflows` and `@dome/sdk/mcp` respectively.
+1. **`@dome/sdk` core's `package.json` `dependencies` list excludes `ai`, `@ai-sdk/anthropic`, and `@modelcontextprotocol/sdk`.** Planned provider/MCP companion entrypoints must keep those packages outside the core dependency graph.
 2. **`tests/integration/bundle-deps.test.ts` walks the transitive import graph of `src/index.ts` and asserts no `node_modules` path under those package names.** A re-export from `src/index.ts` that pulls in `ai` (e.g., re-exporting `projectAiSdk` from workflows) fails the test.
 3. **`tests/integration/public-surface-shape.test.ts` asserts the symbols exported from `src/index.ts` match an allowlist** that excludes any LLM/MCP-flavored types. Adding an `@ai-sdk` symbol to the public surface fails the test.
 4. **A future v1.x semantic linter `no-engine-internal-llm-import`** (proposed; not yet authored as a spec file) would grep `src/engine/`, `src/processors/`, `src/projections/`, `src/ledger/`, `src/outbox/`, `src/capabilities/` for any import from the LLM/MCP package names; until that linter ships, the bundle-deps test is the enforcement.

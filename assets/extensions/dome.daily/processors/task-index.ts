@@ -1,4 +1,4 @@
-// dome.daily.task-index — project explicit daily checkboxes into facts.
+// dome.daily.task-index — project explicit daily checkboxes into page facts.
 
 import {
   factEffect,

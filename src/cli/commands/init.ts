@@ -266,8 +266,8 @@ const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 extensions:
   dome.lint:
     enabled: true
-    # No capability grants needed — view-phase processor; reads are
-    # implicitly allowed by the read.paths declaration in its manifest.
+    # No capability grants needed today — the shipped lint view command
+    # does not read vault content.
 
   dome.markdown:
     enabled: true

@@ -307,6 +307,8 @@ Work:
 - [x] Index explicit open daily checkboxes as source-ref-backed
       `dome.daily.open_task` facts, and explicit `#followup` / `#follow-up`
       checkboxes as `dome.daily.followup` facts.
+- [ ] Decide whether v1 needs stable task identities, or whether page-scoped
+      daily task observations are enough until a richer task model lands.
 - [ ] Implement deterministic followup/todo extraction from daily notes where
       possible beyond explicit checkbox markers.
 - [ ] Ask questions for ambiguous writes instead of silently guessing.
@@ -485,6 +487,17 @@ Fold these into nearby milestone work when they are on-path:
 - SQLite foreign keys: enable `PRAGMA foreign_keys=ON` where applicable.
 - Bundle lockstep tests: assert shipped bundle manifests, capabilities, and
   docs/matrices agree.
+- Command-trigger uniqueness: reject duplicate view command names at
+  registry/load time instead of letting runtime dispatch pick the first match.
+- Bundle module confinement: reject processor `module:` paths that are
+  absolute, escape the bundle root, or bypass `processors/`.
+- Route-level harness coverage: add scenario/matrix dimensions for
+  adoption, garden-signal, garden-schedule, garden-job, garden-answer, and
+  view-command routes so fact invalidation, capability-use ledgering, and
+  patch semantics are proven per dispatcher.
+- Fact invalidation generalization: before non-signal garden processors emit
+  page facts, make inspected paths explicit in runner results or effects so
+  stale fact replacement is not coupled to trigger `changedPaths`.
 
 ## V1 Exit Criteria
 

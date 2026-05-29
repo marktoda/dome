@@ -243,7 +243,6 @@ Read-only operational substrate. V1 subjects:
 - `outbox`
 - `runs`
 - `quarantine`
-- `cost`
 
 This is mostly for debugging and recovery, not daily happy-path use.
 

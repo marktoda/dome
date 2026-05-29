@@ -111,7 +111,12 @@ View-phase processors run **on demand** when a query, CLI render, or UI request 
 - See the adopted snapshot.
 - Read from the projection store ([[wiki/specs/projection-store]]) for indexed facts.
 - Return `ViewEffect` (the rendered output) or no effects.
-- Never mutate state — `PatchEffect`, `DiagnosticEffect`, `FactEffect`, `JobEffect`, `ExternalActionEffect` from a view-phase processor are rejected by the broker as capability violations.
+- Never mutate adopted state — `PatchEffect`, `FactEffect`,
+  `SearchDocumentEffect`, `QuestionEffect`, `JobEffect`, and
+  external/operational recovery effects from a view-phase processor are
+  rejected by the broker as phase mismatches. Non-blocking
+  `DiagnosticEffect`s are allowed for view/report findings; block-severity
+  diagnostics are rejected because views have no merge gate.
 
 Examples: `dome query`, agenda-for-person render, weekly-rollup view, semantic search response.
 

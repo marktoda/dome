@@ -7,7 +7,11 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # CLI
 
-This spec is normative for Dome's command-line interface. The CLI is **one protocol adapter** over [[wiki/specs/sdk-surface]] §"AbstractSurface" for reads and view commands, plus CLI-only engine-control verbs such as `sync`, `serve`, and `rebuild`.
+This spec is normative for Dome's command-line interface. The CLI is the
+shipped v1 protocol adapter. It routes through the runtime directly today and
+should converge with the planned [[wiki/specs/sdk-surface]] §"AbstractSurface"
+for reads and view commands once that boundary lands, while keeping CLI-only
+engine-control verbs such as `sync`, `serve`, and `rebuild`.
 
 ## The CLI surface
 
@@ -37,7 +41,7 @@ dome serve [--vault <path>] [--poll-interval-ms <n>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
+- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through the shipped view-command boundary today and should map to `AbstractSurface.query` once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
@@ -459,7 +463,7 @@ A dedicated `dome <name>` Commander binding is a fourth edit when the command
 has user-facing ergonomics that justify first-class flags, help text, or text
 rendering.
 
-The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run <command-name>` or the AbstractSurface API directly. Both dedicated view commands and generic `dome run` use the same shared dispatch boundary, so they inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
+The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor and invoke it via `dome run <command-name>`. A future `AbstractSurface` adapter should reuse the same shared dispatch boundary so dedicated view commands and generic command invocations inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
 
 Planned substrate scaffold:
 - A future CLI-shell-shape test should enumerate command-triggered processors in `assets/extensions/dome.*/processors/` and assert each has either a Commander binding in `src/cli/index.ts` or a documented `dome run` invocation in `cli.md`.
@@ -473,11 +477,11 @@ behind `dome run <name>` and graduate to dedicated aliases once their workflow
 deserves first-class help text, flags, and text rendering. This keeps the core
 surface small while leaving a clean path to richer named commands.
 
-The MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views are reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
+The planned MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views would be reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
 
 ## Related
 
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter should converge with.
 - [[wiki/specs/harnesses]] — when the CLI vs MCP earns its keep.
 - [[wiki/specs/adoption]] — what `dome sync` / `dome status` consult.
 - [[wiki/specs/processors]] — view-phase command processors.

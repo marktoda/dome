@@ -311,16 +311,25 @@ The shipped default config currently lives in the `dome init` scaffold and must 
 
 ## Consumer surfaces
 
-Every consumer shell that builds against Dome (the v1-shipped CLI and MCP server today; v2+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
+Every consumer shell that builds against Dome should aggregate four kinds of
+things from the SDK. The CLI is the shipped v1 surface today; `AbstractSurface`,
+MCP, HTTP, mobile, desktop, and voice adapters are target shapes for the
+multi-surface roadmap and are not v1 acceptance gates.
 
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
 - **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
 - **Engine status/control where appropriate** — CLI-only operations such as `sync`, `rebuild`, `serve`, and `status` that are not generic protocol tools in v1.
 
-The aggregation is split across two layers — **`AbstractSurface`** (protocol-agnostic; lives in `@dome/sdk` core) and **per-protocol renderers** (one per consumer protocol; live in their respective entrypoints). This is the structural shape that makes multi-surface work cheap: a new protocol adapter ships as one render function, not as a parallel aggregation.
+The intended aggregation splits across two layers — **`AbstractSurface`**
+(protocol-agnostic) and **per-protocol renderers** (one per consumer protocol;
+living in their respective entrypoints). This is the structural shape that
+will make multi-surface work cheap: a new protocol adapter ships as one render
+function, not as a parallel aggregation. The current v1 implementation routes
+CLI commands directly through the runtime while this abstraction is still
+planned.
 
-### `AbstractSurface` (in `@dome/sdk` core)
+### `AbstractSurface` (planned)
 
 ```ts
 interface AbstractSurface {
@@ -340,16 +349,20 @@ function buildAbstractSurface(vault: Vault): Promise<AbstractSurface>;
 
 ### Per-protocol renderers
 
-Each consumer protocol adapts `AbstractSurface` to its wire format:
+Each future consumer protocol adapts `AbstractSurface` to its wire format:
 
 | Adapter | Entry point | Wire format |
 |---|---|---|
-| MCP | `renderMcp(surface): McpSurface` in `@dome/sdk/mcp` | MCP protocol — read/query tools, resources, prompts |
-| CLI | `runCli(surface, argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
+| MCP (planned) | `renderMcp(surface): McpSurface` in planned `@dome/sdk/mcp` | MCP protocol — read/query tools, resources, prompts |
+| CLI (shipped, direct runtime today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
 | HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Recall + future native-surface write controls |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
 
-The protocol renderers consume `AbstractSurface`, never `Vault` directly. This is what makes [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] structurally true — `@dome/sdk` core builds an `AbstractSurface` with no MCP / LLM transitive dependency; `@dome/sdk/mcp` lifts it into MCP shape; `@dome/sdk/cli` lifts it into a Commander program.
+The protocol renderers should consume `AbstractSurface`, never `Vault`
+directly. This is the intended structure behind
+[[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: `@dome/sdk` core
+stays free of MCP / LLM transitive dependencies, while planned
+protocol/provider packages lift the core surface into their own wire formats.
 
 ## Outputs the SDK does not have
 
@@ -374,13 +387,13 @@ yaml (config + manifest loading)
 zod (schema validation)
 ```
 
-Planned `@dome/sdk/workflows` provider adapters add:
+Planned provider adapters add:
 ```
 ai (Vercel AI SDK; for model.invoke in garden-LLM processors)
 @ai-sdk/anthropic
 ```
 
-`@dome/sdk/mcp` adds:
+The planned MCP adapter adds:
 ```
 @modelcontextprotocol/sdk
 ```

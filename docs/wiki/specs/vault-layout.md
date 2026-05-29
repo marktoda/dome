@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -141,7 +141,7 @@ being silently ignored.
 extensions:
   dome.markdown: { enabled: true,  grants: { read: ["**/*.md"], patch.auto: ["**/*.md"], question.ask: true } }
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
-  dome.daily:    { enabled: true,  grants: { read: ["wiki/dailies/*.md"], patch.auto: ["wiki/dailies/*.md"] } }
+  dome.daily:    { enabled: true,  grants: { read: ["wiki/dailies/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"] } }
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
   dome.lint:     { enabled: true,  grants: {} }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }

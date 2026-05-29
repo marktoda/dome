@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -13,12 +13,12 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter. The MCP 
 
 The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (CLAUDE/AGENTS orientation + CLI + compiler host + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP design remains useful, but the complete Claude Code v1 plan does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively. Until `AbstractSurface` and the MCP adapter are implemented, this page is a target protocol spec rather than a v1 acceptance gate; see [[wiki/syntheses/v1-claude-code-vault-plan]].
 
-The MCP surface earns its keep in two scenarios:
+The planned MCP surface earns its keep in two scenarios:
 
 1. **Harnesses without robust shell-execution.** A sandboxed agent that cannot invoke `Bash` reaches Dome via typed MCP tools instead. MCP becomes the only path.
 2. **Workflows that benefit from typed argument validation.** Some agent interactions prefer Zod-typed structured inputs over CLI argument strings. MCP routes the same operations with stronger schema enforcement.
 
-For v1's primary path (Claude Code with full shell access), MCP is additive — available, not required.
+For v1's primary path (Claude Code with full shell access), MCP is additive future work — not required.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ renderMcp(surface) → McpSurface  ──── DomeMcpServer (MCP protocol)
 
 The MCP server is a thin protocol adapter. It does not embed Dome's Recall or processor execution; it forwards to the AbstractSurface's `query`, `read`, and `commands` callbacks. v1.0 does not expose Proposal submission over MCP; adoption catch-up is Git + CLI-native.
 
-Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the `@dome/sdk` core has no MCP dependency; `@dome/sdk/mcp` lives in a separate entrypoint) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
+Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the `@dome/sdk` core has no MCP dependency; a planned MCP adapter must live outside the core entrypoint) and [[wiki/gotchas/transitive-llm-dependency]] (the bundle-deps test catches re-exports that would defeat the separation).
 
 ## MCP tools
 
@@ -135,7 +135,7 @@ These are intentional. The MCP server is a Recall + Submit adapter, not a privil
 
 ## Related
 
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter will render.
 - [[wiki/specs/harnesses]] — when MCP earns its keep vs the CLI path.
 - [[wiki/specs/proposals]] — how the engine constructs Proposals internally.
 - [[wiki/specs/processors]] §"Phase × trigger matrix" — `dome.run_command` invokes command-triggered view-phase processors.
