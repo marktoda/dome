@@ -188,6 +188,8 @@ Work:
 - [x] Stabilize `sync --json` and `status --json` fixture schemas.
 - [x] Coalesce branch movement while adoption is active.
 - [x] Ensure only one compiler-host tick runs per branch at a time.
+- [x] Refresh drift inside the branch lock so one-shot sync cannot adopt a
+      stale observed HEAD while newer committed work is already present.
 - [x] Add explicit verbose output mode.
 - [x] Decide whether `serve --exclusive` belongs in v1: no separate flag for
       v1; branch-level compiler-host locking is always on.

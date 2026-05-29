@@ -149,6 +149,13 @@ export type AdoptedCursor = {
   current: CommitOid;
 };
 
+type CompilerHostTickCommonOptions = {
+  readonly runtime: VaultRuntime;
+  readonly now?: () => Date;
+  readonly runOperationalWhenInSync?: boolean;
+  readonly onEvent?: (event: AdoptEvent) => void;
+};
+
 // ----- detectDrift ----------------------------------------------------------
 
 /**
@@ -207,40 +214,78 @@ export type { AdoptEvent };
  * `dome sync`, `dome serve`, and the harness; callers decide only when to
  * invoke it and how to render the returned result.
  */
-export async function runCompilerHostTick(opts: {
-  readonly runtime: VaultRuntime;
+export async function runCompilerHostTick(opts: CompilerHostTickCommonOptions & {
   readonly drift?: DriftResult;
-  readonly now?: () => Date;
-  readonly runOperationalWhenInSync?: boolean;
-  readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<CompilerHostTickResult> {
-  const drift = opts.drift ?? await detectDrift(opts.runtime.path);
+  const observedDrift = opts.drift ?? await detectDrift(opts.runtime.path);
 
-  if (drift.kind === "detached-head" || drift.kind === "no-commits") {
-    return Object.freeze({ kind: drift.kind });
+  return runCompilerHostTickForObservedDrift({
+    ...commonTickOptions(opts),
+    observedDrift,
+    relockAttempts: 0,
+  });
+}
+
+async function runCompilerHostTickForObservedDrift(
+  opts: CompilerHostTickCommonOptions & {
+    readonly observedDrift: DriftResult;
+    readonly relockAttempts: number;
+  },
+): Promise<CompilerHostTickResult> {
+  if (
+    opts.observedDrift.kind === "detached-head" ||
+    opts.observedDrift.kind === "no-commits"
+  ) {
+    return Object.freeze({ kind: opts.observedDrift.kind });
   }
 
-  const branch = drift.kind === "in-sync" ? drift.branch : drift.info.branch;
+  const branch = driftBranch(opts.observedDrift);
   const locked = await withCompilerHostBranchLock(
     {
       vaultPath: opts.runtime.path,
       branch,
       command: "compiler-host-tick",
     },
-    () => runCompilerHostTickUnlocked({ ...opts, drift }),
+    async () => {
+      // Re-read inside the branch lock. A caller may have observed HEAD
+      // before another commit landed; the locked tick must process the
+      // current branch state, not the stale observation.
+      const drift = await detectDrift(opts.runtime.path);
+      if (drift.kind !== "detached-head" && drift.kind !== "no-commits") {
+        const freshBranch = driftBranch(drift);
+        if (freshBranch !== branch && opts.relockAttempts < 1) {
+          return Object.freeze({
+            kind: "relock" as const,
+            drift,
+          });
+        }
+      }
+      return runCompilerHostTickUnlocked({
+        ...commonTickOptions(opts),
+        drift,
+      });
+    },
   );
-  return locked.kind === "busy" ? locked : locked.value;
+  if (locked.kind === "busy") return locked;
+  if (locked.value.kind === "relock") {
+    return runCompilerHostTickForObservedDrift({
+      ...commonTickOptions(opts),
+      observedDrift: locked.value.drift,
+      relockAttempts: opts.relockAttempts + 1,
+    });
+  }
+  return locked.value;
 }
 
-async function runCompilerHostTickUnlocked(opts: {
-  readonly runtime: VaultRuntime;
-  readonly drift: Extract<DriftResult, { readonly kind: "drift" | "in-sync" }>;
-  readonly now?: () => Date;
-  readonly runOperationalWhenInSync?: boolean;
-  readonly onEvent?: (event: AdoptEvent) => void;
+async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions & {
+  readonly drift: DriftResult;
 }): Promise<CompilerHostTickResult> {
   const now = opts.now ?? ((): Date => new Date());
   const { drift } = opts;
+
+  if (drift.kind === "detached-head" || drift.kind === "no-commits") {
+    return Object.freeze({ kind: drift.kind });
+  }
 
   if (drift.kind === "in-sync") {
     let operational: OperationalWorkResult | null = null;
@@ -283,6 +328,25 @@ async function runCompilerHostTickUnlocked(opts: {
     finalAdoptedRef: cycle.finalAdoptedRef,
     projectionRebuild: cycle.projectionRebuild,
   });
+}
+
+function driftBranch(
+  drift: Extract<DriftResult, { readonly kind: "drift" | "in-sync" }>,
+): string {
+  return drift.kind === "in-sync" ? drift.branch : drift.info.branch;
+}
+
+function commonTickOptions(
+  opts: CompilerHostTickCommonOptions,
+): CompilerHostTickCommonOptions {
+  return {
+    runtime: opts.runtime,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.runOperationalWhenInSync !== undefined
+      ? { runOperationalWhenInSync: opts.runOperationalWhenInSync }
+      : {}),
+    ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+  };
 }
 
 // ----- runOneAdoption -------------------------------------------------------

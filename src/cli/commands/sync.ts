@@ -39,10 +39,8 @@ import { resolve } from "node:path";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
 import {
-  detectDrift,
   runCompilerHostTick,
   type CompilerHostTickResult,
-  type DriftResult,
 } from "../../engine/compiler-host";
 import {
   formatFilteredAdoptEvent,
@@ -116,47 +114,13 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   const verbose = options.verbose === true;
   const quiet = options.quiet === true && !jsonMode;
 
-  // ----- 2. Detect drift ----------------------------------------------------
-  // The shared helper short-circuits the unworkable states (detached
-  // HEAD, no commits) before we open the runtime, so we surface the
-  // usage error cheaply.
-  const drift = await detectDrift(vaultPath);
-
-  if (drift.kind === "detached-head") {
-    const msg = `dome sync: HEAD is detached at ${vaultPath}. The adopted-ref substrate requires a branch. Check out a branch and retry.`;
-    if (jsonMode) {
-      emitErrorJson({ branch: null, error: "detached-head", message: msg });
-    } else {
-      console.error(msg);
-    }
-    return 64;
-  }
-  if (drift.kind === "no-commits") {
-    const msg = `dome sync: vault at ${vaultPath} has no commits yet. Make an initial commit and retry.`;
-    if (jsonMode) {
-      emitErrorJson({ branch: null, error: "no-commits", message: msg });
-    } else {
-      console.error(msg);
-    }
-    return 64;
-  }
-  if (drift.kind === "in-sync") {
-    return runInSyncOperationalWork({
-      vaultPath,
-      bundlesRoot,
-      drift,
-      jsonMode,
-      quiet,
-    });
-  }
-
-  // ----- 3. Open the runtime ------------------------------------------------
+  // ----- 2. Open the runtime ------------------------------------------------
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     const msg = `dome sync: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`;
     if (jsonMode) {
       emitErrorJson({
-        branch: drift.info.branch,
+        branch: null,
         error: runtimeResult.error.kind,
         message: msg,
       });
@@ -167,11 +131,10 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   }
   const runtime = runtimeResult.value;
 
-  // ----- 4. Run one compiler-host tick --------------------------------------
+  // ----- 3. Run one compiler-host tick --------------------------------------
   try {
     const tick = await runCompilerHostTick({
       runtime,
-      drift,
       ...(verbose && !quiet && !jsonMode
         ? {
             onEvent: (e) => {
@@ -191,57 +154,13 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     } else {
       printTickLines(tick, { quiet });
     }
-    if (tick.kind === "busy") return 75;
-    return tick.kind === "blocked" ? 1 : 0;
+    return exitCodeForTick(tick);
   } finally {
     await runtime.close();
   }
 }
 
 // ----- Internals ------------------------------------------------------------
-
-async function runInSyncOperationalWork(opts: {
-  readonly vaultPath: string;
-  readonly bundlesRoot: string;
-  readonly drift: Extract<DriftResult, { readonly kind: "in-sync" }>;
-  readonly jsonMode: boolean;
-  readonly quiet: boolean;
-}): Promise<number> {
-  const runtimeResult = await openVaultRuntime({
-    vaultPath: opts.vaultPath,
-    bundlesRoot: opts.bundlesRoot,
-  });
-  if (!runtimeResult.ok) {
-    const msg = `dome sync: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`;
-    if (opts.jsonMode) {
-      emitErrorJson({
-        branch: opts.drift.branch,
-        error: runtimeResult.error.kind,
-        message: msg,
-      });
-    } else {
-      console.error(msg);
-    }
-    return 1;
-  }
-  const runtime = runtimeResult.value;
-  let tick: CompilerHostTickResult;
-  try {
-    tick = await runCompilerHostTick({
-      runtime,
-      drift: opts.drift,
-    });
-  } finally {
-    await runtime.close();
-  }
-
-  if (opts.jsonMode) {
-    console.log(formatJson(tickResultJson(tick)));
-  } else {
-    printTickLines(tick, { quiet: opts.quiet });
-  }
-  return tick.kind === "busy" ? 75 : 0;
-}
 
 /**
  * Render the adoption result as a small block of lines on stdout. The
@@ -271,7 +190,18 @@ function printTickLines(
     );
     return;
   }
-  if (tick.kind === "detached-head" || tick.kind === "no-commits") return;
+  if (tick.kind === "detached-head") {
+    console.error(
+      "dome sync: HEAD is detached. The adopted-ref substrate requires a branch. Check out a branch and retry.",
+    );
+    return;
+  }
+  if (tick.kind === "no-commits") {
+    console.error(
+      "dome sync: vault has no commits yet. Make an initial commit and retry.",
+    );
+    return;
+  }
 
   const result = tick.adoption;
   const diagCount = result.diagnostics.length;
@@ -302,6 +232,12 @@ function printTickLines(
   if (blockers.length > 5) {
     console.error(`  ... and ${blockers.length - 5} more (see \`dome inspect diagnostics\`).`);
   }
+}
+
+function exitCodeForTick(tick: CompilerHostTickResult): number {
+  if (tick.kind === "detached-head" || tick.kind === "no-commits") return 64;
+  if (tick.kind === "busy") return 75;
+  return tick.kind === "blocked" ? 1 : 0;
 }
 
 /**

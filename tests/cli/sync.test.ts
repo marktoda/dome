@@ -36,6 +36,11 @@ import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
+import { openVaultRuntime } from "../../src/engine/vault-runtime";
+import {
+  detectDrift,
+  runCompilerHostTick,
+} from "../../src/engine/compiler-host";
 import {
   compilerHostLockPath,
   withCompilerHostBranchLock,
@@ -533,6 +538,57 @@ describe("runSync drift adoption", () => {
     } finally {
       ledger.value.db.close();
     }
+  }, 10_000);
+
+  test("compiler host refreshes stale observed drift under the branch lock", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const options = { vault: f.vaultPath, bundlesRoot: f.bundlesRoot };
+
+    const code1 = await runSync(options);
+    expect(code1).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+
+    await writeFile(join(f.vaultPath, "wiki/first.md"), VALID_CONCEPT_PAGE);
+    const firstSha = await commit({
+      path: f.vaultPath,
+      message: "add first page\n",
+      files: ["wiki/first.md"],
+    });
+    const staleDrift = await detectDrift(f.vaultPath);
+    expect(staleDrift.kind).toBe("drift");
+
+    await writeFile(join(f.vaultPath, "wiki/second.md"), VALID_CONCEPT_PAGE);
+    const secondSha = await commit({
+      path: f.vaultPath,
+      message: "add second page\n",
+      files: ["wiki/second.md"],
+    });
+    expect(firstSha).not.toBe(secondSha);
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    if (!runtimeResult.ok) {
+      throw new Error(`openVaultRuntime failed: ${runtimeResult.error.kind}`);
+    }
+    try {
+      const tick = await runCompilerHostTick({
+        runtime: runtimeResult.value,
+        drift: staleDrift,
+      });
+      expect(tick.kind).toBe("adopted");
+      if (tick.kind !== "adopted") return;
+      expect(String(tick.drift.head)).toBe(secondSha);
+      expect(String(tick.finalAdoptedRef)).toBe(secondSha);
+    } finally {
+      await runtimeResult.value.close();
+    }
+
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(secondSha);
   }, 10_000);
 });
 
