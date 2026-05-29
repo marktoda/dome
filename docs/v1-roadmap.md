@@ -648,6 +648,10 @@ Work:
 - [x] Split command-triggered view execution into a reusable open-runtime
       boundary so CLI, MCP, HTTP, or embedded surfaces can share adopted-ref
       resolution, projection freshness, view sinks, and command dispatch.
+- [x] Split `openVaultRuntime` into named internal composition steps for
+      policy-derived settings, operational state handles, and runtime-handle
+      assembly, keeping the public runtime constructor stable while making
+      extension/runtime wiring easier to audit.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

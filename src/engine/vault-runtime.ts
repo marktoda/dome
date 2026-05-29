@@ -82,6 +82,7 @@ import {
   buildRuntime,
   type ProcessorRuntime,
 } from "../processors/runtime";
+import type { ProcessorExecutionState } from "../processors/execution-state";
 import {
   buildRegistry,
   type ProcessorRegistry,
@@ -315,25 +316,89 @@ export async function openVaultRuntime(
   //    no need to clean up handles on these paths.
   const resolved = await resolveRegistryFromOpts(opts, policy);
   if (!resolved.ok) return err(resolved.error);
-  const {
-    registry,
-    extensions,
-    processorVersions,
-    processorExtensionIds,
-    pageTypes,
-  } = resolved.value;
 
-  const resolveGrants = policy.foundConfig
-    ? resolveGrantsFromPolicy(registry, policy, processorExtensionIds)
-    : defaultResolveGrants(registry);
-  const capabilityPolicyHash = computeCapabilityPolicyHash(policy);
-  const extensionIdFor = extensionIdForProcessor(processorExtensionIds);
-  const externalHandlers = opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS;
+  const settings = runtimeSettingsForPolicy({
+    opts,
+    policy,
+    resolved: resolved.value,
+  });
+
+  const operationalState = await openOperationalState({
+    vaultPath: opts.vaultPath,
+    extensions: resolved.value.extensions,
+    processorVersions: resolved.value.processorVersions,
+    capabilityPolicyHash: settings.capabilityPolicyHash,
+  });
+  if (!operationalState.ok) return operationalState;
+
+  return ok(buildVaultRuntime({
+    opts,
+    policy,
+    resolved: resolved.value,
+    settings,
+    operationalState: operationalState.value,
+  }));
+}
+
+// ----- Runtime composition --------------------------------------------------
+
+type RuntimeSettings = {
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly capabilityPolicyHash: string;
+  readonly extensionIdFor: (processorId: string) => string;
+  readonly externalHandlers: ExternalHandlerRegistry;
+  readonly modelProvider?: ModelProvider;
+};
+
+function runtimeSettingsForPolicy(input: {
+  readonly opts: OpenVaultRuntimeOpts;
+  readonly policy: CapabilityPolicy;
+  readonly resolved: ResolvedRegistry;
+}): RuntimeSettings {
+  const resolveGrants = input.policy.foundConfig
+    ? resolveGrantsFromPolicy(
+        input.resolved.registry,
+        input.policy,
+        input.resolved.processorExtensionIds,
+      )
+    : defaultResolveGrants(input.resolved.registry);
   const modelProvider =
-    opts.modelProvider ?? modelProviderFromConfig(policy.runtime, opts.vaultPath);
+    input.opts.modelProvider ??
+    modelProviderFromConfig(input.policy.runtime, input.opts.vaultPath);
 
+  return Object.freeze({
+    resolveGrants,
+    capabilityPolicyHash: computeCapabilityPolicyHash(input.policy),
+    extensionIdFor: extensionIdForProcessor(
+      input.resolved.processorExtensionIds,
+    ),
+    externalHandlers: input.opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
+    ...(modelProvider !== undefined ? { modelProvider } : {}),
+  });
+}
+
+type OperationalState = {
+  readonly executionState: ProcessorExecutionState;
+  readonly projectionDb: ProjectionDb;
+  readonly answersDb: AnswersDb;
+  readonly outboxDb: OutboxDb;
+  readonly ledgerDb: LedgerDb;
+};
+
+async function openOperationalState(input: {
+  readonly vaultPath: string;
+  readonly extensions: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
+  readonly capabilityPolicyHash: string;
+}): Promise<Result<OperationalState, OpenVaultRuntimeError>> {
   const quarantinePath = join(
-    opts.vaultPath,
+    input.vaultPath,
     ".dome",
     "state",
     "quarantined.json",
@@ -347,13 +412,11 @@ export async function openVaultRuntime(
   }
   const executionState = quarantineResult.value;
 
-  // 2. Projection DB.
-  const projectionPath = join(opts.vaultPath, ".dome", "state", "projection.db");
   const projectionResult = await openProjectionDb({
-    path: projectionPath,
-    extensionSet: extensions,
-    processorVersions,
-    capabilityPolicyHash,
+    path: statePath(input.vaultPath, "projection.db"),
+    extensionSet: input.extensions,
+    processorVersions: input.processorVersions,
+    capabilityPolicyHash: input.capabilityPolicyHash,
   });
   if (!projectionResult.ok) {
     return err({
@@ -363,10 +426,9 @@ export async function openVaultRuntime(
   }
   const projectionDb = projectionResult.value.db;
 
-  // 3. Answers DB. Human answers are durable operational state, separate
-  //    from the rebuildable question rows in projection.db.
-  const answersPath = join(opts.vaultPath, ".dome", "state", "answers.db");
-  const answersResult = await openAnswersDb({ path: answersPath });
+  const answersResult = await openAnswersDb({
+    path: statePath(input.vaultPath, "answers.db"),
+  });
   if (!answersResult.ok) {
     projectionDb.close();
     return err({
@@ -376,9 +438,9 @@ export async function openVaultRuntime(
   }
   const answersDb = answersResult.value.db;
 
-  // 4. Outbox DB. Close prior handles on failure to avoid a leak.
-  const outboxPath = join(opts.vaultPath, ".dome", "state", "outbox.db");
-  const outboxResult = await openOutboxDb({ path: outboxPath });
+  const outboxResult = await openOutboxDb({
+    path: statePath(input.vaultPath, "outbox.db"),
+  });
   if (!outboxResult.ok) {
     answersDb.close();
     projectionDb.close();
@@ -389,9 +451,9 @@ export async function openVaultRuntime(
   }
   const outboxDb = outboxResult.value.db;
 
-  // 5. Ledger DB. Close the prior handles on failure.
-  const ledgerPath = join(opts.vaultPath, ".dome", "state", "runs.db");
-  const ledgerResult = await openLedgerDb({ path: ledgerPath });
+  const ledgerResult = await openLedgerDb({
+    path: statePath(input.vaultPath, "runs.db"),
+  });
   if (!ledgerResult.ok) {
     outboxDb.close();
     answersDb.close();
@@ -401,53 +463,80 @@ export async function openVaultRuntime(
       cause: ledgerResult.error.kind,
     });
   }
-  const ledgerDb = ledgerResult.value.db;
 
-  // 6. Build the ProcessorRuntime. The three injections cover the v1.0
-  //    runtime seams — see file banner. `resolveTree` is wired against
-  //    the live git boundary so the runtime's per-iteration
-  //    `Snapshot` construction doesn't trip on a throw placeholder.
-  //    `projection` wires a live `ProjectionQueryView` for view-phase
-  //    processors (Phase 13a) — the runtime's view-phase dispatcher
-  //    sets `ctx.projection` from this handle so command-triggered
-  //    views can read facts / diagnostics / questions.
+  return ok(Object.freeze({
+    executionState,
+    projectionDb,
+    answersDb,
+    outboxDb,
+    ledgerDb: ledgerResult.value.db,
+  }));
+}
+
+function statePath(vaultPath: string, filename: string): string {
+  return join(vaultPath, ".dome", "state", filename);
+}
+
+function buildVaultRuntime(input: {
+  readonly opts: OpenVaultRuntimeOpts;
+  readonly policy: CapabilityPolicy;
+  readonly resolved: ResolvedRegistry;
+  readonly settings: RuntimeSettings;
+  readonly operationalState: OperationalState;
+}): VaultRuntime {
+  const { opts, policy, resolved, settings, operationalState } = input;
+  const {
+    projectionDb,
+    answersDb,
+    outboxDb,
+    ledgerDb,
+    executionState,
+  } = operationalState;
+
+  // `resolveTree` is wired against the live git boundary so the runtime's
+  // per-iteration Snapshot construction cannot fail on a throw placeholder.
+  // `projection` gives view processors the adopted-state query surface.
   const operationalQueryView = buildOperationalQueryView({
     outbox: outboxDb,
     ledger: ledgerDb,
     executionState,
   });
   const processorRuntime = buildRuntime({
-    registry,
-    resolveGrants,
-    extensionIdFor,
+    registry: resolved.registry,
+    resolveGrants: settings.resolveGrants,
+    extensionIdFor: settings.extensionIdFor,
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
     projection: buildProjectionQueryView(projectionDb),
     operational: operationalQueryView,
-    pageTypes,
+    pageTypes: resolved.pageTypes,
     executionState,
     executionCap: policy.runtime.engine.executionCap,
-    ...(modelProvider !== undefined ? { modelProvider } : {}),
+    ...(settings.modelProvider !== undefined
+      ? { modelProvider: settings.modelProvider }
+      : {}),
   });
 
-  const runtime: VaultRuntime = Object.freeze({
+  return Object.freeze({
     path: opts.vaultPath,
     projectionDb,
     answersDb,
     outboxDb,
     ledgerDb,
-    extensions,
-    processorVersions,
-    capabilityPolicyHash,
-    registry,
+    extensions: resolved.extensions,
+    processorVersions: resolved.processorVersions,
+    capabilityPolicyHash: settings.capabilityPolicyHash,
+    registry: resolved.registry,
     processorRuntime,
-    pageTypes,
+    pageTypes: resolved.pageTypes,
     config: policy.runtime,
-    resolveGrants,
-    extensionIdFor,
-    externalHandlers,
+    resolveGrants: settings.resolveGrants,
+    extensionIdFor: settings.extensionIdFor,
+    externalHandlers: settings.externalHandlers,
     operationalQueryView,
-    ...(modelProvider !== undefined ? { modelProvider } : {}),
+    ...(settings.modelProvider !== undefined
+      ? { modelProvider: settings.modelProvider }
+      : {}),
     close: async () => {
       await processorRuntime.close();
       // Close in reverse-open order. SQLite handles are idempotent under
@@ -458,8 +547,6 @@ export async function openVaultRuntime(
       projectionDb.close();
     },
   });
-
-  return ok(runtime);
 }
 
 // ----- Registry resolution --------------------------------------------------
