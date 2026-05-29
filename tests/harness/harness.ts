@@ -10,9 +10,9 @@
 //   - No mocks at the boundary. Every read goes through the same code paths
 //     a real vault uses: `currentSha` / `readBlob` / `getAdoptedRef` /
 //     `queryRuns` / etc.
-//   - `tick()` reuses `detectDrift` + `runOneAdoption` from the CLI shared
-//     module so a scenario's tick is byte-for-byte identical to one `dome
-//     sync` invocation against the same vault.
+//   - `tick()` reuses `detectDrift` + `runOneAdoption` from the engine
+//     compiler host so a scenario's tick is byte-for-byte identical to one
+//     `dome sync` invocation against the same vault.
 //   - `install()` symlinks the shipped bundle directory into
 //     `.dome/extensions/<id>/` and reopens the runtime so the new
 //     processor registry is picked up. We symlink (not copy) so the
@@ -42,9 +42,9 @@ import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import {
   detectDrift,
   runOperationalWorkForAdopted,
-  resolveShippedBundlesRoot,
   runOneAdoption,
-} from "../../src/cli/commands/sync-shared";
+} from "../../src/engine/compiler-host";
+import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import {
   commit as gitCommit,
   currentSha,

@@ -3,7 +3,7 @@
 // `dome sync` is the one-shot catch-up: detect drift between working-tree
 // HEAD and `refs/dome/adopted/<branch>`, run a single adoption cycle if
 // drift is present, print the result, exit. It reuses the shared drift
-// + adoption helpers in `src/cli/commands/sync-shared.ts` with `dome serve`.
+// + adoption helpers in `src/engine/compiler-host.ts` with `dome serve`.
 //
 // Four tests cover the four outcome shapes:
 //

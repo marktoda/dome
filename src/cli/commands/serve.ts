@@ -13,8 +13,8 @@
 // 500ms latency is invisible to a user editing + committing markdown.
 // The interval is configurable via `--poll-interval-ms <n>`.
 //
-// Drift detection + adoption-invocation live in `./sync-shared.ts`, so
-// `dome serve` (Phase 11b) and `dome sync` (Phase 11c) share the same
+// Drift detection + adoption-invocation live in `src/engine/compiler-host.ts`,
+// so `dome serve` (Phase 11b) and `dome sync` (Phase 11c) share the same
 // underlying per-tick body. The daemon wraps it in a poll loop with
 // cancellation, error tolerance (one bad commit shouldn't crash a
 // long-running poll), and a one-line operator-facing summary.
@@ -41,12 +41,14 @@ import { getCurrentBranch } from "../../adopted-ref";
 
 import {
   detectDrift,
-  formatAdoptEvent,
   rebuildProjectionIfCacheKeysChanged,
-  resolveShippedBundlesRoot,
   runOneAdoption,
   runOperationalWorkForAdopted,
   type DriftInfo,
+} from "../../engine/compiler-host";
+import {
+  formatAdoptEvent,
+  resolveShippedBundlesRoot,
 } from "./sync-shared";
 
 // ----- Constants ------------------------------------------------------------

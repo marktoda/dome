@@ -20,7 +20,7 @@
 // `applyPatchToCandidate` to produce a new commit head, constructs a
 // Proposal with `source: { kind: "garden", processorId, runId }`,
 // and routes it through the injected `adoptSubProposal` callback —
-// which is wired by the caller (sync-shared.ts) to recurse into
+// which is wired by the compiler host to recurse into
 // `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
 //
 // Cascade-depth cap: default 10. When a garden run at the cap emits
@@ -144,7 +144,7 @@ export type GardenRunSummary = {
  * The callback signature the orchestrator invokes to adopt a sub-Proposal
  * spawned from a garden-emitted PatchEffect.
  *
- * Wired by the caller (typically `sync-shared.ts`'s `runOneAdoption`)
+ * Wired by the caller (typically `compiler-host.ts`'s `runOneAdoption`)
  * to a recursive closure: the closure calls `adopt()` on the sub-Proposal,
  * then if adopted, calls `runGardenPhase()` again with `cascadeDepth + 1`
  * + the same closure. This is the structural recursion that lets garden
@@ -212,7 +212,7 @@ export async function runGardenPhase(opts: {
    * PatchEffects log+drop (Phase 4a behavior). When present, they spawn
    * sub-Proposals routed through this callback (Phase 4a' behavior).
    *
-   * Caller wiring: `sync-shared.ts` constructs this as a recursive
+   * Caller wiring: `compiler-host.ts` constructs this as a recursive
    * closure that calls `adopt()` + `runGardenPhase()` with
    * `cascadeDepth + 1`.
    */

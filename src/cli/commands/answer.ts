@@ -16,16 +16,16 @@ import {
 import { answerQuestionDurably } from "../../engine/question-answering";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import {
+  runAnswerHandlersForQuestion,
+  type AnswerHandlersForQuestionResult,
+} from "../../engine/compiler-host";
+import {
   getQuestionRecord,
   type AnswerQuestionResult,
   type QuestionRecord,
 } from "../../projections/questions";
 
-import {
-  resolveShippedBundlesRoot,
-  runAnswerHandlersForQuestion,
-  type AnswerHandlersForQuestionResult,
-} from "./sync-shared";
+import { resolveShippedBundlesRoot } from "./sync-shared";
 import { formatJson } from "../format";
 
 export type RunAnswerOptions = {

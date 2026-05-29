@@ -136,7 +136,7 @@ export type SchedulerResult = {
  * orchestrator routes their non-Patch effects through `applyEffect`
  * with the right phase so any future garden-scheduled patch path
  * would route correctly (the sub-Proposal cascade lives one layer
- * up in `sync-shared.ts`).
+ * up in `compiler-host.ts`).
  */
 export async function runScheduler(opts: {
   readonly vault: EngineVault;

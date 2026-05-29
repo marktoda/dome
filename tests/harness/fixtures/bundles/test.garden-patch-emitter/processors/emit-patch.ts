@@ -52,7 +52,7 @@ const EMITTED_PATH = "wiki/garden-emitted.md";
 //   - dome.markdown.normalize-frontmatter — frontmatter keys are
 //     deliberately unsorted (`zeta` before `alpha`); the processor
 //     emits a patch.auto reordering them. This patch goes through
-//     sync-shared.ts's `realApplyPatch` sink, exercising the
+//     compiler-host.ts's `realApplyPatch` sink, exercising the
 //     sub-Proposal frame the Phase 4a' follow-up fixed (bug 1: the
 //     resulting engine commit's `Dome-Base` / `Dome-Source-Head`
 //     trailers must be scoped to the sub-Proposal, not the parent).

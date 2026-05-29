@@ -3,7 +3,7 @@
 // Regression scenario for the Phase 4a' sink-frame fix-up (commit
 // 2307ab8 on main). The bugs being guarded:
 //
-//   Bug 1: `realApplyPatch` in sync-shared.ts captured `drift.base` and
+//   Bug 1: `realApplyPatch` in compiler-host.ts captured `drift.base` and
 //          `drift.head` via closure once at the top of `runOneAdoption`.
 //          When reused for a sub-Proposal's adoption, those values were
 //          still the *original* user-drift Proposal's, not the sub-

@@ -6,7 +6,7 @@
 //     whose first two segments name the bundle) is an *extension-substrate*
 //     concept, not a core-engine one. Co-locating with `loader.ts` +
 //     `manifest-schema.ts` keeps the bundle-id discipline in one place.
-//   - Multiple call sites (`src/cli/commands/sync-shared.ts`'s `realApplyPatch`
+//   - Multiple call sites (`src/engine/compiler-host.ts`'s `realApplyPatch`
 //     closure, `src/engine/garden.ts`'s spawn loop) need the same derivation;
 //     before this helper existed they each carried a copy, and a convention
 //     change (e.g., 3-segment bundle ids) would require updating both. This

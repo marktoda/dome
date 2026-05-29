@@ -156,7 +156,7 @@ cd ~/vaults/work && dome sync --json
 cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD (v1.1 — see below)
 ```
 
-`dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands (`src/cli/commands/sync-shared.ts`).
+`dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/compiler-host.ts`).
 
 The four outcomes:
 

@@ -32,7 +32,7 @@ sourceRefs: []
 
 The diagnostic surfaces:
 
-- In the in-memory `GardenPhaseResult.diagnostics` (returned to the orchestrator's caller; today discarded by `sync-shared.ts`, surfaced through stderr via `console.warn`).
+- In the in-memory `GardenPhaseResult.diagnostics` (returned to the orchestrator's caller; today discarded by the compiler host, surfaced through stderr via `console.warn`).
 - In `projection.db.diagnostics` via the wired `sinks.recordDiagnostic` call with `processorId: "engine.garden"` and the run id of the first queued patch.
 - Operators see the diagnostic via `dome inspect diagnostics --code garden.cascade-cap`.
 

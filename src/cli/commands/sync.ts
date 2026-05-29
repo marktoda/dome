@@ -14,7 +14,7 @@
 //   - Exit.
 //
 // Drift detection + adoption-invocation are shared with `dome serve` via
-// `./sync-shared.ts`; this command is the host's per-tick body invoked
+// `src/engine/compiler-host.ts`; this command is the host's per-tick body invoked
 // exactly once and surfaced with a CLI-shaped output / exit code.
 //
 // Exit codes:
@@ -37,14 +37,15 @@ import { resolve } from "node:path";
 
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
-
 import {
   detectDrift,
-  type DriftResult,
-  formatAdoptEvent,
-  resolveShippedBundlesRoot,
   runOneAdoption,
   runOperationalWorkForAdopted,
+  type DriftResult,
+} from "../../engine/compiler-host";
+import {
+  formatAdoptEvent,
+  resolveShippedBundlesRoot,
 } from "./sync-shared";
 import { formatJson } from "../format";
 
@@ -103,7 +104,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   const vaultPath = resolve(options.vault ?? process.cwd());
 
   // Default to the SDK's shipped first-party bundles. See serve.ts /
-  // sync-shared.ts `resolveShippedBundlesRoot` for the rationale.
+  // sync-shared.ts `resolveShippedBundlesRoot` for the shipped-bundle path.
   const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
 
   const jsonMode = options.json === true;
