@@ -117,7 +117,7 @@ Extension bundles contribute additional page types via a bundle-root `page-types
 | Type | Bundle | Directory |
 |---|---|---|
 | `daily` | `dome.daily` | `wiki/dailies/` |
-| `weekly` | `dome.daily` | `wiki/weeklies/` |
+| `weekly` | planned `dome.daily` | `wiki/weeklies/` |
 
 Each declared extension type may carry `frontmatter_extras:` — required or optional fields beyond the universal four. The `dome.daily` daily type, for example, requires:
 

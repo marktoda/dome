@@ -19,6 +19,9 @@
 //
 // v1.0 scope (intentional deferrals, documented inline):
 //
+//   - Bundle activation: when `.dome/config.yaml` exists, only
+//     `extensions.<id>.enabled: true` bundles are registered. Config-less
+//     test/dev vaults keep the compatibility behavior of loading all bundles.
 //   - `resolveGrants`: `.dome/config.yaml` grant lookup when a config file
 //     exists; compatibility fallback to declared capabilities only for
 //     config-less test/dev vaults.
@@ -276,6 +279,8 @@ export type OpenVaultRuntimeError =
  *
  * v1 defaults (documented in the file banner; this comment lists the
  * wired seams the function injects):
+ *   - Bundle activation := vault config `enabled: true` when `.dome/config.yaml`
+ *     exists, compatibility all-active behavior only when it does not.
  *   - `resolveGrants` := vault config grants when `.dome/config.yaml`
  *     exists, compatibility declared-grant fallback only when it does not.
  *   - `extensionIdFor` := processor → bundle id map.
@@ -284,11 +289,20 @@ export type OpenVaultRuntimeError =
 export async function openVaultRuntime(
   opts: OpenVaultRuntimeOpts,
 ): Promise<Result<VaultRuntime, OpenVaultRuntimeError>> {
+  const policyResult = await loadCapabilityPolicy(opts.vaultPath);
+  if (!policyResult.ok) {
+    return err({
+      kind: "capability-policy-load-failed",
+      cause: policyResult.error,
+    });
+  }
+  const policy = policyResult.value;
+
   // 1. Resolve the registry + projection-cache-key lists from the opts
   //    shape. Bundle-load failures and registry-build failures surface as
   //    structured `OpenVaultRuntimeError` variants before any DB opens —
   //    no need to clean up handles on these paths.
-  const resolved = await resolveRegistryFromOpts(opts);
+  const resolved = await resolveRegistryFromOpts(opts, policy);
   if (!resolved.ok) return err(resolved.error);
   const {
     registry,
@@ -298,15 +312,8 @@ export async function openVaultRuntime(
     pageTypes,
   } = resolved.value;
 
-  const policyResult = await loadCapabilityPolicy(opts.vaultPath);
-  if (!policyResult.ok) {
-    return err({
-      kind: "capability-policy-load-failed",
-      cause: policyResult.error,
-    });
-  }
-  const resolveGrants = policyResult.value.foundConfig
-    ? resolveGrantsFromPolicy(registry, policyResult.value, processorExtensionIds)
+  const resolveGrants = policy.foundConfig
+    ? resolveGrantsFromPolicy(registry, policy, processorExtensionIds)
     : defaultResolveGrants(registry);
   const extensionIdFor = extensionIdForProcessor(processorExtensionIds);
   const externalHandlers = opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS;
@@ -470,6 +477,7 @@ type ResolvedRegistry = {
  */
 async function resolveRegistryFromOpts(
   opts: OpenVaultRuntimeOpts,
+  policy: CapabilityPolicy,
 ): Promise<Result<ResolvedRegistry, OpenVaultRuntimeError>> {
   if ("registry" in opts) {
     return ok({
@@ -492,8 +500,9 @@ async function resolveRegistryFromOpts(
     return err({ kind: "bundle-load-failed", cause: bundlesResult.error });
   }
   const bundles = bundlesResult.value;
+  const activeBundles = activeBundlesForPolicy(bundles, policy);
 
-  const processors = flattenBundleProcessors(bundles);
+  const processors = flattenBundleProcessors(activeBundles);
   const registryResult = buildRegistry(processors);
   if (!registryResult.ok) {
     return err({
@@ -504,11 +513,21 @@ async function resolveRegistryFromOpts(
 
   return ok({
     registry: registryResult.value,
-    extensions: deriveExtensionList(bundles),
+    extensions: deriveExtensionList(activeBundles),
     processorVersions: deriveProcessorVersionList(processors),
-    processorExtensionIds: deriveProcessorExtensionIds(bundles),
-    pageTypes: buildPageTypeRegistryForBundles(bundles),
+    processorExtensionIds: deriveProcessorExtensionIds(activeBundles),
+    pageTypes: buildPageTypeRegistryForBundles(activeBundles),
   });
+}
+
+function activeBundlesForPolicy(
+  bundles: ReadonlyArray<LoadedBundle>,
+  policy: CapabilityPolicy,
+): ReadonlyArray<LoadedBundle> {
+  if (!policy.foundConfig) return bundles;
+  return Object.freeze(
+    bundles.filter((bundle) => policy.isExtensionEnabled(bundle.id)),
+  );
 }
 
 /**

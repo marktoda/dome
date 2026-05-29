@@ -16,6 +16,7 @@ import { err, ok, type Result } from "../types";
 
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
+  readonly isExtensionEnabled: (extensionId: string) => boolean;
   readonly grantsForExtension: (
     extensionId: string,
   ) => ReadonlyArray<Capability>;
@@ -48,6 +49,7 @@ export async function loadCapabilityPolicy(
   }
 
   const grants = new Map<string, ReadonlyArray<Capability>>();
+  const enabled = new Set<string>();
   const extensions = asRecord(root.extensions);
   if (extensions !== null) {
     for (const [extensionId, rawExtension] of Object.entries(extensions)) {
@@ -57,6 +59,7 @@ export async function loadCapabilityPolicy(
         grants.set(extensionId, Object.freeze([]));
         continue;
       }
+      enabled.add(extensionId);
       const rawGrant = extension.grant ?? extension.grants;
       grants.set(extensionId, parseGrantBlock(rawGrant));
     }
@@ -65,6 +68,7 @@ export async function loadCapabilityPolicy(
   return ok(
     Object.freeze({
       foundConfig: true,
+      isExtensionEnabled: (extensionId: string) => enabled.has(extensionId),
       grantsForExtension: (extensionId: string) =>
         grants.get(extensionId) ?? Object.freeze([]),
     }),
@@ -74,6 +78,7 @@ export async function loadCapabilityPolicy(
 function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   return Object.freeze({
     foundConfig,
+    isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
   });
 }

@@ -73,6 +73,7 @@ import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
 import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
 import "../scenarios/effect-routing/health-quarantine-recovery.scenario.test";
 import "../scenarios/effect-routing/health-orphan-run-recovery.scenario.test";
+import "../scenarios/effect-routing/daily-create-carry-forward.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
 import "../scenarios/capabilities/model-invoke-scheduled.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";

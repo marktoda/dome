@@ -160,15 +160,14 @@ Shipped and strong:
 - Adoption loop, garden sub-Proposals, scheduler, JobEffect routing, outbox dispatch, run ledger, projection store, and capability broker exist.
 - `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, and `dome rebuild` exist.
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
-- Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, and a minimal `dome.lint`.
+- Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, and a minimal `dome.lint`.
 
 Not yet at v1:
 
-- `dome answer` now records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, and `dome doctor` renders probe-only findings for failed outbox rows, orphan runs, and quarantines. Export-context retrieval and orphan-run recovery are still missing.
-- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon and quarantined-processor reset questions and answer handlers. `dome.intake`, `dome.daily`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
-- The day-to-day workflows the user wants are not yet implemented: daily note creation, carry-forward tasks, capture compilation, todo/followup extraction, and review questions.
+- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions. Export-context retrieval is still missing.
+- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation and task carry-forward. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The day-to-day workflows the user wants are only partially implemented: daily note creation and carry-forward tasks work, but capture compilation, todo/followup extraction, and review questions remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
-- Failed-outbox and quarantine recovery are repairable through first-party `dome.health` questions; orphan-run recovery is visible but not yet resettable through first-party answer handlers.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
 ## v1 acceptance scenario
@@ -408,8 +407,8 @@ Acceptance:
 ### Milestone 5: daily-note and task loop
 
 - Define minimal markdown task schema compatible with plain Obsidian checkboxes.
-- Implement `dome.daily.create-daily`.
-- Implement carry-forward of unfinished tasks from the previous daily note.
+- [x] Implement `dome.daily.create-daily`.
+- [x] Implement carry-forward of unfinished tasks from the previous daily note.
 - Implement extraction of followups/todos from daily notes or raw captures.
 - Decide whether task completion writes are direct garden patches or questions when ambiguous.
 

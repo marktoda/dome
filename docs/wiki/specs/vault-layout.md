@@ -147,15 +147,12 @@ invariants:
   # ... full list per src/types.ts INVARIANTS
 
 extensions:
-  dome.markdown: { enabled: true,  grants: { patch.auto: ["**"] } }
-  dome.index:    { enabled: true,  grants: { owns.path: ["index.md"], patch.auto: ["index.md"] } }
-  dome.log:      { enabled: true,  grants: { owns.path: ["log.md"], patch.auto: ["log.md"] } }
-  dome.links:    { enabled: true,  grants: { patch.propose: ["wiki/**"] } }
-  dome.intake:   { enabled: true,  grants: { model.invoke: true, patch.auto: ["wiki/generated/**", "inbox/processed/**"], question.ask: ["dome.intake"], job.enqueue: ["dome.daily.*"] } }
-  dome.daily:    { enabled: true,  grants: { patch.auto: ["wiki/dailies/**", "wiki/weeklies/**"], question.ask: ["dome.daily"] } }
-  dome.lint:     { enabled: true,  grants: { patch.propose: ["**"] } }
+  dome.markdown: { enabled: true,  grants: { read: ["**/*.md"], patch.auto: ["**/*.md"], question.ask: true } }
+  dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
+  dome.daily:    { enabled: true,  grants: { read: ["wiki/dailies/*.md"], patch.auto: ["wiki/dailies/*.md"] } }
+  dome.health:   { enabled: true,  grants: { question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
+  dome.lint:     { enabled: true,  grants: {} }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }
-  dome.migrate:  { enabled: true,  grants: { patch.auto: ["**"] } }
 
 engine:
   max_iterations: 100             # MAX_ITER for the fixed-point loop
@@ -229,7 +226,7 @@ The capability broker enforces ownership. Default rules:
 | `index.md` | `dome.index` (via `owns.path`) |
 | `log.md` | `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
-| `wiki/dailies/**`, `wiki/weeklies/**` | `dome.daily` (via `patch.auto`) |
+| `wiki/dailies/*.md` | `dome.daily` (via `patch.auto`) |
 | `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
 | `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
 | `wiki/<type>/**` (general) | open — any processor with `patch.auto: ["wiki/**"]` |

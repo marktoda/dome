@@ -121,6 +121,20 @@ async function makeFixture(): Promise<Fixture> {
   });
 
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
+  await writeFile(
+    join(vaultPath, ".dome", "config.yaml"),
+    `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+        - ".dome/page-types.yaml"
+      patch.auto:
+        - "**/*.md"
+`,
+  );
 
   return {
     vaultPath,

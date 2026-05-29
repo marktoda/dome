@@ -297,8 +297,8 @@ Work:
 
 - [ ] Define a minimal task representation compatible with plain markdown
       checkboxes and Obsidian expectations.
-- [ ] Implement `dome.daily.create-daily`.
-- [ ] Implement carry-forward of unfinished tasks from the previous daily
+- [x] Implement `dome.daily.create-daily`.
+- [x] Implement carry-forward of unfinished tasks from the previous daily
       note.
 - [ ] Implement deterministic followup/todo extraction from daily notes where
       possible.
@@ -308,7 +308,7 @@ Work:
 
 Acceptance:
 
-- [ ] Yesterday has unfinished tasks; today's daily note is created with
+- [x] Yesterday has unfinished tasks; today's daily note is created with
       carried-forward tasks.
 - [ ] Daily/capture text yields source-ref-backed followups.
 - [ ] Ambiguous task extraction asks a question instead of mutating silently.
@@ -426,8 +426,8 @@ Required for daily value:
 | `dome.markdown` | partially shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
-| `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon and quarantine-reset question emitters and answer handlers |
-| `dome.daily` | missing | daily creation, task carry-forward, today/prep views |
+| `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
+| `dome.daily` | partially shipped | daily creation and task carry-forward shipped; followup extraction and today/prep views remain |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 
 Optional or conditional:

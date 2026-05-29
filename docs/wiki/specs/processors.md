@@ -200,15 +200,12 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | Bundle | Phase × processors | What it does |
 |---|---|---|
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, stale `updated:` dates, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
-| `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns the `index.md` path. |
-| `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns the `log.md` path. |
-| `dome.links` | garden: cross-reference | On entity-page creation, finds mentions in other wiki pages and emits PatchEffect to add backlinks. |
-| `dome.intake` | garden: extract-capture | On `inbox/raw/*` creation, calls the LLM to compile the capture into wiki updates. |
-| `dome.daily` | garden: create-daily, carry-forward; view: today, week-review | Creates daily/weekly notes; carries unfinished tasks forward; renders agenda views. |
-| `dome.lint` | view: lint-report | Walks the wiki, emits DiagnosticEffect for each finding, renders the report. |
+| `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
+| `dome.daily` | garden: create-daily, carry-forward | Creates daily notes and carries unfinished markdown checkbox tasks forward. |
+| `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query | Maintains the FTS5 projection; answers adopted-state query requests. |
 
-The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].
+The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]].
 
 The bundles ship in the SDK at `assets/extensions/dome.*/`. `dome init` does not copy first-party bundle code into the vault; it writes activations and grants in `<vault>/.dome/config.yaml`, and the runtime resolves shipped bundles from the SDK package. Users disable a first-party bundle with `enabled: false` in `<vault>/.dome/config.yaml`; `<vault>/.dome/extensions/` is reserved for vault-local third-party bundles or overrides.
 

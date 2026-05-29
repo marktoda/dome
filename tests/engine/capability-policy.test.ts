@@ -24,6 +24,7 @@ describe("loadCapabilityPolicy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.foundConfig).toBe(false);
+    expect(result.value.isExtensionEnabled("dome.markdown")).toBe(true);
     expect(result.value.grantsForExtension("dome.markdown")).toEqual([]);
   });
 
@@ -101,5 +102,8 @@ extensions:
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);
+    expect(result.value.isExtensionEnabled("dome.markdown")).toBe(true);
+    expect(result.value.isExtensionEnabled("disabled.bundle")).toBe(false);
+    expect(result.value.isExtensionEnabled("missing.bundle")).toBe(false);
   });
 });

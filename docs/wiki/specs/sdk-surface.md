@@ -240,22 +240,18 @@ The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` w
 
 ### First-party bundles
 
-The SDK ships nine `dome.*` bundles under `assets/extensions/`:
+The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some product-pressure bundles remain planned and are marked in the matrices, not in this shipped list:
 
 | Bundle | Phase × processors | Purpose |
 |---|---|---|
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits diagnostics on broken references/frontmatter/date issues, asks about suspected duplicates, and provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
-| `dome.index` | adoption: update-index | Maintains `index.md` as a committed projection of `wiki/`. Owns `index.md`. |
-| `dome.log` | adoption: append-log | Maintains `log.md` from the run ledger. Owns `log.md`. |
-| `dome.links` | garden: cross-reference | On entity-page creation, finds mentions and emits PatchEffect to add backlinks. |
-| `dome.intake` | garden: extract-capture (LLM) | On `inbox/raw/*` creation, compiles the capture into wiki updates. |
-| `dome.daily` | garden: create-daily (cron), carry-forward; view: today, week-review | Daily/weekly notes + agenda views. |
-| `dome.lint` | view: lint-report (cron + command) | Walks the wiki; emits diagnostics; writes the report to `inbox/review/`. |
+| `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
+| `dome.daily` | garden: create-daily (cron), carry-forward | Creates daily notes and carries open markdown checkbox tasks forward. |
+| `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply flow remains planned. |
 | `dome.search` | adoption: index-text; view: query | Maintains FTS5 adopted-state search; answers `dome query` requests. Embeddings/export-context remain future work. |
-| `dome.migrate` | view: migrate-vault (command) | Migrates a vault between SDK schema versions. |
 
-The full map (which contribution kind comes from which bundle) is at [[wiki/matrices/built-in-extensions-x-phase]].
+The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
 
 Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles into the vault — they live with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()` (the default `--bundles-root` for every CLI command). A vault that wants to override a first-party bundle does so by enabling/disabling activations in `<vault>/.dome/config.yaml`, not by editing copied files.
 
@@ -309,9 +305,9 @@ The SDK ships features across three tiers:
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | First-party `dome.*` bundles, the shipped-default-tier invariants per [[wiki/invariants/]], the four default page types. |
 | **Opt-in** | Shipped, not active by default. Activated by config or by installing an additional bundle. | Voice-intake (`inbox/voice/` bucket + ingest workflow inside `dome.intake`), research-intake, third-party bundles. |
 
-`dome init <path>` produces a minimal general-purpose vault — the axioms plus shipped defaults. Activation of opt-in features is `dome.extensions.<name>.enabled: true` in `<vault>/.dome/config.yaml`.
+`dome init <path>` produces a minimal general-purpose vault — the axioms plus shipped defaults. Activation of opt-in features is `extensions.<name>.enabled: true` in `<vault>/.dome/config.yaml`.
 
-The shipped-defaults catalog has a single source of truth in the SDK: `src/shipped-defaults.ts` exports `SHIPPED_VAULT_CONFIG: VaultConfig`, `SHIPPED_PAGE_TYPES: PageTypesConfig`, and `SHIPPED_BUNDLES: string[]` as typed values. The runtime fallback in `openVault`, the `dome init` / `dome migrate` scaffolder, and the test vault factories all derive from these constants.
+The shipped default config currently lives in the `dome init` scaffold and must stay reconciled with the shipped bundle assets and matrices. A future cleanup should extract this to a typed `shipped-defaults` module once migrations need a shared source of truth.
 
 ## Consumer surfaces
 

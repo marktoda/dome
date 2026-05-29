@@ -7,29 +7,28 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Built-in extensions × phase matrix
 
-The dense map of the nine first-party `dome.*` bundles × the three processor phases × which processors they ship. This is what new bundle authors compare against when registering a processor — "is there already a first-party processor doing this?"
+The dense map of first-party `dome.*` bundles × the three processor phases. Rows marked `planned` are product-pressure references, not shipped assets.
 
 ## The matrix
 
-| Bundle | Adoption phase | Garden phase | View phase |
-|---|---|---|---|
-| **`dome.markdown`** | `validate-wikilinks` (emits `DiagnosticEffect` for unresolved links); `normalize-frontmatter` (emits canonicalizing `PatchEffect`s); `lint-frontmatter` (minimal frontmatter diagnostics); `broken-images` (emits `DiagnosticEffect` for missing local image embeds); `duplicate-detection` (emits `QuestionEffect` for suspected duplicate pages); `stale-dates` (emits `DiagnosticEffect` when `updated:` trails git history) | — | `orphan-pages` (command-triggered view over `dome.graph.links_to` facts) |
-| **`dome.graph`** | `links` (emits `dome.graph.links_to` facts from wikilinks); `tag-index` (emits `dome.graph.tagged` facts from frontmatter and inline tags) | — | — |
-| **`dome.index`** | `update-index` (emits `PatchEffect` to rewrite `index.md` row for each changed wiki page) | — | — |
-| **`dome.log`** | `append-log` (emits `PatchEffect` to append per-adoption summary to `log.md` from the run ledger) | — | — |
-| **`dome.links`** | — | `cross-reference` (on `signal:file.created` for `wiki/entities/**`, scans wiki bodies for entity-name mentions, emits `PatchEffect` to add backlinks) | — |
-| **`dome.intake`** | `inbox-stale-check` (per-sync; emits `DiagnosticEffect` for files older than `engine.inbox_stale_age_hours`) | `extract-capture` (on `signal:file.created` for `inbox/raw/**`, calls LLM to compile capture into wiki updates; emits `PatchEffect` and `FactEffect`); `process-questions` (on `signal:document.changed` for pages with unanswered questions) | — |
-| **`dome.daily`** | — | `create-daily` (cron `0 6 * * *`); `create-weekly` (cron `0 6 * * MON`); `carry-forward` (on `signal:file.created` for `wiki/dailies/**`); `append-followup` (on `signal:document.changed` for `wiki/dailies/**` when a followup line is added) | `today` (command `dome today`); `week-review` (command and cron); `agenda-with` (command `dome query agenda-with <person>`); `prep` (command `dome prep <topic>`) |
-| **`dome.lint`** | — | — | `lint-report` (command `dome lint` and cron `0 7 * * MON`); `apply-finding` (command `dome lint --apply <id>`) |
-| **`dome.search`** | `index-text` (on `signal:document.changed`, `signal:file.created`, and `signal:file.deleted`, emits SearchDocumentEffect for `fts_documents`) | future: embeddings / refresh jobs | `query` (command `dome query`); future: `export-context` |
-| **`dome.migrate`** | — | — | `migrate-vault` (command `dome migrate`) |
+| Bundle | Status | Adoption phase | Garden phase | View phase |
+|---|---|---|---|---|
+| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates` | — | `orphan-pages` |
+| **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
+| **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
+| **`dome.daily`** | partially shipped | — | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | planned: `today`, `week-review`, `agenda-with`, `prep` |
+| **`dome.lint`** | partially shipped | — | — | shipped: `markdown-format`; planned: `lint-report`, `apply-finding` |
+| **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`; planned: `export-context` |
+| **`dome.index`** | planned | `update-index` | — | — |
+| **`dome.log`** | planned | `append-log` | — | — |
+| **`dome.links`** | planned | — | `cross-reference` | — |
+| **`dome.intake`** | planned | `inbox-stale-check` | `extract-capture`; `process-questions` | — |
+| **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts
 
-- **Total processors:** ~25 across the nine bundles.
-- **Adoption-phase processors:** 7 (parse, validate-wikilinks, validate-frontmatter, update-index, append-log, inbox-stale-check, index-text, index-embeddings).
-- **Garden-phase processors:** 8 (cross-reference, extract-capture, process-questions, create-daily, create-weekly, carry-forward, append-followup, refresh-embeddings).
-- **View-phase processors:** ~10 planned (today, week-review, agenda-with, prep, lint-report, apply-finding, query, export-context, migrate-vault, + cli adapter for the same).
+- **Shipped processors:** 20 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
+- **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
 
