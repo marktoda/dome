@@ -63,6 +63,13 @@ WHERE namespace = ? AND predicate = ?
 ORDER BY id
 `.trim();
 
+const ALL_FACTS_SQL = `
+SELECT namespace, subject_kind, subject_id, predicate, object_json,
+       assertion, confidence, source_refs
+FROM facts
+ORDER BY id
+`.trim();
+
 const DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL = `
 DELETE FROM facts
 WHERE processor_id = ? AND subject_kind = 'page' AND subject_id = ?
@@ -134,6 +141,16 @@ export function factsByPredicate(
   const rows = db.raw
     .query<FactRow, [string, string]>(FACTS_BY_PREDICATE_SQL)
     .all(namespace, predicate);
+  return Object.freeze(rows.map(rowToFact));
+}
+
+/**
+ * Read every fact row in insertion order. This is intentionally a projection
+ * accessor rather than query-view inline SQL, so all facts deserialization
+ * stays in one module.
+ */
+export function allFacts(db: ProjectionDb): ReadonlyArray<FactEffect> {
+  const rows = db.raw.query<FactRow, []>(ALL_FACTS_SQL).all();
   return Object.freeze(rows.map(rowToFact));
 }
 

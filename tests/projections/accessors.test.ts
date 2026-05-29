@@ -24,6 +24,7 @@ import {
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import {
+  allFacts,
   factsByPredicate,
   factsBySubject,
   insertFact,
@@ -162,6 +163,30 @@ describe("facts accessor", () => {
     const got = factsByPredicate(db, "dome.tasks", "dome.tasks.dueDate");
     expect(got.length).toBe(1);
     expect(got[0]?.predicate).toBe("dome.tasks.dueDate");
+  });
+
+  it("allFacts returns every fact in insertion order with one accessor call", () => {
+    const a = factEffect({
+      subject: { kind: "page", path: "wiki/a.md" },
+      predicate: "dome.tasks.dueDate",
+      object: { kind: "string", value: "2026-01-01" },
+      assertion: "explicit",
+      sourceRefs: [REF],
+    });
+    const b = factEffect({
+      subject: { kind: "page", path: "wiki/b.md" },
+      predicate: "dome.tasks.status",
+      object: { kind: "string", value: "done" },
+      assertion: "explicit",
+      sourceRefs: [REF],
+    });
+    insertFact(db, { effect: a, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, { effect: b, processorId: "p1", adoptedCommit: ADOPTED });
+
+    expect(allFacts(db).map((fact) => fact.predicate)).toEqual([
+      "dome.tasks.dueDate",
+      "dome.tasks.status",
+    ]);
   });
 
   it("resolveStalePageFacts clears only the processor's page-subject rows for inspected paths", () => {

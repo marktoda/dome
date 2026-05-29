@@ -34,7 +34,7 @@ import type { ProjectionQueryView } from "../core/processor";
 
 import type { ProjectionDb } from "./db";
 import { queryDiagnostics } from "./diagnostics";
-import { factsBySubject, factsByPredicate } from "./facts";
+import { allFacts, factsBySubject, factsByPredicate } from "./facts";
 import { queryQuestions } from "./questions";
 import { searchDocuments } from "./search";
 
@@ -86,12 +86,7 @@ type FactsFilter = {
  *   - subject + predicate     → factsBySubject(...), filter by predicate
  *   - subject only            → factsBySubject(...)
  *   - predicate only          → factsByPredicate(namespace, predicate)
- *   - no filter               → all facts via a direct query
- *
- * The "no filter" path uses an inline SQL query rather than threading a
- * fourth accessor into `./facts` — view-phase processors that need every
- * fact are uncommon, and inlining keeps the per-table accessor file
- * focused on the two common shapes.
+ *   - no filter               → all facts
  */
 function readFacts(
   db: ProjectionDb,
@@ -119,9 +114,7 @@ function readFacts(
     return factsByPredicate(db, namespace, predicate);
   }
 
-  // No filter — return every fact. Defensive bound is the caller's
-  // responsibility; v1 has no LIMIT clause here.
-  return readAllFacts(db);
+  return allFacts(db);
 }
 
 /**
@@ -151,34 +144,6 @@ function buildSubject(
 function predicateNamespace(predicate: string): string {
   const idx = predicate.lastIndexOf(".");
   return idx === -1 ? predicate : predicate.slice(0, idx);
-}
-
-/**
- * Read every fact row from the projection. Used only by the "no filter"
- * branch of `readFacts`; otherwise the per-table accessors are preferred
- * (they push the predicate filter down to SQL).
- *
- * The query is intentionally minimal — same column selection as the
- * existing accessors so the row → FactEffect path is consistent.
- */
-function readAllFacts(db: ProjectionDb): ReadonlyArray<FactEffect> {
-  // Delegate to factsByPredicate with no predicate filter would require
-  // a new SQL variant. The simplest implementation: list distinct
-  // (namespace, predicate) pairs and union their results. The fact set
-  // is small in practice (v1 processors that need "every fact" are rare).
-  type Pair = { readonly namespace: string; readonly predicate: string };
-  const pairs = db.raw
-    .query<Pair, []>(
-      "SELECT DISTINCT namespace, predicate FROM facts ORDER BY namespace, predicate",
-    )
-    .all();
-  const out: FactEffect[] = [];
-  for (const { namespace, predicate } of pairs) {
-    for (const f of factsByPredicate(db, namespace, predicate)) {
-      out.push(f);
-    }
-  }
-  return Object.freeze(out);
 }
 
 // ----- Re-exports for the runtime --------------------------------------------
