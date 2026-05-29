@@ -74,6 +74,10 @@ import { join, resolve } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
+import {
+  defaultConfigRecord,
+  defaultConfigYaml,
+} from "../default-vault-config";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -255,7 +259,7 @@ async function ensureConfigYaml(opts: {
   readonly refresh: boolean;
 }): Promise<StepOutcome> {
   if (!existsSync(opts.path)) {
-    await writeFile(opts.path, DEFAULT_CONFIG_YAML, "utf8");
+    await writeFile(opts.path, defaultConfigYaml(), "utf8");
     return "created";
   }
   if (!opts.refresh) return "skipped (already present)";
@@ -265,10 +269,7 @@ async function ensureConfigYaml(opts: {
   if (root === null) {
     throw new Error(".dome/config.yaml must be a YAML mapping");
   }
-  const defaults = recordFromYaml(parseYaml(DEFAULT_CONFIG_YAML));
-  if (defaults === null) {
-    throw new Error("internal default config template is not a YAML mapping");
-  }
+  const defaults = defaultConfigRecord();
 
   const changed = refreshFirstPartyDefaultConfig(root, defaults);
   if (!changed) return "skipped (already present)";
@@ -427,131 +428,6 @@ const DEFAULT_GITIGNORE = `# Dome — derived operational state. Rebuildable fro
 # OS metadata
 .DS_Store
 Thumbs.db
-`;
-
-const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
-#
-# This file controls which extensions are active and their capability
-# grants. The shipped first-party bundles (\`dome.daily\`, \`dome.graph\`,
-# \`dome.health\`, \`dome.intake\`, \`dome.lint\`, \`dome.markdown\`,
-# \`dome.search\`) live with the SDK — the
-# CLI's default \`--bundles-root\` resolves to the SDK's \`assets/extensions/\`
-# directory.
-# To install a third-party bundle,
-# create \`.dome/extensions/<bundle-id>/\` here and pass
-# \`--bundles-root .dome/extensions\` on the command line.
-#
-# Model-capable bundles can use an injected host provider or a command
-# provider configured here. The command runs with the vault root as cwd,
-# receives a JSON request on stdin, and returns JSON on stdout:
-#
-# model_provider:
-#   kind: command
-#   command: ["bun", ".dome/model-provider.ts"]
-
-extensions:
-  dome.lint:
-    enabled: true
-    grant:
-      read:
-        - "**/*.md"
-
-  dome.markdown:
-    enabled: true
-    # Markdown adoption processors read markdown and normalize frontmatter.
-    grant:
-      read:
-        - "**/*.md"
-        - ".dome/page-types.yaml"
-        - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
-        - "raw/**"
-      patch.auto:
-        - "**/*.md"
-      question.ask: true
-
-  dome.graph:
-    enabled: true
-    grant:
-      read:
-        - "**/*.md"
-      graph.write:
-        - "dome.graph.*"
-
-  dome.daily:
-    enabled: true
-    grant:
-      read:
-        - "wiki/**/*.md"
-      patch.auto:
-        - "wiki/**/*.md"
-      graph.write:
-        - "dome.daily.*"
-      question.ask: true
-
-  # Opt in when your Dome host injects or configures a ModelProvider. The
-  # bundle compiles committed markdown captures from inbox/raw/*.md into
-  # generated intake pages and processed archives.
-  dome.intake:
-    enabled: false
-    grant:
-      read:
-        - "inbox/**/*.md"
-        - "wiki/generated/intake/*.md"
-      patch.auto:
-        - "wiki/generated/intake/*.md"
-        - "wiki/syntheses/intake-*.md"
-        - "inbox/processed/*.md"
-        - "inbox/raw/*.md"
-      graph.write:
-        - "dome.intake.*"
-      model.invoke:
-        maxDailyCostUsd: 5
-      question.ask: true
-
-  dome.search:
-    enabled: true
-    grant:
-      read:
-        - "**/*.md"
-      search.write:
-        - "**/*.md"
-
-  dome.health:
-    enabled: true
-    grant:
-      read:
-        - "**"
-      outbox.read:
-        - failed
-      question.ask: true
-      outbox.recover: true
-      quarantine.read: true
-      quarantine.recover: true
-      run.read:
-        - running
-      run.recover: true
-
-engine:
-  # Maximum iterations of the fixed-point adoption loop per Proposal.
-  # Hitting this cap is a programmer error (processors not idempotent
-  # or in a patch-fight); surface diagnostic + block.
-  max_iterations: 100
-
-  # Optional global execution caps. Uncomment to bound processor manifest
-  # requests more tightly for this vault.
-  # processor_timeout_ms: 600000
-  # model_call_timeout_ms: 180000
-
-  # Auto-commit closure commits when adoption-phase processors emit
-  # patches that converge. When false, processors that emit PatchEffect
-  # are dropped (with a diagnostic). Default true for normal vaults.
-  auto_commit_workflows: true
-
-git:
-  # Mirror of engine.auto_commit_workflows so EngineVault.config can expose
-  # the historical git-shaped flag to closure-commit code. When both keys
-  # are present, they must agree.
-  auto_commit_workflows: true
 `;
 
 // The AGENTS.md template — orientation surface for agentic harnesses. The

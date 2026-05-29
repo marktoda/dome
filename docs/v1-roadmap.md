@@ -667,6 +667,9 @@ Work:
 - [x] Enforce RAW_IS_IMMUTABLE with broker-level raw patch denial plus
       `dome.markdown.raw-immutable` adoption blocking for committed raw
       modifications/deletions.
+- [x] Extract shipped first-party default grants from the `dome init` YAML
+      literal into `src/cli/default-vault-config.ts`, with lockstep coverage
+      against shipped bundle declared capability kinds.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

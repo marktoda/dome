@@ -33,6 +33,7 @@ import { runInspect } from "../../src/cli/commands/inspect";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
+import { defaultConfigRecord } from "../../src/cli/default-vault-config";
 import { loadBundles } from "../../src/extensions/loader";
 
 import {
@@ -298,6 +299,7 @@ describe("runInit", () => {
       expect(configBody).toContain("dome.lint");
       expect(configBody).toContain("dome.markdown");
       expect(configBody).toContain("max_iterations");
+      expect(parseYaml(configBody)).toEqual(defaultConfigRecord());
 
       const agentsPath = join(target, "AGENTS.md");
       expect(existsSync(agentsPath)).toBe(true);

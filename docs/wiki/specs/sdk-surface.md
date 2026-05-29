@@ -360,7 +360,7 @@ Four file edits, paralleling the v0.5 "Adding a Tool" recipe:
 
 1. **The processor file** at `assets/extensions/<bundle>/processors/<name>.ts` (or `<vault>/.dome/extensions/<bundle>/processors/<name>.ts` for vault-local). Exports `defineProcessorImplementation({ run })`.
 2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities / execution.
-3. **The shipped default grants** in `src/cli/commands/init.ts`'s `DEFAULT_CONFIG_YAML` block (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`; if one processor in a bundle needs a narrower or broader scope than the rest of the bundle, use `extensions.<bundle>.processors.<processor-id>.grant` as a replacement grant.
+3. **The shipped default grants** in `src/cli/default-vault-config.ts` (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`; if one processor in a bundle needs a narrower or broader scope than the rest of the bundle, use `extensions.<bundle>.processors.<processor-id>.grant` as a replacement grant.
 4. **The test** at `tests/processors/<bundle-id>-<processor-id>.test.ts` asserting the processor runs against a representative input and emits the expected effects.
 
 The substrate scaffold catches the missing pieces:
@@ -390,7 +390,7 @@ Five kinds; one registration path (extension bundle):
 | Page type | `assets/extensions/dome.*/page-types.yaml` and SDK shipped-defaults | `<vault>/.dome/page-types.yaml` extensions block |
 | Preamble fragment | `assets/extensions/dome.*/preamble.md` | `<vault>/.dome/extensions/<bundle>/preamble.md` |
 | External handler | `assets/extensions/dome.*/external-handlers/` | `<vault>/.dome/extensions/<bundle>/external-handlers/*.ts` |
-| Capability grant | `src/cli/commands/init.ts` `DEFAULT_CONFIG_YAML` shipped-defaults | `<vault>/.dome/config.yaml` |
+| Capability grant | `src/cli/default-vault-config.ts` shipped-defaults | `<vault>/.dome/config.yaml` |
 
 There is no "Tool," "Hook," "Workflow," or "CLI command" as separate registration kinds. CLI commands are processors with `triggers: [{ kind: "command", name: "..." }]` — the bundle's `processors/` directory is the single registration surface.
 
@@ -406,7 +406,7 @@ The SDK ships features across three tiers:
 
 `dome init <path>` produces a minimal general-purpose vault — the axioms plus shipped defaults. Activation of opt-in features is `extensions.<name>.enabled: true` in `<vault>/.dome/config.yaml`.
 
-The shipped default config currently lives in the `dome init` scaffold and must stay reconciled with the shipped bundle assets and matrices. A future cleanup should extract this to a typed `shipped-defaults` module once migrations need a shared source of truth.
+The shipped default config lives in `src/cli/default-vault-config.ts`, and `dome init` renders / refreshes `.dome/config.yaml` from that typed source. Integration coverage checks that enabled shipped-default bundles grant every declared capability kind.
 
 ## Consumer surfaces
 
