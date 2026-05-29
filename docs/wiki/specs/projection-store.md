@@ -24,15 +24,16 @@ Three properties drive the choice:
 ```
 <vault>/.dome/state/
   projection.db       # this spec — facts, fts, diagnostics, questions, scheduled_jobs, schedule_cursors
+  answers.db          # durable user answers to QuestionEffect rows
   runs.db             # see [[wiki/specs/run-ledger]]
   outbox.db           # see §"Outbox" below
   quarantined.json    # processor-quarantine state (carried forward from v0.5)
   last-reconcile-mtime.txt  # see [[wiki/specs/adoption]] §"Migration"
 ```
 
-The three `.db` files are independent SQLite databases. Splitting by concern (projections / runs / outbox) keeps the schemas focused and the rebuild paths independent — wiping `projection.db` to recover from schema skew doesn't touch the run ledger's audit history.
+The four `.db` files are independent SQLite databases. Splitting by concern (projections / answers / runs / outbox) keeps the schemas focused and the rebuild paths independent — wiping `projection.db` to recover from schema skew doesn't touch human answers or the run ledger's audit history.
 
-All three files are gitignored ([[wiki/specs/vault-layout]] §"Derived operational state"). They never appear in a Proposal.
+All four files are gitignored ([[wiki/specs/vault-layout]] §"Derived operational state"). They never appear in a Proposal.
 
 ## Cache key
 
@@ -173,13 +174,13 @@ questions` prints those row records; `dome answer <id> <value>` validates the
 answer and sets `answered_at` / `answer`.
 
 Design note: answer values are user input, not rebuildable markdown-derived
-facts. In the current implementation they live in `projection.db.questions`
-because that is where QuestionEffects already land. The complete recovery loop
-must either materialize answers immediately through answer-handler processors or
-move question/answer records into durable operational state before treating
-answers as long-lived source-of-truth. That same work should make answer
-handler dispatch retryable after partial failure; the current CLI records the
-answer before dispatching matching handlers.
+facts. `projection.db.questions.answer` is a denormalized view of the current
+answer for inspect/query ergonomics; the durable source of truth is
+`answers.db.question_answers`, keyed by `QuestionEffect.idempotencyKey`.
+Projection rebuild resets and replays `QuestionEffect` rows, then reapplies
+matching durable answers from `answers.db`. Answer-handler dispatch retry
+remains separate operational work: the CLI records the durable answer before
+dispatching matching handlers.
 
 ### `scheduled_jobs`
 

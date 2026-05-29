@@ -229,11 +229,11 @@ Work:
       validate options, and persist answers by stable question row id.
 - [x] Add answer-triggered processor dispatch through
       normal processor/effect semantics.
-- [ ] Tighten question-answer durability: either move answer records out of
-      rebuildable projection state or ensure answer handlers materialize every
-      answer before projection rebuild can discard it. This should also make
-      answer-handler dispatch retryable after partial failure; today a recorded
-      answer is not re-dispatched by re-running `dome answer`.
+- [x] Move answer records out of rebuildable projection state into
+      `answers.db` and rehydrate answered question rows during projection
+      rebuild.
+- [ ] Make answer-handler dispatch retryable after partial failure; today a
+      recorded answer is not re-dispatched by re-running `dome answer`.
 - [x] Implement probe-only health checks for failed outbox rows, orphan
       running rows, and quarantined processors.
 - [ ] Add health probes for schema skew, instruction drift, adopted-ref

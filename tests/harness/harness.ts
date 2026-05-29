@@ -86,6 +86,7 @@ import type {
 import type { LedgerDb } from "../../src/ledger/db";
 import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
+import type { AnswersDb } from "../../src/answers/db";
 import type { ModelProvider } from "../../src/engine/model-invoke";
 import type { OperationalWorkResult } from "../../src/engine/operational-work";
 
@@ -440,6 +441,10 @@ export class HarnessImpl implements Harness {
 
   get projection(): ProjectionDb {
     return this.runtime.projectionDb;
+  }
+
+  get answers(): AnswersDb {
+    return this.runtime.answersDb;
   }
 
   get outbox(): OutboxDb {

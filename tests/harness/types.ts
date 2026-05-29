@@ -23,6 +23,7 @@
 // `./assertions/*`).
 
 import type { CommitOid } from "../../src/core/source-ref";
+import type { AnswersDb } from "../../src/answers/db";
 import type { LedgerDb } from "../../src/ledger/db";
 import type { RunStatus } from "../../src/ledger/runs";
 import type { OutboxDb } from "../../src/outbox/db";
@@ -422,6 +423,7 @@ export interface Harness {
   readonly clock: TestClockHandle;
   readonly ledger: LedgerDb;
   readonly projection: ProjectionDb;
+  readonly answers: AnswersDb;
   readonly outbox: OutboxDb;
   readonly refs: RefsView;
   readonly git: GitView;

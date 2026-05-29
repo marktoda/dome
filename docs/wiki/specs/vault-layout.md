@@ -124,6 +124,7 @@ Rebuilt by `dome rebuild` when stale. (The pre-recut `dome doctor --rebuild-inde
                           # need to be copied here. See `extensions/` below.
   state/                  # derived operational state (gitignored)
     projection.db         # Bun.sqlite — facts, fts5, diagnostics, questions, schedule_cursors
+    answers.db            # Bun.sqlite — durable answers to projection questions
     runs.db               # Bun.sqlite — run ledger
     outbox.db             # Bun.sqlite — external-action outbox
     quarantined.json      # processor quarantine state
@@ -191,15 +192,16 @@ Each `<vault>/.dome/extensions/<bundle>/` is a bundle directory per [[wiki/specs
 
 ### Derived operational state under `.dome/state/`
 
-Gitignored. Rebuildable. Three SQLite files plus markers:
+Gitignored operational state:
 
 - `projection.db` — see [[wiki/specs/projection-store]].
+- `answers.db` — durable answers to `QuestionEffect` rows.
 - `runs.db` — see [[wiki/specs/run-ledger]].
 - `outbox.db` — see [[wiki/specs/projection-store]] §"Outbox".
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
 - `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 
-Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting `projection.db` and running `dome rebuild` reconverges the derived query cache. `runs.db` and `outbox.db` are persistent operational state, not rebuildable projections: wiping `runs.db` loses historical run audit, and wiping `outbox.db` loses pending external actions. Users should delete only `projection.db` unless they are intentionally discarding operational history.
+Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting `projection.db` and running `dome rebuild` reconverges the derived query cache. `answers.db`, `runs.db`, and `outbox.db` are persistent operational state, not rebuildable projections: wiping `answers.db` loses human question decisions, wiping `runs.db` loses historical run audit, and wiping `outbox.db` loses pending external actions. Users should delete only `projection.db` unless they are intentionally discarding operational history.
 
 ## Git repository structure
 

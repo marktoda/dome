@@ -10,7 +10,7 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** Anything in `<vault>/.dome/state/projection.db` can be reconstructed by walking the adopted commit and re-running the relevant processors. Wiping `projection.db` and running `dome rebuild` produces a byte-equivalent (modulo timestamps) `.db` file. The outbox (`outbox.db`) and run ledger (`runs.db`) are NOT covered by this invariant — they hold history that cannot be derived from markdown.
+**Statement:** Anything in `<vault>/.dome/state/projection.db` can be reconstructed by walking the adopted commit and re-running the relevant processors, then rehydrating durable human answers from `answers.db`. Wiping `projection.db` and running `dome rebuild` produces a byte-equivalent (modulo timestamps) `.db` file. Answers (`answers.db`), the outbox (`outbox.db`), and the run ledger (`runs.db`) are NOT covered by this invariant — they hold human decisions and history that cannot be derived from markdown.
 
 **Why:** This is the structural guarantee that makes [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] concrete for the projection layer. SQLite gives the engine fast queries; markdown remains the durable source. If the projection becomes corrupt, the user wipes and rebuilds — no data loss, no migration tooling required.
 

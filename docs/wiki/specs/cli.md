@@ -258,7 +258,7 @@ The `<linked count>` is rendered from `src/types.ts` `INVARIANTS` at run time �
 ### `dome inspect <subject> [--limit <n>] [--json]`
 
 Read-only view over the operational substrate. The command opens the
-runtime (so the three databases are initialized) but does not submit a
+runtime (so the operational databases are initialized) but does not submit a
 Proposal, does not invoke any processor, and does not mutate state.
 
 Subjects (v1.0):
@@ -384,10 +384,11 @@ new answer-handler in the bundle; no new CLI command.
 Without `<value>`, `dome answer <question-id>` prints the question
 and its options.
 
-Answering writes to `projection.db.questions` (sets `answered_at` +
-`answer`) and dispatches garden-phase processors with `answer` triggers.
-The relevant answer-handler processor catches the answer event and applies
-the mutation through normal Effect routing.
+Answering writes the durable answer to `answers.db.question_answers`, updates
+the current `projection.db.questions` row for inspect/query ergonomics, and
+dispatches garden-phase processors with `answer` triggers. The relevant
+answer-handler processor catches the answer event and applies the mutation
+through normal Effect routing.
 
 **Current behavior.** `dome answer` looks up the row id, prints the question
 when `<value>` is omitted, validates `<value>` against `options` when options
@@ -395,11 +396,11 @@ are present, records the answer, and dispatches matching garden-phase answer
 handlers. Duplicate-detection content questions plus a fixture answer handler
 are covered end-to-end by the harness.
 
-Answer-handler retry/durability is still incomplete: if dispatch fails after
-the answer row is recorded, re-running `dome answer` reports the already
-answered row and does not re-dispatch handlers. The durable recovery milestone
-tracks moving this to a retryable operational event or otherwise materializing
-the answer before it can be lost by projection rebuild.
+Answer-handler retry is still incomplete: if dispatch fails after the durable
+answer is recorded, re-running `dome answer` reports the already answered row
+and does not re-dispatch handlers. Projection rebuild does preserve the
+answered state by replaying `answers.db.question_answers` onto rebuilt
+question rows.
 
 Until `dome.health` ships, no first-party processor emits operational
 QuestionEffects for outbox/quarantine/orphan-run recovery; those recovery
@@ -411,7 +412,7 @@ Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Cl
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the three operational databases (`projection.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved bundles root (SDK-shipped `assets/extensions/` by default; vault-local `.dome/extensions/` only when explicitly selected).
+1. `openVaultRuntime({vaultPath, bundlesRoot})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved bundles root (SDK-shipped `assets/extensions/` by default; vault-local `.dome/extensions/` only when explicitly selected).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.

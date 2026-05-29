@@ -226,10 +226,11 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
 
     {
       name: "SQLITE_INTEGRITY",
-      description: "PRAGMA integrity_check passes on all three databases",
+      description: "PRAGMA integrity_check passes on all four databases",
       check: async (h: Harness): Promise<void> => {
         const dbs = [
           ["projection", h.projection.raw],
+          ["answers", h.answers.raw],
           ["outbox", h.outbox.raw],
           ["ledger", h.ledger.raw],
         ] as const;

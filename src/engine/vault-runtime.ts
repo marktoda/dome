@@ -1,6 +1,6 @@
 // vault-runtime: the composed v1 runtime handle.
 //
-// One `VaultRuntime` opens the three operational databases — projection,
+// One `VaultRuntime` opens the operational databases — projection, answers,
 // outbox, and run-ledger — and builds the `ProcessorRuntime` against
 // either a caller-supplied `ProcessorRegistry` or a bundle-loader-derived
 // registry built by walking `bundlesRoot/`. The handle is consumed by the
@@ -14,7 +14,7 @@
 //
 // This module is not re-exported from `src/index.ts`. The daemon is the
 // only consumer; harnesses that want to query the projection / outbox /
-// ledger reach the three DBs via the dedicated `open<*>Db` functions on
+// ledger reach the DBs via the dedicated `open<*>Db` functions on
 // the public surface.
 //
 // v1.0 scope (intentional deferrals, documented inline):
@@ -35,7 +35,7 @@
 //
 // Normative references:
 //   - docs/wiki/specs/vault-layout.md §"Derived operational state under
-//     `.dome/`" — the canonical paths for the three databases.
+//     `.dome/`" — the canonical paths for the databases.
 //   - docs/wiki/specs/proposals.md — the engine-internal contract this
 //     runtime backs.
 //
@@ -58,6 +58,7 @@ import {
   type CapabilityPolicy,
 } from "./capability-policy";
 import { readTree } from "../git";
+import { openAnswersDb, type AnswersDb } from "../answers/db";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
 import { buildProjectionQueryView } from "../projections/query-view";
 import { openOutboxDb, type OutboxDb } from "../outbox/db";
@@ -107,6 +108,7 @@ const EMPTY_EXTERNAL_HANDLERS: ExternalHandlerRegistry = Object.freeze({});
 export type VaultRuntime = {
   readonly path: string;
   readonly projectionDb: ProjectionDb;
+  readonly answersDb: AnswersDb;
   readonly outboxDb: OutboxDb;
   readonly ledgerDb: LedgerDb;
   readonly extensions: ReadonlyArray<{
@@ -134,8 +136,8 @@ export type VaultRuntime = {
  */
 export type OpenVaultRuntimeWithRegistryOpts = {
   /**
-   * Absolute filesystem path to the vault root. The three databases land
-   * at `<vaultPath>/.dome/state/{projection,outbox,runs}.db`.
+   * Absolute filesystem path to the vault root. The operational databases
+   * land under `<vaultPath>/.dome/state/`.
    */
   readonly vaultPath: string;
   /**
@@ -222,8 +224,8 @@ export type OpenVaultRuntimeOpts =
  * underlying cause from the failing call so the caller can surface an
  * actionable error.
  *
- *   - `projection-db-open-failed`, `outbox-db-open-failed`,
- *     `ledger-db-open-failed`: the three DB-open seams.
+ *   - `projection-db-open-failed`, `answers-db-open-failed`,
+ *     `outbox-db-open-failed`, `ledger-db-open-failed`: DB-open seams.
  *   - `quarantine-store-open-failed`: the processor quarantine JSON store
  *     could not be read or parsed.
  *   - `bundle-load-failed`: the bundle loader rejected the bundlesRoot
@@ -235,6 +237,7 @@ export type OpenVaultRuntimeOpts =
  */
 export type OpenVaultRuntimeError =
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }
+  | { readonly kind: "answers-db-open-failed"; readonly cause: string }
   | { readonly kind: "outbox-db-open-failed"; readonly cause: string }
   | { readonly kind: "ledger-db-open-failed"; readonly cause: string }
   | { readonly kind: "quarantine-store-open-failed"; readonly cause: string }
@@ -245,7 +248,7 @@ export type OpenVaultRuntimeError =
 // ----- openVaultRuntime -----------------------------------------------------
 
 /**
- * Open the three operational databases under `<vaultPath>/.dome/state/`
+ * Open the operational databases under `<vaultPath>/.dome/state/`
  * and build a `ProcessorRuntime` against the resolved registry. Returns a
  * `VaultRuntime` handle the daemon passes to `adopt()` per commit.
  *
@@ -332,10 +335,24 @@ export async function openVaultRuntime(
   }
   const projectionDb = projectionResult.value.db;
 
-  // 3. Outbox DB. Close the projection on failure to avoid a handle leak.
+  // 3. Answers DB. Human answers are durable operational state, separate
+  //    from the rebuildable question rows in projection.db.
+  const answersPath = join(opts.vaultPath, ".dome", "state", "answers.db");
+  const answersResult = await openAnswersDb({ path: answersPath });
+  if (!answersResult.ok) {
+    projectionDb.close();
+    return err({
+      kind: "answers-db-open-failed",
+      cause: answersResult.error.kind,
+    });
+  }
+  const answersDb = answersResult.value.db;
+
+  // 4. Outbox DB. Close prior handles on failure to avoid a leak.
   const outboxPath = join(opts.vaultPath, ".dome", "state", "outbox.db");
   const outboxResult = await openOutboxDb({ path: outboxPath });
   if (!outboxResult.ok) {
+    answersDb.close();
     projectionDb.close();
     return err({
       kind: "outbox-db-open-failed",
@@ -344,11 +361,12 @@ export async function openVaultRuntime(
   }
   const outboxDb = outboxResult.value.db;
 
-  // 4. Ledger DB. Close the prior two on failure.
+  // 5. Ledger DB. Close the prior handles on failure.
   const ledgerPath = join(opts.vaultPath, ".dome", "state", "runs.db");
   const ledgerResult = await openLedgerDb({ path: ledgerPath });
   if (!ledgerResult.ok) {
     outboxDb.close();
+    answersDb.close();
     projectionDb.close();
     return err({
       kind: "ledger-db-open-failed",
@@ -357,7 +375,7 @@ export async function openVaultRuntime(
   }
   const ledgerDb = ledgerResult.value.db;
 
-  // 5. Build the ProcessorRuntime. The three injections cover the v1.0
+  // 6. Build the ProcessorRuntime. The three injections cover the v1.0
   //    runtime seams — see file banner. `resolveTree` is wired against
   //    the live git boundary so the runtime's per-iteration
   //    `Snapshot` construction doesn't trip on a throw placeholder.
@@ -380,6 +398,7 @@ export async function openVaultRuntime(
   const runtime: VaultRuntime = Object.freeze({
     path: opts.vaultPath,
     projectionDb,
+    answersDb,
     outboxDb,
     ledgerDb,
     extensions,
@@ -395,6 +414,7 @@ export async function openVaultRuntime(
       // `sqlite3_close_v2`, so a double-close is safe.
       ledgerDb.close();
       outboxDb.close();
+      answersDb.close();
       projectionDb.close();
     },
   });

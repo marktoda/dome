@@ -16,6 +16,8 @@ import {
   markProjectionBuilt,
   resetProjectionDb,
 } from "../projections/db";
+import { queryQuestionAnswers } from "../answers/question-answers";
+import { applyQuestionAnswer } from "../projections/questions";
 import { buildSqliteSinks } from "../projections/sinks";
 import type { VaultRuntime } from "./vault-runtime";
 import { applyEffect } from "./apply-effect";
@@ -93,6 +95,8 @@ export async function rebuildProjection(opts: {
     }
   }
 
+  restoreDurableQuestionAnswers(opts.runtime);
+
   markProjectionBuilt(opts.runtime.projectionDb, {
     adoptedCommit: opts.adopted,
     extensionSet: opts.runtime.extensions,
@@ -106,6 +110,16 @@ export async function rebuildProjection(opts: {
     processorCount: runnerResults.length,
     effectCount: routedEffects,
   });
+}
+
+function restoreDurableQuestionAnswers(runtime: VaultRuntime): void {
+  for (const answer of queryQuestionAnswers(runtime.answersDb)) {
+    applyQuestionAnswer(runtime.projectionDb, {
+      idempotencyKey: answer.idempotencyKey,
+      answer: answer.answer,
+      answeredAt: answer.answeredAt,
+    });
+  }
 }
 
 async function listFilesAtCommit(

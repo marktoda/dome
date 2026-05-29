@@ -46,11 +46,19 @@ export type QuestionRecord = {
 export type AnswerQuestionOpts = {
   readonly idempotencyKey: string;
   readonly answer: string;
+  readonly answeredAt?: string;
 };
 
 export type AnswerQuestionByIdOpts = {
   readonly id: number;
   readonly answer: string;
+  readonly answeredAt?: string;
+};
+
+export type ApplyQuestionAnswerOpts = {
+  readonly idempotencyKey: string;
+  readonly answer: string;
+  readonly answeredAt: string;
 };
 
 export type AnswerQuestionResult =
@@ -112,6 +120,12 @@ const ANSWER_BY_ID_SQL = `
 UPDATE questions
 SET answer = ?, answered_at = ?
 WHERE id = ? AND answered_at IS NULL
+`.trim();
+
+const APPLY_ANSWER_SQL = `
+UPDATE questions
+SET answer = ?, answered_at = ?
+WHERE idempotency_key = ?
 `.trim();
 
 // ----- Row shape ------------------------------------------------------------
@@ -213,7 +227,23 @@ export function answerQuestion(
 ): void {
   db.raw.query(ANSWER_SQL).run(
     opts.answer,
-    new Date().toISOString(),
+    opts.answeredAt ?? new Date().toISOString(),
+    opts.idempotencyKey,
+  );
+}
+
+/**
+ * Apply a previously durable answer to the rebuildable projection row.
+ * Unlike `answerQuestion`, this overwrites the row because the durable
+ * answers store is the source of truth during projection rebuild.
+ */
+export function applyQuestionAnswer(
+  db: ProjectionDb,
+  opts: ApplyQuestionAnswerOpts,
+): void {
+  db.raw.query(APPLY_ANSWER_SQL).run(
+    opts.answer,
+    opts.answeredAt,
     opts.idempotencyKey,
   );
 }
@@ -244,7 +274,7 @@ export function answerQuestionById(
 
   db.raw.query(ANSWER_BY_ID_SQL).run(
     opts.answer,
-    new Date().toISOString(),
+    opts.answeredAt ?? new Date().toISOString(),
     opts.id,
   );
   const answered = getQuestionRecord(db, opts.id);

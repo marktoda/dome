@@ -65,6 +65,7 @@ scenario(
     const rows = JSON.parse(inspect.stdout) as ReadonlyArray<{
       readonly id: number;
       readonly status: string;
+      readonly idempotency_key: string;
       readonly options: ReadonlyArray<string> | string;
     }>;
     expect(rows.length).toBe(1);
@@ -127,5 +128,19 @@ scenario(
     expect(afterRows[0]?.id).toBe(questionId);
     expect(afterRows[0]?.status).toBe("answered");
     expect(afterRows[0]?.answer).toBe("keep separate");
+
+    const rebuild = await h.runCli(["rebuild", "--json"]);
+    expect(rebuild.exitCode).toBe(0);
+    const rebuiltRows = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<{
+      readonly status: string;
+      readonly answer: string;
+      readonly idempotency_key: string;
+    }>;
+    expect(rebuiltRows.length).toBe(1);
+    expect(rebuiltRows[0]?.idempotency_key).toBe(rows[0]?.idempotency_key);
+    expect(rebuiltRows[0]?.status).toBe("answered");
+    expect(rebuiltRows[0]?.answer).toBe("keep separate");
   },
 );

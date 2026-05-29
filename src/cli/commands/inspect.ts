@@ -2,7 +2,7 @@
 //
 // Per [[wiki/specs/cli]] §"dome inspect <subject>", `dome inspect` is the
 // read-only view over the operational substrate. It opens the runtime
-// (so the three databases are initialized) but does not submit a
+// (so the operational databases are initialized) but does not submit a
 // Proposal, does not invoke any processor, and does not mutate state.
 //
 // v1.0 ships four subjects backed by existing query surfaces:

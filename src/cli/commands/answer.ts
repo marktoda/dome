@@ -6,9 +6,9 @@
 
 import { resolve } from "node:path";
 
+import { answerQuestionDurably } from "../../engine/question-answering";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import {
-  answerQuestionById,
   getQuestionRecord,
   type AnswerQuestionResult,
   type QuestionRecord,
@@ -67,7 +67,9 @@ export async function runAnswer(
       return 0;
     }
 
-    const result = answerQuestionById(runtime.projectionDb, {
+    const result = answerQuestionDurably({
+      projection: runtime.projectionDb,
+      answers: runtime.answersDb,
       id,
       answer: rawValue,
     });
