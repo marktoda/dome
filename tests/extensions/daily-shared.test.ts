@@ -37,8 +37,20 @@ describe("dome.daily shared date helpers", () => {
         ].join("\n"),
       ),
     ).toEqual([
-      { line: 1, text: "- [ ] #task Follow up", sourcePath: null },
-      { line: 2, text: "  * [ ] Review notes", sourcePath: null },
+      {
+        line: 1,
+        text: "- [ ] #task Follow up",
+        sourcePath: null,
+        body: "#task Follow up",
+        followup: false,
+      },
+      {
+        line: 2,
+        text: "  * [ ] Review notes",
+        sourcePath: null,
+        body: "Review notes",
+        followup: false,
+      },
     ]);
   });
 
@@ -52,6 +64,34 @@ describe("dome.daily shared date helpers", () => {
         line: 1,
         text: "- [ ] Already carried",
         sourcePath: "wiki/dailies/2025-12-31",
+        body: "Already carried",
+        followup: false,
+      },
+    ]);
+  });
+
+  test("openTasksFromMarkdown marks explicit followups without guessing prose", () => {
+    expect(
+      openTasksFromMarkdown(
+        [
+          "- [ ] #followup Send Ada launch notes",
+          "- [ ] Follow up with Ben",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        line: 1,
+        text: "- [ ] #followup Send Ada launch notes",
+        sourcePath: null,
+        body: "#followup Send Ada launch notes",
+        followup: true,
+      },
+      {
+        line: 2,
+        text: "- [ ] Follow up with Ben",
+        sourcePath: null,
+        body: "Follow up with Ben",
+        followup: false,
       },
     ]);
   });
@@ -61,11 +101,19 @@ describe("dome.daily shared date helpers", () => {
       carriedForwardSection({
         yesterday: { yyyy: "2026", mm: "01", dd: "01" },
         tasks: [
-          { line: 1, text: "- [ ] New task", sourcePath: null },
+          {
+            line: 1,
+            text: "- [ ] New task",
+            sourcePath: null,
+            body: "New task",
+            followup: false,
+          },
           {
             line: 2,
             text: "- [ ] Already carried",
             sourcePath: "wiki/dailies/2025-12-31",
+            body: "Already carried",
+            followup: false,
           },
         ],
       }),

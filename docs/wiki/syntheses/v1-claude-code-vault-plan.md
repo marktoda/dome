@@ -1,7 +1,7 @@
 ---
 type: synthesis
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-29
 sources:
   - "[[wiki/specs/harnesses]]"
   - "[[wiki/specs/cli]]"
@@ -165,8 +165,8 @@ Shipped and strong:
 Not yet at v1:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions. Export-context retrieval is still missing.
-- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation and task carry-forward. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
-- The day-to-day workflows the user wants are only partially implemented: daily note creation and carry-forward tasks work, but capture compilation, todo/followup extraction, and review questions remain.
+- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, and explicit daily task/followup fact indexing. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, and explicit daily task/followup fact indexing work, but capture compilation, richer todo/followup extraction, and review questions remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -319,7 +319,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
 | `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
 | `dome.search` | adopted-state recall | FTS indexing and `dome query` shipped; `export-context` remains |
-| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, extract followups, today/prep views |
+| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index explicit daily task/followup facts, extract richer followups, today/prep views |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, todo/followup extraction, question emission |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
 
@@ -411,7 +411,10 @@ Acceptance:
 - Define minimal markdown task schema compatible with plain Obsidian checkboxes.
 - [x] Implement `dome.daily.create-daily`.
 - [x] Implement carry-forward of unfinished tasks from the previous daily note.
-- Implement extraction of followups/todos from daily notes or raw captures.
+- [x] Index explicit open checkboxes and `#followup` / `#follow-up` markers
+  in daily notes as source-ref-backed facts.
+- Implement richer extraction of followups/todos from daily notes or raw
+  captures.
 - Decide whether task completion writes are direct garden patches or questions when ambiguous.
 
 External prior: Obsidian task plugins show the durable expectation here: users want vault-wide task queries, due/recurring metadata, and carry-forward into daily/weekly notes. See <https://community.obsidian.md/plugins/obsidian-tasks-plugin> and <https://www.obsidianstats.com/plugins/auto-tasks>.

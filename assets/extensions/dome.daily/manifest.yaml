@@ -14,6 +14,26 @@ processors:
         paths: ["wiki/dailies/*.md"]
     module: processors/create-daily.ts
 
+  - id: dome.daily.task-index
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/dailies/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/dailies/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/dailies/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/dailies/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.daily.*"]
+    module: processors/task-index.ts
+
   - id: dome.daily.carry-forward
     version: 0.1.0
     phase: garden

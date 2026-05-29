@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -16,7 +16,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates` | — | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
-| **`dome.daily`** | partially shipped | — | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | planned: `today`, `week-review`, `agenda-with`, `prep` |
+| **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | planned: `today`, `week-review`, `agenda-with`, `prep` |
 | **`dome.lint`** | partially shipped | — | — | shipped: `markdown-format`; planned: `lint-report`, `apply-finding` |
 | **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`; planned: `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
@@ -27,7 +27,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 
 ## Counts
 
-- **Shipped processors:** 20 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
+- **Shipped processors:** 21 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
 - **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.

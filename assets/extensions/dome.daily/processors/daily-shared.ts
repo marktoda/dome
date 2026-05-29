@@ -18,6 +18,8 @@ export type OpenTask = {
   readonly line: number;
   readonly text: string;
   readonly sourcePath: string | null;
+  readonly body: string;
+  readonly followup: boolean;
 };
 
 export function localDateParts(date: Date): DailyDate {
@@ -70,6 +72,8 @@ export function openTasksFromMarkdown(content: string): ReadonlyArray<OpenTask> 
         line: i + 1,
         text: stripCarryForwardSource(line),
         sourcePath: carryForwardSourcePath(line),
+        body: taskBodyFromCheckboxLine(line),
+        followup: isExplicitFollowup(line),
       }),
     );
   }
@@ -144,6 +148,16 @@ export function replaceCarriedForwardSection(input: {
 
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
+}
+
+function taskBodyFromCheckboxLine(line: string): string {
+  return stripCarryForwardSource(line)
+    .replace(/^\s*[-*]\s+\[ \]\s+/, "")
+    .trim();
+}
+
+function isExplicitFollowup(line: string): boolean {
+  return /(^|\s)#follow-?up(\s|$)/i.test(line);
 }
 
 function stripCarryForwardSource(line: string): string {

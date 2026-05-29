@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -204,7 +204,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits DiagnosticEffect on broken wikilinks, missing local image embeds, stale `updated:` dates, and frontmatter issues; asks about suspected duplicate pages; provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
-| `dome.daily` | garden: create-daily, carry-forward | Creates daily notes and carries unfinished markdown checkbox tasks forward. |
+| `dome.daily` | adoption: task-index; garden: create-daily, carry-forward | Creates daily notes, carries unfinished markdown checkbox tasks forward, and indexes explicit daily task/followup facts. |
 | `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query | Maintains the FTS5 projection; answers adopted-state query requests. |
 

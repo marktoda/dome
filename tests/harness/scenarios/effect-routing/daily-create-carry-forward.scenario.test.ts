@@ -27,6 +27,7 @@ extensions:
     grant:
       read: ["wiki/dailies/*.md"]
       patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
   dome.markdown:
     enabled: true
     grant:
@@ -44,7 +45,7 @@ recurrence: 2026-01-01
 
 ## Notes
 
-- [ ] #task Follow up with [[wiki/entities/Ada]]
+- [ ] #task #followup Follow up with [[wiki/entities/Ada]]
 - [x] Completed task should stay behind
 * [ ] Review launch plan
 - [ ] Already carried once (from [[wiki/dailies/2025-12-31]])
@@ -71,7 +72,7 @@ recurrence: 2026-01-01
       .toContain("<!-- dome.daily:carried-forward:start -->");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("- [ ] #task Follow up with [[wiki/entities/Ada]] (from [[wiki/dailies/2026-01-01]])");
+      .toContain("- [ ] #task #followup Follow up with [[wiki/entities/Ada]] (from [[wiki/dailies/2026-01-01]])");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("* [ ] Review launch plan (from [[wiki/dailies/2026-01-01]])");
@@ -94,6 +95,28 @@ recurrence: 2026-01-01
         status: "succeeded",
       })
       .toHaveExactlyOne();
+    await h
+      .expectLedger({
+        processorId: "dome.daily.task-index",
+        status: "succeeded",
+      })
+      .toHaveAtLeastOne();
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: "wiki/dailies/2026-01-02.md",
+      })
+      .toHaveCount(3);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: "wiki/dailies/2026-01-02.md",
+        objectString: "#task #followup Follow up with [[wiki/entities/Ada]]",
+      })
+      .toHaveCount(1);
 
     expect(capabilityUsesByRun(h.ledger, createRun.id as RunId)).toEqual([
       expect.objectContaining({

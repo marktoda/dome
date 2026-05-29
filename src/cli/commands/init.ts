@@ -296,6 +296,8 @@ extensions:
         - "wiki/dailies/*.md"
       patch.auto:
         - "wiki/dailies/*.md"
+      graph.write:
+        - "dome.daily.*"
 
   dome.search:
     enabled: true

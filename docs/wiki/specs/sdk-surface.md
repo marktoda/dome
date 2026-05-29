@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -247,7 +247,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits diagnostics on broken references/frontmatter/date issues, asks about suspected duplicates, and provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
-| `dome.daily` | garden: create-daily (cron), carry-forward | Creates daily notes and carries open markdown checkbox tasks forward. |
+| `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward | Creates daily notes, carries open markdown checkbox tasks forward, and indexes explicit daily task/followup facts. |
 | `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply flow remains planned. |
 | `dome.search` | adoption: index-text; view: query | Maintains FTS5 adopted-state search; answers `dome query` requests. Embeddings/export-context remain future work. |
 

@@ -90,8 +90,8 @@ V1 capability ledger:
 - [x] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
       probe-only `dome doctor`, and first-party outbox retry/abandon
       plus quarantine reset and orphan-run recovery are shipped.
-- [ ] Daily/task loop: daily creation, carry-forward, followup/todo
-      extraction, today/prep views.
+- [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
+      task/followup fact indexing, capture extraction, today/prep views.
 - [ ] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering are shipped; daily budget enforcement and production provider
@@ -304,8 +304,11 @@ Work:
 - [x] Implement `dome.daily.create-daily`.
 - [x] Implement carry-forward of unfinished tasks from the previous daily
       note.
+- [x] Index explicit open daily checkboxes as source-ref-backed
+      `dome.daily.open_task` facts, and explicit `#followup` / `#follow-up`
+      checkboxes as `dome.daily.followup` facts.
 - [ ] Implement deterministic followup/todo extraction from daily notes where
-      possible.
+      possible beyond explicit checkbox markers.
 - [ ] Ask questions for ambiguous writes instead of silently guessing.
 - [ ] Add `dome today` and `dome prep` only once they have useful data to
       render.
@@ -314,7 +317,9 @@ Acceptance:
 
 - [x] Yesterday has unfinished tasks; today's daily note is created with
       carried-forward tasks.
-- [ ] Daily/capture text yields source-ref-backed followups.
+- [x] Explicit daily checkbox tasks and followup markers yield
+      source-ref-backed facts.
+- [ ] Capture text yields source-ref-backed followups.
 - [ ] Ambiguous task extraction asks a question instead of mutating silently.
 - [ ] Real-vault dogfood against `~/vaults/work` or `docs/`.
 
@@ -432,7 +437,7 @@ Required for daily value:
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | partially shipped | daily creation and task carry-forward shipped; followup extraction and today/prep views remain |
+| `dome.daily` | partially shipped | daily creation, task carry-forward, and explicit daily task/followup fact indexing shipped; capture extraction and today/prep views remain |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 
 Optional or conditional:
