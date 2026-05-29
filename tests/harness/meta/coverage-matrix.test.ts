@@ -55,6 +55,7 @@ import "../scenarios/cli-surface/doctor-health.scenario.test";
 import "../scenarios/cli-surface/query-adopted-state.scenario.test";
 import "../scenarios/cli-surface/rebuild-projection.scenario.test";
 import "../scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test";
+import "../scenarios/cli-surface/view-command-failure.scenario.test";
 import "../scenarios/effect-kinds/diagnostic-effect-lands.scenario.test";
 import "../scenarios/effect-kinds/patch-effect-applies.scenario.test";
 import "../scenarios/effect-kinds/patch-and-diagnostic-same-cycle.scenario.test";
@@ -65,6 +66,7 @@ import "../scenarios/effect-kinds/page-type-schema-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/bundle-page-type-schema.scenario.test";
 import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
+import "../scenarios/effect-kinds/daily-task-index-facts.scenario.test";
 import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
@@ -85,6 +87,7 @@ import "../scenarios/lifecycle/bundle-uninstall-reinstall.scenario.test";
 import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test";
 import "../scenarios/garden-cascade/sub-proposal-frame-correctness.scenario.test";
 import "../scenarios/garden-cascade/multiple-garden-patches.scenario.test";
+import "../scenarios/garden-cascade/sub-proposal-max-iterations.scenario.test";
 
 describe("coverage matrix (Phase H2 mini-version)", () => {
   test("registry is non-empty", () => {
@@ -116,14 +119,14 @@ describe("coverage matrix (Phase H2 mini-version)", () => {
   // H2 additions ----------------------------------------------------------
 
   test("every shipped processor's phase has at least one scenario", () => {
-    // The currently-shipped first-party bundles (dome.markdown +
-    // dome.graph) carry processors in two phases: `adoption` (the
-    // adoption-phase markdown + graph processors) and `view` (the
-    // Phase 13a `dome.markdown.orphan-pages` view processor).
-    // As more phases ship (capture, retrieval, learning, ...) we
-    // extend this list; H3+ will wire it to the processor registry so
-    // it stays automatically in sync.
-    const shippedPhases: ReadonlyArray<string> = ["adoption", "view"];
+    // First-party bundles now ship processors in adoption, garden, and
+    // view phases. Keep this explicit until the meta-test reads the
+    // loaded processor registry directly.
+    const shippedPhases: ReadonlyArray<string> = [
+      "adoption",
+      "garden",
+      "view",
+    ];
     const registry = getRegistry();
     for (const phase of shippedPhases) {
       const covered = registry.some((entry) =>

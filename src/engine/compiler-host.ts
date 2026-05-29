@@ -715,6 +715,7 @@ function sinksForCursor(opts: {
     resolveDiagnostics: async (input) =>
       current().resolveDiagnostics?.(input),
     resolveFacts: async (input) => current().resolveFacts?.(input),
+    resolveQuestions: async (input) => current().resolveQuestions?.(input),
     recordFact: async (input) => current().recordFact(input),
     recordSearchDocument: async (input) =>
       current().recordSearchDocument(input),

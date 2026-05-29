@@ -41,9 +41,11 @@ The original effect is **discarded** (not applied, not recorded in its expected 
 
 This catches bugs in processor authoring — a processor declared `phase: "view"` that emits a `PatchEffect` (likely a copy-paste error or a phase mis-declaration) fails loudly on the first invocation.
 
-## Capability enforcement is upstream
+## Phase compatibility precedes capability enforcement
 
-Routing happens *after* capability enforcement. An effect that fails capability enforcement (per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]]) is either:
+The routing chokepoint first rejects incompatible `(effect kind, phase)` pairs with `phase-mismatch`. The rejected effect is not applied, not recorded in its expected sink, not broker-checked, and not capability-use-ledgered; its audit record is the phase-mismatch diagnostic on the processor RunRecord.
+
+Every phase-compatible effect is then capability-checked before any sink write, sub-Proposal route, or view return. An effect that fails capability enforcement (per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]]) is either:
 
 - **Denied:** discarded with a capability-deny diagnostic (recorded in `capability_uses` with `outcome: "denied"`).
 - **Downgraded:** routed under the downgraded shape (e.g., PatchEffect `auto → propose`).
@@ -62,7 +64,7 @@ Three properties hold:
 
 1. **Every (kind, phase) pair has one route.** No ambiguity in routing means no defensive code in `apply-effect.ts`.
 2. **Phase-mismatch is structurally caught.** The matrix specifies which pairs are valid; the engine rejects the rest at the routing chokepoint.
-3. **Capability enforcement is one layer above routing.** Routing assumes capabilities have been checked; the broker assumes effects are well-formed. Separation of concerns at the engine boundary.
+3. **Phase compatibility and capability enforcement are separate gates.** The router rejects structurally impossible phase/effect pairs; the broker authorizes every phase-compatible effect before it can reach a sink or sub-Proposal route.
 
 ## Related
 

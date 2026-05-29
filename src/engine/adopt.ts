@@ -64,7 +64,12 @@
 //     iteration for the closure commit's touchedPaths argument is fine —
 //     `makeClosureCommit` does not require sort order).
 
-import type { Effect, DiagnosticEffect, PatchEffect } from "../core/effect";
+import type {
+  Effect,
+  DiagnosticEffect,
+  PatchEffect,
+  QuestionEffect,
+} from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
 import type {
   AdoptionResult,
@@ -364,6 +369,9 @@ export async function adopt(opts: {
       const emittedDiagnostics = effects.filter(
         (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
       );
+      const emittedQuestions = effects.filter(
+        (effect): effect is QuestionEffect => effect.kind === "question",
+      );
       if (
         executionStatus === "succeeded" &&
         routingSinks.resolveFacts !== undefined
@@ -448,6 +456,17 @@ export async function adopt(opts: {
           runId,
           inspectedPaths,
           emittedDiagnostics,
+        });
+      }
+      if (
+        executionStatus === "succeeded" &&
+        routingSinks.resolveQuestions !== undefined
+      ) {
+        await routingSinks.resolveQuestions({
+          processorId,
+          runId,
+          inspectedPaths,
+          emittedQuestions,
         });
       }
     }
@@ -688,6 +707,9 @@ type ResolveDiagnosticsInput = Parameters<
 type ResolveFactsInput = Parameters<
   NonNullable<ApplyEffectSinks["resolveFacts"]>
 >[0];
+type ResolveQuestionsInput = Parameters<
+  NonNullable<ApplyEffectSinks["resolveQuestions"]>
+>[0];
 type RecordFactInput = Parameters<ApplyEffectSinks["recordFact"]>[0];
 type RecordSearchDocumentInput = Parameters<
   ApplyEffectSinks["recordSearchDocument"]
@@ -700,6 +722,7 @@ type BufferedProjectionOperation =
       readonly input: ResolveDiagnosticsInput;
     }
   | { readonly kind: "resolveFacts"; readonly input: ResolveFactsInput }
+  | { readonly kind: "resolveQuestions"; readonly input: ResolveQuestionsInput }
   | { readonly kind: "recordFact"; readonly input: RecordFactInput }
   | {
       readonly kind: "recordSearchDocument";
@@ -728,6 +751,9 @@ function bufferAdoptionProjectionEffects(sinks: ApplyEffectSinks): {
     resolveFacts: async (input) => {
       operations.push({ kind: "resolveFacts", input });
     },
+    resolveQuestions: async (input) => {
+      operations.push({ kind: "resolveQuestions", input });
+    },
     recordFact: async (input) => {
       operations.push({ kind: "recordFact", input });
     },
@@ -749,6 +775,9 @@ function bufferAdoptionProjectionEffects(sinks: ApplyEffectSinks): {
             break;
           case "resolveFacts":
             await sinks.resolveFacts?.(op.input);
+            break;
+          case "resolveQuestions":
+            await sinks.resolveQuestions?.(op.input);
             break;
           case "recordFact":
             await sinks.recordFact(op.input);

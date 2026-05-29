@@ -61,6 +61,12 @@ export type ApplyQuestionAnswerOpts = {
   readonly answeredAt: string;
 };
 
+export type ResolveStaleQuestionsOpts = {
+  readonly processorId: string;
+  readonly inspectedPaths: ReadonlyArray<string>;
+  readonly emittedQuestions: ReadonlyArray<QuestionEffect>;
+};
+
 export type AnswerQuestionResult =
   | { readonly kind: "answered"; readonly record: QuestionRecord }
   | { readonly kind: "already-answered"; readonly record: QuestionRecord }
@@ -128,6 +134,17 @@ SET answer = ?, answered_at = ?
 WHERE idempotency_key = ?
 `.trim();
 
+const QUERY_BY_PROCESSOR_SQL = `
+SELECT id, idempotency_key, source_refs
+FROM questions
+WHERE processor_id = ?
+`.trim();
+
+const DELETE_BY_ID_SQL = `
+DELETE FROM questions
+WHERE id = ?
+`.trim();
+
 // ----- Row shape ------------------------------------------------------------
 
 type QuestionRow = {
@@ -141,6 +158,12 @@ type QuestionRow = {
   readonly asked_at: string;
   readonly answered_at: string | null;
   readonly answer: string | null;
+};
+
+type QuestionStaleRow = {
+  readonly id: number;
+  readonly idempotency_key: string;
+  readonly source_refs: string;
 };
 
 // ----- Public functions -----------------------------------------------------
@@ -282,6 +305,39 @@ export function answerQuestionById(
   return Object.freeze({ kind: "answered", record: answered });
 }
 
+/**
+ * Delete stale derived questions for a processor after it re-checks a bounded
+ * set of paths. A prior question from the same processor whose source refs
+ * touch an inspected path is kept only when this run re-emitted the same
+ * idempotency key.
+ *
+ * This is intentionally projection-owned. Processors remain pure effect
+ * producers; they don't need to remember or mutate their prior rows.
+ */
+export function resolveStaleQuestions(
+  db: ProjectionDb,
+  opts: ResolveStaleQuestionsOpts,
+): number {
+  if (opts.inspectedPaths.length === 0) return 0;
+  const inspected = new Set(opts.inspectedPaths);
+  const keep = new Set(
+    opts.emittedQuestions.map((effect) => effect.idempotencyKey),
+  );
+  const rows = db.raw
+    .query<QuestionStaleRow, [string]>(QUERY_BY_PROCESSOR_SQL)
+    .all(opts.processorId);
+
+  let deleted = 0;
+  const stmt = db.raw.query(DELETE_BY_ID_SQL);
+  for (const row of rows) {
+    if (!questionTouchesAnyPath(row.source_refs, inspected)) continue;
+    if (keep.has(row.idempotency_key)) continue;
+    stmt.run(row.id);
+    deleted += 1;
+  }
+  return deleted;
+}
+
 // ----- internals ------------------------------------------------------------
 
 function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
@@ -316,4 +372,17 @@ function rowToQuestion(row: QuestionRow): QuestionEffect {
           options,
         };
   return questionEffect(input);
+}
+
+function questionTouchesAnyPath(
+  sourceRefsJson: string,
+  paths: ReadonlySet<string>,
+): boolean {
+  let refs: ReadonlyArray<SourceRef>;
+  try {
+    refs = JSON.parse(sourceRefsJson) as ReadonlyArray<SourceRef>;
+  } catch {
+    return false;
+  }
+  return refs.some((ref) => paths.has(ref.path as string));
 }

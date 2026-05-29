@@ -255,6 +255,37 @@ scenario(
     expect(
       sourceRefRowsForQuestions(h).every((refs) => hasSourceRef(refs, path)),
     ).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [path]: [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-04",
+          "---",
+          "",
+          "# 2026-01-04",
+          "",
+          "TODO: Send budget update",
+          "Follow up: Confirm Q3 plan with Eli",
+          "Follow up: Check in with Sam about hiring",
+          "",
+        ].join("\n"),
+      },
+      message: "clarify ambiguous followup",
+    });
+    const clarified = await h.tick();
+    expect(clarified.adopted).toBe(true);
+
+    await h.expectProjection().questions().toHaveCount(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.followup",
+        subjectId: path,
+        objectString: "Check in with Sam about hiring",
+      })
+      .toHaveCount(1);
   },
 );
 

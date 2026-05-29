@@ -43,6 +43,7 @@
 import type {
   DiagnosticEffect,
   PatchEffect,
+  QuestionEffect,
 } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
 import type { AdoptionResult, Proposal } from "../core/proposal";
@@ -421,6 +422,20 @@ async function runGardenPhaseInner(opts: {
         ...(applied.capabilityUse !== undefined
           ? { capabilityUse: applied.capabilityUse }
           : {}),
+      });
+    }
+
+    if (
+      result.executionStatus === "succeeded" &&
+      sinks.resolveQuestions !== undefined
+    ) {
+      await sinks.resolveQuestions({
+        processorId: result.processorId,
+        runId: result.runId,
+        inspectedPaths: result.inspectedPaths,
+        emittedQuestions: result.effects.filter(
+          (effect): effect is QuestionEffect => effect.kind === "question",
+        ),
       });
     }
 

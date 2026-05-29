@@ -36,7 +36,10 @@ import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
-import { withCompilerHostBranchLock } from "../../src/engine/compiler-host-lock";
+import {
+  compilerHostLockPath,
+  withCompilerHostBranchLock,
+} from "../../src/engine/compiler-host-lock";
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
@@ -391,6 +394,24 @@ describe("runSync idempotent", () => {
     releaseLock?.();
     const lockResult = await heldLock;
     expect(lockResult.kind).toBe("acquired");
+  }, 10_000);
+
+  test("recovers from a corrupt compiler-host lock file", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const lockPath = compilerHostLockPath(f.vaultPath, "main");
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "{not-json", "utf8");
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(code).toBe(0);
+    expect(captured.out.join("\n")).toContain("adopted main");
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
   }, 10_000);
 });
 

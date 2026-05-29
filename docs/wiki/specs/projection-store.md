@@ -196,6 +196,13 @@ answer-handler dispatch state (`pending`, `handled`, `failed`, `skipped`) so a
 crash after recording the answer but before completing handler dispatch can be
 retried by re-running `dome answer <id> <value>`.
 
+Incremental adoption resolves stale derived questions after a successful
+processor re-inspects a bounded path set. A prior row from the same processor
+whose `source_refs` touch an inspected path is kept only if the run re-emitted
+the same `idempotency_key`; otherwise it is deleted. This keeps pending
+questions aligned with the currently adopted markdown when a user removes or
+clarifies ambiguous prose, without giving processors a direct delete API.
+
 ### `scheduled_jobs`
 
 Stores `JobEffect` rows for deferred garden-phase work. `runAfter` defaults

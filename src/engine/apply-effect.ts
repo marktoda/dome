@@ -145,6 +145,19 @@ export type ApplyEffectSinks = {
     readonly inspectedPaths: ReadonlyArray<string>;
   }) => Promise<void>;
 
+  /**
+   * Optional projection-maintenance hook. After a processor re-checks a set of
+   * paths, the engine passes the QuestionEffects it emitted so the sink can
+   * remove older derived questions for those paths when they were not
+   * re-emitted.
+   */
+  readonly resolveQuestions?: (input: {
+    readonly processorId: string;
+    readonly runId: RunId;
+    readonly inspectedPaths: ReadonlyArray<string>;
+    readonly emittedQuestions: ReadonlyArray<QuestionEffect>;
+  }) => Promise<void>;
+
   /** FactEffect — written to `projection_store.facts`. */
   readonly recordFact: (input: {
     readonly effect: FactEffect;
@@ -303,6 +316,7 @@ export function noopSinks(): ApplyEffectSinks {
     applyPatch: async () => null,
     recordDiagnostic: async () => undefined,
     resolveFacts: async () => undefined,
+    resolveQuestions: async () => undefined,
     recordFact: async () => undefined,
     recordSearchDocument: async () => undefined,
     recordQuestion: async () => undefined,

@@ -12,6 +12,7 @@
 //   - recordFact       → src/projections/facts.ts:       insertFact
 //   - recordSearchDocument → src/projections/search.ts:  applySearchDocumentEffect
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
+//   - resolveQuestions → src/projections/questions.ts:   resolveStaleQuestions
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
@@ -69,7 +70,7 @@ import type { OutboxDb } from "../outbox/db";
 import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
 import { insertFact, resolveStalePageFacts } from "./facts";
 import { applySearchDocumentEffect } from "./search";
-import { insertQuestion } from "./questions";
+import { insertQuestion, resolveStaleQuestions } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
 import {
   dispatchExternalEffect,
@@ -167,6 +168,18 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       resolveStalePageFacts(opts.projectionDb, {
         processorId,
         inspectedPaths,
+      });
+    },
+
+    resolveQuestions: async ({
+      processorId,
+      inspectedPaths,
+      emittedQuestions,
+    }) => {
+      resolveStaleQuestions(opts.projectionDb, {
+        processorId,
+        inspectedPaths,
+        emittedQuestions,
       });
     },
 

@@ -43,6 +43,7 @@ import {
   insertQuestion,
   queryQuestionRecords,
   queryQuestions,
+  resolveStaleQuestions,
 } from "../../src/projections/questions";
 import {
   claimNextEligibleJob,
@@ -575,6 +576,80 @@ describe("questions accessor", () => {
 
     const got = queryQuestions(db);
     expect(got.length).toBe(1);
+  });
+
+  it("resolveStaleQuestions deletes stale questions for inspected paths", () => {
+    const stale = questionEffect({
+      question: "stale?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+      idempotencyKey: "q-stale",
+    });
+    const keptPath = questionEffect({
+      question: "other path?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/b.md" })],
+      idempotencyKey: "q-other-path",
+    });
+    const keptProcessor = questionEffect({
+      question: "other processor?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+      idempotencyKey: "q-other-processor",
+    });
+    insertQuestion(db, {
+      effect: stale,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: keptPath,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: keptProcessor,
+      processorId: "p2",
+      adoptedCommit: ADOPTED,
+    });
+
+    const deleted = resolveStaleQuestions(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/a.md", "wiki/a.md"],
+      emittedQuestions: [],
+    });
+
+    expect(deleted).toBe(1);
+    expect(queryQuestions(db).map((q) => q.idempotencyKey)).toEqual([
+      "q-other-path",
+      "q-other-processor",
+    ]);
+  });
+
+  it("resolveStaleQuestions keeps re-emitted questions by idempotency key", () => {
+    const original = questionEffect({
+      question: "original?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+      idempotencyKey: "q-keep",
+    });
+    const reEmitted = questionEffect({
+      question: "updated wording?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+      idempotencyKey: "q-keep",
+    });
+    insertQuestion(db, {
+      effect: original,
+      processorId: "p1",
+      adoptedCommit: ADOPTED,
+    });
+
+    const deleted = resolveStaleQuestions(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/a.md"],
+      emittedQuestions: [reEmitted],
+    });
+
+    expect(deleted).toBe(0);
+    expect(queryQuestions(db).map((q) => q.idempotencyKey)).toEqual([
+      "q-keep",
+    ]);
   });
 
   it("queryQuestions({resolved: true}) filters to answered questions only", () => {
