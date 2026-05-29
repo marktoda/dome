@@ -155,8 +155,8 @@ not need to be passed explicitly. Multi-root resolution (merging the
 SDK's shipped bundles with a vault-local third-party set in one
 runtime) is a v1.x polish.
 
-Each step prints a one-line outcome (`created` or `skipped (already
-present)`); idempotent re-runs surface as all-skipped no-ops.
+Each step prints a one-line outcome (`created`, `updated`, or `skipped
+(already present)`); idempotent re-runs surface as all-skipped no-ops.
 
 Exit codes: 0 on success (including idempotent re-runs); 1 on
 unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.

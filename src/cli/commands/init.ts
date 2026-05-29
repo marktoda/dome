@@ -366,7 +366,7 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
 
 /**
  * Print a small block summarizing what `dome init` did. One line per
- * step, "created" vs "skipped". The format is human-oriented; downstream
+ * step. The format is human-oriented; downstream
  * tooling that wants a structured shape can shell out to
  * `dome status --json` after init for the canonical state read.
  */
