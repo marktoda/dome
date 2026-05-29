@@ -79,7 +79,7 @@ Most CLI commands are not things Claude should call constantly. The CLI should b
 |---|---|---|
 | Load-bearing | `dome serve`, `dome sync`, `dome status` | Drive the compiler runtime; let Claude/user wait for adoption; show whether the vault is healthy. |
 | Recovery | `dome inspect`, `dome doctor`, `dome answer` | Explain and resolve stuck engine work. |
-| User-value views | `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep` | Explicit views when the user asks for them. |
+| User-value views | `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda` | Explicit views when the user asks for them. |
 | Admin/dev | `dome rebuild`, `dome migrate`, `dome run`, future low-level run-processor | Maintenance, testing, escape hatches. |
 
 The v1 CLI should not be a huge command zoo Claude is expected to remember. `CLAUDE.md` should teach only the load-bearing and recovery commands by default, plus a small list of named views.
@@ -158,18 +158,18 @@ Shipped and strong:
 
 - Four-concept engine model is real: Proposal, Processor, Effect, adopted ref.
 - Adoption loop, garden sub-Proposals, scheduler, JobEffect routing, outbox dispatch, run ledger, projection store, and capability broker exist.
-- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome export-context`, and `dome rebuild` exist.
+- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome agenda`, `dome export-context`, and `dome rebuild` exist.
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
 - Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.intake`.
 
 Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, and `dome prep`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, low-confidence question/answer handling, confidence-carrying `dome.intake.*` fact indexing, and stale-inbox diagnostics. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, `dome prep`, and `dome agenda`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages, processed archives, low-confidence question/answer handling, confidence-carrying `dome.intake.*` fact indexing, and stale-inbox diagnostics. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 
 Not yet at v1:
 
-- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, production model-provider packaging, raw inbox capture compilation, low-confidence capture question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics. Remaining v1 work is real-vault dogfood and richer synthesis.
+- The day-to-day workflows the user wants are still maturing beyond the deterministic core. Shipped pieces include daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, deterministic `dome agenda`, production model-provider packaging, raw inbox capture compilation, low-confidence capture question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics. Remaining v1 work is real-vault dogfood and richer synthesis.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -190,7 +190,7 @@ A v1 release is good enough when this scenario works on a real vault:
    - diagnostics for broken or ambiguous state.
 7. If a processor needs a human decision, `dome inspect questions` shows it and `dome answer` resolves it.
 8. If a processor or external action is stuck, `dome doctor` explains it and points to the same answer/retry flow.
-9. Claude can optionally run `dome status`, `dome sync`, `dome inspect diagnostics`, `dome today`, `dome prep`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, or recall packet.
+9. Claude can optionally run `dome status`, `dome sync`, `dome inspect diagnostics`, `dome today`, `dome prep`, `dome agenda <person>`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, agenda, or recall packet.
 
 ## CLI shape for v1
 
@@ -306,6 +306,13 @@ Explicit audit/report command. It is useful when the user asks "clean up the vau
 
 High-value Claude workflow command. It should produce a portable, source-backed markdown packet for handing a topic to another AI session or product. This is more important than MCP for the near-term multi-agent story.
 
+### `dome agenda`
+
+Management-workflow view for "what should I talk to this person about?" It
+should be deterministic and source-backed in v1: open followups, open tasks,
+unresolved questions, and adopted-state snippets that mention the supplied
+person or topic. LLM summarization can follow later over the retrieved evidence.
+
 ### `dome rebuild`, `dome migrate`, `dome run`
 
 Admin/dev surfaces. They should exist, but they should not be taught as normal Claude Code behavior except when troubleshooting.
@@ -321,7 +328,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
 | `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
 | `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
-| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`; generated intake captures feed the same task index |
+| `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`, `dome prep`, `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, low-confidence question/answer handling, confidence-carrying intake fact indexing, and stale-inbox diagnostics shipped; richer synthesis remains |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
 
@@ -426,12 +433,13 @@ Acceptance:
 - [x] Extend raw-capture extraction with richer fact namespaces.
 - [x] Add `dome today` once the data is useful enough to render.
 - [x] Add prep views once planning context is useful enough to render.
+- [x] Add a source-backed agenda view for people/topics.
 
 External prior: Obsidian task plugins show the durable expectation here: users want vault-wide task queries, due/recurring metadata, and carry-forward into daily/weekly notes. See <https://community.obsidian.md/plugins/obsidian-tasks-plugin> and <https://www.obsidianstats.com/plugins/auto-tasks>.
 
 Acceptance:
 
-- A user can talk with Claude about today's work, commit the daily note, and Dome creates/carries forward the next actionable task surface; `dome today` renders the source-backed open tasks, followups, and daily questions; `dome prep` renders a source-backed planning packet.
+- A user can talk with Claude about today's work, commit the daily note, and Dome creates/carries forward the next actionable task surface; `dome today` renders the source-backed open tasks, followups, and daily questions; `dome prep` renders a source-backed planning packet; `dome agenda <person>` renders source-backed topics for a meeting.
 
 ### Milestone 6: modelInvoke substrate
 
@@ -470,6 +478,7 @@ Acceptance:
 - [x] Implement `dome lint` as a report over diagnostics plus additional checks.
 - [x] Add `dome today` once the daily bundle has enough data to render something useful.
 - [x] Add `dome prep` once planning context is useful enough.
+- [x] Add `dome agenda` once daily/search context is useful enough.
 - [x] Keep generic `dome run` as a development escape hatch; teach named commands in instructions.
 
 Acceptance:

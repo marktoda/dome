@@ -21,7 +21,7 @@ as `sync` remain CLI-only in v1.
 | **Query adopted state** | `surface.query(input)` | `dome query <text>` | `dome.query` tool | `GET /query?q=...` | Speech-to-text query, response rendered as audio |
 | **Read document** | `surface.read(path)` | `dome cat <path>` (deferred to v1.1; today: file read) | `dome.read_document` tool | `GET /documents/<path>` | "Read me my notes about X" routed through `dome.read_document` |
 | **Resolve wikilink** | `surface.resolveWikilink(link)` | n/a (not a CLI surface) | `dome.resolve_wikilink` tool | `GET /wikilinks/<link>` | n/a |
-| **Run command processor** | `surface.commands.<name>.invoke(args)` | Dedicated commands (`dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`) or `dome run <name>` | `dome.run_command` tool | `POST /commands/<name>` | Voice command → command processor (query / lint / prep / etc.) |
+| **Run command processor** | `surface.commands.<name>.invoke(args)` | Dedicated commands (`dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda`) or `dome run <name>` | `dome.run_command` tool | `POST /commands/<name>` | Voice command → command processor (query / lint / prep / etc.) |
 | **Read resource** | `surface.readResource(uri)` | n/a (CLI reads paths, not URIs) | MCP resources at `dome://<scheme>/<path>` | `GET /<uri>` | n/a |
 | **Get instructions** | `surface.instructions` | `dome inspect instructions` (v1.x subject) | MCP `serverInfo.instructions` | `GET /instructions` | Read at session start by voice client |
 | **Get adoption status** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status` / `dome status --json` | `dome://status` resource | `GET /status` | n/a |

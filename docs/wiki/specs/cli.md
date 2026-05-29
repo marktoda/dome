@@ -24,6 +24,8 @@ dome today [--date <YYYY-MM-DD>] [--json]
                                 Source-backed daily task/followup surface.
 dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]
                                 Source-backed daily planning packet.
+dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]
+                                Source-backed agenda for a person or topic.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome lint [--fail-on <severity>] [--json]
@@ -51,8 +53,8 @@ dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome status`, `dome inspect` — read paths. `dome query`, `dome lint`, `dome export-context`, `dome today`, and `dome prep` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, and `dome prep` — command-triggered view-phase processors invoked through the shared view-command boundary.
+- **Recall and dashboards:** `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda`, `dome status`, `dome inspect` — read paths. `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
@@ -80,7 +82,7 @@ those opaque flags through to `ctx.input.commandArgs.flags`; all shipped
 first-party commands should prefer explicit Commander options.
 
 Dedicated wrappers over shipped view processors (`dome query`, `dome lint`,
-`dome export-context`, `dome today`, and `dome prep`) also validate the
+`dome export-context`, `dome today`, `dome prep`, and `dome agenda`) also validate the
 returned `ViewEffect` boundary. Each wrapper expects exactly one view with
 the canonical effect `name` and structured `schema` for that command before
 rendering. `dome run` remains the generic extension escape hatch and renders
@@ -344,6 +346,25 @@ Default text output is markdown:
 emits the structured `dome.daily.prep/v1` payload, including the markdown packet
 under `markdown`. `--date` is for prepping a chosen day and for deterministic
 tests; omitted means local today.
+
+### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
+
+Dedicated wrapper for the `dome.daily.agenda-with` view processor. It reuses
+the same source-backed daily action state as `dome today` / `dome prep`, filters
+open tasks, followups, and unresolved daily questions by the supplied person or
+topic, and joins adopted-state search matches when `dome.search` has populated
+the projection.
+
+Default text output is markdown:
+
+- the date context and daily note path,
+- matching open agenda items with source labels,
+- adopted-state context snippets for the person/topic,
+- SourceRefs for the backing facts, questions, and search entries.
+
+`--limit` bounds agenda items and context matches. `--json` emits the structured
+`dome.daily.agenda-with/v1` payload, including the markdown packet under
+`markdown`. `--date` provides daily-note context; omitted means local today.
 
 ### `dome rebuild`
 

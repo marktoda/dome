@@ -134,6 +134,18 @@ export function parseInputLimit(input: unknown, fallback: number): number {
   return fallback;
 }
 
+export function parseInputString(
+  input: unknown,
+  keys: ReadonlyArray<string>,
+): string | null {
+  const { record, flags } = commandArgsRecord(input);
+  for (const key of keys) {
+    const value = stringValue(record[key]) ?? stringValue(flags[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 function commandArgsRecord(input: unknown): {
   readonly record: Record<string, unknown>;
   readonly flags: Record<string, unknown>;

@@ -414,6 +414,7 @@ git commit -m "describe the vault change"
   user wants to wait for adoption.
 - \`dome today\` - source-backed open tasks, followups, and questions for today.
 - \`dome prep\` - source-backed planning packet for a day.
+- \`dome agenda <person-or-topic>\` - source-backed prep for a person or topic.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome lint\` - adopted-state hygiene report over diagnostics and lint checks.
 - \`dome export-context <topic>\` - portable source-backed context packet for
@@ -469,7 +470,7 @@ Use the Dome vault workflow in AGENTS.md. Edit markdown normally, commit
 coherent changes with git, and use Dome commands when the user asks to wait for
 adoption, inspect health/recovery state, or render a source-backed vault view.
 The command list in AGENTS.md is the source of truth for \`dome status\`,
-\`dome sync\`, \`dome today\`, \`dome prep\`, \`dome query\`,
+\`dome sync\`, \`dome today\`, \`dome prep\`, \`dome agenda\`, \`dome query\`,
 \`dome export-context\`, and recovery commands such as
 \`dome inspect <subject>\` / \`dome answer\`.
 `;

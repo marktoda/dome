@@ -57,6 +57,17 @@ processors:
         paths: ["wiki/**/*.md"]
     module: processors/prep.ts
 
+  - id: dome.daily.agenda-with
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: agenda-with
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md"]
+    module: processors/agenda-with.ts
+
   - id: dome.daily.carry-forward
     version: 0.1.0
     phase: garden

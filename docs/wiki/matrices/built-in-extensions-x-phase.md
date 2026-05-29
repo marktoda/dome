@@ -16,7 +16,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates` | — | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
-| **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `today`, `prep`; planned: `week-review`, `agenda-with` |
+| **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
 | **`dome.lint`** | partially shipped | — | — | shipped: `report`; planned: `apply-finding` |
 | **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
@@ -27,7 +27,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 
 ## Counts
 
-- **Shipped processors:** 28 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
+- **Shipped processors:** 29 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
 - **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
@@ -38,7 +38,7 @@ A new bundle author looking at this matrix sees:
 
 - **Adoption-phase is sparse.** Most of the action is in garden + view. The author can register an adoption-phase processor only when they need merge-time validation (rare).
 - **Schedule-driven processors are explicit.** Each cron-driven processor's schedule is visible — the author can avoid overlapping with existing schedules.
-- **View processors are dominantly LLM-driven in the future plan.** `week-review` and `agenda-with` use `model.invoke`. The shipped `dome.search.query`, `dome.search.export-context`, `dome.lint.report`, `dome.daily.today`, and `dome.daily.prep` paths are deterministic first.
+- **View processors are dominantly LLM-driven in the future plan.** `week-review` uses `model.invoke`. The shipped `dome.search.query`, `dome.search.export-context`, `dome.lint.report`, `dome.daily.agenda-with`, `dome.daily.today`, and `dome.daily.prep` paths are deterministic first.
 
 ## Adding to the matrix
 

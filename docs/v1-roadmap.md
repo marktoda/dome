@@ -73,7 +73,7 @@ Shipped:
       `dome.graph` (2),
       `dome.search` (3),
       `dome.health` (6),
-      `dome.daily` (5),
+      `dome.daily` (6),
       `dome.lint` (1), and
       `dome.intake` (4).
 - [x] Page-type schema substrate.
@@ -92,9 +92,9 @@ V1 capability ledger:
       probe-only `dome doctor`, and first-party outbox retry/abandon
       plus quarantine reset and orphan-run recovery are shipped.
 - [ ] Daily/task loop: daily creation, carry-forward, deterministic daily
-      task/followup fact indexing, `today` / `prep` views, and first raw
-      inbox capture extraction plus low-confidence answer handling are shipped;
-      richer capture synthesis remains.
+      task/followup fact indexing, `today` / `prep` / `agenda` views, and
+      first raw inbox capture extraction plus low-confidence answer handling
+      are shipped; richer capture synthesis remains.
 - [x] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
       ledgering plus daily budget enforcement are shipped; command provider
@@ -103,7 +103,8 @@ V1 capability ledger:
       first `dome.intake.extract-capture` slice, low-confidence capture
       questions/answers, confidence-carrying intake fact namespaces, and
       stale-inbox diagnostics shipped; synthesis remains.
-- [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
+- [x] User-value views: `dome today`, `dome prep`, `dome agenda`,
+      `dome lint`, and
       `dome export-context` are shipped.
 - [x] V1 end-to-end acceptance harness.
 - [ ] Real-vault dogfood run.
@@ -331,6 +332,7 @@ Work:
 - [x] Add `dome today` once deterministic task/followup data is useful enough
       to render.
 - [x] Add `dome prep` once there is enough planning context to render.
+- [x] Add `dome agenda` for source-backed people/topic prep.
 
 Decision:
 
@@ -349,6 +351,8 @@ Acceptance:
 - [x] Ambiguous task extraction asks a question instead of mutating silently.
 - [x] Capture text outside daily notes yields source-ref-backed followups.
 - [x] `dome today` renders source-backed daily/task/followup/question data.
+- [x] `dome agenda <person>` renders source-backed matching tasks, followups,
+      questions, and adopted-state context snippets.
 - [ ] Real-vault dogfood against `~/vaults/work` or `docs/`.
 
 ## Milestone 6 - modelInvoke Substrate
@@ -436,6 +440,8 @@ Work:
       checks.
 - [x] Implement `dome today` once daily/task data is strong enough.
 - [x] Implement `dome prep` once planning context is strong enough.
+- [x] Implement `dome agenda` once people/topic prep has useful source-backed
+      data.
 - [x] Keep `dome run` as a dev escape hatch, not the primary user-facing
       command family.
 
@@ -447,6 +453,7 @@ Acceptance:
       thresholds.
 - [x] Today view renders useful daily/task data.
 - [x] Prep view renders useful planning data.
+- [x] Agenda view renders useful people/topic prep data.
 
 ## Milestone 9 - V1 Release Hardening
 
@@ -484,7 +491,7 @@ Required for daily value:
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
-| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, and `dome prep` shipped; generated intake captures feed the same task index |
+| `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, `dome today`, `dome prep`, and `dome agenda` shipped; generated intake captures feed the same task index |
 | `dome.intake` | partially shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, and stale-inbox diagnostics shipped; synthesis remains |
 
 Optional or conditional:

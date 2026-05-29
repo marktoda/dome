@@ -71,7 +71,8 @@ boundary. The useful moments to call Dome explicitly are:
 - `dome sync` when the user wants to block until the latest commit is adopted.
 - `dome status` when the user wants a cheap health/adoption pulse.
 - `dome query <text>` for adopted-state recall with SourceRefs.
-- `dome today` / `dome prep` for daily management surfaces.
+- `dome today` / `dome prep` / `dome agenda <person-or-topic>` for daily
+  management surfaces.
 - `dome export-context <topic>` for a portable context packet.
 - `dome lint` for deterministic vault hygiene.
 
@@ -155,8 +156,9 @@ state file to patch.
 - Draft counts are expected only while the user has uncommitted work.
 - Diagnostics/questions/outbox/quarantine are zero or intentionally being
   resolved.
-- `dome query`, `dome today`, `dome prep`, and `dome export-context` read from
-  adopted state and include source-backed evidence.
+- `dome query`, `dome today`, `dome prep`, `dome agenda`, and
+  `dome export-context` read from adopted state and include source-backed
+  evidence.
 - Claude can continue normal markdown work without knowing SQLite, internal
   run ids, or processor implementation details.
 

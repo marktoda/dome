@@ -8,6 +8,7 @@
 
 import { Command, CommanderError, Option } from "commander";
 
+import { runAgenda } from "./commands/agenda";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
@@ -125,6 +126,32 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
           orphanThresholdMs: options.orphanThresholdMs,
+        }),
+      );
+    });
+
+  program
+    .command("agenda")
+    .description("Render a source-backed agenda for a person or topic.")
+    .argument("<topic...>", "Person or topic to prepare for.")
+    .option("--date <YYYY-MM-DD>", "Date context (defaults to local today).")
+    .option(
+      "--limit <n>",
+      "Maximum items per agenda section.",
+      parsePositiveIntegerOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (topic: string[], options: AgendaCliOptions) => {
+      setExitCode(
+        await runAgenda({
+          topic: topic.join(" "),
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
         }),
       );
     });
@@ -396,6 +423,14 @@ type DoctorCliOptions = {
   readonly vault?: string;
   readonly bundlesRoot?: string;
   readonly orphanThresholdMs?: number;
+};
+
+type AgendaCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
 };
 
 type AnswerCliOptions = {
