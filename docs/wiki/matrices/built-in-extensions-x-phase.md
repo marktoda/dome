@@ -18,7 +18,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
 | **`dome.daily`** | partially shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward`; planned: `create-weekly`, `append-followup` | shipped: `today`; planned: `week-review`, `agenda-with`, `prep` |
 | **`dome.lint`** | partially shipped | — | — | shipped: `markdown-format`; planned: `lint-report`, `apply-finding` |
-| **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`; planned: `export-context` |
+| **`dome.search`** | partially shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
@@ -27,7 +27,7 @@ The dense map of first-party `dome.*` bundles × the three processor phases. Row
 
 ## Counts
 
-- **Shipped processors:** 22 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
+- **Shipped processors:** 23 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.search`.
 - **Planned processors:** listed as `planned` above; they do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
@@ -38,7 +38,7 @@ A new bundle author looking at this matrix sees:
 
 - **Adoption-phase is sparse.** Most of the action is in garden + view. The author can register an adoption-phase processor only when they need merge-time validation (rare).
 - **Schedule-driven processors are explicit.** Each cron-driven processor's schedule is visible — the author can avoid overlapping with existing schedules.
-- **View processors are dominantly LLM-driven in the future plan.** `week-review`, `agenda-with`, `prep`, `lint-report`, `export-context` — most use `model.invoke`. The shipped `dome.search.query` and `dome.daily.today` paths are deterministic first.
+- **View processors are dominantly LLM-driven in the future plan.** `week-review`, `agenda-with`, `prep`, `lint-report` — most use `model.invoke`. The shipped `dome.search.query`, `dome.search.export-context`, and `dome.daily.today` paths are deterministic first.
 
 ## Adding to the matrix
 

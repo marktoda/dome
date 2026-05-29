@@ -99,8 +99,8 @@ V1 capability ledger:
       ledgering are shipped; daily budget enforcement and production provider
       packaging remain.
 - [ ] LLM garden/intake processors with provenance and source-backed writes.
-- [ ] User-value views: `dome today` is shipped; `dome export-context`,
-      useful `dome lint`, and `dome prep` remain.
+- [ ] User-value views: `dome today` and `dome export-context` are shipped;
+      useful `dome lint` and `dome prep` remain.
 - [ ] V1 end-to-end acceptance harness and real-vault dogfood run.
 
 ## Milestone 0 - Plan and Spec Coherence
@@ -407,7 +407,7 @@ remembering internal processors.
 
 Work:
 
-- [ ] Implement `dome export-context <topic>` as a source-backed markdown
+- [x] Implement `dome export-context <topic>` as a source-backed markdown
       packet.
 - [ ] Implement `dome lint` as a report over diagnostics plus deterministic
       checks.
@@ -418,7 +418,7 @@ Work:
 
 Acceptance:
 
-- [ ] Export-context returns paths, snippets, facts, and SourceRefs for a
+- [x] Export-context returns paths, snippets, facts, and SourceRefs for a
       topic.
 - [ ] Lint report is stable and exits nonzero only on defined severity
       thresholds.
@@ -459,7 +459,7 @@ Required for daily value:
 |---|---|---|
 | `dome.markdown` | partially shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
-| `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
+| `dome.search` | partially shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval shipped; embeddings remain |
 | `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
 | `dome.daily` | partially shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions, and `dome today` shipped; raw-capture compilation and prep view remain |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |

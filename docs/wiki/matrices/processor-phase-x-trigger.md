@@ -17,7 +17,7 @@ Maps the three processor phases (adoption / garden / view) to the trigger kinds 
 | **`path`** (path glob pattern) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
 | **`schedule`** (cron expression) | ✗ Rejected — adoption is per-Proposal, not periodic | ✓ Allowed | ✓ Allowed for read-only scheduled reports; write-producing scheduled work belongs in garden |
 | **`answer`** (QuestionEffect answer, optionally narrowed by idempotency-key prefix) | ✗ Rejected — answers are user decisions after adoption | ✓ Allowed | ✗ Rejected |
-| **`command`** (command name) | ✗ Rejected — adoption isn't user-invoked | ✗ Rejected — garden runs autonomously | ✓ Allowed (`dome query` today; planned aliases include `dome lint` and `dome export-context`) |
+| **`command`** (command name) | ✗ Rejected — adoption isn't user-invoked | ✗ Rejected — garden runs autonomously | ✓ Allowed (`dome query` / `dome export-context` today; planned aliases include `dome lint`) |
 
 ## Phase semantics recap
 

@@ -261,7 +261,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders today's action surface. |
 | `dome.lint` | view: markdown-format | Minimal lint command surface; fuller report/apply flow remains planned. |
-| `dome.search` | adoption: index-text; view: query | Maintains FTS5 adopted-state search; answers `dome query` requests. Embeddings/export-context remain future work. |
+| `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
 

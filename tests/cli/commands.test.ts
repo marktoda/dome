@@ -288,6 +288,7 @@ describe("runInit", () => {
       expect(agentsBody).toContain("Commit each coherent unit of work");
       expect(agentsBody).toContain("Dome works at the git commit boundary");
       expect(agentsBody).toContain("dome today");
+      expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("dome inspect questions");
       expect(agentsBody).toContain("dome answer <id> <value>");
       expect(agentsBody).toContain("dome rebuild");

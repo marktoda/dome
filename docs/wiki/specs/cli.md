@@ -23,6 +23,8 @@ dome today [--date <YYYY-MM-DD>] [--json]
                                 Source-backed daily task/followup surface.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
+dome export-context <topic> [--limit <n>] [--json]
+                                Portable source-backed context packet.
 dome run <name> [--json] [-- <processor flags>]
                                 Invoke a command-triggered view processor.
 dome rebuild                    Wipe and rebuild projection store from adopted commit.
@@ -43,14 +45,14 @@ dome serve [--vault <path>] [--poll-interval-ms <n>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome today`, `dome status`, `dome inspect` — read paths. `dome query` and `dome today` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query` and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary.
+- **Recall and dashboards:** `dome query`, `dome export-context`, `dome today`, `dome status`, `dome inspect` — read paths. `dome query`, `dome export-context`, and `dome today` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
-Planned dedicated view aliases such as `dome lint`, `dome stats`, and
-`dome export-context` are not Commander bindings yet. Until they ship, their
-processors are invoked through `dome run <command-name>` when present.
+Planned dedicated view aliases such as `dome lint` and `dome stats` are not
+Commander bindings yet. Until they ship, their processors are invoked through
+`dome run <command-name>` when present.
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
@@ -222,6 +224,17 @@ dome query: 4 matches for "platform ownership"
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
+
+### `dome export-context <topic> [--limit <n>] [--json]`
+
+Dedicated wrapper for the `dome.search.export-context` view processor. It uses
+the same adopted-state retrieval substrate as `dome query`, then renders a
+portable markdown packet for another Claude session, review, or handoff.
+
+Default text output is the markdown packet itself. It includes matching paths,
+snippets, related facts, and SourceRefs. `--json` emits the structured
+`dome.search.export-context/v1` payload, including the packet under
+`markdown`.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 
@@ -460,15 +473,13 @@ Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime o
 
 ### Planned dedicated view aliases
 
-`dome lint`, `dome stats`, `dome export-context`, and `dome migrate` are
+`dome lint`, `dome stats`, and `dome migrate` are
 roadmap commands, not current Commander bindings. The intended shape is:
 
 - `dome lint` — an error-recovering checker over adopted state and current
   diagnostics, with future review/apply affordances.
 - `dome stats` — richer vault analytics beyond the compact `dome status`
   dashboard.
-- `dome export-context <topic>` — a portable context packet for cross-AI
-  handoff, built from adopted-state search and fact lookups.
 - `dome migrate` — explicit vault/schema upgrade orchestration beyond the
   current open-time SQLite migration and projection rebuild paths.
 

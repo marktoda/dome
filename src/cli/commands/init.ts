@@ -379,6 +379,8 @@ git commit -m "describe the vault change"
   user wants to wait for adoption.
 - \`dome today\` - source-backed open tasks, followups, and questions for today.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
+- \`dome export-context <topic>\` - portable source-backed context packet for
+  another Claude session or review.
 - \`dome inspect diagnostics\` - current markdown and engine diagnostics.
 - \`dome inspect questions\` - open questions that need human input.
 - \`dome answer <id> <value>\` - answer a question from \`dome inspect questions\`.

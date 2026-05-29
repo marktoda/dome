@@ -28,3 +28,14 @@ processors:
       - kind: read
         paths: ["**/*.md"]
     module: processors/query.ts
+
+  - id: dome.search.export-context
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: export-context
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    module: processors/export-context.ts

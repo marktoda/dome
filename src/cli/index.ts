@@ -9,6 +9,7 @@
 import { Command, CommanderError } from "commander";
 
 import { runAnswer } from "./commands/answer";
+import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
@@ -196,6 +197,26 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("export-context")
+    .description("Export a source-backed context packet for a topic.")
+    .argument("<topic...>", "Topic to export.")
+    .option("--limit <n>", "Maximum matches to include.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (topic: string[], options: ExportContextCliOptions) => {
+      setExitCode(
+        await runExportContext({
+          topic: topic.join(" "),
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("today")
     .description("Render today's source-backed task surface.")
     .option("--date <YYYY-MM-DD>", "Date to render (defaults to local today).")
@@ -318,6 +339,13 @@ type RunCliOptions = {
 type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type ExportContextCliOptions = {
   readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;

@@ -164,8 +164,8 @@ Shipped and strong:
 
 Not yet at v1:
 
-- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions. Export-context retrieval is still missing.
-- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, and `dome today`. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
+- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, and `dome today`. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 - The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, and `dome today` work. Capture compilation from raw inbox text, raw-capture todo/followup extraction, and prep views remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
@@ -317,7 +317,7 @@ V1 should ship a smaller bundle set than the aspirational matrix, but each shipp
 |---|---|---|
 | `dome.markdown` | deterministic hygiene and adopted-state confidence | frontmatter normalization/lint, wikilink diagnostics |
 | `dome.graph` | link/fact substrate for recall | wikilink facts, entity/task facts |
-| `dome.search` | adopted-state recall | FTS indexing and `dome query` shipped; `export-context` remains |
+| `dome.search` | adopted-state recall | FTS indexing, `dome query`, and `dome export-context` shipped; embeddings remain |
 | `dome.daily` | user's stated daily workflow | create daily, carry-forward tasks, index source-ref-backed wiki-page task/followup facts, extract richer followups, `dome today`; prep remains |
 | `dome.intake` | "talk about my day" capture compilation | raw capture extraction, todo/followup extraction, question emission |
 | `dome.health` | trust and recovery | orphan runs, outbox failures, quarantine, schema skew, instruction drift |
@@ -378,7 +378,7 @@ Acceptance:
 ### Milestone 3: deterministic adopted-state substrate
 
 - Complete `dome.markdown` and `dome.graph` against real vault files.
-- Extend shipped `dome.search` beyond FTS/`dome query` into export-context retrieval.
+- [x] Extend shipped `dome.search` beyond FTS/`dome query` into export-context retrieval.
 - Keep `dome rebuild` as the explicit projection recovery path from adopted commit.
 - Keep stale projection invalidation for processor-version and extension-set changes covered by cache-key drift rebuilds.
 
@@ -456,7 +456,7 @@ Acceptance:
 
 ### Milestone 8: user-value views
 
-- Implement `dome export-context <topic>`.
+- [x] Implement `dome export-context <topic>`.
 - Implement `dome lint` as a report over diagnostics plus additional checks.
 - [x] Add `dome today` once the daily bundle has enough data to render something useful.
 - Add `dome prep` once planning context is useful enough.

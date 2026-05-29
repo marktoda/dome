@@ -20,7 +20,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
-- [[wiki/specs/cli]] — The Dome CLI: init / sync / serve / status / query / run / rebuild / inspect / doctor / answer, plus planned user-value aliases such as lint and export-context.
+- [[wiki/specs/cli]] — The Dome CLI: init / sync / serve / status / today / query / export-context / run / rebuild / inspect / doctor / answer, plus planned user-value aliases such as lint.
 - [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.

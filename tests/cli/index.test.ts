@@ -58,6 +58,14 @@ describe("runCli", () => {
     expect(captured.err.join("\n")).toContain("invalid --date");
   });
 
+  test("export-context help exposes limit and json options", async () => {
+    expect(await runCli(["export-context", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("Usage: dome export-context");
+    expect(out).toContain("--limit <n>");
+    expect(out).toContain("--json");
+  });
+
   test("inspect help names every shipped subject", async () => {
     expect(await runCli(["inspect", "-h"])).toBe(0);
     const out = captured.out.join("\n");
@@ -81,11 +89,13 @@ describe("runCli", () => {
 
   test("numeric options are validated by Commander before actions run", async () => {
     expect(await runCli(["query", "alpha", "--limit", "10x"])).toBe(64);
+    expect(await runCli(["export-context", "alpha", "--limit", "x"])).toBe(64);
     expect(await runCli(["inspect", "runs", "--limit", "0"])).toBe(64);
     expect(await runCli(["doctor", "--orphan-threshold-ms", "-1"])).toBe(64);
     expect(await runCli(["serve", "--poll-interval-ms", "500x"])).toBe(64);
     const err = captured.err.join("\n");
     expect(err).toContain("option '--limit <n>' argument '10x' is invalid");
+    expect(err).toContain("option '--limit <n>' argument 'x' is invalid");
     expect(err).toContain("option '--limit <n>' argument '0' is invalid");
     expect(err).toContain(
       "option '--orphan-threshold-ms <n>' argument '-1' is invalid",
