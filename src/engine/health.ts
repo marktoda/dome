@@ -503,8 +503,8 @@ function instructionDriftFinding(id: string, message: string): HealthFinding {
     id,
     message,
     recovery:
-      "Re-run `dome init` to restore missing orientation files without " +
-      "overwriting user prose.",
+      "Run `dome init --refresh-instructions` to repair orientation shims " +
+      "without overwriting user prose.",
   });
 }
 

@@ -157,6 +157,8 @@ Work:
 - [x] Add explicit `dome init --refresh-config` recovery for old first-party
       configs with missing default grant keys, without clobbering custom
       grant values or enabling missing bundles.
+- [x] Add explicit `dome init --refresh-instructions` recovery for old
+      AGENTS/CLAUDE orientation shims, preserving existing vault guidance.
 
 Acceptance:
 
@@ -165,6 +167,8 @@ Acceptance:
 - [x] CLI tests assert generated `AGENTS.md` / `CLAUDE.md` content.
 - [x] E2E harness scenario for refreshing stale first-party grant keys and
       clearing doctor grant-gap findings.
+- [x] E2E harness scenario for refreshing stale AGENTS/CLAUDE shims and
+      clearing doctor instruction-drift findings.
 - [ ] Release-hardening smoke against `docs/` or `~/vaults/work` where safe.
 
 ## Milestone 2 - Compiler Host Spine

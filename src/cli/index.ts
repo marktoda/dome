@@ -83,11 +83,16 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "--refresh-config",
       "Fill missing first-party default grant keys in an existing config.",
     )
+    .option(
+      "--refresh-instructions",
+      "Repair old AGENTS.md/CLAUDE.md orientation shims.",
+    )
     .action(async (path: string | undefined, options: InitCliOptions) => {
       setExitCode(
         await runInit({
           path,
           refreshConfig: options.refreshConfig,
+          refreshInstructions: options.refreshInstructions,
         }),
       );
     });
@@ -421,6 +426,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
 type InitCliOptions = {
   readonly refreshConfig?: boolean;
+  readonly refreshInstructions?: boolean;
 };
 
 type InspectCliOptions = {

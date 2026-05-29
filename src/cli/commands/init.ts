@@ -46,14 +46,12 @@
 //     opt-in path fills missing first-party default grant keys for already
 //     enabled first-party bundles without changing existing grant values.
 //   - `.gitignore`: skip if exists.
-//   - `AGENTS.md`: skip if exists. (Per
-//     [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]], the file has a
-//     user-prose section that survives the templated-section merge; first-
-//     write-only matches that contract — the merge regenerates templated
-//     sections on demand, today on `dome init` re-runs and in v1.x via the
-//     reserved `dome doctor --repair` verb.)
-//   - `CLAUDE.md`: skip if exists. Users may add local Claude-specific
-//     notes below the shim; re-init must not clobber them.
+//   - `AGENTS.md`: skip if exists, unless `--refresh-instructions` is set.
+//     The refresh path adds the managed user-prose delimiter if an old
+//     orientation file is missing it.
+//   - `CLAUDE.md`: skip if exists, unless `--refresh-instructions` is set.
+//     The refresh path adds the `@AGENTS.md` import shim if an old Claude
+//     memory file is missing it, preserving the old content below.
 //   - Initial scaffold commit: skip if HEAD already resolves.
 //
 // Exit codes per spec:
@@ -75,6 +73,7 @@ import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 export type RunInitOptions = {
   readonly path?: string | undefined;
   readonly refreshConfig?: boolean | undefined;
+  readonly refreshInstructions?: boolean | undefined;
 };
 
 /**
@@ -149,16 +148,22 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     const gitignorePath = join(vaultPath, ".gitignore");
     const gitignoreOutcome = await writeIfMissing(gitignorePath, DEFAULT_GITIGNORE);
 
-    // 6. Write `AGENTS.md` (first-write-only — preserves user-prose section
-    //    across re-runs per AGENTS_MD_IS_ORIENTATION_SURFACE).
+    // 6. Write `AGENTS.md` (first-write-only by default; explicit refresh
+    //    repairs old orientation files without dropping user prose).
     const agentsPath = join(vaultPath, "AGENTS.md");
-    const agentsOutcome = await writeIfMissing(agentsPath, AGENTS_MD_TEMPLATE);
+    const agentsOutcome = await ensureAgentsMd({
+      path: agentsPath,
+      refresh: options.refreshInstructions === true,
+    });
 
     // 7. Write `CLAUDE.md`, the Claude Code auto-load shim. Claude Code
     //    reads CLAUDE.md, so it imports AGENTS.md where the full cross-
     //    harness orientation lives.
     const claudePath = join(vaultPath, "CLAUDE.md");
-    const claudeOutcome = await writeIfMissing(claudePath, CLAUDE_MD_TEMPLATE);
+    const claudeOutcome = await ensureClaudeMd({
+      path: claudePath,
+      refresh: options.refreshInstructions === true,
+    });
 
     // 8. Initial scaffold commit, if the repo has no commits yet. The
     //    adopted-ref substrate needs HEAD to resolve before `dome sync`
@@ -250,6 +255,51 @@ async function ensureConfigYaml(opts: {
   if (!changed) return "skipped (already present)";
   await writeFile(opts.path, stringifyYaml(root), "utf8");
   return "updated";
+}
+
+async function ensureAgentsMd(opts: {
+  readonly path: string;
+  readonly refresh: boolean;
+}): Promise<StepOutcome> {
+  if (!existsSync(opts.path)) {
+    await writeFile(opts.path, AGENTS_MD_TEMPLATE, "utf8");
+    return "created";
+  }
+  if (!opts.refresh) return "skipped (already present)";
+
+  const body = await readFile(opts.path, "utf8");
+  if (hasManagedUserProseDelimiters(body)) {
+    return "skipped (already present)";
+  }
+  await writeFile(
+    opts.path,
+    body.trimEnd() + "\n\n" + USER_PROSE_SECTION,
+    "utf8",
+  );
+  return "updated";
+}
+
+async function ensureClaudeMd(opts: {
+  readonly path: string;
+  readonly refresh: boolean;
+}): Promise<StepOutcome> {
+  if (!existsSync(opts.path)) {
+    await writeFile(opts.path, CLAUDE_MD_TEMPLATE, "utf8");
+    return "created";
+  }
+  if (!opts.refresh) return "skipped (already present)";
+
+  const body = await readFile(opts.path, "utf8");
+  if (body.includes("@AGENTS.md")) return "skipped (already present)";
+  const next = body.trim().length === 0
+    ? CLAUDE_MD_TEMPLATE
+    : `@AGENTS.md\n\n${body.trimStart()}`;
+  await writeFile(opts.path, next, "utf8");
+  return "updated";
+}
+
+function hasManagedUserProseDelimiters(body: string): boolean {
+  return body.includes(USER_PROSE_BEGIN) && body.includes(USER_PROSE_END);
 }
 
 function refreshEnabledDefaultGrants(
@@ -483,6 +533,22 @@ git:
 // edit them without updating the invariant doc + any future
 // `src/agents-md.ts` parser.
 
+const USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->";
+const USER_PROSE_END = "<!-- END user-prose -->";
+const USER_PROSE_SECTION = `${USER_PROSE_BEGIN}
+
+## Your own notes about this vault
+
+(Anything you add between the BEGIN / END user-prose delimiters above
+and below survives Dome's templated-section regeneration. The templated
+sections above the delimiter are regenerated by Dome when the AGENTS.md
+template merge runs — today this file is first-write-only on \`dome init\`
+re-runs, and v1.x reserves \`dome doctor --repair\` for future safe
+template refresh.)
+
+${USER_PROSE_END}
+`;
+
 const AGENTS_MD_TEMPLATE = `# This is a Dome vault.
 
 This directory is a git-backed markdown vault managed by Dome. Claude Code can
@@ -547,18 +613,7 @@ Do not call Dome after every edit. Dome works at the git commit boundary.
 - Projection state is rebuildable from adopted markdown.
 - Engine commits carry \`Dome-*\` trailers for auditability.
 
-<!-- BEGIN user-prose -->
-
-## Your own notes about this vault
-
-(Anything you add between the BEGIN / END user-prose delimiters above
-and below survives Dome's templated-section regeneration. The templated
-sections above the delimiter are regenerated by Dome when the AGENTS.md
-template merge runs — today this file is first-write-only on \`dome init\`
-re-runs, and v1.x reserves \`dome doctor --repair\` for future safe
-template refresh.)
-
-<!-- END user-prose -->
+${USER_PROSE_SECTION}
 `;
 
 const CLAUDE_MD_TEMPLATE = `@AGENTS.md

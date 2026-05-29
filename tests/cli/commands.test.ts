@@ -453,6 +453,41 @@ describe("runInit", () => {
     }
   });
 
+  test("--refresh-instructions repairs old orientation shims", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-instructions-"));
+    try {
+      await writeFile(
+        join(target, "AGENTS.md"),
+        "# Old instructions\n\nKeep this vault-specific guidance.\n",
+        "utf8",
+      );
+      await writeFile(
+        join(target, "CLAUDE.md"),
+        "# Work Knowledge Base\n\nOld Claude-specific memory.\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
+
+      const agents = await readFile(join(target, "AGENTS.md"), "utf8");
+      const claude = await readFile(join(target, "CLAUDE.md"), "utf8");
+      expect(agents).toContain("# Old instructions");
+      expect(agents).toContain("Keep this vault-specific guidance.");
+      expect(agents).toContain("<!-- BEGIN user-prose -->");
+      expect(agents).toContain("<!-- END user-prose -->");
+      expect(claude.startsWith("@AGENTS.md\n\n# Work Knowledge Base")).toBe(true);
+      expect(claude).toContain("Old Claude-specific memory.");
+
+      const firstAgents = agents;
+      const firstClaude = claude;
+      expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
+      expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(firstAgents);
+      expect(await readFile(join(target, "CLAUDE.md"), "utf8")).toBe(firstClaude);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   test(
     "end-to-end demo: init → sync init → broken wikilink commit → sync → diagnostic lands",
     async () => {

@@ -92,7 +92,7 @@ the processor's own view payloads without imposing a first-party schema.
 
 ## Per-command specs
 
-### `dome init [path] [--refresh-config]`
+### `dome init [path] [--refresh-config] [--refresh-instructions]`
 
 Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
 hotfix: `dome init` no longer copies the shipped first-party bundles
@@ -128,7 +128,10 @@ The shipped initialization steps:
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
    path rather than polish. First-write-only — re-runs preserve any
-   user-prose section the vault owner added.
+   user-prose section the vault owner added. `--refresh-instructions` is an
+   explicit maintenance path for old orientation files: it adds the managed
+   AGENTS user-prose delimiters when missing and prepends the `@AGENTS.md`
+   shim to CLAUDE.md when missing, preserving existing file content.
 6. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
    `.dome/config.yaml`. Skipped if HEAD already resolves (re-init on a

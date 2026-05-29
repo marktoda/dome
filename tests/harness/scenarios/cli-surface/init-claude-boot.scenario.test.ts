@@ -131,6 +131,55 @@ scenario(
   },
 );
 
+scenario(
+  {
+    name: "cli-surface: dome init refreshes stale orientation shims",
+    tags: [{ kind: "group", group: "cli-surface" }],
+  },
+  async () => {
+    const target = mkdtempSync(join(tmpdir(), "dome-init-instructions-"));
+    try {
+      await writeFile(
+        join(target, "AGENTS.md"),
+        "# Old AGENTS\n\nVault-specific instructions.\n",
+        "utf8",
+      );
+      await writeFile(
+        join(target, "CLAUDE.md"),
+        "# Old CLAUDE\n\nClaude-specific instructions.\n",
+        "utf8",
+      );
+
+      const init = await runCliCaptured([
+        "init",
+        target,
+        "--refresh-instructions",
+      ]);
+      expect(init.exitCode).toBe(0);
+      expect(init.stderr).toBe("");
+      expect(init.stdout).toContain("AGENTS.md:               updated");
+      expect(init.stdout).toContain("CLAUDE.md:               updated");
+
+      const doctor = await runCliCaptured([
+        "doctor",
+        "--vault",
+        target,
+        "--json",
+      ]);
+      expect(doctor.exitCode).toBe(0);
+      expect(doctor.stderr).toBe("");
+      const report = JSON.parse(doctor.stdout) as {
+        readonly status: string;
+        readonly summary: { readonly instructionDrift: number };
+      };
+      expect(report.status).toBe("ok");
+      expect(report.summary.instructionDrift).toBe(0);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  },
+);
+
 async function runCliCaptured(args: ReadonlyArray<string>): Promise<{
   readonly exitCode: number;
   readonly stdout: string;
