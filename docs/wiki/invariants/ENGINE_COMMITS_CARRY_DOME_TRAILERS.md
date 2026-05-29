@@ -10,7 +10,8 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** Every commit produced by Dome's engine — closure commits from the adoption loop, garden-emitted Proposal heads, init scaffolding commits, migration commits — carries four trailers in the commit message body:
+**Statement:** Every semantic commit produced by Dome's engine during adoption
+or garden patch application carries four trailers in the commit message body:
 
 ```text
 Dome-Run: run_<unix-ms>_<6-char-rand>
@@ -27,14 +28,26 @@ The dual surface also makes recovery cheap. Wiping `runs.db` and rebuilding from
 
 **Structural enforcement:**
 
-1. **`src/engine/closure-commit.ts` is the single chokepoint for engine commits.** Its `commitWorkflow(input)` function requires a `runContext` parameter; the function refuses (throws) when the parameter is absent. There is no path to producing a trailer-less engine commit through this function.
-2. **`commitWorkflow` is called from exactly two places** — `src/engine/adopt.ts` (closure commits at the end of the adoption loop) and `src/engine/garden-proposal.ts` (when a garden processor's PatchEffect spawns a Proposal head). Both pass a properly-constructed `runContext`.
-3. **The four-trailer format is enforced by `composeCommitMessage`.** The function takes the `runContext` and produces the message; the trailers are appended after the body using `git interpret-trailers` convention.
-4. **`tests/integration/engine-commit-trailers.test.ts`** asserts every engine commit produced during a sync carries all four trailers, parseable via `git interpret-trailers --parse`.
+Init scaffolding commits are bootstrap/user-facing setup commits, not semantic
+engine adoption commits, and do not carry `Dome-*` trailers.
+
+**Structural enforcement:**
+
+1. **Engine semantic commits use the trailer composer.** Closure commits flow
+   through `src/engine/closure-commit.ts` and PatchEffect commits flow through
+   `src/engine/apply-patch.ts`; both require a `runContext` and call the shared
+   `composeCommitMessage` helper from `src/workflow-commit.ts`.
+2. **The four-trailer format is enforced by `composeCommitMessage`.** The
+   function takes the `runContext` and produces the message; the trailers are
+   appended after the body using `git interpret-trailers` convention.
+3. **Harness scenarios assert the behavior at the git boundary.** Garden
+   cascade scenarios verify patch-produced commits carry frame-correct
+   trailers, and the init scenario asserts the bootstrap commit is a normal
+   non-engine commit.
 
 **Counter-example:** A future Phase contributor adds a "fast-path" commit producer at `src/engine/quick-commit.ts` that bypasses `commitWorkflow`. The integration test fails: a commit appears in the engine-history grep without all four trailers. The test names the file path and the missing trailers; the contributor either threads `runContext` through the new path or removes the bypass.
 
-**Test guarantee:** `tests/invariants/engine-commits-carry-dome-trailers.test.ts` — for each engine commit produced during a fixture sync, parses the commit message with `git interpret-trailers --parse`, asserts the four trailers are present and well-formed, asserts the `Dome-Run` value matches a row in `runs.db`.
+**Test guarantee:** `tests/invariants/engine-commits-carry-dome-trailers.test.ts` pins the invariant doc into the AC3 lockstep surface. High-level harness scenarios exercise the git-boundary behavior for engine PatchEffect commits and the non-engine init bootstrap commit.
 
 **Related:**
 - [[wiki/specs/adoption]] §"Engine commit trailers"

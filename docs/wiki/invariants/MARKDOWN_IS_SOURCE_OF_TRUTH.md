@@ -20,7 +20,7 @@ tier: axiom
 
 **Counter-example:** A plugin stores entity relationships in `.dome/state/relations.sqlite` and serves queries from it without re-reading markdown. Native writes from Obsidian update markdown but not the parallel SQLite; queries return stale results. The fix: treat the SQLite as a projection scoped under the plugin's `graph.write` namespace inside `projection.db`; per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] and [[wiki/specs/projection-store]] §"Rebuild path", projections rebuild on every Proposal adoption (the cache key `(adoptedCommit × extensionSetHash × processorVersionsHash)` invalidates).
 
-**Test guarantee:** `tests/invariants/markdown-is-source-of-truth.test.ts` — seeds a fixture vault, runs `dome sync`, snapshots the projection.db contents, deletes `.dome/state/projection.db`, runs `dome rebuild`, asserts the rebuilt tables match the snapshot byte-for-byte (modulo `written_at` timestamps which are normalized in the comparison). The test exercises the rebuild path per [[wiki/specs/projection-store]] §"Rebuild path".
+**Test guarantee:** `tests/invariants/markdown-is-source-of-truth.test.ts` pins the invariant doc into the AC3 lockstep surface. High-level harness scenarios exercise the operational behavior: committed markdown is adopted, projection rows are rebuilt from adopted state, and operational stores such as the run ledger and outbox are preserved rather than treated as markdown-derived cache.
 
 **Related:**
 - [[wiki/specs/vault-layout]]

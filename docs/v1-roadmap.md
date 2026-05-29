@@ -59,7 +59,8 @@ Shipped:
 - [x] Fixed-point adoption loop and `refs/dome/adopted/<branch>`.
 - [x] Garden sub-Proposals and operational work drain.
 - [x] Capability broker as the single effect gate.
-- [x] Bun.sqlite projection store, run ledger, outbox, and rebuild path.
+- [x] Bun.sqlite projection store, durable answers store, run ledger, outbox,
+      and rebuild path.
 - [x] Processor runtime with output validation, cancellation, timeouts,
       nominal transient/model errors, and quarantine.
 - [x] Commander-based CLI dispatch.

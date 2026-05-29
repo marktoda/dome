@@ -1,29 +1,68 @@
-# Dome vault configuration
+# Dome vault configuration (v1.0).
 #
-# This vault is the Dome project's own design substrate. It dogfoods Dome
-# on Dome — proof that Dome generalizes beyond personal notes to systems
-# thinking, project design, and software documentation.
+# This vault is the Dome project's own design substrate. It dogfoods Dome on
+# Dome as a project/design vault rather than a personal notes vault.
 
-vault:
-  name: "Dome design substrate"
-  purpose: "Design substrate for the Dome project itself"
-  kind: "project"   # vs. "personal"
+extensions:
+  dome.lint:
+    enabled: true
 
-# Invariant configuration.
-# Some default invariants don't apply to a project-design vault.
-invariants:
-  PAGE_CREATION_REQUIRES_RECURRENCE:
-    enabled: false
-    reason: "Specs, invariants, matrices, and gotchas are authored explicitly upfront, not extracted from recurring conversational mentions."
-  SENSITIVE_GOES_TO_INBOX:
-    enabled: false
-    reason: "This is a project vault, not a personal vault. No people-performance / HR / health / legal content lives here."
+  dome.markdown:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+        - ".dome/page-types.yaml"
+        - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
+      patch.auto:
+        - "**/*.md"
+      question.ask: true
 
-# Hook execution model.
-hooks:
-  default_mode: async
-  queue_backend: in_process   # v0.5 default; can be swapped for redis/bullmq later
+  dome.graph:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+      graph.write:
+        - "dome.graph.*"
 
-# Wikilink convention.
-wikilinks:
-  format: full_path           # [[wiki/entities/x]] not [[x]]
+  dome.daily:
+    enabled: true
+    grant:
+      read:
+        - "wiki/dailies/*.md"
+      patch.auto:
+        - "wiki/dailies/*.md"
+      graph.write:
+        - "dome.daily.*"
+      question.ask: true
+
+  dome.search:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+      search.write:
+        - "**/*.md"
+
+  dome.health:
+    enabled: true
+    grant:
+      read:
+        - "**"
+      outbox.read:
+        - failed
+      question.ask: true
+      outbox.recover: true
+      quarantine.read: true
+      quarantine.recover: true
+      run.read:
+        - running
+      run.recover: true
+
+engine:
+  max_iterations: 100
+  auto_commit_workflows: true
+
+git:
+  auto_commit_workflows: true

@@ -1,7 +1,7 @@
 node_modules/
 *.log
 .DS_Store
-.dome/state/
+**/.dome/state/
 
 # Test artifacts
 tests/tmp/

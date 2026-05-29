@@ -37,7 +37,12 @@ By substrate type:
 - **Effects are the only processor output.** A processor returns `Promise<Effect[]>` from its `run(ctx)` body. No direct mutation surface. Pinned by [[docs/wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
 - **Every effect is capability-checked.** The broker at `src/engine/apply-effect.ts` is the single chokepoint. Pinned by [[docs/wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 - **`@dome/sdk` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `model.invoke` or MCP machinery from `src/index.ts` fails CI. Pinned by [[docs/wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
-- **Markdown is the source of truth.** Anything Dome derives — projection store, run ledger, outbox, index.md, log.md — can be rebuilt from markdown alone. `.dome/state/` is gitignored and rebuildable.
+- **Markdown is the source of truth.** Knowledge projections in `projection.db`
+  can be rebuilt from adopted markdown plus deterministic processors. Durable
+  operational state (`answers.db`, `runs.db`, `outbox.db`, quarantine state) is
+  gitignored but not fully rebuildable; preserve it unless intentionally
+  discarding human answers, audit history, retry state, or processor recovery
+  state.
 - **Every vault is a git repo.** Axiom; enforced at `openVault`.
 - **The compiler boundary** (AGENTS.md + CLI + daemon + git-native writes) is the contract every agentic harness interacts with — see [[docs/wiki/specs/harnesses]].
 

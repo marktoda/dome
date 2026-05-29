@@ -113,7 +113,8 @@ The result is computed once per loop iteration and passed to every processor who
 
 ## Engine commit trailers
 
-Every engine-produced commit (closure commits, garden-emitted Proposals after their adoption, init scaffolding commits) carries four trailers in the message body:
+Every semantic engine-produced commit from adoption or garden patch application
+carries four trailers in the message body:
 
 ```text
 adopt: <Proposal source kind> proposal <Proposal id-prefix>
@@ -134,6 +135,10 @@ Trailers sit after a blank line per `git interpret-trailers` convention. They ar
 | `Dome-Source-Head` | SHA of HEAD at the moment the loop started. |
 
 User out-of-band commits (vim, Obsidian, agent's `Write`) do **not** carry these trailers. The structural difference makes `git log --grep="^Dome-Run:"` the canonical engine-history query and `git log --invert-grep --grep="^Dome-Run:"` the user-history query.
+
+`dome init`'s initial scaffold commit is a bootstrap setup commit, not an
+adoption/garden semantic engine commit, and intentionally does not carry
+`Dome-*` trailers.
 
 Pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]. The trailers and the run ledger are dual surfaces for the same provenance — see [[wiki/specs/run-ledger]] §"Why a separate ledger".
 

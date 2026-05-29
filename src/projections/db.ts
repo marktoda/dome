@@ -589,9 +589,11 @@ export async function openProjectionDb(
 }
 
 /**
- * Wipe and recreate every projection table on an already-open database
- * handle. The run ledger and outbox live in separate databases, so this is
- * scoped to rebuildable projection state only.
+ * Wipe and recreate every table in projection.db on an already-open handle.
+ * Most rows are rebuildable projections. `scheduled_jobs` and
+ * `schedule_cursors` are volatile operational rows that intentionally reset
+ * with the projection cache; durable answers, run history, outbox rows, and
+ * quarantine state live outside this database.
  */
 export function resetProjectionDb(db: ProjectionDb): void {
   applyDropAll(db.raw);

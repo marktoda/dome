@@ -7,11 +7,18 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 # SDK surface
 
-This spec is normative for the Dome SDK's public API. The SDK is a TypeScript package implemented for Bun (`bun` runtime) that exposes **four core types** — Vault, Proposal, Processor, Effect — and the registration mechanism for extension bundles. Everything beyond these is a pattern built on top.
+This spec is normative for the Dome SDK's target public API. The SDK is a TypeScript package implemented for Bun (`bun` runtime) whose stable conceptual surface is **four core types** — Vault, Proposal, Processor, Effect — plus the registration mechanism for extension bundles. Everything beyond these is a pattern built on top.
+
+Implementation status: the current package root (`src/index.ts`) exports core
+types, effect constructors, processor authoring helpers, adopted-ref read
+helpers, the bundle loader, and pure commit-trailer helpers. The runtime
+`Vault` / `openVault` object described below is the intended public SDK
+wrapper, not a shipped export yet. The shipped v1 operational surface is the
+Commander CLI over the internal `openVaultRuntime` boundary.
 
 ## The four concepts
 
-### Vault
+### Vault (target public wrapper)
 
 A Vault is a directory plus the engine that maintains it. One `Vault` instance per process per vault path. Constructed by `openVault(path: string): Promise<Result<Vault, ToolError>>` — the factory returns a `Result` so failure modes (non-git directory; missing `.dome/`; corrupted config) surface as typed errors at the boundary rather than throwing.
 
@@ -73,7 +80,11 @@ openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
 
 `drainProcessors()` is the planned v1.x drain surface. When implemented, it is idempotent — re-callable any number of times — and awaits the engine's garden/view processor work plus any in-flight outbox dispatch attempts.
 
-`close()` currently releases the SQLite handles for projection store / run ledger / outbox. The future drain-integrated close path calls `drainProcessors()` first, then releases handles, then sets a `closed` flag so subsequent `query` / `sync` / `rebuild` calls return `Result.err({ kind: "vault-closed" })`.
+`close()` currently releases the SQLite handles for the projection store,
+answers store, run ledger, and outbox. The future drain-integrated close path
+calls `drainProcessors()` first, then releases handles, then sets a `closed`
+flag so subsequent `query` / `sync` / `rebuild` calls return
+`Result.err({ kind: "vault-closed" })`.
 
 #### Composable construction
 

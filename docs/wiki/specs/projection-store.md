@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 
 This spec is normative for Dome's derived-state layer. The **projection store** is a Bun.sqlite-backed cache of facts, search indexes, diagnostics, questions, scheduled jobs, and schedule cursors. The adjacent outbox database is operational retry/audit state for external side effects. Together they answer "where do view-phase processors read from" and "how does the engine recover operational work."
 
-The projection store is **derived**. Markdown + git history is the knowledge source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); `projection.db` can be deleted and rebuilt at any time from adopted markdown plus deterministic processors. The adjacent `runs.db` and `outbox.db` are persistent operational state and are not covered by the projection-rebuild guarantee. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+The projection store is **derived** for adopted-state knowledge rows. Markdown + git history is the knowledge source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); facts, diagnostics, search rows, and rebuild-eligible questions in `projection.db` can be deleted and rebuilt at any time from adopted markdown plus deterministic processors. Projection-local operational rows (`scheduled_jobs`, `schedule_cursors`) reset during rebuild by design. The adjacent `answers.db`, `runs.db`, and `outbox.db` files are durable operational state and are not covered by the projection-rebuild guarantee. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 
 ## Why SQLite (and why Bun.sqlite)
 
