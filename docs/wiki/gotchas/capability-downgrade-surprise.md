@@ -2,12 +2,13 @@
 type: gotcha
 created: 2026-05-27
 updated: 2026-05-29
-severity: low
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
 enforced_at: src/engine/capability-broker.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
+severity: low
 ---
 
 # Capability downgrade surprise
