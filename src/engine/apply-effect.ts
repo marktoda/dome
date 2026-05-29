@@ -68,7 +68,7 @@ import type {
 import { diagnosticEffect } from "../core/effect";
 import type { Capability, ProcessorPhase } from "../core/processor";
 import type { CommitOid } from "../core/source-ref";
-import { enforceCapability } from "./capability-broker";
+import { enforceCapability, type DeniedCapability } from "./capability-broker";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import {
   capabilityUseForEffect,
@@ -375,7 +375,11 @@ export async function applyEffect(opts: {
       outcome: "denied",
       appliedEffect: null,
       diagnostics: Object.freeze([diagnostic]),
-      ...capabilityUseField(opts.effect, "denied"),
+      ...capabilityUseField(
+        opts.effect,
+        "denied",
+        verdict.deniedCapability,
+      ),
     });
     await recordDiagnosticsViaSink({
       sinks: opts.sinks,
@@ -467,7 +471,17 @@ export async function applyEffect(opts: {
 function capabilityUseField(
   effect: Effect,
   outcome: "allowed" | "downgraded" | "denied",
+  override?: DeniedCapability,
 ): { capabilityUse?: EffectCapabilityUse } {
+  if (override !== undefined) {
+    return {
+      capabilityUse: Object.freeze({
+        capability: override.capability,
+        resource: override.resource,
+        outcome,
+      }),
+    };
+  }
   const capabilityUse = capabilityUseForEffect(effect, outcome);
   return capabilityUse === null ? {} : { capabilityUse };
 }

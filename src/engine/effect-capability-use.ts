@@ -98,9 +98,15 @@ export function capabilityUseForPatch(
 ): EffectCapabilityUse {
   return Object.freeze({
     capability: effect.mode === "auto" ? "patch.auto" : "patch.propose",
-    resource: effect.changes[0]?.path ?? null,
+    resource: patchResource(effect),
     outcome,
   });
+}
+
+function patchResource(effect: PatchEffect): string | null {
+  const paths = [...new Set(effect.changes.map((change) => change.path))];
+  if (paths.length === 0) return null;
+  return paths.join(",");
 }
 
 export function recordEffectCapabilityUse(opts: {

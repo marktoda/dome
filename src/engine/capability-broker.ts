@@ -93,15 +93,28 @@ export type EnforcementResult =
   | {
       readonly kind: "deny";
       readonly diagnostic: DiagnosticEffect;
+      readonly deniedCapability?: DeniedCapability;
     };
+
+export type DeniedCapability = {
+  readonly capability: string;
+  readonly resource: string | null;
+};
 
 /** Frozen singleton for the common case — avoid per-call allocation. */
 const ALLOW: EnforcementResult = Object.freeze({ kind: "allow" } as const);
 
 const allow = (): EnforcementResult => ALLOW;
 
-const deny = (diagnostic: DiagnosticEffect): EnforcementResult =>
-  Object.freeze({ kind: "deny", diagnostic } as const);
+const deny = (
+  diagnostic: DiagnosticEffect,
+  deniedCapability?: DeniedCapability,
+): EnforcementResult =>
+  Object.freeze({
+    kind: "deny",
+    diagnostic,
+    ...(deniedCapability !== undefined ? { deniedCapability } : {}),
+  } as const);
 
 const downgrade = (
   rewrittenEffect: Effect,
@@ -198,6 +211,10 @@ function enforceSourceRefRead(
             "'read' grant. Use ctx.sourceRef(...) only for readable paths, " +
             "or declare and grant read access for the referenced evidence.",
           sourceRefs: [],
+        }),
+        Object.freeze({
+          capability: "read",
+          resource: ref.path,
         }),
       );
     }

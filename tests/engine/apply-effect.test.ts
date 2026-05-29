@@ -7,6 +7,7 @@ import { applyEffect, noopSinks } from "../../src/engine/apply-effect";
 import {
   diagnosticEffect,
   externalActionEffect,
+  factEffect,
   jobEffect,
   outboxRecoveryEffect,
   patchEffect,
@@ -268,6 +269,27 @@ describe("successful routes (noopSinks)", () => {
     expect(r.outcome).toBe("applied");
   });
 
+  test("multi-path PatchEffect records every touched path in audit resource", async () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [read, auto],
+      granted: [read, auto],
+      phase: "adoption",
+      effect: patchEffect({
+        mode: "auto",
+        changes: [
+          { kind: "write", path: "wiki/a.md", content: "a\n" },
+          { kind: "write", path: "wiki/b.md", content: "b\n" },
+        ],
+        reason: "two files",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.resource).toBe("wiki/a.md,wiki/b.md");
+  });
+
   test("DiagnosticEffect (info) in any phase → applied (no capability needed)", async () => {
     const e = diagnosticEffect({
       severity: "info",
@@ -486,6 +508,33 @@ describe("capability denial flows through", () => {
     expect(r.diagnostics[0]?.code).toBe("capability-deny-search-write");
     expect(r.capabilityUse?.capability).toBe("search.write");
     expect(r.capabilityUse?.outcome).toBe("denied");
+  });
+
+  test("sourceRef read denial records read capability instead of primary capability", async () => {
+    const write: Capability = {
+      kind: "graph.write",
+      namespaces: ["dome.test"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [write],
+      granted: [write],
+      phase: "adoption",
+      effect: factEffect({
+        subject: { kind: "page", path: "wiki/x.md" },
+        predicate: "dome.test.value",
+        object: { kind: "string", value: "x" },
+        assertion: "explicit",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-source-ref-read");
+    expect(r.capabilityUse).toMatchObject({
+      capability: "read",
+      resource: "wiki/x.md",
+      outcome: "denied",
+    });
   });
 
   test("JobEffect with no matching job.enqueue grant is denied", async () => {
