@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: shipped-default
 ---
@@ -10,14 +10,15 @@ tier: shipped-default
 
 **Tier:** Shipped default — enabled by default; per-bucket disable in `<vault>/.dome/config.yaml` is deferred to v1.1+.
 
-**Statement:** Files in `<vault>/inbox/<bucket>/` (excluding `inbox/review/`, the lint-report destination) are expected to be moved or deleted by the bucket's intake processor within `engine.inbox_stale_age_hours` (default 168 = 7 days) of creation. Files lingering past the threshold are surfaced as DiagnosticEffect by the `dome.intake` adoption-phase processor on every sync.
+**Statement:** Files in `<vault>/inbox/<bucket>/` (excluding `inbox/review/`, the lint-report destination) are expected to be moved or deleted by the bucket's intake processor within `engine.inbox_stale_age_hours` (default 168 = 7 days) of creation. Files lingering past the threshold should be surfaced as DiagnosticEffect by a `dome.intake` adoption-phase processor on every sync.
 
 **Why:** The inbox-as-drop-zone pattern (a phone widget writes raw markdown to `inbox/raw/`; a share-sheet writes to `inbox/clip/`; the `dome.intake` garden-phase processor compiles them into wiki updates) only works if files don't accumulate. Persistent inbox files indicate either: (a) the intake processor is broken or quarantined; (b) the LLM failed to compile a low-confidence capture and the user needs to triage; (c) the bucket is wrong for the captured content. All three deserve visibility.
 
-**Implementation status:** Shipped-default target, not shipped in current v1. The core
-diagnostic, question/answer, quarantine, and recovery mechanisms exist, but
-`dome.intake`, stale-inbox diagnostics, and the lint/apply disposition surface
-remain planned.
+**Implementation status:** Shipped-default target, partially shipped. The core
+diagnostic, question/answer, quarantine, and recovery mechanisms exist, and
+`dome.intake.extract-capture` archives processed `inbox/raw/*.md` captures to
+`inbox/processed/`. Stale-inbox diagnostics and a lint/apply disposition
+surface remain planned.
 
 **Target structural enforcement:**
 

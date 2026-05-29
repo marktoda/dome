@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 severity: high
 coverage: off-matrix
@@ -21,26 +21,38 @@ first_observed: 2026-05-26 (closed at v0.5+phase1+phase3; pin maintained in v1)
 
 1. **The [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] axiom** pins the contract: `@dome/sdk` core (the engine, processor runtime, projection store, run ledger, outbox, capability broker, the four core types) may not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`. Structurally enforced by `tests/integration/bundle-deps.test.ts`.
 
-2. **The entrypoint split.** Four entrypoints:
-   - `@dome/sdk` — core (engine, processors runtime, projection store, run ledger, outbox, capability broker, the four core types, `submitProposal` / `query` / `getAdoptionStatus`, **`AbstractSurface`** + `buildAbstractSurface(vault)`)
-   - `@dome/sdk/workflows` — garden-LLM machinery (`modelInvoke` shim, AI-SDK projection helpers, `@ai-sdk/anthropic` + `ai` deps). Consumed by garden-phase processors that hold `model.invoke` capability.
-   - `@dome/sdk/mcp` — MCP server surface (`DomeMcpServer`, `renderMcp(surface)`, `McpSurface`, adapters, `@modelcontextprotocol/sdk` dep)
-   - `@dome/sdk/cli` — CLI shell (the `dome*` command functions; consumes `commander`)
+2. **The entrypoint split.** Current v1 exports keep `src/index.ts` clean and
+   route LLM use through runtime/provider injection plus extension bundles:
+   - `@dome/sdk` — core types, effect constructors, processor authoring helpers,
+     adopted-ref read helpers, bundle-loader helpers, and pure engine
+     commit-trailer helpers. It does not export a public submit API or protocol
+     adapters.
+   - Future companion entrypoints such as `@dome/sdk/mcp`, `@dome/sdk/http`, or
+     provider packages may depend on protocol/model libraries explicitly. They
+     are not imported from the package root.
 
-   `Vault` itself exposes only Submit (`submitProposal`) + Recall (`query`, `readDocument`, `resolveWikilink`) + engine control (`sync`, `rebuild`, `getAdoptionStatus`) + lifecycle (`close`). The planned v1.x lifecycle drain surface is `drainProcessors`; it remains part of the core lifecycle contract because it is a synchronization primitive, not an LLM surface. The LLM-flavored surfaces live in `@dome/sdk/workflows`; consumers reach them explicitly.
+   The target `Vault` wrapper exposes Recall (`query`, `readDocument`,
+   `resolveWikilink`) plus engine control (`sync`, `rebuild`,
+   `getAdoptionStatus`) and lifecycle (`close`; future `drainProcessors`).
+   Writes remain git-native plus engine-internal Proposal construction. There
+   is no public `submitProposal` surface in v1.0.
 
 **Specific scenarios:**
 
-- **v2 mobile shell** importing `openVault` + `submitProposal` + `query` → core only; no Anthropic, no MCP. Bundle stays small.
+- **v2 mobile shell** importing the target `openVault` wrapper plus Recall/query helpers → core only; no Anthropic, no MCP. Bundle stays small.
 - **v2 web/HTTP shell** wanting search-only over a vault → core only. If it later adds an HTTP transport, it imports `@dome/sdk/http` (when that ships) for the adapter pattern.
-- **Plugin SDK author** writing a custom garden-LLM processor that needs the AI SDK → imports `@dome/sdk` for the four core types AND `@dome/sdk/workflows` for the `modelInvoke` integration. The split lets them pay only for what they use.
+- **Plugin SDK author** writing a custom garden-LLM processor → imports `@dome/sdk` for processor/effect types and depends explicitly on whatever provider adapter or model library the processor needs. The split lets them pay only for what they use.
 - **Test harness** that spins up a Vault to validate an adoption-phase processor → core only. The eval suite at `tests/fixtures/eval-inputs/` was always supposed to be an internal `@dome/sdk/workflows` consumer when it touches garden-LLM, not a core consumer.
 
 **Operational notes:**
 
 - The `bundle-deps.test.ts` regression test introspects the import graph from `src/index.ts` and asserts none of the forbidden packages appear. It runs on every PR; CI blocks regressions before merge.
 - Bundlers that tree-shake (esbuild, Rollup, Bun's bundler) won't actually pull dead code from `@dome/sdk` if the consumer doesn't reach it — but tree-shaking is a runtime optimization, not a contract. The invariant + test pin the contract; tree-shaking is a happy side effect.
-- First-party `dome.*` extension bundles that contain garden-LLM processors (`dome.intake`, `dome.daily`, `dome.lint`, `dome.search`) ship the processor TypeScript inside `assets/extensions/dome.*/processors/`; those files import from `@dome/sdk/workflows` for `modelInvoke`. The bundle loader dynamic-imports them at `openVault` time — never via the static graph of `src/index.ts`.
+- First-party `dome.*` extension bundles ship processor TypeScript inside
+  `assets/extensions/dome.*/processors/`; model-capable processors receive
+  `ctx.modelInvoke` only when their manifest capabilities and runtime provider
+  configuration allow it. The bundle loader imports processors at runtime, but
+  the package-root static graph stays free of model and MCP packages.
 
 **Related:**
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] (the axiom)

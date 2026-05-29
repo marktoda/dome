@@ -95,7 +95,11 @@ processors:
         cron: "0 7 * * MON"
 ```
 
-Both triggers are allowed by the view row of the matrix. The processor's `run(ctx)` body inspects `ctx.input.triggerKind` (`"command"` or `"schedule"`) and renders an appropriate ViewEffect. If the scheduled path needs to mutate vault markdown, that work belongs in a garden processor because `applyEffect({ phase: "view" })` rejects write effects.
+Both triggers are allowed by the view row of the matrix. Command dispatch uses
+`ctx.input.kind === "view"` with `commandName`; scheduled dispatch uses
+`ctx.input.kind === "schedule"` with the cron and fire timestamp. If the
+scheduled path needs to mutate vault markdown, that work belongs in a garden
+processor because `applyEffect({ phase: "view" })` rejects write effects.
 
 ## Related
 

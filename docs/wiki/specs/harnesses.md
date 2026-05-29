@@ -27,7 +27,7 @@ These four surfaces are the *load-bearing* contract. The MCP server ([[wiki/spec
 
 ## How a harness writes into the vault
 
-An agentic harness can write to the vault in three ways. Each goes through the engine's adoption loop:
+An agentic harness can write to the vault in two ways. Each goes through the engine's adoption loop:
 
 ### 1. Native write + compiler-host pickup (the canonical path)
 
@@ -46,10 +46,6 @@ cd ~/vaults/work && dome sync
 # Agent reacts: write a fix, re-submit
 # Agent reacts: write a fix, commit it, re-sync
 ```
-
-### 3. MCP read/query tools (target, when MCP is implemented and mounted)
-
-When a future harness mounts the planned MCP server, read/query tools are available as typed protocol operations. v1.0 does not expose a Proposal-submission MCP tool; adoption catch-up remains Git + CLI-native. See [[wiki/specs/mcp-surface]].
 
 Both write paths produce a Proposal internally, run the same adoption loop, and produce the same adoption result. There is no "trusted write" path that bypasses adoption.
 
@@ -70,6 +66,11 @@ Structured queries against adopted state + projection store. Returns results wit
 ```bash
 cd ~/vaults/work && dome query "what's on the platform-team thread"
 ```
+
+When a future harness mounts the planned MCP server, the same read/query
+operations are available as typed protocol operations. v1.0 does not expose a
+Proposal-submission MCP tool; adoption catch-up remains Git + CLI-native. See
+[[wiki/specs/mcp-surface]].
 
 ## Supported v1 harnesses
 

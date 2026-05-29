@@ -86,7 +86,10 @@ interface DiagnosticEffect {
 | `error` | Recorded; surfaced; non-blocking but visible. |
 | `block` | **Blocks adoption.** The engine emits `engine.adoption.blocked`, refuses to advance the adopted ref, and surfaces the diagnostic via `dome sync` exit code 1 or the `dome serve` run ledger. The user resolves, commits the fix, and syncs again. |
 
-In the garden phase, `block` is treated as `error` — garden processors cannot block adoption (they run *after* it). In the view phase, only `info` and `warning` are emitted.
+In the garden phase, `block` is treated as `error` — garden processors cannot
+block adoption because they run after it. In the view phase, `info`,
+`warning`, and `error` diagnostics may be recorded; `block` is rejected as a
+phase mismatch because a view command cannot block adoption.
 
 **Persistence:** diagnostics are written to `projection_store.diagnostics` ([[wiki/specs/projection-store]] §"Tables") with `(processor_id, code, proposal_id, subject_hash)` as the dedup key. Processor-emitted diagnostics and engine-created diagnostics (capability denials, phase mismatches, adoption/scheduler/job orchestration failures) use the same table; engine-created rows use synthetic producer ids such as `engine.adoption`, `engine.scheduler`, and `engine.jobs`. `dome inspect diagnostics` reads from there.
 

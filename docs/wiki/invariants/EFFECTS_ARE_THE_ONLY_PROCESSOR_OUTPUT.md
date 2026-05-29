@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: axiom
 ---
@@ -27,23 +27,24 @@ tier: axiom
 
 ## Implementation status
 
-**As of Phase 1+3 (Processor type + freeze-locked constructor + runtime landed; bundle linter forward-looking):**
+The type-level, construction-time, runtime-validation, and first-party lint
+fences are current v1 behavior.
 
-The type-level and construction-time fences are real today; the lint fence and first-party processor bundles arrive in later phases.
-
-- Structurally true now:
-  - **`ProcessorContext` has no mutation surface.** The type in `src/core/processor.ts` carries `snapshot`, `changedPaths`, `proposal`, `runId`, `input`, `capabilities` (opaque `CapabilityToken` brand), `modelInvoke?` (optional), and `sourceRef` (helper). No `writer`, no `db`, no `git`, no `fs`. TypeScript's structural typing makes a `Processor.run` body that calls `ctx.write(...)` or `ctx.git.commit(...)` fail compilation today.
-  - **`defineProcessor(...)` is the freeze-locked construction path.** `src/core/processor.ts:407-411` wraps the input in `Object.freeze` and returns it as a typed `Processor<TInput>`. Reassigning `processor.run` after definition fails at runtime — bullet 2 of the structural-enforcement list is operational today, not forward-looking.
-  - **`run` returns `Promise<Effect[]>`.** The `Processor` type's `run` field is `(ctx: ProcessorContext<TInput>) => Promise<Effect[]>` — the return type is fixed and the Effect union is closed (7 kinds, exhaustive switch in the engine).
-  - **`CapabilityToken` is structurally opaque** — `{ readonly __brand: "CapabilityToken" }` — so processor code cannot inspect or unwrap it to reach the broker directly.
-  - **Effect schemas validate at the engine boundary** (`src/core/effect.ts` Zod schemas) — a processor that constructs an Effect with a wrong shape fails Zod parsing before reaching the router.
-
-- Forward-looking (lands in later phases):
-  - **The semantic linter `processor-purity`** ([[wiki/linters/processor-purity]]) is a reviewable spec but not yet a CI check. It ships in Phase 10 cleanup. Until then, the import-allowlist on processor files is reviewer-enforced.
-  - **No first-party processors live under `assets/extensions/*/processors/` yet.** The shipped-default hooks migrate into bundle-form processors in Phase 6; the linter's scan target only becomes populated then.
-  - **`tests/integration/processor-purity.test.ts`** (and its lockstep stub) ship once the first first-party processor bundle lands (Phase 6).
-
-The type-level + construction-time chokepoints are in place; the *lint coverage* layer (scanning real first-party processor bundles) stacks on top as Phases 6 and 10 ship.
+- **`ProcessorContext` has no mutation surface.** The type in
+  `src/core/processor.ts` carries read/query inputs such as `snapshot`,
+  `changedPaths`, `proposal`, `runId`, `input`, optional `modelInvoke`, and
+  SourceRef helpers. It does not expose writers, git, SQLite, or filesystem
+  handles.
+- **`defineProcessor(...)` is the freeze-locked construction path.** Processor
+  static metadata and `run` are frozen after definition.
+- **`run` returns `Promise<Effect[]>`.** The Effect union is closed at eleven
+  kinds and `src/engine/apply-effect.ts` exhaustively routes them.
+- **Effect schemas validate at the executor boundary.** Invalid processor
+  output becomes a nominal processor failure/diagnostic rather than reaching
+  the router.
+- **`tests/integration/processor-purity.test.ts` is active.** It scans
+  first-party processor files under `assets/extensions/*/processors/` for
+  mutation-capable imports and obvious write calls.
 
 **Related:**
 - [[wiki/specs/processors]] §"What a processor cannot do"

@@ -323,18 +323,18 @@ tests; omitted means local today.
 
 ### `dome rebuild`
 
-Wipes `<vault>/.dome/state/projection.db` and rebuilds from the adopted commit per [[wiki/specs/projection-store]] §"Rebuild path". The run ledger (`runs.db`) and outbox (`outbox.db`) are preserved. Output:
+Wipes `<vault>/.dome/state/projection.db` and rebuilds from the adopted commit per [[wiki/specs/projection-store]] §"Rebuild path". The run ledger (`runs.db`) and outbox (`outbox.db`) are preserved. Text output is intentionally terse:
 
 ```text
 dome rebuild: rebuilding projection.db from adopted commit 41a98c2...
-  walking wiki/... 234 pages
-  walking raw/... 187 captures
-  re-running adoption-phase processors... 9 processors
-  re-running garden-phase fact-emitters... 4 processors
-  done (8.3s; projection.db now 3.2 MB)
+dome rebuild: done (234 files, 9 processors, 812 effects)
 ```
 
-Exit codes: 0 on success; 1 on rebuild failure (engine error); 2 on usage error.
+`--json` emits `{ status, branch, adopted, files, processors, effects }` on
+success or `{ status: "error", branch, adopted, error }` on failure.
+
+Exit codes: 0 on success; 1 on rebuild/runtime failure; 64 (EX_USAGE) on
+detached HEAD or uninitialized adopted ref.
 
 ### `dome inspect <subject> [--limit <n>] [--json]`
 
@@ -383,32 +383,16 @@ probe-only and read-only: it reports failed/stuck outbox rows, orphan running
 rows, quarantined processor triggers, projection cache drift, adopted-ref
 divergence, and instruction drift from `src/engine/health.ts`.
 
-**Design (complete v1).** `dome doctor` (no flags) runs a closed set of
-health-check probes against the engine substrate — orphan runs,
-stuck-outbox rows, dirty git state, drift age, schema skew, AGENTS.md
-template drift, bundle load failures. Each probe is a **garden-phase
-scheduled processor** in the `dome.health` first-party bundle, fired
-on a periodic cron or on engine signals (e.g.,
-`engine.outbox.terminal-failure`). Probes emit DiagnosticEffects with
-`source: engine.health` that persist to `projection.db.diagnostics`
-and surface via `dome inspect diagnostics`.
-
-`dome doctor` itself is a **view-phase command-triggered processor**
-(`dome.health.render-report`) that reads the persisted probe findings
-plus does on-demand ad-hoc readings, returning a ViewEffect with the
-assembled report. The verb-form invocation is the user-facing "is my
-vault healthy?" surface; the persisted findings are the durable
-audit trail.
-
-`--repair` applies the safe subset of mitigations — running answer-handler
-processors for any pending `dome.health.*` questions and triggering
-garden-phase repair processors (e.g., AGENTS.md template re-merge).
-
 **Current behavior.** `dome doctor` opens the runtime, collects a
 `HealthReport`, prints a compact text report, and exits 0. `--json` emits the
 same report with `status`, `summary`, and `findings`. `--repair` exits 64
 because recovery mutations still belong to the answer-handler loop. The report
 is not yet persisted as DiagnosticEffects.
+
+**Target v1.x shape.** Health probes can become scheduled `dome.health`
+processors that persist DiagnosticEffects for durable inspection, and the
+doctor report can become a view-phase command processor over those rows. That
+is an implementation target, not the current v1 command path.
 
 **Why this isn't a kitchen-sink admin command.** Pre-recut, the spec
 described `dome doctor` as a single verb covering reads (`--show`),
@@ -434,7 +418,7 @@ The recut splits these along their real seams:
   because there's no decision; it's a "block until quiet" verb.
 
 This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
-three named surfaces (`show`, `doctor`, `answer`) plus the existing
+three named surfaces (`inspect`, `doctor`, `answer`) plus the existing
 processor substrate.
 
 ### `dome answer <question-id> [<value>]` *(required for complete v1 recovery)*

@@ -67,10 +67,10 @@ A page's *type* (singular) is the directory name in `wiki/` mapped through the `
 
 ## `raw/` — immutable raw captures
 
-`raw/` contains source materials Dome treats as **definitive** for citation. Voice transcripts, meeting notes, research clippings, source-of-truth artifacts. Files in `raw/` are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]]:
+`raw/` contains source materials Dome treats as **definitive** for citation. Voice transcripts, meeting notes, research clippings, source-of-truth artifacts. Files in `raw/` are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]]. The raw-specific enforcement is a v1 target; current shipped grants avoid raw writes, but the broker hard-deny and adoption blocking processor remain planned:
 
-- `PatchEffect` targeting any `raw/<path>` is rejected by the broker.
-- The `dome.markdown` adoption-phase processor emits a blocking diagnostic if any Proposal mutates a `raw/` file.
+- `PatchEffect` targeting any `raw/<path>` should be rejected by the broker.
+- The `dome.markdown` adoption-phase processor should emit a blocking diagnostic if any Proposal mutates a `raw/` file.
 - `dome.intake`'s capture compilation writes *new* `wiki/` pages citing the raw; it never modifies the raw.
 
 Raw files carry a `type:` frontmatter naming the capture source (e.g., `type: voice-capture`, `type: research-clip`). Subdirectory structure is convention, not contract — `raw/voice/`, `raw/meetings/`, `raw/clips/` are common but not required.
@@ -234,7 +234,7 @@ Plugin / third-party bundles should not grant themselves `owns.path` on shipped-
 Four properties make the layout self-defending:
 
 1. **Category by path.** Adding a new page type doesn't require schema work — create `wiki/<plural>/`, declare in `page-types.yaml extensions:`, write a processor that handles the type's signals.
-2. **`raw/` immutability is structural.** Pinned by RAW_IS_IMMUTABLE; broker refuses; dome.markdown emits blocking diagnostic.
+2. **`raw/` immutability is a structural target.** Pinned by RAW_IS_IMMUTABLE; the planned broker hard-deny plus adoption diagnostic should enforce it independent of first-party grants.
 3. **`projection.db` is wipeable.** Derived query state can be rebuilt from markdown + git. Operational files in `.dome/state/` (`runs.db`, `outbox.db`) are persistent audit/retry state and should be preserved unless the user intentionally discards that history.
 4. **`notes/` asymmetry keeps the wiki clean.** User-authored prose stays in notes; the wiki ontology stays curated by processors.
 
@@ -248,4 +248,4 @@ Four properties make the layout self-defending:
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — markdown + git are canonical knowledge; `.dome/state/` is derived/operational
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — the vault root is a git repo
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox bucket files are expected to move
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw files cannot be patched
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw immutability target and enforcement plan

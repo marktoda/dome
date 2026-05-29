@@ -64,13 +64,28 @@ engine:
   model_call_timeout_ms: 180000
 ```
 
-Defaults:
+Default execution class by phase:
 
-| Phase | Default timeout | Rationale |
-|---|---:|---|
-| `adoption` | 2s per processor run | Adoption is the merge gate; it must be deterministic and low latency. |
-| `garden` | 120s per processor run | Garden work may call models or external systems, but must still be bounded. |
-| `view` | 30s per processor run | A user or protocol caller is waiting for output. |
+| Phase | Default class | Rationale |
+|---|---|---|
+| `adoption` | `deterministic` | Adoption is the merge gate; it must be deterministic and low latency. |
+| `garden` | `background` | Garden work may be slower and asynchronous. |
+| `view` | `interactive` | A user or protocol caller is waiting for output. |
+
+Timeout defaults by execution class:
+
+| Class | Default timeout | Model-call timeout |
+|---|---:|---:|
+| `deterministic` | 2s | n/a |
+| `interactive` | 30s | n/a |
+| `background` | 120s | n/a |
+| `llm` | 600s | 180s |
+| `batch` | 600s | n/a |
+
+Processor manifests may request a different execution class and explicit
+timeouts where the phase allows it. Adoption processors are always capped to
+deterministic execution; garden and view processors may request `llm` or
+`batch` when their capabilities and product role justify longer runs.
 
 Timeouts are enforced by the executor boundary, not by individual processors.
 A timed-out processor produces a `processor.timeout` diagnostic, the executor

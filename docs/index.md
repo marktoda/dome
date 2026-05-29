@@ -32,7 +32,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
 
 - [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest fully-adopted commit; advanced only after a clean fixed-point sync. Fast-forward-only.
-- [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; templated sections refreshed by `dome doctor --repair`.
+- [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; richer templated-section refresh remains planned.
 - [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — *(axiom)* Every vault state change — agent native write, vim save, garden-emitted patch, scheduled job — eventually flows through the engine's adoption loop.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
@@ -42,12 +42,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — *(shipped default)* Every processor invocation writes one RunRecord row, regardless of phase or outcome.
 - [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — *(axiom)* `Processor.run(ctx)` returns `Promise<Effect[]>`; no direct mutation surface.
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
-- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files must move/delete on processing; lingering files surface as diagnostics.
+- [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default target)* Intake bucket files should move/delete on processing; stale-inbox diagnostics remain planned.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by `dome.log`'s append-only adoption processor.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* PatchEffect refuses raw/.
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom target)* Raw files are immutable by design; raw-specific broker/adoption enforcement remains planned.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
 
 ## Matrices
@@ -103,7 +103,7 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 - [[wiki/entities/claude-code]] — Anthropic's CLI; Dome v1's first official harness.
 - [[wiki/entities/git]] — The version control system underpinning Dome's adoption, undo, and sync.
 - [[wiki/entities/isomorphic-git]] — Pure-JS git implementation; the Dome SDK's git engine.
-- [[wiki/entities/mcp-protocol]] — Model Context Protocol; how Dome exposes Submit / Recall to harnesses that mount the MCP server.
+- [[wiki/entities/mcp-protocol]] — Model Context Protocol; target Recall/view protocol adapter for harnesses that mount the future MCP server.
 - [[wiki/entities/obsidian]] — Markdown editor; Dome's recommended browse surface.
 - [[wiki/entities/typescript]] — Dome SDK's implementation language.
 
