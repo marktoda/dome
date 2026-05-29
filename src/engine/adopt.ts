@@ -201,9 +201,9 @@ export const DEFAULT_MAX_ITERATIONS = 100;
  *                                    Phase 2 standalone validation.
  * @param opts.forceAdvance           When `true`, the adopted-ref write
  *                                    accepts a non-fast-forward advance.
- *                                    Surfaced through `dome sync
- *                                    --force-advance` per
- *                                    `adopted-ref-divergence.md`.
+ *                                    Internal/test recovery only in v1; the
+ *                                    user-facing CLI refuses divergent
+ *                                    history before Proposal construction.
  * @param opts.maxIterations          Per-call override of
  *                                    `DEFAULT_MAX_ITERATIONS`.
  */

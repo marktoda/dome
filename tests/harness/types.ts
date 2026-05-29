@@ -456,7 +456,7 @@ export interface Harness {
   advance(ms: number): Promise<void>;
   /** Drain due schedule, queued job, and outbox work against the adopted state. */
   drainOperationalWork(): Promise<OperationalWorkResult>;
-  /** Force `dome sync --force-advance` semantics. */
+  /** Placeholder for future force-advance recovery semantics. */
   forceSync(): Promise<TickResult>;
   /** Close the runtime, then re-open. Simulates daemon restart. */
   crashAndRestart(): Promise<void>;

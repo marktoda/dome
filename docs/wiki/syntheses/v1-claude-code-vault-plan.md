@@ -284,9 +284,10 @@ The universal human-decision channel. The current implementation can print a
 question, validate a choice, record an answer by row id, and dispatch matching
 garden-phase answer handlers through normal Effect routing. Failed outbox rows,
 quarantines, and orphaned running rows are recoverable through first-party
-`dome.health` answer handlers. Future hardening can broaden the question
-patterns for daily/intake ambiguity; the durable answer store already keeps
-answer records outside rebuildable projection state.
+`dome.health` answer handlers. Daily and intake ambiguity questions are
+already part of the shipped v1 loop; future hardening can broaden those
+patterns. The durable answer store keeps answer records outside rebuildable
+projection state.
 
 The rule: do not create one-off commands like `dome replay-outbox-row` or `dome clear-quarantine`. Instead:
 

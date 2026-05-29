@@ -377,12 +377,9 @@ export class HarnessImpl implements Harness {
   }
 
   async forceSync(): Promise<TickResult> {
-    // H1: `--force-advance` is surfaced by `dome sync` but the underlying
-    // `runOneAdoption` doesn't take a flag in v1.0 — the force-advance
-    // toggle lives in `setAdoptedRef` and is engaged on the CLI side.
-    // For H1, force-sync is the same as `tick()`; the explicit method
-    // exists so scenarios can document the intent and future phases
-    // wire the flag through.
+    // V1 does not expose a user-facing force-advance command. Keep this
+    // method as a named future-hook for scenarios that need to document the
+    // intended divergence recovery shape; today it is equivalent to `tick()`.
     return this.tick();
   }
 

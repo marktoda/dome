@@ -47,7 +47,9 @@ export async function getAdoptedRef(vaultPath: string, branch?: string): Promise
  * Advance the adopted ref to `sha`. Fast-forward-only by default: refuses
  * (`adopted-ref-divergence` ToolError) if the current ref value is not an
  * ancestor of `sha`. The `forceAdvance: true` opt-out accepts any new
- * commit — surfaced through `dome sync --force-advance`.
+ * commit for internal recovery call sites and tests. V1 deliberately does
+ * not expose a user-facing force-advance command; divergent histories are
+ * resolved by repairing git history before running `dome sync` again.
  *
  * INTERNAL — not re-exported from `src/index.ts`. The only legitimate
  * callers are `src/engine/adopt.ts`'s adoption loop (which runs the full adoption
@@ -85,7 +87,7 @@ export async function setAdoptedRef(
         kind: "validation",
         message:
           `adopted ref ${refName} (${current.slice(0, 7)}) is not an ancestor of ${sha.slice(0, 7)}; ` +
-          `run \`dome sync --force-advance\` after confirming the new HEAD is the intended trunk. ` +
+          `repair git history so the adopted ref is in HEAD's ancestry, then run \`dome sync\` again. ` +
           `See docs/wiki/gotchas/adopted-ref-divergence.md.`,
       });
     }

@@ -234,7 +234,7 @@ export type ProcessorRuntime = {
  *
  * `resolveTree` is injected (rather than imported from `../git`) so this
  * runtime file stays I/O-free at the type layer. Whoever calls
- * `buildRuntime` (today: `src/vault.ts` or a future processors/index.ts)
+ * `buildRuntime` (today: `src/engine/vault-runtime.ts` or test harnesses)
  * wires the resolver against the live git boundary.
  */
 export type BuildRuntimeOptions = {
@@ -250,10 +250,8 @@ export type BuildRuntimeOptions = {
    * invocation, and exactly one terminal mark (`succeeded`, `failed`,
    * `timed_out`, or `cancelled`) after executor completion.
    *
-   * Optional during the Phase 6 transition: existing call sites
-   * (`tests/processors/runtime.test.ts`, the to-be-wired `src/vault.ts`)
-   * continue to operate without a ledger; Phase 7+ wires the live handle
-   * end-to-end. When absent, no ledger writes occur and the runner-result
+   * Optional for unit tests and lightweight fixtures. When absent, no ledger
+   * writes occur and the runner-result
    * `runId` falls back to a `makeRunContext`-synthesized placeholder so
    * downstream `applyEffect` capability-use recording still has a slot
    * (the engine's adoption loop skips ledger writes if the ledger itself

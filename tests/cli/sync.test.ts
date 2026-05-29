@@ -796,6 +796,8 @@ describe("runSync drift adoption", () => {
     expect(code3).toBe(1);
     expect(captured.err.join("\n")).toContain("adopted ref");
     expect(captured.err.join("\n")).toContain("is not an ancestor of HEAD");
+    expect(captured.err.join("\n")).toContain("Inspect git history");
+    expect(captured.err.join("\n")).not.toContain("--force-advance");
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(adoptedSha);
 
     const ledgerAfter = await openLedgerDb({

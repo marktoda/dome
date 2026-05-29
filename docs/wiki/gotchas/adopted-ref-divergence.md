@@ -35,10 +35,11 @@ severity: medium
    The two-way diff shows the rewritten work. If the new HEAD is the intended trunk (the common case after a `git reset --hard origin/main` or `git pull --rebase`), proceed to step 2. If the rewrite was unintentional, proceed to step 3.
 
 2. **Accept the new HEAD as the adopted ref's new target.**
-   ```bash
-   cd ~/vaults/work && dome sync --force-advance
-   ```
-   This is the intended v1.1 recovery flow. The underlying engine/adopted-ref boundary already has a `forceAdvance` option, but the user-facing `dome sync --force-advance` flag is not shipped in v1.0. Until it lands, resolve manually by restoring the intended branch history or updating the adopted ref only after confirming the new HEAD is the intended trunk.
+
+   This is the intended v1.1 recovery flow, but the user-facing
+   `dome sync --force-advance` flag is not shipped in v1.0. Until it lands,
+   resolve manually by restoring the intended branch history or updating the
+   adopted ref only after confirming the new HEAD is the intended trunk.
 
 3. **Restore the prior HEAD via `git reflog`.**
    ```bash

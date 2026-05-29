@@ -22,7 +22,7 @@ refs/heads/main                  user/client/agent source branch
 refs/dome/adopted/main           latest fully adopted semantic state for `main`
 ```
 
-One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses. The intended v1.1 recovery is `dome sync --force-advance` after confirming the rewritten HEAD; in v1.0 the operator resolves manually. See [[wiki/gotchas/adopted-ref-divergence]].
+One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses. In v1.0 the operator resolves manually after inspecting both sides of the rewritten history; a first-class force-advance recovery flow is deferred. See [[wiki/gotchas/adopted-ref-divergence]].
 
 Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
 
@@ -164,7 +164,6 @@ The retired `dome submit` shape existed in earlier drafts as a direct Proposal-c
 ```bash
 cd ~/vaults/work && dome sync
 cd ~/vaults/work && dome sync --json
-cd ~/vaults/work && dome sync --force-advance  # accept divergent HEAD (v1.1 — see below)
 ```
 
 `dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/compiler-host.ts`). The shared tick acquires a branch-level compiler-host lock before adoption or operational patch work, so `sync`, `serve`, and future host surfaces do not run the same branch concurrently.
@@ -192,7 +191,7 @@ Output (`--json`):
 
 Garden-phase scheduled-trigger processors run after a successful top-level adoption attempt. Scheduled garden PatchEffects must re-enter adoption as garden sub-Proposals; they do not mutate the adopted candidate directly. View processors are command-driven in v1.
 
-The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place both at drift detection and at `setAdoptedRef`, but the user-facing bypass lands with the adopted-ref-divergence recovery flow in v1.1. Until then, a divergent HEAD surfaces as an early compiler-host refusal and the operator resolves manually (e.g., `git reset --hard <adopted-ref>` to realign).
+The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place both at drift detection and at `setAdoptedRef`, but the user-facing bypass lands only when the adopted-ref-divergence recovery flow is wired end to end. Until then, a divergent HEAD surfaces as an early compiler-host refusal and the operator resolves manually: inspect both sides of the rewrite, then either restore the intended branch history (for example with `git reset --hard <adopted-ref>`) or intentionally move the adopted ref only after confirming the new HEAD is the intended trunk.
 
 The CLI `dome reconcile` shipped in v0.5+phase1+phase3 as a deprecated alias for `dome sync`. **The alias is retired in v1.** Callers that still invoke `dome reconcile` see "unknown command" and a one-line pointer to `dome sync`.
 

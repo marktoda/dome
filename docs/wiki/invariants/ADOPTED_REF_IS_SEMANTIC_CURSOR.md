@@ -21,7 +21,7 @@ enforced_at: src/engine/adopt.ts
 - **"What's queued for adoption"** is a single git query: `git log refs/dome/adopted/<branch>..HEAD`. The engine-internal Proposal that `dome sync` / `dome serve` constructs uses this range directly per [[wiki/specs/proposals]] §"Local-eventual mode".
 - **Hosted-protected mode** (v1.5, designed-for in [[wiki/specs/adoption]] §"Hosted-protected mode") layers cleanly: in hosted mode, `refs/heads/main` is the adopted trunk (PR merges replace the ref advance); the cursor shape is the same git ref pattern, only the cursor name differs.
 
-**Structural enforcement:** Off-matrix. The advance-ref step lives at the `setAdoptedRef` call inside `src/engine/adopt.ts` — the single chokepoint at the tail of the engine adoption loop (per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]). Fast-forward-only by default: refuses to advance if `sha` is not a descendant of the current ref value; the `forceAdvance: true` opt-out is explicit and surfaces through the `dome sync --force-advance` CLI flag. The `getAdoptedRef` reader is the symmetric companion; both are re-exported from `@dome/sdk` core for consumer use, but the write side (`setAdoptedRef`) is **not** re-exported — only the engine advances the ref.
+**Structural enforcement:** Off-matrix. The advance-ref step lives at the `setAdoptedRef` call inside `src/engine/adopt.ts` — the single chokepoint at the tail of the engine adoption loop (per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]). Fast-forward-only by default: refuses to advance if `sha` is not a descendant of the current ref value. The internal `forceAdvance: true` opt-out exists for future recovery wiring and tests, but v1.0 exposes no user-facing bypass. The `getAdoptedRef` reader is the symmetric companion; the read side is re-exported from `@dome/sdk` core for consumer use, but the write side (`setAdoptedRef`) is **not** re-exported — only the engine advances the ref.
 
 **Counter-example (what this invariant rules out):** A Dome installation that reports its "trusted state" via a `.dome/state/` cursor file alone — the file lives outside git, can drift from reality, and gives no structural signal of divergence. The v1 substrate retires that pattern entirely; the ref is the only cursor.
 
@@ -29,7 +29,7 @@ enforced_at: src/engine/adopt.ts
 
 1. **Fresh vault.** `dome sync` initializes `refs/dome/adopted/main` at the Proposal's adopted head; subsequent `dome status` reports no pending and zero divergence.
 2. **Source-ahead vault.** User commits land on top of the existing adopted ref; `dome sync` constructs a Proposal `adopted..HEAD`, the adoption loop reaches fixed point, the engine fast-forwards the ref to the new head (possibly through a closure commit).
-3. **Divergent vault.** HEAD's ancestry no longer contains the prior adopted commit (simulated by `git reset --hard` to an earlier commit and then committing a different change); `dome sync` refuses to advance with an `engine.adoption.blocked` event; the designed-for `dome sync --force-advance` flow accepts the new HEAD when it ships.
+3. **Divergent vault.** HEAD's ancestry no longer contains the prior adopted commit (simulated by `git reset --hard` to an earlier commit and then committing a different change); `dome sync` refuses before constructing a Proposal, preserves the adopted ref, and points the operator at manual git-history recovery.
 
 **Related:**
 

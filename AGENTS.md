@@ -43,7 +43,8 @@ By substrate type:
   gitignored but not fully rebuildable; preserve it unless intentionally
   discarding human answers, audit history, retry state, or processor recovery
   state.
-- **Every vault is a git repo.** Axiom; enforced at `openVault`.
+- **Every vault is a git repo.** Axiom; enforced by `dome init`, the git
+  boundary, and runtime open paths before adoption work runs.
 - **The compiler boundary** (AGENTS.md + CLI + daemon + git-native writes) is the contract every agentic harness interacts with — see [[docs/wiki/specs/harnesses]].
 
 ## How to run
@@ -69,7 +70,7 @@ src/
   cli/                  # CLI command adapters
   extensions/           # bundle loader
   git.ts                # isomorphic-git boundary
-  workflow-commit.ts    # internal engine commit helper
+  engine-commit.ts      # pure Dome trailer/commit-message helper
 
 assets/extensions/      # first-party dome.* bundles
   dome.markdown/
@@ -77,6 +78,7 @@ assets/extensions/      # first-party dome.* bundles
   dome.search/
   dome.health/
   dome.daily/
+  dome.intake/
   dome.lint/
 
 tests/                  # bun test files

@@ -201,8 +201,9 @@ Acceptance:
 
 ## Milestone 1 - Claude Code Boot Path
 
-Status: shipped for initial v1; update when query/recovery commands become
-part of default Claude workflow.
+Status: shipped for initial v1; generated instructions now include the
+load-bearing status/sync path, recovery commands, named view commands, and
+stable status attention reason branching.
 
 Goal: `dome init <vault>` creates a git repo Claude Code can immediately work
 in.
@@ -716,11 +717,8 @@ Acceptance:
 
 ## V1 Remaining Gate
 
-Canonical gate: see **Active Release Gate** above. The remaining release
-decision is still real use: run Dome against the daily management vault for one
-week, with `dome serve` or regular `dome sync`, and fix any issue that
-requires manual sqlite/JSON edits, loses garden patches, leaves unexplained
-stuck state, or makes recovery confusing.
+Canonical gate: see **Active Release Gate** above. Keep this section as a
+pointer only so release criteria do not drift.
 
 ## V1 Bundle Cut
 

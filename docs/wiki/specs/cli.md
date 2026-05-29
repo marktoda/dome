@@ -527,8 +527,8 @@ has raised but cannot resolve autonomously.
 already has a primitive for "I need a human decision" — `QuestionEffect`
 in the closed taxonomy at [[wiki/specs/effects]] §"QuestionEffect".
 When operational substrate gets stuck (outbox row terminally failed,
-processor quarantined, force-advance needed across a divergent
-adopted ref), the natural pattern is:
+processor quarantined, orphaned running row, or similar recoverable state),
+the natural pattern is:
 
 1. **A scheduled garden-phase processor in `dome.health`** reads the relevant
    operational substrate through a scoped `ctx.operational` query view
