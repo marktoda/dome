@@ -638,6 +638,10 @@ Work:
       after grants or code paths are fixed.
 - [x] Tighten `question.ask` to a binary v1 capability, rejecting fake
       namespace-scoped grants until `QuestionEffect` has a real scope field.
+- [x] Make adoption finalization recoverable: if branch advancement is
+      followed by working-tree materialization failure or adopted-ref refusal,
+      roll the source branch and affected paths back before returning the
+      blocking diagnostic.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

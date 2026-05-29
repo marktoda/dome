@@ -67,7 +67,11 @@ if candidate != P.head:
 else:
   closureCommit := null
 
-# Adopt: atomically advance the adopted ref
+# Adopt: finalize the local branch and adopted cursor
+if candidate != sourceHead:
+  dry-run materialize changed engine paths
+  advance refs/heads/<branch> to candidate
+  materialize changed engine paths into the working tree
 setAdoptedRef(branch, candidate)
 emit engine.adoption.advanced { proposal, closureCommit, iterations }
 return { adopted: true, adoptedRef: candidate, closureCommit, iterations }
@@ -77,7 +81,7 @@ The loop has six properties that make it well-behaved:
 
 1. **Bounded.** `MAX_ITER` (default 100, configurable as `engine.max_iterations` in `.dome/config.yaml`) caps wall-clock cost. Hitting the cap is a blocking diagnostic, not an infinite loop.
 2. **Deterministic.** Adoption-phase processors are pure (snapshot in, effects out) and idempotent. The same Proposal against the same processor set converges to the same fixed point.
-3. **Atomic.** The adopted ref advances exactly once per Proposal, at the end. Mid-loop crashes leave the ref unchanged.
+3. **Atomic cursor.** The adopted ref advances exactly once per Proposal, at the end. Mid-loop crashes leave the ref unchanged. In local-eventual mode, engine-created commits also have to land on `refs/heads/<branch>` and be materialized into the checked-out working tree; if that finalization fails before the adopted ref advances, the engine rolls the branch and affected paths back to the source HEAD and returns a blocking diagnostic.
 4. **Capability-checked.** Every effect passes through `enforceCapability` before being applied. PatchEffects exceeding `patch.auto` grants are downgraded to `propose` and emit a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic; in adoption, any proposed patch blocks the loop for human review instead of being silently applied.
 5. **Ledgered.** Every processor invocation writes a `RunRecord` row, regardless of outcome. Failed adoptions are debuggable.
 6. **Closure-explicit.** Engine-driven changes land as git commits carrying the four Dome-* trailers. In the current plumbing path, each auto PatchEffect writes one candidate commit and the final candidate chain head is surfaced as `closureCommitOid`; a future squash/compaction layer may make that a single commit without changing the adoption result contract. The trailers are the durable provenance surface in `git log`.

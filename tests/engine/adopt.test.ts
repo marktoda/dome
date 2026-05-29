@@ -10,6 +10,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { adopt } from "../../src/engine/adopt";
+import { applyPatchToCandidate } from "../../src/engine/apply-patch";
 import type {
   AdoptionPhaseRunner,
   RunId,
@@ -19,7 +20,7 @@ import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/vault-shape";
-import { commit, initRepo, currentSha } from "../../src/git";
+import { commit, initRepo, currentSha, readRef, writeRef } from "../../src/git";
 
 type Fixture = {
   vault: EngineVault;
@@ -251,5 +252,101 @@ describe("adopt fixed-point loop", () => {
     expect(r.adopted).toBe(true);
     expect(resolvedFacts).toEqual([["wiki/visible.md"]]);
     expect(resolvedDiagnostics).toEqual([["wiki/visible.md"]]);
+  });
+
+  test("adopted-ref refusal rolls branch and working tree back to source head", async () => {
+    const f = await makeMinimalGitVault();
+    fixtures.push(f);
+
+    await writeFile(join(f.vault.path, "wiki", "seed.md"), "user\n");
+    const userHead = await commit({
+      path: f.vault.path,
+      message: "user edit\n",
+      files: ["wiki/seed.md"],
+    });
+
+    await writeRef({
+      path: f.vault.path,
+      ref: "refs/heads/main",
+      value: f.baseSha,
+    });
+    await writeFile(join(f.vault.path, "wiki", "seed.md"), "stale adopted\n");
+    const staleAdopted = await commit({
+      path: f.vault.path,
+      message: "stale adopted sibling\n",
+      files: ["wiki/seed.md"],
+    });
+    await writeRef({
+      path: f.vault.path,
+      ref: "refs/dome/adopted/main",
+      value: staleAdopted,
+    });
+
+    const proposal = makeManualProposal({
+      id: "prop_stale_adopted",
+      base: commitOid(f.baseSha),
+      head: commitOid(userHead),
+      branch: "main",
+    });
+    const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    let ran = false;
+    const runner: AdoptionPhaseRunner = async () => {
+      if (ran) return [];
+      ran = true;
+      return [
+        {
+          runId: "run_test_ref_refusal" as RunId,
+          processorId: "test.patch",
+          executionStatus: "succeeded",
+          declared: [auto],
+          granted: [auto],
+          inspectedPaths: ["wiki/seed.md"],
+          effects: [
+            patchEffect({
+              mode: "auto",
+              changes: [
+                { kind: "write", path: "wiki/seed.md", content: "engine\n" },
+              ],
+              reason: "engine normalization",
+              sourceRefs: [],
+            }),
+          ],
+        },
+      ];
+    };
+
+    const r = await adopt({
+      vault: f.vault,
+      proposal,
+      runAdoptionProcessors: runner,
+      sinks: {
+        ...noopSinks(),
+        applyPatch: async ({ effect, processorId, runId, candidate }) =>
+          applyPatchToCandidate({
+            vaultPath: f.vault.path,
+            candidate,
+            patch: effect,
+            runContext: {
+              runId,
+              processorId,
+              extensionId: "test",
+              base: proposal.base,
+              sourceHead: commitOid(staleAdopted),
+            },
+          }),
+      },
+    });
+
+    expect(r.adopted).toBe(false);
+    expect(r.diagnostics.some((d) => d.code === "adoption.ref-advance-refused"))
+      .toBe(true);
+    expect(await readRef({ path: f.vault.path, ref: "refs/heads/main" }))
+      .toBe(staleAdopted);
+    expect(await readRef({ path: f.vault.path, ref: "refs/dome/adopted/main" }))
+      .toBe(staleAdopted);
+    const workingTree = await Bun.file(
+      join(f.vault.path, "wiki", "seed.md"),
+    ).text();
+    expect(workingTree).toBe("stale adopted\n");
   });
 });

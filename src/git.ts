@@ -353,6 +353,7 @@ export async function checkoutPathsAtRef(opts: {
   ref: string;
   filepaths: ReadonlyArray<string>;
   dryRun?: boolean;
+  force?: boolean;
 }): Promise<void> {
   if (opts.filepaths.length === 0) return;
   const { root, prefix } = await resolveGitContext(opts.path);
@@ -365,7 +366,7 @@ export async function checkoutPathsAtRef(opts: {
     ref: opts.ref,
     filepaths: fullpaths,
     noUpdateHead: true,
-    force: false,
+    force: opts.force ?? false,
     dryRun: opts.dryRun ?? false,
   });
 }

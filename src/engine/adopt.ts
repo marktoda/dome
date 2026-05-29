@@ -629,8 +629,9 @@ export async function adopt(opts: {
   // either. The next cycle will retry from a clean state since the engine
   // target commit is still a floating object the loop can reproduce.
   const branchAdvanceTarget = newAdopted;
+  let materializePaths: ReadonlyArray<string> = Object.freeze([]);
   if (branchAdvanceTarget !== sourceHead) {
-    const materializePaths = await changedPathsBetween({
+    materializePaths = await changedPathsBetween({
       vaultPath: vault.path,
       base: sourceHead,
       head: branchAdvanceTarget,
@@ -697,19 +698,30 @@ export async function adopt(opts: {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      const rollbackDiagnostic = await rollbackBranchAdvance({
+        vaultPath: vault.path,
+        branch,
+        sourceHead,
+        paths: materializePaths,
+      });
       const materializeFailedDiag = diagnosticEffect({
         severity: "block",
         code: "adoption.working-tree-materialize-failed",
         message:
           `Advanced refs/heads/${branch} to engine target ` +
           `${branchAdvanceTarget.slice(0, 7)}, but failed to materialize ` +
-          `the changed paths into the working tree: ${msg}`,
+          `the changed paths into the working tree: ${msg}` +
+          rollbackMessage(rollbackDiagnostic, branch, sourceHead),
         sourceRefs: [],
       });
       allDiagnostics.push(materializeFailedDiag);
+      if (rollbackDiagnostic !== null) allDiagnostics.push(rollbackDiagnostic);
       await recordDiagnosticsViaSink({
         sinks,
-        diagnostics: [materializeFailedDiag],
+        diagnostics: [
+          materializeFailedDiag,
+          ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
+        ],
         processorId: "engine.adoption",
         proposalId: proposal.id,
       });
@@ -734,16 +746,31 @@ export async function adopt(opts: {
     // Ref-advance failed (typically `adopted-ref-divergence` per
     // ADOPTED_REF_IS_SEMANTIC_CURSOR). Surface as a blocking diagnostic;
     // the loop ran cleanly but the substrate refused the advance.
+    const rollbackDiagnostic = branchAdvanceTarget !== sourceHead
+      ? await rollbackBranchAdvance({
+          vaultPath: vault.path,
+          branch,
+          sourceHead,
+          paths: materializePaths,
+        })
+      : null;
     const refAdvanceDiag = diagnosticEffect({
       severity: "block",
       code: "adoption.ref-advance-refused",
-      message: `Failed to advance refs/dome/adopted/${branch}: ${writeResult.error.kind === "validation" ? writeResult.error.message : writeResult.error.kind}`,
+      message:
+        `Failed to advance refs/dome/adopted/${branch}: ` +
+        `${writeResult.error.kind === "validation" ? writeResult.error.message : writeResult.error.kind}` +
+        rollbackMessage(rollbackDiagnostic, branch, sourceHead),
       sourceRefs: [],
     });
     allDiagnostics.push(refAdvanceDiag);
+    if (rollbackDiagnostic !== null) allDiagnostics.push(rollbackDiagnostic);
     await recordDiagnosticsViaSink({
       sinks,
-      diagnostics: [refAdvanceDiag],
+      diagnostics: [
+        refAdvanceDiag,
+        ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
+      ],
       processorId: "engine.adoption",
       proposalId: proposal.id,
     });
@@ -820,6 +847,49 @@ async function materializeBranchTarget(opts: {
     ref: opts.target,
     filepaths: opts.paths,
   });
+}
+
+async function rollbackBranchAdvance(opts: {
+  readonly vaultPath: string;
+  readonly branch: string;
+  readonly sourceHead: CommitOid;
+  readonly paths: ReadonlyArray<string>;
+}): Promise<DiagnosticEffect | null> {
+  try {
+    await writeRef({
+      path: opts.vaultPath,
+      ref: `refs/heads/${opts.branch}`,
+      value: opts.sourceHead,
+    });
+    await checkoutPathsAtRef({
+      path: opts.vaultPath,
+      ref: opts.sourceHead,
+      filepaths: opts.paths,
+      force: true,
+    });
+    return null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return diagnosticEffect({
+      severity: "block",
+      code: "adoption.branch-rollback-failed",
+      message:
+        `Failed to roll refs/heads/${opts.branch} and working-tree paths ` +
+        `back to source HEAD ${opts.sourceHead.slice(0, 7)} after adoption finalization failed: ${msg}`,
+      sourceRefs: [],
+    });
+  }
+}
+
+function rollbackMessage(
+  rollbackDiagnostic: DiagnosticEffect | null,
+  branch: string,
+  sourceHead: CommitOid,
+): string {
+  if (rollbackDiagnostic !== null) {
+    return "; rollback also failed, inspect diagnostics before continuing.";
+  }
+  return `; rolled refs/heads/${branch} and affected working-tree paths back to ${sourceHead.slice(0, 7)}.`;
 }
 
 type ResolveDiagnosticsInput = Parameters<
