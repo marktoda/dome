@@ -117,7 +117,7 @@ export function ambiguousFollowupsFromMarkdown(
   const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
-    if (isOpenCheckboxLine(line)) continue;
+    if (isCheckboxLine(line)) continue;
     if (directiveActionItemFromLine(line, i + 1) !== null) continue;
     if (!looksLikeAmbiguousFollowup(line)) continue;
     items.push(
@@ -198,6 +198,10 @@ export function replaceCarriedForwardSection(input: {
 
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
+}
+
+function isCheckboxLine(line: string): boolean {
+  return /^\s*[-*]\s+\[[ xX]\]\s+\S/.test(line);
 }
 
 function openTaskFromLine(line: string, lineNumber: number): OpenTask {

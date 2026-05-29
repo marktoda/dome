@@ -129,13 +129,14 @@ describe("dome.daily shared date helpers", () => {
         [
           "TODO: Send budget update",
           "- [ ] #followup Explicit checkbox",
+          "- [x] Follow up with completed person",
           "- Follow up: Explicit directive",
           "We should follow up with Sam about hiring",
         ].join("\n"),
       ),
     ).toEqual([
       {
-        line: 4,
+        line: 5,
         text: "We should follow up with Sam about hiring",
       },
     ]);

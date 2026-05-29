@@ -166,7 +166,7 @@ Not yet at v1:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions. Export-context retrieval is still missing.
 - The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, and explicit daily task/followup fact indexing. `dome.intake`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
-- The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, and explicit daily task/followup fact indexing work, but capture compilation, richer todo/followup extraction, and review questions remain.
+- The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, explicit daily task/followup fact indexing, deterministic `TODO:` / `Follow up:` directive extraction, and ambiguity questions for prose follow-up guesses work. Capture compilation, raw-capture todo/followup extraction, and today/prep views remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
@@ -412,9 +412,12 @@ Acceptance:
 - [x] Implement carry-forward of unfinished tasks from the previous daily note.
 - [x] Index explicit open checkboxes and `#followup` / `#follow-up` markers
   in daily notes as source-ref-backed facts.
-- Implement richer extraction of followups/todos from daily notes or raw
-  captures.
-- Decide whether task completion writes are direct garden patches or questions when ambiguous.
+- [x] Extract deterministic `TODO:` / `Follow up:` directives from daily
+  notes as source-ref-backed facts.
+- [x] Ask questions for ambiguous prose follow-up guesses instead of mutating
+  silently.
+- Implement raw-capture followup/todo extraction.
+- Add today/prep views once the data is useful enough to render.
 
 External prior: Obsidian task plugins show the durable expectation here: users want vault-wide task queries, due/recurring metadata, and carry-forward into daily/weekly notes. See <https://community.obsidian.md/plugins/obsidian-tasks-plugin> and <https://www.obsidianstats.com/plugins/auto-tasks>.
 

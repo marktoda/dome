@@ -1,4 +1,4 @@
-// dome.daily.task-index — project explicit daily checkboxes into page facts.
+// dome.daily.task-index — project explicit daily action items into facts.
 
 import { createHash } from "node:crypto";
 
