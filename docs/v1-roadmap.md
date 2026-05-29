@@ -183,6 +183,9 @@ Work:
 - [x] Use this file as the technical roadmap and shipped-status ledger.
 - [x] Link both from `docs/index.md`.
 - [x] Keep MCP described as optional/additive for v1.
+- [x] Keep Claude Code hooks described as optional session affordances, not
+      Dome substrate; git commits, adoption, processors, effects, and the run
+      ledger remain the semantic contract.
 - [x] Mark aspirational matrices as roadmap/speculative when they name
       unshipped bundles or processors.
 - [x] Keep `docs/wiki/specs/cli.md` aligned with actual command state and
@@ -193,6 +196,7 @@ Acceptance:
 - [x] A contributor can reach the v1 product plan and technical roadmap from
       `docs/index.md`.
 - [x] No v1 acceptance path requires MCP.
+- [x] No v1 acceptance path requires Claude Code hooks.
 - [x] No planning/spec doc claims an unshipped command or bundle is shipped.
 
 ## Milestone 1 - Claude Code Boot Path
@@ -280,6 +284,10 @@ Acceptance:
 - [x] Host-off E2E path is covered by `sync` harness scenarios.
 - [x] In-sync operational-drain path is covered by harness/CLI scenarios.
 - [x] CLI fixture tests cover status/sync text and JSON schemas.
+- [x] `dome status` acceptance covers the full health pulse required by the
+      product plan: branch, HEAD, adopted ref, sync/pending commits,
+      dirty/untracked draft state, content/link analytics, run status,
+      diagnostics, questions, outbox, quarantine, and foreground host liveness.
 
 ## Milestone 3 - Deterministic Adopted-State Substrate
 
@@ -365,8 +373,9 @@ Work:
       declared capability kinds are missing from the vault's effective grants.
 - [x] Make `dome doctor` render health findings, not a grab bag of admin
       operations.
-- [x] Move quarantine into durable operational state or provide inspect/reset
-      through the same question/answer flow.
+- [x] Keep v1 quarantine JSON-backed but inspectable/resettable through the
+      same question/answer flow; moving it into richer operational DB storage
+      is post-v1 hardening unless soak proves the JSON store unreliable.
 - [x] Add `OutboxRecoveryEffect` + `outbox.recover` so answer handlers can
       retry/abandon failed outbox rows without direct DB access.
 - [x] Ship first-party `dome.health` outbox recovery question emitters and
@@ -702,9 +711,10 @@ Optional or conditional:
 These are explicitly not V1 blockers, but the V1 architecture should keep
 them natural:
 
-- hosted queue: remote proposal refs, synthetic merge candidates, engine
-  patches pushed onto proposal branches, conflict routing, and auto-merge only
-  after adoption plus required checks pass;
+- hosted queue: remote proposal refs, synthetic merge candidates,
+  engine-generated commits with run/proposal/source trailers, engine patches
+  pushed onto proposal branches, conflict routing, and auto-merge only after
+  adoption plus required checks pass;
 - provider adapters: AI SDK / Anthropic SDK packages outside `@dome/sdk` core,
   plus richer adapter-owned backoff/classification if soak shows provider
   failures are common;
