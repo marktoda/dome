@@ -10,6 +10,9 @@
 //   - sync_needed:      true when HEAD and adopted differ.
 //   - pending_commits:  commit count from adopted..HEAD, or null when unknown.
 //   - adopted_diverged: true when adopted is initialized but not an ancestor of HEAD.
+//   - attention_required:
+//                       true when any status field needs user/agent action.
+//   - attention:        stable reason codes explaining attention_required.
 //   - dirty_modified:   working-tree paths modified/deleted/staged.
 //   - dirty_untracked:  working-tree paths not present at HEAD.
 //   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
@@ -97,6 +100,8 @@ type StatusSnapshot = {
   readonly sync_needed: boolean;
   readonly pending_commits: number | null;
   readonly adopted_diverged: boolean;
+  readonly attention_required: boolean;
+  readonly attention: ReadonlyArray<string>;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
   readonly content_pages: number;
@@ -207,6 +212,21 @@ export async function runStatus(
     const quarantined =
       runtime.processorRuntime.executionState.quarantines().length;
 
+    const attention = statusAttention({
+      syncNeeded,
+      adoptedDiverged,
+      dirtyModified: analytics.dirty_modified,
+      dirtyUntracked: analytics.dirty_untracked,
+      pendingRuns: pending_runs,
+      failedRuns: failed_runs,
+      serveStatus: serve.status,
+      diagnostics,
+      questions,
+      outboxPending: outbox_pending,
+      outboxFailed: outbox_failed,
+      quarantined,
+    });
+
     const snapshot: StatusSnapshot = {
       vault: vaultPath,
       branch,
@@ -215,6 +235,8 @@ export async function runStatus(
       sync_needed: syncNeeded,
       pending_commits: pendingCommits,
       adopted_diverged: adoptedDiverged,
+      attention_required: attention.length > 0,
+      attention,
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
       content_pages: analytics.content_pages,
@@ -289,6 +311,36 @@ function formatServe(s: StatusSnapshot): string {
       ? ` on ${s.serve_branch}`
       : "";
   return `${s.serve_status}${branch}`;
+}
+
+function statusAttention(input: {
+  readonly syncNeeded: boolean;
+  readonly adoptedDiverged: boolean;
+  readonly dirtyModified: number;
+  readonly dirtyUntracked: number;
+  readonly pendingRuns: number;
+  readonly failedRuns: number;
+  readonly serveStatus: ServeHeartbeatStatus["status"];
+  readonly diagnostics: number;
+  readonly questions: number;
+  readonly outboxPending: number;
+  readonly outboxFailed: number;
+  readonly quarantined: number;
+}): ReadonlyArray<string> {
+  const out: string[] = [];
+  if (input.adoptedDiverged) out.push("adopted_ref_diverged");
+  if (input.syncNeeded) out.push("sync_needed");
+  if (input.dirtyModified > 0) out.push("dirty_modified");
+  if (input.dirtyUntracked > 0) out.push("dirty_untracked");
+  if (input.pendingRuns > 0) out.push("pending_runs");
+  if (input.failedRuns > 0) out.push("failed_runs");
+  if (input.serveStatus === "stale") out.push("serve_stale");
+  if (input.diagnostics > 0) out.push("diagnostics");
+  if (input.questions > 0) out.push("questions");
+  if (input.outboxPending > 0) out.push("outbox_pending");
+  if (input.outboxFailed > 0) out.push("outbox_failed");
+  if (input.quarantined > 0) out.push("quarantined");
+  return Object.freeze(out);
 }
 
 function shortOid(oid: string | null, fallback: string): string {

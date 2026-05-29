@@ -70,6 +70,8 @@ const SYNC_JSON_KEYS = Object.freeze([
   "closureCommit",
   "garden",
   "operational",
+  "attention_required",
+  "attention",
   "diagnostics",
 ]);
 const SYNC_ERROR_JSON_KEYS = Object.freeze([...SYNC_JSON_KEYS, "error"]);
@@ -235,6 +237,8 @@ describe("runSync empty-diff init", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["attention_required"]).toBe(false);
+    expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -399,6 +403,8 @@ describe("runSync idempotent", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["attention_required"]).toBe(false);
+    expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -475,6 +481,8 @@ extensions:
       diagnosticCount: 0,
     });
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["attention_required"]).toBe(false);
+    expect(parsed["attention"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -656,6 +664,8 @@ extensions:
     expect(parsed["branch"]).toBe("main");
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(["compiler_host_busy"]);
     expect(parsed["error"]).toBe("compiler-host-busy");
 
     releaseLock?.();
@@ -906,6 +916,8 @@ describe("runSync detached HEAD", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(["detached_head"]);
     expect(parsed["diagnostics"]).toEqual([]);
     expect(parsed["error"]).toBe("detached-head");
   }, 5_000);

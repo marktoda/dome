@@ -16,6 +16,8 @@ const STATUS_KEYS = Object.freeze([
   "sync_needed",
   "pending_commits",
   "adopted_diverged",
+  "attention_required",
+  "attention",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -116,7 +118,7 @@ scenario(
       files: {
         "wiki/project-alpha.md":
           "---\n" +
-          "type: project\n" +
+          "type: concept\n" +
           "tags:\n" +
           "  - strategy\n" +
           "---\n" +
@@ -134,6 +136,9 @@ scenario(
     expect(status["sync_needed"]).toBe(false);
     expect(status["pending_commits"]).toBe(0);
     expect(status["adopted_diverged"]).toBe(false);
+    expect(status["attention_required"]).toBe(true);
+    expect(status["attention"]).toEqual(["dirty_untracked"]);
+    expect(status["dirty_untracked"]).toBeGreaterThan(0);
     expect(status["content_pages"]).toBe(1);
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);
     expect(status["serve_status"]).toBe("off");

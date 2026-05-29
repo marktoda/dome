@@ -80,6 +80,8 @@ type SyncJsonResult = {
   readonly closureCommit: string | null;
   readonly garden: SyncGardenSummary;
   readonly operational: SyncOperationalSummary;
+  readonly attention_required: boolean;
+  readonly attention: ReadonlyArray<string>;
   readonly diagnostics: ReadonlyArray<{
     readonly severity: string;
     readonly code: string;
@@ -295,6 +297,8 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       garden: emptyGardenSummary(),
       operational: emptyOperationalSummary(),
+      attention_required: true,
+      attention: ["compiler_host_busy"],
       diagnostics: [],
       error: "compiler-host-busy",
     };
@@ -310,6 +314,8 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       closureCommit: null,
       garden: emptyGardenSummary(),
       operational: emptyOperationalSummary(),
+      attention_required: true,
+      attention: ["adopted_ref_diverged"],
       diagnostics: [
         {
           severity: "error",
@@ -323,6 +329,12 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
     };
   }
   if (tick.kind === "in-sync") {
+    const operational = summarizeOperational(tick.operational);
+    const attention = syncAttention({
+      status: "in-sync",
+      garden: emptyGardenSummary(),
+      operational,
+    });
     return {
       status: "in-sync",
       branch: tick.branch,
@@ -332,11 +344,20 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
       iterations: 0,
       closureCommit: null,
       garden: emptyGardenSummary(),
-      operational: summarizeOperational(tick.operational),
+      operational,
+      attention_required: attention.length > 0,
+      attention,
       diagnostics: diagnosticsJson(tick.operational?.diagnostics ?? []),
     };
   }
   const result = tick.adoption;
+  const garden = summarizeGarden(tick.garden);
+  const operational = summarizeOperational(tick.operational);
+  const attention = syncAttention({
+    status: result.adopted ? "adopted" : "blocked",
+    garden,
+    operational,
+  });
   return {
     status: result.adopted ? "adopted" : "blocked",
     branch: tick.branch,
@@ -345,14 +366,31 @@ function tickResultJson(tick: CompilerHostTickResult): SyncJsonResult {
     adoptedRef: tick.finalAdoptedRef,
     iterations: result.iterations,
     closureCommit: result.closureCommitOid,
-    garden: summarizeGarden(tick.garden),
-    operational: summarizeOperational(tick.operational),
+    garden,
+    operational,
+    attention_required: attention.length > 0,
+    attention,
     diagnostics: diagnosticsJson([
       ...result.diagnostics,
       ...(tick.garden?.diagnostics ?? []),
       ...(tick.operational?.diagnostics ?? []),
     ]),
   };
+}
+
+function syncAttention(input: {
+  readonly status: SyncJsonResult["status"];
+  readonly garden: SyncGardenSummary;
+  readonly operational: SyncOperationalSummary;
+}): ReadonlyArray<string> {
+  const out: string[] = [];
+  if (input.status === "blocked") out.push("adoption_blocked");
+  if (input.garden.rejectedPatchCount > 0) out.push("garden_rejected_patches");
+  if (input.garden.diagnosticCount > 0) out.push("garden_diagnostics");
+  if (input.operational.diagnosticCount > 0) {
+    out.push("operational_diagnostics");
+  }
+  return Object.freeze(out);
 }
 
 function diagnosticsJson(
@@ -379,6 +417,8 @@ function errorPayload(input: {
     closureCommit: null,
     garden: emptyGardenSummary(),
     operational: emptyOperationalSummary(),
+    attention_required: true,
+    attention: [input.error.replace(/-/g, "_")],
     diagnostics: [],
     error: input.error,
   };
@@ -444,6 +484,8 @@ function emitErrorJson(input: {
     closureCommit: null,
     garden: emptyGardenSummary(),
     operational: emptyOperationalSummary(),
+    attention_required: true,
+    attention: [input.error.replace(/-/g, "_")],
     diagnostics: [],
     error: input.error,
   };

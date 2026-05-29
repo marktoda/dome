@@ -184,7 +184,7 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"attention_required":false,"attention":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
@@ -193,6 +193,13 @@ sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
 the scheduled/job/outbox pump. `diagnostics` contains adoption diagnostics plus
 garden and operational diagnostics; for `"in-sync"`, it can contain only
 operational diagnostics because no adoption ran.
+`attention_required` is the agent-facing branch point. It is true for blocked
+or errored adoption, compiler-host busy responses, garden rejected patches,
+garden diagnostics, or operational diagnostics. `attention` contains stable
+reason codes such as `adoption_blocked`, `compiler_host_busy`,
+`garden_rejected_patches`, `garden_diagnostics`, and
+`operational_diagnostics` so Claude Code can choose a recovery path without
+deriving one from counters.
 
 `--quiet` suppresses non-error human-readable text for adopted / in-sync
 outcomes. It does not suppress `--json`, usage errors, blocked-adoption
@@ -231,13 +238,18 @@ health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"attention_required":true,"attention":["outbox_pending"],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
 rows, grouped by processor id. It is for status dashboards and agents that
 need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
+`attention_required` and `attention` summarize the status counters into stable
+reason codes. Current reasons include `adopted_ref_diverged`, `sync_needed`,
+`dirty_modified`, `dirty_untracked`, `pending_runs`, `failed_runs`,
+`serve_stale`, `diagnostics`, `questions`, `outbox_pending`, `outbox_failed`,
+and `quarantined`.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink

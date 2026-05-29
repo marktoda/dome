@@ -81,6 +81,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "sync_needed",
   "pending_commits",
   "adopted_diverged",
+  "attention_required",
+  "attention",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -1492,6 +1494,10 @@ describe("runStatus", () => {
     expect(parsed["sync_needed"]).toBe(true);
     expect(parsed["pending_commits"]).toBeNull();
     expect(parsed["adopted_diverged"]).toBe(false);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(
+      expect.arrayContaining(["sync_needed"]),
+    );
     expect(parsed["dirty_modified"]).toBe(0);
     expect(parsed["dirty_untracked"]).toBe(0);
     expect(parsed["content_pages"]).toBe(2);
@@ -1569,7 +1575,11 @@ describe("runStatus", () => {
     captured.out = [];
     captured.err = [];
 
-    await writeFile(join(f.vaultPath, "wiki/pending.md"), "pending\n", "utf8");
+    await writeFile(
+      join(f.vaultPath, "wiki/pending.md"),
+      "---\ntype: concept\n---\n# Pending\n\npending\n",
+      "utf8",
+    );
     const head = await commit({
       path: f.vaultPath,
       message: "add pending page\n",
@@ -1587,6 +1597,8 @@ describe("runStatus", () => {
     expect(parsed["sync_needed"]).toBe(true);
     expect(parsed["pending_commits"]).toBe(1);
     expect(parsed["adopted_diverged"]).toBe(false);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(expect.arrayContaining(["sync_needed"]));
   });
 
   test("--json mode reports vault content analytics", async () => {
@@ -1778,6 +1790,16 @@ describe("runStatus", () => {
     expect(parsed["outbox_failed"]).toBe(1);
     expect(parsed["failed_runs"]).toBe(1);
     expect(parsed["quarantined"]).toBe(1);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual([
+      "sync_needed",
+      "failed_runs",
+      "diagnostics",
+      "questions",
+      "outbox_pending",
+      "outbox_failed",
+      "quarantined",
+    ]);
     expect(parsed["recent_processor_runs"]).toEqual([
       {
         processor_id: "test.status",
