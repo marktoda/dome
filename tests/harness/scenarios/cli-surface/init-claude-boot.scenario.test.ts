@@ -39,6 +39,11 @@ scenario(
       const gitignore = await readFile(join(target, ".gitignore"), "utf8");
 
       expect(claude.startsWith("@AGENTS.md")).toBe(true);
+      expect(claude).toContain("dome today");
+      expect(claude).toContain("dome prep");
+      expect(claude).toContain("dome query");
+      expect(claude).toContain("dome export-context");
+      expect(claude).not.toContain("only use `dome status`");
       expect(agents).toContain("## Daily loop");
       expect(agents).toContain("Dome works at the git commit boundary");
       expect(agents).toContain("dome status");

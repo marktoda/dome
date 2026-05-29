@@ -162,10 +162,13 @@ Shipped and strong:
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
 - Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.intake`.
 
-Not yet at v1:
+Shipped, but still needs release hardening:
 
 - `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
-- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` now ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` now ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, and `dome prep`; `dome.intake` now ships opt-in raw inbox capture extraction into generated capture pages and processed archives. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- The first-party bundle cut is now narrower than the older aspirational matrix. `dome.search` ships deterministic FTS indexing, `dome query`, and `dome export-context`; `dome.health` ships failed-outbox retry/abandon, quarantined-processor reset, and orphan-run recovery; `dome.daily` ships deterministic daily creation, task carry-forward, source-ref-backed task/followup fact indexing across wiki pages, `dome today`, and `dome prep`; `dome.intake` ships opt-in raw inbox capture extraction into generated capture pages and processed archives. `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+
+Not yet at v1:
+
 - The day-to-day workflows the user wants are only partially implemented: daily note creation, carry-forward tasks, deterministic `TODO:` / `Follow up:` directive extraction across wiki pages, ambiguity questions for prose follow-up guesses, `dome today`, deterministic `dome prep`, and first raw inbox capture compilation work. Production model-provider packaging, low-confidence capture questions, stale-inbox checks, and richer synthesis remain.
 - Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.

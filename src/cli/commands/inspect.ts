@@ -167,6 +167,7 @@ function collectRows(
         severity: d.severity,
         code: d.code,
         message: d.message,
+        source_refs: formatSourceRefs(d.sourceRefs),
       }));
     }
     case "questions": {
@@ -211,6 +212,38 @@ function collectRows(
       // Unreachable — VALID_SUBJECTS guard above enforces this.
       return [];
   }
+}
+
+function formatSourceRefs(
+  refs: ReadonlyArray<{
+    readonly path: string;
+    readonly commit?: string;
+    readonly range?: {
+      readonly startLine: number;
+      readonly endLine: number;
+    };
+  }>,
+): string {
+  if (refs.length === 0) return "-";
+  return refs.map(formatSourceRef).join(", ");
+}
+
+function formatSourceRef(ref: {
+  readonly path: string;
+  readonly commit?: string;
+  readonly range?: {
+    readonly startLine: number;
+    readonly endLine: number;
+  };
+}): string {
+  const range =
+    ref.range === undefined
+      ? ""
+      : ref.range.endLine === ref.range.startLine
+        ? `:${ref.range.startLine}`
+        : `:${ref.range.startLine}-${ref.range.endLine}`;
+  const commit = ref.commit === undefined ? "" : ` @ ${ref.commit.slice(0, 7)}`;
+  return `${ref.path}${range}${commit}`;
 }
 
 /**

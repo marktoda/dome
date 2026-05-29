@@ -342,7 +342,9 @@ Proposal, does not invoke any processor, and does not mutate state.
 Subjects (v1.0):
 
 - `runs` — recent processor runs from `runs.db`.
-- `diagnostics` — current unresolved diagnostics from `projection.db.diagnostics`.
+- `diagnostics` — current unresolved diagnostics from
+  `projection.db.diagnostics`, including compact SourceRef locations so Claude
+  can jump directly to affected markdown.
 - `questions` — durable questions from `projection.db.questions`, including
   row id, status, options, answer, timestamps, and idempotency key.
 - `outbox` — pending / failed external actions from `outbox.db`.

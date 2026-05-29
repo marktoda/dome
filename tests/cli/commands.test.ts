@@ -305,7 +305,12 @@ describe("runInit", () => {
       expect(claudeBody.startsWith("@AGENTS.md")).toBe(true);
       expect(claudeBody).toContain("dome status");
       expect(claudeBody).toContain("dome sync");
+      expect(claudeBody).toContain("dome today");
+      expect(claudeBody).toContain("dome prep");
+      expect(claudeBody).toContain("dome query");
+      expect(claudeBody).toContain("dome export-context");
       expect(claudeBody).toContain("dome inspect <subject>");
+      expect(claudeBody).not.toContain("only use `dome status`");
       expect(captured.out.join("\n")).toContain("CLAUDE.md:");
 
       // Git initialized + HEAD resolves (the initial scaffold commit landed).
@@ -499,13 +504,48 @@ describe("runInspect", () => {
     expect(captured.out.join("\n")).toContain("(no rows)");
   });
 
-  test("subject 'diagnostics' returns 0 on a fresh vault", async () => {
+  test("subject 'diagnostics' returns source locations", async () => {
     const f = await makeFixture();
     fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.diagnostic",
+          message: "Needs a source location",
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.headSha),
+              path: "wiki/new.md",
+              range: {
+                startLine: 3,
+                endLine: 5,
+              },
+            }),
+          ],
+        }),
+        processorId: "test.cli",
+        proposalId: "prop_cli",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
 
     expect(
       await runInspect({ subject: "diagnostics", vault: f.vaultPath }),
     ).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("test.diagnostic");
+    expect(out).toContain("wiki/new.md:3-5");
   });
 
   test("subjects 'questions' and 'outbox' both return 0", async () => {

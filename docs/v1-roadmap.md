@@ -197,7 +197,7 @@ Acceptance:
 
 ## Milestone 3 - Deterministic Adopted-State Substrate
 
-Status: active.
+Status: shipped for deterministic v1; maintain through release hardening.
 
 Goal: adopted state is queryable, rebuildable, and deterministic before LLM
 processors enter the write path.
@@ -243,7 +243,7 @@ Acceptance:
 
 ## Milestone 4 - Recovery and Questions
 
-Status: partially shipped.
+Status: shipped for first-party recovery loops; maintain through release hardening.
 
 Goal: a stuck Dome system is recoverable through one understandable
 operational surface.
@@ -368,6 +368,8 @@ Work:
 - [x] Treat model parse/schema failures as nominal processor failures.
 - [x] Ensure structured-output retries are bounded.
 - [x] Keep LLM write effects capability-scoped and SourceRef-backed.
+- [ ] Package a production provider path; tests currently inject providers
+      directly at the runtime boundary.
 
 Acceptance:
 
