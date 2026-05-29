@@ -8,7 +8,7 @@
 import git from "isomorphic-git";
 import fs from "node:fs";
 import { join, posix, relative, resolve } from "node:path";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, lstatSync, statSync } from "node:fs";
 import { walkUpForAncestor } from "./path-walk";
 
 /**
@@ -80,19 +80,92 @@ export async function initRepo(path: string, branch = "main"): Promise<void> {
  * the subdir prefix so callers see paths relative to `path` (the vault root)
  * regardless of where `.git/` lives.
  */
-export async function statusMatrix(path: string): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
+export async function statusMatrix(
+  path: string,
+): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
   const { root, prefix } = await resolveGitContext(path);
   const matrix = await git.statusMatrix({ fs, dir: root });
-  if (prefix === "") return matrix;
+  const ignored = await ignoredUntrackedPaths(
+    root,
+    matrix
+      .filter(
+        ([, head, workdir, stage]) =>
+          head === 0 && (workdir !== 0 || stage !== 0),
+      )
+      .map(([filepath]) => filepath),
+  );
   const prefixSlash = `${prefix}/`;
   const result: Awaited<ReturnType<typeof git.statusMatrix>> = [];
   for (const row of matrix) {
-    const [filepath, ...rest] = row;
-    if (filepath.startsWith(prefixSlash)) {
-      result.push([filepath.slice(prefixSlash.length), ...rest] as typeof row);
+    const [filepath, head, workdir, stage] = row;
+    if (
+      head === 0 &&
+      (workdir !== 0 || stage !== 0) &&
+      ignored.has(filepath)
+    ) {
+      continue;
+    }
+    if (prefix === "") {
+      result.push(row);
+    } else if (filepath.startsWith(prefixSlash)) {
+      result.push([filepath.slice(prefixSlash.length), head, workdir, stage]);
     }
   }
   return result;
+}
+
+async function ignoredUntrackedPaths(
+  root: string,
+  filepaths: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> {
+  if (filepaths.length === 0) return new Set();
+  const pathspecByFilepath = new Map(
+    filepaths.map((filepath) => [filepath, ignoreCheckPathspec(root, filepath)]),
+  );
+  const pathspecs = [...new Set(pathspecByFilepath.values())];
+
+  const proc = Bun.spawn(["git", "-C", root, "check-ignore", "--stdin"], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  proc.stdin.write(pathspecs.join("\n"));
+  proc.stdin.end();
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0 && exitCode !== 1) {
+    throw new Error(
+      `git check-ignore failed for ${root}: ${stderr.trim() || `exit ${exitCode}`}`,
+    );
+  }
+  const ignoredPathspecs = new Set(
+    stdout.split(/\r?\n/).filter((line) => line.length > 0),
+  );
+  return new Set(
+    filepaths.filter((filepath) =>
+      ignoredPathspecs.has(pathspecByFilepath.get(filepath) ?? filepath),
+    ),
+  );
+}
+
+function ignoreCheckPathspec(root: string, filepath: string): string {
+  const parts = filepath.split("/");
+  let pathspec = "";
+  for (const part of parts) {
+    pathspec = pathspec === "" ? part : posix.join(pathspec, part);
+    try {
+      if (lstatSync(join(root, ...pathspec.split("/"))).isSymbolicLink()) {
+        return pathspec;
+      }
+    } catch {
+      return filepath;
+    }
+  }
+  return filepath;
 }
 
 export async function currentSha(path: string): Promise<string | null> {

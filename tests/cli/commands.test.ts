@@ -1637,6 +1637,34 @@ describe("runStatus", () => {
     expect(parsed["dirty_untracked"]).toBe(4);
   });
 
+  test("--json mode ignores excluded untracked files in dirty counts", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await writeFile(
+      join(f.vaultPath, ".git", "info", "exclude"),
+      ".claude/\n",
+      "utf8",
+    );
+    await mkdir(join(f.vaultPath, ".claude", "commands"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(f.vaultPath, ".claude", "commands", "eod.md"),
+      "local command\n",
+      "utf8",
+    );
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["dirty_untracked"]).toBe(0);
+    expect(parsed["attention"]).not.toContain("dirty_untracked");
+  });
+
   test("--json mode reports operational health counts", async () => {
     const f = await makeFixture();
     fixtures.push(f);

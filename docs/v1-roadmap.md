@@ -682,6 +682,9 @@ Work:
 - [x] Tighten the model-provider protocol parser with the existing Zod
       boundary so command-provider JSON cannot bypass the same response shape
       validation used by injected providers.
+- [x] Make status dirty counts match native git by filtering ignored
+      untracked files at the git status boundary, keeping
+      `dirty_untracked` attention from firing on local Claude command files.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
