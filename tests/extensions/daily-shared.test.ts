@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  carriedForwardSection,
   dailyPath,
+  openTasksFromMarkdown,
   parseDailyPath,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
@@ -21,5 +23,57 @@ describe("dome.daily shared date helpers", () => {
     expect(parseDailyPath("wiki/dailies/2026-02-31.md")).toBeNull();
     expect(parseDailyPath("wiki/dailies/2026-13-01.md")).toBeNull();
     expect(parseDailyPath("wiki/dailies/2026-00-10.md")).toBeNull();
+  });
+
+  test("openTasksFromMarkdown extracts plain open markdown checkboxes", () => {
+    expect(
+      openTasksFromMarkdown(
+        [
+          "- [ ] #task Follow up",
+          "  * [ ] Review notes",
+          "- [x] Finished item",
+          "- [ ]",
+          "plain text",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { line: 1, text: "- [ ] #task Follow up", sourcePath: null },
+      { line: 2, text: "  * [ ] Review notes", sourcePath: null },
+    ]);
+  });
+
+  test("openTasksFromMarkdown preserves existing carry-forward provenance", () => {
+    expect(
+      openTasksFromMarkdown(
+        "- [ ] Already carried (from [[wiki/dailies/2025-12-31]])",
+      ),
+    ).toEqual([
+      {
+        line: 1,
+        text: "- [ ] Already carried",
+        sourcePath: "wiki/dailies/2025-12-31",
+      },
+    ]);
+  });
+
+  test("carriedForwardSection uses original provenance when available", () => {
+    expect(
+      carriedForwardSection({
+        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
+        tasks: [
+          { line: 1, text: "- [ ] New task", sourcePath: null },
+          {
+            line: 2,
+            text: "- [ ] Already carried",
+            sourcePath: "wiki/dailies/2025-12-31",
+          },
+        ],
+      }),
+    ).toContain(
+      [
+        "- [ ] New task (from [[wiki/dailies/2026-01-01]])",
+        "- [ ] Already carried (from [[wiki/dailies/2025-12-31]])",
+      ].join("\n"),
+    );
   });
 });

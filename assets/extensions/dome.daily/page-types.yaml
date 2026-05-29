@@ -3,4 +3,3 @@ extensions:
     frontmatter_extras:
       recurrence: required
       prev: optional
-      next: optional

@@ -71,13 +71,10 @@ recurrence: 2026-01-01
       .toContain("* [ ] Review launch plan (from [[wiki/dailies/2026-01-01]])");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("- [ ] Already carried once (from [[wiki/dailies/2026-01-01]])");
+      .toContain("- [ ] Already carried once (from [[wiki/dailies/2025-12-31]])");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toNotContain("Completed task should stay behind");
-    await h
-      .expectFile("wiki/dailies/2026-01-02.md")
-      .toNotContain("2025-12-31");
 
     const createRun = await h
       .expectLedger({

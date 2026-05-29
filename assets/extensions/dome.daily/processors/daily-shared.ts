@@ -1,7 +1,7 @@
 const DAILY_DIR = "wiki/dailies";
 const DAILY_PATH_RE = /^wiki\/dailies\/(\d{4})-(\d{2})-(\d{2})\.md$/;
 const CARRY_FORWARD_RE =
-  /\s+\(from \[\[wiki\/dailies\/\d{4}-\d{2}-\d{2}\]\]\)\s*$/;
+  /\s+\(from \[\[(wiki\/dailies\/\d{4}-\d{2}-\d{2})\]\]\)\s*$/;
 
 export const CARRIED_FORWARD_START =
   "<!-- dome.daily:carried-forward:start -->";
@@ -17,6 +17,7 @@ export type DailyDate = {
 export type OpenTask = {
   readonly line: number;
   readonly text: string;
+  readonly sourcePath: string | null;
 };
 
 export function localDateParts(date: Date): DailyDate {
@@ -67,7 +68,8 @@ export function openTasksFromMarkdown(content: string): ReadonlyArray<OpenTask> 
     tasks.push(
       Object.freeze({
         line: i + 1,
-        text: line.replace(CARRY_FORWARD_RE, "").trimEnd(),
+        text: stripCarryForwardSource(line),
+        sourcePath: carryForwardSourcePath(line),
       }),
     );
   }
@@ -108,11 +110,13 @@ export function carriedForwardSection(input: {
   readonly yesterday: DailyDate;
   readonly tasks: ReadonlyArray<OpenTask>;
 }): string {
-  const source = `[[${dailyLink(input.yesterday)}]]`;
   return [
     CARRIED_FORWARD_START,
     "### Carried Forward",
-    ...input.tasks.map((task) => `${task.text} (from ${source})`),
+    ...input.tasks.map((task) => {
+      const sourcePath = task.sourcePath ?? dailyLink(input.yesterday);
+      return `${task.text} (from [[${sourcePath}]])`;
+    }),
     CARRIED_FORWARD_END,
   ].join("\n");
 }
@@ -138,6 +142,14 @@ export function replaceCarriedForwardSection(input: {
 
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
+}
+
+function stripCarryForwardSource(line: string): string {
+  return line.replace(CARRY_FORWARD_RE, "").trimEnd();
+}
+
+function carryForwardSourcePath(line: string): string | null {
+  return CARRY_FORWARD_RE.exec(line)?.[1] ?? null;
 }
 
 function isValidDailyDate(date: DailyDate): boolean {

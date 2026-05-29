@@ -127,7 +127,6 @@ extensions:
     frontmatter_extras:
       recurrence: required    # frontmatter must carry recurrence: <YYYY-MM-DD>
       prev: optional          # backlink to previous daily
-      next: optional          # backlink to next daily
 ```
 
 The `dome.markdown` processor validates `frontmatter_extras` per type — a `daily` page without `recurrence:` produces a blocking diagnostic.

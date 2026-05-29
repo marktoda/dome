@@ -297,8 +297,10 @@ Goal: the user's stated daily workflow works without hand-maintained glue.
 
 Work:
 
-- [ ] Define a minimal task representation compatible with plain markdown
-      checkboxes and Obsidian expectations.
+- [x] Define a minimal task representation compatible with plain markdown
+      checkboxes and Obsidian expectations: v1 treats open `- [ ]` / `* [ ]`
+      lines in daily notes as tasks, preserves the checkbox line as markdown,
+      and preserves any existing carried-forward origin marker.
 - [x] Implement `dome.daily.create-daily`.
 - [x] Implement carry-forward of unfinished tasks from the previous daily
       note.
