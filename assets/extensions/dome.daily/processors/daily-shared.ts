@@ -22,7 +22,7 @@ export type OpenTask = {
   readonly followup: boolean;
 };
 
-export type DailyActionItem = {
+export type MarkdownActionItem = {
   readonly line: number;
   readonly text: string;
   readonly body: string;
@@ -86,8 +86,8 @@ export function openTasksFromMarkdown(content: string): ReadonlyArray<OpenTask> 
 
 export function actionItemsFromMarkdown(
   content: string,
-): ReadonlyArray<DailyActionItem> {
-  const items: DailyActionItem[] = [];
+): ReadonlyArray<MarkdownActionItem> {
+  const items: MarkdownActionItem[] = [];
   const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
@@ -217,7 +217,7 @@ function openTaskFromLine(line: string, lineNumber: number): OpenTask {
 function directiveActionItemFromLine(
   line: string,
   lineNumber: number,
-): DailyActionItem | null {
+): MarkdownActionItem | null {
   const match = /^\s*(?:[-*]\s+)?(todo|follow[- ]?up)\s*:\s*(\S.*)$/i.exec(
     line,
   );
