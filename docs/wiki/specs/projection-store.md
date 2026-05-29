@@ -50,7 +50,7 @@ Every row in `projection.db` is keyed (in addition to its table-specific primary
 - `processorVersionsHash` — sha256 of the sorted list of `(processorId, version)` for every loaded processor. Bumping a processor version invalidates the projection cache.
 - `capabilityPolicyHash` — sha256 of the effective vault runtime policy and enabled-extension grants. Changing `.dome/config.yaml` in a way that alters processor visibility, activation, or runtime limits invalidates the projection cache.
 
-When any of these change, the engine considers cached rows stale and re-derives them from the adopted commit before operational or view work reads projection rows. V1 uses full projection rebuild for cache-key drift; per-processor invalidation is an optimization, not the correctness boundary. The cache key tuple is stored in a `projection_meta` table:
+When any of these change, the engine considers cached rows stale and re-derives them from the adopted commit before operational or view work reads projection rows. V1 uses full projection rebuild for cache-key drift; per-processor invalidation is an optimization, not the correctness boundary. Candidate-bound projection-global config files, currently `.dome/page-types.yaml`, also force a full rebuild when adopted because they can change diagnostics for pages outside the commit's changed-path set. The cache key tuple is stored in a `projection_meta` table:
 
 ```sql
 CREATE TABLE projection_meta (
@@ -298,6 +298,12 @@ dome rebuild
 ```
 
 The rebuild is **idempotent** — running it twice in succession produces byte-equivalent `.db` files (modulo `written_at` timestamps). Any processor that depends on time, random values, network responses, or fresh LLM output is not eligible for automatic rebuild.
+
+The engine may run this same rebuild path automatically after adoption when a
+projection-global config file changes. For example, editing
+`.dome/page-types.yaml` can clear or create frontmatter diagnostics for pages
+that were not edited in the same commit, so incremental row replacement is not
+the correctness boundary for that change.
 
 Wall-clock cost scales with vault size + processor count. For a typical user vault (hundreds to low thousands of pages, a dozen processors), rebuild is seconds. For a 50k-page vault, rebuild is a couple of minutes. The user-facing UX is "you can always wipe and rebuild" — slow but correct.
 

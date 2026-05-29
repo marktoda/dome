@@ -324,7 +324,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 The current runtime loads bundles from a single root per process. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`); `--bundles-root` replaces that root for tests or vault-local third-party installs. Multi-root composition of shipped plus vault-local bundles in one runtime remains v1.x polish. Within the selected root, bundles load alphabetically by directory name. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
-2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`.
+2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`. When the vault-local file changes, adoption invalidates the full projection store because schema diagnostics may change for pages outside the commit's changed-path set.
 3. **Preamble fragment** loading is planned. Bundle-local `preamble.md` files are part of the intended extension shape, but the current loader does not yet merge them into `AGENTS.md`.
 4. **Processors register** into the engine's processor registry under their fully qualified manifest ids.
 5. **Capabilities register** with the broker.

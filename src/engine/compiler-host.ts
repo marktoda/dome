@@ -72,6 +72,12 @@ import type { ApplyEffectSinks } from "./apply-effect";
 import { failRunIfCurrent } from "../ledger/runs";
 import { buildOperationalQueryView } from "./operational-query-view";
 
+// These files affect projection rows for pages that may not appear in the
+// changed-path set, so adoption treats them as full projection invalidators.
+const PROJECTION_GLOBAL_CONFIG_PATHS: ReadonlySet<string> = new Set([
+  ".dome/page-types.yaml",
+]);
+
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -433,11 +439,19 @@ async function runAdoptionCycle(opts: {
   const cursor: AdoptedCursor = { current: adoptionResult.adoptedRef };
 
   if (adoptionResult.adopted) {
+    const adoptedCompiled = await compileRange({
+      vaultPath: runtime.path,
+      base: drift.base,
+      head: adoptionResult.adoptedRef,
+    });
     projectionRebuild = await rebuildProjectionAfterAdoption({
       runtime,
       adopted: adoptionResult.adoptedRef,
       branch: drift.branch,
       initialBootstrap: drift.base === drift.head,
+      globalConfigChanged: projectionGlobalConfigChanged(
+        adoptedCompiled.changedPaths,
+      ),
       now,
     });
 
@@ -449,17 +463,12 @@ async function runAdoptionCycle(opts: {
       now,
       ...(onEvent !== undefined ? { onEvent } : {}),
     });
-    const gardenCompiled = await compileRange({
-      vaultPath: runtime.path,
-      base: drift.base,
-      head: adoptionResult.adoptedRef,
-    });
     garden = await runGardenPhase({
       vault: adoptOpts.vault,
       proposal,
       adopted: adoptionResult.adoptedRef,
-      changedPaths: gardenCompiled.changedPaths,
-      signals: gardenCompiled.signals,
+      changedPaths: adoptedCompiled.changedPaths,
+      signals: adoptedCompiled.signals,
       runGardenProcessors: runtime.processorRuntime.gardenRunner,
       sinks: sinksForCursor({ sinksFor, cursor }),
       ledger: runtime.ledgerDb,
@@ -477,6 +486,22 @@ async function runAdoptionCycle(opts: {
       adoptSubProposal,
       cursor,
     });
+
+    if (cursor.current !== adoptionResult.adoptedRef) {
+      const finalCompiled = await compileRange({
+        vaultPath: runtime.path,
+        base: adoptionResult.adoptedRef,
+        head: cursor.current,
+      });
+      if (projectionGlobalConfigChanged(finalCompiled.changedPaths)) {
+        projectionRebuild = await rebuildProjection({
+          runtime,
+          adopted: cursor.current,
+          branch: drift.branch,
+          now,
+        });
+      }
+    }
 
     markProjectionBuilt(runtime.projectionDb, {
       adoptedCommit: cursor.current,
@@ -658,10 +683,12 @@ async function rebuildProjectionAfterAdoption(opts: {
   readonly adopted: CommitOid;
   readonly branch: string;
   readonly initialBootstrap: boolean;
+  readonly globalConfigChanged: boolean;
   readonly now?: () => Date;
 }): Promise<ProjectionRebuildResult | null> {
   if (
     !opts.initialBootstrap &&
+    !opts.globalConfigChanged &&
     !projectionCacheKeysChanged(opts.runtime.projectionDb, {
       extensionSet: opts.runtime.extensions,
       processorVersions: opts.runtime.processorVersions,
@@ -677,6 +704,12 @@ async function rebuildProjectionAfterAdoption(opts: {
     branch: opts.branch,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
+}
+
+function projectionGlobalConfigChanged(
+  changedPaths: ReadonlyArray<string>,
+): boolean {
+  return changedPaths.some((path) => PROJECTION_GLOBAL_CONFIG_PATHS.has(path));
 }
 
 async function latestAdoptedOr(

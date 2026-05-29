@@ -58,5 +58,30 @@ scenario(
     await h
       .expectLedger({ processorId: "dome.markdown.lint-frontmatter" })
       .toAllHaveStatus("succeeded");
+
+    await h.userCommit({
+      files: {
+        ".dome/page-types.yaml":
+          "extensions:\n" +
+          "  - name: recipe\n" +
+          "    frontmatter_extras:\n" +
+          "      cuisine: optional\n" +
+          "      servings: optional\n" +
+          "      unexpected: optional\n",
+      },
+      message: "relax recipe page type",
+    });
+
+    const relaxed = await h.tick();
+    expect(relaxed.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-required-field" })
+      .toHaveCount(0);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.unknown-frontmatter-field" })
+      .toHaveCount(0);
   },
 );

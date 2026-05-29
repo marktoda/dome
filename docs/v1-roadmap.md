@@ -240,6 +240,9 @@ Work:
       view path.
 - [x] Replace graph/tag page facts on edit/delete instead of accumulating stale
       projection rows until a full rebuild.
+- [x] Rebuild projections when candidate-bound projection-global config changes,
+      starting with `.dome/page-types.yaml`, so schema diagnostics stay correct
+      even for pages outside the changed-path set.
 
 Acceptance:
 
