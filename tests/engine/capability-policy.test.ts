@@ -592,6 +592,31 @@ extensions:
     );
   });
 
+  test("rejects scoped question.ask grants until QuestionEffect has a scope", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      question.ask: ["dome.markdown"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.grant.question.ask must be true",
+    );
+  });
+
   test("rejects invalid operational grant enum values", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);

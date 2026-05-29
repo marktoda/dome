@@ -234,7 +234,6 @@ export type SearchWriteCapability = {
 };
 export type QuestionAskCapability = {
   readonly kind: "question.ask";
-  readonly namespaces?: ReadonlyArray<string>;
 };
 export type JobEnqueueCapability = {
   readonly kind: "job.enqueue";
@@ -681,7 +680,6 @@ export const SearchWriteCapabilitySchema = z
 export const QuestionAskCapabilitySchema = z
   .object({
     kind: z.literal("question.ask"),
-    namespaces: z.array(z.string().min(1)).optional(),
   })
   .strict();
 

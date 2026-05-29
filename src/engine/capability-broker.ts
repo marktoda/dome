@@ -446,10 +446,9 @@ function enforceSearchDocument(
 // ----- QuestionEffect enforcement ------------------------------------------
 
 /**
- * QuestionEffect requires an explicit `question.ask` grant. The current
- * QuestionEffect shape has no namespace/channel field, so namespace-scoped
- * `question.ask` capabilities are accepted as effective grants but cannot
- * further narrow the effect until the effect carries that namespace.
+ * QuestionEffect requires an explicit `question.ask` grant. In v1 this is a
+ * binary capability: QuestionEffect has no namespace/channel field, so the
+ * manifest/config surface does not pretend to expose narrower scopes.
  */
 function enforceQuestion(
   declared: ReadonlyArray<Capability>,

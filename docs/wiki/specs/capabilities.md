@@ -30,7 +30,7 @@ type Capability =
   | { kind: "owns.path";     paths: string[] }                  // exclusive ownership of paths (e.g., index.md)
   | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
   | { kind: "search.write";  paths: string[] }                  // SearchDocumentEffect paths
-  | { kind: "question.ask";  namespaces?: string[] }            // QuestionEffect namespaces / channels
+  | { kind: "question.ask" }                                    // QuestionEffect emission
   | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
   | { kind: "external";      capability: string }               // ExternalActionEffect capabilities (e.g., "calendar.write")
@@ -88,7 +88,7 @@ FTS5 upsert/delete SQL.
 
 ### `question.ask`
 
-Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. The `namespaces` field is accepted in manifests/config as the planned scope shape, but the current `QuestionEffect` has no namespace/channel field to enforce against, so v1 enforcement is binary (`question.ask` present or absent). Operational recovery answer handlers must separately bind their `answer` triggers to the originating question processor plus the idempotency-key prefix; that is the current confused-deputy guard for privileged recovery flows.
+Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. V1 enforcement is binary (`question.ask` present or absent) because `QuestionEffect` has no namespace/channel field. Namespaced question grants are deliberately rejected until the effect shape carries a real scope. Operational recovery answer handlers must separately bind their `answer` triggers to the originating question processor plus the idempotency-key prefix; that is the current confused-deputy guard for privileged recovery flows.
 
 ### `job.enqueue`
 

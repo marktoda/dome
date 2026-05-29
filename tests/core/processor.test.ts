@@ -142,9 +142,15 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
   });
 
   test("question.ask", () => {
-    expect(
-      CapabilitySchema.parse({ kind: "question.ask", namespaces: ["dome.intake"] }).kind,
-    ).toBe("question.ask");
+    expect(CapabilitySchema.parse({ kind: "question.ask" }).kind).toBe(
+      "question.ask",
+    );
+    expect(() =>
+      CapabilitySchema.parse({
+        kind: "question.ask",
+        namespaces: ["dome.intake"],
+      }),
+    ).toThrow();
   });
 
   test("job.enqueue", () => {

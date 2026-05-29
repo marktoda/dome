@@ -20,7 +20,7 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **DiagnosticEffect (any severity)** | (none — every processor may emit diagnostics) | — | (n/a — no denial path) |
 | **FactEffect** | `graph.write` matching the namespace prefix of `predicate` | predicate `<namespace>.<key>` → namespace must be in the grant list | Denied; diagnostic with `code: capability-deny-graph-write`; effect discarded |
 | **SearchDocumentEffect** | `search.write` | indexed/deleted document path must match the grant's glob list | Denied; diagnostic with `code: capability-deny-search-write`; effect discarded |
-| **QuestionEffect** | `question.ask` | question namespace / channel (defaults to emitting bundle namespace when omitted) | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
+| **QuestionEffect** | `question.ask` | binary in v1; future scoped questions need an explicit effect field first | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
 | **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
 | **OutboxRecoveryEffect** | `outbox.recover` | requested action (`retry` or `abandon`) | Denied; diagnostic with `code: capability-deny-outbox-recover`; effect discarded |

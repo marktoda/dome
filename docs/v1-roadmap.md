@@ -636,6 +636,8 @@ Work:
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.
+- [x] Tighten `question.ask` to a binary v1 capability, rejecting fake
+      namespace-scoped grants until `QuestionEffect` has a real scope field.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

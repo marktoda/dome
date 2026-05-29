@@ -337,7 +337,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | DiagnosticEffect | (none — every processor may emit) |
 | FactEffect | `graph.write` for the namespace prefix of `predicate` |
 | SearchDocumentEffect | `search.write` for the indexed document path |
-| QuestionEffect | `question.ask` for the question namespace/channel |
+| QuestionEffect | `question.ask` |
 | JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
 | OutboxRecoveryEffect | `outbox.recover` for `retry` or `abandon` |

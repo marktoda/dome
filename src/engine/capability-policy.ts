@@ -618,9 +618,7 @@ function normalizeQuestionAsk(
   label: string,
 ): Result<ReadonlyArray<unknown>, string> {
   if (raw === true) return ok([{ kind: "question.ask" }]);
-  const namespaces = readRequiredStringList(raw, label);
-  if (!namespaces.ok) return namespaces;
-  return ok([{ kind: "question.ask", namespaces: namespaces.value }]);
+  return err(`${label} must be true`);
 }
 
 function normalizeModelInvoke(
