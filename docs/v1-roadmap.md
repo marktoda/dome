@@ -95,10 +95,10 @@ V1 capability ledger:
       task/followup fact indexing, `today` / `prep` views, and first raw
       inbox capture extraction are shipped; richer capture questions and
       synthesis remain.
-- [ ] Productized model boundary: provider injection, model allowlists,
+- [x] Productized model boundary: provider injection, model allowlists,
       structured-output validation, nominal model failures, and run-local cost
-      ledgering plus daily budget enforcement are shipped; production provider
-      packaging remains.
+      ledgering plus daily budget enforcement are shipped; command provider
+      packaging gives vaults a production path without SDK vendor dependencies.
 - [ ] LLM garden/intake processors with provenance and source-backed writes:
       first `dome.intake.extract-capture` slice shipped; low-confidence
       questions and synthesis remain.
@@ -369,8 +369,8 @@ Work:
 - [x] Treat model parse/schema failures as nominal processor failures.
 - [x] Ensure structured-output retries are bounded.
 - [x] Keep LLM write effects capability-scoped and SourceRef-backed.
-- [ ] Package a production provider path; tests currently inject providers
-      directly at the runtime boundary.
+- [x] Package a production provider path; vaults can configure a command
+      provider and the CLI/harness path exercises it without runtime injection.
 
 Acceptance:
 

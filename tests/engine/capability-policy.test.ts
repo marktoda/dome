@@ -128,6 +128,9 @@ engine:
 git:
   auto_commit_workflows: false
 extensions: {}
+model_provider:
+  kind: command
+  command: ["bun", ".dome/model-provider.ts"]
 `,
       "utf8",
     );
@@ -145,7 +148,34 @@ extensions: {}
         },
       },
       git: { auto_commit_workflows: false },
+      modelProvider: {
+        kind: "command",
+        command: ["bun", ".dome/model-provider.ts"],
+      },
     });
+  });
+
+  test("rejects malformed runtime model provider config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+model_provider:
+  kind: command
+  command: []
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "model_provider.command must be a non-empty string array",
+    );
   });
 
   test("rejects malformed runtime config", async () => {

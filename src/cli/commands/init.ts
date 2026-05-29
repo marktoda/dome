@@ -264,6 +264,14 @@ const DEFAULT_CONFIG_YAML = `# Dome vault configuration (v1.0).
 # To install a third-party bundle,
 # create \`.dome/extensions/<bundle-id>/\` here and pass
 # \`--bundles-root .dome/extensions\` on the command line.
+#
+# Model-capable bundles can use an injected host provider or a command
+# provider configured here. The command runs with the vault root as cwd,
+# receives a JSON request on stdin, and returns JSON on stdout:
+#
+# model_provider:
+#   kind: command
+#   command: ["bun", ".dome/model-provider.ts"]
 
 extensions:
   dome.lint:
@@ -303,9 +311,9 @@ extensions:
         - "dome.daily.*"
       question.ask: true
 
-  # Opt in when your Dome host injects a ModelProvider. The bundle compiles
-  # committed markdown captures from inbox/raw/*.md into generated intake
-  # pages and processed archives.
+  # Opt in when your Dome host injects or configures a ModelProvider. The
+  # bundle compiles committed markdown captures from inbox/raw/*.md into
+  # generated intake pages and processed archives.
   dome.intake:
     enabled: false
     grant:

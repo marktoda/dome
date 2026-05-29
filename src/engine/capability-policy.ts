@@ -35,6 +35,14 @@ export type RuntimeConfig = {
   readonly git: {
     readonly auto_commit_workflows: boolean;
   };
+  readonly modelProvider?: RuntimeModelProviderConfig;
+};
+
+export type RuntimeModelProviderConfig = CommandModelProviderConfig;
+
+export type CommandModelProviderConfig = {
+  readonly kind: "command";
+  readonly command: ReadonlyArray<string>;
 };
 
 export async function loadCapabilityPolicy(
@@ -151,7 +159,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   }),
 });
 
-const ROOT_KEYS = new Set(["extensions", "engine", "git"]);
+const ROOT_KEYS = new Set(["extensions", "engine", "git", "model_provider"]);
 
 const GRANT_KEYS = new Set([
   "read",
@@ -197,6 +205,11 @@ function parseRuntimeConfig(
   if (engine === null) return err(`${path} engine must be a YAML mapping`);
   const git = root.git === undefined ? {} : asRecord(root.git);
   if (git === null) return err(`${path} git must be a YAML mapping`);
+  const modelProvider = parseModelProviderConfig(
+    root.model_provider,
+    `${path} model_provider`,
+  );
+  if (!modelProvider.ok) return err(modelProvider.error);
 
   for (const key of Object.keys(engine)) {
     if (!ENGINE_KEYS.has(key)) {
@@ -265,6 +278,9 @@ function parseRuntimeConfig(
           gitAutoCommit.value ??
           DEFAULT_RUNTIME_CONFIG.git.auto_commit_workflows,
       }),
+      ...(modelProvider.value !== undefined
+        ? { modelProvider: modelProvider.value }
+        : {}),
     }),
   );
 }
@@ -276,6 +292,33 @@ const ENGINE_KEYS = new Set([
   "model_call_timeout_ms",
 ]);
 const GIT_KEYS = new Set(["auto_commit_workflows"]);
+
+function parseModelProviderConfig(
+  raw: unknown,
+  label: string,
+): Result<RuntimeModelProviderConfig | undefined, string> {
+  if (raw === undefined) return ok(undefined);
+  const provider = asRecord(raw);
+  if (provider === null) return err(`${label} must be a YAML mapping`);
+  for (const key of Object.keys(provider)) {
+    if (!MODEL_PROVIDER_KEYS.has(key)) {
+      return err(`${label}.${key} is not a known model_provider field`);
+    }
+  }
+  if (provider.kind !== "command") {
+    return err(`${label}.kind must be "command"`);
+  }
+  const command = readRequiredStringList(provider.command, `${label}.command`);
+  if (!command.ok) return command;
+  return ok(
+    Object.freeze({
+      kind: "command",
+      command: command.value,
+    }),
+  );
+}
+
+const MODEL_PROVIDER_KEYS = new Set(["kind", "command"]);
 
 function parsePositiveInteger(
   raw: unknown,

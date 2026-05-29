@@ -66,6 +66,7 @@ import {
   type CapabilityPolicy,
   type RuntimeConfig,
 } from "./capability-policy";
+import { buildCommandModelProvider } from "./command-model-provider";
 import { readTree } from "../git";
 import { openAnswersDb, type AnswersDb } from "../answers/db";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
@@ -325,7 +326,8 @@ export async function openVaultRuntime(
     : defaultResolveGrants(registry);
   const extensionIdFor = extensionIdForProcessor(processorExtensionIds);
   const externalHandlers = opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS;
-  const modelProvider = opts.modelProvider;
+  const modelProvider =
+    opts.modelProvider ?? modelProviderFromConfig(policy.runtime, opts.vaultPath);
 
   const quarantinePath = join(
     opts.vaultPath,
@@ -455,6 +457,18 @@ export async function openVaultRuntime(
 }
 
 // ----- Registry resolution --------------------------------------------------
+
+function modelProviderFromConfig(
+  config: RuntimeConfig,
+  vaultPath: string,
+): ModelProvider | undefined {
+  const provider = config.modelProvider;
+  if (provider === undefined) return undefined;
+  switch (provider.kind) {
+    case "command":
+      return buildCommandModelProvider(provider, { cwd: vaultPath });
+  }
+}
 
 /**
  * Internal shape returned by `resolveRegistryFromOpts`: the three pieces

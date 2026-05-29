@@ -40,6 +40,32 @@ extensions:
       question.ask: true
 `;
 
+const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
+
+const COMMAND_PROVIDER_CONFIG = `
+model_provider:
+  kind: command
+  command: ${JSON.stringify([process.execPath, COMMAND_PROVIDER_PATH])}
+${BASE_CONFIG}
+`;
+
+const COMMAND_PROVIDER_SOURCE = `
+const request = JSON.parse(await Bun.stdin.text());
+console.log(JSON.stringify({
+  text: JSON.stringify({
+    title: "Command launch follow-up",
+    summary: "Ada needs a staffing note and Ben owns budget follow-up.",
+    tasks: ["Send Ada the launch staffing note"],
+    followups: ["Ask Ben about hiring budget"],
+    decisions: ["Keep launch staffing review in this week's plan"],
+    entities: ["Ada", "Ben"],
+    sourceQuotes: ["Ask Ben about hiring budget"],
+  }),
+  model: request.model,
+  costUsd: 0.2,
+}));
+`;
+
 scenario(
   {
     name: "effect-kinds: dome.intake extracts raw capture into generated markdown and task facts",
@@ -142,6 +168,69 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake uses configured command model provider through CLI sync",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "fact" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": COMMAND_PROVIDER_CONFIG,
+        [COMMAND_PROVIDER_PATH]: COMMAND_PROVIDER_SOURCE,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [CAPTURE_PATH]: [
+          "# Capture",
+          "",
+          "Need to send Ada the launch staffing note.",
+          "Ask Ben about hiring budget.",
+          "",
+        ].join("\n"),
+      },
+      message: "capture day",
+    });
+
+    const cli = await h.runCli(["sync", "--json"]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+
+    await h.expectFile(OUTPUT_PATH).toContain("# Command launch follow-up");
+    await h
+      .expectFile(OUTPUT_PATH)
+      .toContain("- [ ] Send Ada the launch staffing note");
+    await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
+    const refs = await h.refs.current();
+    if (refs.head === null) throw new Error("expected HEAD");
+    await h.expectFile(CAPTURE_PATH, { atCommit: refs.head }).toBeAbsent();
+
+    const run = await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
+      .toHaveExactlyOne();
+    const cost = h.ledger.raw
+      .query<{ cost_usd: number | null }, [string]>(
+        "SELECT cost_usd FROM runs WHERE id = ?",
+      )
+      .get(run.id);
+    expect(cost?.cost_usd).toBe(0.2);
   },
 );
 
