@@ -778,7 +778,7 @@ function resolveGrantsFromPolicy(
       );
     }
     const extensionId = processorExtensionIds.get(processorId) ?? processorId;
-    return policy.grantsForExtension(extensionId);
+    return policy.grantsForProcessor(extensionId, processorId);
   };
 }
 

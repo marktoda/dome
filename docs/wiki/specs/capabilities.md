@@ -227,6 +227,20 @@ extensions:
     config:
       confidence_threshold: 0.82
 
+  dome.markdown:
+    enabled: true
+    grant:
+      read:
+        - wiki/**/*.md
+      patch.auto:
+        - wiki/**/*.md
+      question.ask: true
+    processors:
+      dome.markdown.validate-wikilinks:
+        grant:
+          read:
+            - "**/*.md"
+
   acme.calendar-sync:
     enabled: true
     grants:
@@ -238,7 +252,9 @@ extensions:
 
 With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
-Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, and opaque per-extension `config`.
+Processor-specific grants live under `extensions.<bundle>.processors.<processor-id>.grant` (or `grants`). A processor override is a **replacement** for the bundle grant, not an additive patch. Processors without an override inherit the bundle grant. This lets one bundle hold processors with different natural scopes: for example, a wikilink resolver may need to read all markdown to resolve targets while a frontmatter normalizer in the same bundle may be granted patches only under `wiki/**/*.md`.
+
+Extension config and grant blocks are validated fail-loudly when the runtime opens the vault: unknown extension-level keys, unknown processor-level keys, unknown capability keys, malformed scalar/list shapes, invalid operational enum values, ambiguous `grant`/`grants` aliases, non-map `config`, non-map `processors`, or non-boolean `enabled` values abort runtime construction instead of silently reducing the effective grant set. The extension-level keys are closed to `enabled`, `grant`, `grants`, `processors`, and opaque per-extension `config`. Processor-level keys are closed to `grant` and `grants`.
 
 Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches, and `question.ask` for duplicate-detection questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted wiki-page reads, auto-patches only for `wiki/dailies/*.md`, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, inbox/generated capture reads, generated-page and synthesis-page patch grants, and `dome.intake.*` graph writes so low-confidence extracted items become user-mediated writes instead of silent writes, model-written syntheses remain source-linked, confidence-carrying facts stay rebuildable, and stale-inbox diagnostics can inspect active inbox buckets. Third-party bundles default to inactive until the user explicitly opts in.
 

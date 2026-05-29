@@ -2,7 +2,8 @@
 //
 // Processors declare their requested capabilities in manifest.yaml. The
 // vault grants capabilities in .dome/config.yaml under
-// `extensions.<bundle>.grant` (or the documented plural `grants`). The
+// `extensions.<bundle>.grant` (or the documented plural `grants`), with
+// optional replacement grants under `extensions.<bundle>.processors.<id>`. The
 // broker receives the intersection: declaration from the processor, grant
 // from this policy resolver. The same parse pass owns the small runtime
 // config surface (`engine.max_iterations`, `*.auto_commit_workflows`) so
@@ -25,6 +26,13 @@ export type CapabilityPolicy = {
   readonly isExtensionEnabled: (extensionId: string) => boolean;
   readonly grantsForExtension: (
     extensionId: string,
+  ) => ReadonlyArray<Capability>;
+  readonly processorGrantIdsForExtension: (
+    extensionId: string,
+  ) => ReadonlyArray<string>;
+  readonly grantsForProcessor: (
+    extensionId: string,
+    processorId: string,
   ) => ReadonlyArray<Capability>;
 };
 
@@ -49,11 +57,18 @@ export type CommandModelProviderConfig = {
 export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
   const extensionIds = [...policy.enabledExtensionIds].sort();
   const extensionGrants = extensionIds.map((extensionId) => {
-    const grants = [...policy.grantsForExtension(extensionId)]
-      .map(stableJsonStringify)
+    const grants = serializeGrantSet(policy.grantsForExtension(extensionId));
+    const processorGrants = [
+      ...policy.processorGrantIdsForExtension(extensionId),
+    ]
       .sort()
-      .map((serialized) => JSON.parse(serialized) as unknown);
-    return { extensionId, grants };
+      .map((processorId) => ({
+        processorId,
+        grants: serializeGrantSet(
+          policy.grantsForProcessor(extensionId, processorId),
+        ),
+      }));
+    return { extensionId, grants, processorGrants };
   });
   return sha256(
     stableJsonStringify({
@@ -98,6 +113,10 @@ export async function loadCapabilityPolicy(
   if (!runtimeConfig.ok) return err(runtimeConfig.error);
 
   const grants = new Map<string, ReadonlyArray<Capability>>();
+  const processorGrants = new Map<
+    string,
+    ReadonlyMap<string, ReadonlyArray<Capability>>
+  >();
   const enabled = new Set<string>();
   if (root.extensions !== undefined) {
     const extensions = asRecord(root.extensions);
@@ -126,6 +145,7 @@ export async function loadCapabilityPolicy(
       }
       if (extension.enabled !== true) {
         grants.set(extensionId, Object.freeze([]));
+        processorGrants.set(extensionId, new Map());
         continue;
       }
       enabled.add(extensionId);
@@ -143,6 +163,15 @@ export async function loadCapabilityPolicy(
         return err(`${path} ${parsedGrant.error}`);
       }
       grants.set(extensionId, parsedGrant.value);
+
+      const parsedProcessorGrants = parseProcessorGrantOverrides(
+        extension.processors,
+        `${extensionPath}.processors`,
+      );
+      if (!parsedProcessorGrants.ok) {
+        return err(`${path} ${parsedProcessorGrants.error}`);
+      }
+      processorGrants.set(extensionId, parsedProcessorGrants.value);
     }
   }
 
@@ -154,6 +183,12 @@ export async function loadCapabilityPolicy(
       isExtensionEnabled: (extensionId: string) => enabled.has(extensionId),
       grantsForExtension: (extensionId: string) =>
         grants.get(extensionId) ?? Object.freeze([]),
+      processorGrantIdsForExtension: (extensionId: string) =>
+        Object.freeze([...(processorGrants.get(extensionId)?.keys() ?? [])]),
+      grantsForProcessor: (extensionId: string, processorId: string) =>
+        processorGrants.get(extensionId)?.get(processorId) ??
+        grants.get(extensionId) ??
+        Object.freeze([]),
     }),
   );
 }
@@ -165,7 +200,18 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
     enabledExtensionIds: Object.freeze([]),
     isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
+    processorGrantIdsForExtension: () => Object.freeze([]),
+    grantsForProcessor: () => Object.freeze([]),
   });
+}
+
+function serializeGrantSet(grants: ReadonlyArray<Capability>): ReadonlyArray<unknown> {
+  return Object.freeze(
+    [...grants]
+      .map(stableJsonStringify)
+      .sort()
+      .map((serialized) => JSON.parse(serialized) as unknown),
+  );
 }
 
 function stableJsonStringify(value: unknown): string {
@@ -222,7 +268,14 @@ const GRANT_KEYS = new Set([
   "run.recover",
 ]);
 
-const EXTENSION_KEYS = new Set(["enabled", "grant", "grants", "config"]);
+const EXTENSION_KEYS = new Set([
+  "enabled",
+  "grant",
+  "grants",
+  "config",
+  "processors",
+]);
+const PROCESSOR_KEYS = new Set(["grant", "grants"]);
 
 const OUTBOX_STATUSES = ["pending", "sent", "failed", "abandoned"] as const;
 const OUTBOX_RECOVERY_ACTIONS = ["retry", "abandon"] as const;
@@ -428,6 +481,44 @@ function parseGrantBlock(
   }
 
   return ok(Object.freeze(capabilities));
+}
+
+function parseProcessorGrantOverrides(
+  raw: unknown,
+  label: string,
+): Result<ReadonlyMap<string, ReadonlyArray<Capability>>, string> {
+  if (raw === undefined) return ok(Object.freeze(new Map()));
+
+  const processors = asRecord(raw);
+  if (processors === null) return err(`${label} must be a YAML mapping`);
+
+  const out = new Map<string, ReadonlyArray<Capability>>();
+  for (const [processorId, rawProcessor] of Object.entries(processors)) {
+    const processor = asRecord(rawProcessor);
+    const processorLabel = `${label}.${processorId}`;
+    if (processor === null) {
+      return err(`${processorLabel} must be a YAML mapping`);
+    }
+    for (const key of Object.keys(processor)) {
+      if (!PROCESSOR_KEYS.has(key)) {
+        return err(`${processorLabel}.${key} is not a known processor config field`);
+      }
+    }
+    if (hasOwn(processor, "grant") && hasOwn(processor, "grants")) {
+      return err(`${processorLabel} must use grant or grants, not both`);
+    }
+    const rawGrant = hasOwn(processor, "grant")
+      ? processor.grant
+      : processor.grants;
+    const grantLabel = hasOwn(processor, "grant")
+      ? `${processorLabel}.grant`
+      : `${processorLabel}.grants`;
+    const parsedGrant = parseGrantBlock(rawGrant, grantLabel);
+    if (!parsedGrant.ok) return parsedGrant;
+    out.set(processorId, parsedGrant.value);
+  }
+
+  return ok(Object.freeze(out));
 }
 
 const STRING_LIST_GRANTS: Record<

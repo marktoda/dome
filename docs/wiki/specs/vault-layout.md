@@ -134,12 +134,20 @@ Once `dome.index` ships, it should be rebuildable through `dome rebuild` when st
 ### `config.yaml`
 
 The single config file. The accepted top-level keys are `extensions`,
-`engine`, and `git`; unknown top-level keys fail runtime open rather than
-being silently ignored.
+`engine`, `git`, and `model_provider`; unknown top-level keys fail runtime
+open rather than being silently ignored.
 
 ```yaml
 extensions:
-  dome.markdown: { enabled: true,  grants: { read: ["**/*.md"], patch.auto: ["**/*.md"], question.ask: true } }
+  dome.markdown:
+    enabled: true
+    grants:
+      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"]
+      patch.auto: ["wiki/**/*.md"]
+      question.ask: true
+    processors:
+      dome.markdown.validate-wikilinks:
+        grants: { read: ["**/*.md"] }
   dome.graph:    { enabled: true,  grants: { read: ["**/*.md"], graph.write: ["dome.graph.*"] } }
   dome.daily:    { enabled: true,  grants: { read: ["wiki/**/*.md"], patch.auto: ["wiki/dailies/*.md"], graph.write: ["dome.daily.*"], question.ask: true } }
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }

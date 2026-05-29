@@ -354,7 +354,7 @@ Four file edits, paralleling the v0.5 "Adding a Tool" recipe:
 
 1. **The processor file** at `assets/extensions/<bundle>/processors/<name>.ts` (or `<vault>/.dome/extensions/<bundle>/processors/<name>.ts` for vault-local). Exports `defineProcessor({ id, version, phase, triggers, capabilities, run })`.
 2. **The manifest entry** in `assets/extensions/<bundle>/manifest.yaml`'s `processors:` block, declaring id / version / phase / triggers / capabilities.
-3. **The shipped default grants** in `src/cli/commands/init.ts`'s `DEFAULT_CONFIG_YAML` block (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`.
+3. **The shipped default grants** in `src/cli/commands/init.ts`'s `DEFAULT_CONFIG_YAML` block (if a first-party processor needs capabilities not on the shipped-default grant set). Vault-local bundles grant capabilities in `<vault>/.dome/config.yaml`; if one processor in a bundle needs a narrower or broader scope than the rest of the bundle, use `extensions.<bundle>.processors.<processor-id>.grant` as a replacement grant.
 4. **The test** at `tests/processors/<bundle-id>-<processor-id>.test.ts` asserting the processor runs against a representative input and emits the expected effects.
 
 The substrate scaffold catches the missing pieces:

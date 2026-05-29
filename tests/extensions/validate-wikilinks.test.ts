@@ -248,6 +248,44 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.message).not.toContain("[[b]]");
   });
 
+  test("ignores literal wikilink examples in code spans and fenced code blocks", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/page.md",
+        content: [
+          "Inline example `[[not-a-real-link]]` should be ignored.",
+          "",
+          "```md",
+          "[[also-not-real]]",
+          "```",
+          "",
+          "Authored link [[actually-missing]] should still be reported.",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-code-examples",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.message).toContain("actually-missing");
+    expect(diag.message).not.toContain("not-a-real-link");
+    expect(diag.message).not.toContain("also-not-real");
+  });
+
   // Regression: [[parent/child]] resolves to <anything>/parent/child.md via
   // suffix-match. Pre-fix, the resolver only tried vault-root-relative
   // paths and would flag this as broken.

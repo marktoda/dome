@@ -3,7 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadCapabilityPolicy } from "../../src/engine/capability-policy";
+import {
+  computeCapabilityPolicyHash,
+  loadCapabilityPolicy,
+} from "../../src/engine/capability-policy";
 
 const roots: string[] = [];
 
@@ -26,6 +29,12 @@ describe("loadCapabilityPolicy", () => {
     expect(result.value.foundConfig).toBe(false);
     expect(result.value.isExtensionEnabled("dome.markdown")).toBe(true);
     expect(result.value.grantsForExtension("dome.markdown")).toEqual([]);
+    expect(
+      result.value.grantsForProcessor(
+        "dome.markdown",
+        "dome.markdown.validate-wikilinks",
+      ),
+    ).toEqual([]);
   });
 
   test("parses extension grant blocks from .dome/config.yaml", async () => {
@@ -111,6 +120,97 @@ extensions:
     expect(result.value.isExtensionEnabled("disabled.bundle")).toBe(false);
     expect(result.value.isExtensionEnabled("omitted-enabled.bundle")).toBe(false);
     expect(result.value.isExtensionEnabled("missing.bundle")).toBe(false);
+  });
+
+  test("parses processor grant overrides as replacement grants", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/**/*.md"]
+      question.ask: true
+    processors:
+      dome.markdown.validate-wikilinks:
+        grant:
+          read: ["**/*.md"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.processorGrantIdsForExtension("dome.markdown")).toEqual([
+      "dome.markdown.validate-wikilinks",
+    ]);
+    expect(
+      result.value.grantsForProcessor(
+        "dome.markdown",
+        "dome.markdown.validate-wikilinks",
+      ),
+    ).toEqual([{ kind: "read", paths: ["**/*.md"] }]);
+    expect(
+      result.value.grantsForProcessor(
+        "dome.markdown",
+        "dome.markdown.normalize-frontmatter",
+      ),
+    ).toEqual([
+      { kind: "read", paths: ["wiki/**/*.md"] },
+      { kind: "patch.auto", paths: ["wiki/**/*.md"] },
+      { kind: "question.ask" },
+    ]);
+  });
+
+  test("processor grant overrides participate in the policy hash", async () => {
+    const rootA = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    const rootB = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(rootA, rootB);
+    mkdirSync(join(rootA, ".dome"), { recursive: true });
+    mkdirSync(join(rootB, ".dome"), { recursive: true });
+    writeFileSync(
+      join(rootA, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+`,
+      "utf8",
+    );
+    writeFileSync(
+      join(rootB, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+    processors:
+      dome.markdown.validate-wikilinks:
+        grant:
+          read: ["**/*.md"]
+`,
+      "utf8",
+    );
+
+    const policyA = await loadCapabilityPolicy(rootA);
+    const policyB = await loadCapabilityPolicy(rootB);
+
+    expect(policyA.ok).toBe(true);
+    expect(policyB.ok).toBe(true);
+    if (!policyA.ok || !policyB.ok) return;
+    expect(computeCapabilityPolicyHash(policyA.value)).not.toBe(
+      computeCapabilityPolicyHash(policyB.value),
+    );
   });
 
   test("parses runtime config from .dome/config.yaml", async () => {
@@ -289,6 +389,86 @@ extensions:
     if (result.ok) return;
     expect(result.error).toContain(
       "extensions.dome.markdown.enabledd is not a known extension config field",
+    );
+  });
+
+  test("rejects malformed processor grant override blocks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant: {}
+    processors: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.processors must be a YAML mapping",
+    );
+  });
+
+  test("rejects unknown processor-level config keys", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant: {}
+    processors:
+      dome.markdown.validate-wikilinks:
+        enabled: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.processors.dome.markdown.validate-wikilinks.enabled is not a known processor config field",
+    );
+  });
+
+  test("rejects ambiguous processor grant aliases", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  dome.markdown:
+    enabled: true
+    grant: {}
+    processors:
+      dome.markdown.validate-wikilinks:
+        grant: {}
+        grants: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "extensions.dome.markdown.processors.dome.markdown.validate-wikilinks must use grant or grants, not both",
     );
   });
 

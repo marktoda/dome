@@ -162,9 +162,11 @@ type WikilinkMatch = {
  */
 function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
   const matches: WikilinkMatch[] = [];
+  const ignoredRanges = markdownCodeRanges(content);
   WIKILINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = WIKILINK_RE.exec(content)) !== null) {
+    if (isOffsetInRanges(m.index, ignoredRanges)) continue;
     const target = m[1];
     if (target === undefined) continue;
     const trimmed = target.trim();
@@ -178,6 +180,124 @@ function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
     });
   }
   return matches;
+}
+
+type OffsetRange = {
+  readonly start: number;
+  readonly end: number;
+};
+
+/**
+ * Markdown examples often mention wikilink syntax literally. Ignore fenced
+ * code blocks and inline backtick code spans so the validator reports authored
+ * links, not documentation examples.
+ */
+function markdownCodeRanges(content: string): ReadonlyArray<OffsetRange> {
+  const ranges: OffsetRange[] = [];
+  const fencedLineRanges: OffsetRange[] = [];
+  let inFence: { marker: "`" | "~"; length: number; start: number } | null = null;
+  let lineStart = 0;
+
+  while (lineStart <= content.length) {
+    const newline = content.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? content.length : newline;
+    const rangeEnd = newline === -1 ? lineEnd : lineEnd + 1;
+    const line = content.slice(lineStart, lineEnd);
+    const fence = parseFenceMarker(line);
+
+    if (inFence !== null) {
+      if (
+        fence !== null &&
+        fence.marker === inFence.marker &&
+        fence.length >= inFence.length
+      ) {
+        ranges.push({ start: inFence.start, end: rangeEnd });
+        fencedLineRanges.push({ start: inFence.start, end: rangeEnd });
+        inFence = null;
+      }
+    } else if (fence !== null) {
+      inFence = { ...fence, start: lineStart };
+    }
+
+    if (newline === -1) break;
+    lineStart = rangeEnd;
+  }
+
+  if (inFence !== null) {
+    ranges.push({ start: inFence.start, end: content.length });
+    fencedLineRanges.push({ start: inFence.start, end: content.length });
+  }
+
+  lineStart = 0;
+  while (lineStart <= content.length) {
+    const newline = content.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? content.length : newline;
+    if (!isOffsetInRanges(lineStart, fencedLineRanges)) {
+      ranges.push(...inlineCodeRangesForLine(content, lineStart, lineEnd));
+    }
+    if (newline === -1) break;
+    lineStart = lineEnd + 1;
+  }
+
+  return ranges;
+}
+
+function parseFenceMarker(
+  line: string,
+): { marker: "`" | "~"; length: number } | null {
+  const match = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
+  if (match === null) return null;
+  const raw = match[1];
+  if (raw === undefined) return null;
+  return { marker: raw[0] as "`" | "~", length: raw.length };
+}
+
+function inlineCodeRangesForLine(
+  content: string,
+  lineStart: number,
+  lineEnd: number,
+): ReadonlyArray<OffsetRange> {
+  const ranges: OffsetRange[] = [];
+  let cursor = lineStart;
+  while (cursor < lineEnd) {
+    if (content.charCodeAt(cursor) !== 96 /* ` */) {
+      cursor += 1;
+      continue;
+    }
+    const start = cursor;
+    while (cursor < lineEnd && content.charCodeAt(cursor) === 96) {
+      cursor += 1;
+    }
+    const length = cursor - start;
+    const close = findBacktickRun(content, cursor, lineEnd, length);
+    if (close === -1) continue;
+    ranges.push({ start, end: close + length });
+    cursor = close + length;
+  }
+  return ranges;
+}
+
+function findBacktickRun(
+  content: string,
+  from: number,
+  to: number,
+  length: number,
+): number {
+  for (let cursor = from; cursor < to; cursor += 1) {
+    if (content.charCodeAt(cursor) !== 96 /* ` */) continue;
+    let end = cursor;
+    while (end < to && content.charCodeAt(end) === 96) end += 1;
+    if (end - cursor === length) return cursor;
+    cursor = end;
+  }
+  return -1;
+}
+
+function isOffsetInRanges(
+  offset: number,
+  ranges: ReadonlyArray<OffsetRange>,
+): boolean {
+  return ranges.some((range) => offset >= range.start && offset < range.end);
 }
 
 /**

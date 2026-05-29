@@ -17,6 +17,11 @@ extensions:
       patch.auto:
         - "wiki/**/*.md"
       question.ask: true
+    processors:
+      dome.markdown.validate-wikilinks:
+        grant:
+          read:
+            - "**/*.md"
 
   dome.graph:
     enabled: true
