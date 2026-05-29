@@ -250,7 +250,7 @@ function renderGeneratedCapture(input: {
     lines,
     "## Entities",
     entities,
-    (item) => `- [[${item.text}]]`,
+    (item) => `- ${item.text}`,
   );
   appendListSection(
     lines,

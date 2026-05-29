@@ -20,8 +20,9 @@
 // callers don't pass `signal` and rely on the OS-signal handlers.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { runServe } from "../../src/cli/commands/serve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
+import { runInspect } from "../../src/cli/commands/inspect";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -46,6 +48,16 @@ const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
 const TEST_BUNDLES_ROOT = join(REPO_ROOT, "tests", "harness", "fixtures", "bundles");
 const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
+const SERVE_CAPTURE_PATH = "inbox/raw/serve-manager-day.md";
+const SERVE_CAPTURE_OUTPUT_PATH = outputPath(
+  SERVE_CAPTURE_PATH,
+  "wiki/generated/intake",
+);
+const SERVE_CAPTURE_ARCHIVE_PATH = outputPath(
+  SERVE_CAPTURE_PATH,
+  "inbox/processed",
+);
+const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -100,24 +112,46 @@ async function makeFixture(
   opts: {
     readonly bundlesRoot?: string;
     readonly configYaml?: string;
+    readonly extraInitialFiles?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<Fixture> {
   const vaultPath = mkdtempSync(join(tmpdir(), "serve-test-"));
   await initRepo(vaultPath);
   await mkdir(join(vaultPath, "wiki"), { recursive: true });
+  await mkdir(join(vaultPath, ".dome"), { recursive: true });
 
   await writeFile(join(vaultPath, "wiki/seed.md"), VALID_CONCEPT_PAGE);
+  await writeFile(
+    join(vaultPath, ".dome", "config.yaml"),
+    opts.configYaml ?? defaultServeConfig(),
+  );
+  for (const [path, content] of Object.entries(opts.extraInitialFiles ?? {})) {
+    await mkdir(dirname(join(vaultPath, path)), { recursive: true });
+    await writeFile(join(vaultPath, path), content, "utf8");
+  }
   const initialSha = await commit({
     path: vaultPath,
     message: "init\n",
-    files: ["wiki/seed.md"],
+    files: [
+      "wiki/seed.md",
+      ".dome/config.yaml",
+      ...Object.keys(opts.extraInitialFiles ?? {}),
+    ],
   });
 
   await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
-  await writeFile(
-    join(vaultPath, ".dome", "config.yaml"),
-    opts.configYaml ??
-      `
+  return {
+    vaultPath,
+    bundlesRoot: opts.bundlesRoot ?? SHIPPED_BUNDLES_ROOT,
+    initialSha,
+    cleanup: async () => {
+      await rm(vaultPath, { recursive: true, force: true });
+    },
+  };
+}
+
+function defaultServeConfig(): string {
+  return `
 extensions:
   dome.markdown:
     enabled: true
@@ -127,17 +161,120 @@ extensions:
         - ".dome/page-types.yaml"
       patch.auto:
         - "**/*.md"
-`,
-  );
+`;
+}
 
-  return {
-    vaultPath,
-    bundlesRoot: opts.bundlesRoot ?? SHIPPED_BUNDLES_ROOT,
-    initialSha,
-    cleanup: async () => {
-      await rm(vaultPath, { recursive: true, force: true });
-    },
-  };
+function fullServeWorkflowConfig(): string {
+  return `
+model_provider:
+  kind: command
+  command: ${JSON.stringify([process.execPath, COMMAND_PROVIDER_PATH])}
+extensions:
+  dome.markdown:
+    enabled: true
+    grant:
+      read:
+        - "**/*.md"
+        - ".dome/page-types.yaml"
+        - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
+      patch.auto: ["**/*.md"]
+      question.ask: true
+  dome.graph:
+    enabled: true
+    grant:
+      read: ["**/*.md"]
+      graph.write: ["dome.graph.*"]
+  dome.search:
+    enabled: true
+    grant:
+      read: ["**/*.md"]
+      search.write: ["**/*.md"]
+  dome.daily:
+    enabled: true
+    grant:
+      read:
+        - "wiki/**/*.md"
+        - "wiki/dailies/*.md"
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+  dome.intake:
+    enabled: true
+    grant:
+      read:
+        - "inbox/**/*.md"
+        - "wiki/generated/intake/*.md"
+      patch.auto:
+        - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/intake-*.md"
+        - "inbox/processed/*.md"
+        - "inbox/raw/*.md"
+      graph.write: ["dome.intake.*"]
+      model.invoke:
+        modelAllowlist: ["test-model"]
+        maxDailyCostUsd: 1
+      question.ask: true
+  dome.lint:
+    enabled: true
+    grant:
+      read: ["**/*.md"]
+  dome.health:
+    enabled: true
+    grant:
+      read: ["**"]
+      outbox.read: ["failed"]
+      outbox.recover: ["retry", "abandon"]
+      quarantine.read: true
+      quarantine.recover: ["reset"]
+      run.read: ["running"]
+      run.recover: ["fail"]
+      question.ask: true
+`;
+}
+
+function commandProviderSource(): string {
+  return `
+const request = JSON.parse(await Bun.stdin.text());
+if (request.prompt.startsWith("Synthesize recent Dome generated intake captures")) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Serve management rollup",
+      thesis: "The served vault keeps staffing and budget follow-up visible.",
+      themes: ["Ada needs launch staffing support", "Ben owns budget follow-up"],
+      risks: ["Budget uncertainty may block launch staffing"],
+      nextSteps: ["Review launch staffing with Ada and Ben"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else if (request.prompt.startsWith("Synthesize a Dome generated intake capture")) {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Serve staffing synthesis",
+      thesis: "The capture identifies launch staffing as the active management thread.",
+      highlights: ["Ada needs staffing notes", "Ben owns budget follow-up"],
+      risks: ["Budget ownership may block launch staffing"],
+      nextSteps: ["Send Ada the staffing note"],
+    }),
+    model: request.model,
+    costUsd: 0.05,
+  }));
+} else {
+  console.log(JSON.stringify({
+    text: JSON.stringify({
+      title: "Serve command launch follow-up",
+      summary: "Ada needs a staffing note and Ben owns budget follow-up.",
+      tasks: ["Send Ada the launch staffing note"],
+      followups: ["Ask Ben about hiring budget"],
+      decisions: ["Keep launch staffing review in this week's plan"],
+      entities: ["Ada", "Ben"],
+      sourceQuotes: ["Ask Ben about hiring budget"],
+    }),
+    model: request.model,
+    costUsd: 0.2,
+  }));
+}
+`;
 }
 
 const fixtures: Fixture[] = [];
@@ -224,7 +361,17 @@ describe("runServe smoke", () => {
     expect(status.adopted).toBe(newSha);
     expect(status.pending_runs).toBe(0);
     expect(status.failed_runs).toBe(0);
-    expect(status.diagnostics).toBe(0);
+    if (status.diagnostics !== 0) {
+      captured.out = [];
+      captured.err = [];
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        json: true,
+      });
+      throw new Error(`unexpected diagnostics: ${captured.out.join("\n")}`);
+    }
     expect(status.questions).toBe(0);
     expect(status.outbox_pending).toBe(0);
     expect(status.outbox_failed).toBe(0);
@@ -246,6 +393,133 @@ describe("runServe smoke", () => {
       ledger.value.db.close();
     }
   }, 10_000);
+
+  test("runs the full intake management workflow while serving", async () => {
+    const f = await makeFixture({
+      configYaml: fullServeWorkflowConfig(),
+      extraInitialFiles: {
+        [COMMAND_PROVIDER_PATH]: commandProviderSource(),
+      },
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      quiet: true,
+    });
+    expect(initCode).toBe(0);
+    await waitFor(async () => {
+      const head = await currentSha(f.vaultPath);
+      const adopted = await getAdoptedRef(f.vaultPath, "main");
+      return head !== null && adopted === head;
+    }, 3000);
+    captured.out = [];
+    captured.err = [];
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+        quiet: true,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    await mkdir(dirname(join(f.vaultPath, SERVE_CAPTURE_PATH)), {
+      recursive: true,
+    });
+    await writeFile(
+      join(f.vaultPath, SERVE_CAPTURE_PATH),
+      [
+        "# Serve manager day",
+        "",
+        "Need to send Ada the launch staffing note.",
+        "Ask Ben about hiring budget.",
+        "",
+      ].join("\n"),
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "capture serve manager day\n",
+      files: [SERVE_CAPTURE_PATH],
+    });
+
+    try {
+      await waitFor(
+        async () =>
+          existsSync(join(f.vaultPath, SERVE_CAPTURE_OUTPUT_PATH)) &&
+          existsSync(join(f.vaultPath, SERVE_CAPTURE_ARCHIVE_PATH)),
+        15_000,
+      );
+    } catch (error) {
+      throw new Error(
+        `serve intake workflow did not materialize capture files: ${await debugServeState(f)}`,
+        { cause: error },
+      );
+    } finally {
+      controller.abort();
+    }
+
+    const code = await servePromise;
+    expect(code).toBe(0);
+    expect(captured.err.join("\n")).toBe("");
+
+    const generated = await readFile(
+      join(f.vaultPath, SERVE_CAPTURE_OUTPUT_PATH),
+      "utf8",
+    );
+    expect(generated).toContain("# Serve command launch follow-up");
+    expect(generated).toContain("- [ ] Send Ada the launch staffing note");
+    expect(generated).toContain("- [ ] #followup Ask Ben about hiring budget");
+    const archived = await readFile(
+      join(f.vaultPath, SERVE_CAPTURE_ARCHIVE_PATH),
+      "utf8",
+    );
+    expect(archived).toContain("Need to send Ada");
+
+    captured.out = [];
+    captured.err = [];
+    const statusCode = await runStatus({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    expect(statusCode).toBe(0);
+    expect(captured.err.join("\n")).toBe("");
+    const status = JSON.parse(captured.out.join("\n")) as {
+      readonly sync_needed: boolean;
+      readonly pending_runs: number;
+      readonly failed_runs: number;
+      readonly diagnostics: number;
+      readonly questions: number;
+      readonly outbox_failed: number;
+      readonly quarantined: number;
+    };
+    expect(status.sync_needed).toBe(false);
+    expect(status.pending_runs).toBe(0);
+    expect(status.failed_runs).toBe(0);
+    if (status.diagnostics !== 0) {
+      captured.out = [];
+      captured.err = [];
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        json: true,
+      });
+      throw new Error(`unexpected diagnostics: ${captured.out.join("\n")}`);
+    }
+    expect(status.questions).toBe(0);
+    expect(status.outbox_failed).toBe(0);
+    expect(status.quarantined).toBe(0);
+  }, 25_000);
 
   test("drains due operational work while HEAD is already in sync", async () => {
     const f = await makeFixture();
@@ -529,4 +803,49 @@ async function waitForRunningProcessor(
       ledger.value.db.close();
     }
   }, timeoutMs);
+}
+
+async function debugServeState(fixture: Fixture): Promise<string> {
+  const head = await currentSha(fixture.vaultPath);
+  const adopted = await getAdoptedRef(fixture.vaultPath, "main");
+  const outputExists = existsSync(
+    join(fixture.vaultPath, SERVE_CAPTURE_OUTPUT_PATH),
+  );
+  const archiveExists = existsSync(
+    join(fixture.vaultPath, SERVE_CAPTURE_ARCHIVE_PATH),
+  );
+  const ledgerPath = join(fixture.vaultPath, ".dome", "state", "runs.db");
+  const ledger = await openLedgerDb({ path: ledgerPath });
+  if (!ledger.ok) {
+    return `head=${head} adopted=${adopted} output=${outputExists} archive=${archiveExists} ledger=${ledger.error.kind}`;
+  }
+  try {
+    const runs = queryRuns(ledger.value.db, { limit: 100 }).map((run) => ({
+      processorId: run.processorId,
+      status: run.status,
+      triggerKind: run.triggerKind,
+      error: run.error,
+    }));
+    return JSON.stringify({
+      head,
+      adopted,
+      outputExists,
+      archiveExists,
+      runs,
+    });
+  } finally {
+    ledger.value.db.close();
+  }
+}
+
+function outputPath(path: string, dir: string): string {
+  const basename = path.split("/").at(-1) ?? "capture.md";
+  const stem = basename.replace(/\.md$/i, "");
+  const slug = stem
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "capture";
+  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
+  return `${dir}/${slug}-${digest}.md`;
 }

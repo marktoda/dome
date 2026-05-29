@@ -512,6 +512,10 @@ Work:
       plan end to end.
 - [x] Add host-off `sync` and host-on compiler-tick harness fixtures.
       `serve` daemon pickup remains covered by the lower-level CLI E2E suite.
+- [x] Add daemon-mode release-hardening coverage where `dome serve` runs the
+      intake management workflow through the configured command model provider,
+      materializes generated capture/archive files, and exits with clean
+      operational status.
 - [x] Add bundle coverage tests so docs/matrices cannot claim unshipped
       processors are shipped.
 - [x] Add status/doctor/query/export JSON fixtures.

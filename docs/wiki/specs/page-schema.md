@@ -105,6 +105,8 @@ created: 2026-05-20
 updated: 2026-05-27
 sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
 status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
+generated_from: "wiki/generated/intake/example.md" # optional; generated synthesis provenance
+processor: dome.intake.synthesize-capture       # optional; generating processor id
 ---
 ```
 

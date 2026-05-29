@@ -52,7 +52,7 @@ export function renderTrackedCaptureItem(input: {
     case "decision":
       return `- ${input.text}`;
     case "entity":
-      return `- [[${input.text}]]`;
+      return `- ${input.text}`;
     case "source_quote":
       return `> ${input.text}`;
   }

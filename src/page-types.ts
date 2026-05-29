@@ -75,6 +75,8 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       published: "optional",
     }),
     pageTypeDeclaration("synthesis", "dome.default", {
+      generated_from: "optional",
+      processor: "optional",
       status: "optional",
     }),
   ]);
