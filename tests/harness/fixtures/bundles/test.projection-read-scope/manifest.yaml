@@ -9,5 +9,5 @@ processors:
         name: projection-read-scope
     capabilities:
       - kind: read
-        paths: ["public/**"]
+        paths: ["wiki/public/**"]
     module: processors/leaky-view.ts

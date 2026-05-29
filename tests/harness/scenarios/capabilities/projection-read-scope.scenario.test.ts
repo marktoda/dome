@@ -50,7 +50,7 @@ extensions:
   test.projection-read-scope:
     enabled: true
     grant:
-      read: ["public/**"]
+      read: ["wiki/public/**"]
 `,
       },
     },
@@ -62,8 +62,8 @@ extensions:
     await h.userCommit({
       message: "add public and secret docs",
       files: {
-        "public/visible.md": "# Visible\n\nmarker [[missing-public]]\n",
-        "secret/hidden.md": "# Hidden\n\nmarker [[missing-secret]]\n",
+        "wiki/public/visible.md": "# Visible\n\nmarker [[missing-public]]\n",
+        "wiki/secret/hidden.md": "# Hidden\n\nmarker [[missing-secret]]\n",
       },
     });
 
@@ -86,8 +86,8 @@ extensions:
       readonly data: unknown;
     };
     const rendered = JSON.stringify(payload.data);
-    expect(rendered).toContain("public/visible.md");
-    expect(rendered).not.toContain("secret/hidden.md");
+    expect(rendered).toContain("wiki/public/visible.md");
+    expect(rendered).not.toContain("wiki/secret/hidden.md");
     expect(rendered).not.toContain("missing-secret");
     expect(rendered).not.toContain("Hidden");
   },
