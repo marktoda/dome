@@ -82,6 +82,21 @@ processors:
         paths: ["**/*.md"]
     module: processors/stale-dates.ts
 
+  - id: dome.markdown.raw-immutable
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: file.modified
+        pathPattern: raw/**
+      - kind: signal
+        name: file.deleted
+        pathPattern: raw/**
+    capabilities:
+      - kind: read
+        paths: ["raw/**"]
+    module: processors/raw-immutable.ts
+
   - id: dome.markdown.orphan-pages
     version: 0.1.0
     phase: view

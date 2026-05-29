@@ -47,7 +47,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom target)* Raw files are immutable by design; raw-specific broker/adoption enforcement remains planned.
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* Raw files are immutable after creation; broker raw-patch denial plus `dome.markdown.raw-immutable` block committed mutations.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
 
 ## Matrices

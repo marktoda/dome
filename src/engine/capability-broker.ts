@@ -34,6 +34,9 @@
 //     by a granted `owns.path` capability that the emitting processor's
 //     declared capabilities do not include is denied with a
 //     `capability-deny-patch` diagnostic.
+//   - `raw/**` is immutable: any PatchEffect touching a raw path is denied
+//     regardless of declared/granted path reach. Direct user commits that mutate
+//     raw files are blocked separately by `dome.markdown.raw-immutable`.
 //   - Content/user-visible SourceRefs are broker-checked against the
 //     processor's effective `read` grant after the effect-kind-specific
 //     capability check succeeds. This prevents processors from bypassing
@@ -249,13 +252,14 @@ function sourceRefsForReadCheck(effect: Effect): ReadonlyArray<SourceRef> {
  * PatchEffect enforcement. Steps (per the matrix):
  *
  *   1. Extract the unique touched paths from `effect.changes`.
- *   2. If a third party owns any path (any `owns.path` grant whose pattern
+ *   2. Deny `raw/**` unconditionally. Raw sources are immutable.
+ *   3. If a third party owns any path (any `owns.path` grant whose pattern
  *      matches, but not declared by this processor), deny.
- *   3. For `mode: "auto"`:
+ *   4. For `mode: "auto"`:
  *      - If `patch.auto` is effective for every path → allow.
  *      - Else if `patch.propose` is effective for every path → downgrade.
  *      - Else → deny.
- *   4. For `mode: "propose"`:
+ *   5. For `mode: "propose"`:
  *      - If `patch.propose` is effective for every path → allow.
  *      - Else → deny.
  *
@@ -291,6 +295,24 @@ function enforcePatch(
         message:
           "PatchEffect denied: 'owns.region' is planned but not supported in v1. Use 'owns.path' or path-scoped patch grants until generated-region ownership enforcement ships.",
         sourceRefs: [],
+      }),
+    );
+  }
+
+  const rawPath = paths.find(isRawPath);
+  if (rawPath !== undefined) {
+    return deny(
+      diagnosticEffect({
+        severity: "error",
+        code: "capability-deny-patch",
+        message:
+          `PatchEffect denied: raw/ is immutable; processors cannot patch '${rawPath}'. ` +
+          "Create derived wiki pages or inbox archives instead of mutating raw evidence.",
+        sourceRefs: [],
+      }),
+      Object.freeze({
+        capability: effect.mode === "auto" ? "patch.auto" : "patch.propose",
+        resource: rawPath,
       }),
     );
   }
@@ -394,6 +416,10 @@ function uniqueChangedPaths(effect: PatchEffect): ReadonlyArray<string> {
     paths.add(change.path);
   }
   return Object.freeze([...paths]);
+}
+
+function isRawPath(path: string): boolean {
+  return path === "raw" || path.startsWith("raw/");
 }
 
 // ----- FactEffect enforcement ----------------------------------------------

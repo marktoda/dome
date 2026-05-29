@@ -464,6 +464,7 @@ extensions:
         - "**/*.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
+        - "raw/**"
       patch.auto:
         - "**/*.md"
       question.ask: true

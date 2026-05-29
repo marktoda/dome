@@ -152,6 +152,23 @@ describe("PatchEffect (mode: auto)", () => {
     expect(r.diagnostic.code).toBe("capability-deny-patch");
     expect(r.diagnostic.message).toContain("../secret.md");
   });
+
+  test("denies raw paths even with broad patch.auto grant", () => {
+    const auto: Capability = { kind: "patch.auto", paths: ["**"] };
+    const r = enforceCapability(
+      patchTouching("raw/example.md"),
+      [read, auto],
+      [read, auto],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-patch");
+    expect(r.diagnostic.message).toContain("raw/ is immutable");
+    expect(r.deniedCapability).toEqual({
+      capability: "patch.auto",
+      resource: "raw/example.md",
+    });
+  });
 });
 
 describe("PatchEffect (mode: propose)", () => {
@@ -178,6 +195,23 @@ describe("PatchEffect (mode: propose)", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.message).toContain("private/y.md");
+  });
+
+  test("denies raw paths even with broad patch.propose grant", () => {
+    const propose: Capability = { kind: "patch.propose", paths: ["**"] };
+    const r = enforceCapability(
+      proposePatchTouching("raw/example.md"),
+      [read, propose],
+      [read, propose],
+    );
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-patch");
+    expect(r.diagnostic.message).toContain("raw/ is immutable");
+    expect(r.deniedCapability).toEqual({
+      capability: "patch.propose",
+      resource: "raw/example.md",
+    });
   });
 });
 

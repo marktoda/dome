@@ -17,6 +17,7 @@ extensions:
         - "wiki/**/*.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
+        - "raw/**"
       patch.auto:
         - "wiki/**/*.md"
       question.ask: true

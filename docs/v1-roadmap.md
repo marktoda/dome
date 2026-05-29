@@ -69,7 +69,7 @@ Shipped:
       `dome export-context`, `dome today`, `dome prep`, `dome agenda`,
       `dome run`, and `dome rebuild`.
 - [x] Shipped first-party bundle processors:
-      `dome.markdown` (7 processors),
+      `dome.markdown` (8 processors),
       `dome.graph` (2),
       `dome.search` (3),
       `dome.health` (6),
@@ -664,6 +664,9 @@ Work:
 - [x] Add CLI shell-shape lockstep coverage so every shipped command-triggered
       view processor has either a dedicated Commander binding or a documented
       `dome run <command>` path.
+- [x] Enforce RAW_IS_IMMUTABLE with broker-level raw patch denial plus
+      `dome.markdown.raw-immutable` adoption blocking for committed raw
+      modifications/deletions.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
@@ -692,7 +695,7 @@ Required for daily value:
 
 | Bundle | Status | V1 responsibility |
 |---|---|---|
-| `dome.markdown` | v1 shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
+| `dome.markdown` | v1 shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, raw immutability blocking, page schemas |
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
 | `dome.health` | v1 shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |

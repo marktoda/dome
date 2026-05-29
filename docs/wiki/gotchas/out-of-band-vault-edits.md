@@ -32,7 +32,7 @@ See [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] for the formal correc
 - *Compiler host off during a burst of native writes.* The host doesn't catch commits in real time, but `dome sync` at next startup catches up by constructing a single Proposal from the accumulated `adopted..HEAD` range. Cost grows with time-since-sync (see [[wiki/gotchas/daemon-off-while-vault-mutating]]).
 - *Mid-merge state.* Git in the middle of a merge or rebase can have unmerged conflict markers in files. Explicit merge/rebase refusal is planned (see [[wiki/gotchas/dirty-git-state-at-reconcile]]) so conflict-marker content doesn't propagate as if it were normal content. The user resolves the merge, commits, and sync proceeds.
 - *Sync layers (Syncthing, git pull from a peer, iCloud Drive).* Generate native writes or commits when receiving changes from other machines. Each device's compiler host constructs Proposals from its own branch/adopted view.
-- *Raw write attempt.* A user manually edits and commits a `raw/` file. Per [[wiki/invariants/RAW_IS_IMMUTABLE]], v1 should block raw rewrites at adoption with a `raw.immutable` diagnostic. That hard enforcement remains planned; until then, raw immutability is a design invariant and review target rather than a complete runtime fence.
+- *Raw write attempt.* A user manually edits and commits a `raw/` file. Per [[wiki/invariants/RAW_IS_IMMUTABLE]], v1 blocks raw rewrites at adoption with a `raw.immutable` diagnostic. New raw files can be committed; existing raw evidence cannot be modified or deleted.
 
 **User-facing expectations:**
 

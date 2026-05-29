@@ -60,6 +60,8 @@ Permits `PatchEffect` with `mode: "auto"` for paths matching the glob. Auto-mode
 
 **Downgrade behavior:** a `mode: "auto"` PatchEffect whose touched paths exceed `patch.auto` capability is downgraded to `mode: "propose"` and emits a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic. In adoption, that proposed patch then blocks for review; outside adoption it follows the phase's propose route.
 
+**Raw exception:** `raw/**` is not grantable write territory in v1. The broker denies both `patch.auto` and `patch.propose` effects touching `raw/**` even when a processor has otherwise broad path reach. Direct committed raw mutations are blocked separately by [[wiki/invariants/RAW_IS_IMMUTABLE]]'s adoption processor.
+
 ### `owns.region`
 
 Marker-delimited region ownership. A processor that `owns.region: ["dome.daily.morning_brief"]` is the only one allowed to write inside `<!-- dome:region id="dome.daily.morning_brief" --> ... <!-- /dome:region -->` markers. Another processor's patch that touches the region is rejected.
