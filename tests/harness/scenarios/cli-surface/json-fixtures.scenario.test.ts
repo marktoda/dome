@@ -29,6 +29,10 @@ const STATUS_KEYS = Object.freeze([
   "pending_runs",
   "failed_runs",
   "recent_processor_runs",
+  "serve_status",
+  "serve_pid",
+  "serve_branch",
+  "serve_updated_at",
   "diagnostics",
   "questions",
   "outbox_pending",
@@ -131,6 +135,7 @@ scenario(
     expect(status["adopted_diverged"]).toBe(false);
     expect(status["content_pages"]).toBe(1);
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);
+    expect(status["serve_status"]).toBe("off");
 
     const doctor = parseJson(await h.runCli(["doctor", "--json"]));
     expect(Object.keys(doctor)).toEqual([...DOCTOR_KEYS]);

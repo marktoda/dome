@@ -268,6 +268,9 @@ Work:
 - [x] Decide whether `serve --exclusive` belongs in v1: no separate flag for
       v1; branch-level compiler-host locking is always on.
 - [x] Add explicit quiet output mode.
+- [x] Surface foreground `dome serve` liveness in `dome status` via a
+      host-owned heartbeat file, reporting `running`, `stale`, or `off`
+      without using the per-tick compiler-host lock as a daemon marker.
 
 Acceptance:
 

@@ -42,6 +42,11 @@ import {
 } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo, readBlob } from "../../src/git";
+import {
+  createServeHeartbeatHandle,
+  serveHeartbeatPath,
+  writeServeHeartbeat,
+} from "../../src/engine/compiler-host-heartbeat";
 import { openQuarantineStore } from "../../src/engine/quarantine-store";
 import { openLedgerDb } from "../../src/ledger/db";
 import {
@@ -87,6 +92,10 @@ const STATUS_JSON_KEYS = Object.freeze([
   "pending_runs",
   "failed_runs",
   "recent_processor_runs",
+  "serve_status",
+  "serve_pid",
+  "serve_branch",
+  "serve_updated_at",
   "diagnostics",
   "questions",
   "outbox_pending",
@@ -987,6 +996,7 @@ describe("runStatus", () => {
     expect(out).toContain("questions 0");
     expect(out).toContain("outbox 0 pending / 0 failed");
     expect(out).toContain("quarantine 0");
+    expect(out).toContain("serve off");
   });
 
   test("--json mode emits a parseable JSON object with expected keys", async () => {
@@ -1017,11 +1027,60 @@ describe("runStatus", () => {
     expect(parsed["pending_runs"]).toBe(0);
     expect(parsed["failed_runs"]).toBe(0);
     expect(parsed["recent_processor_runs"]).toEqual([]);
+    expect(parsed["serve_status"]).toBe("off");
+    expect(parsed["serve_pid"]).toBeNull();
+    expect(parsed["serve_branch"]).toBeNull();
+    expect(parsed["serve_updated_at"]).toBeNull();
     expect(parsed["diagnostics"]).toBe(0);
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json mode reports stale serve heartbeat", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await writeServeHeartbeat({
+      vaultPath: f.vaultPath,
+      handle: createServeHeartbeatHandle(
+        new Date("2026-01-01T00:00:00.000Z"),
+      ),
+      branch: "main",
+      pollIntervalMs: 20,
+      operationalIntervalMs: 20,
+      now: new Date(Date.now() - 10_000),
+    });
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["serve_status"]).toBe("stale");
+    expect(parsed["serve_pid"]).toBe(process.pid);
+    expect(parsed["serve_branch"]).toBe("main");
+    expect(typeof parsed["serve_updated_at"]).toBe("string");
+  });
+
+  test("--json mode reports invalid serve heartbeat as stale", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await writeFile(serveHeartbeatPath(f.vaultPath), "not json\n", "utf8");
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["serve_status"]).toBe("stale");
+    expect(parsed["serve_pid"]).toBeNull();
+    expect(parsed["serve_branch"]).toBeNull();
+    expect(parsed["serve_updated_at"]).toBeNull();
   });
 
   test("--json mode reports sync drift and pending commit count", async () => {

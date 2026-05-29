@@ -25,6 +25,8 @@
 //   - failed_runs:      count of ledger rows in `status='failed'`.
 //   - recent_processor_runs:
 //                       bounded per-processor summary from the recent run ledger.
+//   - serve_status:     whether a foreground `dome serve` heartbeat is running,
+//                       stale, or absent.
 //   - diagnostics:      count of unresolved projection diagnostics.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
@@ -46,6 +48,10 @@ import { resolve } from "node:path";
 
 import { countCommitsSince, currentSha, isAncestor } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
+import {
+  readServeHeartbeatStatus,
+  type ServeHeartbeatStatus,
+} from "../../engine/compiler-host-heartbeat";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
@@ -104,6 +110,10 @@ type StatusSnapshot = {
   readonly pending_runs: number;
   readonly failed_runs: number;
   readonly recent_processor_runs: ReadonlyArray<ProcessorRunSummary>;
+  readonly serve_status: ServeHeartbeatStatus["status"];
+  readonly serve_pid: number | null;
+  readonly serve_branch: string | null;
+  readonly serve_updated_at: string | null;
   readonly diagnostics: number;
   readonly questions: number;
   readonly outbox_pending: number;
@@ -187,6 +197,7 @@ export async function runStatus(
         limit: RECENT_PROCESSOR_RUN_LIMIT,
       }),
     );
+    const serve = await readServeHeartbeatStatus({ vaultPath });
     const diagnostics = queryDiagnostics(runtime.projectionDb).length;
     const questions = queryQuestions(runtime.projectionDb, {
       resolved: false,
@@ -221,6 +232,10 @@ export async function runStatus(
       pending_runs,
       failed_runs,
       recent_processor_runs,
+      serve_status: serve.status,
+      serve_pid: serve.pid,
+      serve_branch: serve.branch,
+      serve_updated_at: serve.updatedAt,
       diagnostics,
       questions,
       outbox_pending,
@@ -264,11 +279,20 @@ function printStatusText(s: StatusSnapshot): void {
     `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${s.inbox_pages} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
   );
   console.log(
-    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs}`,
+    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
   );
   console.log(
     `health    diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
+}
+
+function formatServe(s: StatusSnapshot): string {
+  if (s.serve_status === "off") return "off";
+  const branch =
+    s.serve_branch !== null && s.serve_branch !== s.branch
+      ? ` on ${s.serve_branch}`
+      : "";
+  return `${s.serve_status}${branch}`;
 }
 
 function shortOid(oid: string | null, fallback: string): string {

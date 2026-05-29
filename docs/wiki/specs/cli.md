@@ -218,14 +218,14 @@ vault     /Users/mark/vaults/work
 git       branch main | head 41a98c2 | adopted 41a98c2 | sync ok | pending 0
 draft     0 modified | 0 untracked
 content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
-engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0
+engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
 health    diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
 ```
 
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
@@ -240,7 +240,10 @@ occurrences in those markdown files; raw file count and bytes under
 adopted..HEAD when the adopted ref is initialized and ancestral to HEAD; and
 dirty working-tree counts excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
-reports. Use `dome inspect diagnostics`, `dome inspect questions`,
+reports. `serve_status` is read from the foreground host heartbeat file and is
+`running`, `stale`, or `off`; stale means the host did not exit cleanly or has
+not refreshed its heartbeat within the host's configured cadence. Use
+`dome inspect diagnostics`, `dome inspect questions`,
 `dome inspect outbox`, or `dome inspect runs` for details. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and
 [[wiki/specs/foreground-compiler-workflow]] for the normal session pulse.
@@ -562,7 +565,11 @@ Composition (v1.0):
 5. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 6. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
 7. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
-8. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
+8. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
+   can report whether the foreground compiler appears `running`, `stale`, or
+   `off`. The heartbeat is observability only; the branch-level compiler-host
+   lock remains the concurrency guard.
+9. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
    outbox handler attempts receive the host cancellation signal and remain
    pending without consuming retry budget, then the host closes the runtime
    (releases the projection, answers, ledger, and outbox SQLite handles) and

@@ -45,6 +45,12 @@ import {
   type DriftResult,
 } from "../../engine/compiler-host";
 import {
+  clearServeHeartbeat,
+  createServeHeartbeatHandle,
+  writeServeHeartbeat,
+  type ServeHeartbeatHandle,
+} from "../../engine/compiler-host-heartbeat";
+import {
   formatFilteredAdoptEvent,
   resolveShippedBundlesRoot,
 } from "./sync-shared";
@@ -179,6 +185,15 @@ export async function runServe(
       `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms${verbose ? ", verbose" : ""})`,
     );
   }
+  const heartbeat = createServeHeartbeatHandle();
+  await writeServeHeartbeat({
+    vaultPath,
+    handle: heartbeat,
+    branch: startupBranch,
+    pollIntervalMs,
+    operationalIntervalMs:
+      opts.operationalIntervalMs ?? DEFAULT_OPERATIONAL_INTERVAL_MS,
+  });
 
   // ----- 5. Register cancellation handlers ----------------------------------
   // A single `AbortController` unifies three cancel paths: SIGINT, SIGTERM,
@@ -208,6 +223,8 @@ export async function runServe(
       operationalIntervalMs:
         opts.operationalIntervalMs ?? DEFAULT_OPERATIONAL_INTERVAL_MS,
       cancel: controller.signal,
+      heartbeat,
+      initialBranch: startupBranch,
       verbose,
       quiet,
       ...(options.filterProcessor !== undefined
@@ -224,7 +241,11 @@ export async function runServe(
     if (opts.signal !== undefined) {
       opts.signal.removeEventListener("abort", onAbort);
     }
-    await runtime.close();
+    try {
+      await runtime.close();
+    } finally {
+      await clearServeHeartbeat({ vaultPath, handle: heartbeat });
+    }
   }
 
   if (!quiet) {
@@ -258,6 +279,8 @@ async function pollLoop(input: {
   readonly pollIntervalMs: number;
   readonly operationalIntervalMs: number;
   readonly cancel: AbortSignal;
+  readonly heartbeat: ServeHeartbeatHandle;
+  readonly initialBranch: string;
   readonly verbose: boolean;
   readonly quiet: boolean;
   readonly filterProcessor?: string | undefined;
@@ -268,6 +291,8 @@ async function pollLoop(input: {
     pollIntervalMs,
     operationalIntervalMs,
     cancel,
+    heartbeat,
+    initialBranch,
     verbose,
     quiet,
     filterProcessor,
@@ -278,9 +303,18 @@ async function pollLoop(input: {
   // gets one notification on transition, not one per poll tick.
   let lastKind: string | null = null;
   let nextOperationalAtMs = 0;
+  let heartbeatBranch = initialBranch;
 
   while (!cancel.aborted) {
     const drift = await detectDrift(vaultPath);
+    heartbeatBranch = branchForHeartbeat(drift, heartbeatBranch);
+    await writeServeHeartbeat({
+      vaultPath,
+      handle: heartbeat,
+      branch: heartbeatBranch,
+      pollIntervalMs,
+      operationalIntervalMs,
+    });
     if (drift.kind === "drift" || drift.kind === "in-sync") {
       if (verbose && !quiet) {
         if (drift.kind === "drift") {
@@ -328,6 +362,14 @@ async function pollLoop(input: {
     if (cancel.aborted) break;
     await sleep(pollIntervalMs, cancel);
   }
+}
+
+function branchForHeartbeat(drift: DriftResult, fallback: string): string {
+  if (drift.kind === "drift") return drift.info.branch;
+  if (drift.kind === "in-sync" || drift.kind === "diverged") {
+    return drift.branch;
+  }
+  return fallback;
 }
 
 /**

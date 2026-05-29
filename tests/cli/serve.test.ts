@@ -315,6 +315,30 @@ describe("runServe smoke", () => {
       2000,
     );
 
+    captured.out = [];
+    captured.err = [];
+    const runningStatusCode = await runStatus({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    expect(runningStatusCode).toBe(0);
+    const runningStatusBlob = captured.out.find((line) =>
+      line.includes("\"vault\"")
+    );
+    expect(runningStatusBlob).toBeDefined();
+    if (runningStatusBlob === undefined) return;
+    const runningStatus = JSON.parse(runningStatusBlob) as {
+      readonly serve_status: string;
+      readonly serve_pid: number | null;
+      readonly serve_branch: string | null;
+    };
+    expect(runningStatus.serve_status).toBe("running");
+    expect(runningStatus.serve_pid).toBe(process.pid);
+    expect(runningStatus.serve_branch).toBe("main");
+    captured.out = [];
+    captured.err = [];
+
     // Make a second commit. The daemon should detect drift on the next
     // poll and run adoption against `(initialSha, newSha)`.
     await writeFile(join(f.vaultPath, "wiki/new.md"), VALID_CONCEPT_PAGE);
@@ -355,6 +379,7 @@ describe("runServe smoke", () => {
       readonly outbox_pending: number;
       readonly outbox_failed: number;
       readonly quarantined: number;
+      readonly serve_status: string;
     };
     expect(status.branch).toBe("main");
     expect(status.head).toBe(newSha);
@@ -376,6 +401,7 @@ describe("runServe smoke", () => {
     expect(status.outbox_pending).toBe(0);
     expect(status.outbox_failed).toBe(0);
     expect(status.quarantined).toBe(0);
+    expect(status.serve_status).toBe("off");
 
     // Open the ledger READ-ONLY through a separate handle after the host's
     // runtime closes. The load-bearing assertions above cover the host and
