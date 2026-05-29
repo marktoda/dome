@@ -1,0 +1,14 @@
+id: test.slow-answer-handler
+version: 0.1.0
+processors:
+  - id: test.slow-answer-handler.wait-for-abort
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "test.slow-answer-handler:"
+    capabilities: []
+    execution:
+      class: background
+      timeoutMs: 600000
+    module: processors/wait-for-abort.ts

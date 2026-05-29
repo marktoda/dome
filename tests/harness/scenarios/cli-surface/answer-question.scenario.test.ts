@@ -29,6 +29,14 @@ const INVALID_ANSWER_HANDLER_BUNDLE_ROOT = join(
   "bundles",
   "test.invalid-answer-handler",
 );
+const SLOW_ANSWER_HANDLER_BUNDLE_ROOT = join(
+  __dirname,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.slow-answer-handler",
+);
 
 scenario(
   {
@@ -273,5 +281,92 @@ extensions:
     expect(durableAnswer?.last_handler_error).toContain(
       "Processor returned invalid output",
     );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome answer applies vault processor timeout cap to handlers",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "answer" },
+    ],
+    harness: {
+      bundles: [
+        {
+          id: "test.slow-answer-handler",
+          root: SLOW_ANSWER_HANDLER_BUNDLE_ROOT,
+        },
+      ],
+      initialFiles: {
+        ".dome/config.yaml": `
+engine:
+  processor_timeout_ms: 5
+extensions:
+  test.slow-answer-handler:
+    enabled: true
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+    const adopted = await h.refs.adopted();
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+
+    const ref = sourceRef({
+      commit: commitOid(adopted),
+      path: ".dome/config.yaml",
+    });
+    insertQuestion(h.projection, {
+      effect: questionEffect({
+        question: "Trigger slow handler?",
+        options: ["yes"],
+        sourceRefs: [ref],
+        idempotencyKey: "test.slow-answer-handler:timeout",
+      }),
+      processorId: "test.ask",
+      adoptedCommit: commitOid(adopted),
+    });
+
+    const answer = await h.runCli(["answer", "1", "yes", "--json"]);
+    expect(answer.exitCode).toBe(0);
+    const body = JSON.parse(answer.stdout) as {
+      readonly handlers: {
+        readonly status: string;
+        readonly runs: ReadonlyArray<{
+          readonly processor_id: string;
+          readonly execution_status: string;
+          readonly execution_error?: {
+            readonly code: string;
+            readonly message: string;
+          };
+        }>;
+      };
+    };
+    expect(body.handlers.status).toBe("failed");
+    expect(body.handlers.runs).toEqual([
+      expect.objectContaining({
+        processor_id: "test.slow-answer-handler.wait-for-abort",
+        execution_status: "timed_out",
+        execution_error: expect.objectContaining({
+          code: "processor.timeout",
+          message: expect.stringContaining("5ms"),
+        }),
+      }),
+    ]);
+
+    const row = await h
+      .expectLedger({
+        processorId: "test.slow-answer-handler.wait-for-abort",
+        status: "timed_out",
+      })
+      .toHaveExactlyOne();
+    expect(JSON.parse(row.error ?? "{}").message).toContain("5ms");
   },
 );

@@ -543,6 +543,7 @@ export async function runAnswerHandlersForQuestion(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    executionCap: opts.runtime.config.engine.executionCap,
     operational: opts.runtime.operationalQueryView,
     ...(opts.runtime.modelProvider !== undefined
       ? { modelProvider: opts.runtime.modelProvider }

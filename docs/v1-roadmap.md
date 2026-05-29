@@ -104,7 +104,8 @@ V1 capability ledger:
       questions and synthesis remain.
 - [x] User-value views: `dome today`, `dome prep`, `dome lint`, and
       `dome export-context` are shipped.
-- [ ] V1 end-to-end acceptance harness and real-vault dogfood run.
+- [x] V1 end-to-end acceptance harness.
+- [ ] Real-vault dogfood run.
 
 ## Milestone 0 - Plan and Spec Coherence
 

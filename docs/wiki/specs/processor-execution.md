@@ -17,7 +17,7 @@ Shipped in the current v1 runtime:
 
 - `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
-- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, durable JobEffect drains, and deterministic projection rebuild processors.
+- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, answer handlers, durable JobEffect drains, and deterministic projection rebuild processors.
 - `src/engine/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs and schedule-triggered view runs are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
@@ -83,10 +83,10 @@ failure is retryable, and repeated retryable timeouts can contribute to
 garden/scheduled quarantine.
 
 The same resolved timeout policy applies no matter which engine subsystem
-initiates the run. Schedule-triggered processors, durable jobs, direct
-adoption/garden/view runners, and projection-rebuild dispatch all call the
-shared runtime boundary with the vault cap from `.dome/config.yaml`; none of
-those paths owns a private timeout interpretation.
+initiates the run. Schedule-triggered processors, answer handlers, durable
+jobs, direct adoption/garden/view runners, and projection-rebuild dispatch all
+call the shared runtime boundary with the vault cap from `.dome/config.yaml`;
+none of those paths owns a private timeout interpretation.
 
 The executor-created invocation signal is the only signal a processor observes.
 `ctx.signal` and `ctx.modelInvoke` share that lifecycle: when the executor
@@ -211,7 +211,7 @@ Already pinned:
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.
 - Quarantine tests assert three consecutive retryable garden failures quarantine matching triggers, subsequent invocations skip with diagnostics, the skipped row is ledgered, and the file-backed quarantine store survives reopen.
 - Model-invoke tests assert missing-provider denial, allowlist denial, provider cost capture, valid structured JSON, invalid JSON, schema mismatch, explicit structured retry, provider response validation, pre-aborted invocation denial before provider calls, daily budget denial before and after provider calls, executor preservation of model error codes, ledgered model cost on failed structured-output runs, and quarantine after repeated retryable model timeouts.
-- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, explicit `drainOperationalWork()`, source-backed model PatchEffect routing/rejection, and vault-level timeout caps on scheduled dispatch.
+- Harness scenarios assert scheduled `model.invoke` processors run through the live operational pump, including model-output failure, cost ledgering, daily budget denial, in-sync `tick()` drains, explicit `drainOperationalWork()`, source-backed model PatchEffect routing/rejection, and vault-level timeout caps on scheduled and answer-triggered dispatch.
 
 Pending:
 

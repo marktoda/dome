@@ -115,7 +115,9 @@ dome inspect cost                        # per-processor spend, current day + la
 dome doctor                              # reports orphan running rows and other health findings
 ```
 
-The ledger is also queryable via the MCP server's `dome.runs.list` tool when MCP is mounted (per [[wiki/specs/mcp-surface]]).
+The planned MCP adapter does not expose direct ledger queries. Per
+[[wiki/specs/mcp-surface]], MCP stays a Recall + view-command adapter; run
+ledger forensics remain on the CLI operational surface.
 
 ## Retention
 
