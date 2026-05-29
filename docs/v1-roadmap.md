@@ -701,6 +701,10 @@ Work:
       attention reasons, especially `sync_needed`, `projection_stale`,
       diagnostics, questions, failed runs, failed outbox rows, quarantines,
       and dirty draft state.
+- [x] Remove direct `console.*` writes from engine/substrate modules and pin
+      the host boundary with a structural test, so future CLI, HTTP, MCP, and
+      embedded hosts own rendering while engine code returns structured
+      diagnostics/results.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

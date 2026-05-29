@@ -106,7 +106,7 @@ export async function runAnswerHandlers(opts: {
         `Answer-handler dispatch crashed for question ${opts.question.id}: ${msg}`,
       sourceRefs: opts.question.effect.sourceRefs,
     });
-    console.warn(`dome: answer-handler dispatch crashed: ${msg}`);
+    const diagnostics: DiagnosticEffect[] = [crashDiag];
     try {
       await recordDiagnosticsViaSink({
         sinks: opts.sinks,
@@ -117,8 +117,13 @@ export async function runAnswerHandlers(opts: {
     } catch (recordError) {
       const recordMsg =
         recordError instanceof Error ? recordError.message : String(recordError);
-      console.warn(
-        `dome: answer dispatch diagnostic was not recorded: ${recordMsg}`,
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "error",
+          code: "answer.dispatch-diagnostic-record-failed",
+          message: `Answer dispatch diagnostic was not recorded: ${recordMsg}`,
+          sourceRefs: opts.question.effect.sourceRefs,
+        }),
       );
     }
     return frozenResult({
@@ -126,7 +131,7 @@ export async function runAnswerHandlers(opts: {
       runs: [],
       subProposalCount: 0,
       rejectedPatchCount: 0,
-      diagnostics: [crashDiag],
+      diagnostics,
     });
   }
 }

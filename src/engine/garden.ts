@@ -193,11 +193,10 @@ export type AdoptSubProposalFn = (
  * sub-adoption throws) are caught and synthesized into a
  * `garden.crashed` DiagnosticEffect added to the result's `diagnostics`
  * array. Adoption has already completed by the time garden runs, so a
- * crash here doesn't roll back vault state — but the operator should
- * see the crash, hence the synthesis + an stderr line. The crash
- * diagnostic is in-memory only (not written to `projection.db`) since
- * there's no concrete `processorId` + `runId` to anchor a row to; a
- * v1.x polish may attach it to a synthetic `engine.garden` run.
+ * crash here doesn't roll back vault state. The crash diagnostic is returned
+ * in-memory and the orchestrator attempts to persist it against the synthetic
+ * `engine.garden` processor id through the injected sinks; host surfaces own
+ * any stderr/log rendering.
  */
 export async function runGardenPhase(opts: {
   readonly vault: EngineVault;
@@ -245,12 +244,7 @@ export async function runGardenPhase(opts: {
         `depth=${cascadeDepth}: ${msg}`,
       sourceRefs: [],
     });
-    // Operator visibility — adoption has already advanced; without this
-    // log the crash is invisible at the CLI surface.
-    console.warn(
-      `dome: garden phase crashed (proposal=${opts.proposal.id}, ` +
-        `depth=${cascadeDepth}): ${msg}`,
-    );
+    const diagnostics: DiagnosticEffect[] = [crashDiag];
     try {
       await recordDiagnosticsViaSink({
         sinks: opts.sinks,
@@ -261,8 +255,13 @@ export async function runGardenPhase(opts: {
     } catch (recordError) {
       const recordMsg =
         recordError instanceof Error ? recordError.message : String(recordError);
-      console.warn(
-        `dome: garden crash diagnostic was not recorded: ${recordMsg}`,
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "error",
+          code: "garden.crash-diagnostic-record-failed",
+          message: `Garden crash diagnostic was not recorded: ${recordMsg}`,
+          sourceRefs: [],
+        }),
       );
     }
     return frozenResult({
@@ -270,7 +269,7 @@ export async function runGardenPhase(opts: {
       runs: [],
       subProposalCount: 0,
       rejectedPatchCount: 0,
-      diagnostics: [crashDiag],
+      diagnostics,
       cascadeDepth,
     });
   }

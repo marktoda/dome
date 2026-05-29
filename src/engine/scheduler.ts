@@ -166,7 +166,7 @@ export async function runScheduler(opts: {
       message: `Scheduler crashed during runScheduler: ${msg}`,
       sourceRefs: [],
     });
-    console.warn(`dome: scheduler crashed: ${msg}`);
+    const diagnostics: DiagnosticEffect[] = [crashDiag];
     try {
       await recordDiagnosticsViaSink({
         sinks: opts.sinks,
@@ -177,14 +177,19 @@ export async function runScheduler(opts: {
     } catch (recordError) {
       const recordMsg =
         recordError instanceof Error ? recordError.message : String(recordError);
-      console.warn(
-        `dome: scheduler crash diagnostic was not recorded: ${recordMsg}`,
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "error",
+          code: "scheduler.crash-diagnostic-record-failed",
+          message: `Scheduler crash diagnostic was not recorded: ${recordMsg}`,
+          sourceRefs: [],
+        }),
       );
     }
     return Object.freeze({
       fired: Object.freeze([]),
       skipped: Object.freeze([]),
-      diagnostics: Object.freeze([crashDiag]),
+      diagnostics: Object.freeze(diagnostics),
     });
   }
 }

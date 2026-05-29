@@ -873,13 +873,6 @@ function sinksForRuntime(
         ...(now !== undefined ? { now } : {}),
       });
 
-      if (result === null) {
-        console.warn(
-          `dome: applyPatch dropped — patch from ${processorId} did not apply ` +
-            `against candidate ${candidate.slice(0, 12)}`,
-        );
-      }
-
       return result;
     };
 
@@ -1031,11 +1024,5 @@ function makeAdoptSubProposal(opts: {
  * answer, job, or operational routing; phase compatibility should reject those
  * effects before the sink is called.
  */
-const captureViewPlaceholder: ApplyEffectSinks["captureView"] = async ({
-  processorId,
-}) => {
-  console.warn(
-    `dome: ViewEffect from ${processorId} dropped — compiler-host ` +
-      "routes do not render view output.",
-  );
-};
+const captureViewPlaceholder: ApplyEffectSinks["captureView"] =
+  async () => undefined;
