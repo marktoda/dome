@@ -52,6 +52,8 @@ type FileChange =
 
 **Why whole-content instead of a unified diff?** Earlier drafts of this spec described `patch` as a `UnifiedDiff` string. The implementation chose whole-content writes because (a) the engine's applier is pure git plumbing — it builds a new tree by overlaying blob OIDs onto the candidate's tree, so it never needed a diff library, and (b) the unified-diff shape introduced an entire class of "hunk failed to apply" failure modes (driven by content drift between when the processor ran and when the engine applied) that the whole-content shape simply doesn't have. Processors that need to surface a textual diff to the user (e.g., `dome lint --apply`) compute it themselves against the candidate's blob, where the side-by-side render is a presentation concern rather than an applier prerequisite.
 
+Patch paths must resolve to a coherent git tree shape. The engine rejects file/directory collisions explicitly: a PatchEffect cannot write `a/b.md` when `a` is already a file, cannot write file `a` over an existing directory `a/`, and cannot address the same path as both a file and directory within one effect. Processors that need to restructure a path across the file/directory boundary must stage that as separate, reviewable work rather than relying on implicit subtree deletion.
+
 PatchEffect `sourceRefs` are not globally non-empty because some deterministic processors create purely generated files with no specific evidence span. A processor with an effective `model.invoke` grant is stricter: every PatchEffect from that run must carry at least one SourceRef. The executor enforces that as output policy before the broker routes the effect, and the broker then checks every referenced path against effective `read`.
 
 **Routing:**

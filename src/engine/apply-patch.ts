@@ -260,6 +260,10 @@ async function rebuildTreeWithChanges(opts: {
     if (existing === undefined) subtreeChanges.set(head, [nested]);
     else existing.push(nested);
   }
+  assertNoFileDirectoryCollisions({
+    leafNames: new Set([...leafWrites.keys(), ...leafDeletes]),
+    subtreeNames: new Set(subtreeChanges.keys()),
+  });
 
   // Read the current tree's entries.
   const current = await git.readTree({ fs, dir: root, oid: treeOid });
@@ -279,6 +283,9 @@ async function rebuildTreeWithChanges(opts: {
       continue;
     }
     if (leafWrites.has(entry.path)) {
+      if (entry.type === "tree") {
+        throw pathCollisionError(entry.path, "write-file-over-directory");
+      }
       const blobOid = leafWrites.get(entry.path);
       if (blobOid === undefined) continue;
       newEntries.push({
@@ -290,7 +297,10 @@ async function rebuildTreeWithChanges(opts: {
       handled.add(entry.path);
       continue;
     }
-    if (subtreeChanges.has(entry.path) && entry.type === "tree") {
+    if (subtreeChanges.has(entry.path)) {
+      if (entry.type !== "tree") {
+        throw pathCollisionError(entry.path, "write-under-file");
+      }
       const nested = subtreeChanges.get(entry.path);
       if (nested === undefined) continue;
       const newSubOid = await rebuildTreeWithChanges({
@@ -375,6 +385,10 @@ async function buildTreeFromScratch(opts: {
     if (existing === undefined) subtreeChanges.set(head, [nested]);
     else existing.push(nested);
   }
+  assertNoFileDirectoryCollisions({
+    leafNames: new Set(leafWrites.keys()),
+    subtreeNames: new Set(subtreeChanges.keys()),
+  });
 
   if (leafWrites.size === 0 && subtreeChanges.size === 0) return null;
 
@@ -396,6 +410,29 @@ async function buildTreeFromScratch(opts: {
 
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return git.writeTree({ fs, dir: root, tree: entries });
+}
+
+function assertNoFileDirectoryCollisions(input: {
+  readonly leafNames: ReadonlySet<string>;
+  readonly subtreeNames: ReadonlySet<string>;
+}): void {
+  for (const name of input.leafNames) {
+    if (input.subtreeNames.has(name)) {
+      throw pathCollisionError(name, "same-patch-file-and-directory");
+    }
+  }
+}
+
+function pathCollisionError(
+  path: string,
+  kind:
+    | "same-patch-file-and-directory"
+    | "write-file-over-directory"
+    | "write-under-file",
+): Error {
+  return new Error(
+    `applyPatchToCandidate: file/directory path collision at '${path}' (${kind}).`,
+  );
 }
 
 // ----- path helpers ---------------------------------------------------------

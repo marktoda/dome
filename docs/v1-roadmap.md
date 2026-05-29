@@ -543,6 +543,8 @@ Work:
       garden/view dispatch is cancelled through the executor signal, adoption
       work is awaited for atomicity, and terminal run rows are written before
       handle release.
+- [x] Reject PatchEffect file/directory path collisions at the tree rewrite
+      boundary instead of producing duplicate or invalid git tree entries.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -224,6 +224,88 @@ describe("applyPatchToCandidate", () => {
     expect(existing).toBe("existing\n");
   });
 
+  test("writing under an existing file rejects with a path-collision error", async () => {
+    const f = await makeFixture({ "wiki/topic": "plain file\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [
+        {
+          kind: "write",
+          path: "wiki/topic/detail.md",
+          content: "nested\n",
+        },
+      ],
+      reason: "invalid file to directory conversion",
+      sourceRefs: [],
+    });
+
+    await expect(
+      applyPatchToCandidate({
+        vaultPath: f.vaultPath,
+        candidate: f.baseCandidate,
+        patch: effect,
+        runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+      }),
+    ).rejects.toThrow("file/directory path collision");
+  });
+
+  test("writing a file over an existing directory rejects with a path-collision error", async () => {
+    const f = await makeFixture({ "wiki/topic/detail.md": "nested\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [
+        {
+          kind: "write",
+          path: "wiki/topic",
+          content: "plain file\n",
+        },
+      ],
+      reason: "invalid directory to file conversion",
+      sourceRefs: [],
+    });
+
+    await expect(
+      applyPatchToCandidate({
+        vaultPath: f.vaultPath,
+        candidate: f.baseCandidate,
+        patch: effect,
+        runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+      }),
+    ).rejects.toThrow("file/directory path collision");
+  });
+
+  test("same patch cannot address one path as both file and directory", async () => {
+    const f = await makeFixture({});
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [
+        { kind: "write", path: "wiki/topic", content: "plain file\n" },
+        {
+          kind: "write",
+          path: "wiki/topic/detail.md",
+          content: "nested\n",
+        },
+      ],
+      reason: "ambiguous tree shape",
+      sourceRefs: [],
+    });
+
+    await expect(
+      applyPatchToCandidate({
+        vaultPath: f.vaultPath,
+        candidate: f.baseCandidate,
+        patch: effect,
+        runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+      }),
+    ).rejects.toThrow("file/directory path collision");
+  });
+
   test("file deletion removes the path from the tree", async () => {
     const f = await makeFixture({
       "wiki/keep.md": "keep\n",
