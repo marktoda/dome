@@ -101,7 +101,7 @@ Processor.run(ctx): Promise<Effect[]>
 The executor boundary validates returned values before routing:
 
 1. The resolved value must be an array.
-2. Each array element must match one of the nine Effect schemas in [[wiki/specs/effects]].
+2. Each array element must match one of the ten Effect schemas in [[wiki/specs/effects]].
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
 4. The effect list is canonicalized for hashing only after validation; the engine does not silently repair malformed effects.
 
@@ -150,7 +150,7 @@ that nominal SDK-created error and records the run as `processor.threw` with
 `retryable: true`. A plain thrown object with a `retryable: true` property is
 not trusted by shape and remains a non-retryable `processor.threw`.
 
-Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user approves a `dome.health` recovery question whose answer handler emits `QuarantineRecoveryEffect`.
+Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. When a key enters quarantine, the runtime assigns a durable `quarantineId` generation token. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user approves a `dome.health` recovery question whose answer handler emits `QuarantineRecoveryEffect` for the current generation.
 
 Adoption-phase processors are never quarantined automatically. If an adoption processor fails, adoption blocks: trusted state cannot advance while the deterministic gate is unhealthy.
 

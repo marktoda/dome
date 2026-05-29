@@ -608,11 +608,15 @@ function sinksForRuntime(
       captureView: captureViewPlaceholder,
       externalHandlers: runtime.externalHandlers,
       recoverQuarantine: async ({ effect }) => {
-        runtime.processorRuntime.executionState.clearQuarantine({
+        runtime.processorRuntime.executionState.clearQuarantineIfCurrent({
           phase: effect.phase,
           processorId: effect.processorId,
           processorVersion: effect.processorVersion,
           triggerHash: effect.triggerHash,
+          quarantineId: effect.quarantineId,
+          quarantinedAt: new Date(effect.quarantinedAt),
+          consecutiveRetryableFailures:
+            effect.consecutiveRetryableFailures,
         });
       },
     });

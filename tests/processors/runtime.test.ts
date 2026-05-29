@@ -16,6 +16,7 @@ import {
   type Capability,
   type ExecutionPolicyRequest,
   type OperationalOutboxRow,
+  type OperationalQuarantineRow,
   type OperationalQueryView,
   type Processor,
   type ProcessorContext,
@@ -499,8 +500,10 @@ describe("gardenRunner — executor diagnostics", () => {
       triggers: [{ kind: "signal", name: "file.created" }],
       capabilities: [cap],
       run: async (ctx) => {
-        seen.granted = ctx.operational?.outbox().map((row) => row.idempotencyKey) ?? [];
-        seen.denied = ctx.operational?.outbox({ status: "pending" }).length === 0;
+        seen.granted =
+          ctx.operational?.outbox().map((row) => row.idempotencyKey) ?? [];
+        seen.denied =
+          ctx.operational?.outbox({ status: "pending" }).length === 0;
         return [];
       },
     });
@@ -518,6 +521,65 @@ describe("gardenRunner — executor diagnostics", () => {
     });
 
     expect(seen.granted).toEqual(["failed"]);
+    expect(seen.denied).toBe(true);
+  });
+
+  test("garden processor receives quarantine rows only with effective quarantine.read grant", async () => {
+    const cap: Capability = { kind: "quarantine.read" };
+    const row: OperationalQuarantineRow = Object.freeze({
+      phase: "garden",
+      processorId: "test.quarantined",
+      processorVersion: "0.1.0",
+      triggerHash: "trigger-1",
+      quarantineId: "quarantine-1",
+      consecutiveRetryableFailures: 3,
+      quarantinedAt: "2026-05-29T00:00:00.000Z",
+      reason: "timeout",
+    });
+    const operational: OperationalQueryView = Object.freeze({
+      outbox: () => Object.freeze([]),
+      quarantines: () => Object.freeze([row]),
+    });
+    const seen: { allowed: ReadonlyArray<string>; denied: boolean } = {
+      allowed: [],
+      denied: false,
+    };
+    const allowed = makeFixtureProcessor({
+      id: "test.garden.quarantine-read.allowed",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      run: async (ctx) => {
+        seen.allowed =
+          ctx.operational?.quarantines().map((q) => q.processorId) ?? [];
+        return [];
+      },
+    });
+    const denied = makeFixtureProcessor({
+      id: "test.garden.quarantine-read.denied",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: [cap],
+      run: async (ctx) => {
+        seen.denied = ctx.operational === undefined;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([allowed, denied], {
+      resolveGrants: (processorId) =>
+        processorId === allowed.id ? [cap] : [],
+      operational,
+    });
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(seen.allowed).toEqual(["test.quarantined"]);
     expect(seen.denied).toBe(true);
   });
 

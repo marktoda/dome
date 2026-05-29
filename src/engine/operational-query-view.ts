@@ -58,6 +58,7 @@ function toOperationalQuarantineRow(
     processorId: row.key.processorId,
     processorVersion: row.key.processorVersion,
     triggerHash: row.key.triggerHash,
+    quarantineId: row.quarantineId,
     consecutiveRetryableFailures: row.consecutiveRetryableFailures,
     quarantinedAt: row.quarantinedAt.toISOString(),
     reason: row.reason,

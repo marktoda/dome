@@ -415,6 +415,7 @@ export type OperationalQuarantineRow = {
   readonly processorId: string;
   readonly processorVersion: string;
   readonly triggerHash: string;
+  readonly quarantineId: string;
   readonly consecutiveRetryableFailures: number;
   readonly quarantinedAt: string;
   readonly reason: string;

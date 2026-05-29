@@ -10,6 +10,9 @@ export type QuarantineRecoveryTarget = {
   readonly processorId: string;
   readonly processorVersion: string;
   readonly triggerHash: string;
+  readonly quarantineId: string;
+  readonly quarantinedAt: string;
+  readonly consecutiveRetryableFailures: number;
 };
 
 export function parseQuarantineRecoveryAnswer(
@@ -19,10 +22,7 @@ export function parseQuarantineRecoveryAnswer(
 }
 
 export function quarantineRecoveryQuestionKey(
-  target: QuarantineRecoveryTarget & {
-    readonly quarantinedAt: string;
-    readonly consecutiveRetryableFailures: number;
-  },
+  target: QuarantineRecoveryTarget,
 ): string {
   return `${QUARANTINE_RECOVERY_QUESTION_PREFIX}${encodeURIComponent(
     JSON.stringify(target),
@@ -58,10 +58,29 @@ export function targetFromQuestionIdempotencyKey(
   if (typeof record.triggerHash !== "string" || record.triggerHash === "") {
     return null;
   }
+  if (typeof record.quarantineId !== "string" || record.quarantineId === "") {
+    return null;
+  }
+  if (
+    typeof record.quarantinedAt !== "string" ||
+    Number.isNaN(new Date(record.quarantinedAt).getTime())
+  ) {
+    return null;
+  }
+  if (
+    typeof record.consecutiveRetryableFailures !== "number" ||
+    !Number.isSafeInteger(record.consecutiveRetryableFailures) ||
+    record.consecutiveRetryableFailures < 0
+  ) {
+    return null;
+  }
   return Object.freeze({
     phase,
     processorId: record.processorId,
     processorVersion: record.processorVersion,
     triggerHash: record.triggerHash,
+    quarantineId: record.quarantineId,
+    quarantinedAt: new Date(record.quarantinedAt).toISOString(),
+    consecutiveRetryableFailures: record.consecutiveRetryableFailures,
   });
 }

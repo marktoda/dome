@@ -306,6 +306,9 @@ describe("QuarantineRecoveryEffect", () => {
     processorId: "test.proc",
     processorVersion: "0.1.0",
     triggerHash: "trigger-1",
+    quarantineId: "quarantine-1",
+    quarantinedAt: "2026-05-29T00:00:00.000Z",
+    consecutiveRetryableFailures: 3,
     reason: "recover quarantined processor",
     sourceRefs: [ref],
   });

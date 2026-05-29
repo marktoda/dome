@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { ProcessorPhase } from "../core/processor";
 import type { TriggerMatch } from "./triggers";
@@ -14,15 +14,23 @@ export type ProcessorExecutionKey = {
 
 export type ProcessorExecutionStateEntry = ProcessorExecutionKey & {
   readonly consecutiveRetryableFailures: number;
+  readonly quarantineId?: string;
   readonly quarantinedAt?: Date;
   readonly reason?: string;
 };
 
 export type ProcessorQuarantineSnapshot = {
   readonly key: ProcessorExecutionKey;
+  readonly quarantineId: string;
   readonly consecutiveRetryableFailures: number;
   readonly quarantinedAt: Date;
   readonly reason: string;
+};
+
+export type ProcessorQuarantineClearExpectation = ProcessorExecutionKey & {
+  readonly quarantineId: string;
+  readonly consecutiveRetryableFailures: number;
+  readonly quarantinedAt: Date;
 };
 
 export type ProcessorExecutionState = {
@@ -39,10 +47,14 @@ export type ProcessorExecutionState = {
     reason: string,
   ) => ProcessorQuarantineSnapshot | null;
   readonly clearQuarantine: (key: ProcessorExecutionKey) => void;
+  readonly clearQuarantineIfCurrent: (
+    expected: ProcessorQuarantineClearExpectation,
+  ) => boolean;
 };
 
 type MutableEntry = {
   consecutiveRetryableFailures: number;
+  quarantineId?: string;
   quarantinedAt?: Date;
   reason?: string;
 };
@@ -58,16 +70,22 @@ export function buildProcessorExecutionState(opts?: {
     opts?.quarantineThreshold ?? DEFAULT_QUARANTINE_THRESHOLD;
   const entries = new Map<string, MutableEntry>();
   for (const entry of opts?.initialEntries ?? []) {
-    entries.set(
-      keyId(entry),
-      {
-        consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
-        ...(entry.quarantinedAt !== undefined
-          ? { quarantinedAt: new Date(entry.quarantinedAt.getTime()) }
-          : {}),
-        ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
-      },
-    );
+    const mutable: MutableEntry = {
+      consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
+      ...(entry.quarantinedAt !== undefined
+        ? { quarantinedAt: new Date(entry.quarantinedAt.getTime()) }
+        : {}),
+      ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
+    };
+    if (entry.quarantineId !== undefined) {
+      mutable.quarantineId = entry.quarantineId;
+    } else if (
+      mutable.quarantinedAt !== undefined &&
+      mutable.reason !== undefined
+    ) {
+      mutable.quarantineId = legacyQuarantineId(entry, mutable);
+    }
+    entries.set(keyId(entry), mutable);
   }
 
   const persist = (): void => {
@@ -86,6 +104,8 @@ export function buildProcessorExecutionState(opts?: {
       return null;
     }
     return freezeSnapshot(key, {
+      quarantineId:
+        entry.quarantineId ?? legacyQuarantineId(key, entry),
       consecutiveRetryableFailures:
         entry.consecutiveRetryableFailures,
       quarantinedAt: entry.quarantinedAt,
@@ -111,6 +131,7 @@ export function buildProcessorExecutionState(opts?: {
         entry.consecutiveRetryableFailures >= threshold &&
         entry.quarantinedAt === undefined
       ) {
+        entry.quarantineId = randomUUID();
         entry.quarantinedAt = new Date();
         entry.reason = reason;
       }
@@ -120,6 +141,23 @@ export function buildProcessorExecutionState(opts?: {
     },
     clearQuarantine: (key) => {
       if (entries.delete(keyId(key))) persist();
+    },
+    clearQuarantineIfCurrent: (expected) => {
+      const id = keyId(expected);
+      const entry = entries.get(id);
+      if (
+        entry?.quarantinedAt === undefined ||
+        entry.quarantineId !== expected.quarantineId ||
+        entry.consecutiveRetryableFailures !==
+          expected.consecutiveRetryableFailures ||
+        entry.quarantinedAt.toISOString() !==
+          expected.quarantinedAt.toISOString()
+      ) {
+        return false;
+      }
+      entries.delete(id);
+      persist();
+      return true;
     },
   });
 }
@@ -164,6 +202,7 @@ function keyId(key: ProcessorExecutionKey): string {
 function freezeSnapshot(
   key: ProcessorExecutionKey,
   entry: {
+    readonly quarantineId: string;
     readonly consecutiveRetryableFailures: number;
     readonly quarantinedAt: Date;
     readonly reason: string;
@@ -171,6 +210,7 @@ function freezeSnapshot(
 ): ProcessorQuarantineSnapshot {
   return Object.freeze({
     key,
+    quarantineId: entry.quarantineId,
     consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
     quarantinedAt: new Date(entry.quarantinedAt.getTime()),
     reason: entry.reason,
@@ -205,6 +245,9 @@ function snapshotEntries(
         triggerHash,
         consecutiveRetryableFailures:
           entry.consecutiveRetryableFailures,
+        ...(entry.quarantineId !== undefined
+          ? { quarantineId: entry.quarantineId }
+          : {}),
         ...(entry.quarantinedAt !== undefined
           ? { quarantinedAt: new Date(entry.quarantinedAt.getTime()) }
           : {}),
@@ -226,6 +269,8 @@ function quarantineSnapshots(
     }
     out.push(
       freezeSnapshot(entry, {
+        quarantineId:
+          entry.quarantineId ?? legacyQuarantineId(entry, entry),
         consecutiveRetryableFailures:
           entry.consecutiveRetryableFailures,
         quarantinedAt: entry.quarantinedAt,
@@ -234,4 +279,27 @@ function quarantineSnapshots(
     );
   }
   return Object.freeze(out);
+}
+
+function legacyQuarantineId(
+  key: ProcessorExecutionKey,
+  entry: {
+    readonly consecutiveRetryableFailures: number;
+    readonly quarantinedAt?: Date;
+    readonly reason?: string;
+  },
+): string {
+  return `legacy-${createHash("sha256")
+    .update(
+      JSON.stringify([
+        key.phase,
+        key.processorId,
+        key.processorVersion,
+        key.triggerHash,
+        entry.quarantinedAt?.toISOString() ?? "",
+        entry.consecutiveRetryableFailures,
+        entry.reason ?? "",
+      ]),
+    )
+    .digest("hex")}`;
 }

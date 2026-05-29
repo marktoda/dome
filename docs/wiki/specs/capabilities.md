@@ -122,7 +122,7 @@ Permits reading processor quarantine rows through `ctx.operational.quarantines()
 
 ### `quarantine.recover`
 
-Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the only action is `reset`, which clears one quarantine key after the user approves a `dome.health` recovery question. It does not permit direct mutation of processor execution state.
+Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the only action is `reset`, which clears one quarantine generation after the user approves a `dome.health` recovery question. It does not permit direct mutation of processor execution state.
 
 ## Manifest schema
 

@@ -268,7 +268,8 @@ Subjects (v1.0):
 - `questions` — durable questions from `projection.db.questions`, including
   row id, status, options, answer, timestamps, and idempotency key.
 - `outbox` — pending / failed external actions from `outbox.db`.
-- `quarantine` — quarantined processor triggers from processor execution state.
+- `quarantine` — quarantined processor triggers from processor execution state,
+  including the `quarantine_id` generation token used for safe reset.
 
 `--limit <n>` caps the row count (default 20). `--json` emits structured
 rows for cross-tool consumption.

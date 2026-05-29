@@ -237,12 +237,15 @@ interface QuarantineRecoveryEffect {
   readonly processorId: string;
   readonly processorVersion: string;
   readonly triggerHash: string;
+  readonly quarantineId: string;
+  readonly quarantinedAt: string;
+  readonly consecutiveRetryableFailures: number;
   readonly reason: string;
   readonly sourceRefs: SourceRef[];
 }
 ```
 
-**Routing:** garden phase only. The effect is capability-checked via `quarantine.recover` for `action: "reset"`. The engine-owned sink clears the matching quarantine key `(phase, processorId, processorVersion, triggerHash)` from durable processor execution state. Adoption processors cannot emit this effect because quarantine recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
+**Routing:** garden phase only. The effect is capability-checked via `quarantine.recover` for `action: "reset"`. The engine-owned sink clears the matching quarantine generation `(phase, processorId, processorVersion, triggerHash, quarantineId)` from durable processor execution state only if the current row still matches `quarantinedAt` and `consecutiveRetryableFailures`. Stale answers therefore cannot clear a later re-quarantine for the same trigger. Adoption processors cannot emit this effect because quarantine recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
 
 **Why an effect instead of direct quarantine access:** quarantine state controls whether processor code is allowed to run. Resetting it must be visible in the run ledger and capability audit trail, so recovery follows the same engine-asks model as outbox recovery: health processors read operational state, ask a question, answer handlers emit a recovery effect, and the engine applies the state transition.
 

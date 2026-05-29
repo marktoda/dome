@@ -62,6 +62,10 @@ const quarantineRecoveryAnswer: Processor = defineProcessor({
         processorId: target.processorId,
         processorVersion: target.processorVersion,
         triggerHash: target.triggerHash,
+        quarantineId: target.quarantineId,
+        quarantinedAt: target.quarantinedAt,
+        consecutiveRetryableFailures:
+          target.consecutiveRetryableFailures,
         reason: "dome.health: reset quarantined processor trigger",
         sourceRefs: input.question.sourceRefs,
       }),

@@ -36,6 +36,7 @@ describe("quarantine store", () => {
       const body = JSON.parse(await readFile(path, "utf8"));
       expect(body.version).toBe(1);
       expect(body.entries[0].processorId).toBe("test.processor");
+      expect(body.entries[0].quarantineId).toEqual(expect.any(String));
       expect(body.entries[0].quarantinedAt).toEqual(expect.any(String));
 
       const reopened = openQuarantineStore({
@@ -49,6 +50,52 @@ describe("quarantine store", () => {
       expect(reopened.value.quarantines()[0]?.key.processorId).toBe(
         "test.processor",
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("clearQuarantineIfCurrent refuses stale quarantine generations", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-quarantine-store-"));
+    try {
+      const path = join(root, ".dome", "state", "quarantined.json");
+      const opened = openQuarantineStore({
+        path,
+        quarantineThreshold: 1,
+      });
+      if (!opened.ok) throw new Error(opened.error.kind);
+      const key: ProcessorExecutionKey = Object.freeze({
+        phase: "garden",
+        processorId: "test.processor",
+        processorVersion: "0.0.1",
+        triggerHash: "abc123",
+      });
+
+      const current = opened.value.recordRetryableTerminalFailure(key, "boom");
+      if (current === null) throw new Error("expected quarantine");
+      expect(
+        opened.value.clearQuarantineIfCurrent({
+          ...key,
+          quarantineId: "stale-generation",
+          quarantinedAt: current.quarantinedAt,
+          consecutiveRetryableFailures:
+            current.consecutiveRetryableFailures,
+        }),
+      ).toBe(false);
+      expect(opened.value.quarantineFor(key)?.quarantineId).toBe(
+        current.quarantineId,
+      );
+
+      expect(
+        opened.value.clearQuarantineIfCurrent({
+          ...key,
+          quarantineId: current.quarantineId,
+          quarantinedAt: current.quarantinedAt,
+          consecutiveRetryableFailures:
+            current.consecutiveRetryableFailures,
+        }),
+      ).toBe(true);
+      expect(opened.value.quarantineFor(key)).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

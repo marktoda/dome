@@ -1,6 +1,7 @@
 // projection-sinks: assembles the `ApplyEffectSinks` shape against
-// the projection database, the outbox database, and two engine-layer
-// injections (`applyPatch`, `captureView`). This is the Phase 4 wiring layer
+// the projection database, the outbox database, and three engine-layer
+// injections (`applyPatch`, `captureView`, `recoverQuarantine`). This is the
+// Phase 4 wiring layer
 // that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
@@ -14,9 +15,8 @@
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
-//   - recoverQuarantine → injected engine-owned execution-state reset
 //
-// Two sinks are injected by the caller (engine layer):
+// Three sinks are injected by the caller (engine layer):
 //
 //   - applyPatch  — patch application is dual-mode per the matrix below
 //     (adoption-phase patches mutate the candidate tree; garden-phase patches
@@ -28,6 +28,10 @@
 //     MCP request). The view-phase processor returns its rendered output for
 //     the engine to relay back to the caller's stdout / stream / response.
 //     That delivery surface doesn't live in the projection store.
+//
+//   - recoverQuarantine — QuarantineRecoveryEffect targets processor
+//     execution state, which is owned by the engine runtime rather than
+//     the projection/outbox stores.
 //
 // Normative references:
 //   - docs/wiki/matrices/effect-router-targets.md — the (kind, phase) → sink
@@ -109,7 +113,7 @@ export type BuildSqliteSinksOpts = {
    * Injected by the engine layer. Quarantine state is operational processor
    * execution state, not projection or outbox state.
    */
-  readonly recoverQuarantine?: ApplyEffectSinks["recoverQuarantine"];
+  readonly recoverQuarantine: ApplyEffectSinks["recoverQuarantine"];
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -204,7 +208,6 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       }
     },
 
-    recoverQuarantine:
-      opts.recoverQuarantine ?? (async () => undefined),
+    recoverQuarantine: opts.recoverQuarantine,
   });
 }

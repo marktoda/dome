@@ -69,7 +69,10 @@ export function capabilityUseForEffect(
         resource:
           `${effect.action}:${effect.phase}:` +
           `${effect.processorId}:${effect.processorVersion}:` +
-          `${effect.triggerHash}`,
+          `${effect.triggerHash}:` +
+          `${effect.quarantineId}:` +
+          `${effect.quarantinedAt}:` +
+          `${effect.consecutiveRetryableFailures}`,
         outcome,
       });
     case "diagnostic":

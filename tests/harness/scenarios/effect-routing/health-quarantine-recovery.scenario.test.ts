@@ -118,16 +118,17 @@ extensions:
       }),
     ]);
 
-    expect(
-      capabilityUsesByRun(h.ledger, body.handlers.runs[0]?.run_id as RunId),
-    ).toEqual([
-      expect.objectContaining({
-        capability: "quarantine.recover",
-        resource:
-          "reset:garden:test.quarantined:0.1.0:health-quarantine-trigger",
-        outcome: "allowed",
-      }),
-    ]);
+	    expect(
+	      capabilityUsesByRun(h.ledger, body.handlers.runs[0]?.run_id as RunId),
+	    ).toEqual([
+	      expect.objectContaining({
+	        capability: "quarantine.recover",
+	        resource: expect.stringContaining(
+	          "reset:garden:test.quarantined:0.1.0:health-quarantine-trigger:",
+	        ),
+	        outcome: "allowed",
+	      }),
+	    ]);
 
     const inspectAfter = await h.runCli(["inspect", "quarantine", "--json"]);
     expect(inspectAfter.exitCode).toBe(0);

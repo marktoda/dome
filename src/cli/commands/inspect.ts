@@ -200,6 +200,7 @@ function collectRows(
         processor: q.key.processorId,
         version: q.key.processorVersion,
         trigger_hash: q.key.triggerHash,
+        quarantine_id: q.quarantineId,
         failures: q.consecutiveRetryableFailures,
         quarantined_at: q.quarantinedAt.toISOString(),
         reason: q.reason,

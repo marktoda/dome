@@ -31,6 +31,7 @@ type QuarantineStoreEntry = {
   readonly processorVersion: string;
   readonly triggerHash: string;
   readonly consecutiveRetryableFailures: number;
+  readonly quarantineId?: string;
   readonly quarantinedAt?: string;
   readonly reason?: string;
 };
@@ -114,6 +115,9 @@ function writeEntries(
           triggerHash: entry.triggerHash,
           consecutiveRetryableFailures:
             entry.consecutiveRetryableFailures,
+          ...(entry.quarantineId !== undefined
+            ? { quarantineId: entry.quarantineId }
+            : {}),
           ...(entry.quarantinedAt !== undefined
             ? { quarantinedAt: entry.quarantinedAt.toISOString() }
             : {}),
@@ -188,6 +192,11 @@ function parseEntry(
   }
 
   let quarantinedAt: Date | undefined;
+  if (value.quarantineId !== undefined) {
+    if (typeof value.quarantineId !== "string" || value.quarantineId === "") {
+      return err(`entries[${index}].quarantineId must be a non-empty string`);
+    }
+  }
   if (value.quarantinedAt !== undefined) {
     if (typeof value.quarantinedAt !== "string") {
       return err(`entries[${index}].quarantinedAt must be a string`);
@@ -209,6 +218,9 @@ function parseEntry(
       processorVersion: value.processorVersion,
       triggerHash: value.triggerHash,
       consecutiveRetryableFailures: value.consecutiveRetryableFailures,
+      ...(value.quarantineId !== undefined
+        ? { quarantineId: value.quarantineId }
+        : {}),
       ...(quarantinedAt !== undefined ? { quarantinedAt } : {}),
       ...(value.reason !== undefined ? { reason: value.reason } : {}),
     }),

@@ -86,6 +86,9 @@ describe("phase-mismatch rejections", () => {
         processorId: "test.proc",
         processorVersion: "0.1.0",
         triggerHash: "trigger-1",
+        quarantineId: "quarantine-1",
+        quarantinedAt: "2026-05-29T00:00:00.000Z",
+        consecutiveRetryableFailures: 3,
         reason: "recover",
         sourceRefs: [ref],
       }),
@@ -350,6 +353,9 @@ describe("successful routes (noopSinks)", () => {
         processorId: "test.proc",
         processorVersion: "0.1.0",
         triggerHash: "trigger-1",
+        quarantineId: "quarantine-1",
+        quarantinedAt: "2026-05-29T00:00:00.000Z",
+        consecutiveRetryableFailures: 3,
         reason: "recover",
         sourceRefs: [ref],
       }),
@@ -357,7 +363,7 @@ describe("successful routes (noopSinks)", () => {
     expect(r.outcome).toBe("applied");
     expect(r.capabilityUse?.capability).toBe("quarantine.recover");
     expect(r.capabilityUse?.resource).toBe(
-      "reset:garden:test.proc:0.1.0:trigger-1",
+      "reset:garden:test.proc:0.1.0:trigger-1:quarantine-1:2026-05-29T00:00:00.000Z:3",
     );
   });
 });
@@ -457,6 +463,9 @@ describe("capability denial flows through", () => {
         processorId: "test.proc",
         processorVersion: "0.1.0",
         triggerHash: "trigger-1",
+        quarantineId: "quarantine-1",
+        quarantinedAt: "2026-05-29T00:00:00.000Z",
+        consecutiveRetryableFailures: 3,
         reason: "recover",
         sourceRefs: [ref],
       }),
@@ -465,7 +474,7 @@ describe("capability denial flows through", () => {
     expect(r.diagnostics[0]?.code).toBe("capability-deny-quarantine-recover");
     expect(r.capabilityUse?.capability).toBe("quarantine.recover");
     expect(r.capabilityUse?.resource).toBe(
-      "reset:garden:test.proc:0.1.0:trigger-1",
+      "reset:garden:test.proc:0.1.0:trigger-1:quarantine-1:2026-05-29T00:00:00.000Z:3",
     );
   });
 });

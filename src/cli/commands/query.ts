@@ -71,6 +71,8 @@ export async function runQuery(
       capturedViews.push(effect);
     };
     const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
+    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
+      async () => undefined;
     const sinks = buildSqliteSinks({
       projectionDb: runtime.projectionDb,
       outboxDb: runtime.outboxDb,
@@ -78,6 +80,7 @@ export async function runQuery(
       captureView,
       applyPatch,
       externalHandlers: runtime.externalHandlers,
+      recoverQuarantine,
     });
 
     const result = await runViewCommand({

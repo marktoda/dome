@@ -280,6 +280,9 @@ export type QuarantineRecoveryEffect = {
   readonly processorId: string;
   readonly processorVersion: string;
   readonly triggerHash: string;
+  readonly quarantineId: string;
+  readonly quarantinedAt: string;
+  readonly consecutiveRetryableFailures: number;
   readonly reason: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -560,6 +563,9 @@ export const QuarantineRecoveryEffectSchema = z
     processorId: z.string().min(1),
     processorVersion: z.string().min(1),
     triggerHash: z.string().min(1),
+    quarantineId: z.string().min(1),
+    quarantinedAt: z.string().datetime(),
+    consecutiveRetryableFailures: z.number().int().nonnegative(),
     reason: z.string().min(1),
     sourceRefs: z.array(SourceRefSchema),
   })
@@ -754,6 +760,9 @@ export function quarantineRecoveryEffect(
     processorId: input.processorId,
     processorVersion: input.processorVersion,
     triggerHash: input.triggerHash,
+    quarantineId: input.quarantineId,
+    quarantinedAt: input.quarantinedAt,
+    consecutiveRetryableFailures: input.consecutiveRetryableFailures,
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };

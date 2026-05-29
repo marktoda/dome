@@ -27,7 +27,7 @@ Three properties drive the choice:
   answers.db          # durable user answers to QuestionEffect rows
   runs.db             # see [[wiki/specs/run-ledger]]
   outbox.db           # see §"Outbox" below
-  quarantined.json    # processor-quarantine state; reset via QuarantineRecoveryEffect
+  quarantined.json    # processor-quarantine state with generation ids; reset via QuarantineRecoveryEffect
   last-reconcile-mtime.txt  # see [[wiki/specs/adoption]] §"Migration"
 ```
 

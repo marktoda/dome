@@ -164,6 +164,8 @@ export async function runRun(
     // (the broker rejects PatchEffect as phase-mismatch). Provide a
     // defensive placeholder that drops the patch + returns null.
     const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
+    const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
+      async () => undefined;
     const sinks = buildSqliteSinks({
       projectionDb: runtime.projectionDb,
       outboxDb: runtime.outboxDb,
@@ -171,6 +173,7 @@ export async function runRun(
       captureView,
       applyPatch,
       externalHandlers: runtime.externalHandlers,
+      recoverQuarantine,
     });
 
     // ----- 6. Dispatch via runViewCommand ---------------------------------
