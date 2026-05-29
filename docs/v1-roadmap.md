@@ -696,6 +696,10 @@ Work:
 - [x] Surface projection freshness in `dome status --json` and status text,
       including cache-key drift, so stale projection diagnostics do not look
       like fresh blockers during real-vault soak.
+- [x] Teach generated AGENTS.md how to branch on `dome status --json`
+      attention reasons, especially `sync_needed`, `projection_stale`,
+      diagnostics, questions, failed runs, failed outbox rows, quarantines,
+      and dirty draft state.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

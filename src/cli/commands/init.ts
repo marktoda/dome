@@ -499,6 +499,22 @@ git commit -m "describe the vault change"
 
 Do not call Dome after every edit. Dome works at the git commit boundary.
 
+## Reading Dome status
+
+\`dome status --json\` exposes \`attention_required\` plus stable \`attention\`
+reason codes. Treat them as the next-action branch:
+
+- \`sync_needed\` or \`projection_stale\` - let \`dome serve\` catch up, or run
+  \`dome sync\` when the user wants to wait.
+- \`diagnostics\` - run \`dome inspect diagnostics\`; fix source markdown when
+  the SourceRefs point to vault files.
+- \`questions\` - run \`dome inspect questions\`, ask the user, then answer with
+  \`dome answer <id> <value>\`.
+- \`failed_runs\`, \`outbox_failed\`, or \`quarantined\` - run \`dome doctor\`
+  and use the question/answer recovery flow it points to.
+- \`dirty_modified\` or \`dirty_untracked\` - commit, ignore, or remove the draft
+  files before expecting Dome to adopt them.
+
 ## Vault conventions
 
 - \`wiki/\` is the main markdown knowledge base. Pages can link with

@@ -97,6 +97,9 @@ When something looks wrong, use the recovery surfaces in this order:
 1. **Pulse:** run `dome status`.
    - `sync needed` means run `dome sync` or check the foreground `serve`
      process.
+   - `projection stale` means projections need refresh before projection-backed
+     diagnostics or views should be treated as current; run `dome sync` when
+     the user wants to wait.
    - Non-zero diagnostics, questions, failed runs, failed outbox rows, or
      quarantines mean inspect/doctor has details.
 

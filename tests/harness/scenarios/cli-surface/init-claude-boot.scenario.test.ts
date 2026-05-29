@@ -51,6 +51,10 @@ scenario(
       expect(agents).toContain("## Daily loop");
       expect(agents).toContain("Dome works at the git commit boundary");
       expect(agents).toContain("dome status");
+      expect(agents).toContain("attention_required");
+      expect(agents).toContain("projection_stale");
+      expect(agents).toContain("dome inspect diagnostics");
+      expect(agents).toContain("failed_runs");
       expect(agents).toContain("dome sync");
       expect(agents).toContain("dome today");
       expect(agents).toContain("dome export-context <topic>");
