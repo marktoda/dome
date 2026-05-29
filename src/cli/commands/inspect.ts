@@ -45,6 +45,12 @@ import { queryOutbox } from "../../outbox/dispatch";
 
 import { resolveBundleRoots } from "./sync-shared";
 
+import {
+  formatSourceRefs,
+  summarizeDiagnosticEffects,
+  type DiagnosticSeverity,
+  type DiagnosticSummary,
+} from "../diagnostic-summary";
 import { formatJson, formatTable } from "../format";
 import { parsePositiveIntegerValue } from "../parse-options";
 
@@ -64,12 +70,6 @@ const VALID_DIAGNOSTIC_SEVERITIES = new Set([
   "error",
   "block",
 ] as const);
-const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
-  block: 0,
-  error: 1,
-  warning: 2,
-  info: 3,
-};
 
 export type RunInspectOptions = {
   readonly subject?: string | undefined;
@@ -171,7 +171,6 @@ export async function runInspect(
 // ----- internals ------------------------------------------------------------
 
 type Row = Record<string, unknown>;
-type DiagnosticSeverity = "info" | "warning" | "error" | "block";
 type ParsedDiagnosticOptions = {
   readonly summary: boolean;
   readonly filter: DiagnosticsFilter;
@@ -180,21 +179,6 @@ type ParsedDiagnosticOptions = {
 type ParseDiagnosticOptionsResult =
   | { readonly ok: true; readonly value: ParsedDiagnosticOptions | null }
   | { readonly ok: false; readonly message: string };
-
-type DiagnosticGroup = {
-  readonly severity: DiagnosticSeverity;
-  readonly code: string;
-  readonly count: number;
-  readonly first_message: string;
-  readonly first_source_refs: string;
-};
-
-type DiagnosticSummary = {
-  readonly total: number;
-  readonly group_count: number;
-  readonly shown_groups: number;
-  readonly groups: ReadonlyArray<DiagnosticGroup>;
-};
 
 type InspectResult =
   | { readonly kind: "rows"; readonly rows: ReadonlyArray<Row> }
@@ -315,33 +299,7 @@ function summarizeDiagnostics(
   diagnosticOptions: ParsedDiagnosticOptions,
 ): DiagnosticSummary {
   const diagnostics = filteredDiagnostics(runtime, diagnosticOptions);
-  const grouped = new Map<string, DiagnosticGroup>();
-  for (const diagnostic of diagnostics) {
-    const key = `${diagnostic.severity}\u0000${diagnostic.code}`;
-    const existing = grouped.get(key);
-    if (existing !== undefined) {
-      grouped.set(key, {
-        ...existing,
-        count: existing.count + 1,
-      });
-      continue;
-    }
-    grouped.set(key, {
-      severity: diagnostic.severity,
-      code: diagnostic.code,
-      count: 1,
-      first_message: diagnostic.message,
-      first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
-    });
-  }
-
-  const groups = [...grouped.values()].sort(compareDiagnosticGroups);
-  return Object.freeze({
-    total: diagnostics.length,
-    group_count: groups.length,
-    shown_groups: Math.min(limit, groups.length),
-    groups: Object.freeze(groups.slice(0, limit)),
-  });
+  return summarizeDiagnosticEffects(diagnostics, limit);
 }
 
 function filteredDiagnostics(
@@ -355,17 +313,6 @@ function filteredDiagnostics(
   const code = diagnosticOptions?.code;
   if (code === undefined) return diagnostics;
   return Object.freeze(diagnostics.filter((d) => d.code === code));
-}
-
-function compareDiagnosticGroups(
-  a: DiagnosticGroup,
-  b: DiagnosticGroup,
-): number {
-  if (b.count !== a.count) return b.count - a.count;
-  if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) {
-    return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-  }
-  return a.code.localeCompare(b.code);
 }
 
 function jsonForResult(
@@ -437,38 +384,6 @@ function parseDiagnosticOptions(opts: {
 
 function isDiagnosticSeverity(value: string): value is DiagnosticSeverity {
   return VALID_DIAGNOSTIC_SEVERITIES.has(value as DiagnosticSeverity);
-}
-
-function formatSourceRefs(
-  refs: ReadonlyArray<{
-    readonly path: string;
-    readonly commit?: string;
-    readonly range?: {
-      readonly startLine: number;
-      readonly endLine: number;
-    };
-  }>,
-): string {
-  if (refs.length === 0) return "-";
-  return refs.map(formatSourceRef).join(", ");
-}
-
-function formatSourceRef(ref: {
-  readonly path: string;
-  readonly commit?: string;
-  readonly range?: {
-    readonly startLine: number;
-    readonly endLine: number;
-  };
-}): string {
-  const range =
-    ref.range === undefined
-      ? ""
-      : ref.range.endLine === ref.range.startLine
-        ? `:${ref.range.startLine}`
-        : `:${ref.range.startLine}-${ref.range.endLine}`;
-  const commit = ref.commit === undefined ? "" : ` @ ${ref.commit.slice(0, 7)}`;
-  return `${ref.path}${range}${commit}`;
 }
 
 /**

@@ -101,6 +101,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "serve_branch",
   "serve_updated_at",
   "diagnostics",
+  "diagnostic_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",
@@ -1023,12 +1024,19 @@ describe("runInspect", () => {
     expect(payload.group_count).toBe(2);
     expect(payload.groups[0]).toEqual(
       expect.objectContaining({
+        severity: "error",
+        code: "test.single",
+        count: 1,
+      }),
+    );
+    expect(payload.groups[1]).toEqual(
+      expect.objectContaining({
         severity: "warning",
         code: "test.repeated",
         count: 2,
       }),
     );
-    expect(payload.groups[0]?.first_source_refs).toContain("wiki/seed.md");
+    expect(payload.groups[1]?.first_source_refs).toContain("wiki/seed.md");
   });
 
   test("diagnostics filters by severity, code, and processor", async () => {
@@ -1813,6 +1821,20 @@ describe("runStatus", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["diagnostic_summary"]).toEqual({
+      total: 1,
+      group_count: 1,
+      shown_groups: 1,
+      groups: [
+        {
+          severity: "warning",
+          code: "status.test",
+          count: 1,
+          first_message: "status diagnostic",
+          first_source_refs: `wiki/seed.md @ ${adoptedCommit.slice(0, 7)}`,
+        },
+      ],
+    });
     expect(parsed["questions"]).toBe(1);
     expect(parsed["outbox_pending"]).toBe(1);
     expect(parsed["outbox_failed"]).toBe(1);

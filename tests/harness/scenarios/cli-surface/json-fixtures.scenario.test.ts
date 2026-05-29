@@ -36,6 +36,7 @@ const STATUS_KEYS = Object.freeze([
   "serve_branch",
   "serve_updated_at",
   "diagnostics",
+  "diagnostic_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",

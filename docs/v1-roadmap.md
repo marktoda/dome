@@ -685,6 +685,9 @@ Work:
 - [x] Make status dirty counts match native git by filtering ignored
       untracked files at the git status boundary, keeping
       `dirty_untracked` attention from firing on local Claude command files.
+- [x] Add bounded diagnostic grouping to `dome status --json` and status text,
+      sorted by severity before volume, so Claude Code sees blocking
+      diagnostics without needing a separate inspect command first.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

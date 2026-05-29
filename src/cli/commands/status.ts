@@ -31,6 +31,8 @@
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
 //   - diagnostics:      count of unresolved projection diagnostics.
+//   - diagnostic_summary:
+//                       bounded severity/code grouping for quick triage.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
 //   - outbox_failed:    count of terminally-failed external-action rows.
@@ -63,10 +65,15 @@ import { queryQuestions } from "../../projections/questions";
 
 import { resolveBundleRoots } from "./sync-shared";
 
+import {
+  summarizeDiagnosticEffects,
+  type DiagnosticSummary,
+} from "../diagnostic-summary";
 import { formatJson } from "../format";
 import { collectVaultAnalytics } from "../vault-analytics";
 
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
+const STATUS_DIAGNOSTIC_GROUP_LIMIT = 5;
 const PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "failed",
   "timed_out",
@@ -120,6 +127,7 @@ type StatusSnapshot = {
   readonly serve_branch: string | null;
   readonly serve_updated_at: string | null;
   readonly diagnostics: number;
+  readonly diagnostic_summary: DiagnosticSummary;
   readonly questions: number;
   readonly outbox_pending: number;
   readonly outbox_failed: number;
@@ -199,7 +207,12 @@ export async function runStatus(
       }),
     );
     const serve = await readServeHeartbeatStatus({ vaultPath });
-    const diagnostics = queryDiagnostics(runtime.projectionDb).length;
+    const diagnosticRows = queryDiagnostics(runtime.projectionDb);
+    const diagnostics = diagnosticRows.length;
+    const diagnostic_summary = summarizeDiagnosticEffects(
+      diagnosticRows,
+      STATUS_DIAGNOSTIC_GROUP_LIMIT,
+    );
     const questions = queryQuestions(runtime.projectionDb, {
       resolved: false,
     }).length;
@@ -255,6 +268,7 @@ export async function runStatus(
       serve_branch: serve.branch,
       serve_updated_at: serve.updatedAt,
       diagnostics,
+      diagnostic_summary,
       questions,
       outbox_pending,
       outbox_failed,
@@ -302,6 +316,9 @@ function printStatusText(s: StatusSnapshot): void {
   console.log(
     `health    diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
+  if (s.diagnostic_summary.groups.length > 0) {
+    console.log(`diag top  ${formatDiagnosticTopLine(s.diagnostic_summary)}`);
+  }
 }
 
 function formatServe(s: StatusSnapshot): string {
@@ -341,6 +358,12 @@ function statusAttention(input: {
   if (input.outboxFailed > 0) out.push("outbox_failed");
   if (input.quarantined > 0) out.push("quarantined");
   return Object.freeze(out);
+}
+
+function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
+  return summary.groups
+    .map((group) => `${group.count} ${group.severity} ${group.code}`)
+    .join(" | ");
 }
 
 function shortOid(oid: string | null, fallback: string): string {
