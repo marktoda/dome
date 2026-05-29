@@ -528,8 +528,9 @@ function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {
       `${row.key.triggerHash.slice(0, 12)} after ` +
       `${row.consecutiveRetryableFailures} retryable failure(s).`,
     recovery:
-      "Inspect recent runs; reset/retry should route through `dome answer` " +
-      "when quarantine recovery handlers ship.",
+      "Inspect with `dome inspect quarantine`; run `dome sync` or " +
+      "`dome serve` with dome.health enabled to raise a reset question, " +
+      "then answer it with `dome answer`.",
     quarantine: Object.freeze({
       phase: row.key.phase,
       processorId: row.key.processorId,

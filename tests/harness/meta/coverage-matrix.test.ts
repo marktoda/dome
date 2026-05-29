@@ -71,6 +71,7 @@ import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
 import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
+import "../scenarios/effect-routing/health-quarantine-recovery.scenario.test";
 import "../scenarios/capabilities/read-capability-filters-snapshot.scenario.test";
 import "../scenarios/capabilities/model-invoke-scheduled.scenario.test";
 import "../scenarios/triggers/file-created-fires.scenario.test";
@@ -182,6 +183,7 @@ const EFFECT_KINDS_ALL: ReadonlyArray<EffectKind> = [
   "job",
   "external",
   "outbox-recovery",
+  "quarantine-recovery",
   "view",
 ];
 
@@ -207,6 +209,8 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "external",
   "outbox.read",
   "outbox.recover",
+  "quarantine.read",
+  "quarantine.recover",
 ];
 
 const PHASES_ALL: ReadonlyArray<ProcessorPhase> = [

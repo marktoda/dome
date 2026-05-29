@@ -11,6 +11,7 @@
 //   - `diagnostics` → `queryDiagnostics(projection)`
 //   - `questions`   → `queryQuestionRecords(projection)`
 //   - `outbox`      → `queryOutbox(outbox)`
+//   - `quarantine`  → `executionState.quarantines()`
 //
 // Exit codes:
 //   - 0 always on a clean read — including empty result sets.
@@ -49,6 +50,7 @@ const VALID_SUBJECTS = new Set<string>([
   "diagnostics",
   "questions",
   "outbox",
+  "quarantine",
 ]);
 
 export type RunInspectOptions = {
@@ -74,13 +76,13 @@ export async function runInspect(
   const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome inspect: subject is required. Subjects: runs, diagnostics, questions, outbox.",
+      "dome inspect: subject is required. Subjects: runs, diagnostics, questions, outbox, quarantine.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome inspect: unknown subject '${subject}'. Available: runs, diagnostics, questions, outbox.`,
+      `dome inspect: unknown subject '${subject}'. Available: runs, diagnostics, questions, outbox, quarantine.`,
     );
     return 64;
   }
@@ -189,6 +191,18 @@ function collectRows(
         enqueued_at: o.enqueuedAt,
         next_attempt_at: o.nextAttemptAt,
         last_error: o.lastError,
+      }));
+    }
+    case "quarantine": {
+      const all = runtime.processorRuntime.executionState.quarantines();
+      return all.slice(0, limit).map((q) => ({
+        phase: q.key.phase,
+        processor: q.key.processorId,
+        version: q.key.processorVersion,
+        trigger_hash: q.key.triggerHash,
+        failures: q.consecutiveRetryableFailures,
+        quarantined_at: q.quarantinedAt.toISOString(),
+        reason: q.reason,
       }));
     }
     default:

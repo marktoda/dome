@@ -303,6 +303,8 @@ extensions:
         - failed
       question.ask: true
       outbox.recover: true
+      quarantine.read: true
+      quarantine.recover: true
 
 engine:
   # Maximum iterations of the fixed-point adoption loop per Proposal.

@@ -15,10 +15,10 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/proposals]] — The Proposal type; the only write path; local-eventual and hosted-protected construction.
 - [[wiki/specs/processors]] — The Processor type; three phases (adoption / garden / view); triggers; capabilities; first-party `dome.*` processors; idempotency.
 - [[wiki/specs/processor-execution]] — Processor invocation state machine; timeouts; output validation; model structured-output failures; retries; quarantine; drain/shutdown.
-- [[wiki/specs/effects]] — The nine-kind Effect taxonomy (Patch / Diagnostic / Fact / SearchDocument / Question / Job / ExternalAction / OutboxRecovery / View); SourceRef shape; exhaustive routing.
+- [[wiki/specs/effects]] — The ten-kind Effect taxonomy (Patch / Diagnostic / Fact / SearchDocument / Question / Job / ExternalAction / OutboxRecovery / QuarantineRecovery / View); SourceRef shape; exhaustive routing.
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
-- [[wiki/specs/capabilities]] — Twelve capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
+- [[wiki/specs/capabilities]] — Fifteen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: sync / status / query / lint / rebuild / stats / doctor / serve / export-context / init / migrate / run-processor.
 - [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.

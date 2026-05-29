@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
@@ -23,7 +23,7 @@ dome rebuild                    Wipe and rebuild projection store from adopted c
 dome stats                      Vault size / processor counts / ledger summary.
 dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
-                                Subjects: runs, diagnostics, questions, outbox.
+                                Subjects: runs, diagnostics, questions, outbox, quarantine.
 dome doctor [--json] [--repair]
                                 Run engine-substrate health checks; --repair is
                                 reserved for answer-mediated mitigations.
@@ -42,9 +42,9 @@ dome run-processor <id> [--args ...]
 The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
 - **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the three operational sqlite databases (projection / ledger / outbox).
+- **Recall and dashboards:** `dome query`, `dome status`, `dome inspect` — read paths. `dome query` routes through `AbstractSurface.query`; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
 - **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` retry/abandon handling for failed outbox rows. Quarantine reset and orphan-run recovery remain v1 work. See [[wiki/syntheses/v1-claude-code-vault-plan]].
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` retry/abandon handling for failed outbox rows plus reset handling for quarantined processors. Orphan-run recovery remains v1 work. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
 The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
@@ -268,6 +268,7 @@ Subjects (v1.0):
 - `questions` — durable questions from `projection.db.questions`, including
   row id, status, options, answer, timestamps, and idempotency key.
 - `outbox` — pending / failed external actions from `outbox.db`.
+- `quarantine` — quarantined processor triggers from processor execution state.
 
 `--limit <n>` caps the row count (default 20). `--json` emits structured
 rows for cross-tool consumption.
@@ -366,7 +367,8 @@ adopted ref), the natural pattern is:
 
 1. **A scheduled garden-phase processor in `dome.health`** reads the relevant
    operational substrate through a scoped `ctx.operational` query view
-   (for example failed outbox rows via `outbox.read`).
+  (for example failed outbox rows via `outbox.read` or quarantines via
+  `quarantine.read`).
 2. **That processor emits a `QuestionEffect`** with options (for example
    `["retry", "abandon"]`), an idempotency key that names the stuck row and
    failure instance, and `sourceRefs` pointing at the substrate row's origin.
@@ -374,8 +376,8 @@ adopted ref), the natural pattern is:
 4. **User runs `dome answer <question-id> retry`** to resolve.
 5. **A second garden-phase processor in `dome.health`** declares an
    `answer` trigger, receives `{ question, answer }`, looks up the
-   question's `idempotencyKey` → outbox-id, and emits the appropriate
-   effect to mutate the outbox row.
+   question's `idempotencyKey` → operational target, and emits the appropriate
+   recovery effect to mutate the engine-owned operational state.
 
 The CLI surface is one verb (`dome answer`); the per-substrate logic
 lives in the `dome.health` bundle's answer-handler processors. Adding
@@ -407,9 +409,9 @@ answered question when `answers.db.question_answers.handler_status` is not
 `handled`. Projection rebuild preserves the answered state by replaying
 `answers.db.question_answers` onto rebuilt question rows.
 
-`dome.health` now ships the failed-outbox retry/abandon loop as first-party
-processors. Quarantine reset and orphan-run recovery remain planned
-question/answer flows rather than hidden per-substrate CLI verbs.
+`dome.health` now ships the failed-outbox retry/abandon loop and quarantined
+processor reset loop as first-party processors. Orphan-run recovery remains a
+planned question/answer flow rather than a hidden per-substrate CLI verb.
 
 ### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>]`
 

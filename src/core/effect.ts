@@ -1,8 +1,8 @@
-// The nine-kind Effect union: the only value a Processor returns.
+// The ten-kind Effect union: the only value a Processor returns.
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
-// external actions, recovering operational outbox rows, rendering views.
+// external actions, recovering operational rows, rendering views.
 // The taxonomy is *closed*: plugins
 // emit existing kinds, not new ones. See docs/wiki/specs/effects.md for
 // the normative contract (kind-by-kind shape, routing, capability matrix,
@@ -269,6 +269,22 @@ export type OutboxRecoveryEffect = {
 };
 
 /**
+ * A recovery transition for a quarantined processor trigger. Health/recovery
+ * processors emit this after a user answers an operational question; the
+ * engine-owned execution-state sink clears the matching quarantine entry.
+ */
+export type QuarantineRecoveryEffect = {
+  readonly kind: "quarantine-recovery";
+  readonly action: "reset";
+  readonly phase: "adoption" | "garden" | "view";
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly triggerHash: string;
+  readonly reason: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+/**
  * A rendered response to a query or command. View effects are *not*
  * persisted by default — they're computed on demand. `scope` lists the
  * pages the view summarizes, for cache invalidation by callers.
@@ -295,6 +311,7 @@ export type Effect =
   | JobEffect
   | ExternalActionEffect
   | OutboxRecoveryEffect
+  | QuarantineRecoveryEffect
   | ViewEffect;
 
 // ----- Zod schemas ----------------------------------------------------------
@@ -535,6 +552,19 @@ export const OutboxRecoveryEffectSchema = z
   })
   .strict();
 
+export const QuarantineRecoveryEffectSchema = z
+  .object({
+    kind: z.literal("quarantine-recovery"),
+    action: z.literal("reset"),
+    phase: z.enum(["adoption", "garden", "view"]),
+    processorId: z.string().min(1),
+    processorVersion: z.string().min(1),
+    triggerHash: z.string().min(1),
+    reason: z.string().min(1),
+    sourceRefs: z.array(SourceRefSchema),
+  })
+  .strict();
+
 export const ViewEffectSchema = z
   .object({
     kind: z.literal("view"),
@@ -545,7 +575,7 @@ export const ViewEffectSchema = z
   .strict();
 
 /**
- * Discriminated union over the nine effect kinds. Use this at engine
+ * Discriminated union over the ten effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
  * preserve `exactOptionalPropertyTypes` semantics.
@@ -564,6 +594,7 @@ export const EffectSchema = z
     JobEffectSchema,
     ExternalActionEffectSchema,
     OutboxRecoveryEffectSchema,
+    QuarantineRecoveryEffectSchema,
     ViewEffectSchema,
   ])
   .superRefine((v, ctx) => {
@@ -705,6 +736,24 @@ export function outboxRecoveryEffect(
     kind: "outbox-recovery",
     action: input.action,
     idempotencyKey: input.idempotencyKey,
+    reason: input.reason,
+    sourceRefs: input.sourceRefs,
+  };
+  return Object.freeze(e);
+}
+
+export function quarantineRecoveryEffect(
+  input: Omit<QuarantineRecoveryEffect, "kind">,
+): QuarantineRecoveryEffect {
+  const e: {
+    -readonly [K in keyof QuarantineRecoveryEffect]: QuarantineRecoveryEffect[K];
+  } = {
+    kind: "quarantine-recovery",
+    action: input.action,
+    phase: input.phase,
+    processorId: input.processorId,
+    processorVersion: input.processorVersion,
+    triggerHash: input.triggerHash,
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };

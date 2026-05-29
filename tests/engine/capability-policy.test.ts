@@ -46,6 +46,8 @@ extensions:
       external: ["calendar.write"]
       outbox.read: ["failed"]
       outbox.recover: true
+      quarantine.read: true
+      quarantine.recover: true
   disabled.bundle:
     enabled: false
     grant:
@@ -81,6 +83,11 @@ extensions:
     expect(grants).toContainEqual({
       kind: "outbox.recover",
       actions: ["retry", "abandon"],
+    });
+    expect(grants).toContainEqual({ kind: "quarantine.read" });
+    expect(grants).toContainEqual({
+      kind: "quarantine.recover",
+      actions: ["reset"],
     });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);

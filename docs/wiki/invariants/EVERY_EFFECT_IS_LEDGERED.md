@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: shipped-default
 ---
@@ -10,9 +10,9 @@ tier: shipped-default
 
 **Tier:** Shipped default — enabled by default; disable only in tightly-resource-constrained vaults via `<vault>/.dome/config.yaml`.
 
-**Statement:** Every Effect emitted by a Processor produces an audit record. PatchEffects that adopt are recoverable via `git log --grep="^Dome-Run:"` + the run ledger join. DiagnosticEffects, FactEffects, QuestionEffects, JobEffects, ExternalActionEffects, OutboxRecoveryEffects, and ViewEffects land in their respective tables in `projection.db`, `outbox.db`, or are part of the run ledger's effect-hashes list — every emission is traceable.
+**Statement:** Every Effect emitted by a Processor produces an audit record. PatchEffects that adopt are recoverable via `git log --grep="^Dome-Run:"` + the run ledger join. DiagnosticEffects, FactEffects, QuestionEffects, JobEffects, ExternalActionEffects, OutboxRecoveryEffects, QuarantineRecoveryEffects, and ViewEffects land in their respective tables in `projection.db`, `outbox.db`, operational state, or are part of the run ledger's effect-hashes list — every emission is traceable.
 
-This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: the v0.5 surface was Tool effects (only the three on-disk-mutation kinds) tracked in `log.md`; v1's surface is the nine-kind effect taxonomy tracked across the run ledger, outbox, and projection store, with `log.md` now a projection of the run ledger.
+This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: the v0.5 surface was Tool effects (only the three on-disk-mutation kinds) tracked in `log.md`; v1's surface is the ten-kind effect taxonomy tracked across the run ledger, outbox, projection store, and operational recovery state, with `log.md` now a projection of the run ledger.
 
 **Why:** Provenance — for every change Dome made, the user (or a future agent walking the audit trail) can answer: which processor produced it, against which adopted commit, with what capability use, at what cost, and what evidence (sourceRefs). Without per-effect ledgering, the audit trail has gaps; failed runs leave no trace; external-action retries are unauditable.
 

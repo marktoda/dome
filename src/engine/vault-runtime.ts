@@ -390,7 +390,10 @@ export async function openVaultRuntime(
   //    processors (Phase 13a) — the runtime's view-phase dispatcher
   //    sets `ctx.projection` from this handle so command-triggered
   //    views can read facts / diagnostics / questions.
-  const operationalQueryView = buildOperationalQueryView({ outbox: outboxDb });
+  const operationalQueryView = buildOperationalQueryView({
+    outbox: outboxDb,
+    executionState,
+  });
   const processorRuntime = buildRuntime({
     registry,
     resolveGrants,

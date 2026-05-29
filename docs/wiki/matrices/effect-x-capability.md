@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -24,6 +24,7 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
 | **OutboxRecoveryEffect** | `outbox.recover` | requested action (`retry` or `abandon`) | Denied; diagnostic with `code: capability-deny-outbox-recover`; effect discarded |
+| **QuarantineRecoveryEffect** | `quarantine.recover` | requested action (`reset`) | Denied; diagnostic with `code: capability-deny-quarantine-recover`; effect discarded |
 | **ViewEffect** | (none at capability layer — phase check rejects view effects from non-view processors) | — | (n/a at capability layer; phase mismatch at the routing layer per [[wiki/matrices/effect-router-targets]]) |
 
 ## Downgrade vs denial

@@ -40,6 +40,7 @@ import type {
   FactEffect,
   QuestionEffect,
   OutboxRecoveryEffect,
+  QuarantineRecoveryEffect,
   SearchDocumentEffect,
 } from "./effect";
 import type { PageTypeRegistry } from "../page-types";
@@ -197,6 +198,8 @@ export type Trigger =
  *   - `external`      — emit ExternalActionEffect with the named capability.
  *   - `outbox.read`   — read operational outbox rows via `ctx.operational`.
  *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
+ *   - `quarantine.read` — read operational quarantine rows via `ctx.operational`.
+ *   - `quarantine.recover` — emit QuarantineRecoveryEffect reset actions.
  */
 export type ReadCapability = {
   readonly kind: "read";
@@ -256,6 +259,13 @@ export type OutboxRecoverCapability = {
   readonly kind: "outbox.recover";
   readonly actions: ReadonlyArray<OutboxRecoveryEffect["action"]>;
 };
+export type QuarantineReadCapability = {
+  readonly kind: "quarantine.read";
+};
+export type QuarantineRecoverCapability = {
+  readonly kind: "quarantine.recover";
+  readonly actions: ReadonlyArray<QuarantineRecoveryEffect["action"]>;
+};
 
 export type Capability =
   | ReadCapability
@@ -270,7 +280,9 @@ export type Capability =
   | ModelInvokeCapability
   | ExternalCapability
   | OutboxReadCapability
-  | OutboxRecoverCapability;
+  | OutboxRecoverCapability
+  | QuarantineReadCapability
+  | QuarantineRecoverCapability;
 
 // ----- CapabilityToken ------------------------------------------------------
 
@@ -398,6 +410,16 @@ export type OperationalOutboxRow = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
+export type OperationalQuarantineRow = {
+  readonly phase: "adoption" | "garden" | "view";
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly triggerHash: string;
+  readonly consecutiveRetryableFailures: number;
+  readonly quarantinedAt: string;
+  readonly reason: string;
+};
+
 /**
  * Read-only operational-state surface for garden/view processors that need to
  * explain or recover engine substrate state. This is intentionally not a raw
@@ -408,6 +430,7 @@ export type OperationalQueryView = {
   readonly outbox: (filter?: {
     readonly status?: OperationalOutboxStatus;
   }) => ReadonlyArray<OperationalOutboxRow>;
+  readonly quarantines: () => ReadonlyArray<OperationalQuarantineRow>;
 };
 
 // ----- ProcessorContext -----------------------------------------------------
@@ -647,6 +670,19 @@ export const OutboxRecoverCapabilitySchema = z
   })
   .strict();
 
+export const QuarantineReadCapabilitySchema = z
+  .object({
+    kind: z.literal("quarantine.read"),
+  })
+  .strict();
+
+export const QuarantineRecoverCapabilitySchema = z
+  .object({
+    kind: z.literal("quarantine.recover"),
+    actions: z.array(z.enum(["reset"])).min(1),
+  })
+  .strict();
+
 export const CapabilitySchema = z.discriminatedUnion("kind", [
   ReadCapabilitySchema,
   PatchProposeCapabilitySchema,
@@ -661,6 +697,8 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   ExternalCapabilitySchema,
   OutboxReadCapabilitySchema,
   OutboxRecoverCapabilitySchema,
+  QuarantineReadCapabilitySchema,
+  QuarantineRecoverCapabilitySchema,
 ]);
 
 // SnapshotSchema validates only the data fields (commit, tree); the read

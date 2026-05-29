@@ -14,6 +14,7 @@
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
+//   - recoverQuarantine → injected engine-owned execution-state reset
 //
 // Two sinks are injected by the caller (engine layer):
 //
@@ -104,6 +105,11 @@ export type BuildSqliteSinksOpts = {
    * fails with a missing-handler error instead of lingering as pending.
    */
   readonly externalHandlers?: ExternalHandlerRegistry;
+  /**
+   * Injected by the engine layer. Quarantine state is operational processor
+   * execution state, not projection or outbox state.
+   */
+  readonly recoverQuarantine?: ApplyEffectSinks["recoverQuarantine"];
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -197,5 +203,8 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         markAbandoned(opts.outboxDb, effect.idempotencyKey);
       }
     },
+
+    recoverQuarantine:
+      opts.recoverQuarantine ?? (async () => undefined),
   });
 }

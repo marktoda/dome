@@ -89,8 +89,8 @@ Still missing for v1:
 - [x] Adopted-state recall: `dome.search` FTS indexing and `dome query`.
 - [ ] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
       probe-only `dome doctor`, and first-party outbox retry/abandon
-      recovery are shipped; quarantine reset and orphan-run recovery are
-      still pending.
+      plus quarantine reset recovery are shipped; orphan-run recovery is still
+      pending.
 - [ ] Daily/task loop: daily creation, carry-forward, followup/todo
       extraction, today/prep views.
 - [ ] Productized model boundary: provider injection, cost ledger, budgets,
@@ -257,11 +257,16 @@ Work:
       before any unrebuildable state is refused or wiped.
 - [x] Make `dome doctor` render health findings, not a grab bag of admin
       operations.
-- [ ] Move quarantine into durable operational state or provide inspect/reset
+- [x] Move quarantine into durable operational state or provide inspect/reset
       through the same question/answer flow.
 - [x] Add `OutboxRecoveryEffect` + `outbox.recover` so answer handlers can
       retry/abandon failed outbox rows without direct DB access.
 - [x] Ship first-party `dome.health` outbox recovery question emitters and
+      answer handlers.
+- [x] Add `QuarantineRecoveryEffect` + `quarantine.read` /
+      `quarantine.recover` so health answer handlers can reset quarantined
+      processor triggers without direct state-file access.
+- [x] Ship first-party `dome.health` quarantine recovery question emitters and
       answer handlers.
 
 Acceptance:
@@ -270,7 +275,7 @@ Acceptance:
 - [x] Answering a question triggers follow-up processor behavior.
 - [x] Forced outbox failure is visible in status/doctor and recoverable
       through shipped `dome.health` questions, not just the substrate fixture.
-- [ ] Quarantined processor is visible and resettable without direct sqlite or
+- [x] Quarantined processor is visible and resettable without direct sqlite or
       JSON edits.
 - [x] Orphan run is detected by doctor.
 
@@ -413,7 +418,7 @@ Required for daily value:
 | `dome.markdown` | partially shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, page schemas |
 | `dome.graph` | partially shipped | wikilink/tag/task/entity facts for recall and daily workflows |
 | `dome.search` | partially shipped | FTS indexing, adopted-state query; export-context retrieval remains |
-| `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon question emitters and answer handlers |
+| `dome.health` | partially shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon and quarantine-reset question emitters and answer handlers |
 | `dome.daily` | missing | daily creation, task carry-forward, today/prep views |
 | `dome.intake` | missing | capture extraction, task/entity/decision facts, questions |
 

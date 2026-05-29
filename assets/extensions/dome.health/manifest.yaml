@@ -23,3 +23,25 @@ processors:
       - kind: outbox.recover
         actions: ["retry", "abandon"]
     module: processors/outbox-recovery-answer.ts
+
+  - id: dome.health.quarantine-recovery-questions
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "* * * * *"
+    capabilities:
+      - kind: quarantine.read
+      - kind: question.ask
+    module: processors/quarantine-recovery-questions.ts
+
+  - id: dome.health.quarantine-recovery-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        idempotencyKeyPrefix: "dome.health.quarantine-recovery:"
+    capabilities:
+      - kind: quarantine.recover
+        actions: ["reset"]
+    module: processors/quarantine-recovery-answer.ts

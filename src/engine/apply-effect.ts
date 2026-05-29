@@ -61,6 +61,7 @@ import type {
   JobEffect,
   OutboxRecoveryEffect,
   PatchEffect,
+  QuarantineRecoveryEffect,
   QuestionEffect,
   SearchDocumentEffect,
   ViewEffect,
@@ -190,6 +191,13 @@ export type ApplyEffectSinks = {
     readonly runId: RunId;
   }) => Promise<void>;
 
+  /** QuarantineRecoveryEffect — reset a quarantined processor trigger. */
+  readonly recoverQuarantine: (input: {
+    readonly effect: QuarantineRecoveryEffect;
+    readonly processorId: string;
+    readonly runId: RunId;
+  }) => Promise<void>;
+
   /** ViewEffect — captured for return to the view-phase caller. */
   readonly captureView: (input: {
     readonly effect: ViewEffect;
@@ -295,6 +303,7 @@ export function noopSinks(): ApplyEffectSinks {
     enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
     recoverOutbox: async () => undefined,
+    recoverQuarantine: async () => undefined,
     captureView: async () => undefined,
   };
 }
@@ -459,11 +468,13 @@ function capabilityUseField(
  * Per docs/wiki/matrices/effect-router-targets.md, the (kind, phase) cells
  * marked "Rejected: phase-mismatch":
  *
- *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect, ViewEffect
+ *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect,
+ *               QuarantineRecoveryEffect, ViewEffect
  *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
  *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
- *               ExternalActionEffect, OutboxRecoveryEffect
+ *               ExternalActionEffect, OutboxRecoveryEffect,
+ *               QuarantineRecoveryEffect
  *
  * Every other (kind, phase) pair is routed normally.
  */
@@ -474,6 +485,7 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind !== "job" &&
         effect.kind !== "external" &&
         effect.kind !== "outbox-recovery" &&
+        effect.kind !== "quarantine-recovery" &&
         effect.kind !== "view"
       );
     case "garden":
@@ -486,7 +498,8 @@ function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
         effect.kind === "question" ||
         effect.kind === "job" ||
         effect.kind === "external" ||
-        effect.kind === "outbox-recovery"
+        effect.kind === "outbox-recovery" ||
+        effect.kind === "quarantine-recovery"
       ) {
         return false;
       }
@@ -588,6 +601,13 @@ async function routeToSink(
       return { newCandidate: null };
     case "outbox-recovery":
       await opts.sinks.recoverOutbox({
+        effect,
+        processorId: opts.processorId,
+        runId: opts.runId,
+      });
+      return { newCandidate: null };
+    case "quarantine-recovery":
+      await opts.sinks.recoverQuarantine({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,

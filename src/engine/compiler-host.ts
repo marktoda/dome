@@ -607,6 +607,14 @@ function sinksForRuntime(
       applyPatch: realApplyPatch,
       captureView: captureViewPlaceholder,
       externalHandlers: runtime.externalHandlers,
+      recoverQuarantine: async ({ effect }) => {
+        runtime.processorRuntime.executionState.clearQuarantine({
+          phase: effect.phase,
+          processorId: effect.processorId,
+          processorVersion: effect.processorVersion,
+          triggerHash: effect.triggerHash,
+        });
+      },
     });
   };
 }
@@ -632,7 +640,8 @@ function sinksForCursor(opts: {
     enqueueJob: async (input) => current().enqueueJob(input),
     dispatchExternal: async (input) => current().dispatchExternal(input),
     recoverOutbox: async (input) => current().recoverOutbox(input),
-  });
+    recoverQuarantine: async (input) => current().recoverQuarantine(input),
+  } satisfies ApplyEffectSinks);
 }
 
 // Garden patches can spawn sub-Proposals recursively. The closure is

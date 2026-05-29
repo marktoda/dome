@@ -63,6 +63,15 @@ export function capabilityUseForEffect(
         resource: `${effect.action}:${effect.idempotencyKey}`,
         outcome,
       });
+    case "quarantine-recovery":
+      return Object.freeze({
+        capability: "quarantine.recover",
+        resource:
+          `${effect.action}:${effect.phase}:` +
+          `${effect.processorId}:${effect.processorVersion}:` +
+          `${effect.triggerHash}`,
+        outcome,
+      });
     case "diagnostic":
     case "view":
       return null;

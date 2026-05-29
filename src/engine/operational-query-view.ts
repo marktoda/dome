@@ -8,18 +8,28 @@
 
 import type {
   OperationalOutboxRow,
+  OperationalQuarantineRow,
   OperationalQueryView,
 } from "../core/processor";
 import type { OutboxDb } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
+import type {
+  ProcessorExecutionState,
+  ProcessorQuarantineSnapshot,
+} from "../processors/execution-state";
 
 export function buildOperationalQueryView(opts: {
   readonly outbox: OutboxDb;
+  readonly executionState: ProcessorExecutionState;
 }): OperationalQueryView {
   return Object.freeze({
     outbox: (filter) =>
       Object.freeze(
         queryOutbox(opts.outbox, filter ?? {}).map(toOperationalOutboxRow),
+      ),
+    quarantines: () =>
+      Object.freeze(
+        opts.executionState.quarantines().map(toOperationalQuarantineRow),
       ),
   });
 }
@@ -37,5 +47,19 @@ function toOperationalOutboxRow(row: OutboxRow): OperationalOutboxRow {
     sentAt: row.sentAt,
     lastError: row.lastError,
     sourceRefs: row.sourceRefs,
+  });
+}
+
+function toOperationalQuarantineRow(
+  row: ProcessorQuarantineSnapshot,
+): OperationalQuarantineRow {
+  return Object.freeze({
+    phase: row.key.phase,
+    processorId: row.key.processorId,
+    processorVersion: row.key.processorVersion,
+    triggerHash: row.key.triggerHash,
+    consecutiveRetryableFailures: row.consecutiveRetryableFailures,
+    quarantinedAt: row.quarantinedAt.toISOString(),
+    reason: row.reason,
   });
 }

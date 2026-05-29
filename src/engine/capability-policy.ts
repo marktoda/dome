@@ -96,6 +96,8 @@ function parseGrantBlock(raw: unknown): ReadonlyArray<Capability> {
   pushExternalCapability(capabilities, grant.external);
   pushOutboxReadCapability(capabilities, grant["outbox.read"]);
   pushOutboxRecoverCapability(capabilities, grant["outbox.recover"]);
+  pushQuarantineReadCapability(capabilities, grant["quarantine.read"]);
+  pushQuarantineRecoverCapability(capabilities, grant["quarantine.recover"]);
   return Object.freeze(capabilities);
 }
 
@@ -194,6 +196,22 @@ function pushOutboxRecoverCapability(out: Capability[], raw: unknown): void {
   );
   if (actions === undefined || actions.length === 0) return;
   out.push({ kind: "outbox.recover", actions });
+}
+
+function pushQuarantineReadCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) out.push({ kind: "quarantine.read" });
+}
+
+function pushQuarantineRecoverCapability(out: Capability[], raw: unknown): void {
+  if (raw === true) {
+    out.push({ kind: "quarantine.recover", actions: ["reset"] });
+    return;
+  }
+  const actions = stringArray(raw)?.filter(
+    (action): action is "reset" => action === "reset",
+  );
+  if (actions === undefined || actions.length === 0) return;
+  out.push({ kind: "quarantine.recover", actions });
 }
 
 function stringArray(raw: unknown): ReadonlyArray<string> | null {

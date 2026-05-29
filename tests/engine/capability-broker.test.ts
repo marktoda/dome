@@ -12,6 +12,7 @@ import {
   jobEffect,
   outboxRecoveryEffect,
   patchEffect,
+  quarantineRecoveryEffect,
   questionEffect,
   viewEffect,
   type PatchEffect,
@@ -295,5 +296,31 @@ describe("OutboxRecoveryEffect", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.code).toBe("capability-deny-outbox-recover");
+  });
+});
+
+describe("QuarantineRecoveryEffect", () => {
+  const e = quarantineRecoveryEffect({
+    action: "reset",
+    phase: "garden",
+    processorId: "test.proc",
+    processorVersion: "0.1.0",
+    triggerHash: "trigger-1",
+    reason: "recover quarantined processor",
+    sourceRefs: [ref],
+  });
+
+  test("allowed when quarantine.recover covers the action", () => {
+    const cap: Capability = { kind: "quarantine.recover", actions: ["reset"] };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("allow");
+  });
+
+  test("denied when quarantine.recover is not granted", () => {
+    const cap: Capability = { kind: "quarantine.read" };
+    const r = enforceCapability(e, [cap], [cap]);
+    expect(r.kind).toBe("deny");
+    if (r.kind !== "deny") return;
+    expect(r.diagnostic.code).toBe("capability-deny-quarantine-recover");
   });
 });

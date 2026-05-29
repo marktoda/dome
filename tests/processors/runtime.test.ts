@@ -491,6 +491,7 @@ describe("gardenRunner — executor diagnostics", () => {
           ),
         );
       },
+      quarantines: () => Object.freeze([]),
     });
     const p = makeFixtureProcessor({
       id: "test.garden.operational",

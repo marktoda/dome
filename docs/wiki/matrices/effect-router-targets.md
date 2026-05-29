@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
@@ -23,6 +23,7 @@ The canonical mapping from Effect kind × processor phase → engine routing des
 | **JobEffect** | Rejected: adoption-phase processors can't enqueue follow-on work (would re-trigger inside same loop iteration) | Enqueued in `projection.db.scheduled_jobs`; runs after `runAfter?` elapses or immediately if absent | Rejected: `phase-mismatch` diagnostic |
 | **ExternalActionEffect** | Rejected: adoption-phase processors can't touch the outside world (would race with the merge gate) | Inserted into `outbox.db`; dispatched to the registered external handler; status tracked per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] | Rejected: `phase-mismatch` diagnostic |
 | **OutboxRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned outbox recovery transition (`retry` or `abandon`) after `outbox.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
+| **QuarantineRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned quarantine recovery transition (`reset`) after `quarantine.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
 | **ViewEffect** | Rejected: adoption-phase processors don't render views | Rejected: garden-phase processors don't render views (run async, no caller waiting) | Returned to the caller (CLI command, MCP `dome.run_command`, future HTTP request) |
 
 ## Phase-mismatch diagnostic shape
@@ -64,7 +65,7 @@ Three properties hold:
 
 ## Related
 
-- [[wiki/specs/effects]] — the nine kinds
+- [[wiki/specs/effects]] — the ten kinds
 - [[wiki/specs/processors]] — phase semantics
 - [[wiki/specs/adoption]] — the fixed-point loop
 - [[wiki/specs/projection-store]] — where Facts / Diagnostics / Questions / Jobs land

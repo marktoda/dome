@@ -164,11 +164,11 @@ Shipped and strong:
 
 Not yet at v1:
 
-- `dome answer` now records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, and `dome doctor` renders probe-only findings for failed outbox rows, orphan runs, and quarantines. Export-context retrieval, quarantine reset, and orphan-run recovery are still missing.
-- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon questions and answer handlers. `dome.intake`, `dome.daily`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
+- `dome answer` now records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, and `dome doctor` renders probe-only findings for failed outbox rows, orphan runs, and quarantines. Export-context retrieval and orphan-run recovery are still missing.
+- The first-party bundle matrix is partly aspirational. `dome.search` now ships deterministic FTS indexing and `dome query`; `dome.health` now ships failed-outbox retry/abandon and quarantined-processor reset questions and answer handlers. `dome.intake`, `dome.daily`, `dome.index`, `dome.log`, and `dome.migrate` are not shipped as described.
 - The day-to-day workflows the user wants are not yet implemented: daily note creation, carry-forward tasks, capture compilation, todo/followup extraction, and review questions.
-- Quarantine exists, but there is no good inspect/reset/answer path.
-- Failed-outbox recovery is repairable through first-party `dome.health` questions; orphan-run and quarantine recovery are visible but not yet resettable through first-party answer handlers.
+- Quarantine exists and is inspectable/resettable through first-party `dome.health` questions, but the backing store is still JSON rather than a richer operational database.
+- Failed-outbox and quarantine recovery are repairable through first-party `dome.health` questions; orphan-run recovery is visible but not yet resettable through first-party answer handlers.
 - `AbstractSurface` and MCP docs are ahead of implementation and should not drive the v1 acceptance gate.
 
 ## v1 acceptance scenario
@@ -253,7 +253,7 @@ This is mostly for debugging and recovery, not daily happy-path use.
 The universal human-decision channel. The current implementation can print a
 question, validate a choice, record an answer by row id, and dispatch matching
 garden-phase answer handlers through normal Effect routing. Complete v1 still
-needs first-party recovery handlers and a durability model that does not depend
+needs orphan-run recovery handlers and a durability model that does not depend
 on rebuildable projection state for long-lived decisions.
 
 The rule: do not create one-off commands like `dome replay-outbox-row` or `dome clear-quarantine`. Instead:
@@ -399,7 +399,7 @@ Acceptance:
   - AGENTS/CLAUDE managed-section drift,
   - adopted-ref divergence.
 - Add question emitters and answer handlers for recoverable cases.
-- Move quarantine to ledger-backed or sqlite-backed operational state, or at least add inspect/reset through the same question/answer flow.
+- Keep quarantine visible/resettable through the same question/answer flow; optionally move the backing store from JSON to sqlite if the operational state model needs richer history.
 
 Acceptance:
 

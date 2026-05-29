@@ -10,6 +10,7 @@ import {
   jobEffect,
   outboxRecoveryEffect,
   patchEffect,
+  quarantineRecoveryEffect,
   questionEffect,
   searchDocumentEffect,
   viewEffect,
@@ -68,6 +69,23 @@ describe("phase-mismatch rejections", () => {
       effect: outboxRecoveryEffect({
         action: "retry",
         idempotencyKey: "e-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("rejected-by-phase");
+  });
+
+  test("QuarantineRecoveryEffect in adoption phase", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "adoption",
+      effect: quarantineRecoveryEffect({
+        action: "reset",
+        phase: "garden",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        triggerHash: "trigger-1",
         reason: "recover",
         sourceRefs: [ref],
       }),
@@ -315,6 +333,33 @@ describe("successful routes (noopSinks)", () => {
     expect(r.capabilityUse?.capability).toBe("outbox.recover");
     expect(r.capabilityUse?.resource).toBe("retry:e-1");
   });
+
+  test("QuarantineRecoveryEffect in garden phase with quarantine.recover granted → applied", async () => {
+    const recover: Capability = {
+      kind: "quarantine.recover",
+      actions: ["reset"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: quarantineRecoveryEffect({
+        action: "reset",
+        phase: "garden",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        triggerHash: "trigger-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.capabilityUse?.capability).toBe("quarantine.recover");
+    expect(r.capabilityUse?.resource).toBe(
+      "reset:garden:test.proc:0.1.0:trigger-1",
+    );
+  });
 });
 
 describe("capability denial flows through", () => {
@@ -400,6 +445,28 @@ describe("capability denial flows through", () => {
     expect(r.diagnostics[0]?.code).toBe("capability-deny-outbox-recover");
     expect(r.capabilityUse?.capability).toBe("outbox.recover");
     expect(r.capabilityUse?.resource).toBe("abandon:e-1");
+  });
+
+  test("QuarantineRecoveryEffect with no quarantine.recover grant is denied", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: quarantineRecoveryEffect({
+        action: "reset",
+        phase: "garden",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        triggerHash: "trigger-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-quarantine-recover");
+    expect(r.capabilityUse?.capability).toBe("quarantine.recover");
+    expect(r.capabilityUse?.resource).toBe(
+      "reset:garden:test.proc:0.1.0:trigger-1",
+    );
   });
 });
 

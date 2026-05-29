@@ -150,7 +150,7 @@ that nominal SDK-created error and records the run as `processor.threw` with
 `retryable: true`. A plain thrown object with a `retryable: true` property is
 not trusted by shape and remains a non-retryable `processor.threw`.
 
-Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user or a health processor clears the quarantine.
+Garden runs and schedule-triggered view runs maintain consecutive failure counters keyed by `(phase, processorId, processorVersion, triggerHash)`, persisted under `.dome/state/quarantined.json`. `triggerHash` is computed from the matched trigger payload, not from volatile execution envelope fields such as a schedule fire timestamp. After three consecutive retryable terminal failures, the processor trigger is quarantined and future matching invocations are skipped with a `processor.quarantined` diagnostic until the user approves a `dome.health` recovery question whose answer handler emits `QuarantineRecoveryEffect`.
 
 Adoption-phase processors are never quarantined automatically. If an adoption processor fails, adoption blocks: trusted state cannot advance while the deterministic gate is unhealthy.
 

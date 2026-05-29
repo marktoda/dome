@@ -56,6 +56,7 @@ import type {
   JobEffect,
   OutboxRecoveryEffect,
   PatchEffect,
+  QuarantineRecoveryEffect,
   SearchDocumentEffect,
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
@@ -120,6 +121,7 @@ const downgrade = (
  *   - job        → `job.enqueue` matching the target processor id
  *   - external   → `external:<capability>` matching effect's `capability`
  *   - outbox-recovery → `outbox.recover` matching effect's action
+ *   - quarantine-recovery → `quarantine.recover` matching effect's action
  *   - view       → always allow at this layer (phase check lives elsewhere)
  */
 export function enforceCapability(
@@ -144,6 +146,8 @@ export function enforceCapability(
       return enforceExternal(effect, declared, granted);
     case "outbox-recovery":
       return enforceOutboxRecovery(effect, declared, granted);
+    case "quarantine-recovery":
+      return enforceQuarantineRecovery(effect, declared, granted);
     case "view":
       return allow();
   }
@@ -452,6 +456,30 @@ function enforceOutboxRecovery(
       severity: "error",
       code: "capability-deny-outbox-recover",
       message: `OutboxRecoveryEffect denied: action '${effect.action}' has no effective 'outbox.recover' grant.`,
+      sourceRefs: [],
+    }),
+  );
+}
+
+// ----- QuarantineRecoveryEffect enforcement --------------------------------
+
+function enforceQuarantineRecovery(
+  effect: QuarantineRecoveryEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): EnforcementResult {
+  const hasDeclared = declared.some(
+    (c) => c.kind === "quarantine.recover" && c.actions.includes(effect.action),
+  );
+  const hasGranted = granted.some(
+    (c) => c.kind === "quarantine.recover" && c.actions.includes(effect.action),
+  );
+  if (hasDeclared && hasGranted) return allow();
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: "capability-deny-quarantine-recover",
+      message: `QuarantineRecoveryEffect denied: action '${effect.action}' has no effective 'quarantine.recover' grant.`,
       sourceRefs: [],
     }),
   );

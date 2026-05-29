@@ -1,15 +1,15 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # Effects
 
-This spec is normative for the nine-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
+This spec is normative for the ten-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
 
-The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the nine existing kinds within their declared capabilities.
+The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the ten existing kinds within their declared capabilities.
 
 ## The Effect union
 
@@ -23,6 +23,7 @@ type Effect =
   | JobEffect
   | ExternalActionEffect
   | OutboxRecoveryEffect
+  | QuarantineRecoveryEffect
   | ViewEffect;
 ```
 
@@ -224,6 +225,27 @@ interface OutboxRecoveryEffect {
 
 **Why an effect instead of direct outbox access:** answer handlers are processors. Letting them import `outbox.db` accessors would create a second write path outside the broker and ledger. This effect keeps operational recovery under the same Processor → Effect → capability → sink contract as every other mutation.
 
+## QuarantineRecoveryEffect
+
+A recovery transition for processor quarantine state.
+
+```ts
+interface QuarantineRecoveryEffect {
+  readonly kind: "quarantine-recovery";
+  readonly action: "reset";
+  readonly phase: "adoption" | "garden" | "view";
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly triggerHash: string;
+  readonly reason: string;
+  readonly sourceRefs: SourceRef[];
+}
+```
+
+**Routing:** garden phase only. The effect is capability-checked via `quarantine.recover` for `action: "reset"`. The engine-owned sink clears the matching quarantine key `(phase, processorId, processorVersion, triggerHash)` from durable processor execution state. Adoption processors cannot emit this effect because quarantine recovery is a post-adoption operational decision; view processors cannot emit it because views do not mutate state.
+
+**Why an effect instead of direct quarantine access:** quarantine state controls whether processor code is allowed to run. Resetting it must be visible in the run ledger and capability audit trail, so recovery follows the same engine-asks model as outbox recovery: health processors read operational state, ask a question, answer handlers emit a recovery effect, and the engine applies the state transition.
+
 ## ViewEffect
 
 A rendered response to a query or command.
@@ -284,6 +306,7 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
 | OutboxRecoveryEffect | `outbox.recover` for `retry` or `abandon` |
+| QuarantineRecoveryEffect | `quarantine.recover` for `reset` |
 | ViewEffect | (none — view emission is the phase's purpose; the broker enforces phase compatibility instead) |
 
 ## Why a closed taxonomy
@@ -292,7 +315,7 @@ Three properties depend on the union being closed:
 
 1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
-3. **Substrate stability.** The nine kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox rows, render). A new kind is a *design move*, not a plugin's convenience.
+3. **Substrate stability.** The ten kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox/quarantine rows, render). A new kind is a *design move*, not a plugin's convenience.
 
 ## Related
 

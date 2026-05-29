@@ -829,10 +829,15 @@ function operationalContextField(
     frame.declared,
     frame.granted,
   );
-  if (allowedStatuses === null) return {};
+  const canReadQuarantine = effectiveQuarantineRead(
+    frame.declared,
+    frame.granted,
+  );
+  if (allowedStatuses === null && !canReadQuarantine) return {};
   return {
     operational: Object.freeze({
       outbox: (filter) => {
+        if (allowedStatuses === null) return Object.freeze([]);
         if (
           filter?.status !== undefined &&
           !allowedStatuses.has(filter.status)
@@ -845,6 +850,10 @@ function operationalContextField(
             .filter((row) => allowedStatuses.has(row.status)),
         );
       },
+      quarantines: () =>
+        canReadQuarantine
+          ? operational.quarantines()
+          : Object.freeze([]),
     }),
   };
 }
@@ -876,6 +885,16 @@ function outboxReadStatuses(
   statuses: ReadonlyArray<OperationalOutboxStatus> | undefined,
 ): ReadonlySet<OperationalOutboxStatus> {
   return statuses === undefined ? ALL_OUTBOX_STATUSES : new Set(statuses);
+}
+
+function effectiveQuarantineRead(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  return (
+    declared.some((cap) => cap.kind === "quarantine.read") &&
+    granted.some((cap) => cap.kind === "quarantine.read")
+  );
 }
 
 function scopeSnapshotForProcessor(
