@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 
 import {
   collectHealthReport,
+  collectOperationalSchemaReport,
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
   type HealthFinding,
   type HealthReport,
@@ -53,6 +54,17 @@ export async function runDoctor(
 
   const vaultPath = resolve(options.vault ?? process.cwd());
   const bundlesRoot = options.bundlesRoot ?? resolveShippedBundlesRoot();
+
+  const storageReport = collectOperationalSchemaReport({ vaultPath });
+  if (storageReport.status === "unhealthy") {
+    if (options.json === true) {
+      console.log(formatJson(storageReport));
+    } else {
+      printDoctorText(storageReport);
+    }
+    return 0;
+  }
+
   const runtimeResult = await openVaultRuntime({ vaultPath, bundlesRoot });
   if (!runtimeResult.ok) {
     console.error(
@@ -103,7 +115,8 @@ function printDoctorText(report: HealthReport): void {
       `quarantine ${report.summary.quarantinedProcessors} | ` +
       `projection ${report.summary.projectionCacheDrift} | ` +
       `git ${report.summary.adoptedRefDivergence} | ` +
-      `instructions ${report.summary.instructionDrift}`,
+      `instructions ${report.summary.instructionDrift} | ` +
+      `storage ${report.summary.operationalSchemaMismatch}`,
   );
   for (const finding of report.findings) {
     console.log(formatFinding(finding));

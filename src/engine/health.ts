@@ -7,10 +7,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 
+import { computeAnswersSchemaHash } from "../answers/db";
 import type { LedgerDb } from "../ledger/db";
+import { computeLedgerSchemaHash } from "../ledger/db";
 import { orphanRuns, type RunRow } from "../ledger/runs";
 import type { OutboxDb } from "../outbox/db";
+import { computeOutboxSchemaHash } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
 import type { ProjectionDb } from "../projections/db";
 import { projectionCacheKeysChanged } from "../projections/db";
@@ -117,6 +121,20 @@ export type HealthFinding =
       readonly id: string;
       readonly message: string;
       readonly recovery: string;
+    }
+  | {
+      readonly code: "operational.schema-mismatch";
+      readonly severity: "error";
+      readonly subject: "storage";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly storage: {
+        readonly database: "answers" | "outbox" | "ledger";
+        readonly path: string;
+        readonly stored: string | null;
+        readonly expected: string;
+      };
     };
 
 export type HealthSummary = {
@@ -130,6 +148,7 @@ export type HealthSummary = {
   readonly projectionCacheDrift: number;
   readonly adoptedRefDivergence: number;
   readonly instructionDrift: number;
+  readonly operationalSchemaMismatch: number;
 };
 
 export type HealthReport = {
@@ -175,8 +194,10 @@ export async function collectHealthReport(opts: {
     : [];
   const adoptedDivergence = await adoptedRefDivergenceFinding(opts.vaultPath);
   const instructionDrift = instructionDriftFindings(opts.vaultPath);
+  const storageSchema = collectOperationalSchemaFindings(opts.vaultPath);
 
   const findings: HealthFinding[] = [
+    ...storageSchema,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -185,8 +206,27 @@ export async function collectHealthReport(opts: {
     ...(adoptedDivergence === null ? [] : [adoptedDivergence]),
     ...instructionDrift,
   ];
+  return buildHealthReport(findings, now);
+}
+
+export function collectOperationalSchemaReport(opts: {
+  readonly vaultPath: string;
+  readonly now?: Date;
+}): HealthReport {
+  return buildHealthReport(
+    collectOperationalSchemaFindings(opts.vaultPath),
+    opts.now ?? new Date(),
+  );
+}
+
+function buildHealthReport(
+  findings: ReadonlyArray<HealthFinding>,
+  now: Date,
+): HealthReport {
   const errorCount = findings.filter((f) => f.severity === "error").length;
   const warningCount = findings.filter((f) => f.severity === "warning").length;
+  const count = (code: HealthFinding["code"]): number =>
+    findings.filter((f) => f.code === code).length;
 
   return Object.freeze({
     status: findings.length === 0 ? "ok" : "unhealthy",
@@ -195,15 +235,16 @@ export async function collectHealthReport(opts: {
       findingCount: findings.length,
       errorCount,
       warningCount,
-      failedOutbox: failedOutbox.length,
-      stuckPendingOutbox: stuckPendingOutbox.length,
-      orphanRuns: orphaned.length,
-      quarantinedProcessors: quarantined.length,
-      projectionCacheDrift: projectionDrift.length,
-      adoptedRefDivergence: adoptedDivergence === null ? 0 : 1,
-      instructionDrift: instructionDrift.length,
+      failedOutbox: count("outbox.failed"),
+      stuckPendingOutbox: count("outbox.pending-stuck"),
+      orphanRuns: count("run.orphan"),
+      quarantinedProcessors: count("processor.quarantined"),
+      projectionCacheDrift: count("projection.cache-key-drift"),
+      adoptedRefDivergence: count("adopted-ref.diverged"),
+      instructionDrift: count("instructions.drift"),
+      operationalSchemaMismatch: count("operational.schema-mismatch"),
     }),
-    findings: Object.freeze(findings),
+    findings: Object.freeze([...findings]),
   });
 }
 
@@ -383,6 +424,91 @@ function instructionDriftFinding(id: string, message: string): HealthFinding {
       "Re-run `dome init` to restore missing orientation files without " +
       "overwriting user prose.",
   });
+}
+
+function collectOperationalSchemaFindings(
+  vaultPath: string,
+): ReadonlyArray<HealthFinding> {
+  const statePath = join(vaultPath, ".dome", "state");
+  return Object.freeze(
+    [
+      operationalSchemaFinding({
+        database: "answers",
+        path: join(statePath, "answers.db"),
+        table: "answers_meta",
+        expected: computeAnswersSchemaHash(),
+      }),
+      operationalSchemaFinding({
+        database: "outbox",
+        path: join(statePath, "outbox.db"),
+        table: "outbox_meta",
+        expected: computeOutboxSchemaHash(),
+      }),
+      operationalSchemaFinding({
+        database: "ledger",
+        path: join(statePath, "runs.db"),
+        table: "ledger_meta",
+        expected: computeLedgerSchemaHash(),
+      }),
+    ].filter((finding): finding is HealthFinding => finding !== null),
+  );
+}
+
+function operationalSchemaFinding(opts: {
+  readonly database: "answers" | "outbox" | "ledger";
+  readonly path: string;
+  readonly table: string;
+  readonly expected: string;
+}): HealthFinding | null {
+  if (!existsSync(opts.path)) return null;
+  const stored = readOperationalSchemaHash(opts.path, opts.table);
+  if (stored === opts.expected) return null;
+  return Object.freeze({
+    code: "operational.schema-mismatch" as const,
+    severity: "error" as const,
+    subject: "storage" as const,
+    id: `${opts.database}.schema`,
+    message:
+      `${opts.database}.db schema ${
+        stored === null ? "could not be verified" : `hash ${stored}`
+      }; expected ${opts.expected}.`,
+    recovery:
+      "Do not delete operational state. Keep the file intact and run a " +
+      "compatible Dome version or an explicit migration.",
+    storage: Object.freeze({
+      database: opts.database,
+      path: opts.path,
+      stored,
+      expected: opts.expected,
+    }),
+  });
+}
+
+function readOperationalSchemaHash(path: string, table: string): string | null {
+  let db: Database;
+  try {
+    db = new Database(path, { readonly: true, create: false });
+  } catch {
+    return null;
+  }
+  try {
+    const tableExists = db
+      .query<{ name: string }, [string]>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get(table);
+    if (tableExists === null) return null;
+    const row = db
+      .query<{ schema_hash: string }, []>(
+        `SELECT schema_hash FROM ${table} LIMIT 1`,
+      )
+      .get();
+    return row?.schema_hash ?? null;
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
 }
 
 function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {

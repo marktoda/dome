@@ -124,6 +124,51 @@ describe("openOutboxDb", () => {
     expect(queryOutbox(reopened.value.db)[0]?.idempotencyKey).toBe("old-key");
   });
 
+  it("refuses unknown schema mismatches without wiping outbox rows", async () => {
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    const old = new Database(dbPath);
+    old.run(
+      "CREATE TABLE outbox_meta (schema_hash TEXT NOT NULL, built_at TEXT NOT NULL, PRIMARY KEY (schema_hash))",
+    );
+    old.run(
+      "CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, idempotency_key TEXT NOT NULL)",
+    );
+    old.run(
+      "INSERT INTO outbox_meta (schema_hash, built_at) VALUES (?, ?)",
+      ["unknown-outbox-schema", T0.toISOString()],
+    );
+    old.run("INSERT INTO outbox (idempotency_key) VALUES (?)", [
+      "outbox-preserved",
+    ]);
+    old.close();
+
+    const r = await openOutboxDb({ path: dbPath });
+    expect(r.ok).toBe(false);
+    if (r.ok) {
+      handles.push(r.value.db);
+      return;
+    }
+    expect(r.error.kind).toBe("schema-mismatch");
+
+    const check = new Database(dbPath);
+    try {
+      const row = check
+        .query<{ idempotency_key: string }, []>(
+          "SELECT idempotency_key FROM outbox LIMIT 1",
+        )
+        .get();
+      expect(row?.idempotency_key).toBe("outbox-preserved");
+      const meta = check
+        .query<{ schema_hash: string }, []>(
+          "SELECT schema_hash FROM outbox_meta LIMIT 1",
+        )
+        .get();
+      expect(meta?.schema_hash).toBe("unknown-outbox-schema");
+    } finally {
+      check.close();
+    }
+  });
+
   it("can finish an interrupted next_attempt_at migration", async () => {
     mkdirSync(join(root, ".dome", "state"), { recursive: true });
     const old = new Database(dbPath);

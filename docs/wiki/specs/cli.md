@@ -338,9 +338,12 @@ The recut splits these along their real seams:
   QuestionEffect → user runs `dome answer <id>` (below) → answer-handler
   processor in the `dome.health` bundle applies the mutation. No
   per-substrate verb-noun commands.
-- **Auto-mitigations** (AGENTS.md template drift, schema-mismatch
-  rebuild, orphan-commit GC) → handled inline by garden-phase
-  processors with no CLI surface; the engine just does them.
+- **Auto-mitigations** (AGENTS.md template drift, projection schema
+  rebuild, orphan-commit GC) → handled inline by garden-phase processors
+  with no CLI surface; the engine just does them. Operational schema
+  mismatches in `answers.db`, `outbox.db`, or `runs.db` are not
+  auto-mitigated because those files are unrebuildable; `dome doctor`
+  reports them before the runtime opens the DB for mutation.
 - **Synchronization** (`--drain-processors`) → `dome wait` or absorbed
   into `dome status --wait-quiet`. Doesn't fit the engine-asks model
   because there's no decision; it's a "block until quiet" verb.

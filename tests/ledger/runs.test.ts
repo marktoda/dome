@@ -9,7 +9,8 @@
 // EVERY_PROCESSOR_RUN_IS_LEDGERED).
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -86,6 +87,45 @@ describe("openLedgerDb", () => {
     handles.push(second.value.db);
     expect(second.value.migration).toBe("ok");
     expect(second.value.db.schemaHash).toBe(first.value.db.schemaHash);
+  });
+
+  it("refuses unknown schema mismatches without wiping ledger rows", async () => {
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    const old = new Database(dbPath);
+    old.run(
+      "CREATE TABLE ledger_meta (schema_hash TEXT NOT NULL PRIMARY KEY, built_at TEXT NOT NULL)",
+    );
+    old.run("CREATE TABLE runs (id TEXT PRIMARY KEY)");
+    old.run(
+      "INSERT INTO ledger_meta (schema_hash, built_at) VALUES (?, ?)",
+      ["unknown-ledger-schema", "2026-05-28T00:00:00.000Z"],
+    );
+    old.run("INSERT INTO runs (id) VALUES (?)", ["run-preserved"]);
+    old.close();
+
+    const r = await openLedgerDb({ path: dbPath });
+    expect(r.ok).toBe(false);
+    if (r.ok) {
+      handles.push(r.value.db);
+      return;
+    }
+    expect(r.error.kind).toBe("schema-mismatch");
+
+    const check = new Database(dbPath);
+    try {
+      const row = check
+        .query<{ id: string }, []>("SELECT id FROM runs LIMIT 1")
+        .get();
+      expect(row?.id).toBe("run-preserved");
+      const meta = check
+        .query<{ schema_hash: string }, []>(
+          "SELECT schema_hash FROM ledger_meta LIMIT 1",
+        )
+        .get();
+      expect(meta?.schema_hash).toBe("unknown-ledger-schema");
+    } finally {
+      check.close();
+    }
   });
 });
 

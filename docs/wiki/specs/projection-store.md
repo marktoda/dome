@@ -277,6 +277,12 @@ The rebuild is **idempotent** — running it twice in succession produces byte-e
 
 Wall-clock cost scales with vault size + processor count. For a typical user vault (hundreds to low thousands of pages, a dozen processors), rebuild is seconds. For a 50k-page vault, rebuild is a couple of minutes. The user-facing UX is "you can always wipe and rebuild" — slow but correct.
 
+This rebuild guarantee applies only to `projection.db`. Operational SQLite
+files (`answers.db`, `outbox.db`, `runs.db`) carry user decisions, external
+action state, and audit history that cannot be derived from markdown. Unknown
+schema mismatches in those files are refused and reported by `dome doctor`
+before the runtime opens them for mutation; they are not auto-wiped.
+
 ## Schema migrations
 
 Schema migrations are **the rebuild**. The projection store does not carry a schema-migration system; when the schema changes (Dome SDK version bump introducing a new column or table), the engine detects schema-version mismatch on `openVault` and triggers `dome rebuild` automatically, surfacing a one-line message:

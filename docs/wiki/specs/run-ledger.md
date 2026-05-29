@@ -37,6 +37,11 @@ Successful adoption-phase runs that contribute engine patches appear in **both**
 
 Separate SQLite file from `projection.db` so processor-run audit history is not wiped by a projection rebuild. The file is gitignored ([[wiki/specs/vault-layout]] §"Derived operational state") but persists across SDK upgrades, projection schema changes, and `dome rebuild`.
 
+`runs.db` is unrebuildable operational history. Unknown schema-hash
+mismatches are refused rather than wiped; `dome doctor` reports the stored and
+expected hashes so the operator can run a compatible Dome version or an
+explicit migration without losing rows.
+
 ## Tables
 
 ### `runs`

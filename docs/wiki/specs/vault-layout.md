@@ -201,7 +201,7 @@ Gitignored operational state:
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper).
 - `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 
-Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting `projection.db` and running `dome rebuild` reconverges the derived query cache. `answers.db`, `runs.db`, and `outbox.db` are persistent operational state, not rebuildable projections: wiping `answers.db` loses human question decisions, wiping `runs.db` loses historical run audit, and wiping `outbox.db` loses pending external actions. Users should delete only `projection.db` unless they are intentionally discarding operational history.
+Per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]], deleting `projection.db` and running `dome rebuild` reconverges the derived query cache. `answers.db`, `runs.db`, and `outbox.db` are persistent operational state, not rebuildable projections: wiping `answers.db` loses human question decisions, wiping `runs.db` loses historical run audit, and wiping `outbox.db` loses pending external actions. Users should delete only `projection.db` unless they are intentionally discarding operational history. Operational DB schema mismatches are refused and reported by `dome doctor`; they are not auto-wiped.
 
 ## Git repository structure
 

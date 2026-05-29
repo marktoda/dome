@@ -25,7 +25,7 @@
 //     column joins to the `Dome-Run` trailer in engine commit messages.
 //
 // ============================================================================
-// WARNING — schema-mismatch wipe is a known, severe data-loss event.
+// WARNING — schema mismatches are refused, never wiped.
 // ============================================================================
 //
 // The ledger is the audit surface for "what did Dome do." Unlike
@@ -33,7 +33,7 @@
 // [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]]) and unlike `outbox.db`
 // (where the loss is bounded to in-flight external calls), the ledger
 // is NOT rebuildable from any other surface. Wiping it on a schema-hash
-// mismatch erases:
+// mismatch would erase:
 //
 //   - The history of every failed processor run (git only records
 //     successful commits — failed runs leave NO trace outside the ledger).
@@ -47,27 +47,22 @@
 // "corrupting the ledger requires rebuild from git trailers (lossy —
 // capability uses and costs are unrecoverable for past runs)."
 //
-// Phase 5 v1 still wipes on schema-hash mismatch because:
-//   - The ledger schema is small and closed-set; the v1.x roadmap of
-//     anticipated schema changes is minimal.
-//   - A real schema-migration system (add-column, backfill, etc.) is
-//     deferred to a post-v1 version with more substrate around it.
-//   - The wipe is loud: the migration result `"schema-changed"` surfaces
-//     to the caller so the engine can warn the user before continuing
-//     (`dome inspect runs` going from N rows to zero is the
-//     loudest possible failure mode).
+// V1 refuses unknown ledger schema mismatches. `openLedgerDb` returns
+// `schema-mismatch` and closes the handle without mutating the file; `dome
+// doctor` reports the mismatch through the operational health surface. A real
+// schema-migration system (add-column, backfill, etc.) can be added later as
+// explicit, audited migrations.
 //
-// If you find yourself adding a column to the ledger schema below, audit
-// whether the wipe-on-mismatch behavior is acceptable for the change.
-// For columns with default values that are safe to backfill, consider
-// implementing an additive migration before bumping the schema hash.
+// If you find yourself adding a column to the ledger schema below, implement
+// an explicit migration when existing rows can be safely backfilled. Otherwise
+// the opener will refuse the old file and ask the operator to recover it
+// explicitly.
 // ============================================================================
 //
 // v1 Phase 5 scope:
-//   - Schema migrations are the wipe (above). This file does not implement
-//     incremental column-add migrations; it wipes and recreates on
-//     schema-hash change. The DDL uses `CREATE ... IF NOT EXISTS` so a
-//     fresh open on a missing file is safe.
+//   - Schema migrations are intentionally refused unless implemented as an
+//     explicit additive migration. The DDL uses `CREATE ... IF NOT EXISTS`
+//     so a fresh open on a missing file is safe.
 //
 // Imports (tight by design — the ledger is the SQLite boundary):
 //   - `bun:sqlite` for the `Database` handle (the only I/O dependency).
@@ -102,9 +97,8 @@ import { type Result, ok, err } from "../types";
 //
 // The canonical DDL. Order matters for schema-hash determinism — changing
 // the order changes the hash, which is treated by `openLedgerDb` as a
-// schema change and triggers a wipe-and-recreate. The hash is sha256 of
-// the joined statements (joined by "\n"); see `computeLedgerSchemaHash`
-// below.
+// schema change. The hash is sha256 of the joined statements (joined by
+// "\n"); see `computeLedgerSchemaHash` below.
 //
 // Statements are normalized to a single canonical form (no leading/trailing
 // whitespace, single spaces between tokens). This protects the hash from
@@ -189,19 +183,6 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE INDEX IF NOT EXISTS capability_uses_by_run ON capability_uses(run_id)",
 ]);
 
-// Drop order: reverse-creation. `ledger_meta` is dropped last so the
-// schema-version row remains queryable as long as possible during a wipe
-// (defense in depth).
-const DROP_DDL: ReadonlyArray<string> = Object.freeze([
-  "DROP INDEX IF EXISTS capability_uses_by_run",
-  "DROP TABLE IF EXISTS capability_uses",
-  "DROP INDEX IF EXISTS runs_by_status",
-  "DROP INDEX IF EXISTS runs_by_processor",
-  "DROP INDEX IF EXISTS runs_by_proposal",
-  "DROP TABLE IF EXISTS runs",
-  "DROP TABLE IF EXISTS ledger_meta",
-]);
-
 // ----- sha256 helper --------------------------------------------------------
 
 const sha256 = (s: string): string =>
@@ -218,8 +199,7 @@ const sha256 = (s: string): string =>
  * the engine (via those files) writes new rows.
  *
  * `schemaHash` is captured at open time. The schema is immutable for the
- * lifetime of the handle (the wipe-and-recreate path happens before the
- * handle is returned), so the value is safe to memoize.
+ * lifetime of the handle, so the value is safe to memoize.
  *
  * `close()` is idempotent per Bun's `sqlite3_close_v2` semantics.
  */
@@ -248,13 +228,8 @@ export type OpenLedgerDbOpts = {
  * - `"ok"`              — schema hash matches the stored value. No action
  *                         needed; existing runs + capability_uses rows
  *                         survive.
- * - `"schema-changed"`  — schema hash differs from the stored value.
- *                         Tables wiped and recreated; meta row reset.
- *                         **This is a severe data-loss event** — see the
- *                         file banner. The caller should surface a warning
- *                         to the user before continuing.
  */
-export type LedgerMigration = "fresh" | "ok" | "schema-changed";
+export type LedgerMigration = "fresh" | "ok";
 
 export type OpenLedgerDbResult = {
   readonly db: LedgerDb;
@@ -270,6 +245,11 @@ export type LedgerDbError =
   | {
       readonly kind: "schema-init-failed";
       readonly cause: string;
+    }
+  | {
+      readonly kind: "schema-mismatch";
+      readonly stored: string;
+      readonly expected: string;
     };
 
 // ----- Public hash helpers --------------------------------------------------
@@ -287,9 +267,8 @@ export function computeLedgerSchemaHash(): string {
 
 /**
  * Open (or create) the run-ledger database at `opts.path`. Ensures the
- * parent directory exists, applies the schema if missing, and detects
- * schema-hash mismatch (wiping and recreating if so — see file banner
- * warning).
+ * parent directory exists, applies the schema if missing, and refuses
+ * schema-hash mismatches without mutating the file.
  *
  * The function never throws on expected I/O failures — the conditions
  * (directory create, DDL apply, meta read) all surface as `Result.err`.
@@ -341,13 +320,19 @@ export async function openLedgerDb(
   const isSchemaChanged =
     storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash;
 
-  // 4. If schema changed, wipe everything (data-loss event — see banner);
-  //    if fresh, just apply DDL; if matched, apply DDL idempotently
-  //    (`CREATE ... IF NOT EXISTS` is safe and defensive against a partial
-  //    schema left by a prior crash).
+  // 4. If schema changed, refuse to open. The ledger is unrebuildable
+  //    operational history, so unknown schema skew must be reported before
+  //    any destructive migration is attempted. If fresh, just apply DDL;
+  //    if matched, apply DDL idempotently (`CREATE ... IF NOT EXISTS` is
+  //    safe and defensive against a partial schema left by a prior crash).
   try {
     if (isSchemaChanged) {
-      applyDropAll(raw);
+      raw.close();
+      return err({
+        kind: "schema-mismatch",
+        stored: storedSchemaHash ?? "",
+        expected: currentSchemaHash,
+      });
     }
     applyDdl(raw);
   } catch (e) {
@@ -356,10 +341,9 @@ export async function openLedgerDb(
   }
 
   // 5. Ensure exactly one ledger_meta row exists with the current schema
-  //    hash. On fresh/schema-changed paths, the row is missing (the wipe
-  //    dropped the table; the CREATE re-created it empty). On the "ok"
-  //    path, the existing row's hash already matches; INSERT OR REPLACE
-  //    is a defensive no-op (same hash → same row, updated built_at).
+  //    hash. On the "ok" path, the existing row's hash already matches;
+  //    INSERT OR REPLACE is a defensive no-op (same hash → same row,
+  //    updated built_at).
   try {
     insertOrReplaceMetaRow(raw, currentSchemaHash);
   } catch (e) {
@@ -371,8 +355,6 @@ export async function openLedgerDb(
   let migration: LedgerMigration;
   if (isFresh) {
     migration = "fresh";
-  } else if (isSchemaChanged) {
-    migration = "schema-changed";
   } else {
     migration = "ok";
   }
@@ -408,24 +390,6 @@ function applyDdl(db: Database): void {
   db.run("BEGIN");
   try {
     for (const stmt of DDL) {
-      db.run(stmt);
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
-/**
- * Drop every table + index per `DROP_DDL`. Used on schema-hash mismatch
- * before re-applying the current DDL. **Severe data-loss event** — see
- * file banner. Wrapped in a transaction for the same reason as `applyDdl`.
- */
-function applyDropAll(db: Database): void {
-  db.run("BEGIN");
-  try {
-    for (const stmt of DROP_DDL) {
       db.run(stmt);
     }
     db.run("COMMIT");

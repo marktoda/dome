@@ -708,6 +708,53 @@ describe("runDoctor", () => {
     ]);
   });
 
+  test("--json reports operational schema mismatches without opening runtime", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const runsPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const old = new Database(runsPath);
+    old.run(
+      "CREATE TABLE ledger_meta (schema_hash TEXT NOT NULL PRIMARY KEY, built_at TEXT NOT NULL)",
+    );
+    old.run("CREATE TABLE runs (id TEXT PRIMARY KEY)");
+    old.run(
+      "INSERT INTO ledger_meta (schema_hash, built_at) VALUES (?, ?)",
+      ["unknown-ledger-schema", "2026-05-28T00:00:00.000Z"],
+    );
+    old.run("INSERT INTO runs (id) VALUES (?)", ["run-preserved"]);
+    old.close();
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: {
+        readonly operationalSchemaMismatch: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly storage: { readonly stored: string | null };
+      }>;
+    };
+    expect(parsed.status).toBe("unhealthy");
+    expect(parsed.summary.operationalSchemaMismatch).toBe(1);
+    expect(parsed.findings[0]?.code).toBe("operational.schema-mismatch");
+    expect(parsed.findings[0]?.storage.stored).toBe("unknown-ledger-schema");
+
+    const check = new Database(runsPath);
+    try {
+      const row = check
+        .query<{ id: string }, []>("SELECT id FROM runs LIMIT 1")
+        .get();
+      expect(row?.id).toBe("run-preserved");
+    } finally {
+      check.close();
+    }
+  });
+
   test("with --repair: exits 64 (not implemented yet)", async () => {
     const code = await runDoctor({ repair: true });
     expect(code).toBe(64);

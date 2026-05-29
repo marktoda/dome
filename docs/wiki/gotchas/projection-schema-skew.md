@@ -27,7 +27,13 @@ The projection schema is identified by `projection_meta.schema_hash` — a sha25
 
 The auto-rebuild is **safe by construction** because of [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — anything in projection.db can be re-derived from the adopted commit + the loaded processors. No migration tooling needed; no manual user intervention.
 
-The run ledger (`runs.db`) and outbox (`outbox.db`) carry their own schema_hashes and rebuild paths. The ledger's rebuild is partial — historical runs cannot be re-derived from markdown (the ledger holds data git doesn't carry, per [[wiki/specs/run-ledger]] §"Why a separate ledger"); a ledger schema-hash mismatch logs a one-line warning and proceeds with the old schema (the SDK ships *additive-only* ledger schema changes — new columns are nullable, new tables are independently created). The outbox's schema is similarly additive-only.
+The operational databases (`answers.db`, `outbox.db`, and `runs.db`) carry
+their own schema hashes but do **not** share the projection rebuild behavior.
+Those files hold human decisions, external-action state, and audit history
+that cannot be re-derived from markdown. Unknown operational schema mismatches
+are refused without mutating the file and surfaced by `dome doctor` as
+`operational.schema-mismatch`; known additive migrations may preserve and
+upgrade rows when the DB-specific opener implements them.
 
 **Specific scenarios:**
 

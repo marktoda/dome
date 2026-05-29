@@ -239,7 +239,7 @@ Work:
       running rows, and quarantined processors.
 - [x] Add health probes for projection cache-key skew, instruction drift,
       adopted-ref divergence, and stuck-pending outbox rows.
-- [ ] Add non-destructive reporting for operational DB schema mismatches
+- [x] Add non-destructive reporting for operational DB schema mismatches
       before any unrebuildable state is refused or wiped.
 - [x] Make `dome doctor` render health findings, not a grab bag of admin
       operations.
