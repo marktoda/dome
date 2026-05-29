@@ -188,6 +188,23 @@ describe("runSync empty-diff init", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
+
+  test("--verbose labels adoption events as sync output", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      verbose: true,
+    });
+    expect(code).toBe(0);
+
+    const outBlob = captured.out.join("\n");
+    expect(outBlob).toContain("dome sync:   iteration");
+    expect(outBlob).not.toContain("dome serve:   iteration");
+  }, 10_000);
 });
 
 // ----- Test 2: already in sync ----------------------------------------------

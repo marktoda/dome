@@ -66,8 +66,8 @@ export async function runOperationalWork(opts: {
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
 }): Promise<OperationalWorkResult> {
-  const outboxDrainCutoff = new Date();
   const outboxNow = opts.now();
+  const outboxDrainCutoff = outboxNow;
 
   const scheduler = await runScheduler({
     vault: opts.vault,

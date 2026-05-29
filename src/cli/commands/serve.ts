@@ -318,7 +318,12 @@ async function runCompilerHostTickWithErrorHandling(input: {
       runtime,
       drift,
       runOperationalWhenInSync,
-      ...(verbose ? { onEvent: (e) => console.log(formatAdoptEvent(e)) } : {}),
+      ...(verbose
+        ? {
+            onEvent: (e) =>
+              console.log(formatAdoptEvent(e, { command: "serve" })),
+          }
+        : {}),
     });
     printTickLine(tick, verbose);
   } catch (e) {

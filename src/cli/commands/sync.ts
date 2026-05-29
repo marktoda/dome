@@ -166,7 +166,10 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
       runtime,
       drift,
       ...(verbose && !jsonMode
-        ? { onEvent: (e) => console.log(formatAdoptEvent(e)) }
+        ? {
+            onEvent: (e) =>
+              console.log(formatAdoptEvent(e, { command: "sync" })),
+          }
         : {}),
     });
     if (jsonMode) {

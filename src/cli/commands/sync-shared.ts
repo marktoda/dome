@@ -26,25 +26,29 @@ export function resolveShippedBundlesRoot(): string {
 
 /**
  * Format an `AdoptEvent` as a single human-readable stdout line for
- * `dome serve --verbose` / `dome sync --verbose`.
+ * command-specific verbose output.
  */
-export function formatAdoptEvent(event: AdoptEvent): string {
+export function formatAdoptEvent(
+  event: AdoptEvent,
+  opts: { readonly command: "serve" | "sync" },
+): string {
+  const prefix = `dome ${opts.command}:`;
   switch (event.kind) {
     case "iteration-start":
       return (
-        `dome serve:   iteration ${event.iteration}: ` +
+        `${prefix}   iteration ${event.iteration}: ` +
         `${event.changedPathCount} changed path${event.changedPathCount === 1 ? "" : "s"}, ` +
         `${event.signalCount} signal${event.signalCount === 1 ? "" : "s"}`
       );
     case "processor-result":
       return (
-        `dome serve:     ↳ ${event.processorId}: ` +
+        `${prefix}     ↳ ${event.processorId}: ` +
         `${event.effectCount} effect${event.effectCount === 1 ? "" : "s"}`
       );
     case "iteration-end":
       return event.converged
-        ? `dome serve:   iteration ${event.iteration}: converged`
-        : `dome serve:   iteration ${event.iteration}: ` +
+        ? `${prefix}   iteration ${event.iteration}: converged`
+        : `${prefix}   iteration ${event.iteration}: ` +
             `${event.autoPatchCount} auto-patch${event.autoPatchCount === 1 ? "" : "es"} accumulated → re-iterating`;
   }
 }
