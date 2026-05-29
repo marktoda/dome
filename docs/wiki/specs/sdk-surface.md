@@ -19,7 +19,7 @@ A Vault, once unwrapped:
 
 - Knows its `path` (absolute directory).
 - Loads `.dome/page-types.yaml` and `.dome/config.yaml`.
-- Mounts the SDK-shipped first-party bundles plus any configured vault-local bundles and registers their processors.
+- Loads extension bundles from one configured bundles root and registers their processors. CLI commands default that root to the SDK-shipped `assets/extensions/`; tests and vault-local installs can override it with `--bundles-root`.
 - Holds the engine, processor runtime, projection store, run ledger, and outbox.
 - Exposes read/Recall APIs plus engine-control operations such as `sync`, `rebuild`, and adoption status.
 
@@ -159,7 +159,7 @@ Three engine APIs are exposed on the Vault surface:
 
 ## Extension bundles
 
-An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or `assets/extensions/<bundle-name>/` for SDK-shipped bundles) containing a `manifest.yaml` plus contributions across five kinds: page-types, preamble, processors, capabilities, external-handlers.
+An **extension bundle** is a directory under a configured bundles root: `assets/extensions/<bundle-name>/` for SDK-shipped bundles by default, or `<vault>/.dome/extensions/<bundle-name>/` when a command is explicitly run with `--bundles-root <vault>/.dome/extensions`. The bundle contains a `manifest.yaml` plus contributions across five kinds: page-types, preamble, processors, capabilities, external-handlers.
 
 ### Bundle directory shape
 
@@ -224,11 +224,11 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `registry-build-failed` | The loaded processor set fails registry checks such as duplicate processor ids, duplicate command triggers, empty triggers, or invalid phases. |
 | `page-type-collision` | Two bundles declare the same page-type name; the loader fails before opening the runtime. Vault-local collisions with bundle/default page types are surfaced by `dome.markdown.lint-frontmatter` from the candidate snapshot. |
 | `capability-handler-collision` | Two bundles register handlers for the same external capability. |
-| `bundle-deps-unmet` | A `deps:` entry names a bundle not present in `.dome/extensions/`. |
+| `bundle-deps-unmet` | A `deps:` entry names a bundle not present in the selected bundles root. |
 
 ### Bundle load lifecycle
 
-`openVault` loads bundles in this order: (1) the SDK-shipped first-party bundles from `assets/extensions/dome.*/` (resolved at runtime via `resolveShippedBundlesRoot()` per the Phase 11f hotfix — bundles are no longer copied into the vault); (2) vault-local third-party bundles from `<vault>/.dome/extensions/` when `--bundles-root` is set there. Within each tier, alphabetical by directory name. Each bundle:
+The current runtime loads bundles from a single root per process. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`); `--bundles-root` replaces that root for tests or vault-local third-party installs. Multi-root composition of shipped plus vault-local bundles in one runtime remains v1.x polish. Within the selected root, bundles load alphabetically by directory name. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`.

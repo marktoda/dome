@@ -45,9 +45,9 @@ The MCP server exposes Dome's Recall and view-command surfaces as MCP tools unde
 | `dome.query` | `AbstractSurface.query` | Full-text + structured query against adopted state. |
 | `dome.read_document` | `AbstractSurface.read` | Read a single document at the adopted commit. |
 | `dome.resolve_wikilink` | `AbstractSurface.resolveWikilink` (via vault) | Resolve a `[[wikilink]]` to a document. |
-| `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`lint`, `stats`, `query`, etc.). |
+| `dome.run_command` | `AbstractSurface.commands.<name>` | Invoke a view-phase command processor (`query` today; planned examples include `lint`, `stats`, and `export-context`). |
 
-Tool names are derived from a single source (the canonical processor + Submit/Recall surface) — no parallel naming catalog. Adding a new view-phase command processor extends `dome.run_command`'s command list automatically.
+Tool names are derived from the Recall/view surface — no parallel naming catalog. Adding a new view-phase command processor extends `dome.run_command`'s command list automatically.
 
 ### `dome.query`
 
@@ -74,7 +74,7 @@ inputSchema:
   type: object
   required: [name]
   properties:
-    name:  { type: string, description: "Command processor name (lint, stats, query, export-context, etc.)" }
+    name:  { type: string, description: "Command processor name (query today; planned examples include lint, stats, export-context)" }
     args:  { type: object, description: "Command-specific arguments" }
 ```
 
@@ -87,8 +87,8 @@ The MCP server exposes vault contents under URI schemes:
 | URI scheme | Maps to | Returns |
 |---|---|---|
 | `dome://page/<path>` | `AbstractSurface.readResource` | Markdown body of `<path>` at adopted commit |
-| `dome://log` | `AbstractSurface.readResource` | `log.md` at adopted commit |
-| `dome://index` | `AbstractSurface.readResource` | `index.md` at adopted commit |
+| `dome://log` | `AbstractSurface.readResource` | `log.md` at adopted commit once the optional `dome.log` projection ships |
+| `dome://index` | `AbstractSurface.readResource` | `index.md` at adopted commit once the optional `dome.index` projection ships |
 | `dome://search?q=<query>` | `AbstractSurface.readResource` | Top-N FTS matches for `<query>` |
 | `dome://status` | (engine call) | `AdoptionStatus` JSON |
 
@@ -96,19 +96,19 @@ The resource URI map is the read-side counterpart to the tool map.
 
 ## MCP prompts
 
-The MCP server exposes the view-phase processor names as MCP prompts under `dome.workflow.<processor-id>`. The MCP prompt's `getMessages(args)` callback constructs the prompt by invoking the processor with the supplied args and returning the rendered prompt text.
+The MCP prompt surface is speculative. If it ships, it should expose deliberate read/view prompts, not the old workflows-as-prompts model or garden processors directly.
 
 ```yaml
-# Example: dome.workflow.dome.intake.extract-capture
-name: dome.workflow.dome.intake.extract-capture
-description: Compile a raw capture into wiki updates.
+# Example: dome.view.dome.search.query
+name: dome.view.dome.search.query
+description: Build an adopted-state query prompt.
 arguments:
-  - name: capture_path
-    description: "Path to the raw capture file"
+  - name: text
+    description: "Query text"
     required: true
 ```
 
-Note: MCP prompts here are *prompts about processors*, not the workflows-as-prompts pattern v0.5 had. The garden-LLM processors define their own prompts internally; the MCP prompt surface exposes them as MCP-protocol prompts for harnesses that want to invoke a processor's prompt without running the processor itself.
+Garden-LLM processors define their own prompts internally; MCP should not become a privileged way to run or mutate through them.
 
 ## Mount lifecycle
 
@@ -131,7 +131,7 @@ To keep the surface minimal:
 - **No multi-vault routing.** One vault per server process.
 - **No engine-internal queries.** No way to read the run ledger directly through MCP (use `dome inspect runs` via CLI when needed).
 
-These are intentional. The MCP server is a Recall + Submit adapter, not a privileged escape hatch.
+These are intentional. The MCP server is a Recall + view-command adapter, not a privileged escape hatch.
 
 ## Related
 

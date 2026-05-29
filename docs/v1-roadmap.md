@@ -115,9 +115,9 @@ Work:
 - [x] Use this file as the technical roadmap and shipped-status ledger.
 - [x] Link both from `docs/index.md`.
 - [x] Keep MCP described as optional/additive for v1.
-- [ ] Mark aspirational matrices as roadmap/speculative when they name
+- [x] Mark aspirational matrices as roadmap/speculative when they name
       unshipped bundles or processors.
-- [ ] Keep `docs/wiki/specs/cli.md` aligned with actual command state and
+- [x] Keep `docs/wiki/specs/cli.md` aligned with actual command state and
       v1-required placeholders.
 
 Acceptance:
@@ -125,7 +125,7 @@ Acceptance:
 - [x] A contributor can reach the v1 product plan and technical roadmap from
       `docs/index.md`.
 - [x] No v1 acceptance path requires MCP.
-- [ ] No planning/spec doc claims an unshipped command or bundle is shipped.
+- [x] No planning/spec doc claims an unshipped command or bundle is shipped.
 
 ## Milestone 1 - Claude Code Boot Path
 

@@ -15,24 +15,24 @@ Maps the three processor phases (adoption / garden / view) to the trigger kinds 
 |---|---|---|---|
 | **`signal`** (`file.created`, `file.modified`, `file.deleted`, `document.changed`, `frontmatter.changed`, `region.changed`, `link.added`, `link.removed`) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
 | **`path`** (path glob pattern) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
-| **`schedule`** (cron expression) | ✗ Rejected — adoption is per-Proposal, not periodic | ✓ Allowed | ✓ Allowed (the cron-driven CLI commands like `dome lint --schedule weekly`) |
+| **`schedule`** (cron expression) | ✗ Rejected — adoption is per-Proposal, not periodic | ✓ Allowed | ✓ Allowed for read-only scheduled reports; write-producing scheduled work belongs in garden |
 | **`answer`** (QuestionEffect answer, optionally narrowed by idempotency-key prefix) | ✗ Rejected — answers are user decisions after adoption | ✓ Allowed | ✗ Rejected |
-| **`command`** (command name) | ✗ Rejected — adoption isn't user-invoked | ✗ Rejected — garden runs autonomously | ✓ Allowed (`dome lint`, `dome query`, `dome export-context`, ...) |
+| **`command`** (command name) | ✗ Rejected — adoption isn't user-invoked | ✗ Rejected — garden runs autonomously | ✓ Allowed (`dome query` today; planned aliases include `dome lint` and `dome export-context`) |
 
 ## Phase semantics recap
 
 - **Adoption** — runs inside the fixed-point loop. Bounded, deterministic, merge-blocking. Subscribes to per-Proposal signals computed from the candidate-tree diff. Never invoked by cron or user command (it runs because a Proposal is being adopted).
 - **Garden** — runs async on adopted state. May be slow; may call LLMs. Triggered by signals (e.g., post-adoption "new entity page appeared"), paths, cron schedules, or answered questions. Not user-invoked directly — the engine schedules garden runs.
-- **View** — runs on demand for queries / CLI commands / MCP `dome.run_command`. Read-only; renders responses from adopted state + projections. May also run on cron when the view is a periodic deliverable (weekly lint report).
+- **View** — runs on demand for queries / CLI commands / MCP `dome.run_command`. Read-only; renders responses from adopted state + projections. May also run on cron when the view is a periodic read-only deliverable.
 
 ## Why each rejection
 
 | Rejection | Reason |
 |---|---|
 | adoption × schedule | Adoption is per-Proposal — the adoption loop doesn't have a "next cron tick" semantic. A processor that wants periodic execution lives in garden or view phase. |
-| adoption × command | Same — adoption runs because a Proposal needs adopting, not because a user typed `dome <name>`. A view-phase processor handles command invocations and may submit a Proposal via the engine if it wants to write. |
+| adoption × command | Same — adoption runs because a Proposal needs adopting, not because a user typed `dome <name>`. A view-phase processor handles command invocations; if a command needs to cause writes, it should enqueue or ask for garden-phase work rather than emit PatchEffects directly. |
 | adoption × answer | Answers arrive after a question row exists in adopted-state operational substrate; handling them belongs in garden. |
-| garden × command | Garden runs are scheduled by the engine, not the user. A user-invokable operation is view-phase; if the view-phase processor needs to write, it emits an Effect that re-enters as a garden-phase Proposal. |
+| garden × command | Garden runs are scheduled by the engine, not the user. A user-invokable operation is view-phase; writes belong behind garden/adoption routing, not direct command-triggered patches. |
 | view × signal / path / answer | Views render on demand, not on writes or user-decision events. A processor that reacts to a vault write or answer is adoption-phase or garden-phase. |
 
 ## How the validator catches mismatches
@@ -82,7 +82,7 @@ The phase × trigger matrix is **the canonical contract** that the manifest vali
 
 ## Edge: command-triggered view processors that schedule
 
-Some view processors are *both* user-invokable AND cron-driven — `dome.lint`'s `lint-report` is a canonical example (run via `dome lint` AND via `cron '0 7 * * MON'`). The processor declares two triggers:
+Some view processors are *both* user-invokable AND cron-driven when the cron path only renders or records a read-only report for a protocol surface. The processor declares two triggers:
 
 ```yaml
 processors:
@@ -95,7 +95,7 @@ processors:
         cron: "0 7 * * MON"
 ```
 
-Both triggers are allowed by the view row of the matrix. The processor's `run(ctx)` body inspects `ctx.input.triggerKind` (`"command"` or `"schedule"`) and decides whether to render synchronously to the caller (command mode) or write the report to `inbox/review/` (schedule mode).
+Both triggers are allowed by the view row of the matrix. The processor's `run(ctx)` body inspects `ctx.input.triggerKind` (`"command"` or `"schedule"`) and renders an appropriate ViewEffect. If the scheduled path needs to mutate vault markdown, that work belongs in a garden processor because `applyEffect({ phase: "view" })` rejects write effects.
 
 ## Related
 

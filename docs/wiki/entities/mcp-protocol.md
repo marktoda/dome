@@ -1,7 +1,7 @@
 ---
 type: entity
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 aliases: ["MCP", "Model Context Protocol"]
 tags: ["protocol", "standard"]
@@ -11,9 +11,9 @@ tags: ["protocol", "standard"]
 
 Open protocol for connecting AI applications to data sources and tools. Published by Anthropic but vendor-neutral; supported by Claude Code, Cursor, OpenCode, Codex CLI, and others.
 
-For Dome, MCP is the universal mount point. The Dome MCP server exposes the SDK's Tools as MCP tools, Dome's prompts as MCP prompts, and the vault as MCP resources. Any MCP-capable harness becomes Dome-aware by adding one config line — see [[wiki/specs/mcp-surface]].
+For Dome v1, MCP is an optional protocol adapter, not the universal mount point. The load-bearing Claude Code workflow uses the vault orientation files, normal filesystem/git tools, and the CLI/compiler host. The planned Dome MCP server exposes read/query and view-command surfaces for harnesses that benefit from typed MCP routing; it does not replace the Git-native write path. See [[wiki/specs/mcp-surface]].
 
-MCP is what makes the *interface-agnostic* principle practical (see [[wiki/specs/harnesses]] §"Why this design"). Without MCP, every harness would need a bespoke Dome integration.
+MCP still supports the interface-agnostic principle (see [[wiki/specs/harnesses]] §"Why this design"), but v1 deliberately avoids depending on it because many agentic harnesses already have good shell, file, grep, and git tools.
 
 ## See also
 

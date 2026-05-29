@@ -15,7 +15,7 @@ The canonical map of "what an extension bundle contributes to a vault." Rows are
 |---|---|---|
 | `shipped` | `assets/extensions/<bundle>/` in the SDK package (resolved at runtime; not copied into vaults) | Iterate; assert each named filename exists. |
 | `partially shipped` | `assets/extensions/<bundle>/` in the SDK package, with future cells called out explicitly | Iterate only over shipped filenames; future items are non-normative until promoted. |
-| `test-fixture` | `tests/fixtures/extensions/<bundle>/` (only in the SDK repo, never shipped or installed) | Iterate; assert each named filename exists. |
+| `test-fixture` | `tests/harness/fixtures/bundles/<bundle>/` (only in the SDK repo, never shipped or installed) | Iterate; assert each named filename exists. |
 | `anticipated` | n/a (documentation-of-intent for future-pressure bundles) | Skip — rows with this status are non-normative future pressure. |
 
 An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or shipped from the SDK at `assets/extensions/<bundle-name>/`) containing a `manifest.yaml` plus contributions across five kinds: page-types, preamble fragments, processors, external-handlers, capability grants. The bundle mechanism is the only registration path in v1 — there is no separate "tool," "hook," or "workflow" registration kind.
@@ -30,7 +30,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 
 - **External handlers** — `<bundle>/external-handlers/*.ts` register handlers for external capabilities (calendar, notify, network) per [[wiki/specs/capabilities]] §"external". A bundle may register an external handler for a capability it doesn't grant to its own processors (so a calendar-sync bundle can provide a `calendar.write` handler that other bundles' processors consume).
 
-- **Capability grants** — `<bundle>/manifest.yaml`'s `processors[].capabilities` declares per-processor capabilities; `<vault>/.dome/config.yaml`'s `extensions.<bundle>.grants` declares per-bundle grants. The intersection is what the broker enforces per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
+- **Capability grants** — `<bundle>/manifest.yaml`'s `processors[].capabilities` declares per-processor capabilities; `<vault>/.dome/config.yaml`'s `extensions.<bundle>.grant` declares per-bundle grants. The intersection is what the broker enforces per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
 ## Matrix
 
