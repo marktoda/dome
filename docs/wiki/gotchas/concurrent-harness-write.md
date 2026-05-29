@@ -1,45 +1,46 @@
 ---
 type: gotcha
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 severity: medium
-coverage: deferred  # v0.5 matrix test retired in Phase 7b; v1 equivalent TBD
+coverage: deferred  # v1 multi-surface conflict policy remains a roadmap item
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 ---
 
 # Concurrent harness write
 
-**Symptom:** Two Claude Code sessions are open in the same vault. Both ingest something at the same time. Both call `writeDocument` to the same target. The second write clobbers the first. The first user's intended update is lost.
+**Symptom:** Two Claude Code sessions, a future mobile client, or a remote compiler host all try to update the same vault near the same time. Without a single merge boundary, one surface can overwrite or obscure another surface's intended change.
 
-**Root cause:** v0.5's SDK is single-process per Vault instance, but nothing prevents multiple instances from running concurrently against the same vault directory. Each MCP server (one per harness session) opens its own Vault instance; neither knows about the other.
+**Root cause:** Dome v1 removed the v0.5 direct Tool write surface. That is the right architectural move, but it shifts concurrency to the Git/proposal boundary: clients produce commits, the compiler host observes branch movement, processors emit effects, and the engine applies closure commits. A single local compiler host is coherent; multiple writers across devices or hosts need an explicit queue/merge policy.
 
-**Structural mitigation:** **Caller-supplied optimistic locking via `expected_mtime`.**
+**Structural mitigation:** **Git-native proposals plus a future merge queue.**
 
-- `readDocument` returns the document's filesystem `mtime` as an ISO-8601 string in the returned `Document`. Callers (agent, hook, harness) treat the mtime as a snapshot token alongside the page contents.
-- Mutating Tools (`writeDocument`, `moveDocument`, `deleteDocument`) accept an optional `expected_mtime?: string` field. When passed, the Tool re-reads the target's current `mtime` immediately before mutating; on mismatch it returns `Result.err({ kind: 'concurrent-write-conflict', path, expected_mtime, actual_mtime })` and does not write.
-- Omitting `expected_mtime` is the v0.5 default and means "last write wins" — no conflict detection. Workflows that ingest from a single-user, single-session vault (the most common v0.5 case) can ignore the field; harnesses that read-then-write through a multi-session vault should pass it.
-- The agent receiving the conflict re-reads the page (gaining a fresh `mtime`), integrates the other harness's update, and re-proposes with the new snapshot. The user sees a brief "the page was updated by another session; merging..." in chat.
+- The current v1 write path is Git-native: the user or agent edits files, commits, and `dome serve`/`dome sync` adopts the branch head. There is no `writeDocument`/`expected_mtime` contract in v1.
+- Processor-generated mutations are PatchEffects routed through the engine. They apply as adoption/garden sub-proposals and closure commits, so engine writes are ledgered and capability-checked.
+- A future multi-surface server should own a merge queue: incoming client commits become proposals, engine patches apply on top of the current adopted head, conflicts are resolved explicitly, and only accepted heads advance the shared branch.
+- Local same-repo concurrent sessions should be treated like normal Git concurrency: commit, pull/rebase/merge, resolve conflicts, then let Dome adopt the resulting branch state.
 
-This shape makes the protection explicit at the call site rather than implicit in the Tool body. The previous "Tool snapshots mtime internally" design was structurally inert — the snapshot and verify happened inside one synchronous Tool call with no real race window. v0.5 ships the call-site-explicit form; the workflow prompts (shipped-default `ingest`, `query`, `lint`) opt out by not threading `expected_mtime`, while harnesses that hold a Document across user turns thread it.
+This shape keeps the conflict boundary at the same level as the durability boundary. File mtimes are not stable enough for the v1 architecture: they do not compose across Git remotes, server queues, mobile clients, or engine closure commits. Commit ancestry does.
 
 **Specific scenarios:**
 
-- **Two ingests of related content.** User dictates voice-note-A to harness session 1. While session 1 is ingesting, user reads a paper and asks harness session 2 to summarize. Both end up updating `wiki/entities/danny.md`. Session 1 writes first (no conflict; page mtime matches session 1's read). Session 2 attempts second write; mtime has changed; conflict; session 2 re-reads, integrates session 1's update, re-proposes. Final state preserves both updates.
-- **Read-modify-write races within a session.** Two Tools in the same session both read and intend to write the same page. The SDK's effect-batching (see [[wiki/gotchas/multi-page-partial-write]]) groups them; the second write inside the batch uses the first write's intermediate state, not stale on-disk state. No conflict within a session.
-- **Out-of-band edit between read and write.** Session reads page; user edits in Obsidian; session writes. mtime mismatch; conflict; the agent re-reads (now sees the user's edit), integrates, re-proposes. The user explicitly sees the merge happening.
+- **Two ingests of related content.** Two agents both update `wiki/entities/danny.md`. In the current local workflow, Git conflict detection is the guardrail if both sessions commit/pull. In the future server workflow, both commits enter the queue and the loser rebases or becomes an explicit conflict question.
+- **Engine patch on top of user edits.** A processor emits a PatchEffect while the user keeps editing. The engine applies against the adopted/proposal candidate, not arbitrary working-tree state; user work remains visible in Git and can be resubmitted if it was not part of the adopted proposal.
+- **Mobile voice capture while laptop is active.** The mobile client should not push directly to the shared branch. It should submit a commit/proposal to the server queue so the laptop compiler host, mobile app, and engine closure commits share one ordering rule.
 
 **Operational notes:**
 
-- The conflict detection is *optimistic* — it doesn't lock the page during the read-modify-write window. This trades off some retry overhead for not needing a coordinated locking service.
-- The conflict's failure mode is *visible* (the agent surfaces "merging..." to the user), not silent. Compare to "last write wins" silent overwrites in some sync systems — those are the bad alternative this mitigation prevents.
-- For high-conflict workloads (rare in v0.5; common in v1+ multi-device sync), a stronger locking model may be needed. v0.5 ships optimistic locking; v1+ revisits if needed.
+- The v1 local path deliberately avoids per-page locks. It relies on Git commits, branch ancestry, and the adopted ref as semantic cursor.
+- The future server path should make conflict state visible as questions or queue items, not silent last-write-wins behavior.
+- A multi-surface implementation should be tested with high-level harness scenarios: two competing commits, engine patch plus user patch, remote fast-forward, remote non-fast-forward, and conflict question recovery.
 
 **v1+ sync notes:**
 
-Concurrent writes across devices (laptop and phone) are structurally identical to concurrent writes across harness sessions. The same optimistic-locking primitive scales, but the conflict-resolution UI needs care: the user sees the conflict on their phone or laptop and the surfacing must be device-appropriate.
+Concurrent writes across devices are the forcing function for the merge queue. The UI can differ by device, but the ordering rule should not: every surface submits against an explicit base and the server either fast-forwards, rebases, asks, or rejects.
 
 **Related:**
-- [[wiki/specs/sdk-surface]] §"Tool catalog" (`writeDocument`)
+- [[wiki/specs/harnesses]]
+- [[wiki/specs/adoption]]
 - [[wiki/gotchas/multi-page-partial-write]]
 - [[wiki/gotchas/out-of-band-vault-edits]]

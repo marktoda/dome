@@ -59,7 +59,6 @@ import {
   makeResolveTree,
   type VaultRuntime,
 } from "./vault-runtime";
-import { deriveExtensionId } from "../extensions/id-helpers";
 import {
   markProjectionBuilt,
   projectionCacheKeysChanged,
@@ -396,10 +395,11 @@ async function runAdoptionCycle(opts: {
       changedPaths: gardenCompiled.changedPaths,
       signals: gardenCompiled.signals,
       runGardenProcessors: runtime.processorRuntime.gardenRunner,
-      sinks,
+      sinks: sinksForCursor({ sinksFor, cursor }),
       ledger: runtime.ledgerDb,
       adoptSubProposal,
       currentAdopted: () => cursor.current,
+      extensionIdFor: runtime.extensionIdFor,
       cascadeDepth: 0,
     });
 
@@ -653,7 +653,7 @@ function sinksForRuntime(
         runContext: {
           runId,
           processorId,
-          extensionId: deriveExtensionId(processorId),
+          extensionId: runtime.extensionIdFor(processorId),
           base: frame.base,
           sourceHead: frame.head,
         },
@@ -778,6 +778,13 @@ function makeAdoptSubProposal(opts: {
       const cursor = opts.cursor;
       const currentAdopted =
         cursor === undefined ? undefined : ((): CommitOid => cursor.current);
+      const gardenSinks =
+        cursor === undefined
+          ? opts.sinksFor({
+              base: subResult.adoptedRef,
+              head: subResult.adoptedRef,
+            })
+          : sinksForCursor({ sinksFor: opts.sinksFor, cursor });
       await runGardenPhase({
         vault: subAdoptOpts.vault,
         proposal: subProposal,
@@ -785,10 +792,11 @@ function makeAdoptSubProposal(opts: {
         changedPaths: subCompiled.changedPaths,
         signals: subCompiled.signals,
         runGardenProcessors: opts.runtime.processorRuntime.gardenRunner,
-        sinks: subSinks,
+        sinks: gardenSinks,
         ledger: opts.runtime.ledgerDb,
         adoptSubProposal,
         ...(currentAdopted !== undefined ? { currentAdopted } : {}),
+        extensionIdFor: opts.runtime.extensionIdFor,
         cascadeDepth,
       });
     }
@@ -796,11 +804,6 @@ function makeAdoptSubProposal(opts: {
   };
   return adoptSubProposal;
 }
-
-// `deriveExtensionId` moved to `src/extensions/id-helpers.ts` (Phase 4a'
-// fix-up) so both this module and `src/engine/garden.ts` can share one
-// source of truth for the convention. See the imported function for
-// the full doc.
 
 // ----- Placeholder sinks (v1.0) ---------------------------------------------
 

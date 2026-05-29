@@ -1,7 +1,7 @@
 ---
 type: entity
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[wiki/sources/isomorphic-git-library]]"]
 aliases: ["isomorphic-git"]
 tags: ["library", "dependency"]
@@ -9,7 +9,7 @@ tags: ["library", "dependency"]
 
 # isomorphic-git
 
-Pure-JavaScript implementation of git that reads and writes the same `.git/` format as the git CLI. Dome v0.5's mechanism for talking to git from Bun without requiring the git binary to be installed.
+Pure-JavaScript implementation of git that reads and writes the same `.git/` format as the git CLI. Dome's mechanism for talking to git from Bun without requiring the git binary to be installed.
 
 ## Why this over alternatives
 
@@ -23,17 +23,17 @@ Trade-off: isomorphic-git is slower than the native git CLI for some operations 
 
 The SDK uses a small subset of the library's surface:
 
-- `git.statusMatrix({ fs, dir, gitdir })` — returns the [filepath, HEAD, workdir, stage] state of every tracked file. The primary reconciliation primitive.
+- `git.statusMatrix({ fs, dir, gitdir })` — returns the [filepath, HEAD, workdir, stage] state of every tracked file. Used by status/analytics and change inspection.
 - `git.init({ fs, dir })` — invoked by `dome init` to create a fresh git repo.
 - `git.commit({ fs, dir, message, author })` — used by `dome init` for the initial commit.
-- `git.log({ fs, dir, depth })` — for temporal queries (future feature; not in v0.5 hot path).
-- `git.resolveRef({ fs, dir, ref: 'HEAD' })` — to read the current HEAD SHA for the reconciliation pointer.
+- `git.log({ fs, dir, depth })` — for commit-history views and future temporal queries.
+- `git.resolveRef({ fs, dir, ref: 'HEAD' })` — to read branch heads, adopted refs, and current commits.
 
 The `fs` argument is a Bun-compatible filesystem interface; we pass Bun's built-in `fs` module.
 
 ## Version pinning
 
-v0.5 pins to `isomorphic-git ^1.x` (latest stable at time of writing). Major version bumps are reviewed for breaking changes; this is a small enough API surface that upgrades are low-risk.
+Dome pins to `isomorphic-git ^1.x`. Major version bumps are reviewed for breaking changes; this is a small enough API surface that upgrades are low-risk.
 
 ## See also
 

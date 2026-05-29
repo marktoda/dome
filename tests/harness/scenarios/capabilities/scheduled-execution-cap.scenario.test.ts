@@ -51,5 +51,18 @@ extensions:
       .expectProjection()
       .diagnostics({ code: "processor.timeout", severity: "error" })
       .toHaveCount(1);
+
+    const immediateRetry = await h.tick();
+    expect(immediateRetry.hadDrift).toBe(false);
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "timed_out" })
+      .toHaveCount(1);
+
+    await h.advance(60_000);
+    const nextInterval = await h.tick();
+    expect(nextInterval.hadDrift).toBe(false);
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "timed_out" })
+      .toHaveCount(2);
   },
 );

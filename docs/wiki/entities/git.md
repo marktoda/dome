@@ -1,7 +1,7 @@
 ---
 type: entity
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 tags: ["infrastructure", "version-control"]
 ---
@@ -16,7 +16,7 @@ The version control system that powers Dome's durability, reconciliation, undo, 
 - **Undo.** Every vault operation that mutates content is recoverable via `git revert <commit>` or `git reset --hard <sha>`. The "multi-page partial write" gotcha collapses to a `git reset` recovery.
 - **Audit trail.** `git log` provides a content-history view that complements `log.md`'s operation-history view. The two together: git tracks what content changed and when; log.md tracks what Dome operations happened and what they meant.
 - **Temporal queries.** "What did this page look like 6 weeks ago?" is `git show HEAD~50:wiki/entities/danny.md`. The substrate for "what was I thinking 6 weeks ago" queries comes from git history directly.
-- **Multi-device sync (v1+).** `git push` / `git pull` against a remote (GitHub, a private gitea instance, Syncthing-synced bare repo, etc.) becomes Dome's sync mechanism. After pull, run `dome sync` to fire hooks against the synced changes and advance the adopted ref.
+- **Multi-device sync (v1+).** `git push` / `git pull` against a remote (GitHub, a private gitea instance, Syncthing-synced bare repo, etc.) becomes Dome's sync mechanism. After pull, run `dome sync` to adopt the synced commits, run processors, rebuild projections, and advance the adopted ref.
 
 ## Why this works structurally
 
@@ -26,9 +26,9 @@ Git also has decades of operational maturity: handles weird filesystems, corrupt
 
 ## What Dome does NOT use git for
 
-- **Commits.** Dome does not auto-commit. The user commits when they want a snapshot. Reconciliation handles both committed and uncommitted state.
+- **User-intent commits.** The user commits draft vault changes when they want a snapshot. Dome may create engine closure commits while adopting processor PatchEffects; those commits carry Dome trailers and are separate from user-authored intent commits.
 - **Branches.** Dome operates on whatever branch the user has checked out. Branching for experimental thinking ("try a research direction; revert if it doesn't pan out") is a user pattern, not a Dome mechanism.
-- **Hooks.** Dome's Hook concept is unrelated to git's `.git/hooks/` directory. They share a name; the mechanisms are independent. (`.git/hooks/` is git-CLI behavior; Dome Hooks are SDK-registered handlers against document events.)
+- **Git hooks.** Dome does not rely on `.git/hooks/` for engine behavior. The v1 trigger model is processor-based and lives inside the Dome runtime.
 
 ## Implementation
 
@@ -36,7 +36,7 @@ The Dome SDK uses [[wiki/entities/isomorphic-git]] — a pure-JavaScript impleme
 
 - The user does NOT need git installed. The SDK speaks the protocol natively in Bun.
 - Existing git repos created by the CLI work without modification.
-- A user can `git pull` from the command line one moment and have Dome reconcile see the changes the next.
+- A user can `git pull` from the command line one moment and have `dome serve` or `dome sync` see the committed changes the next.
 
 ## Recommended user behavior
 

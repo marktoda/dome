@@ -1,18 +1,18 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 severity: medium
 coverage: off-matrix
 enforced_at: src/engine/adopt.ts
-enforced_at_status: deferred
+enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
 # Processor fixed-point divergence
 
-**Symptom:** The adoption loop hits `MAX_ITER` (default 100) and the Proposal blocks with `code: "fixed-point.divergence"`. `dome submit` exits 1; the user sees the diagnostic naming the processor(s) involved.
+**Symptom:** The adoption loop hits `MAX_ITER` (default 100) and the Proposal blocks with `code: "fixed-point.divergence"`. `dome sync` / `dome serve` report the blocked adoption and the diagnostic is visible through `dome inspect diagnostics`.
 
 **Root cause:** Two or more adoption-phase processors emit patches that invalidate each other's reactions. Processor A patches a property; processor B reacts to the property's new state and patches again; processor A re-reacts; the loop cycles. Without a fixed-point cap, the adoption would loop forever.
 
@@ -30,10 +30,10 @@ The cap (default 100, configurable as `engine.max_iterations` in `.dome/config.y
 - The last 3 iterations' effect-emission history.
 - The candidate processors involved (those whose patches appeared in multiple iterations).
 
-The diagnostic surfaces via `dome submit` exit code, `dome inspect diagnostics --code fixed-point.divergence` (and the deferred `dome inspect recent-processor-divergence` v1.x subject), and the `engine.adoption.blocked` event.
+The diagnostic surfaces via `dome sync` / `dome serve`, `dome inspect diagnostics` (and the deferred `dome inspect recent-processor-divergence` v1.x subject), and the adoption result's diagnostics.
 
 ```text
-dome submit: blocked main: proposal prop_1748... (1 diagnostic)
+dome sync: blocked main: proposal prop_1748... (1 diagnostic)
   - [block] fixed-point.divergence: adoption loop hit MAX_ITER=100 without convergence.
     Last 3 iterations:
       iter 98: processor=dome.markdown.validate-wikilinks, effect=patch (wiki/entities/danny.md frontmatter)

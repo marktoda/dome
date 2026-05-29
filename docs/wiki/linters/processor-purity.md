@@ -1,14 +1,14 @@
 ---
 type: linter
 created: 2026-05-27
-updated: 2026-05-27
-status: v1 (proposed; lockstep check ships in Phase 1 of implementation)
+updated: 2026-05-29
+status: v1 (implemented)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
 # processor-purity
 
-**Status:** v1 substrate; the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]]. The lockstep check ships as part of Phase 1 of v1 implementation per the brainstorm's "Phasing the cut" section.
+**Status:** v1 substrate; the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]]. The implemented check lives at `tests/integration/processor-purity.test.ts`.
 
 **Statement:** TypeScript files under `assets/extensions/*/processors/**/*.ts` (first-party bundles) and `<vault>/.dome/extensions/*/processors/**/*.ts` (vault-local third-party bundles) do not import mutation modules. A processor's `run(ctx)` body uses only the `ProcessorContext` surface; direct filesystem, SQLite, or git access bypasses the engine and violates the snapshot-in-effects-out contract per [[wiki/specs/processors]] §"What a processor cannot do".
 
@@ -21,20 +21,21 @@ assets/extensions/*/processors/**/*.ts
 .dome/extensions/*/processors/**/*.ts   (in vault-local CI integrations)
 ```
 
-For every processor file, the check inspects every `import` and `import()` call, asserts the imported module name is not in the forbidden-module allowlist.
+For every processor file, the check inspects every `import` and `import()` call, asserts the imported module name is not in the forbidden-module denylist, and scans for known mutation calls.
 
 **Forbidden modules:**
 - `node:fs`, `node:fs/promises`
-- `node:path` (allowed in v1.1+ if path manipulation proves necessary; v1 forbids to keep processors strictly snapshot-driven)
 - `bun:sqlite`
 - `bun` (for `Bun.write`, `Bun.file`)
 - `isomorphic-git` (entire module — processors don't need git access; the engine handles git boundaries)
 - `node:child_process` (no shelling out)
 - `node:net`, `node:http`, `node:https` (no direct network — `ExternalActionEffect` is the path)
 
+- Direct mutation calls such as `Bun.write`, `writeFile`, `appendFile`, `unlink`, `rename`, `mkdir`, `fetch`, SQLite mutation statements, and mutating git calls.
+
 **Allowed modules:**
 - `@dome/sdk` — the four core types and the `defineProcessor` helper.
-- `@dome/sdk/workflows` — `modelInvoke` integration for garden-LLM processors (these processors need to call the LLM; the engine's `modelInvoke` shim runs the call through capability enforcement).
+- `node:path` / `node:path/posix` — path-string helpers are allowed; filesystem and git mutation APIs are not.
 - `zod` — input validation.
 - Bundle-local relative imports (other files in the same bundle).
 - Type-only imports from any package (`import type { ... } from "..."`) — these are erased at compile time and carry no runtime dependency.
@@ -53,17 +54,11 @@ The check is per-file (not per-bundle) because a bundle may carry multiple proce
 2. **Type-only imports** — `import type { ... }` is erased at compile.
 3. **Files annotated `// @engine-internal: <justification>`** — reserved escape hatch for v1.x cases where a processor needs unusual reach. No current uses; review-gated.
 
-## Why `node:path` is forbidden in v1
+## Why path helpers are allowed
 
-Path manipulation in a processor's `run(ctx)` body is almost always a signal that the processor is computing paths to read from or write to outside the snapshot. `ProcessorContext.snapshot.readBlob(path)` and `ProcessorContext.sourceRef(path)` are the two path-using surfaces; both accept vault-relative paths the engine validates. A processor that needs `node:path` is typically:
+Path manipulation is not itself mutation. Several first-party processors need POSIX path helpers to normalize vault-relative markdown references and image links. The purity boundary is filesystem, SQLite, git, network, and process mutation access; path-string normalization remains inside the snapshot-in/effects-out contract as long as the processor still reads through `ctx.snapshot` and writes only by returning effects.
 
-- Building paths to call external-system APIs → use `ExternalActionEffect` instead; the engine handles path / URL composition for known capabilities.
-- Constructing `wiki/...` paths for PatchEffect targets → use plain string concatenation or template literals; the path is a string the engine validates against the processor's capability scope.
-- Reading the user's home directory or environment-dependent paths → forbidden; processors run against snapshots, not filesystems.
-
-If a v1.x processor needs `node:path` legitimately, it gets the `// @engine-internal` annotation with a written justification; the v1.x linter check is updated to allow `node:path` under that annotation specifically.
-
-## Implementation sketch (v1 Phase 1)
+## Implementation sketch
 
 ```ts
 // tests/integration/processor-purity.test.ts
@@ -72,7 +67,7 @@ import { Glob } from "bun";
 import { parseImports } from "../helpers/parse-imports";
 
 const FORBIDDEN = new Set([
-  "node:fs", "node:fs/promises", "node:path",
+  "node:fs", "node:fs/promises",
   "bun:sqlite", "bun",
   "isomorphic-git",
   "node:child_process",
@@ -80,8 +75,7 @@ const FORBIDDEN = new Set([
 ]);
 
 const ALLOWED = new Set([
-  "@dome/sdk", "@dome/sdk/workflows",
-  "zod",
+  "@dome/sdk", "zod", "node:path", "node:path/posix",
 ]);
 
 test("processor-purity", async () => {

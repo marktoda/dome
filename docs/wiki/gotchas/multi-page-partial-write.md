@@ -1,11 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 severity: low
 coverage: off-matrix
 enforced_at: src/engine/adopt.ts
-enforced_at_status: deferred
+enforced_at_status: implemented
 first_observed: 2026-05-27
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
@@ -22,7 +22,7 @@ The narrow remaining cases:
 
 1. **Engine crash between writing the closure-commit blob objects and updating the adopted ref.** Atomic at the git-object level (git's content-addressed store survives crashes), but the ref-update is the structural boundary; if the process dies mid-update, the ref stays at the prior commit and the new commit becomes an unreachable object eligible for GC. **Recovery:** zero work — the next `dome sync` rebuilds the candidate from `adopted..HEAD` and resubmits. The orphan engine commit is eventually garbage-collected by `git gc` automatically; a future `dome.health` garden-phase processor surfaces accumulated orphans via DiagnosticEffect (visible at `dome inspect diagnostics`).
 
-2. **User editing multiple files in the working tree, then crashing or interrupting before `dome submit`.** The working tree has half-edited files; adoption never started. **Recovery:** the user runs `dome status` to see the dirty-tree count, decides whether to commit-and-submit or `git restore` to undo.
+2. **User editing multiple files in the working tree, then crashing or interrupting before commit.** The working tree has half-edited files; adoption never started. **Recovery:** the user runs `dome status` to see the dirty-tree count, decides whether to commit and sync or `git restore` to undo.
 
 **Structural mitigation:** **The closure commit is the atomic boundary.**
 
@@ -32,17 +32,17 @@ Per [[wiki/specs/adoption]] §"The fixed-point adoption loop":
 for iteration in 1..MAX_ITER:
   candidate = apply_patches(candidate, ...)
 if candidate != P.head:
-  closureCommit = commitWorkflow({ candidate, runContext })
+  closureCommit = commitEngineChange({ candidate, runContext })
 setAdoptedRef(branch, closureCommit ?? P.head)
 ```
 
-The `commitWorkflow` call produces a single git commit object atomically (git's write-tree + write-commit are atomic-ish via filesystem rename). `setAdoptedRef` is the single ref-update. If either step fails, the prior adopted ref stays unchanged; the user's intent is recoverable via `git status` + resubmit.
+The `commitEngineChange` call produces a single git commit object atomically (git's write-tree + write-commit are atomic-ish via filesystem rename). `setAdoptedRef` is the single ref-update. If either step fails, the prior adopted ref stays unchanged; the user's intent is recoverable via Git history plus another sync.
 
 **Specific scenarios:**
 
-- **Garden processor produces a 7-file PatchEffect; the 5th file emits a blocking diagnostic during adoption.** The engine aborts adoption *before* writing the closure commit. The candidate tree (held in-memory) is discarded. The user sees `dome submit` exit 1 with the diagnostic. No on-disk partial state — the working tree is unchanged from before submit.
+- **Garden processor produces a 7-file PatchEffect; the 5th file emits a blocking diagnostic during adoption.** The engine aborts adoption *before* writing the closure commit. The candidate tree is discarded. The user sees the diagnostic through `dome sync`, `dome serve`, or `dome inspect diagnostics`. No on-disk partial state lands in the adopted ref.
 
-- **User edits 7 files in vim; runs `dome submit`; the engine crashes mid-loop.** The candidate-tree work is lost (no harm — it was in-memory). The user's working-tree edits are preserved. The user re-runs `dome submit`; adoption restarts from scratch with the same Proposal.
+- **User edits 7 files in vim; commits; the engine crashes mid-loop.** The candidate-tree work is lost (no harm). The user's commit is preserved on the source branch. The user re-runs `dome sync`; adoption restarts from the same branch state.
 
 - **`dome.intake.extract-capture` (garden-phase) emits a 12-PatchEffect chain.** The engine constructs each into a sub-Proposal (per [[wiki/specs/proposals]] §"Garden-emitted Proposals") and adopts them sequentially. If the 7th sub-Proposal blocks, the first 6 already adopted; the 7th's blocking diagnostic surfaces in `dome inspect diagnostics`. The user resolves and the engine resumes from the failed sub-Proposal. This isn't "partial write" — each sub-Proposal is its own atomic adoption boundary; the failure is observable and recoverable.
 

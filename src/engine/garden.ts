@@ -215,6 +215,7 @@ export async function runGardenPhase(opts: {
    * same starting commit.
    */
   readonly currentAdopted?: () => CommitOid;
+  readonly extensionIdFor?: (processorId: string) => string;
   /**
    * Optional sub-Proposal adoption callback. When absent, garden-emitted
    * PatchEffects log+drop (Phase 4a behavior). When present, they spawn
@@ -290,6 +291,7 @@ async function runGardenPhaseInner(opts: {
   readonly sinks: ApplyEffectSinks;
   readonly ledger?: LedgerDb;
   readonly currentAdopted?: () => CommitOid;
+  readonly extensionIdFor?: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cascadeDepth?: number;
   readonly maxCascadeDepth?: number;
@@ -304,6 +306,7 @@ async function runGardenPhaseInner(opts: {
     sinks,
     ledger,
     currentAdopted,
+    extensionIdFor = deriveExtensionId,
     adoptSubProposal,
   } = opts;
   const cascadeDepth = opts.cascadeDepth ?? 0;
@@ -523,7 +526,7 @@ async function runGardenPhaseInner(opts: {
           patch: req.patch,
           processorId: req.processorId,
           runId: req.runId,
-          extensionId: deriveExtensionId(req.processorId),
+          extensionId: extensionIdFor(req.processorId),
           cascadeDepth: cascadeDepth + 1,
           applyPatch: applyPatchToCandidate,
           adoptSubProposal,

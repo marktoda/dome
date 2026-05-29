@@ -1,16 +1,16 @@
 ---
 type: entity
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 tags: ["vendor", "llm"]
 ---
 
 # Anthropic
 
-AI safety company. Vendor of the Claude model family (Opus, Sonnet, Haiku) and the `@ai-sdk/anthropic` TypeScript client Dome's headless agent loop uses. Also publishes Claude Code (see [[wiki/entities/claude-code]]) and MCP (see [[wiki/entities/mcp-protocol]]).
+AI safety company. Vendor of the Claude model family (Opus, Sonnet, Haiku) and the `@ai-sdk/anthropic` TypeScript client a Dome host may use as a model provider. Also publishes Claude Code (see [[wiki/entities/claude-code]]) and MCP (see [[wiki/entities/mcp-protocol]]).
 
-Dome v0.5 calls Anthropic's models via the SDK for all LLM operations. Model selection is per-workflow (configured in workflow prompt frontmatter) — most v0.5 workflows default to Sonnet for cost/latency balance; high-stakes flows (sensitivity classification, lint synthesis) opt into Opus.
+In v1, `@dome/sdk` core has no Anthropic dependency. LLM access enters through garden-phase processors with an effective `model.invoke` grant and a host-provided model provider. Model selection, per-call timeouts, structured-output validation, and cost budgets are runtime policy rather than workflow prompt frontmatter.
 
 ## See also
 

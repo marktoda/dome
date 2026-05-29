@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 severity: low
 coverage: off-matrix
 enforced_at: src/cli/commands/serve.ts
@@ -22,23 +22,23 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 - **Compiler host (primary, low-latency when `dome serve` is running).** The host observes `refs/heads/<branch>` moving ahead of `refs/dome/adopted/<branch>`. On branch movement, it debounces/coalesces, then constructs a `"manual"` Proposal per [[wiki/specs/proposals]] §"Local-eventual mode". Uncommitted working-tree edits remain draft material; they are not trusted state until committed.
 - **Sync (secondary, fills the host-off gap).** `dome sync` constructs a Proposal from accumulated commits `refs/dome/adopted/<branch>..HEAD` and routes it through the same adoption loop. Native writes the host missed (host was off, process crashed, branch moved while offline) get caught up. Idempotent by design (per [[wiki/specs/processors]] §"Idempotency" — adoption-phase processors emit the same effects on re-run against the same input).
-- **Show (auditing, ad-hoc).** `dome inspect diagnostics` reads `projection.db.diagnostics` directly and reports findings from the most recent adoption pass — engine-emitted structural diagnostics and processor-emitted content diagnostics together. The user fixes invariant violations the native write introduced and re-submits.
+- **Inspect (auditing, ad-hoc).** `dome inspect diagnostics` reads `projection.db.diagnostics` directly and reports findings from the most recent adoption pass — engine-emitted structural diagnostics and processor-emitted content diagnostics together. The user fixes invariant violations the native write introduced and commits the repair.
 
 See [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] for the formal correctness story this pipeline realizes.
 
 **Edge cases (real but bounded):**
 
-- *Diagnostic emitted by a native write.* A user writes and commits a wiki page in Obsidian with a short-form wikilink (`[[Maya]]` instead of `[[wiki/entities/maya]]`); `dome.markdown.validate-wikilinks` (adoption-phase processor) emits a `DiagnosticEffect` with severity `block`. The Proposal blocks. The user fixes the link (or runs `dome lint --apply` on the proposed correction) and resubmits.
+- *Diagnostic emitted by a native write.* A user writes and commits a wiki page in Obsidian with a broken wikilink; `dome.markdown.validate-wikilinks` emits a `DiagnosticEffect`. The user fixes the link, commits the repair, and syncs again.
 - *Compiler host off during a burst of native writes.* The host doesn't catch commits in real time, but `dome sync` at next startup catches up by constructing a single Proposal from the accumulated `adopted..HEAD` range. Cost grows with time-since-sync (see [[wiki/gotchas/daemon-off-while-vault-mutating]]).
-- *Mid-merge state.* Git in the middle of a merge or rebase has unmerged conflict markers in files. `dome sync` refuses to run under dirty git state (see [[wiki/gotchas/dirty-git-state-at-reconcile]]) so the conflict-marker content doesn't propagate as if it were normal content. The user resolves the merge, commits, and sync proceeds.
+- *Mid-merge state.* Git in the middle of a merge or rebase can have unmerged conflict markers in files. Explicit merge/rebase refusal is planned (see [[wiki/gotchas/dirty-git-state-at-reconcile]]) so conflict-marker content doesn't propagate as if it were normal content. The user resolves the merge, commits, and sync proceeds.
 - *Sync layers (Syncthing, git pull from a peer, iCloud Drive).* Generate native writes or commits when receiving changes from other machines. Each device's compiler host constructs Proposals from its own branch/adopted view.
-- *Raw write attempt.* A user manually edits and commits a `raw/` file. Per [[wiki/invariants/RAW_IS_IMMUTABLE]], the next Proposal containing the raw mutation blocks at the adoption phase with a `raw.immutable` diagnostic. The user reverts via `git restore` (or submits with `--force-advance` to consciously accept the raw rewrite, which the diagnostic message documents).
+- *Raw write attempt.* A user manually edits and commits a `raw/` file. Per [[wiki/invariants/RAW_IS_IMMUTABLE]], v1 should block raw rewrites at adoption with a `raw.immutable` diagnostic. That hard enforcement remains planned; until then, raw immutability is a design invariant and review target rather than a complete runtime fence.
 
 **User-facing expectations:**
 
 - "I edited a page in Obsidian and want Dome to catch up" → commit the change. With `dome serve` running, the compiler host adopts it automatically. Without the host: `dome sync` catches up.
-- "I edited a page and the next sync is blocked" → run `dome inspect diagnostics`; it lists the findings; fix the issue and resubmit.
-- "I want Dome to track every edit including manual ones" → commit coherent edits. `dome serve` keeps the compiler host running; every committed native write becomes a Proposal whose RunRecord lands in `runs.db` and projection into `log.md`.
+- "I edited a page and the next sync reports diagnostics" → run `dome inspect diagnostics`; it lists the findings; fix the issue, commit, and sync again.
+- "I want Dome to track every edit including manual ones" → commit coherent edits. `dome serve` keeps the compiler host running; every committed native write becomes a Proposal whose RunRecord lands in the run ledger and whose facts/diagnostics land in projections.
 - "I want Dome to refuse native edits" → not supported. The vault is yours. Use git pre-commit hooks if you want enforcement at edit time, separate from Dome.
 
 **Obsidian configuration recommendation:**

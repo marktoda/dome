@@ -1,11 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 severity: low
 coverage: off-matrix
 enforced_at: src/engine/capability-broker.ts
-enforced_at_status: deferred
+enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
@@ -28,7 +28,7 @@ sourceRefs: [<patched paths>]
 ```
 
 The diagnostic surfaces:
-- In `dome submit`'s output for the current Proposal, followed by a block diagnostic `patch.propose.requires-review` when this happens inside adoption.
+- In `dome sync` / `dome serve` output for the current Proposal, followed by a block diagnostic `patch.propose.requires-review` when this happens inside adoption.
 - In `dome inspect diagnostics --code capability-downgrade-surprise`.
 - In the relevant review surface (for example the future lint/review queue) when the downgraded patch is presented for approval.
 
@@ -40,7 +40,7 @@ The user resolves by either:
        grants:
          patch.auto: ["wiki/**"]   # widened from wiki/dailies/**
    ```
-2. **Accepting the propose-mode flow** — reviewing the patches via `dome lint --apply <id>` as they accumulate.
+2. **Accepting the propose-mode flow** — reviewing the proposed patch once the v1.x review/apply queue lands. In v1.0, adoption-phase propose-mode patches block because no CLI apply surface is shipped.
 
 **Specific scenarios:**
 

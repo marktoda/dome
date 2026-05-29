@@ -1,14 +1,14 @@
 ---
 type: entity
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 tags: ["runtime", "toolkit"]
 ---
 
 # Bun
 
-JavaScript runtime + bundler + package manager + test runner. Dome's v0.5 runtime.
+JavaScript runtime + bundler + package manager + test runner. Dome's v1 SDK and CLI runtime.
 
 Chosen over Node.js after the language pivot to TypeScript because: native TS support (no `tsc` step), built-in test runner (no `vitest` config), single-binary distribution (`bun build --compile` produces standalone executables for v1+ embedded contexts), fast startup (matters for CLI invocations), built-in file watcher and JSON-RPC support (useful for the MCP server).
 

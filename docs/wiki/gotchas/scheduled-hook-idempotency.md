@@ -1,12 +1,12 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 severity: medium
 coverage: off-matrix
-enforced_at: tests/integration/scheduled-processors.test.ts
-enforced_at_status: deferred
+enforced_at: tests/engine/scheduler.test.ts
+enforced_at_status: implemented
 first_observed: 2026-05-27
 ---
 
@@ -28,7 +28,9 @@ The mirror failure: the user assumes scheduled processors never re-fire on catch
 
 2. **The processor's idempotency contract** (per [[wiki/specs/processors]] §"Idempotency") means a processor that fires on a missed interval against the same `(snapshot, input)` produces the same effects on every run. The fixed-point loop converges; duplicate emissions to the projection store deduplicate via uniqueness constraints; cost is real but bounded.
 
-3. **The lockstep test at `tests/integration/scheduled-processors.test.ts`** asserts the at-most-once-per-sync semantic. A test fixture creates a scheduled-trigger processor, advances the clock three intervals, runs sync, asserts the processor fires exactly once and the RunRecord shows the elapsed-interval delta in its `trigger_payload_json` field.
+3. **Scheduler tests and harness scenarios** assert the at-most-once-per-sync semantic. `tests/engine/scheduler.test.ts` covers cursor behavior and dispatch telemetry; `tests/harness/scenarios/capabilities/scheduled-execution-cap.scenario.test.ts` covers the real compiler-host path with a timed-out scheduled processor.
+
+An attempted scheduled fire consumes the interval even when the processor fails or times out. That avoids a tight retry loop on every `dome serve` poll. Retry happens on the next scheduled interval, while the failed RunRecord and diagnostic make the failure visible.
 
 **Specific scenarios:**
 

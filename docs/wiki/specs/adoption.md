@@ -20,7 +20,7 @@ refs/heads/main                  user/client/agent source branch
 refs/dome/adopted/main           latest fully adopted semantic state for `main`
 ```
 
-One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses and the user resolves via `dome sync --force-advance` after confirming. See [[wiki/gotchas/adopted-ref-divergence]].
+One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses. The intended v1.1 recovery is `dome sync --force-advance` after confirming the rewritten HEAD; in v1.0 the operator resolves manually. See [[wiki/gotchas/adopted-ref-divergence]].
 
 Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
 

@@ -1,0 +1,42 @@
+id: test.bundle-id-map
+version: 0.1.0
+processors:
+  - id: acme.notbundle.adopt-patch
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/adopt.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/adopt-patch.ts
+
+  - id: acme.notbundle.garden-patch
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/seed.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+      - kind: patch.auto
+        paths: ["wiki/**"]
+    module: processors/garden-patch.ts
+
+  - id: acme.notbundle.garden-diagnostic
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/adopt.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/**"]
+    module: processors/garden-diagnostic.ts

@@ -97,6 +97,7 @@ import "../scenarios/lifecycle/throwing-processor-blocks-adoption.scenario.test"
 import "../scenarios/garden-cascade/sub-proposal-frame-correctness.scenario.test";
 import "../scenarios/garden-cascade/multiple-garden-patches.scenario.test";
 import "../scenarios/garden-cascade/sub-proposal-max-iterations.scenario.test";
+import "../scenarios/garden-cascade/bundle-id-trailers.scenario.test";
 
 describe("coverage matrix (Phase H2 mini-version)", () => {
   test("registry is non-empty", () => {

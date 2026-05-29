@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-29
 sources: ["[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"]
 severity: medium
 coverage: off-matrix
@@ -36,7 +36,7 @@ enforced_at: src/adopted-ref.ts
    ```bash
    cd ~/vaults/work && dome sync --force-advance
    ```
-   The flag accepts the non-fast-forward update of `refs/dome/adopted/<branch>`. The rest of the sync (reconcile phases, drainHooks, advance) runs normally. The new adopted ref is the current HEAD; future syncs work in fast-forward mode again.
+   This is the intended v1.1 recovery flow. The underlying engine/adopted-ref boundary already has a `forceAdvance` option, but the user-facing `dome sync --force-advance` flag is not shipped in v1.0. Until it lands, resolve manually by restoring the intended branch history or updating the adopted ref only after confirming the new HEAD is the intended trunk.
 
 3. **Restore the prior HEAD via `git reflog`.**
    ```bash
@@ -47,12 +47,12 @@ enforced_at: src/adopted-ref.ts
    ```
    This recovers from an unintentional rewrite. The adopted ref is once again an ancestor of HEAD, and the divergence diagnostic clears.
 
-**Why the structural fence:** Without the fast-forward check, a force-push could silently move adopted to a commit that no longer carries the engine-closure work the prior adopted commit had. Future `dome sync` runs would re-do work that was already done (idempotency saves us in practice — `auto-update-index` is a content-addressed update, not a blind append — but the diagnostic saves the user from confusion and from running expensive workflows redundantly). The structural fence is `setAdoptedRef`'s fast-forward check in `src/adoption.ts`; the `forceAdvance: true` opt-out is explicit and named, surfacing through the `--force-advance` CLI flag.
+**Why the structural fence:** Without the fast-forward check, a force-push could silently move adopted to a commit that no longer carries the engine-closure work the prior adopted commit had. Future `dome sync` runs would re-do work that was already done. Idempotency saves deterministic processors in practice, but the diagnostic saves the user from confusion and from running expensive model-backed processors redundantly. The structural fence is `setAdoptedRef`'s fast-forward check in `src/adopted-ref.ts`; the internal `forceAdvance: true` opt-out is explicit and named.
 
 **Why NOT silently force-advance:** A silent force-advance is wrong for the unintentional-rewrite case — the user wanted to keep their prior history, the force-advance would lose it. The opt-in flag makes the user assert "I know the rewrite was intentional; advance anyway." The default-refuse posture is safer.
 
 **Related:**
 
 - [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — pins the ref's existence and the fast-forward semantics.
-- [[wiki/gotchas/dirty-git-state-at-reconcile]] — the sibling "git state is wrong, refuse" gotcha; the two share `src/adoption.ts`'s precondition-diagnose step.
+- [[wiki/gotchas/dirty-git-state-at-reconcile]] — the sibling "git state is wrong, refuse" gotcha.
 - [[wiki/specs/adoption]] — §"The adopted ref" names the divergence case explicitly.
