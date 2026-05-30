@@ -2,10 +2,10 @@
 type: concept
 tags:
   - product-framing
-created: 2026-05-27T00:00:00.000Z
-updated: 2026-05-29T00:00:00.000Z
+created: 2026-05-27
+updated: 2026-05-29
 sources:
-  - '[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]'
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 status: stable
 ---
 
