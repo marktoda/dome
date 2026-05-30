@@ -348,6 +348,14 @@ export type FileInfoAtCommit = {
   readonly lastChangedAt: string;
 };
 
+type CommitFileInfoCache = {
+  readonly trackedPaths: ReadonlySet<string>;
+  readonly infoByPath: ReadonlyMap<string, FileInfoAtCommit>;
+};
+
+const FILE_INFO_CACHE_MAX_COMMITS = 32;
+const fileInfoCacheByCommit = new Map<string, Promise<CommitFileInfoCache>>();
+
 /**
  * Return git-backed metadata for a vault-relative file at `commit`.
  *
@@ -363,31 +371,160 @@ export async function fileInfoAtCommit(opts: {
 }): Promise<FileInfoAtCommit | null> {
   const { root, prefix } = await resolveGitContext(opts.path);
   const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  const cache = await fileInfoCacheForCommit({ root, prefix, commit: opts.commit });
+  if (!cache.trackedPaths.has(fullpath)) return null;
+  return cache.infoByPath.get(fullpath) ?? null;
+}
+
+async function fileInfoCacheForCommit(opts: {
+  readonly root: string;
+  readonly prefix: string;
+  readonly commit: string;
+}): Promise<CommitFileInfoCache> {
+  const key = `${opts.root}\0${opts.prefix}\0${opts.commit}`;
+  const existing = fileInfoCacheByCommit.get(key);
+  if (existing !== undefined) return existing;
+
+  const promise = buildFileInfoCacheForCommit(opts);
+  rememberFileInfoCache(key, promise);
   try {
-    const commits = await git.log({
-      fs,
-      dir: root,
-      ref: opts.commit,
-      filepath: fullpath,
-      depth: 1,
-      force: true,
+    return await promise;
+  } catch (e) {
+    fileInfoCacheByCommit.delete(key);
+    throw e;
+  }
+}
+
+async function buildFileInfoCacheForCommit(opts: {
+  readonly root: string;
+  readonly prefix: string;
+  readonly commit: string;
+}): Promise<CommitFileInfoCache> {
+  try {
+    const trackedPaths = await trackedPathsAtCommit(opts);
+    const infoByPath = await latestFileInfoByPath(opts);
+    return Object.freeze({
+      trackedPaths,
+      infoByPath,
     });
-    const latest = commits[0];
-    if (latest === undefined) return null;
-    return {
-      lastChangedCommit: latest.oid,
-      lastChangedAt: new Date(latest.commit.committer.timestamp * 1000).toISOString(),
-    };
   } catch (e) {
     if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
-      return null;
+      return emptyFileInfoCache();
     }
     if (typeof e === "object" && e !== null && "code" in e) {
       const code = (e as { code: unknown }).code;
-      if (code === "NotFoundError") return null;
+      if (code === "NotFoundError") {
+        return emptyFileInfoCache();
+      }
     }
     throw e;
   }
+}
+
+function rememberFileInfoCache(
+  key: string,
+  cache: Promise<CommitFileInfoCache>,
+): void {
+  fileInfoCacheByCommit.set(key, cache);
+  while (fileInfoCacheByCommit.size > FILE_INFO_CACHE_MAX_COMMITS) {
+    const oldest = fileInfoCacheByCommit.keys().next().value;
+    if (oldest === undefined || oldest === key) return;
+    fileInfoCacheByCommit.delete(oldest);
+  }
+}
+
+function emptyFileInfoCache(): CommitFileInfoCache {
+  return Object.freeze({
+    trackedPaths: Object.freeze(new Set<string>()),
+    infoByPath: Object.freeze(new Map<string, FileInfoAtCommit>()),
+  });
+}
+
+async function trackedPathsAtCommit(opts: {
+  readonly root: string;
+  readonly prefix: string;
+  readonly commit: string;
+}): Promise<ReadonlySet<string>> {
+  const args = [
+    "-C",
+    opts.root,
+    "ls-tree",
+    "-rz",
+    "-r",
+    "--name-only",
+    opts.commit,
+  ];
+  if (opts.prefix !== "") {
+    args.push("--", opts.prefix);
+  }
+  const output = await runNativeGit(args);
+  return Object.freeze(
+    new Set(splitNul(output).filter((path) => path.length > 0)),
+  );
+}
+
+async function latestFileInfoByPath(opts: {
+  readonly root: string;
+  readonly prefix: string;
+  readonly commit: string;
+}): Promise<ReadonlyMap<string, FileInfoAtCommit>> {
+  const args = [
+    "-C",
+    opts.root,
+    "log",
+    "--pretty=format:%x1e%H%x1f%ct%x00",
+    "--name-only",
+    "-z",
+    "--diff-filter=ACMRT",
+    opts.commit,
+  ];
+  if (opts.prefix !== "") {
+    args.push("--", opts.prefix);
+  }
+  const output = await runNativeGit(args);
+  const entries = new Map<string, FileInfoAtCommit>();
+  for (const record of output.split("\x1e")) {
+    if (record.length === 0) continue;
+    const headerEnd = record.indexOf("\0");
+    if (headerEnd === -1) continue;
+    const header = record.slice(0, headerEnd);
+    const [commitOid, timestamp] = header.split("\x1f");
+    if (commitOid === undefined || timestamp === undefined) continue;
+    const seconds = Number(timestamp);
+    if (!Number.isFinite(seconds)) continue;
+    const info = Object.freeze({
+      lastChangedCommit: commitOid,
+      lastChangedAt: new Date(seconds * 1000).toISOString(),
+    });
+    for (const rawPath of splitNul(record.slice(headerEnd + 1))) {
+      const path = rawPath.startsWith("\n") ? rawPath.slice(1) : rawPath;
+      if (path.length === 0 || entries.has(path)) continue;
+      entries.set(path, info);
+    }
+  }
+  return Object.freeze(entries);
+}
+
+async function runNativeGit(args: ReadonlyArray<string>): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).arrayBuffer(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} failed: ${stderr.trim() || `exit ${exitCode}`}`,
+    );
+  }
+  return Buffer.from(stdout).toString("utf8");
+}
+
+function splitNul(output: string): ReadonlyArray<string> {
+  return output.split("\0").filter((part) => part.length > 0);
 }
 
 /**

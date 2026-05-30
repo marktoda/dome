@@ -830,6 +830,9 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Fact invalidation generalization: before non-signal garden processors emit
   page facts, make inspected paths explicit in runner results or effects so
   stale fact replacement is not coupled to trigger `changedPaths`.
+- [x] Commit-scoped path metadata cache: `ctx.snapshot.getFileInfo` no longer
+      shells out once per path, so `dome.markdown.stale-dates` can handle
+      bulk real-vault adoptions without timing out.
 
 ## V1 Exit Criteria
 
