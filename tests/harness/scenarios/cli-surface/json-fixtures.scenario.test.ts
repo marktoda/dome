@@ -20,6 +20,7 @@ const STATUS_KEYS = Object.freeze([
   "projection_cache_drift",
   "attention_required",
   "attention",
+  "next_actions",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -145,6 +146,14 @@ scenario(
     expect(status["projection_cache_drift"]).toBe(false);
     expect(status["attention_required"]).toBe(true);
     expect(status["attention"]).toEqual(["dirty_untracked"]);
+    expect(status["next_actions"]).toEqual([
+      {
+        reasons: ["dirty_untracked"],
+        command: "git status --short",
+        description:
+          "Review draft working-tree changes; commit anything Dome should compile.",
+      },
+    ]);
     expect(status["dirty_untracked"]).toBeGreaterThan(0);
     expect(status["content_pages"]).toBe(1);
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);

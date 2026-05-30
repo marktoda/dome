@@ -466,9 +466,9 @@ changes and compiles them into adopted vault state.
 2. Keep changes in ordinary vault files, usually under \`wiki/\`.
 3. Commit each coherent unit of work with git.
 4. If \`dome serve\` is running, let it adopt the commit in the background.
-5. If the user wants to wait for Dome, run \`dome sync\`.
-6. Use \`dome status\` or \`dome inspect <subject>\` only for health, adoption
-   status, and recovery.
+5. If the user wants to wait for Dome, run \`dome sync --json\`.
+6. Run \`dome status --json\` at session boundaries or when Dome reports
+   attention. Follow its \`next_actions\`.
 
 Good commit shape:
 
@@ -479,41 +479,47 @@ git commit -m "describe the vault change"
 
 ## Dome commands
 
-- \`dome status\` - branch, HEAD, adopted ref, content counts, and health counts.
-- \`dome sync\` - one-shot catch-up when no compiler host is running or when the
-  user wants to wait for adoption.
-- \`dome today\` - source-backed open tasks, followups, and questions for today.
-- \`dome prep\` - source-backed planning packet for a day.
-- \`dome agenda <person-or-topic>\` - source-backed prep for a person or topic.
+Primary compiler commands:
+
+- \`dome serve\` - keep the local compiler host running.
+- \`dome sync --json\` - run one compiler tick now; use this when the user wants
+  to wait for adoption or the host was off.
+- \`dome status --json\` - fast vault pulse. Read \`attention_required\`,
+  \`attention\`, and \`next_actions\`.
+- \`dome check --json\` - unified read-only explanation for remaining attention:
+  engine health, content diagnostics, and open decisions.
+- \`dome resolve <id> <value>\` - resolve a Dome-raised decision from
+  \`dome check\`.
+
+Optional adopted-state views:
+
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
-- \`dome lint\` - adopted-state hygiene report over diagnostics and lint checks.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
-- \`dome inspect diagnostics\` - current markdown and engine diagnostics.
-- \`dome inspect questions\` - open questions that need human input.
-- \`dome answer <id> <value>\` - answer a question from \`dome inspect questions\`.
-- \`dome inspect runs\` - recent processor runs and failures.
-- \`dome inspect outbox\` - pending or failed external actions.
-- \`dome rebuild\` - rebuild projection state from adopted markdown when recovery
-  requires it.
+- \`dome today\`, \`dome prep\`, and \`dome agenda <person-or-topic>\` -
+  deterministic daily/planning views when explicitly useful.
+
+Advanced/debug commands:
+
+- \`dome inspect <subject>\`, \`dome doctor\`, \`dome lint\`, \`dome answer\`,
+  \`dome run\`, and \`dome rebuild\` remain available for debugging,
+  compatibility, and extension development, but they are not the normal Claude
+  Code workflow.
 
 Do not call Dome after every edit. Dome works at the git commit boundary.
 
 ## Reading Dome status
 
-\`dome status --json\` exposes \`attention_required\` plus stable \`attention\`
-reason codes. Treat them as the next-action branch:
+\`dome status --json\` exposes \`attention_required\`, stable \`attention\`
+reason codes, and \`next_actions\`. Treat \`next_actions\` as the canonical
+branch. In normal use:
 
-- \`sync_needed\` or \`projection_stale\` - let \`dome serve\` catch up, or run
-  \`dome sync\` when the user wants to wait.
-- \`diagnostics\` - run \`dome inspect diagnostics\`; fix source markdown when
-  the SourceRefs point to vault files.
-- \`questions\` - run \`dome inspect questions\`, ask the user, then answer with
-  \`dome answer <id> <value>\`.
-- \`failed_runs\`, \`outbox_failed\`, or \`quarantined\` - run \`dome doctor\`
-  and use the question/answer recovery flow it points to.
-- \`dirty_modified\` or \`dirty_untracked\` - commit, ignore, or remove the draft
-  files before expecting Dome to adopt them.
+- Run \`dome sync --json\` when status says the compiler needs to catch up.
+- Run \`dome check --json\` when status says attention remains after sync.
+- Run \`dome resolve <id> <value>\` only after a Dome question is clear and the
+  user has chosen the answer.
+- Commit, ignore, or remove dirty draft files before expecting Dome to adopt
+  them.
 
 ## Vault conventions
 
@@ -550,11 +556,10 @@ const CLAUDE_MD_TEMPLATE = `@AGENTS.md
 
 Use the Dome vault workflow in AGENTS.md. Edit markdown normally, commit
 coherent changes with git, and use Dome commands when the user asks to wait for
-adoption, inspect health/recovery state, or render a source-backed vault view.
-The command list in AGENTS.md is the source of truth for \`dome status\`,
-\`dome sync\`, \`dome today\`, \`dome prep\`, \`dome agenda\`, \`dome query\`,
-\`dome export-context\`, and recovery commands such as
-\`dome inspect <subject>\` / \`dome answer\`.
+adoption, explain compiler attention, resolve a Dome-raised decision, or render
+an explicit source-backed vault view. The normal command path is
+\`dome status --json\` -> \`next_actions\` -> \`dome sync --json\`,
+\`dome check --json\`, or \`dome resolve <id> <value>\`.
 `;
 
 const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold

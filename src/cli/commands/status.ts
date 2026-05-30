@@ -18,6 +18,7 @@
 //   - attention_required:
 //                       true when any status field needs user/agent action.
 //   - attention:        stable reason codes explaining attention_required.
+//   - next_actions:     stable command suggestions for agent routing.
 //   - dirty_modified:   working-tree paths modified/deleted/staged.
 //   - dirty_untracked:  working-tree paths not present at HEAD.
 //   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
@@ -84,6 +85,10 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
+import {
+  nextActionsForStatus,
+  type CliNextAction,
+} from "../next-actions";
 import { collectVaultAnalytics } from "../vault-analytics";
 
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
@@ -129,6 +134,7 @@ type StatusSnapshot = {
   readonly projection_cache_drift: boolean;
   readonly attention_required: boolean;
   readonly attention: ReadonlyArray<string>;
+  readonly next_actions: ReadonlyArray<CliNextAction>;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
   readonly content_pages: number;
@@ -287,6 +293,7 @@ export async function runStatus(
       projection_cache_drift,
       attention_required: attention.length > 0,
       attention,
+      next_actions: nextActionsForStatus(attention),
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
       content_pages: analytics.content_pages,
@@ -356,6 +363,9 @@ function printStatusText(s: StatusSnapshot): void {
   if (s.diagnostic_summary.groups.length > 0) {
     console.log(`diag top  ${formatDiagnosticTopLine(s.diagnostic_summary)}`);
   }
+  for (const line of formatNextActionLines(s.next_actions)) {
+    console.log(line);
+  }
 }
 
 function formatServe(s: StatusSnapshot): string {
@@ -408,6 +418,17 @@ function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups
     .map((group) => `${group.count} ${group.severity} ${group.code}`)
     .join(" | ");
+}
+
+function formatNextActionLines(
+  actions: ReadonlyArray<CliNextAction>,
+): ReadonlyArray<string> {
+  if (actions.length === 0) return [];
+  return actions.map((action, index) => {
+    const command = action.command === null ? "(manual)" : action.command;
+    const prefix = index === 0 ? "next      " : "          ";
+    return `${prefix}${command} - ${action.description}`;
+  });
 }
 
 function shortOid(oid: string | null, fallback: string): string {

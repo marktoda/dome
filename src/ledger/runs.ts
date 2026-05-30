@@ -56,11 +56,11 @@
 // `failOrphanedRuns` / `failRunIfCurrent` are the recovery paths for engine crashes between
 // `markRunning` and a terminal mark — it transitions stuck-running rows
 // to `failed` so the audit history reaches a terminal state. v1.0
-// surfaces orphans via `dome inspect runs --status running`; v1.x wires
-// the recovery via the engine-asks model — the deferred
-// `dome.health.detect-orphan-runs` garden-phase processor emits a
-// QuestionEffect per orphan row, and the user answers `fail` / `keep`
-// via `dome answer` (the answer-handler invokes `failRunIfCurrent`).
+// surfaces orphans via `dome check` and advanced `dome inspect runs`; recovery
+// follows the engine-asks model: `dome.health.orphan-run-recovery-questions`
+// emits a QuestionEffect per orphan row, and the user resolves `fail` /
+// `ignore` via `dome resolve` (the answer-handler invokes
+// `failRunIfCurrent`).
 //
 // Imports (tight by design — the ledger is the SQLite boundary):
 //   - `node:crypto` for the random suffix in `newRunId`.

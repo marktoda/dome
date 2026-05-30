@@ -1,9 +1,9 @@
 // engine/answers: dispatch garden-phase processors after a user answer.
 //
-// `dome answer` records the human decision in the questions table; this
-// module turns that durable row into normal processor work. Answer handlers
-// are garden-phase processors with `{ kind: "answer" }` triggers. They see
-// the adopted snapshot and emit ordinary Effects routed through the same
+// `dome resolve` / `dome answer` records the human decision in the questions
+// table; this module turns that durable row into normal processor work. Answer
+// handlers are garden-phase processors with `{ kind: "answer" }` triggers. They
+// see the adopted snapshot and emit ordinary Effects routed through the same
 // broker/ledger/sub-Proposal machinery as scheduled jobs and garden work.
 
 import {

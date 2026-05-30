@@ -22,7 +22,7 @@
 //
 // Mitigated gotchas:
 //   - docs/wiki/gotchas/outbox-stuck.md — per the engine-asks recovery
-//     model in cli.md §"dome answer", `replayFailed` and `markAbandoned`
+//     model in cli.md §"dome resolve", `replayFailed` and `markAbandoned`
 //     are the state-machine transitions invoked by the engine-owned
 //     OutboxRecoveryEffect sink after a recovery answer handler emits
 //     `retry` or `abandon`.
@@ -462,7 +462,7 @@ export function incrementAttempts(
 /**
  * Mark a row abandoned. Invoked by the engine-owned OutboxRecoveryEffect
  * sink when a recovery answer handler emits `action: "abandon"` (per
- * [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]]).
+ * [[wiki/specs/cli]] §"`dome resolve`" and [[wiki/gotchas/outbox-stuck]]).
  * Useful for entries that have become irrelevant (the meeting already
  * happened; the notification window passed). Abandoned rows "stop
  * attracting attention" — they remain in the table for audit but are
@@ -481,7 +481,7 @@ export function markAbandoned(db: OutboxDb, idempotencyKey: string): void {
 /**
  * Re-queue a previously-failed row. Invoked by the engine-owned
  * OutboxRecoveryEffect sink when a recovery answer handler emits
- * `action: "retry"` (per [[wiki/specs/cli]] §"dome answer") — typically
+ * `action: "retry"` (per [[wiki/specs/cli]] §"`dome resolve`") — typically
  * after the underlying cause has been fixed
  * (rotated credentials, remote service came back up, etc.). Resets
  * `attempts` to 0 and clears `last_error`; the row returns to

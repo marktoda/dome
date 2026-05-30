@@ -24,9 +24,11 @@ the agent session.
   runs adoption, drains garden/operational work, and keeps projections current.
 - **`dome sync`** is the blocking one-shot catch-up path. It runs the same
   compiler tick when the host is off or the user wants to wait.
-- **`dome status` / `dome doctor` / `dome inspect` / `dome answer`** are the
-  recovery loop. They explain state and route human decisions back through
-  normal Effect handling.
+- **`dome status` / `dome check` / `dome resolve`** are the normal recovery
+  loop. They route attention, explain state, and route human decisions back
+  through normal Effect handling.
+- **`dome inspect` / `dome doctor` / `dome answer`** remain advanced detail
+  and compatibility commands, not the daily path.
 
 ## Session startup
 
@@ -46,12 +48,11 @@ the agent session.
 3. Check the pulse when needed:
 
    ```bash
-   dome status
+   dome status --json
    ```
 
-   The git row answers whether the adopted ref is caught up:
-   `sync ok | pending 0` means Recall reads adopted state at current `HEAD`.
-   `sync needed` means there are committed changes that still need adoption.
+   `attention_required: false` means Recall reads adopted state at current
+   `HEAD`. When attention is required, follow `next_actions`.
 
 ## Normal edit loop
 
@@ -70,8 +71,11 @@ Claude/user edits markdown
 Claude should not call Dome after every file edit. Dome works at the commit
 boundary. The useful moments to call Dome explicitly are:
 
-- `dome sync` when the user wants to block until the latest commit is adopted.
-- `dome status` when the user wants a cheap health/adoption pulse.
+- `dome sync --json` when the user wants to block until the latest commit is adopted.
+- `dome status --json` when the user wants a cheap health/adoption pulse.
+- `dome check --json` when status reports remaining attention.
+- `dome resolve <id> <value>` when the user has chosen an answer to a Dome
+  question.
 - `dome query <text>` for adopted-state recall with SourceRefs.
 - `dome today` / `dome prep` / `dome agenda <person-or-topic>` for daily
   management surfaces.
@@ -84,7 +88,7 @@ If `dome serve` was not running, committed work is not lost. The next
 foreground host startup or explicit sync uses the same git queue:
 
 ```bash
-dome sync
+dome sync --json
 ```
 
 `dome sync` compares `refs/dome/adopted/<branch>` to `HEAD`, adopts the pending
@@ -96,42 +100,28 @@ a latency/cost issue, not a correctness issue.
 
 When something looks wrong, use the recovery surfaces in this order:
 
-1. **Pulse:** run `dome status`.
-   - `sync needed` means run `dome sync` or check the foreground `serve`
-     process.
-   - `projection stale` means projections need refresh before projection-backed
-     diagnostics or views should be treated as current; run `dome sync` when
-     the user wants to wait.
-   - Non-zero diagnostics, questions, failed runs, failed outbox rows, or
-     quarantines mean inspect/doctor has details.
+1. **Pulse:** run `dome status --json`.
+   - `next_actions` is the canonical branch for Claude Code.
+   - `dome sync --json` means the compiler needs to catch up or drain due
+     work.
+   - `dome check --json` means attention remains after sync or needs a more
+     detailed explanation.
+   - `git status --short` means there are uncommitted draft files; commit,
+     ignore, or remove them before expecting Dome to adopt them.
 
-2. **Inspect concrete rows:**
+2. **Explain attention:**
 
    ```bash
-   dome inspect diagnostics
-   dome inspect questions
-   dome inspect runs
-   dome inspect outbox
+   dome check --json
    ```
 
-   `inspect diagnostics` includes source refs so Claude can jump to the file
-   and fix markdown. `inspect questions` gives stable row ids for `dome answer`.
+   `check` includes engine health findings, content diagnostics with SourceRefs,
+   open questions with ids/options, and its own `next_actions`.
 
-3. **Run health probes:**
-
-   ```bash
-   dome doctor
-   ```
-
-   Doctor is read-only in v1. It reports failed outbox rows, stuck pending
-   outbox rows, orphan running runs, processor quarantines, projection cache
-   drift, adopted-ref divergence, instruction drift, and unrebuildable
-   operational schema mismatches.
-
-4. **Answer engine questions:**
+3. **Resolve engine questions:**
 
    ```bash
-   dome answer <question-id> <value>
+   dome resolve <question-id> <value>
    ```
 
    Recovery mutations go through first-party health processors. For example,
@@ -140,6 +130,19 @@ When something looks wrong, use the recovery surfaces in this order:
    running rows. The answer handler emits a recovery Effect, and the engine
    applies it through the same capability-checked routing path as every other
    processor output.
+
+4. **Inspect concrete rows only when debugging:**
+
+   ```bash
+   dome inspect diagnostics
+   dome inspect questions
+   dome inspect runs
+   dome inspect outbox
+   dome doctor
+   ```
+
+   These commands expose row-level details and compatibility surfaces. They are
+   not the first thing Claude should choose during the normal loop.
 
 5. **Rebuild only rebuildable state:**
 
@@ -157,7 +160,8 @@ state file to patch.
 
 ## What success looks like
 
-- `dome status` shows `sync ok | pending 0`.
+- `dome status --json` shows `attention_required: false` after sync, or
+  `next_actions` points to an understandable follow-up.
 - Draft counts are expected only while the user has uncommitted work.
 - Diagnostics/questions/outbox/quarantine are zero or intentionally being
   resolved.

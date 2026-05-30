@@ -176,7 +176,16 @@ interface QuestionEffect {
 }
 ```
 
-**Routing:** written to `projection.db.questions` when the processor holds `question.ask`. The user surfaces them via `dome inspect questions` (CLI) or the query API (`dome query --questions`). When the user answers, the answer is written back to the originating page (via a garden-emitted PatchEffect from `dome.intake`) or handled by the relevant answer-handler processor, and the question row is marked resolved. Answer-handler triggers can require both an idempotency-key prefix and the `processorId` that created the question row; privileged operational handlers must use both so another question emitter cannot borrow their recovery capability by forging a prefix.
+**Routing:** written to `projection.db.questions` when the processor holds
+`question.ask`. The user surfaces them via `dome check` (normal CLI path),
+advanced `dome inspect questions`, or the query API. When the user answers via
+`dome resolve` (`dome answer` remains a compatibility alias), the answer is
+written back to the originating page (via a garden-emitted PatchEffect from
+`dome.intake`) or handled by the relevant answer-handler processor, and the
+question row is marked resolved. Answer-handler triggers can require both an
+idempotency-key prefix and the `processorId` that created the question row;
+privileged operational handlers must use both so another question emitter
+cannot borrow their recovery capability by forging a prefix.
 
 The `idempotencyKey` is what keeps the question table from filling with duplicates when a garden processor runs repeatedly on the same input.
 
@@ -215,7 +224,16 @@ interface ExternalActionEffect {
 
 **Routing:** the engine inserts a row in `outbox.db` with `status: "pending"` and `next_attempt_at = enqueued_at`, then attempts the external call via the capability handler registered for `capability`. Each handler attempt receives an engine-owned `AbortSignal` and is bounded by an outbox handler timeout. On success, the row updates to `status: "sent"` with the external system's id. On handler failure or timeout, retries per `maxAttempts` (default 3) with bounded exponential backoff by advancing `next_attempt_at`; terminal failure marks `status: "failed"`. If dispatch is explicitly cancelled by the engine, the handler signal is aborted and the row remains `pending` without consuming an attempt, so shutdown does not burn retry budget. Pinned by [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]].
 
-**No fire-and-forget.** The engine never attempts an external call without an outbox row preceding it. This is what makes retries idempotent (the idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure follows the engine-asks model: failed rows are visible through health/inspect surfaces; `dome.health.outbox-recovery-questions` raises a `QuestionEffect`; the user answers via `dome answer <id> retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]] §"dome answer"); `dome.health.outbox-recovery-answer` emits an `OutboxRecoveryEffect`; the engine-owned outbox sink applies the state transition.
+**No fire-and-forget.** The engine never attempts an external call without an
+outbox row preceding it. This is what makes retries idempotent (the
+idempotencyKey de-dups) and failures recoverable. Recovery on terminal failure
+follows the engine-asks model: failed rows are visible through `dome check` and
+advanced health/inspect surfaces; `dome.health.outbox-recovery-questions`
+raises a `QuestionEffect`; the user answers via `dome resolve <id>
+retry|abandon` (the universal user-decision channel per [[wiki/specs/cli]]
+§"`dome resolve`"); `dome.health.outbox-recovery-answer` emits an
+`OutboxRecoveryEffect`; the engine-owned outbox sink applies the state
+transition.
 
 ## OutboxRecoveryEffect
 

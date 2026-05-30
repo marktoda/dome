@@ -42,7 +42,7 @@ The practical promise is: "Talk to Claude Code about my day; let it edit and com
 The primary v1 interface is Claude Code sitting inside the vault repository. That means:
 
 - The vault must carry `CLAUDE.md`, or a `CLAUDE.md` shim importing `AGENTS.md`, because Claude Code reads `CLAUDE.md` rather than `AGENTS.md`.
-- The instructions must be short and operational: write markdown, commit meaningful changes, run `dome status`/`dome sync` when the user wants to wait for adoption, inspect diagnostics/questions when Dome reports trouble.
+- The instructions must be short and operational: write markdown, commit meaningful changes, run `dome status --json` / `dome sync --json` when the user wants to wait for adoption, and follow `status.next_actions` into `dome check --json` or `dome resolve` when Dome reports trouble.
 - Dome should not assume Claude needs a bespoke write API. Native file edits plus git are the write path.
 
 External reference: Claude Code documents `CLAUDE.md` as the persistent project instruction surface and recommends importing `AGENTS.md` from `CLAUDE.md` when a repo uses both conventions: <https://code.claude.com/docs/en/memory>.
@@ -81,12 +81,11 @@ Most CLI commands are not things Claude should call constantly. The CLI should b
 
 | Tier | Commands | Purpose |
 |---|---|---|
-| Load-bearing | `dome serve`, `dome sync`, `dome status` | Drive the compiler runtime; let Claude/user wait for adoption; show whether the vault is healthy. |
-| Recovery | `dome inspect`, `dome doctor`, `dome answer` | Explain and resolve stuck engine work. |
-| User-value views | `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda` | Explicit views when the user asks for them. |
-| Admin/dev | `dome rebuild`, `dome run`, future `dome migrate` / low-level run-processor | Maintenance, testing, escape hatches. |
+| Primary compiler loop | `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve` | Drive the compiler runtime, route attention, explain what remains, and record user decisions. |
+| Optional user-value views | `dome query`, `dome export-context`, `dome today`, `dome prep`, `dome agenda` | Explicit adopted-state views when the user asks for recall, planning, or handoff material. |
+| Advanced/debug | `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild` | Detail views, compatibility, extension development, and maintenance. |
 
-The v1 CLI should not be a huge command zoo Claude is expected to remember. `CLAUDE.md` should teach only the load-bearing and recovery commands by default, plus a small list of named views.
+The v1 CLI should not be a huge command zoo Claude is expected to remember. `CLAUDE.md` should teach the primary compiler loop by default and mention optional views only as explicit user-requested surfaces.
 
 ### MCP is not the v1 value path
 
@@ -162,13 +161,13 @@ Shipped and strong:
 
 - Four-concept engine model is real: Proposal, Processor, Effect, adopted ref.
 - Adoption loop, garden sub-Proposals, scheduler, JobEffect routing, outbox dispatch, run ledger, projection store, and capability broker exist.
-- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome inspect`, `dome doctor`, `dome answer`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome agenda`, `dome export-context`, and `dome rebuild` exist.
+- `dome init`, `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome inspect`, `dome doctor`, `dome answer`, `dome run`, `dome query`, `dome lint`, `dome today`, `dome prep`, `dome agenda`, `dome export-context`, and `dome rebuild` exist.
 - Processor execution boundary is now much tighter: timeouts, cancellation, output validation, nominal model errors, nominal transient processor errors, and quarantine.
 - Current first-party assets include `dome.markdown`, `dome.graph`, `dome.search`, `dome.health`, `dome.daily`, `dome.lint`, and `dome.intake`.
 
 Shipped, but still needs release hardening:
 
-- `dome answer` records QuestionEffect answers and dispatches answer handlers, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
+- `dome resolve` records QuestionEffect answers and dispatches answer handlers, `dome check` unifies engine health, content diagnostics, and open decisions, `dome query` ships deterministic adopted-state search, `dome lint` ships an adopted-state hygiene report, `dome export-context` ships source-backed handoff packets, `dome doctor` renders probe-only findings, and failed outbox rows, quarantines, and orphan runs are recoverable through first-party `dome.health` questions.
 - The first-party bundle cut is narrower than the older aspirational plan.
   The matrices may still name explicit future processors, but their shipped
   cells now match the manifest-backed v1 bundle cut. `dome.search` ships
@@ -217,9 +216,9 @@ A v1 release is good enough when this scenario works on a real vault:
    - extracted todos/followups from the conversation/capture,
    - wikilink/fact/search projections,
    - diagnostics for broken or ambiguous state.
-7. If a processor needs a human decision, `dome inspect questions` shows it and `dome answer` resolves it.
-8. If a processor or external action is stuck, `dome doctor` explains it and points to the same answer/retry flow.
-9. Claude can optionally run `dome status`, `dome sync`, `dome inspect diagnostics`, `dome today`, `dome prep`, `dome agenda <person>`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, agenda, or recall packet.
+7. If a processor needs a human decision, `dome check --json` shows it and `dome resolve` resolves it.
+8. If a processor or external action is stuck, `dome status --json` routes to `dome check --json`, which explains the issue and points to the same resolve/retry flow.
+9. Claude can optionally run `dome status --json`, `dome sync --json`, `dome check --json`, `dome today`, `dome prep`, `dome agenda <person>`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, agenda, or recall packet.
 
 ## CLI shape for v1
 
@@ -250,13 +249,16 @@ Output should be optimized for agents:
 
 ### `dome status`
 
-The health pulse. This should answer:
+The health pulse and next-action router. This should answer:
 
 - current branch,
 - HEAD,
 - adopted ref,
 - pending commits,
 - dirty/merge/rebase state,
+- `attention_required` and stable `attention` reason codes,
+- `next_actions` that route to `git status --short`, `dome sync --json`, or
+  `dome check --json`,
 - unresolved diagnostics count,
 - open questions count,
 - failed outbox count,
@@ -266,19 +268,21 @@ The health pulse. This should answer:
 
 Claude can call this at the beginning or end of a session, but it should not be required for every edit.
 
-### `dome inspect`
+### `dome check`
 
-Read-only operational substrate. V1 subjects:
+The unified read-only explanation path. It consolidates the normal parts of
+`doctor`, `lint`, `inspect diagnostics`, and `inspect questions`:
 
-- `diagnostics`
-- `questions`
-- `outbox`
-- `runs`
-- `quarantine`
+- engine health findings,
+- content diagnostics with SourceRefs,
+- open decisions with question ids and options,
+- `next_actions`, usually `dome resolve <id> <choice>`,
+  `dome sync --json`, or a manual markdown fix.
 
-This is mostly for debugging and recovery, not daily happy-path use.
+Claude should prefer this over choosing among low-level debug commands when
+`dome status --json` reports attention.
 
-### `dome answer`
+### `dome resolve`
 
 The universal human-decision channel. The current implementation can print a
 question, validate a choice, record an answer by row id, and dispatch matching
@@ -292,8 +296,21 @@ projection state.
 The rule: do not create one-off commands like `dome replay-outbox-row` or `dome clear-quarantine`. Instead:
 
 1. engine/health processor emits a question,
-2. user answers,
+2. user resolves it,
 3. answer-handler processor applies the mutation.
+
+### `dome inspect`
+
+Read-only operational substrate. V1 subjects:
+
+- `diagnostics`
+- `questions`
+- `outbox`
+- `runs`
+- `quarantine`
+
+This is mostly for debugging and recovery details, not daily happy-path use.
+`dome answer` remains as the compatibility alias over `dome resolve`.
 
 ### `dome doctor`
 

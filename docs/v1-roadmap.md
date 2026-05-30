@@ -20,7 +20,7 @@ Claude/user edits markdown
   -> adoption processors validate, normalize, and index deterministic state
   -> adopted ref advances only after a clean fixed point
   -> garden processors run follow-on maintenance
-  -> status, inspect, doctor, answer, query, and export explain the result
+  -> status, check, resolve, and optional adopted-state views explain the result
 ```
 
 The goal is not a bespoke agent write API. Claude Code already has strong file,
@@ -64,8 +64,9 @@ Shipped:
 - [x] Processor runtime with output validation, cancellation, timeouts,
       nominal transient/model errors, and quarantine.
 - [x] Commander-based CLI dispatch.
-- [x] `dome init`, `dome sync`, `dome serve`, `dome status`, `dome inspect`,
-      `dome doctor`, `dome answer`, `dome query`, `dome lint`,
+- [x] `dome init`, `dome sync`, `dome serve`, `dome status`, `dome check`,
+      `dome resolve`, `dome inspect`, `dome doctor`, `dome answer`,
+      `dome query`, `dome lint`,
       `dome export-context`, `dome today`, `dome prep`, `dome agenda`,
       `dome run`, and `dome rebuild`.
 - [x] Shipped first-party bundle processors:
@@ -88,7 +89,7 @@ Shipped:
 V1 capability ledger:
 
 - [x] Adopted-state recall: `dome.search` FTS indexing and `dome query`.
-- [x] Durable recovery: `dome answer`, answer-triggered follow-up dispatch,
+- [x] Durable recovery: `dome resolve` / `dome answer`, answer-triggered follow-up dispatch,
       probe-only `dome doctor`, and first-party outbox retry/abandon
       plus quarantine reset and orphan-run recovery are shipped.
 - [x] Daily/task loop implementation: daily creation, carry-forward,
@@ -110,6 +111,9 @@ V1 capability ledger:
 - [x] User-value views: `dome today`, `dome prep`, `dome agenda`,
       `dome lint`, and
       `dome export-context` are shipped.
+- [x] Unified attention path: `dome status --json` emits `next_actions`,
+      `dome check --json` consolidates engine health, content diagnostics, and
+      open decisions, and `dome resolve` is the primary decision verb.
 - [x] V1 end-to-end acceptance harness.
 - [x] Initial real-vault smoke against `docs/` and `~/vaults/work`.
 - [ ] Week-long daily workflow dogfood without manual `.dome/state` edits.
@@ -138,14 +142,15 @@ Daily soak script, repeated for seven working days:
       project decision, idea, meeting note, or raw inbox capture.
 - [ ] Commit the vault change through git.
 - [ ] Let `dome serve` adopt it, or run `dome sync --json` to block.
-- [ ] Review `dome status --json`; record whether there are diagnostics,
-      questions, failed outbox rows, quarantines, pending runs, or pending
-      commits.
+- [ ] Review `dome status --json`; record `attention_required`, `attention`,
+      and `next_actions`.
+- [ ] If status routes to `dome check --json`, run it and record the engine
+      findings, content diagnostics, open decisions, and suggested next action.
 - [ ] Use at least one user-value view for real work: `dome today`,
       `dome prep`, `dome agenda <person-or-topic>`, `dome query <topic>`, or
       `dome export-context <topic>`.
 - [ ] Resolve any open `dome.health` or intake questions through
-      `dome inspect questions` and `dome answer`, not by editing
+      `dome check --json` and `dome resolve <id> <value>`, not by editing
       `.dome/state` directly.
 
 Required evidence:
@@ -154,7 +159,7 @@ Required evidence:
   summary, any open questions/diagnostics, and whether manual state edits were
   needed.
 - `dome status --json` evidence before stopping each session.
-- For any stuck state, `dome doctor --json` plus the recovery command or code
+- For any stuck state, `dome check --json` plus the recovery command or code
   fix that resolved it.
 
 Release-blocking failures:
@@ -163,7 +168,8 @@ Release-blocking failures:
 - A lost or overwritten human/Claude markdown edit.
 - An engine-created patch that does not materialize into the working tree.
 - A pending run, failed outbox row, quarantine, or open question that cannot be
-  understood and resolved through `status` / `doctor` / `inspect` / `answer`.
+  understood and resolved through `status` / `check` / `resolve` (with
+  `inspect` / `doctor` as advanced detail views when needed).
 - A model/intake failure mode that loses the raw capture or commits
   ungrounded output without SourceRefs.
 - A repeated command or status output that is confusing enough that Claude Code
@@ -685,6 +691,10 @@ Work:
 - [x] Add agent-facing `attention_required` / `attention` reason codes to
       `dome status --json` and `dome sync --json`, so Claude Code can branch
       from stable status instead of inferring action from counters.
+- [x] Add `dome status --json` `next_actions`, `dome check --json`, and
+      `dome resolve`, consolidating the normal see-and-fix path around
+      status/check/resolve instead of making Claude choose among
+      doctor/lint/inspect/answer.
 - [x] Tighten the model-provider protocol parser with the existing Zod
       boundary so command-provider JSON cannot bypass the same response shape
       validation used by injected providers.
@@ -738,7 +748,7 @@ Required for daily value:
 | `dome.markdown` | v1 shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, raw immutability blocking, page schemas |
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
-| `dome.health` | v1 shipped | doctor probes; probe-only CLI; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers |
+| `dome.health` | v1 shipped | health probes surfaced through `dome check` / advanced `dome doctor`; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers resolved through `dome resolve` |
 | `dome.daily` | v1 shipped | daily creation, task carry-forward, deterministic wiki-page task/followup fact indexing, ambiguity questions and accepted-answer patching, `dome today`, `dome prep`, and `dome agenda`; generated intake captures feed the same task index |
 | `dome.intake` | v1 shipped | raw `inbox/raw/*.md` capture extraction, generated capture pages, processed archives, model cost/provenance gates, low-confidence questions/answers, downstream task/followup facts, confidence-carrying `dome.intake.*` fact namespaces, stale-inbox diagnostics, source-backed per-capture synthesis, and source-backed recent-capture rollup; richer long-horizon synthesis remains post-v1 |
 
@@ -836,6 +846,7 @@ vault:
 5. Daily/task processors create or update the user's daily working surface.
 6. Query/export surfaces retrieve adopted-state evidence with SourceRefs.
 7. Questions, outbox failures, quarantine, and orphan runs are visible and
-   recoverable through status/inspect/doctor/answer.
+   recoverable through status/check/resolve, with inspect/doctor retained for
+   detailed debugging.
 8. The system can be dogfooded for a week without direct sqlite/JSON state
    edits or unexplained stuck state.

@@ -8,6 +8,7 @@
 
 import { Command, CommanderError, Option } from "commander";
 
+import { runCheck } from "./commands/check";
 import { runAgenda } from "./commands/agenda";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
@@ -18,6 +19,7 @@ import { runLint, type LintFailOn } from "./commands/lint";
 import { runPrep } from "./commands/prep";
 import { runQuery } from "./commands/query";
 import { runRebuild } from "./commands/rebuild";
+import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
@@ -98,6 +100,36 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("check")
+    .description("Explain compiler attention.")
+    .option("--engine", "Show engine health findings.")
+    .option("--content", "Show adopted-state diagnostics.")
+    .option("--decisions", "Show open Dome questions.")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option(
+      "--orphan-threshold-ms <n>",
+      "Age before a running row is reported as orphaned.",
+      parseNonNegativeIntegerOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: CheckCliOptions) => {
+      setExitCode(
+        await runCheck({
+          engine: options.engine,
+          content: options.content,
+          decisions: options.decisions,
+          limit: options.limit,
+          orphanThresholdMs: options.orphanThresholdMs,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("inspect")
     .description("Read operational substrate rows.")
     .argument(
@@ -171,6 +203,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           topic: topic.join(" "),
           date: options.date,
           limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("resolve")
+    .description("Resolve an engine-raised decision.")
+    .argument("<question-id>", "Question row id from `dome check`.")
+    .argument("[value...]", "Decision value. Omit to print the question.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (
+      id: string,
+      value: string[] | undefined,
+      options: ResolveCliOptions,
+    ) => {
+      setExitCode(
+        await runResolve({
+          id,
+          value: value?.join(" "),
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -437,6 +493,17 @@ type InitCliOptions = {
   readonly refreshInstructions?: boolean;
 };
 
+type CheckCliOptions = {
+  readonly engine?: boolean;
+  readonly content?: boolean;
+  readonly decisions?: boolean;
+  readonly limit?: number;
+  readonly orphanThresholdMs?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
 type InspectCliOptions = {
   readonly limit?: number;
   readonly summary?: boolean;
@@ -469,6 +536,8 @@ type AnswerCliOptions = {
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };
+
+type ResolveCliOptions = AnswerCliOptions;
 
 type RunCliOptions = {
   readonly json?: boolean;

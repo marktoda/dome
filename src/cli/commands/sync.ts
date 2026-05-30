@@ -280,7 +280,9 @@ function printTickLines(
     console.error(`  [${d.code}] ${d.message}`);
   }
   if (blockers.length > 5) {
-    console.error(`  ... and ${blockers.length - 5} more (see \`dome inspect diagnostics\`).`);
+    console.error(
+      `  ... and ${blockers.length - 5} more (see \`dome check --json\`).`,
+    );
   }
 }
 

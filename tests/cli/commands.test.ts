@@ -28,8 +28,10 @@ import { parse as parseYaml } from "yaml";
 
 import { runInit } from "../../src/cli/commands/init";
 import { runAnswer } from "../../src/cli/commands/answer";
+import { runCheck } from "../../src/cli/commands/check";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runInspect } from "../../src/cli/commands/inspect";
+import { runResolve } from "../../src/cli/commands/resolve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
@@ -86,6 +88,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "projection_cache_drift",
   "attention_required",
   "attention",
+  "next_actions",
   "dirty_modified",
   "dirty_untracked",
   "content_pages",
@@ -142,6 +145,13 @@ afterEach(() => {
   console.log = origLog;
   console.error = origErr;
 });
+
+function record(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("expected object");
+  }
+  return value as Record<string, unknown>;
+}
 
 // ----- Fixture helpers -------------------------------------------------------
 
@@ -315,13 +325,14 @@ describe("runInit", () => {
       expect(agentsBody).toContain("## Daily loop");
       expect(agentsBody).toContain("Commit each coherent unit of work");
       expect(agentsBody).toContain("Dome works at the git commit boundary");
+      expect(agentsBody).toContain("next_actions");
+      expect(agentsBody).toContain("dome check --json");
+      expect(agentsBody).toContain("dome resolve <id> <value>");
       expect(agentsBody).toContain("dome today");
       expect(agentsBody).toContain("dome prep");
       expect(agentsBody).toContain("dome export-context <topic>");
-      expect(agentsBody).toContain("dome lint");
-      expect(agentsBody).toContain("dome inspect questions");
-      expect(agentsBody).toContain("dome answer <id> <value>");
-      expect(agentsBody).toContain("dome rebuild");
+      expect(agentsBody).toContain("Advanced/debug commands");
+      expect(agentsBody).toContain("dome inspect <subject>");
       expect(agentsBody).toContain("inbox/raw/");
       expect(agentsBody).toContain("dome.intake");
       expect(agentsBody).toContain("Do not edit or commit it");
@@ -333,13 +344,11 @@ describe("runInit", () => {
       expect(existsSync(claudePath)).toBe(true);
       const claudeBody = await readFile(claudePath, "utf8");
       expect(claudeBody.startsWith("@AGENTS.md")).toBe(true);
-      expect(claudeBody).toContain("dome status");
-      expect(claudeBody).toContain("dome sync");
-      expect(claudeBody).toContain("dome today");
-      expect(claudeBody).toContain("dome prep");
-      expect(claudeBody).toContain("dome query");
-      expect(claudeBody).toContain("dome export-context");
-      expect(claudeBody).toContain("dome inspect <subject>");
+      expect(claudeBody).toContain("dome status --json");
+      expect(claudeBody).toContain("next_actions");
+      expect(claudeBody).toContain("dome sync --json");
+      expect(claudeBody).toContain("dome check --json");
+      expect(claudeBody).toContain("dome resolve <id> <value>");
       expect(claudeBody).not.toContain("only use `dome status`");
       expect(captured.out.join("\n")).toContain("CLAUDE.md:");
       expect(captured.out.join("\n")).toContain("inbox/raw/:");
@@ -1331,6 +1340,232 @@ describe("runAnswer", () => {
   });
 });
 
+// ----- runResolve ------------------------------------------------------------
+
+describe("runResolve", () => {
+  test("records an answer through the user-facing decision verb", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    const adopted = commitOid(f.headSha);
+    insertQuestion(projection.value.db, {
+      effect: questionEffect({
+        question: "Track this follow-up?",
+        sourceRefs: [sourceRef({ commit: adopted, path: "wiki/new.md" })],
+        idempotencyKey: "cli-resolve-1",
+        options: ["track", "ignore"],
+      }),
+      processorId: "test.cli",
+      adoptedCommit: adopted,
+    });
+    const id = queryQuestionRecords(projection.value.db)[0]?.id;
+    projection.value.db.close();
+    expect(id).toBeGreaterThan(0);
+    if (id === undefined) return;
+
+    expect(
+      await runResolve({
+        id,
+        value: "track",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+
+    const after = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    try {
+      const record = queryQuestionRecords(after.value.db)[0];
+      expect(record?.answer).toBe("track");
+    } finally {
+      after.value.db.close();
+    }
+  });
+});
+
+// ----- runCheck --------------------------------------------------------------
+
+describe("runCheck", () => {
+  test("clean vault reports one unified ok surface", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("DOME check");
+    expect(out).toContain("status    ok");
+    expect(out).toContain("engine    ok");
+    expect(out).toContain("content   0 diagnostic(s)");
+    expect(out).toContain("decisions 0 open question(s)");
+  });
+
+  test("--json reports engine findings, content diagnostics, and decisions", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedUnhealthyOperationalState(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "check.test",
+          message: "check diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Resolve this?",
+          options: ["yes", "no"],
+          sourceRefs: [ref],
+          idempotencyKey: "check-question",
+        }),
+        processorId: "test.check",
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["schema"]).toBe("dome.check/v1");
+    expect(parsed["status"]).toBe("attention");
+    expect(record(parsed["scopes"])).toEqual({
+      engine: true,
+      content: true,
+      decisions: true,
+    });
+    expect(record(parsed["engine"])["status"]).toBe("unhealthy");
+    expect(record(record(parsed["engine"])["summary"])["findingCount"])
+      .toBeGreaterThan(0);
+    expect(record(parsed["content"])["diagnostics"]).toBe(1);
+    expect(record(parsed["decisions"])["questions"]).toBe(1);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["questions"],
+        command: "dome resolve 1 <choice>",
+        description:
+          "Resolve an open Dome decision after choosing the correct option.",
+      },
+      {
+        reasons: ["engine"],
+        command: "dome sync --json",
+        description:
+          "Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain.",
+      },
+      {
+        reasons: ["diagnostics"],
+        command: null,
+        description:
+          "Fix the source markdown issue(s), commit the change, then run dome sync --json.",
+      },
+    ]);
+  });
+
+  test("scope flags select one check surface", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(record(parsed["scopes"])).toEqual({
+      engine: false,
+      content: true,
+      decisions: false,
+    });
+    expect(parsed["engine"]).toBeNull();
+    expect(parsed["content"]).not.toBeNull();
+    expect(parsed["decisions"]).toBeNull();
+  });
+
+  test("--json reports operational schema mismatches as engine-only attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const runsPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const old = new Database(runsPath);
+    old.run(
+      "CREATE TABLE ledger_meta (schema_hash TEXT NOT NULL PRIMARY KEY, built_at TEXT NOT NULL)",
+    );
+    old.run("CREATE TABLE runs (id TEXT PRIMARY KEY)");
+    old.run(
+      "INSERT INTO ledger_meta (schema_hash, built_at) VALUES (?, ?)",
+      ["unknown-ledger-schema", "2026-05-28T00:00:00.000Z"],
+    );
+    old.run("INSERT INTO runs (id) VALUES (?)", ["run-preserved"]);
+    old.close();
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["schema"]).toBe("dome.check/v1");
+    expect(record(parsed["scopes"])).toEqual({
+      engine: true,
+      content: false,
+      decisions: false,
+    });
+    expect(record(parsed["engine"])["status"]).toBe("unhealthy");
+    expect(parsed["content"]).toBeNull();
+    expect(parsed["decisions"]).toBeNull();
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["engine"],
+        command: "dome sync --json",
+        description:
+          "Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain.",
+      },
+    ]);
+  });
+});
+
 // ----- runDoctor ------------------------------------------------------------
 
 describe("runDoctor", () => {
@@ -1512,6 +1747,14 @@ describe("runStatus", () => {
     expect(parsed["attention"]).toEqual(
       expect.arrayContaining(["sync_needed"]),
     );
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["sync_needed"],
+        command: "dome sync --json",
+        description:
+          "Run one compiler tick to adopt pending commits or drain due operational work.",
+      },
+    ]);
     expect(parsed["dirty_modified"]).toBe(0);
     expect(parsed["dirty_untracked"]).toBe(0);
     expect(parsed["content_pages"]).toBe(2);
@@ -1578,6 +1821,14 @@ describe("runStatus", () => {
     expect(parsed["attention"]).toEqual(
       expect.arrayContaining(["projection_stale"]),
     );
+    expect(parsed["next_actions"]).toEqual(expect.arrayContaining([
+      {
+        reasons: ["projection_stale"],
+        command: "dome sync --json",
+        description:
+          "Run one compiler tick to adopt pending commits or drain due operational work.",
+      },
+    ]));
     expect((parsed["attention"] as ReadonlyArray<string>)[0]).toBe(
       "projection_stale",
     );
@@ -1968,6 +2219,27 @@ describe("runStatus", () => {
       "outbox_pending",
       "outbox_failed",
       "quarantined",
+    ]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["sync_needed", "outbox_pending"],
+        command: "dome sync --json",
+        description:
+          "Run one compiler tick to adopt pending commits or drain due operational work.",
+      },
+      {
+        reasons: [
+          "pending_runs",
+          "failed_runs",
+          "diagnostics",
+          "questions",
+          "outbox_failed",
+          "quarantined",
+        ],
+        command: "dome check --json",
+        description:
+          "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
+      },
     ]);
     expect(parsed["recent_processor_runs"]).toEqual([
       {

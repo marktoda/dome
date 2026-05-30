@@ -209,7 +209,7 @@ export type ViewPhaseRunner = (input: {
  *
  * Schedule triggers do not fire through this signal/path runner; the
  * scheduler owns due cron dispatch. Answer triggers likewise fire through
- * the answer dispatcher after `dome answer` records a row.
+ * the answer dispatcher after `dome resolve` / `dome answer` records a row.
  */
 export type GardenPhaseRunner = (input: {
   readonly vault: EngineVault;

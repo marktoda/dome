@@ -409,9 +409,9 @@ function outboxFinding(row: OutboxRow): HealthFinding {
       `Outbox row ${row.id} (${row.capability}) failed after ` +
       `${row.attempts}/${row.maxAttempts} attempt(s).`,
     recovery:
-      "Inspect with `dome inspect outbox`; run `dome sync` or `dome serve` " +
-      "with dome.health enabled to raise a retry/abandon question, then " +
-      "answer it with `dome answer`.",
+      "Run `dome sync --json` or keep `dome serve` running with dome.health " +
+      "enabled to raise a retry/abandon question, then resolve it with " +
+      "`dome resolve`. Use `dome inspect outbox` only for row-level detail.",
     outbox: Object.freeze({
       id: row.id,
       capability: row.capability,
@@ -434,8 +434,9 @@ function stuckPendingOutboxFinding(row: OutboxRow): HealthFinding {
       `Outbox row ${row.id} (${row.capability}) is pending and due ` +
       `for retry since ${row.nextAttemptAt}.`,
     recovery:
-      "Run `dome sync` or `dome serve` to drain due outbox work; if it " +
-      "keeps returning, inspect with `dome inspect outbox`.",
+      "Run `dome sync --json` or keep `dome serve` running to drain due " +
+      "outbox work; if it keeps returning, use `dome check --json` for the " +
+      "next action or `dome inspect outbox` for row-level detail.",
     outbox: Object.freeze({
       id: row.id,
       capability: row.capability,
@@ -456,8 +457,10 @@ function orphanFinding(row: RunRow): HealthFinding {
       `Run ${row.id} for ${row.processorId} is still running from ` +
       `${row.startedAt}.`,
     recovery:
-      "Inspect with `dome inspect runs`; answer the `dome.health` " +
-      "orphan-run recovery question with `fail` to mark the row failed.",
+      "Run `dome sync --json` or keep `dome serve` running to raise the " +
+      "`dome.health` orphan-run recovery question, then resolve it with " +
+      "`dome resolve <id> fail`. Use `dome inspect runs` only for row-level " +
+      "detail.",
     run: Object.freeze({
       id: row.id,
       processorId: row.processorId,
@@ -669,9 +672,10 @@ function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {
       `${row.key.triggerHash.slice(0, 12)} after ` +
       `${row.consecutiveRetryableFailures} retryable failure(s).`,
     recovery:
-      "Inspect with `dome inspect quarantine`; run `dome sync` or " +
-      "`dome serve` with dome.health enabled to raise a reset question, " +
-      "then answer it with `dome answer`.",
+      "Run `dome sync --json` or keep `dome serve` running with dome.health " +
+      "enabled to raise a reset question, then resolve it with " +
+      "`dome resolve`. Use `dome inspect quarantine` only for row-level " +
+      "detail.",
     quarantine: Object.freeze({
       phase: row.key.phase,
       processorId: row.key.processorId,

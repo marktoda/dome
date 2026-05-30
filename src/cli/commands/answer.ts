@@ -1,6 +1,7 @@
 // cli/commands/answer: resolve a durable QuestionEffect row.
 //
-// This is the small write-side companion to `dome inspect questions`.
+// This is the small write-side companion behind `dome resolve` and the
+// compatibility `dome answer` command.
 // It owns CLI parsing/printing only; the projection accessor owns row
 // lookup, multiple-choice validation, and mutation semantics.
 
@@ -27,15 +28,17 @@ export type RunAnswerOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly commandLabel?: string | undefined;
 };
 
 export async function runAnswer(
   options: RunAnswerOptions = {},
 ): Promise<number> {
+  const commandLabel = options.commandLabel ?? "dome answer";
   const id = parseQuestionId(options.id);
   if (id === null) {
     console.error(
-      "dome answer: question id must be a positive integer. Usage: dome answer <question-id> [value]",
+      `${commandLabel}: question id must be a positive integer. Usage: ${commandLabel} <question-id> [value]`,
     );
     return 64;
   }
@@ -48,7 +51,7 @@ export async function runAnswer(
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
     console.error(
-      `dome answer: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
+      `${commandLabel}: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
     );
     return 1;
   }
@@ -59,7 +62,7 @@ export async function runAnswer(
     if (rawValue === undefined || rawValue.length === 0) {
       const record = getQuestionRecord(runtime.projectionDb, id);
       if (record === null) {
-        console.error(`dome answer: question ${id} was not found.`);
+        console.error(`${commandLabel}: question ${id} was not found.`);
         return 64;
       }
       if (options.json === true) {
@@ -83,10 +86,15 @@ export async function runAnswer(
             question: result.record,
           })
         : null;
-    return printAnswerResult(result, options.json === true, handlerResult);
+    return printAnswerResult(
+      result,
+      options.json === true,
+      handlerResult,
+      commandLabel,
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome answer: failed: ${msg}`);
+    console.error(`${commandLabel}: failed: ${msg}`);
     return 1;
   } finally {
     await runtime.close();
@@ -97,10 +105,11 @@ function printAnswerResult(
   result: AnswerQuestionResult,
   json: boolean,
   handlerResult: AnswerHandlerDispatchResult,
+  commandLabel: string,
 ): number {
   switch (result.kind) {
     case "not-found":
-      console.error("dome answer: question was not found.");
+      console.error(`${commandLabel}: question was not found.`);
       return 64;
     case "already-answered":
       if (json) {
@@ -135,7 +144,7 @@ function printAnswerResult(
         );
       } else {
         console.error(
-          `dome answer: invalid answer. Expected one of: ${result.options.join(", ")}`,
+          `${commandLabel}: invalid answer. Expected one of: ${result.options.join(", ")}`,
         );
       }
       return 64;

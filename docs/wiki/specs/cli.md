@@ -22,6 +22,11 @@ dome init [path]                Initialize a new vault.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
+dome check [--engine] [--content] [--decisions] [--limit <n>] [--json]
+                                Explain compiler attention across health,
+                                diagnostics, and decisions.
+dome resolve <question-id> [<value>]
+                                Resolve a Dome-raised decision from `check`.
 dome today [--date <YYYY-MM-DD>] [--json]
                                 Source-backed daily task/followup surface.
 dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]
@@ -42,11 +47,10 @@ dome inspect <subject> [--limit <n>] [--json]
                                 Read-only view over the operational substrate.
                                 Subjects: runs, diagnostics, questions, outbox, quarantine.
 dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
-                                Run engine-substrate health checks; --repair is
-                                reserved for answer-mediated mitigations.
+                                Advanced engine-substrate health checks;
+                                --repair is reserved for answer-mediated mitigations.
 dome answer <question-id> [<value>]
-                                Resolve an engine-raised QuestionEffect from
-                                the user-decision channel.
+                                Low-level compatibility alias for `resolve`.
 dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
@@ -55,10 +59,10 @@ dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Adoption catch-up:** `dome sync` — the Git-native catch-up path that triggers an adoption run for already-committed draft state.
-- **Recall and dashboards:** `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda`, `dome status`, `dome inspect` — read paths. `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands; `dome status` is the compact local dashboard over git cursor, content analytics, and operational counts; `dome inspect` is a thin read over the operational state stores (projection / ledger / outbox / quarantine).
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records the user's answer to a Dome-raised decision and dispatches answer handlers.
+- **Optional adopted-state views:** `dome query`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` are explicit read views when the user asks for recall, planning, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
+- **Advanced/debug surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, compatibility, extension development, and maintenance. They are not the normal Claude Code workflow.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` — command-triggered view-phase processors invoked through the shared view-command boundary.
-- **Engine control:** `dome rebuild`, `dome doctor`, `dome answer`, `dome serve` — engine-substrate operations exposed only on the CLI surface. The current implementation records `dome answer` decisions, dispatches matching garden-phase answer handlers, renders probe-only `dome doctor` findings for failed outbox rows, orphan runs, and quarantined processors, and ships first-party `dome.health` recovery loops for failed outbox rows, quarantined processors, and orphaned running rows. See [[wiki/syntheses/v1-claude-code-vault-plan]].
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -238,7 +242,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"projection_stale":false,"projection_cache_drift":false,"attention_required":true,"attention":["outbox_pending"],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"diagnostic_summary":{"total":0,"group_count":0,"shown_groups":0,"groups":[]},"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"projection_stale":false,"projection_cache_drift":false,"attention_required":true,"attention":["outbox_pending"],"next_actions":[{"reasons":["outbox_pending"],"command":"dome sync --json","description":"Run one compiler tick to adopt pending commits or drain due operational work."}],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"diagnostic_summary":{"total":0,"group_count":0,"shown_groups":0,"groups":[]},"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
@@ -246,10 +250,11 @@ rows, grouped by processor id. It is for status dashboards and agents that
 need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
 `attention_required` and `attention` summarize the status counters into stable
-reason codes. Current reasons include `adopted_ref_diverged`, `sync_needed`,
-`projection_stale`, `dirty_modified`, `dirty_untracked`, `pending_runs`,
-`failed_runs`, `serve_stale`, `diagnostics`, `questions`, `outbox_pending`,
-`outbox_failed`, and `quarantined`.
+reason codes; `next_actions` maps those reasons to a small set of commands an
+agent can safely follow. Current reasons include `adopted_ref_diverged`,
+`sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
+`pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
+`outbox_pending`, `outbox_failed`, and `quarantined`.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
@@ -261,10 +266,52 @@ dirty working-tree counts excluding rebuildable
 reports. `serve_status` is read from the foreground host heartbeat file and is
 `running`, `stale`, or `off`; stale means the host did not exit cleanly or has
 not refreshed its heartbeat within the host's configured cadence. Use
-`dome inspect diagnostics`, `dome inspect questions`,
-`dome inspect outbox`, or `dome inspect runs` for details. See
+`dome check --json` for the normal explanation path and `dome inspect
+diagnostics/questions/outbox/runs` only for row-level debugging. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and
 [[wiki/specs/foreground-compiler-workflow]] for the normal session pulse.
+
+### `dome check [--engine] [--content] [--decisions] [--limit <n>] [--json]`
+
+The unified read-only attention report. It exists so Claude Code and a human
+operator have one "see what remains" command instead of choosing among
+`doctor`, `lint`, `inspect diagnostics`, and `inspect questions`.
+
+Default scope includes:
+
+- **engine:** health findings from the operational substrate: adopted-ref
+  divergence, projection cache drift, instruction drift, schema mismatches,
+  failed or stuck outbox rows, orphan runs, quarantines, and model-provider
+  configuration gaps;
+- **content:** unresolved DiagnosticEffect rows with bounded grouping and
+  SourceRefs;
+- **decisions:** unresolved QuestionEffect rows with row ids, options, and
+  SourceRefs.
+
+The `--engine`, `--content`, and `--decisions` flags narrow the report to one
+or more scopes. `--limit` bounds rows per section. `--json` emits the
+structured `dome.check/v1` payload. Abbreviated example:
+
+```json
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"summary":{"total":2},"items":[]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"..."}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
+```
+
+`dome check` does not mutate state and does not run the compiler. When the
+report says engine work may be recoverable through a health question, run
+`dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
+
+### `dome resolve <question-id> [<value>]`
+
+The normal user-facing decision channel for QuestionEffects. `<question-id>` is
+the row id shown by `dome check`; `<value>` is one of the question's options
+when options are present, or free-form text otherwise. Without `<value>`,
+`dome resolve <question-id>` prints the question and options.
+
+`dome resolve` delegates to the same durable answer machinery as `dome answer`:
+it records the answer, marks the projection row resolved, and dispatches
+matching garden-phase answer handlers. The dedicated verb exists so the
+primary path reads naturally: `status` routes, `check` explains, `resolve`
+answers.
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
 
@@ -501,7 +548,7 @@ The recut splits these along their real seams:
 - **Probes** → `dome doctor` (this section). The probes themselves are
   garden-phase processors; the verb is just the view-phase renderer.
 - **Per-substrate mutations needing human input** → engine-emitted
-  QuestionEffect → user runs `dome answer <id>` (below) → answer-handler
+  QuestionEffect → user runs `dome resolve <id>` → answer-handler
   processor in the `dome.health` bundle applies the mutation. No
   per-substrate verb-noun commands.
 - **Auto-mitigations** (AGENTS.md template drift, projection schema
@@ -515,13 +562,15 @@ The recut splits these along their real seams:
   because there's no decision; it's a "block until quiet" verb.
 
 This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
-three named surfaces (`inspect`, `doctor`, `answer`) plus the existing
-processor substrate.
+the primary `status` / `check` / `resolve` path, with `inspect` and
+`doctor` retained as advanced detail views.
 
-### `dome answer <question-id> [<value>]` *(required for complete v1 recovery)*
+### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
 
-The universal **user-decision channel** for QuestionEffects the engine
-has raised but cannot resolve autonomously.
+The low-level compatibility alias for `dome resolve`. Existing scripts and
+older docs may still call `dome answer`; the implementation is the same
+durable user-decision channel for QuestionEffects the engine has raised but
+cannot resolve autonomously.
 
 **Why a single answer surface (not per-substrate verbs).** The engine
 already has a primitive for "I need a human decision" — `QuestionEffect`
@@ -537,24 +586,24 @@ the natural pattern is:
 2. **That processor emits a `QuestionEffect`** with options (for example
    `["retry", "abandon"]`), an idempotency key that names the stuck row and
    failure instance, and `sourceRefs` pointing at the substrate row's origin.
-3. **User runs `dome inspect questions`** to see pending questions.
-4. **User runs `dome answer <question-id> retry`** to resolve.
+3. **User runs `dome check --json`** to see pending questions.
+4. **User runs `dome resolve <question-id> retry`** to resolve.
 5. **A second garden-phase processor in `dome.health`** declares an
    `answer` trigger bound to both the emitting question processor and the
    idempotency-key prefix, receives `{ question, answer }`, looks up the
    question's `idempotencyKey` → operational target, and emits the appropriate
    recovery effect to mutate the engine-owned operational state.
 
-The CLI surface is one verb (`dome answer`); the per-substrate logic
+The primary CLI surface is one verb (`dome resolve`); the per-substrate logic
 lives in the `dome.health` bundle's answer-handler processors. Adding
 a new operational mutation type is one new question-emitter + one
 new answer-handler in the bundle; no new CLI command.
 
 **Design (complete v1).** `<question-id>` is the question row's id (from
-`dome inspect questions`). `<value>` is one of the question's options
+`dome check`). `<value>` is one of the question's options
 (when `options` is set) or free-form text (when `options` is null).
-Without `<value>`, `dome answer <question-id>` prints the question
-and its options.
+Without `<value>`, `dome resolve <question-id>` or
+`dome answer <question-id>` prints the question and its options.
 
 Answering writes the durable answer to `answers.db.question_answers`, updates
 the current `projection.db.questions` row for inspect/query ergonomics, and
@@ -565,10 +614,11 @@ the question's originating `processorId` as well as its idempotency-key prefix;
 this prevents a third-party question emitter from invoking a first-party
 handler that holds recovery capabilities.
 
-**Current behavior.** `dome answer` looks up the row id, prints the question
-when `<value>` is omitted, validates `<value>` against `options` when options
-are present, records the answer, and dispatches matching garden-phase answer
-handlers. Duplicate-detection content questions plus a fixture answer handler
+**Current behavior.** `dome resolve` / `dome answer` looks up the row id,
+prints the question when `<value>` is omitted, validates `<value>` against
+`options` when options are present, records the answer, and dispatches matching
+garden-phase answer handlers. Duplicate-detection content questions plus a
+fixture answer handler
 are covered end-to-end by the harness.
 
 Answer-handler dispatch is retryable from the durable answer record. The CLI
@@ -658,14 +708,20 @@ The CLI shell-shape lockstep test enumerates command-triggered processors in
 Commander binding in `src/cli/index.ts` or a documented `dome run` invocation
 in this spec.
 
-## Why the CLI surface is rich (not minimal)
+## Why the CLI surface is tiered
 
-The CLI is the primary v1 surface for agentic harnesses. Stable operational
-verbs (`sync`, `status`, `query`, `inspect`, `doctor`, `answer`, `rebuild`,
-`serve`) are named CLI commands. Extension-defined view commands can start
-behind `dome run <name>` and graduate to dedicated aliases once their workflow
-deserves first-class help text, flags, and text rendering. This keeps the core
-surface small while leaving a clean path to richer named commands.
+The CLI is the primary v1 control surface for agentic harnesses, but the normal
+Claude Code grammar is intentionally small: `serve` / `sync` drive the
+compiler, `status` routes attention, `check` explains it, and `resolve` records
+the user's decision. Optional view commands read adopted state when explicitly
+useful. Advanced commands (`inspect`, `doctor`, `answer`, `run`, `rebuild`)
+remain named because they are valuable for debugging, scripting, and extension
+development, not because agents should choose among them during the daily loop.
+
+Extension-defined view commands can start behind `dome run <name>` and
+graduate to dedicated aliases once their workflow deserves first-class help
+text, flags, and text rendering. This keeps the primary loop small while
+leaving a clean path to richer named commands.
 
 The planned MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views would be reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
 

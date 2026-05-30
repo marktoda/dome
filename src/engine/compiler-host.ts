@@ -7,10 +7,10 @@
 //   2. If drift is present, construct a `manual`-source Proposal and run
 //      `adopt()` against the open `VaultRuntime`.
 //
-// `dome answer` also uses this module for the same runtime-host wiring:
-// frame-aware SQLite sinks, adopted-ref resolution, and garden sub-Proposal
-// adoption. Keeping those operations together prevents each CLI verb from
-// hand-rolling a slightly different engine host.
+// `dome resolve` / `dome answer` also use this module for the same runtime-host
+// wiring: frame-aware SQLite sinks, adopted-ref resolution, and garden
+// sub-Proposal adoption. Keeping those operations together prevents each CLI
+// verb from hand-rolling a slightly different engine host.
 //
 // Refactoring invariants:
 //

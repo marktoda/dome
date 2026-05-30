@@ -1,10 +1,10 @@
 // engine/question-answering: durable answer orchestration.
 //
-// `dome answer` crosses two state surfaces: the rebuildable projection row
-// the user selects by id, and the durable operational record keyed by
-// QuestionEffect.idempotencyKey. This module owns that cross-DB boundary so
-// projection accessors stay table-local and processors never gain mutation
-// rights.
+// `dome resolve` / `dome answer` crosses two state surfaces: the rebuildable
+// projection row the user selects by id, and the durable operational record
+// keyed by QuestionEffect.idempotencyKey. This module owns that cross-DB
+// boundary so projection accessors stay table-local and processors never gain
+// mutation rights.
 
 import type { AnswersDb } from "../answers/db";
 import {

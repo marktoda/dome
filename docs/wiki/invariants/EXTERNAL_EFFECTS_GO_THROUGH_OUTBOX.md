@@ -16,7 +16,7 @@ tier: axiom
 **Why:** External side effects are the failure-mode-rich layer of the system. Networks fail, vendors return 500s, idempotency keys collide, retries cause double-sends. The outbox provides:
 
 1. **Idempotency.** The `idempotencyKey` on every effect de-dups: a processor that re-emits the same effect on retry produces one row, one external call.
-2. **Recoverability.** A terminally-failed external action is visible via `dome inspect outbox`; recovery follows the engine-asks model — `dome.health.outbox-recovery-questions` raises a `QuestionEffect`, the user answers `dome answer <question-id> retry|abandon`, and `dome.health.outbox-recovery-answer` emits an `OutboxRecoveryEffect` that the engine-owned outbox sink applies. See [[wiki/specs/cli]] §"dome answer" and [[wiki/gotchas/outbox-stuck]].
+2. **Recoverability.** A terminally-failed external action is visible via `dome check` and advanced `dome inspect outbox`; recovery follows the engine-asks model — `dome.health.outbox-recovery-questions` raises a `QuestionEffect`, the user answers `dome resolve <question-id> retry|abandon`, and `dome.health.outbox-recovery-answer` emits an `OutboxRecoveryEffect` that the engine-owned outbox sink applies. See [[wiki/specs/cli]] §"`dome resolve`" and [[wiki/gotchas/outbox-stuck]].
 3. **Auditability.** The outbox is the audit history of "what did Dome try to do to the outside world." Every call traces to a processor, a Proposal, and a RunRecord.
 4. **Crash safety.** If the engine crashes between "insert outbox row" and "dispatch handler," the next startup sees `status: pending` and retries. If it crashes between "dispatch" and "mark sent," the retry detects via idempotency key that the call already succeeded and updates the row without re-firing.
 

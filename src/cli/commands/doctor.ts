@@ -3,7 +3,7 @@
 // `dome doctor` is the human/agent recovery dashboard for engine substrate
 // failures that need attention. It does not mutate state. The repair half of
 // the recovery loop remains the engine-asks path: health processors raise
-// questions, the user answers with `dome answer`, and answer handlers apply
+// questions, the user resolves them with `dome resolve`, and answer handlers apply
 // the mutation.
 
 import { resolve } from "node:path";
@@ -36,7 +36,7 @@ export async function runDoctor(
   if (options.repair === true) {
     console.error(
       "dome doctor --repair: not implemented yet. Recovery mutations flow " +
-        "through health questions and `dome answer`; this command is " +
+        "through health questions and `dome resolve`; this command is " +
         "currently probe-only.",
     );
     return EX_USAGE;

@@ -24,9 +24,9 @@ as `sync` remain CLI-only in v1.
 | **Run command processor** | `surface.commands.<name>.invoke(args)` | Dedicated commands (`dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda`) or `dome run <name>` | `dome.run_command` tool | `POST /commands/<name>` | Voice command → command processor (query / lint / prep / etc.) |
 | **Read resource** | `surface.readResource(uri)` | n/a (CLI reads paths, not URIs) | MCP resources at `dome://<scheme>/<path>` | `GET /<uri>` | n/a |
 | **Get instructions** | `surface.instructions` | `dome inspect instructions` (v1.x subject) | MCP `serverInfo.instructions` | `GET /instructions` | Read at session start by voice client |
-| **Get adoption status** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status` / `dome status --json` | `dome://status` resource | `GET /status` | n/a |
+| **Get adoption status / attention** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status --json` / `dome check --json` | `dome://status` resource | `GET /status` | n/a |
 | **Rebuild projection** | `vault.rebuild()` (engine) | `dome rebuild` | n/a (engine control, not exposed via MCP in v1) | `POST /rebuild` (auth-gated in hosted mode) | n/a |
-| **Engine control (sync, doctor, init, inspect, answer)** | (engine, not AbstractSurface) | `dome sync`, `dome doctor`, `dome init`, `dome inspect <subject>`, `dome answer <id>` | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
+| **Engine control (sync, init, resolve, advanced detail)** | (engine, not AbstractSurface) | `dome sync`, `dome init`, `dome resolve <id>`, plus advanced `dome inspect` / `dome doctor` / `dome answer` | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
 
 ## Architectural shape
 
@@ -67,7 +67,7 @@ Three operations are CLI-only in v1 by deliberate scope:
 
 - **`dome init`** — vault construction is interactive and one-time; doesn't benefit from protocol-routing.
 - **`dome serve`** — daemon lifecycle is OS-process-level; not a Submit/Recall operation.
-- **`dome doctor --repair`** (v1.x reserved flag) and **`dome answer <id>`** — vault-maintenance and operational-decision channels are administrative; protocol-routing them could create accidental remote-administrator footguns.
+- **`dome doctor --repair`** (v1.x reserved flag) and **`dome resolve <id>` / `dome answer <id>`** — vault-maintenance and operational-decision channels are administrative; protocol-routing them could create accidental remote-administrator footguns.
 
 The hosted-protected v1.5 mode may expose `init`/`serve`/`doctor` over HTTP with auth gating; v1 keeps them CLI-only.
 
