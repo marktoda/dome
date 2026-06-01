@@ -25,7 +25,7 @@ const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
 const taskIndex: Processor = defineProcessor({
   id: "dome.daily.task-index",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "adoption",
   triggers: [
     {
@@ -35,17 +35,32 @@ const taskIndex: Processor = defineProcessor({
     },
     {
       kind: "signal",
+      name: "document.changed",
+      pathPattern: "notes/*.md",
+    },
+    {
+      kind: "signal",
       name: "file.created",
       pathPattern: "wiki/**/*.md",
+    },
+    {
+      kind: "signal",
+      name: "file.created",
+      pathPattern: "notes/*.md",
     },
     {
       kind: "signal",
       name: "file.deleted",
       pathPattern: "wiki/**/*.md",
     },
+    {
+      kind: "signal",
+      name: "file.deleted",
+      pathPattern: "notes/*.md",
+    },
   ],
   capabilities: [
-    { kind: "read", paths: ["wiki/**/*.md"] },
+    { kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] },
     { kind: "graph.write", namespaces: ["dome.daily.*"] },
     { kind: "question.ask" },
   ],

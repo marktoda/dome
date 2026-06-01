@@ -264,6 +264,7 @@ draft     0 modified | 0 untracked
 content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
 engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
 health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
+loops     5 known | 3 quiet | 0 attention | 1 partial | 1 inactive
 ```
 
 `--json` emits stable keys for agent consumption. Abbreviated shape:
@@ -296,6 +297,27 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
       "latest_duration_ms": 140,
       "recent_runs": 3,
       "recent_problem_runs": 0
+    }
+  ],
+  "maintenance_loops": [
+    {
+      "id": "dome.context.packet",
+      "goal": "Active work has concise source-backed context packets for foreground agents.",
+      "state": "quiet",
+      "processor_ids": ["dome.search.index-text", "dome.search.query", "dome.search.export-context"],
+      "active_processors": ["dome.search.index-text", "dome.search.query", "dome.search.export-context"],
+      "missing_processors": [],
+      "surfaces": ["command:query", "command:export-context"],
+      "settlement": {
+        "key": "packet target + adopted source set + processor version",
+        "no_op_when": "the packet or query result was produced from the same relevant source set"
+      },
+      "diagnostics": 0,
+      "attention_diagnostics": 0,
+      "questions": 0,
+      "recent_runs": 3,
+      "recent_problem_runs": 0,
+      "latest_run_at": "2026-05-28T12:34:56.000Z"
     }
   ],
   "diagnostics": 12,
@@ -375,6 +397,15 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
 rows, grouped by processor id. It is for status dashboards and agents that
 need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
+`maintenance_loops` is a first-party V1 automation summary over the same
+processor substrate. Loops are metadata, not runtime dispatch units: each row
+names the desired-state objective, its implementing processor ids, command/path
+surfaces, settlement rule, current state, and the unresolved
+diagnostics/questions/recent problem runs attributable to those processors.
+`state: "quiet"` means the loop is active and has no visible attention;
+`"attention"` means diagnostics, questions, or recent problem runs are present;
+`"partial"` means at least one referenced processor is not active; and
+`"inactive"` means none of the loop's processors are active.
 `last_sync` is the started-at timestamp of the newest successful adoption- or
 garden-phase run. Read-only view commands such as `dome lint`, `dome query`,
 `dome today`, `dome prep`, and `dome agenda` remain visible in
@@ -637,6 +668,17 @@ Dedicated wrapper for the `dome.daily.today` view processor. The shared
 view-command boundary validates the adopted ref, refreshes stale projections,
 then invokes the extension-owned command trigger `today`.
 
+The target daily-note path comes from `dome.daily` extension config. Default is
+`wiki/dailies/{date}.md`; vaults that keep Obsidian daily notes at the root of
+`notes/` can set:
+
+```yaml
+extensions:
+  dome.daily:
+    config:
+      daily_path: notes/{date}.md
+```
+
 Default text output renders:
 
 - the target date and expected daily-note path,
@@ -656,9 +698,15 @@ glyphs are also stripped from display text once represented in structured
 `dueDate` / `priority` fields. SourceRefs still point to the original markdown
 line.
 
+The `dome.daily.carry-forward` garden processor may write a small generated
+`## Open Loops` block into the daily note. `dome.daily.task-index` treats that
+block as a surface, not a new source: generated daily entries are skipped during
+fact extraction so `today` and `prep` continue to cite the original project,
+meeting, capture, or prior daily line.
+
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
-Items from the target daily note sort before the wider wiki backlog and
+Items from the target daily note sort before the wider vault backlog and
 preserve source line order. Wider-backlog task and followup rows then sort by
 explicit action metadata before path / line / text: due dates on or before the
 target day first, priority-only rows next, future-dated rows after that, and
@@ -700,7 +748,7 @@ Default text output is markdown:
 
 The shared daily action model is the same as `dome today`: each
 task/followup/question carries a `daily` or `backlog` source scope, items from
-the target daily note appear before wider wiki backlog within each bounded
+the target daily note appear before wider vault backlog within each bounded
 action section, wider-backlog task/followup rows use the same due-date /
 priority ordering, and the "Start Here" buckets preserve their followup /
 question / task priority on top of that source ordering.

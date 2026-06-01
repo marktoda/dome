@@ -1,5 +1,7 @@
 extensions:
   - name: capture
     frontmatter_extras:
+      disposition: optional
       intake_items: optional
       processed_from: optional
+      source_hash: optional

@@ -5,17 +5,30 @@
 // first-party garden processors do follow-on work, and CLI views/recovery
 // surfaces explain the resulting adopted state.
 
-import { createHash } from "node:crypto";
-
 import { expect } from "bun:test";
 
+import {
+  captureOutputPaths,
+  captureSourceHash,
+} from "../../../../assets/extensions/dome.intake/processors/capture-page";
 import { synthesisOutputPath } from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
 import { rollupOutputPath } from "../../../../assets/extensions/dome.intake/processors/synthesize-rollup";
 import { TestClock, scenario } from "../../index";
 
 const CAPTURE_PATH = "inbox/raw/manager-day.md";
-const GENERATED_CAPTURE_PATH = outputPath(CAPTURE_PATH, "wiki/generated/intake");
-const ARCHIVE_PATH = outputPath(CAPTURE_PATH, "inbox/processed");
+const CAPTURE_BODY = [
+  "# Manager day capture",
+  "",
+  "Need to send Ada the launch staffing note.",
+  "Ask Ben about hiring budget.",
+  "",
+].join("\n");
+const CAPTURE_PATHS = captureOutputPaths({
+  path: CAPTURE_PATH,
+  sourceHash: captureSourceHash(CAPTURE_BODY),
+});
+const GENERATED_CAPTURE_PATH = CAPTURE_PATHS.generated;
+const ARCHIVE_PATH = CAPTURE_PATHS.archive;
 const SYNTHESIS_PATH = synthesisOutputPath(GENERATED_CAPTURE_PATH);
 const ROLLUP_PATH = rollupOutputPath();
 const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
@@ -161,13 +174,7 @@ scenario(
       files: {
         "wiki/projects/alpha-review.md": projectPage(),
         "wiki/projects/alpha-review-copy.md": projectPage(),
-        [CAPTURE_PATH]: [
-          "# Manager day capture",
-          "",
-          "Need to send Ada the launch staffing note.",
-          "Ask Ben about hiring budget.",
-          "",
-        ].join("\n"),
+        [CAPTURE_PATH]: CAPTURE_BODY,
       },
     });
 
@@ -393,16 +400,4 @@ function projectPage(): string {
     "Follow up: Ask Ben about hiring budget",
     "",
   ].join("\n");
-}
-
-function outputPath(path: string, dir: string): string {
-  const basename = path.split("/").at(-1) ?? "capture.md";
-  const stem = basename.replace(/\.md$/i, "");
-  const slug = stem
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64) || "capture";
-  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
-  return `${dir}/${slug}-${digest}.md`;
 }

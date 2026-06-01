@@ -44,6 +44,7 @@
 
 import type {
   CapabilityToken,
+  ExtensionConfig,
   ModelInvokeFn,
   OperationalQueryView,
   ProcessorContext,
@@ -89,6 +90,7 @@ export type ProcessorContextInput<TInput> = {
   readonly modelInvoke?: ModelInvokeFn;
   readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
+  readonly extensionConfig?: ExtensionConfig;
   /**
    * Optional read-only projection query surface. View-phase invocations
    * pass a live `ProjectionQueryView` backed by the open projection
@@ -110,6 +112,8 @@ export type ProcessorContextInput<TInput> = {
 const CAPABILITY_TOKEN: CapabilityToken = Object.freeze({
   __brand: "CapabilityToken" as const,
 }) as CapabilityToken;
+
+const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
 
 // ----- makeProcessorContext -------------------------------------------------
 
@@ -156,6 +160,7 @@ export function makeProcessorContext<TInput>(
     input: opts.input,
     signal: opts.signal,
     capabilities: CAPABILITY_TOKEN,
+    extensionConfig: opts.extensionConfig ?? EMPTY_EXTENSION_CONFIG,
     sourceRef: boundSourceRef,
   };
   if (opts.modelInvoke !== undefined) ctx.modelInvoke = opts.modelInvoke;

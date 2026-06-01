@@ -20,7 +20,6 @@
 // callers don't pass `signal` and rely on the OS-signal handlers.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,6 +30,10 @@ import { runServe } from "../../src/cli/commands/serve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { runInspect } from "../../src/cli/commands/inspect";
+import {
+  captureOutputPaths,
+  captureSourceHash,
+} from "../../assets/extensions/dome.intake/processors/capture-page";
 
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -49,14 +52,19 @@ const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
 const TEST_BUNDLES_ROOT = join(REPO_ROOT, "tests", "harness", "fixtures", "bundles");
 const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
 const SERVE_CAPTURE_PATH = "inbox/raw/serve-manager-day.md";
-const SERVE_CAPTURE_OUTPUT_PATH = outputPath(
-  SERVE_CAPTURE_PATH,
-  "wiki/generated/intake",
-);
-const SERVE_CAPTURE_ARCHIVE_PATH = outputPath(
-  SERVE_CAPTURE_PATH,
-  "inbox/processed",
-);
+const SERVE_CAPTURE = [
+  "# Serve manager day",
+  "",
+  "Need to send Ada the launch staffing note.",
+  "Ask Ben about hiring budget.",
+  "",
+].join("\n");
+const SERVE_CAPTURE_PATHS = captureOutputPaths({
+  path: SERVE_CAPTURE_PATH,
+  sourceHash: captureSourceHash(SERVE_CAPTURE),
+});
+const SERVE_CAPTURE_OUTPUT_PATH = SERVE_CAPTURE_PATHS.generated;
+const SERVE_CAPTURE_ARCHIVE_PATH = SERVE_CAPTURE_PATHS.archive;
 const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
 
 // ----- Console capture ------------------------------------------------------
@@ -463,13 +471,7 @@ describe("runServe smoke", () => {
     });
     await writeFile(
       join(f.vaultPath, SERVE_CAPTURE_PATH),
-      [
-        "# Serve manager day",
-        "",
-        "Need to send Ada the launch staffing note.",
-        "Ask Ben about hiring budget.",
-        "",
-      ].join("\n"),
+      SERVE_CAPTURE,
     );
     await commit({
       path: f.vaultPath,
@@ -862,16 +864,4 @@ async function debugServeState(fixture: Fixture): Promise<string> {
   } finally {
     ledger.value.db.close();
   }
-}
-
-function outputPath(path: string, dir: string): string {
-  const basename = path.split("/").at(-1) ?? "capture.md";
-  const stem = basename.replace(/\.md$/i, "");
-  const slug = stem
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64) || "capture";
-  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
-  return `${dir}/${slug}-${digest}.md`;
 }

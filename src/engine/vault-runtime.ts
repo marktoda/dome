@@ -58,6 +58,7 @@ import type { CommitOid } from "../core/source-ref";
 import {
   treeOid,
   type Capability,
+  type ExtensionConfig,
   type OperationalQueryView,
   type TreeOid,
 } from "../core/processor";
@@ -144,6 +145,7 @@ export type VaultRuntime = {
   readonly config: RuntimeConfig;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor: (extensionId: string) => ExtensionConfig;
   readonly externalHandlers: ExternalHandlerRegistry;
   readonly operationalQueryView: OperationalQueryView;
   readonly modelProvider?: ModelProvider;
@@ -357,6 +359,7 @@ type RuntimeSettings = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly capabilityPolicyHash: string;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor: CapabilityPolicy["configForExtension"];
   readonly externalHandlers: ExternalHandlerRegistry;
   readonly modelProvider?: ModelProvider;
 };
@@ -383,6 +386,7 @@ function runtimeSettingsForPolicy(input: {
     extensionIdFor: extensionIdForProcessor(
       input.resolved.processorExtensionIds,
     ),
+    extensionConfigFor: input.policy.configForExtension,
     externalHandlers: mergeExternalHandlerRegistries(
       input.resolved.externalHandlers,
       input.opts.externalHandlers,
@@ -519,6 +523,7 @@ function buildVaultRuntime(input: {
     registry: resolved.registry,
     resolveGrants: settings.resolveGrants,
     extensionIdFor: settings.extensionIdFor,
+    extensionConfigFor: settings.extensionConfigFor,
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
     projection: buildProjectionQueryView(projectionDb),
@@ -547,6 +552,7 @@ function buildVaultRuntime(input: {
     config: policy.runtime,
     resolveGrants: settings.resolveGrants,
     extensionIdFor: settings.extensionIdFor,
+    extensionConfigFor: settings.extensionConfigFor,
     externalHandlers: settings.externalHandlers,
     operationalQueryView,
     ...(settings.modelProvider !== undefined

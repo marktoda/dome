@@ -71,6 +71,7 @@ import { posix } from "node:path";
 import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
+  ExtensionConfig,
   OperationalOutboxStatus,
   OperationalRunStatus,
   OperationalQueryView,
@@ -242,6 +243,7 @@ export type BuildRuntimeOptions = {
   readonly registry: ProcessorRegistry;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   /**
    * Optional run-ledger handle. When present, every dispatched processor
@@ -305,6 +307,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     registry,
     resolveGrants,
     extensionIdFor,
+    extensionConfigFor,
     resolveTree,
     ledger,
     projection,
@@ -366,6 +369,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         matches,
         resolveGrants,
         extensionIdFor,
+        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
         ledger,
         executionState,
         ...(executionCap !== undefined ? { executionCap } : {}),
@@ -429,6 +433,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           matches,
           resolveGrants,
           extensionIdFor,
+          ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
           ledger,
           executionState,
           ...(executionCap !== undefined ? { executionCap } : {}),
@@ -521,6 +526,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         matches,
         resolveGrants,
         extensionIdFor,
+        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
         ledger,
         executionState,
         ...(executionCap !== undefined ? { executionCap } : {}),
@@ -700,6 +706,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly matches: ReadonlyArray<TriggerMatch>;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly ledger: LedgerDb | undefined;
   readonly executionCap?: ExecutionPolicyCap;
   readonly signal?: AbortSignal;
@@ -1002,6 +1009,9 @@ function buildExecutionContext<TEnvelope>(
         signal,
         canSourceRefPath: (path) =>
           readablePath(path, frame.declared, frame.granted) !== null,
+        ...(opts.extensionConfigFor !== undefined
+          ? { extensionConfig: opts.extensionConfigFor(frame.extensionId) }
+          : {}),
         ...(frame.phase === "view" && opts.projection !== undefined
           ? {
               projection: scopeProjectionQueryView(

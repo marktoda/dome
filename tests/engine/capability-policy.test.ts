@@ -494,6 +494,46 @@ extensions:
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.isExtensionEnabled("dome.daily")).toBe(true);
+    expect(result.value.configForExtension("dome.daily")).toEqual({
+      timezone: "America/New_York",
+    });
+    expect(Object.isFrozen(result.value.configForExtension("dome.daily"))).toBe(
+      true,
+    );
+    expect(result.value.configForExtension("missing.bundle")).toEqual({});
+  });
+
+  test("extension config participates in the policy hash", async () => {
+    const rootA = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    const rootB = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(rootA, rootB);
+    mkdirSync(join(rootA, ".dome"), { recursive: true });
+    mkdirSync(join(rootB, ".dome"), { recursive: true });
+    const base = `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+`;
+    writeFileSync(join(rootA, ".dome", "config.yaml"), base, "utf8");
+    writeFileSync(
+      join(rootB, ".dome", "config.yaml"),
+      `${base}    config:
+      daily_path: notes/{date}.md
+`,
+      "utf8",
+    );
+
+    const policyA = await loadCapabilityPolicy(rootA);
+    const policyB = await loadCapabilityPolicy(rootB);
+
+    expect(policyA.ok).toBe(true);
+    expect(policyB.ok).toBe(true);
+    if (!policyA.ok || !policyB.ok) return;
+    expect(computeCapabilityPolicyHash(policyA.value)).not.toBe(
+      computeCapabilityPolicyHash(policyB.value),
+    );
   });
 
   test("rejects non-map per-extension config", async () => {

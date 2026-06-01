@@ -13,10 +13,11 @@ This spec is normative for the Dome SDK's target public API. The SDK is a TypeSc
 
 Implementation status: the current package root (`src/index.ts`) exports core
 types, effect constructors, processor authoring helpers, adopted-ref read
-helpers, the bundle loader, and pure commit-trailer helpers. The runtime
-`Vault` / `openVault` object described below is the intended public SDK
-wrapper, not a shipped export yet. The shipped v1 operational surface is the
-Commander CLI over the internal `openVaultRuntime` boundary.
+helpers, the bundle loader, first-party maintenance-loop metadata, and pure
+commit-trailer helpers. The runtime `Vault` / `openVault` object described
+below is the intended public SDK wrapper, not a shipped export yet. The
+shipped v1 operational surface is the Commander CLI over the internal
+`openVaultRuntime` boundary.
 
 ## The four concepts
 
@@ -197,7 +198,7 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 
 ```yaml
 id: dome.intake
-version: 0.1.0
+version: 0.4.1
 description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
 
@@ -223,7 +224,7 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.0
+    version: 0.3.1
     phase: garden
     triggers:
       - kind: signal
@@ -290,7 +291,7 @@ processors:
     module: processors/synthesize-capture.ts
 
   - id: dome.intake.low-confidence-answer
-    version: 0.2.0
+    version: 0.2.1
     phase: garden
     triggers:
       - kind: answer
@@ -348,14 +349,28 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates, raw-immutable; view: orphan-pages | Keeps markdown pages well-formed; normalizes frontmatter, refreshes managed `updated:` dates during adoption, emits warning diagnostics on broken curated-page references/frontmatter and informational diagnostics for broken note-draft links, imported-source body links, optional-root unknown page types, and remaining adopted-date drift, blocks raw-file mutations, asks about high-confidence duplicate canonical content pages, and provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
-| `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
+| `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, raises source-backed open loops into today's daily note, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures, routes low-confidence items through questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, routes low-confidence items through questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
 
 Per the Phase 11f hotfix, `dome init` no longer copies the first-party bundles into the vault — they live with the SDK at `<SDK>/assets/extensions/` and are resolved at runtime via `resolveShippedBundlesRoot()`. A vault can add third-party bundles under `.dome/extensions/<bundle-id>/` and enable them in `.dome/config.yaml`; a vault-local bundle with the same id as a shipped bundle overrides the shipped bundle in that runtime.
+
+### Maintenance loop metadata
+
+The package root also exports `FIRST_PARTY_MAINTENANCE_LOOPS` and
+`validateMaintenanceLoops`. This registry is not a dispatcher and does not add
+a fifth executable primitive to the SDK surface. It groups existing first-party
+processors into V1 maintenance loops so status/check surfaces, tests, and
+future extension authors can talk about the desired conditions those processors
+maintain.
+
+Loop metadata must name a stable loop id, goal, evidence, processor ids,
+surfaces, and a settlement rule. `validateMaintenanceLoops` checks that the
+registry references shipped processor ids and supported command surfaces. See
+[[wiki/specs/processors]] §"Maintenance loops" for the loop contract.
 
 ## Adding a processor
 

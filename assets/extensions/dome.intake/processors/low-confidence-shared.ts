@@ -17,6 +17,8 @@ export type CaptureLowConfidenceKind =
 export type CaptureLowConfidenceTarget = {
   readonly version: 1;
   readonly path: string;
+  readonly sourceHash?: string;
+  readonly generatedPath?: string;
   readonly kind: CaptureLowConfidenceKind;
   readonly text: string;
   readonly confidence?: number;
@@ -29,6 +31,12 @@ export function lowConfidenceQuestionKey(
     JSON.stringify({
       version: target.version,
       path: target.path,
+      ...(target.sourceHash !== undefined
+        ? { sourceHash: target.sourceHash }
+        : {}),
+      ...(target.generatedPath !== undefined
+        ? { generatedPath: target.generatedPath }
+        : {}),
       kind: target.kind,
       text: target.text,
       ...(target.confidence !== undefined
@@ -53,6 +61,19 @@ export function targetFromLowConfidenceQuestionKey(
   const record = raw as Record<string, unknown>;
   if (record.version !== 1) return null;
   if (typeof record.path !== "string" || record.path === "") return null;
+  if (
+    record.sourceHash !== undefined &&
+    !isSha256Hex(record.sourceHash)
+  ) {
+    return null;
+  }
+  if (
+    record.generatedPath !== undefined &&
+    (typeof record.generatedPath !== "string" ||
+      !/^wiki\/generated\/intake\/[^/]+\.md$/.test(record.generatedPath))
+  ) {
+    return null;
+  }
   if (!isLowConfidenceKind(record.kind)) return null;
   if (typeof record.text !== "string" || record.text.trim() === "") {
     return null;
@@ -68,6 +89,12 @@ export function targetFromLowConfidenceQuestionKey(
   return Object.freeze({
     version: 1,
     path: record.path,
+    ...(typeof record.sourceHash === "string"
+      ? { sourceHash: record.sourceHash }
+      : {}),
+    ...(typeof record.generatedPath === "string"
+      ? { generatedPath: record.generatedPath }
+      : {}),
     kind: record.kind,
     text: record.text,
     ...(record.confidence !== undefined
@@ -91,4 +118,8 @@ function isLowConfidenceKind(
     value === "decision" ||
     value === "entity"
   );
+}
+
+function isSha256Hex(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
 }

@@ -227,6 +227,7 @@ async function runDeterministicGardenProjectionProcessors(opts: {
         matches,
         resolveGrants: opts.runtime.resolveGrants,
         extensionIdFor: opts.runtime.extensionIdFor,
+        extensionConfigFor: opts.runtime.extensionConfigFor,
         ledger: opts.runtime.ledgerDb,
         executionCap: opts.runtime.config.engine.executionCap,
         pageTypes: opts.runtime.pageTypes,

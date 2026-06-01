@@ -4,10 +4,9 @@ The catalog of all wiki pages in this vault. In the current SDK it is maintained
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
-## Current v1 Planning
+## Current Product Planning
 
-- [[wiki/syntheses/v1-claude-code-vault-plan]] — Product contract for the Claude Code vault workflow, compiler host modes, CLI priorities, first-party bundle cut, and hosted-queue runway.
-- [[v1-roadmap]] — Living technical execution plan and shipped-status ledger for that product contract.
+- [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
 
 ## Specs
 
@@ -120,6 +119,5 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 ## Syntheses
 
 - [[wiki/syntheses/dome-as-compiler]] — Tests the "compiler for your second brain" framing against real compiler construction: anatomy map (compileRange = incremental compilation, SourceRef = source maps, rebuildable projections = hermetic cache), where the analogy breaks (stochastic optimizer; "language server for prose" reframing), and borrowable ideas (LSP as a third `render*` adapter, query-based incremental engine, `dome explain` provenance debugger).
-- [[wiki/syntheses/v1-claude-code-vault-plan]] — Product contract for the Claude Code vault workflow, compiler host modes, CLI priorities, first-party bundle cut, and hosted-queue runway.
 - [[wiki/syntheses/v0.5-build-plan]] — The v0.5 → v1 sequencing (historical).
 - [[wiki/syntheses/why-dome-vs-mem-tana-granola]] — Positioning against the existing PKM landscape.

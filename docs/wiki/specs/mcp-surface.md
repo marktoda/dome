@@ -13,7 +13,7 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter. The MCP 
 
 ## Status in v1
 
-The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (CLAUDE/AGENTS orientation + CLI + compiler host + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP design remains useful, but the complete Claude Code v1 plan does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively. Until `AbstractSurface` and the MCP adapter are implemented, this page is a target protocol spec rather than a v1 acceptance gate; see [[wiki/syntheses/v1-claude-code-vault-plan]].
+The MCP server is **preserved as a non-primary surface**. The compiler-boundary contract per [[wiki/specs/harnesses]] (CLAUDE/AGENTS orientation + CLI + compiler host + adopted ref) is the load-bearing path for agentic harnesses in v1. The MCP design remains useful, but the automation-first V1 plan does not depend on it for value delivery, and Claude Code users do not need it mounted to use Dome effectively. Until `AbstractSurface` and the MCP adapter are implemented, this page is a target protocol spec rather than a V1 acceptance gate; see [[v1]].
 
 The planned MCP surface earns its keep in two scenarios:
 

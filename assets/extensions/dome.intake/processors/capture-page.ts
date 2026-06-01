@@ -13,6 +13,11 @@ export type CapturePageItem = {
   readonly confidence: number;
 };
 
+export type CaptureOutputPathInput = {
+  readonly path: string;
+  readonly sourceHash?: string;
+};
+
 const CapturePageItemSchema = z
   .object({
     kind: z.enum(["task", "followup", "decision", "entity", "source_quote"]),
@@ -25,14 +30,18 @@ const CapturePageItemSchema = z
   .strict();
 const CapturePageItemsSchema = z.array(CapturePageItemSchema);
 
-export function captureOutputPaths(path: string): {
+export function captureSourceHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+export function captureOutputPaths(input: CaptureOutputPathInput): {
   readonly generated: string;
   readonly archive: string;
 } {
-  const basename = path.split("/").at(-1) ?? "capture.md";
+  const basename = input.path.split("/").at(-1) ?? "capture.md";
   const stem = basename.replace(/\.md$/i, "");
   const slug = slugify(stem) || "capture";
-  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
+  const digest = (input.sourceHash ?? legacyPathHash(input.path)).slice(0, 12);
   const name = `${slug}-${digest}.md`;
   return Object.freeze({
     generated: `wiki/generated/intake/${name}`,
@@ -287,6 +296,10 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+}
+
+function legacyPathHash(path: string): string {
+  return createHash("sha256").update(path).digest("hex");
 }
 
 function yamlString(value: string): string {

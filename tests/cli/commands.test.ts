@@ -107,6 +107,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "orphan_runs",
   "failed_runs",
   "recent_processor_runs",
+  "maintenance_loops",
   "serve_status",
   "serve_pid",
   "serve_branch",
@@ -498,7 +499,7 @@ describe("runInit", () => {
         .toEqual(["dome.graph.*"]);
       expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
-        .toEqual(["wiki/**/*.md"]);
+        .toEqual(["wiki/**/*.md", "notes/*.md"]);
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
       expect(refreshed.extensions["dome.intake"]?.enabled).toBe(false);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
@@ -1056,7 +1057,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.0",
+        version: "0.4.1",
         processors: 6,
         garden: 5,
         model_processors: 3,
@@ -2610,6 +2611,7 @@ describe("runStatus", () => {
     expect(out).toContain("content   2 pages");
     expect(out).toContain("links 0");
     expect(out).toContain("health    projection fresh | diagnostics 0");
+    expect(out).toContain("loops     5 known");
     expect(out).toContain("diagnostics 0");
     expect(out).toContain("questions 0");
     expect(out).toContain("outbox 0 pending / 0 failed");
@@ -2635,6 +2637,7 @@ describe("runStatus", () => {
     expect(parsed["adopted_diverged"]).toBe(false);
     expect(parsed["projection_stale"]).toBe(false);
     expect(parsed["projection_cache_drift"]).toBe(false);
+    expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(
       expect.arrayContaining(["sync_needed"]),

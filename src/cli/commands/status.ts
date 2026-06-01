@@ -41,6 +41,9 @@
 //                       `cancelled`).
 //   - recent_processor_runs:
 //                       bounded per-processor summary from the recent run ledger.
+//   - maintenance_loops:
+//                       first-party V1 maintenance-loop summaries derived from
+//                       processor health, diagnostics, questions, and runs.
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
 //   - diagnostics:      count of unresolved projection diagnostics.
@@ -84,6 +87,7 @@ import {
 } from "../../engine/compiler-host-heartbeat";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
+import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import type { LedgerDb } from "../../ledger/db";
 import {
   countLatestActiveProblemRuns,
@@ -99,7 +103,7 @@ import {
   projectionCacheKeysChanged,
   projectionRequiresRebuild,
 } from "../../projections/db";
-import { queryQuestions } from "../../projections/questions";
+import { queryQuestionRecords } from "../../projections/questions";
 
 import { resolveBundleRoots } from "./sync-shared";
 
@@ -115,6 +119,10 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  collectMaintenanceLoopSummaries,
+  type MaintenanceLoopSummary,
+} from "../maintenance-loop-summary";
+import {
   formatCliNextAction,
   nextActionsForStatus,
   type CliNextAction,
@@ -122,6 +130,7 @@ import {
 import { collectVaultAnalytics } from "../vault-analytics";
 
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
+const LOOP_RECENT_RUN_LIMIT = 25;
 const STATUS_DIAGNOSTIC_GROUP_LIMIT = 5;
 const LAST_SYNC_PHASES = Object.freeze(["adoption", "garden"] as const);
 const PENDING_RUN_STATUSES: ReadonlyArray<RunStatus> = Object.freeze([
@@ -175,6 +184,7 @@ type StatusSnapshot = {
   readonly orphan_runs: number;
   readonly failed_runs: number;
   readonly recent_processor_runs: ReadonlyArray<ProcessorRunSummary>;
+  readonly maintenance_loops: ReadonlyArray<MaintenanceLoopSummary>;
   readonly serve_status: ServeHeartbeatStatus["status"];
   readonly serve_pid: number | null;
   readonly serve_branch: string | null;
@@ -315,9 +325,10 @@ export async function runStatus(
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
-    const questions = queryQuestions(runtime.projectionDb, {
+    const unresolvedQuestions = queryQuestionRecords(runtime.projectionDb, {
       resolved: false,
-    }).length;
+    });
+    const questions = unresolvedQuestions.length;
     const outbox_pending = queryOutbox(runtime.outboxDb, {
       status: "pending",
     }).length;
@@ -341,6 +352,21 @@ export async function runStatus(
       outboxPending: outbox_pending,
       outboxFailed: outbox_failed,
       quarantined,
+    });
+    const activeProcessorIds = new Set(
+      runtime.registry.all().map((processor) => processor.id),
+    );
+    const maintenance_loops = collectMaintenanceLoopSummaries({
+      loops: FIRST_PARTY_MAINTENANCE_LOOPS,
+      activeProcessorIds,
+      diagnosticsByProcessor: (processorId) =>
+        queryDiagnostics(runtime.projectionDb, { processorId }),
+      unresolvedQuestions,
+      runsByProcessor: (processorId) =>
+        queryRuns(runtime.ledgerDb, {
+          processorId,
+          limit: LOOP_RECENT_RUN_LIMIT,
+        }),
     });
 
     const snapshot: StatusSnapshot = {
@@ -370,6 +396,7 @@ export async function runStatus(
       orphan_runs,
       failed_runs,
       recent_processor_runs,
+      maintenance_loops,
       serve_status: serve.status,
       serve_pid: serve.pid,
       serve_branch: serve.branch,
@@ -429,6 +456,7 @@ function printStatusText(s: StatusSnapshot): void {
   console.log(
     `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
+  console.log(`loops     ${formatMaintenanceLoopLine(s.maintenance_loops)}`);
   const diagnosticTop =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_summary
@@ -446,6 +474,21 @@ function printStatusText(s: StatusSnapshot): void {
   for (const line of formatNextActionLines(s.next_actions)) {
     console.log(line);
   }
+}
+
+function formatMaintenanceLoopLine(
+  loops: ReadonlyArray<MaintenanceLoopSummary>,
+): string {
+  const counts = {
+    quiet: 0,
+    attention: 0,
+    partial: 0,
+    inactive: 0,
+  };
+  for (const loop of loops) {
+    counts[loop.state] += 1;
+  }
+  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.partial} partial | ${counts.inactive} inactive`;
 }
 
 function formatServe(s: StatusSnapshot): string {

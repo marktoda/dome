@@ -15,7 +15,7 @@ severity: medium
 
 **Note on filename:** This gotcha was created pre-v1 under the name "scheduled-hook-idempotency"; the filename is preserved for stable wiki links and cross-references from carried-forward substrate. The canonical concept in v1 is the **scheduled-trigger processor** — a Processor (per [[wiki/specs/processors]]) with `triggers: [{ kind: "schedule", cron: "..." }]`.
 
-**Symptom:** A scheduled-trigger garden-phase processor with `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]` creates today's daily note. The user is offline / `dome serve` is off for three days, then runs `dome sync`. Without thinking, the user expects the processor to fire three times (once per missed day) and produce three daily-note creates. Either the processor duplicates effects (three identical creates emit identical PatchEffects against `wiki/dailies/<today>.md` and re-converge at the same fixed point — wasteful), OR the processor's idempotency guard catches it and the cost is just three wasted runs in the ledger.
+**Symptom:** A scheduled-trigger garden-phase processor with `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]` creates today's daily note. The user is offline / `dome serve` is off for three days, then runs `dome sync`. Without thinking, the user expects the processor to fire three times (once per missed day) and produce three daily-note creates. Either the processor duplicates effects (three identical creates emit identical PatchEffects against the configured daily path and re-converge at the same fixed point — wasteful), OR the processor's idempotency guard catches it and the cost is just three wasted runs in the ledger.
 
 The mirror failure: the user assumes scheduled processors never re-fire on catch-up and runs `dome sync` after a week offline. The weekly-rollup processor is supposed to produce one rollup per week; the user wakes up to a vault missing seven weeks of rollups because the processor "skipped catch-up."
 
@@ -35,7 +35,7 @@ An attempted scheduled fire consumes the interval even when the processor fails 
 
 **Specific scenarios:**
 
-- The first-party `dome.daily.create-daily` processor declares `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]`. The processor internally checks the candidate snapshot for `wiki/dailies/<today>.md`; if present, emits no PatchEffect (idempotent no-op). A user off for three days syncs, the processor fires once (per clamp), and the PatchEffect creates today's daily. The other two days stay un-created until a backfill workflow ships.
+- The first-party `dome.daily.create-daily` processor declares `triggers: [{ kind: "schedule", cron: "0 6 * * *" }]`. The processor internally checks the candidate snapshot for the configured daily path (`wiki/dailies/<today>.md` by default, or a vault path such as `notes/<today>.md`); if present, emits no PatchEffect (idempotent no-op). A user off for three days syncs, the processor fires once (per clamp), and the PatchEffect creates today's daily. The other two days stay un-created until a backfill workflow ships.
 
 - A third-party `acme.nightly-export` processor with `triggers: [{ kind: "schedule", cron: "0 2 * * *" }]` and `external: ["network.post"]` capability. A user off for a week syncs, the processor fires once (per clamp), one nightly-export attempt lands in the outbox per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]]. The other six nights' exports are lost — which is fine because exports are non-idempotent side effects that shouldn't be silently re-fired against external systems.
 

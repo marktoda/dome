@@ -16,6 +16,7 @@ import {
 } from "../../../../src/core/processor";
 
 import {
+  dailyPathSettings,
   dailyPath,
   localDateParts,
   previousLocalDate,
@@ -32,23 +33,24 @@ type ScheduleInput = {
 
 const createDaily: Processor = defineProcessor({
   id: "dome.daily.create-daily",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: DAILY_CRON }],
   capabilities: [
-    { kind: "read", paths: ["wiki/dailies/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/dailies/*.md"] },
+    { kind: "read", paths: ["wiki/dailies/*.md", "notes/*.md"] },
+    { kind: "patch.auto", paths: ["wiki/dailies/*.md", "notes/*.md"] },
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseScheduleInput(ctx.input);
     if (input === null) return [];
 
+    const settings = dailyPathSettings(ctx.extensionConfig);
     const today = localDateParts(new Date(input.firedAt));
     const yesterday = previousLocalDate(today);
-    const todayPath = dailyPath(today);
+    const todayPath = dailyPath(today, settings);
     if ((await ctx.snapshot.readFile(todayPath)) !== null) return [];
 
-    const yesterdayPath = dailyPath(yesterday);
+    const yesterdayPath = dailyPath(yesterday, settings);
     const yesterdayExists = (await ctx.snapshot.readFile(yesterdayPath)) !== null;
     const change: FileChangeInput = {
       kind: "write",
@@ -56,6 +58,7 @@ const createDaily: Processor = defineProcessor({
       content: renderDailySkeleton({
         today,
         yesterday: yesterdayExists ? yesterday : null,
+        settings,
       }),
     };
 

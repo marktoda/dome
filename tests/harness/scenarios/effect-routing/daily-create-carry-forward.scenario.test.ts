@@ -1,4 +1,6 @@
 import { expect } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import type { RunId } from "../../../../src/engine/runner-contract";
@@ -6,7 +8,7 @@ import { TestClock, scenario } from "../../index";
 
 scenario(
   {
-    name: "effect-routing: dome.daily creates daily note and carries open tasks",
+    name: "effect-routing: dome.daily creates daily note and surfaces open loops",
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "effect", effect: "patch" },
@@ -71,16 +73,22 @@ recurrence: 2026-01-01
       .toContain("recurrence: 2026-01-02");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("<!-- dome.daily:carried-forward:start -->");
+      .toContain("## Start Here");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("- [ ] #task #followup Follow up with [[wiki/entities/Ada]] (from [[wiki/dailies/2026-01-01]])");
+      .toContain("## Open Loops");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("* [ ] Review launch plan (from [[wiki/dailies/2026-01-01]])");
+      .toContain("<!-- dome.daily:open-loops:start -->");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("- [ ] Already carried once (from [[wiki/dailies/2025-12-31]])");
+      .toContain("- [ ] #followup Follow up with [[wiki/entities/Ada]] (from [[wiki/dailies/2026-01-01]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Review launch plan (from [[wiki/dailies/2026-01-01]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Already carried once (from [[wiki/dailies/2026-01-01]])");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toNotContain("Completed task should stay behind");
@@ -91,12 +99,12 @@ recurrence: 2026-01-01
         status: "succeeded",
       })
       .toHaveExactlyOne();
-    const carryRun = await h
+    await h
       .expectLedger({
         processorId: "dome.daily.carry-forward",
         status: "succeeded",
       })
-      .toHaveExactlyOne();
+      .toHaveAtLeastOne();
     await h
       .expectLedger({
         processorId: "dome.daily.task-index",
@@ -108,17 +116,24 @@ recurrence: 2026-01-01
       .expectProjection()
       .facts({
         predicate: "dome.daily.open_task",
-        subjectId: "wiki/dailies/2026-01-02.md",
+        subjectId: "wiki/dailies/2026-01-01.md",
       })
       .toHaveCount(3);
     await h
       .expectProjection()
       .facts({
         predicate: "dome.daily.followup",
-        subjectId: "wiki/dailies/2026-01-02.md",
+        subjectId: "wiki/dailies/2026-01-01.md",
         objectString: "Follow up with [[wiki/entities/Ada]]",
       })
       .toHaveCount(1);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: "wiki/dailies/2026-01-02.md",
+      })
+      .toHaveCount(0);
 
     expect(capabilityUsesByRun(h.ledger, createRun.id as RunId)).toEqual([
       expect.objectContaining({
@@ -127,14 +142,6 @@ recurrence: 2026-01-01
         outcome: "allowed",
       }),
     ]);
-    expect(capabilityUsesByRun(h.ledger, carryRun.id as RunId)).toEqual([
-      expect.objectContaining({
-        capability: "patch.auto",
-        resource: "wiki/dailies/2026-01-02.md",
-        outcome: "allowed",
-      }),
-    ]);
-
     const second = await h.tick();
     expect(second.adopted).toBe(true);
     await h
@@ -143,5 +150,167 @@ recurrence: 2026-01-01
         status: "succeeded",
       })
       .toHaveExactlyOne();
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.daily uses configured daily note path",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "schedule" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-schedule" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    config:
+      daily_path: notes/{date}.md
+    grant:
+      read: ["notes/*.md"]
+      patch.auto: ["notes/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "notes/2026-01-01.md": [
+          "# 2026-01-01",
+          "",
+          "## Notes",
+          "",
+          "- [ ] Carry configured task",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h.expectFile("notes/2026-01-02.md").toContain("type: daily");
+    await h
+      .expectFile("notes/2026-01-02.md")
+      .toContain('prev: "[[notes/2026-01-01]]"');
+    await h
+      .expectFile("notes/2026-01-02.md")
+      .toContain("- [ ] Carry configured task (from [[notes/2026-01-01]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toBeAbsent();
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.daily raises backlog open loops into today's note",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "Human context stays outside Dome's generated block.",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Send budget update",
+          "Follow up: Confirm Q3 plan with Eli",
+          "",
+        ].join("\n"),
+        "wiki/meetings/staff.md": [
+          "# Staff",
+          "",
+          "- [ ] Review launch plan",
+          "- [x] Completed item should not surface",
+          "",
+        ].join("\n"),
+      },
+      message: "add source open loops",
+    });
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("Human context stays outside Dome's generated block.");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("<!-- dome.daily:open-loops:start -->");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Send budget update (from [[wiki/projects/alpha]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Review launch plan (from [[wiki/meetings/staff]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toNotContain("Completed item should not surface");
+
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.daily.open_task",
+        subjectId: "wiki/dailies/2026-01-02.md",
+      })
+      .toHaveCount(0);
+
+    const before = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    const second = await h.tick();
+    expect(second.adopted).toBe(true);
+    const after = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(after).toBe(before);
   },
 );

@@ -4,9 +4,14 @@ import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
+  dailyPathSettings,
   dailyPath,
+  openLoopSurfaceSection,
+  openLoopSurfaceSources,
   openTasksFromMarkdown,
   parseDailyPath,
+  renderDailySkeleton,
+  replaceOpenLoopSurfaceSection,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
 describe("dome.daily shared date helpers", () => {
@@ -21,10 +26,60 @@ describe("dome.daily shared date helpers", () => {
     });
   });
 
+  test("daily_path config can move the daily surface to notes", () => {
+    const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
+    expect(dailyPath({ yyyy: "2026", mm: "02", dd: "28" }, settings)).toBe(
+      "notes/2026-02-28.md",
+    );
+    expect(parseDailyPath("notes/2026-02-28.md", settings)).toEqual({
+      yyyy: "2026",
+      mm: "02",
+      dd: "28",
+    });
+    expect(parseDailyPath("wiki/dailies/2026-02-28.md", settings)).toBeNull();
+  });
+
+  test("daily_path config rejects unsafe or non-daily templates", () => {
+    expect(() => dailyPathSettings({ daily_path: "/notes/{date}.md" })).toThrow(
+      "relative vault markdown path",
+    );
+    expect(() => dailyPathSettings({ daily_path: "notes/today.md" })).toThrow(
+      "exactly one {date}",
+    );
+    expect(() => dailyPathSettings({ daily_path: "notes/{date}.txt" })).toThrow(
+      ".md file",
+    );
+  });
+
   test("parseDailyPath rejects calendar-impossible dates", () => {
     expect(parseDailyPath("wiki/dailies/2026-02-31.md")).toBeNull();
     expect(parseDailyPath("wiki/dailies/2026-13-01.md")).toBeNull();
     expect(parseDailyPath("wiki/dailies/2026-00-10.md")).toBeNull();
+  });
+
+  test("renderDailySkeleton uses the V1 work-surface shape", () => {
+    expect(
+      renderDailySkeleton({
+        today: { yyyy: "2026", mm: "02", dd: "28" },
+        yesterday: { yyyy: "2026", mm: "02", dd: "27" },
+      }),
+    ).toContain(
+      [
+        "## Start Here",
+        "",
+        "## Meetings",
+        "",
+        "## Open Loops",
+        "",
+        "## Notes",
+        "",
+        "## Decisions",
+        "",
+        "## Done",
+        "",
+        "## Story of the Day",
+      ].join("\n"),
+    );
   });
 
   test("openTasksFromMarkdown extracts plain open markdown checkboxes", () => {
@@ -131,6 +186,21 @@ describe("dome.daily shared date helpers", () => {
     ]);
   });
 
+  test("actionItemsFromMarkdown skips Dome-generated daily sections", () => {
+    expect(
+      actionItemsFromMarkdown(
+        [
+          "TODO: Keep source item",
+          "<!-- dome.daily:open-loops:start -->",
+          "### Source-backed Open Loops",
+          "- [ ] Generated copy should not become source",
+          "<!-- dome.daily:open-loops:end -->",
+          "Follow up: Keep second source item",
+        ].join("\n"),
+      ).map((item) => item.body),
+    ).toEqual(["Keep source item", "Keep second source item"]);
+  });
+
   test("ambiguousFollowupsFromMarkdown asks only for prose follow-up guesses", () => {
     expect(
       ambiguousFollowupsFromMarkdown(
@@ -155,6 +225,42 @@ describe("dome.daily shared date helpers", () => {
         text: "Please follow up with other teams about staffing.",
       },
     ]);
+  });
+
+  test("openLoopSurfaceSection renders and replaces a small source-backed block", () => {
+    const items = openLoopSurfaceSources({
+      path: "wiki/projects/alpha.md",
+      content: [
+        "# Alpha",
+        "",
+        "TODO: Send budget update",
+        "Follow up: Confirm Q3 plan with Eli",
+      ].join("\n"),
+    });
+    const section = openLoopSurfaceSection({ items });
+    expect(section).toContain(
+      "- [ ] Send budget update (from [[wiki/projects/alpha]])",
+    );
+    expect(section).toContain(
+      "- [ ] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])",
+    );
+
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Open Loops",
+      "",
+      "Human note stays here.",
+      "",
+      "## Notes",
+      "",
+    ].join("\n");
+    const next = replaceOpenLoopSurfaceSection({ content: daily, section });
+    expect(next).toContain("## Open Loops\n\n<!-- dome.daily:open-loops:start -->");
+    expect(next).toContain("Human note stays here.");
+    expect(
+      replaceOpenLoopSurfaceSection({ content: next, section }),
+    ).toBe(next);
   });
 
   test("carriedForwardSection uses original provenance when available", () => {
@@ -184,5 +290,24 @@ describe("dome.daily shared date helpers", () => {
         "- [ ] Already carried (from [[wiki/dailies/2025-12-31]])",
       ].join("\n"),
     );
+  });
+
+  test("carriedForwardSection follows configured daily links", () => {
+    const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
+    expect(
+      carriedForwardSection({
+        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
+        settings,
+        tasks: [
+          {
+            line: 1,
+            text: "- [ ] New task",
+            sourcePath: null,
+            body: "New task",
+            followup: false,
+          },
+        ],
+      }),
+    ).toContain("- [ ] New task (from [[notes/2026-01-01]])");
   });
 });

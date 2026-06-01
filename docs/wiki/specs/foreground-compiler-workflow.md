@@ -3,8 +3,7 @@ type: spec
 created: 2026-05-29
 updated: 2026-06-01
 sources:
-  - "[[wiki/syntheses/v1-claude-code-vault-plan]]"
-  - "[[v1-roadmap]]"
+  - "[[v1]]"
 ---
 
 # Foreground compiler workflow
@@ -180,4 +179,4 @@ state file to patch.
 - [[wiki/specs/adoption]] — fixed-point adoption and the adopted ref.
 - [[wiki/gotchas/daemon-off-while-vault-mutating]] — host-off catch-up cost.
 - [[wiki/gotchas/outbox-stuck]] — failed external-action recovery.
-- [[wiki/syntheses/v1-claude-code-vault-plan]] — product workflow target.
+- [[v1]] — automation-first product workflow target.

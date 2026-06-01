@@ -23,10 +23,10 @@ const DEFAULT_LIMIT = 12;
 
 const today: Processor = defineProcessor({
   id: "dome.daily.today",
-  version: "0.1.5",
+  version: "0.1.6",
   phase: "view",
   triggers: [{ kind: "command", name: "today" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(

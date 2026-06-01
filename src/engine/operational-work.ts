@@ -12,6 +12,7 @@
 import type { DiagnosticEffect } from "../core/effect";
 import type {
   Capability,
+  ExtensionConfig,
   OperationalQueryView,
   TreeOid,
 } from "../core/processor";
@@ -53,6 +54,7 @@ export async function runOperationalWork(opts: {
   readonly now: () => Date;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly externalHandlers: ExternalHandlerRegistry;
   readonly operational?: OperationalQueryView;
   readonly ledger?: LedgerDb;
@@ -82,6 +84,9 @@ export async function runOperationalWork(opts: {
     now: opts.now,
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
+    ...(opts.extensionConfigFor !== undefined
+      ? { extensionConfigFor: opts.extensionConfigFor }
+      : {}),
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
@@ -115,6 +120,9 @@ export async function runOperationalWork(opts: {
     now: opts.now,
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
+    ...(opts.extensionConfigFor !== undefined
+      ? { extensionConfigFor: opts.extensionConfigFor }
+      : {}),
     ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }

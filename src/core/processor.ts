@@ -490,6 +490,15 @@ export type OperationalQueryView = {
   }) => ReadonlyArray<OperationalRunRow>;
 };
 
+// ----- ExtensionConfig ------------------------------------------------------
+
+/**
+ * Opaque per-extension configuration from `.dome/config.yaml`.
+ * The capability-policy loader validates only that this is a YAML mapping;
+ * extension processors own the schema for their own config keys.
+ */
+export type ExtensionConfig = Readonly<Record<string, unknown>>;
+
 // ----- ProcessorContext -----------------------------------------------------
 
 /**
@@ -497,7 +506,8 @@ export type OperationalQueryView = {
  * candidate snapshot, the changed-paths delta, the originating Proposal
  * (present for adoption + garden-PatchEffect-derived runs), the trigger
  * input (typed by the processor's `TInput` parameter), the cancellation
- * signal, the opaque capability token, the optional model-invoke handle
+ * signal, the opaque capability token, the extension's opaque config
+ * mapping, the optional model-invoke handle
  * (present iff `model.invoke` capability granted), optional query views
  * (projection for adopted-state views; operational for recovery processors),
  * and the `sourceRef` helper.
@@ -514,6 +524,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly input: TInput;
   readonly signal: AbortSignal;
   readonly capabilities: CapabilityToken;
+  readonly extensionConfig: ExtensionConfig;
   readonly modelInvoke?: ModelInvokeFn;
   readonly projection?: ProjectionQueryView;
   readonly operational?: OperationalQueryView;

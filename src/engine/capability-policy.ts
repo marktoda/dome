@@ -15,7 +15,11 @@ import { createHash } from "node:crypto";
 
 import { parse as parseYaml } from "yaml";
 
-import { CapabilitySchema, type Capability } from "../core/processor";
+import {
+  CapabilitySchema,
+  type Capability,
+  type ExtensionConfig,
+} from "../core/processor";
 import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import { err, ok, type Result } from "../types";
 
@@ -31,6 +35,7 @@ export type CapabilityPolicy = {
   readonly processorGrantIdsForExtension: (
     extensionId: string,
   ) => ReadonlyArray<string>;
+  readonly configForExtension: (extensionId: string) => ExtensionConfig;
   readonly grantsForProcessor: (
     extensionId: string,
     processorId: string,
@@ -74,7 +79,12 @@ export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
           policy.grantsForProcessor(extensionId, processorId),
         ),
       }));
-    return { extensionId, grants, processorGrants };
+    return {
+      extensionId,
+      config: stableJsonValue(policy.configForExtension(extensionId)),
+      grants,
+      processorGrants,
+    };
   });
   return sha256(
     stableJsonStringify({
@@ -123,6 +133,7 @@ export async function loadCapabilityPolicy(
     string,
     ReadonlyMap<string, ReadonlyArray<Capability>>
   >();
+  const extensionConfigs = new Map<string, ExtensionConfig>();
   const configuredExtensions: ExtensionPolicyStatus[] = [];
   const enabled = new Set<string>();
   if (root.extensions !== undefined) {
@@ -147,9 +158,14 @@ export async function loadCapabilityPolicy(
       ) {
         return err(`${path} ${extensionPath}.enabled must be a boolean`);
       }
-      if (extension.config !== undefined && asRecord(extension.config) === null) {
-        return err(`${path} ${extensionPath}.config must be a YAML mapping`);
+      const parsedExtensionConfig = parseExtensionConfig(
+        extension.config,
+        `${extensionPath}.config`,
+      );
+      if (!parsedExtensionConfig.ok) {
+        return err(`${path} ${parsedExtensionConfig.error}`);
       }
+      extensionConfigs.set(extensionId, parsedExtensionConfig.value);
       const isEnabled = extension.enabled === true;
       configuredExtensions.push(Object.freeze({
         id: extensionId,
@@ -198,6 +214,8 @@ export async function loadCapabilityPolicy(
         grants.get(extensionId) ?? Object.freeze([]),
       processorGrantIdsForExtension: (extensionId: string) =>
         Object.freeze([...(processorGrants.get(extensionId)?.keys() ?? [])]),
+      configForExtension: (extensionId: string) =>
+        extensionConfigs.get(extensionId) ?? EMPTY_EXTENSION_CONFIG,
       grantsForProcessor: (extensionId: string, processorId: string) =>
         processorGrants.get(extensionId)?.get(processorId) ??
         grants.get(extensionId) ??
@@ -215,6 +233,7 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
     isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
     processorGrantIdsForExtension: () => Object.freeze([]),
+    configForExtension: () => EMPTY_EXTENSION_CONFIG,
     grantsForProcessor: () => Object.freeze([]),
   });
 }
@@ -255,6 +274,24 @@ function stableJsonValue(value: unknown): unknown {
   return out;
 }
 
+function freezeConfigRecord(record: Record<string, unknown>): ExtensionConfig {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(record)) {
+    out[key] = freezeConfigValue(record[key]);
+  }
+  return Object.freeze(out);
+}
+
+function freezeConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(freezeConfigValue));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  return freezeConfigRecord(value as Record<string, unknown>);
+}
+
 const sha256 = (s: string): string =>
   createHash("sha256").update(s).digest("hex");
 
@@ -267,6 +304,8 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
     auto_commit_workflows: true,
   }),
 });
+
+const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
 
 const ROOT_KEYS = new Set(["extensions", "engine", "git", "model_provider"]);
 
@@ -399,6 +438,16 @@ function parseRuntimeConfig(
         : {}),
     }),
   );
+}
+
+function parseExtensionConfig(
+  raw: unknown,
+  label: string,
+): Result<ExtensionConfig, string> {
+  if (raw === undefined) return ok(EMPTY_EXTENSION_CONFIG);
+  const config = asRecord(raw);
+  if (config === null) return err(`${label} must be a YAML mapping`);
+  return ok(freezeConfigRecord(config));
 }
 
 const ENGINE_KEYS = new Set([

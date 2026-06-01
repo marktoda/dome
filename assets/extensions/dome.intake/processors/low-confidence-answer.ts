@@ -43,8 +43,15 @@ const lowConfidenceAnswer = defineProcessorImplementation({
       return Object.freeze([]);
     }
 
-    const paths = captureOutputPaths(target.path);
-    const content = await ctx.snapshot.readFile(paths.generated);
+    const generatedPath =
+      target.generatedPath ??
+      captureOutputPaths({
+        path: target.path,
+        ...(target.sourceHash !== undefined
+          ? { sourceHash: target.sourceHash }
+          : {}),
+      }).generated;
+    const content = await ctx.snapshot.readFile(generatedPath);
     if (content === null) {
       return [
         diagnosticEffect({
@@ -52,7 +59,7 @@ const lowConfidenceAnswer = defineProcessorImplementation({
           code: "dome.intake.low-confidence-answer.missing-capture-page",
           message:
             `Cannot track low-confidence ${target.kind} from ${target.path}: ` +
-            `generated capture page ${paths.generated} was not found.`,
+            `generated capture page ${generatedPath} was not found.`,
           sourceRefs: input.question.sourceRefs,
         }),
       ];
@@ -72,7 +79,7 @@ const lowConfidenceAnswer = defineProcessorImplementation({
         changes: [
           {
             kind: "write",
-            path: paths.generated,
+            path: generatedPath,
             content: next,
           },
         ],

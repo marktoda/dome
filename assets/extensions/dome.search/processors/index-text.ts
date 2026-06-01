@@ -21,7 +21,7 @@ import {
 
 const searchIndexText: Processor = defineProcessor({
   id: "dome.search.index-text",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -95,8 +95,20 @@ function parseMarkdownDocument(
     category: categoryForPath(path),
     type: frontmatterString(parsed.data["type"]),
     title: titleFor(path, parsed),
-    body: parsed.content,
+    body: stripGeneratedSurfaceBlocks(parsed.content),
   });
+}
+
+function stripGeneratedSurfaceBlocks(content: string): string {
+  return content
+    .replace(
+      /<!-- dome\.daily:open-loops:start -->[\s\S]*?<!-- dome\.daily:open-loops:end -->/g,
+      "",
+    )
+    .replace(
+      /<!-- dome\.daily:carried-forward:start -->[\s\S]*?<!-- dome\.daily:carried-forward:end -->/g,
+      "",
+    );
 }
 
 function categoryForPath(path: string): string {

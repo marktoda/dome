@@ -44,6 +44,8 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "parseManifest",
   "ManifestSchema",
   "ProcessorDeclarationSchema",
+  "FIRST_PARTY_MAINTENANCE_LOOPS",
+  "validateMaintenanceLoops",
 
   // Engine commit-trailer helpers.
   "composeCommitMessage",

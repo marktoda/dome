@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto";
-
 import { expect } from "bun:test";
 
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import type { RunId } from "../../../../src/engine/runner-contract";
+import {
+  captureOutputPaths,
+  captureSourceHash,
+} from "../../../../assets/extensions/dome.intake/processors/capture-page";
 import {
   targetFromLowConfidenceQuestionKey,
 } from "../../../../assets/extensions/dome.intake/processors/low-confidence-shared";
@@ -17,8 +19,17 @@ import { scenario } from "../../index";
 import type { Harness } from "../../types";
 
 const CAPTURE_PATH = "inbox/raw/day.md";
-const OUTPUT_PATH = outputPath(CAPTURE_PATH, "wiki/generated/intake");
-const ARCHIVE_PATH = outputPath(CAPTURE_PATH, "inbox/processed");
+const PRIMARY_CAPTURE = [
+  "# Capture",
+  "",
+  "Need to send Ada the launch staffing note.",
+  "Ask Ben about hiring budget.",
+  "",
+].join("\n");
+const PRIMARY_PATHS = outputPaths(CAPTURE_PATH, PRIMARY_CAPTURE);
+const OUTPUT_PATH = PRIMARY_PATHS.generated;
+const ARCHIVE_PATH = PRIMARY_PATHS.archive;
+const PRIMARY_SOURCE_HASH = captureSourceHash(PRIMARY_CAPTURE);
 const PROCESSOR_ID = "dome.intake.extract-capture";
 
 const BASE_CONFIG = `
@@ -154,13 +165,7 @@ scenario(
 
     await h.userCommit({
       files: {
-        [CAPTURE_PATH]: [
-          "# Capture",
-          "",
-          "Need to send Ada the launch staffing note.",
-          "Ask Ben about hiring budget.",
-          "",
-        ].join("\n"),
+        [CAPTURE_PATH]: PRIMARY_CAPTURE,
       },
       message: "capture day",
     });
@@ -172,7 +177,11 @@ scenario(
     await h.expectFile(OUTPUT_PATH).toContain("- [ ] Send Ada the launch staffing note");
     await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
     await h.expectFile(OUTPUT_PATH).toContain(`[[${ARCHIVE_PATH}]]`);
+    await h.expectFile(OUTPUT_PATH).toContain(`source_hash: ${PRIMARY_SOURCE_HASH}`);
+    await h.expectFile(OUTPUT_PATH).toContain("disposition: digested");
     await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
+    await h.expectFile(ARCHIVE_PATH).toContain(`source_hash: ${PRIMARY_SOURCE_HASH}`);
+    await h.expectFile(ARCHIVE_PATH).toContain("disposition: archived");
     await h
       .expectFile(synthesisOutputPath(OUTPUT_PATH))
       .toContain("# Launch staffing synthesis");
@@ -244,6 +253,73 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake preserves repeated captures with same raw path",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async (request) => {
+        expect(request.model).toBe("test-model");
+        return modelResponseForPrompt(request.prompt, {
+          title: request.prompt.includes("second staffing note")
+            ? "Second launch follow-up"
+            : "First launch follow-up",
+          summary: "A launch staffing follow-up was captured.",
+          tasks: ["Send Ada the launch staffing note"],
+          followups: [],
+          decisions: [],
+          entities: ["Ada"],
+          sourceQuotes: ["launch staffing"],
+        });
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const firstCapture = "# Capture\n\nNeed the first staffing note.\n";
+    const secondCapture = "# Capture\n\nNeed the second staffing note.\n";
+    const firstPaths = outputPaths(CAPTURE_PATH, firstCapture);
+    const secondPaths = outputPaths(CAPTURE_PATH, secondCapture);
+    expect(firstPaths.generated).not.toBe(secondPaths.generated);
+    expect(firstPaths.archive).not.toBe(secondPaths.archive);
+
+    await h.userCommit({
+      files: { [CAPTURE_PATH]: firstCapture },
+      message: "capture first day",
+    });
+    const first = await h.tick();
+    expect(first.adopted).toBe(true);
+
+    await h.userCommit({
+      files: { [CAPTURE_PATH]: secondCapture },
+      message: "capture second day",
+    });
+    const second = await h.tick();
+    expect(second.adopted).toBe(true);
+
+    await h.expectFile(firstPaths.generated).toContain("# First launch follow-up");
+    await h.expectFile(secondPaths.generated).toContain("# Second launch follow-up");
+    await h.expectFile(firstPaths.archive).toContain("first staffing note");
+    await h.expectFile(secondPaths.archive).toContain("second staffing note");
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
+      .toHaveCount(2);
   },
 );
 
@@ -500,13 +576,7 @@ scenario(
 
     await h.userCommit({
       files: {
-        [CAPTURE_PATH]: [
-          "# Capture",
-          "",
-          "Need to send Ada the launch staffing note.",
-          "Ask Ben about hiring budget.",
-          "",
-        ].join("\n"),
+        [CAPTURE_PATH]: PRIMARY_CAPTURE,
       },
       message: "capture day",
     });
@@ -582,16 +652,19 @@ scenario(
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
+    const capture = [
+      "# Capture",
+      "",
+      "Need to send Ada the launch staffing note.",
+      "Ask Ben about hiring budget.",
+      "Maybe Chris or Dana need something for Phoenix?",
+      "",
+    ].join("\n");
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
     await h.userCommit({
       files: {
-        [CAPTURE_PATH]: [
-          "# Capture",
-          "",
-          "Need to send Ada the launch staffing note.",
-          "Ask Ben about hiring budget.",
-          "Maybe Chris or Dana need something for Phoenix?",
-          "",
-        ].join("\n"),
+        [CAPTURE_PATH]: capture,
       },
       message: "capture uncertain day",
     });
@@ -599,26 +672,31 @@ scenario(
     const result = await h.tick();
     expect(result.adopted).toBe(true);
 
-    await h.expectFile(OUTPUT_PATH).toContain("- [ ] Send Ada the launch staffing note");
-    await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
-    await h.expectFile(OUTPUT_PATH).toNotContain("Ask Chris about launch staffing");
-    await h.expectFile(OUTPUT_PATH).toNotContain("Check whether Dana needs");
+    await h.expectFile(paths.generated).toContain("- [ ] Send Ada the launch staffing note");
+    await h.expectFile(paths.generated).toContain("- [ ] #followup Ask Ben about hiring budget");
+    await h.expectFile(paths.generated).toNotContain("Ask Chris about launch staffing");
+    await h.expectFile(paths.generated).toNotContain("Check whether Dana needs");
     await h
       .expectProjection()
       .facts({
         predicate: "dome.intake.task",
-        subjectId: OUTPUT_PATH,
+        subjectId: paths.generated,
         objectString: "Send Ada the launch staffing note",
       })
       .toHaveCount(1);
     expect(
-      factConfidence(h, "dome.intake.task", "Send Ada the launch staffing note"),
+      factConfidence(
+        h,
+        "dome.intake.task",
+        "Send Ada the launch staffing note",
+        paths.generated,
+      ),
     ).toBe(0.95);
     await h
       .expectProjection()
       .facts({
         predicate: "dome.intake.task",
-        subjectId: OUTPUT_PATH,
+        subjectId: paths.generated,
         objectString: "Ask Chris about launch staffing",
       })
       .toHaveCount(0);
@@ -647,6 +725,8 @@ scenario(
     expect(targets).toContainEqual({
       version: 1,
       path: CAPTURE_PATH,
+      sourceHash: captureSourceHash(capture),
+      generatedPath: paths.generated,
       kind: "task",
       text: "Ask Chris about launch staffing",
       confidence: 0.45,
@@ -693,21 +773,24 @@ scenario(
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
+    const capture = [
+      "# Capture",
+      "",
+      "Maybe Chris needs a launch staffing check.",
+      "",
+    ].join("\n");
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
     await h.userCommit({
       files: {
-        [CAPTURE_PATH]: [
-          "# Capture",
-          "",
-          "Maybe Chris needs a launch staffing check.",
-          "",
-        ].join("\n"),
+        [CAPTURE_PATH]: capture,
       },
       message: "capture uncertain task",
     });
 
     const extracted = await h.tick();
     expect(extracted.adopted).toBe(true);
-    await h.expectFile(OUTPUT_PATH).toNotContain(
+    await h.expectFile(paths.generated).toNotContain(
       "Ask Chris about launch staffing",
     );
 
@@ -749,25 +832,30 @@ scenario(
     ]);
     expect(answered.handlers.sub_proposals).toBe(1);
 
-    await h.expectFile(OUTPUT_PATH).toContain(
+    await h.expectFile(paths.generated).toContain(
       "- [ ] Ask Chris about launch staffing",
     );
     await h
       .expectProjection()
       .facts({
         predicate: "dome.intake.task",
-        subjectId: OUTPUT_PATH,
+        subjectId: paths.generated,
         objectString: "Ask Chris about launch staffing",
       })
       .toHaveCount(1);
     expect(
-      factConfidence(h, "dome.intake.task", "Ask Chris about launch staffing"),
+      factConfidence(
+        h,
+        "dome.intake.task",
+        "Ask Chris about launch staffing",
+        paths.generated,
+      ),
     ).toBe(0.45);
     await h
       .expectProjection()
       .facts({
         predicate: "dome.daily.open_task",
-        subjectId: OUTPUT_PATH,
+        subjectId: paths.generated,
         objectString: "Ask Chris about launch staffing",
       })
       .toHaveCount(1);
@@ -864,8 +952,11 @@ scenario(
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
+    const capture = "# Capture\n\nIncomplete output test.\n";
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
     await h.userCommit({
-      files: { [CAPTURE_PATH]: "# Capture\n\nIncomplete output test.\n" },
+      files: { [CAPTURE_PATH]: capture },
       message: "capture with bad model output",
     });
     const result = await h.tick();
@@ -882,8 +973,8 @@ scenario(
       .diagnostics({ code: "model.output.schema-mismatch", severity: "error" })
       .toHaveCount(1);
     await h.expectFile(CAPTURE_PATH).toContain("Incomplete output test.");
-    await h.expectFile(OUTPUT_PATH).toBeAbsent();
-    await h.expectFile(ARCHIVE_PATH).toBeAbsent();
+    await h.expectFile(paths.generated).toBeAbsent();
+    await h.expectFile(paths.archive).toBeAbsent();
   },
 );
 
@@ -932,8 +1023,11 @@ extensions:
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
+    const capture = "# Capture\n\nTry to write outside grant.\n";
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
     await h.userCommit({
-      files: { [CAPTURE_PATH]: "# Capture\n\nTry to write outside grant.\n" },
+      files: { [CAPTURE_PATH]: capture },
       message: "capture denied write",
     });
     const result = await h.tick();
@@ -944,21 +1038,16 @@ extensions:
       .diagnostics({ code: "capability-deny-patch", severity: "error" })
       .toHaveCount(1);
     await h.expectFile(CAPTURE_PATH).toContain("Try to write outside grant.");
-    await h.expectFile(OUTPUT_PATH).toBeAbsent();
-    await h.expectFile(ARCHIVE_PATH).toBeAbsent();
+    await h.expectFile(paths.generated).toBeAbsent();
+    await h.expectFile(paths.archive).toBeAbsent();
   },
 );
 
-function outputPath(path: string, dir: string): string {
-  const basename = path.split("/").at(-1) ?? "capture.md";
-  const stem = basename.replace(/\.md$/i, "");
-  const slug = stem
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64) || "capture";
-  const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
-  return `${dir}/${slug}-${digest}.md`;
+function outputPaths(path: string, content: string): {
+  readonly generated: string;
+  readonly archive: string;
+} {
+  return captureOutputPaths({ path, sourceHash: captureSourceHash(content) });
 }
 
 type CaptureExtractionFixture = {
@@ -1017,12 +1106,13 @@ function factConfidence(
   h: Harness,
   predicate: string,
   objectString: string,
+  subjectId = OUTPUT_PATH,
 ): number | null {
   const rows = h.projection.raw
     .query<{ object_json: string; confidence: number | null }, [string, string]>(
       "SELECT object_json, confidence FROM facts WHERE predicate = ? AND subject_id = ?",
     )
-    .all(predicate, OUTPUT_PATH);
+    .all(predicate, subjectId);
   for (const row of rows) {
     const object = JSON.parse(row.object_json) as {
       readonly kind?: unknown;

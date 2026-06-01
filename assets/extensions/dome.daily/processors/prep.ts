@@ -29,10 +29,10 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.7",
+  version: "0.1.8",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(

@@ -35,6 +35,7 @@ const STATUS_KEYS = Object.freeze([
   "orphan_runs",
   "failed_runs",
   "recent_processor_runs",
+  "maintenance_loops",
   "serve_status",
   "serve_pid",
   "serve_branch",
@@ -177,6 +178,7 @@ scenario(
     expect(status["dirty_untracked"]).toBeGreaterThan(0);
     expect(status["content_pages"]).toBe(1);
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);
+    expect(Array.isArray(status["maintenance_loops"])).toBe(true);
     expect(status["serve_status"]).toBe("off");
 
     const doctor = parseJson(await h.runCli(["doctor", "--json"]));

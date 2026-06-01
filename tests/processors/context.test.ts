@@ -120,6 +120,24 @@ describe("makeProcessorContext — primary inputs round-trip", () => {
   });
 });
 
+describe("makeProcessorContext — extension config", () => {
+  test("ctx.extensionConfig defaults to an empty frozen map", () => {
+    const ctx = makeProcessorContext(baseInput({ input: null }));
+    expect(ctx.extensionConfig).toEqual({});
+    expect(Object.isFrozen(ctx.extensionConfig)).toBe(true);
+  });
+
+  test("ctx.extensionConfig preserves the runtime-supplied map", () => {
+    const extensionConfig = Object.freeze({
+      daily_path: "notes/{date}.md",
+    });
+    const ctx = makeProcessorContext(
+      baseInput({ input: null, extensionConfig }),
+    );
+    expect(ctx.extensionConfig).toBe(extensionConfig);
+  });
+});
+
 describe("makeProcessorContext — cancellation signal", () => {
   test("ctx.signal is the same AbortSignal passed by the runtime", () => {
     const controller = new AbortController();

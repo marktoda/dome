@@ -33,9 +33,12 @@ interface ProcessorContext<TInput = unknown> {
   readonly proposal: Proposal | null;     // present for adoption-phase + garden-PatchEffect-derived runs
   readonly runId: string;                 // matches the RunRecord row's id
   readonly input: TInput;                 // trigger-specific payload (e.g., Signal, ClockTick, CommandArgs)
+  readonly signal: AbortSignal;           // runtime-owned cancellation signal
   readonly capabilities: CapabilityToken; // opaque token; the broker resolves on effect emission
+  readonly extensionConfig: ExtensionConfig; // opaque config from extensions.<id>.config
   readonly modelInvoke?: ModelInvokeFn;   // present iff non-adoption run has effective `model.invoke`; supports text + structured JSON
   readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it)
+  readonly operational?: OperationalQueryView; // present iff the processor has operational read grants
   readonly pageTypes?: PageTypeRegistry; // default + bundle page-type declarations; vault-local schemas stay in ctx.snapshot
   readonly sourceRef(path: string, range?: TextRange): SourceRef;  // helper for SourceRef construction
 }
@@ -87,7 +90,7 @@ type ProjectionQuestion = QuestionEffect & {
 };
 ```
 
-A `Processor` returns `Effect[]`. It does not call writers, git, sqlite, or any other mutation surface. Commit-bound content and git-derived path metadata are exposed only through `ctx.snapshot`, and the runtime scopes both by the processor's effective `read` grant. The engine routes the returned effects through capability enforcement, then applies them. This is the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
+A `Processor` returns `Effect[]`. It does not call writers, git, sqlite, or any other mutation surface. Commit-bound content and git-derived path metadata are exposed only through `ctx.snapshot`, and the runtime scopes both by the processor's effective `read` grant. Per-extension config is exposed as an opaque frozen map on `ctx.extensionConfig`; the capability-policy loader validates only that `extensions.<id>.config` is a YAML mapping, and each extension owns its own schema. Config participates in the projection cache key because it may change emitted facts, patches, and views. The engine routes the returned effects through capability enforcement, then applies them. This is the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
 
 ## The three phases
 
@@ -200,6 +203,50 @@ export default defineProcessorImplementation({
 
 `defineProcessorImplementation` is a type-narrowing identity function. Adding a new processor is one implementation file in the bundle's `processors/` directory plus a row in the bundle's `manifest.yaml` `processors:` block. Legacy modules that export a full `Processor` are still accepted, but new bundle code should not duplicate manifest metadata.
 
+## Maintenance loops
+
+A **maintenance loop** is the V1 automation design unit above processors. It is
+metadata, not a new executable primitive:
+
+```txt
+Processor = executable compiler pass
+Loop      = desired-state objective maintained by processors
+```
+
+The runtime still dispatches processors by phase and trigger. A loop groups one
+or more processors under a goal, evidence set, surfaces, settlement rule, and
+known risks so status surfaces can explain what background maintenance is
+trying to keep true.
+
+The V1 first-party loop registry lives in
+`src/extensions/maintenance-loops.ts`. It intentionally does not call
+processors, sequence processors, or add a workflow engine. It references
+existing processor ids and command surfaces, and tests validate that those
+references stay in lockstep with the shipped bundles.
+
+Required loop metadata:
+
+- `id` — stable namespaced identifier.
+- `goal` — the desired condition in plain language.
+- `evidence` — paths, projections, or operational rows the loop reads.
+- `processors` — processor ids that implement the loop.
+- `surfaces` — markdown paths, CLI/view commands, projections, or status
+  surfaces the loop feeds.
+- `settlement` — stable identity and no-op rule.
+- `risks` — known failure modes, especially LLM churn or destructive edits.
+
+The shipped V1 loops are:
+
+- `dome.capture.digest`
+- `dome.open-loop.continuity`
+- `dome.link-concept.coherence`
+- `dome.context.packet`
+- `dome.question.continuity`
+
+Future third-party loops may move this metadata into bundle manifests. That
+change must preserve the same boundary: loops describe maintenance objectives;
+processors execute.
+
 ## First-party processors (the `dome.*` bundles)
 
 Every behavior Dome ships out of the box is a first-party extension bundle under `assets/extensions/dome.*`. The current set:
@@ -209,8 +256,8 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates, raw-immutable; view: orphan-pages | Keeps markdown pages well-formed; normalizes frontmatter and refreshes managed `updated:` dates during adoption; emits DiagnosticEffect on broken curated-page wikilinks, informational broken note-draft and imported-source body wikilinks, missing local image embeds, informational optional-root unknown page types, informational remaining stale adopted `updated:` dates, frontmatter issues, and raw-file mutations; handles common Obsidian link forms such as heading fragments, self-heading links, unique title-to-slug matches, and close existing-page hints for typoed broken links without false broken-link warnings; asks about high-confidence duplicate canonical content pages; provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through QuestionEffect answers. |
-| `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today, prep | Creates daily notes, carries unfinished markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles `inbox/raw/*.md` captures into generated capture pages plus processed archives, writes source-linked synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and indexes confidence-carrying `dome.intake.*` facts from generated capture metadata. |
+| `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, raises source-backed open loops into a small generated `## Open Loops` block, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, and renders daily action/planning surfaces. The daily surface defaults to `wiki/dailies/{date}.md` and can be moved with `extensions.dome.daily.config.daily_path` such as `notes/{date}.md`. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles `inbox/raw/*.md` captures into source-hash-addressed generated capture pages plus processed archives, records `source_hash` and `disposition` frontmatter, writes source-linked synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, asks before tracking low-confidence items, applies accepted answers through garden sub-Proposals, and indexes confidence-carrying `dome.intake.*` facts from generated capture metadata. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply behavior remains planned. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains the FTS5 projection; answers adopted-state query and context-packet requests. |
 
@@ -231,7 +278,8 @@ Every processor invocation, regardless of outcome, writes one `RunRecord` row to
 
 ## Implementation status
 
-The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engine-completion]]) lands the three-phase model in stages:
+The three-phase model is now implemented enough to support the automation-first
+plan in [[v1]]. Current status:
 
 | Phase | What ships | Status |
 |---|---|---|
@@ -243,7 +291,9 @@ The v1 engine completion sequence (see [[cohesive/brainstorms/2026-05-27-v1-engi
 | Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) | Phase 4d |
 | JobEffect runtime | `scheduled_jobs` table + `runQueuedJobs` dispatcher firing due jobs as garden-phase work with retry/backoff | **Shipped** (Phase 4e) |
 
-See the brainstorm doc for the full plan including dependencies, tests, and the question-answer surface.
+The reset V1 plan now treats this substrate as shipped foundation and moves
+future work toward more useful automation, agent-resolvable decisions, and
+semantic garden processors.
 
 ## Related
 

@@ -13,6 +13,7 @@ import type { AdoptionResult, Proposal } from "../core/proposal";
 import type { CommitOid } from "../core/source-ref";
 import type {
   Capability,
+  ExtensionConfig,
   OperationalQueryView,
   Processor,
   TreeOid,
@@ -76,6 +77,7 @@ export async function runQueuedJobs(opts: {
   readonly now: () => Date;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
@@ -166,6 +168,7 @@ async function runOneJob(opts: {
   readonly now: () => Date;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
@@ -206,6 +209,9 @@ async function runOneJob(opts: {
     matches,
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
+    ...(opts.extensionConfigFor !== undefined
+      ? { extensionConfigFor: opts.extensionConfigFor }
+      : {}),
     ledger: opts.ledger,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.executionState !== undefined

@@ -95,8 +95,7 @@ post-adoption visibility through the regular branch history is
 sufficient for v1.0. A v1.x polish may reintroduce the dedicated garden
 refs if pre-adoption visibility ("what garden work is pending right
 now") becomes operationally important — see
-[[cohesive/brainstorms/2026-05-27-v1-engine-completion]] for the
-relevant phase-tracking.
+[[v1]] for the current automation-first product plan.
 
 **Cascade.** Garden-emitted sub-Proposals fire their own garden phase
 when adopted, which may emit more PatchEffects, which spawn more sub-

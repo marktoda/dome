@@ -349,3 +349,75 @@ scenario(
     );
   },
 );
+
+scenario(
+  {
+    name: "cli-surface: dome today respects configured daily note path",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    config:
+      daily_path: notes/{date}.md
+    grant:
+      read: ["wiki/**/*.md", "notes/*.md"]
+      patch.auto: ["notes/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "notes/2026-01-05.md": [
+          "# 2026-01-05",
+          "",
+          "- [ ] Ship configured daily surface",
+          "",
+        ].join("\n"),
+        "wiki/captures/work.md": [
+          "# Work",
+          "",
+          "TODO: Prepare supporting context",
+          "",
+        ].join("\n"),
+      },
+      message: "add configured daily note",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly daily: { readonly path: string; readonly exists: boolean };
+      readonly sourceCounts: {
+        readonly daily: { readonly openTasks: number };
+        readonly backlog: { readonly openTasks: number };
+      };
+    };
+
+    expect(payload.daily.path).toBe("notes/2026-01-05.md");
+    expect(payload.daily.exists).toBe(true);
+    expect(payload.sourceCounts.daily.openTasks).toBe(1);
+    expect(payload.sourceCounts.backlog.openTasks).toBe(1);
+  },
+);

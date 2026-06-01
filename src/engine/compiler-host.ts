@@ -617,6 +617,7 @@ export async function runOperationalWorkForAdopted(opts: {
       : {}),
     resolveGrants: opts.runtime.resolveGrants,
     extensionIdFor: opts.runtime.extensionIdFor,
+    extensionConfigFor: opts.runtime.extensionConfigFor,
     externalHandlers: opts.runtime.externalHandlers,
     adoptSubProposal,
     currentAdopted: () => cursor.current,

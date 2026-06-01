@@ -6,7 +6,7 @@ severity: medium
 coverage: off-matrix
 enforced_at: src/engine/garden.ts
 first_observed: 2026-05-28 (Phase 4a' implementation)
-sources: ["[[cohesive/brainstorms/2026-05-27-v1-engine-completion]]"]
+sources: ["[[v1]]"]
 ---
 
 # Garden cascade cap
@@ -61,4 +61,4 @@ The diagnostic surfaces:
 - [[wiki/specs/proposals]] §"Garden-emitted Proposals"
 - [[wiki/gotchas/processor-fixed-point-divergence]] — the within-iteration sibling pattern
 - [[wiki/gotchas/processor-idempotency]] — non-idempotent processors amplify cascade risk
-- [[cohesive/brainstorms/2026-05-27-v1-engine-completion]] — Phase 4a' phase plan
+- [[v1]] — automation-first product plan that builds on the shipped garden substrate

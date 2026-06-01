@@ -30,10 +30,10 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.5",
+  version: "0.1.6",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

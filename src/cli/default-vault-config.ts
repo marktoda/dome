@@ -38,8 +38,8 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "graph.write": ["dome.graph.*"],
     }),
     extension("dome.daily", true, {
-      read: ["wiki/**/*.md"],
-      "patch.auto": ["wiki/**/*.md"],
+      read: ["wiki/**/*.md", "notes/*.md"],
+      "patch.auto": ["wiki/**/*.md", "notes/*.md"],
       "graph.write": ["dome.daily.*"],
       "question.ask": true,
     }),

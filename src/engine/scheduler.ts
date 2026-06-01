@@ -75,6 +75,7 @@ import type { ProcessorRegistry } from "../processors/registry";
 import type { LedgerDb } from "../ledger/db";
 import type {
   Capability,
+  ExtensionConfig,
   OperationalQueryView,
   Processor,
   TreeOid,
@@ -150,6 +151,7 @@ export async function runScheduler(opts: {
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
   readonly signal?: AbortSignal;
@@ -210,6 +212,7 @@ async function runSchedulerInner(opts: {
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
+  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
   readonly signal?: AbortSignal;
@@ -232,6 +235,7 @@ async function runSchedulerInner(opts: {
     operational,
     resolveGrants,
     extensionIdFor,
+    extensionConfigFor,
     adoptSubProposal,
     currentAdopted,
     signal,
@@ -360,6 +364,7 @@ async function runSchedulerInner(opts: {
         matches,
         resolveGrants,
         extensionIdFor,
+        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
         ledger,
         ...(signal !== undefined ? { signal } : {}),
         ...(executionState !== undefined ? { executionState } : {}),

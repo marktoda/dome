@@ -13,6 +13,7 @@ import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
 import {
   captureOutputPaths,
+  captureSourceHash,
   renderIntakeItemsFrontmatter,
   type CapturePageItem,
   type CapturePageItemKind,
@@ -79,16 +80,18 @@ const extractCapture = defineProcessorImplementation({
     for (const path of ctx.changedPaths.filter(isRawCapturePath).sort()) {
       const capture = await ctx.snapshot.readFile(path);
       if (capture === null) continue;
+      const sourceHash = captureSourceHash(capture);
 
       const extraction = await ctx.modelInvoke.structured({
         schemaName: MODEL_SCHEMA,
         prompt: promptForCapture(path, capture),
         parse: parseCaptureExtraction,
       });
-      const paths = captureOutputPaths(path);
-      const archive = renderArchive({ sourcePath: path, capture });
+      const paths = captureOutputPaths({ path, sourceHash });
+      const archive = renderArchive({ sourcePath: path, sourceHash, capture });
       const generated = renderGeneratedCapture({
         sourcePath: path,
+        sourceHash,
         archivePath: paths.archive,
         extraction,
       });
@@ -117,6 +120,8 @@ const extractCapture = defineProcessorImplementation({
         }),
         ...lowConfidenceQuestions({
           path,
+          sourceHash,
+          generatedPath: paths.generated,
           sourceRef: ctx.sourceRef(path),
           extraction,
         }),
@@ -201,6 +206,7 @@ function freezeItems(
 
 function renderGeneratedCapture(input: {
   readonly sourcePath: string;
+  readonly sourceHash: string;
   readonly archivePath: string;
   readonly extraction: CaptureExtraction;
 }): string {
@@ -226,6 +232,8 @@ function renderGeneratedCapture(input: {
     `sources: [${yamlString(`[[${input.archivePath}]]`)}]`,
     ...renderIntakeItemsFrontmatter(intakeItems),
     `processed_from: ${yamlString(input.sourcePath)}`,
+    `source_hash: ${yamlString(input.sourceHash)}`,
+    "disposition: digested",
     "---",
     "",
     `# ${extraction.title}`,
@@ -280,6 +288,8 @@ function highConfidenceItems(
 
 function lowConfidenceQuestions(input: {
   readonly path: string;
+  readonly sourceHash: string;
+  readonly generatedPath: string;
   readonly sourceRef: SourceRef;
   readonly extraction: CaptureExtraction;
 }): ReadonlyArray<Effect> {
@@ -322,6 +332,8 @@ function lowConfidenceQuestions(input: {
       lowConfidenceItems(group.items).map((item) =>
         lowConfidenceQuestion({
           path: input.path,
+          sourceHash: input.sourceHash,
+          generatedPath: input.generatedPath,
           sourceRef: input.sourceRef,
           kind: group.kind,
           text: item.text,
@@ -341,6 +353,8 @@ function lowConfidenceItems(
 
 function lowConfidenceQuestion(input: {
   readonly path: string;
+  readonly sourceHash: string;
+  readonly generatedPath: string;
   readonly sourceRef: SourceRef;
   readonly kind: CaptureLowConfidenceKind;
   readonly text: string;
@@ -354,6 +368,8 @@ function lowConfidenceQuestion(input: {
     idempotencyKey: lowConfidenceQuestionKey({
       version: 1,
       path: input.path,
+      sourceHash: input.sourceHash,
+      generatedPath: input.generatedPath,
       kind: input.kind,
       text: input.text,
       confidence: input.confidence,
@@ -363,12 +379,15 @@ function lowConfidenceQuestion(input: {
 
 function renderArchive(input: {
   readonly sourcePath: string;
+  readonly sourceHash: string;
   readonly capture: string;
 }): string {
   return [
     "---",
     "type: capture",
     `processed_from: ${yamlString(input.sourcePath)}`,
+    `source_hash: ${yamlString(input.sourceHash)}`,
+    "disposition: archived",
     "---",
     "",
     input.capture.trimEnd(),

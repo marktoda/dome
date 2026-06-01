@@ -1,5 +1,5 @@
 id: dome.intake
-version: 0.4.0
+version: 0.4.1
 processors:
   - id: dome.intake.capture-index
     version: 0.1.0
@@ -22,7 +22,7 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.0
+    version: 0.3.1
     phase: garden
     triggers:
       - kind: signal
@@ -115,7 +115,7 @@ processors:
     module: processors/synthesize-rollup.ts
 
   - id: dome.intake.low-confidence-answer
-    version: 0.2.0
+    version: 0.2.1
     phase: garden
     triggers:
       - kind: answer

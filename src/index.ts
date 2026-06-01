@@ -13,6 +13,7 @@
 //     legacy `defineProcessor` for full-Processor modules).
 //   - The adopted-ref read accessors.
 //   - The bundle loader (for the daemon and for tests).
+//   - First-party maintenance-loop metadata (pure registry/validation only).
 //
 // What this surface does NOT expose:
 //   - submitProposal — internal to the daemon.
@@ -77,6 +78,7 @@ export type {
   ProcessorPhase,
   Trigger,
   TreeOid,
+  ExtensionConfig,
   ModelInvokeFn,
   ModelInvokeTextInput,
   ModelInvokeStructuredInput,
@@ -114,6 +116,15 @@ export {
   type LoadBundleRootsOpts,
   type LoadBundlesError,
 } from "./extensions/loader";
+export {
+  FIRST_PARTY_MAINTENANCE_LOOPS,
+  validateMaintenanceLoops,
+  type MaintenanceLoop,
+  type MaintenanceLoopEvidence,
+  type MaintenanceLoopSurface,
+  type MaintenanceLoopSettlement,
+  type MaintenanceLoopValidationError,
+} from "./extensions/maintenance-loops";
 export {
   parseManifest,
   ManifestSchema,

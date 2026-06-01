@@ -1,42 +1,51 @@
 id: dome.daily
-version: 0.1.4
+version: 0.1.6
 processors:
   - id: dome.daily.create-daily
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: schedule
         cron: "0 6 * * *"
     capabilities:
       - kind: read
-        paths: ["wiki/dailies/*.md"]
+        paths: ["wiki/dailies/*.md", "notes/*.md"]
       - kind: patch.auto
-        paths: ["wiki/dailies/*.md"]
+        paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/create-daily.ts
 
   - id: dome.daily.task-index
-    version: 0.1.2
+    version: 0.1.3
     phase: adoption
     triggers:
       - kind: signal
         name: document.changed
         pathPattern: "wiki/**/*.md"
       - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
         name: file.created
         pathPattern: "wiki/**/*.md"
       - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+      - kind: signal
         name: file.deleted
         pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "notes/*.md"
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
       - kind: graph.write
         namespaces: ["dome.daily.*"]
       - kind: question.ask
     module: processors/task-index.ts
 
   - id: dome.daily.ambiguous-followup-answer
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: answer
@@ -44,54 +53,69 @@ processors:
         idempotencyKeyPrefix: "dome.daily.ambiguous-followup:"
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
       - kind: patch.auto
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/ambiguous-followup-answer.ts
 
   - id: dome.daily.today
-    version: 0.1.5
+    version: 0.1.6
     phase: view
     triggers:
       - kind: command
         name: today
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/today.ts
 
   - id: dome.daily.prep
-    version: 0.1.7
+    version: 0.1.8
     phase: view
     triggers:
       - kind: command
         name: prep
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/prep.ts
 
   - id: dome.daily.agenda-with
-    version: 0.1.5
+    version: 0.1.6
     phase: view
     triggers:
       - kind: command
         name: agenda-with
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: signal
         name: file.created
-        pathPattern: "wiki/dailies/*.md"
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "notes/*.md"
     capabilities:
       - kind: read
-        paths: ["wiki/dailies/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
       - kind: patch.auto
-        paths: ["wiki/dailies/*.md"]
+        paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/carry-forward.ts

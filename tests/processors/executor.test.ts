@@ -36,6 +36,7 @@ const ctx = Object.freeze({
   input: null,
   signal: new AbortController().signal,
   capabilities: Object.freeze({ __brand: "CapabilityToken" as const }) as never,
+  extensionConfig: Object.freeze({}),
   sourceRef: (path: string) =>
     sourceRef({
       commit: commitOid("abc0000000000000000000000000000000000000"),

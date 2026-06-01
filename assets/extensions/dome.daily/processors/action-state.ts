@@ -9,11 +9,14 @@ import type { SourceRef } from "../../../../src/core/source-ref";
 import { resolveQuestionCommand } from "../../../../src/question-resolution";
 
 import {
+  dailyPathSettings,
   dailyPath,
   formatDate,
   isValidDailyDate,
   localDateParts,
+  parseDailyPath,
   type DailyDate,
+  type DailyPathSettings,
 } from "./daily-shared";
 
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
@@ -104,7 +107,8 @@ export async function collectDailyActionState(
   }
 
   const dateString = formatDate(date);
-  const path = dailyPath(date);
+  const settings = dailyPathSettings(ctx.extensionConfig);
+  const path = dailyPath(date, settings);
   const dailyContent = await ctx.snapshot.readFile(path);
   const dailySourceRefs =
     dailyContent === null ? [] : [ctx.sourceRef(path)];
@@ -120,10 +124,10 @@ export async function collectDailyActionState(
     .map((fact) =>
       taskItemFromFact(fact, followupKeys.has(factKey(fact)), path)
     )
-    .sort(compareTaskItemsForDaily(path));
+    .sort(compareTaskItemsForDaily(path, settings));
   const followups = followupFacts
     .map((fact) => taskItemFromFact(fact, true, path))
-    .sort(compareTaskItemsForDaily(path));
+    .sort(compareTaskItemsForDaily(path, settings));
   const questions = ctx.projection
     .questions({ resolved: false })
     .filter((question) => question.idempotencyKey.startsWith("dome.daily."))
@@ -407,8 +411,9 @@ function compareTaskItems(a: DailyTaskItem, b: DailyTaskItem): number {
 
 function compareTaskItemsForDaily(
   dailyPath: string,
+  settings: DailyPathSettings,
 ): (a: DailyTaskItem, b: DailyTaskItem) => number {
-  const date = dateFromDailyPath(dailyPath);
+  const date = dateFromDailyPath(dailyPath, settings);
   return (a, b) => {
     const sourceCmp = pathDailyPriority(a.path, dailyPath) -
       pathDailyPriority(b.path, dailyPath);
@@ -534,8 +539,12 @@ function taskPriorityRank(priority: DailyTaskPriority | null): number {
   }
 }
 
-function dateFromDailyPath(path: string): string | null {
-  return /^wiki\/dailies\/(\d{4}-\d{2}-\d{2})\.md$/.exec(path)?.[1] ?? null;
+function dateFromDailyPath(
+  path: string,
+  settings: DailyPathSettings,
+): string | null {
+  const date = parseDailyPath(path, settings);
+  return date === null ? null : formatDate(date);
 }
 
 function comparePathLineText(
