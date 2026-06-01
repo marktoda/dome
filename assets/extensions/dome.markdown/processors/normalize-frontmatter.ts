@@ -96,7 +96,7 @@ const MAX_UPDATED_DRIFT_DAYS = 1;
 
 const normalizeFrontmatter: Processor = defineProcessor({
   id: "dome.markdown.normalize-frontmatter",
-  version: "0.2.0",
+  version: "0.2.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -291,7 +291,10 @@ function stringifyFrontmatter(
   body: string,
   data: Record<string, unknown>,
 ): string {
-  const yaml = YAML.stringify(data).trimEnd();
+  // Keep source wikilinks and other long identifiers byte-contiguous. YAML's
+  // default line folding inserts escaped physical newlines, which is valid
+  // YAML but poor markdown substrate for downstream text processors.
+  const yaml = YAML.stringify(data, { lineWidth: 0 }).trimEnd();
   return `---\n${yaml}\n---\n${body}`;
 }
 

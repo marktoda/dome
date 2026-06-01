@@ -483,6 +483,44 @@ describe("dome.markdown.normalize-frontmatter", () => {
     expect(write.content).not.toContain("'2026-05-27'");
   });
 
+  test("long source wikilinks stay on one physical YAML line", async () => {
+    const target =
+      "[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]";
+    const wrapped = withFrontmatter(
+      [
+        "type: gotcha",
+        "sources:",
+        "  - \"[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-traile\\",
+        "    rs]]\"",
+        "",
+      ].join("\n"),
+      "# Wrapped source\n",
+    );
+
+    const f = await makeVaultWithFiles([
+      { path: "wiki/wrapped-source.md", content: wrapped },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/wrapped-source.md"],
+      proposal: null,
+      runId: "run-nfm-long-source",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    const patch = expectPatch(effects, 0);
+    const write = expectWrite(patch.changes, 0);
+
+    expect(write.content).toContain(`  - "${target}"\n`);
+    expect(write.content).not.toContain("\\\n");
+  });
+
   test("active Proposals refresh stale updated dates on managed wiki pages", async () => {
     const content = withFrontmatter(
       "type: project\nupdated: 2026-05-01\n",

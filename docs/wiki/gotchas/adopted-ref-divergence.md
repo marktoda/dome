@@ -3,8 +3,7 @@ type: gotcha
 created: 2026-05-27
 updated: 2026-05-29
 sources:
-  - "[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-traile\
-    rs]]"
+  - "[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"
 coverage: off-matrix
 enforced_at: src/adopted-ref.ts
 severity: medium
