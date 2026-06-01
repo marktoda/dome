@@ -658,9 +658,13 @@ Work:
       processor runs, not read-only view commands, so soak notes cannot mistake
       `dome lint` or query views for compiler catch-up.
 - [x] Give `dome check --json` diagnostic attention a concrete follow-up
-      command (`dome check --content --limit 50 --json`) instead of a null
-      manual action, so Claude Code has a safe bounded path from status to
-      row-level source fixes.
+      command (`dome check --content --attention --limit 50 --json`) instead
+      of a null manual action, so Claude Code has a safe bounded path from
+      status to actionable source fixes.
+- [x] Add `dome check --attention` so the primary status/check path can list
+      only warning/error/block content diagnostics while preserving total
+      diagnostic counts, avoiding advanced inspect fallback for noisy real
+      vaults.
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.

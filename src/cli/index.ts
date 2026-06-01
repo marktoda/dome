@@ -105,6 +105,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--engine", "Show engine health findings.")
     .option("--content", "Show adopted-state diagnostics.")
     .option("--decisions", "Show open Dome questions.")
+    .option(
+      "--attention",
+      "For content diagnostics, show only warning/error/block rows.",
+    )
     .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
     .option(
       "--orphan-threshold-ms <n>",
@@ -120,6 +124,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           engine: options.engine,
           content: options.content,
           decisions: options.decisions,
+          attention: options.attention,
           limit: options.limit,
           orphanThresholdMs: options.orphanThresholdMs,
           json: options.json,
@@ -497,6 +502,7 @@ type CheckCliOptions = {
   readonly engine?: boolean;
   readonly content?: boolean;
   readonly decisions?: boolean;
+  readonly attention?: boolean;
   readonly limit?: number;
   readonly orphanThresholdMs?: number;
   readonly json?: boolean;

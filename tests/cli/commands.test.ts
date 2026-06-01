@@ -1494,9 +1494,9 @@ describe("runCheck", () => {
       },
       {
         reasons: ["diagnostics"],
-        command: "dome check --content --limit 50 --json",
+        command: "dome check --content --attention --limit 50 --json",
         description:
-          "Review a larger bounded diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
+          "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
   });
@@ -1545,6 +1545,76 @@ describe("runCheck", () => {
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(0);
     expect(parsed["next_actions"]).toEqual([]);
+  });
+
+  test("--attention filters content rows while preserving total counts", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "check.info",
+          message: "informational diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "check.warning",
+          message: "warning diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+        json: true,
+      }),
+    ).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const content = record(parsed["content"]);
+    expect(content["diagnostics"]).toBe(2);
+    expect(content["attention_diagnostics"]).toBe(1);
+    expect(content["filtered_diagnostics"]).toBe(1);
+    expect(record(content["filter"])).toEqual({ attention: true });
+    expect(record(content["summary"])["total"]).toBe(1);
+    const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(items.map((item) => item["severity"])).toEqual(["warning"]);
+    expect(items.map((item) => item["code"])).toEqual(["check.warning"]);
+    expect(parsed["status"]).toBe("attention");
   });
 
   test("scope flags select one check surface", async () => {

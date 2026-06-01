@@ -22,7 +22,7 @@ dome init [path]                Initialize a new vault.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
-dome check [--engine] [--content] [--decisions] [--limit <n>] [--json]
+dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--json]
                                 Explain compiler attention across health,
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
@@ -280,7 +280,7 @@ diagnostics/questions/outbox/runs` only for row-level debugging. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and
 [[wiki/specs/foreground-compiler-workflow]] for the normal session pulse.
 
-### `dome check [--engine] [--content] [--decisions] [--limit <n>] [--json]`
+### `dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--json]`
 
 The unified read-only attention report. It exists so Claude Code and a human
 operator have one "see what remains" command instead of choosing among
@@ -299,8 +299,10 @@ Default scope includes:
   SourceRefs.
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
-or more scopes. `--limit` bounds rows per section. `--json` emits the
-structured `dome.check/v1` payload. Abbreviated example:
+or more scopes. `--attention` narrows content diagnostic rows and grouping to
+warning/error/block diagnostics while preserving the total diagnostic and
+attention-diagnostic counts. `--limit` bounds rows per section. `--json` emits
+the structured `dome.check/v1` payload. Abbreviated example:
 
 ```json
 {"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2},"items":[]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"..."}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
@@ -310,8 +312,8 @@ structured `dome.check/v1` payload. Abbreviated example:
 report says engine work may be recoverable through a health question, run
 `dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
 When attention is content diagnostics only, the diagnostic next action points
-to `dome check --content --limit 50 --json` so an agent can safely fetch a
-larger bounded detail list before editing source markdown.
+to `dome check --content --attention --limit 50 --json` so an agent can safely
+fetch a larger bounded actionable detail list before editing source markdown.
 
 ### `dome resolve <question-id> [<value>]`
 

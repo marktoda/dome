@@ -71,9 +71,9 @@ export function nextActionsForCheck(input: {
   if (input.diagnostics > 0) {
     out.push(Object.freeze({
       reasons: Object.freeze(["diagnostics"]),
-      command: "dome check --content --limit 50 --json",
+      command: "dome check --content --attention --limit 50 --json",
       description:
-        "Review a larger bounded diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
+        "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
     }));
   }
   return Object.freeze(out);

@@ -45,6 +45,7 @@ export type RunCheckOptions = {
   readonly engine?: boolean | undefined;
   readonly content?: boolean | undefined;
   readonly decisions?: boolean | undefined;
+  readonly attention?: boolean | undefined;
   readonly limit?: string | number | boolean | undefined;
   readonly orphanThresholdMs?: string | number | undefined;
 };
@@ -69,6 +70,10 @@ type CheckReport = {
 type CheckContentReport = {
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
+  readonly filtered_diagnostics: number;
+  readonly filter: {
+    readonly attention: boolean;
+  };
   readonly summary: DiagnosticSummary;
   readonly items: ReadonlyArray<CheckDiagnosticItem>;
 };
@@ -162,6 +167,7 @@ export async function runCheck(
     const content = scopes.content
       ? collectContentReport({
           diagnostics: queryDiagnostics(runtime.projectionDb),
+          attentionOnly: options.attention === true,
           limit,
         })
       : null;
@@ -201,14 +207,22 @@ function resolveScopes(options: RunCheckOptions): CheckScopes {
 
 function collectContentReport(opts: {
   readonly diagnostics: ReturnType<typeof queryDiagnostics>;
+  readonly attentionOnly: boolean;
   readonly limit: number;
 }): CheckContentReport {
+  const filteredDiagnostics = opts.attentionOnly
+    ? opts.diagnostics.filter((diagnostic) => diagnostic.severity !== "info")
+    : opts.diagnostics;
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
     attention_diagnostics: countAttentionDiagnostics(opts.diagnostics),
-    summary: summarizeDiagnosticEffects(opts.diagnostics, opts.limit),
+    filtered_diagnostics: filteredDiagnostics.length,
+    filter: Object.freeze({
+      attention: opts.attentionOnly,
+    }),
+    summary: summarizeDiagnosticEffects(filteredDiagnostics, opts.limit),
     items: Object.freeze(
-      opts.diagnostics.slice(0, opts.limit).map((diagnostic) =>
+      filteredDiagnostics.slice(0, opts.limit).map((diagnostic) =>
         Object.freeze({
           severity: diagnostic.severity,
           code: diagnostic.code,
@@ -307,7 +321,15 @@ function formatEngine(report: HealthReport | null): string {
 
 function formatContent(report: CheckContentReport | null): string {
   if (report === null) return "skipped";
-  return `${report.diagnostics} diagnostic(s)`;
+  const attention =
+    report.diagnostics === 0
+      ? ""
+      : ` | ${report.attention_diagnostics} attention`;
+  const filter =
+    report.filter.attention
+      ? ` | showing ${report.filtered_diagnostics} attention`
+      : "";
+  return `${report.diagnostics} diagnostic(s)${attention}${filter}`;
 }
 
 function formatDecisions(report: CheckDecisionReport | null): string {
