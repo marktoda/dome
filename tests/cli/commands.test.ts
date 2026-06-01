@@ -338,8 +338,10 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("Advanced/debug commands");
       expect(agentsBody).toContain("dome inspect <subject>");
+      expect(agentsBody).toContain("dome inspect bundles --json");
       expect(agentsBody).toContain("inbox/raw/");
       expect(agentsBody).toContain("dome.intake");
+      expect(agentsBody).toContain('model: "ready"');
       expect(agentsBody).toContain("Do not edit or commit it");
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
       expect(agentsBody).toContain("<!-- END user-prose -->");

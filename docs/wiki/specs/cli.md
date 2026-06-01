@@ -117,9 +117,12 @@ The shipped initialization steps:
    idempotent — a no-op when `.git/` already exists).
 2. Creates the directory scaffold: `wiki/`, `notes/`, `inbox/raw/`,
    `inbox/processed/`, and `.dome/state/`. `inbox/raw/` is the raw
-   capture drop-zone once `dome.intake` is enabled and a model provider is
-   configured; `inbox/processed/` is the archive target for processed
-   captures. `.dome/extensions/` is not created — the shipped bundles live
+   capture drop-zone once `dome.intake` is enabled and model-ready; generated
+   AGENTS guidance tells Claude Code to verify the `dome.intake` row from
+   `dome inspect bundles --json` reports `status: "enabled"` and
+   `model: "ready"` before using raw captures. `inbox/processed/` is the
+   archive target for processed captures. `.dome/extensions/` is not created —
+   the shipped bundles live
    with the SDK; users wanting vault-local third-party bundles create the
    directory themselves.
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension

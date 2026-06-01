@@ -835,6 +835,10 @@ Work:
       release gate can distinguish disabled/no-provider intake from an
       enabled, granted, provider-ready model path without reading config by
       hand.
+- [x] Teach generated AGENTS.md to verify `dome.intake` readiness through
+      `dome inspect bundles --json` before using `inbox/raw/`, so Claude Code
+      does not assume raw capture automation is safe when intake is disabled
+      or missing a model provider.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

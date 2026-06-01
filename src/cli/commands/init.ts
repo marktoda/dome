@@ -531,8 +531,10 @@ branch. In normal use:
 - \`notes/\` is available for loose markdown notes that do not yet belong in a
   wiki page.
 - \`inbox/raw/\` is the raw capture drop-zone for committed captures when
-  \`dome.intake\` is enabled and a model provider is configured. Until then,
-  keep management notes directly under \`wiki/\` or \`notes/\`.
+  \`dome.intake\` is enabled and model-ready. Before using it, run
+  \`dome inspect bundles --json\` and check the \`dome.intake\` row reports
+  \`status: "enabled"\` and \`model: "ready"\`. Until then, keep management
+  notes directly under \`wiki/\` or \`notes/\`.
 - \`inbox/processed/\` is where \`dome.intake\` archives captures it has
   compiled into generated wiki material.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
