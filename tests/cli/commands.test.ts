@@ -1806,6 +1806,12 @@ describe("runCheck", () => {
         first_source_refs: expect.stringContaining("wiki/"),
       }),
     );
+    const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(items.map((item) => item["message"])).toEqual([
+      "Repeated diagnostic",
+      "Repeated diagnostic",
+      "Single diagnostic",
+    ]);
 
     captured.out = [];
     expect(

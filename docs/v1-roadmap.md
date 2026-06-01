@@ -972,6 +972,9 @@ Fold these into nearby milestone work when they are on-path:
       only sync-oriented reason, `dome status --json` now describes
       `dome sync --json` as rebuilding stale projections from adopted markdown
       instead of only mentioning pending commits or operational work.
+- [x] Align bounded `dome check` diagnostic rows with repeated-message groups,
+      so the detailed repair list starts with the same highest-volume
+      source-diagnostic targets that the grouped summary recommends fixing.
 
 ## V1 Exit Criteria
 

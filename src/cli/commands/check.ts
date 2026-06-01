@@ -23,6 +23,7 @@ import {
   countAttentionDiagnostics,
   formatSourceRefs,
   RECOVERY_SOURCE_REF_FORMAT,
+  sortDiagnosticsByMessagePriority,
   summarizeDiagnosticEffects,
   summarizeDiagnosticMessages,
   type DiagnosticMessageSummary,
@@ -222,6 +223,8 @@ function collectContentReport(opts: {
   const filteredDiagnostics = opts.attentionOnly
     ? opts.diagnostics.filter((diagnostic) => diagnostic.severity !== "info")
     : opts.diagnostics;
+  const repairOrderedDiagnostics =
+    sortDiagnosticsByMessagePriority(filteredDiagnostics);
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
     attention_diagnostics: countAttentionDiagnostics(opts.diagnostics),
@@ -240,7 +243,7 @@ function collectContentReport(opts: {
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     ),
     items: Object.freeze(
-      filteredDiagnostics.slice(0, opts.limit).map((diagnostic) =>
+      repairOrderedDiagnostics.slice(0, opts.limit).map((diagnostic) =>
         Object.freeze({
           severity: diagnostic.severity,
           code: diagnostic.code,

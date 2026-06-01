@@ -108,11 +108,7 @@ export function summarizeDiagnosticMessages(
 ): DiagnosticMessageSummary {
   const grouped = new Map<string, DiagnosticMessageGroup>();
   for (const diagnostic of diagnostics) {
-    const key = [
-      diagnostic.severity,
-      diagnostic.code,
-      diagnostic.message,
-    ].join("\u0000");
+    const key = diagnosticMessageKey(diagnostic);
     const existing = grouped.get(key);
     if (existing !== undefined) {
       grouped.set(key, {
@@ -138,6 +134,43 @@ export function summarizeDiagnosticMessages(
     shown_groups: Math.min(limit, groups.length),
     groups: Object.freeze(groups.slice(0, limit)),
   });
+}
+
+export function sortDiagnosticsByMessagePriority(
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+): ReadonlyArray<DiagnosticEffect> {
+  const counts = new Map<string, number>();
+  for (const diagnostic of diagnostics) {
+    const key = diagnosticMessageKey(diagnostic);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return Object.freeze(
+    diagnostics
+      .map((diagnostic, index) => Object.freeze({ diagnostic, index }))
+      .sort((a, b) => {
+        const severityOrder =
+          SEVERITY_RANK[a.diagnostic.severity] -
+          SEVERITY_RANK[b.diagnostic.severity];
+        if (severityOrder !== 0) return severityOrder;
+
+        const countOrder =
+          (counts.get(diagnosticMessageKey(b.diagnostic)) ?? 0) -
+          (counts.get(diagnosticMessageKey(a.diagnostic)) ?? 0);
+        if (countOrder !== 0) return countOrder;
+
+        const codeOrder = a.diagnostic.code.localeCompare(b.diagnostic.code);
+        if (codeOrder !== 0) return codeOrder;
+
+        const messageOrder = a.diagnostic.message.localeCompare(
+          b.diagnostic.message,
+        );
+        if (messageOrder !== 0) return messageOrder;
+
+        return a.index - b.index;
+      })
+      .map(({ diagnostic }) => diagnostic),
+  );
 }
 
 export function formatSourceRefs(
@@ -166,6 +199,16 @@ function compareDiagnosticMessageGroups(
   const codeOrder = a.code.localeCompare(b.code);
   if (codeOrder !== 0) return codeOrder;
   return a.message.localeCompare(b.message);
+}
+
+function diagnosticMessageKey(
+  diagnostic: Pick<DiagnosticEffect, "severity" | "code" | "message">,
+): string {
+  return [
+    diagnostic.severity,
+    diagnostic.code,
+    diagnostic.message,
+  ].join("\u0000");
 }
 
 function compareDiagnosticGroups(
