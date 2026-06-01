@@ -842,6 +842,9 @@ Work:
 - [x] Add `dome lint --limit`, so the adopted-state lint report stays bounded
       on noisy management vaults while preserving full issue counts and
       fail-threshold semantics.
+- [x] Make bounded `dome agenda` context sections reveal when more adopted
+      search context exists beyond `--limit`, so people/topic prep does not
+      look complete when only the first few matches are shown.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

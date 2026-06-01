@@ -161,5 +161,33 @@ scenario(
     expect(payload.markdown).toContain(
       "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
     );
+
+    const limitedContext = await h.runCli([
+      "agenda",
+      "Ada",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(limitedContext.exitCode).toBe(0);
+    expect(limitedContext.stderr).toBe("");
+    const limitedPayload = JSON.parse(limitedContext.stdout) as {
+      readonly shown: {
+        readonly context: number;
+      };
+      readonly hasMore: {
+        readonly context: boolean;
+      };
+      readonly context: ReadonlyArray<{ readonly path: string }>;
+      readonly markdown: string;
+    };
+    expect(limitedPayload.shown.context).toBe(1);
+    expect(limitedPayload.context.length).toBe(1);
+    expect(limitedPayload.hasMore.context).toBe(true);
+    expect(limitedPayload.markdown).toContain(
+      "more context matches exist (increase --limit to show more context)",
+    );
   },
 );

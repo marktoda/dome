@@ -580,10 +580,11 @@ Default text output is markdown:
 
 `--limit` bounds rendered agenda items and context matches. Agenda-item counts
 remain total counts from the source-backed daily action state; context counts
-are rendered context matches from adopted-state search. `--json` emits the
-structured `dome.daily.agenda-with/v1` payload, including the markdown packet
-under `markdown`. `--date` provides daily-note context; omitted means local
-today.
+are rendered context matches from adopted-state search. When the context search
+has more visible matches beyond the limit, text output prints an expansion hint
+and JSON sets `hasMore.context: true`. `--json` emits the structured
+`dome.daily.agenda-with/v1` payload, including the markdown packet under
+`markdown`. `--date` provides daily-note context; omitted means local today.
 
 ### `dome rebuild`
 

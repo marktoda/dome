@@ -29,7 +29,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -48,9 +48,14 @@ const agendaWith: Processor = defineProcessor({
     );
     const allAgendaItems = agendaItemsFor(actionState, input.topic);
     const agendaItems = Object.freeze(allAgendaItems.slice(0, limit));
-    const context = ctx.projection
-      .searchDocuments({ query: input.topic, limit })
-      .map(contextFromMatch);
+    const contextMatches = ctx.projection.searchDocuments({
+      query: input.topic,
+      limit: limit + 1,
+    });
+    const context = Object.freeze(
+      contextMatches.slice(0, limit).map(contextFromMatch),
+    );
+    const hasMoreContext = contextMatches.length > context.length;
     const scope = uniqueSourceRefs([
       ...agendaItems.flatMap((item) => item.sourceRefs),
       ...context.flatMap((entry) => entry.sourceRefs),
@@ -73,6 +78,9 @@ const agendaWith: Processor = defineProcessor({
       omitted: Object.freeze({
         agendaItems: Math.max(0, allAgendaItems.length - agendaItems.length),
       }),
+      hasMore: Object.freeze({
+        context: hasMoreContext,
+      }),
       agendaItems,
       context,
       markdown: renderAgendaMarkdown({
@@ -81,6 +89,7 @@ const agendaWith: Processor = defineProcessor({
         agendaItems,
         totalAgendaItems: allAgendaItems.length,
         context,
+        hasMoreContext,
       }),
     });
 
@@ -207,6 +216,7 @@ function renderAgendaMarkdown(input: {
   readonly agendaItems: ReadonlyArray<AgendaItem>;
   readonly totalAgendaItems: number;
   readonly context: ReadonlyArray<AgendaContextEntry>;
+  readonly hasMoreContext: boolean;
 }): string {
   const lines: string[] = [
     `# Dome Agenda: ${input.topic}`,
@@ -235,6 +245,9 @@ function renderAgendaMarkdown(input: {
       if (entry.snippet.length > 0) {
         lines.push(`  ${entry.snippet.replace(/\s+/g, " ")}`);
       }
+    }
+    if (input.hasMoreContext) {
+      lines.push("- ... more context matches exist (increase --limit to show more context)");
     }
   }
 
