@@ -956,6 +956,10 @@ Fold these into nearby milestone work when they are on-path:
       page types, and entity `status:` is accepted, matching real
       management-vault metadata instead of surfacing false-positive
       unknown-field diagnostics.
+- [x] Foreground-host status nudge: text `dome status` now renders
+      `serve off (run dome serve)` while leaving JSON `serve_status: "off"`
+      and attention routing unchanged, so normal soak sessions see the
+      foreground compiler step without making one-shot sync users look broken.
 
 ## V1 Exit Criteria
 

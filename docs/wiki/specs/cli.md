@@ -299,7 +299,10 @@ dirty working-tree counts excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
 reports. `serve_status` is read from the foreground host heartbeat file and is
 `running`, `stale`, or `off`; stale means the host did not exit cleanly or has
-not refreshed its heartbeat within the host's configured cadence. Use
+not refreshed its heartbeat within the host's configured cadence. Text mode
+annotates `serve off` as `serve off (run dome serve)` to nudge the normal
+foreground-host workflow, but `off` is not itself an attention reason because
+one-shot `dome sync` is a valid catch-up mode. Use
 `dome check --json` for the normal explanation path and `dome inspect
 diagnostics/questions/outbox/runs` only for row-level debugging. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and

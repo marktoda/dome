@@ -380,7 +380,7 @@ function printStatusText(s: StatusSnapshot): void {
 }
 
 function formatServe(s: StatusSnapshot): string {
-  if (s.serve_status === "off") return "off";
+  if (s.serve_status === "off") return "off (run dome serve)";
   const branch =
     s.serve_branch !== null && s.serve_branch !== s.branch
       ? ` on ${s.serve_branch}`

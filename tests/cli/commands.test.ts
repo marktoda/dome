@@ -2120,7 +2120,7 @@ describe("runStatus", () => {
     expect(out).toContain("questions 0");
     expect(out).toContain("outbox 0 pending / 0 failed");
     expect(out).toContain("quarantine 0");
-    expect(out).toContain("serve off");
+    expect(out).toContain("serve off (run dome serve)");
   });
 
   test("--json mode emits a parseable JSON object with expected keys", async () => {
