@@ -53,6 +53,7 @@ import { formatJson } from "../format";
 import { queryRuns, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryQuestions } from "../../projections/questions";
+import { nextActionsForSync, type CliNextAction } from "../next-actions";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -86,6 +87,7 @@ type SyncJsonResult = {
   readonly health: SyncHealthSummary;
   readonly attention_required: boolean;
   readonly attention: ReadonlyArray<string>;
+  readonly next_actions: ReadonlyArray<CliNextAction>;
   readonly diagnostics: ReadonlyArray<{
     readonly severity: string;
     readonly code: string;
@@ -324,6 +326,9 @@ function tickResultJson(
       health,
       attention_required: true,
       attention: ["compiler_host_busy"],
+      next_actions: nextActionsForSync({
+        attention: ["compiler_host_busy"],
+      }),
       diagnostics: [],
       error: "compiler-host-busy",
     };
@@ -342,6 +347,9 @@ function tickResultJson(
       health,
       attention_required: true,
       attention: ["adopted_ref_diverged"],
+      next_actions: nextActionsForSync({
+        attention: ["adopted_ref_diverged"],
+      }),
       diagnostics: [
         {
           severity: "error",
@@ -375,6 +383,7 @@ function tickResultJson(
       health,
       attention_required: attention.length > 0,
       attention,
+      next_actions: nextActionsForSync({ attention }),
       diagnostics: diagnosticsJson(tick.operational?.diagnostics ?? []),
     };
   }
@@ -400,6 +409,7 @@ function tickResultJson(
     health,
     attention_required: attention.length > 0,
     attention,
+    next_actions: nextActionsForSync({ attention }),
     diagnostics: diagnosticsJson([
       ...result.diagnostics,
       ...(tick.garden?.diagnostics ?? []),
@@ -457,6 +467,9 @@ function errorPayload(input: {
     health: emptyHealthSummary(),
     attention_required: true,
     attention: [input.error.replace(/-/g, "_")],
+    next_actions: nextActionsForSync({
+      attention: [input.error.replace(/-/g, "_")],
+    }),
     diagnostics: [],
     error: input.error,
   };
@@ -569,6 +582,9 @@ function emitErrorJson(input: {
     health: emptyHealthSummary(),
     attention_required: true,
     attention: [input.error.replace(/-/g, "_")],
+    next_actions: nextActionsForSync({
+      attention: [input.error.replace(/-/g, "_")],
+    }),
     diagnostics: [],
     error: input.error,
   };

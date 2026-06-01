@@ -751,6 +751,9 @@ Work:
 - [x] Bound `dome prep` markdown SourceRefs to the rendered packet, after the
       work vault soak showed limited prep views still dumping the whole
       available task-source set.
+- [x] Add `next_actions` to `dome sync --json`, after soak showed sync could
+      report durable attention such as open questions without the command hint
+      that status/check already provide.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

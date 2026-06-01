@@ -77,6 +77,7 @@ const SYNC_JSON_KEYS = Object.freeze([
   "health",
   "attention_required",
   "attention",
+  "next_actions",
   "diagnostics",
 ]);
 const SYNC_ERROR_JSON_KEYS = Object.freeze([...SYNC_JSON_KEYS, "error"]);
@@ -253,6 +254,7 @@ describe("runSync empty-diff init", () => {
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
+    expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -420,6 +422,7 @@ describe("runSync idempotent", () => {
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
+    expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -480,6 +483,14 @@ describe("runSync idempotent", () => {
     });
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(["outbox_failed"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["outbox_failed"],
+        command: "dome check --json",
+        description:
+          "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
+      },
+    ]);
   }, 10_000);
 
   test("garden follow-up summaries surface sub-Proposals in text and JSON", async () => {
@@ -558,6 +569,7 @@ extensions:
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
+    expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
   }, 10_000);
 
@@ -742,6 +754,14 @@ extensions:
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(["compiler_host_busy"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["compiler_host_busy"],
+        command: "dome sync --json",
+        description:
+          "Run another compiler tick after the active host or pending operational work clears.",
+      },
+    ]);
     expect(parsed["error"]).toBe("compiler-host-busy");
 
     releaseLock?.();
@@ -997,6 +1017,14 @@ describe("runSync detached HEAD", () => {
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(["detached_head"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["detached_head"],
+        command: "git status --short --branch",
+        description:
+          "Check out a branch before syncing; the adopted-ref substrate cannot run on detached HEAD.",
+      },
+    ]);
     expect(parsed["diagnostics"]).toEqual([]);
     expect(parsed["error"]).toBe("detached-head");
   }, 5_000);

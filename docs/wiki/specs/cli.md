@@ -188,7 +188,7 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"attention_required":false,"attention":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
@@ -203,7 +203,9 @@ garden diagnostics, or operational diagnostics. `attention` contains stable
 reason codes such as `adoption_blocked`, `compiler_host_busy`,
 `garden_rejected_patches`, `garden_diagnostics`, and
 `operational_diagnostics` so Claude Code can choose a recovery path without
-deriving one from counters.
+deriving one from counters. `next_actions` maps those reasons to the next
+command, using `dome check --json` for attention that needs explanation and
+`dome sync --json` for retry/drain cases.
 
 `--quiet` suppresses non-error human-readable text for adopted / in-sync
 outcomes. It does not suppress `--json`, usage errors, blocked-adoption
