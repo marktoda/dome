@@ -35,12 +35,24 @@ export type DiagnosticMessageSummary = {
   readonly groups: ReadonlyArray<DiagnosticMessageGroup>;
 };
 
+export type SourceRefFormatOptions = {
+  readonly includeCommit?: boolean;
+};
+
+export type DiagnosticSummaryOptions = {
+  readonly sourceRefs?: SourceRefFormatOptions;
+};
+
 const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
   block: 0,
   error: 1,
   warning: 2,
   info: 3,
 };
+
+export const RECOVERY_SOURCE_REF_FORMAT: SourceRefFormatOptions = Object.freeze({
+  includeCommit: false,
+});
 
 export function isAttentionDiagnostic(
   diagnostic: Pick<DiagnosticEffect, "severity">,
@@ -57,6 +69,7 @@ export function countAttentionDiagnostics(
 export function summarizeDiagnosticEffects(
   diagnostics: ReadonlyArray<DiagnosticEffect>,
   limit: number,
+  options: DiagnosticSummaryOptions = {},
 ): DiagnosticSummary {
   const grouped = new Map<string, DiagnosticGroup>();
   for (const diagnostic of diagnostics) {
@@ -74,7 +87,7 @@ export function summarizeDiagnosticEffects(
       code: diagnostic.code,
       count: 1,
       first_message: diagnostic.message,
-      first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
+      first_source_refs: formatSourceRefs(diagnostic.sourceRefs, options.sourceRefs),
       firstSourceRefs: diagnostic.sourceRefs,
     });
   }
@@ -91,6 +104,7 @@ export function summarizeDiagnosticEffects(
 export function summarizeDiagnosticMessages(
   diagnostics: ReadonlyArray<DiagnosticEffect>,
   limit: number,
+  options: DiagnosticSummaryOptions = {},
 ): DiagnosticMessageSummary {
   const grouped = new Map<string, DiagnosticMessageGroup>();
   for (const diagnostic of diagnostics) {
@@ -112,7 +126,7 @@ export function summarizeDiagnosticMessages(
       code: diagnostic.code,
       message: diagnostic.message,
       count: 1,
-      first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
+      first_source_refs: formatSourceRefs(diagnostic.sourceRefs, options.sourceRefs),
       firstSourceRefs: diagnostic.sourceRefs,
     });
   }
@@ -135,9 +149,10 @@ export function formatSourceRefs(
       readonly endLine: number;
     };
   }>,
+  options: SourceRefFormatOptions = {},
 ): string {
   if (refs.length === 0) return "-";
-  return refs.map(formatSourceRef).join(", ");
+  return refs.map((ref) => formatSourceRef(ref, options)).join(", ");
 }
 
 function compareDiagnosticMessageGroups(
@@ -171,13 +186,16 @@ function formatSourceRef(ref: {
     readonly startLine: number;
     readonly endLine: number;
   };
-}): string {
+}, options: SourceRefFormatOptions): string {
   const range =
     ref.range === undefined
       ? ""
       : ref.range.endLine === ref.range.startLine
         ? `:${ref.range.startLine}`
         : `:${ref.range.startLine}-${ref.range.endLine}`;
-  const commit = ref.commit === undefined ? "" : ` @ ${ref.commit.slice(0, 7)}`;
+  const commit =
+    options.includeCommit === false || ref.commit === undefined
+      ? ""
+      : ` @ ${ref.commit.slice(0, 7)}`;
   return `${ref.path}${range}${commit}`;
 }

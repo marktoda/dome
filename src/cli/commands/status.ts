@@ -85,6 +85,7 @@ import { resolveBundleRoots } from "./sync-shared";
 
 import {
   countAttentionDiagnostics,
+  RECOVERY_SOURCE_REF_FORMAT,
   summarizeDiagnosticEffects,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
@@ -260,6 +261,7 @@ export async function runStatus(
     const diagnostic_summary = summarizeDiagnosticEffects(
       diagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
     const questions = queryQuestions(runtime.projectionDb, {
       resolved: false,

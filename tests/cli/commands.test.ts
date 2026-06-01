@@ -1482,6 +1482,9 @@ describe("runCheck", () => {
     const diagnosticItems =
       record(parsed["content"])["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(diagnosticItems[0]?.["source_refs"]).toContain("wiki/seed.md");
+    expect(diagnosticItems[0]?.["source_refs"]).not.toContain(
+      adoptedCommit.slice(0, 7),
+    );
     const diagnosticSourceRefs =
       diagnosticItems[0]?.["sourceRefs"] as ReadonlyArray<Record<string, unknown>>;
     expect(diagnosticSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
@@ -1489,6 +1492,9 @@ describe("runCheck", () => {
     const decisionItems =
       record(parsed["decisions"])["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(decisionItems[0]?.["source_refs"]).toContain("wiki/seed.md");
+    expect(decisionItems[0]?.["source_refs"]).not.toContain(
+      adoptedCommit.slice(0, 7),
+    );
     expect(decisionItems[0]?.["resolveCommand"]).toBe(
       "dome resolve 1 <yes|no>",
     );
@@ -2720,7 +2726,7 @@ describe("runStatus", () => {
           code: "status.test",
           count: 1,
           first_message: "status diagnostic",
-          first_source_refs: `wiki/seed.md @ ${adoptedCommit.slice(0, 7)}`,
+          first_source_refs: "wiki/seed.md",
           firstSourceRefs: [
             {
               commit: adoptedCommit,
@@ -2730,6 +2736,9 @@ describe("runStatus", () => {
         },
       ],
     });
+    expect(JSON.stringify(parsed["diagnostic_summary"])).toContain(
+      adoptedCommit,
+    );
     expect(parsed["questions"]).toBe(1);
     expect(parsed["outbox_pending"]).toBe(1);
     expect(parsed["outbox_failed"]).toBe(1);

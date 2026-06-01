@@ -800,6 +800,10 @@ Work:
 - [x] Make bounded `dome agenda` preserve total agenda-item counts and
       omitted-item hints, so common person/topic agendas do not hide additional
       matching work behind the display limit.
+- [x] Keep primary `status` / `check` compact `source_refs` focused on
+      actionable file/line locations while preserving commit provenance in
+      structured `sourceRefs`, after real-vault soak showed older diagnostic
+      commits could distract from the source fix path.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

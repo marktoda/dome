@@ -22,6 +22,7 @@ import { resolveQuestionCommand } from "../../question-resolution";
 import {
   countAttentionDiagnostics,
   formatSourceRefs,
+  RECOVERY_SOURCE_REF_FORMAT,
   summarizeDiagnosticEffects,
   summarizeDiagnosticMessages,
   type DiagnosticMessageSummary,
@@ -228,15 +229,26 @@ function collectContentReport(opts: {
     filter: Object.freeze({
       attention: opts.attentionOnly,
     }),
-    summary: summarizeDiagnosticEffects(filteredDiagnostics, opts.limit),
-    message_summary: summarizeDiagnosticMessages(filteredDiagnostics, opts.limit),
+    summary: summarizeDiagnosticEffects(
+      filteredDiagnostics,
+      opts.limit,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    ),
+    message_summary: summarizeDiagnosticMessages(
+      filteredDiagnostics,
+      opts.limit,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    ),
     items: Object.freeze(
       filteredDiagnostics.slice(0, opts.limit).map((diagnostic) =>
         Object.freeze({
           severity: diagnostic.severity,
           code: diagnostic.code,
           message: diagnostic.message,
-          source_refs: formatSourceRefs(diagnostic.sourceRefs),
+          source_refs: formatSourceRefs(
+            diagnostic.sourceRefs,
+            RECOVERY_SOURCE_REF_FORMAT,
+          ),
           sourceRefs: diagnostic.sourceRefs,
         })
       ),
@@ -262,7 +274,10 @@ function collectDecisionReport(opts: {
             options,
           }),
           processor_id: question.processorId,
-          source_refs: formatSourceRefs(question.effect.sourceRefs),
+          source_refs: formatSourceRefs(
+            question.effect.sourceRefs,
+            RECOVERY_SOURCE_REF_FORMAT,
+          ),
           sourceRefs: question.effect.sourceRefs,
         });
       }),
