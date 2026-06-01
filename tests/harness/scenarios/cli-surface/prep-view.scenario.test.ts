@@ -81,7 +81,7 @@ scenario(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(text.stdout).toContain(
-      "[followup] Ask Ben about hiring budget 🔺 (wiki/captures/launch.md:9)",
+      "[followup] Ask Ben about hiring budget (wiki/captures/launch.md:9)",
     );
     expect(text.stdout).toContain(
       "- 2 followups already listed in Start Here",
@@ -219,7 +219,7 @@ scenario(
     ]);
     expect(payload.planningItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
-      "Ask Ben about hiring budget 🔺",
+      "Ask Ben about hiring budget",
     ]);
     expect(payload.planningItems.map((item) => item.dueDate)).toEqual([
       null,

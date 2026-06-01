@@ -646,8 +646,11 @@ Default text output renders:
   `dome resolve <id> <value>` hints.
 
 Daily action fact text is semantic task text: leading `#task`, `#followup`,
-and `#follow-up` marker tags are stripped from rendered task/followup text,
-while SourceRefs still point to the original markdown line.
+and `#follow-up` marker tags are stripped from rendered task/followup text.
+Parsed Obsidian Tasks metadata markers such as `📅 YYYY-MM-DD` and priority
+glyphs are also stripped from display text once represented in structured
+`dueDate` / `priority` fields. SourceRefs still point to the original markdown
+line.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.

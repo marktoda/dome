@@ -255,10 +255,10 @@ function taskItemFromFact(
 ): DailyTaskItem {
   const ref = fact.sourceRefs[0];
   const path = ref?.path ?? subjectPath(fact);
-  const text = literalToString(fact.object);
-  const metadata = taskMetadata(text);
+  const rawText = literalToString(fact.object);
+  const metadata = taskMetadata(rawText);
   return Object.freeze({
-    text,
+    text: taskDisplayText(rawText),
     path,
     line: ref?.range?.startLine ?? null,
     source: sourceForPath(path, dailyPath),
@@ -504,6 +504,17 @@ function taskPriority(text: string): DailyTaskPriority | null {
   if (text.includes("🔽")) return "low";
   if (text.includes("⏬")) return "lowest";
   return null;
+}
+
+function taskDisplayText(text: string): string {
+  const stripped = text
+    .replace(
+      /(?:^|\s)(?:📅\s*\d{4}-\d{2}-\d{2}|🔺|⏫|🔼|🔽|⏬)(?=\s|$)/gu,
+      " ",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return stripped.length > 0 ? stripped : text;
 }
 
 function taskPriorityRank(priority: DailyTaskPriority | null): number {

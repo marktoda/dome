@@ -77,7 +77,7 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("# Dome Agenda: Ada");
     expect(text.stdout).toContain(
-      "[followup] Ask Ada about rollout risks 🔺 (wiki/projects/launch.md:9)",
+      "[followup] Ask Ada about rollout risks (wiki/projects/launch.md:9)",
     );
     expect(text.stdout).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
@@ -138,7 +138,7 @@ scenario(
     expect(payload.omitted.agendaItems).toBe(1);
     expect(payload.agendaItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
-      "Ask Ada about rollout risks 🔺",
+      "Ask Ada about rollout risks",
       'Possible follow-up in wiki/projects/launch.md:10: "We should follow up with Ada about review timing.". Should Dome track this as a follow-up?',
       "Draft Ada staffing note",
     ]);

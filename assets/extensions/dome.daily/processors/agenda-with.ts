@@ -30,7 +30,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],

@@ -29,7 +29,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.6",
+  version: "0.1.7",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],

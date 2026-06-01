@@ -860,6 +860,10 @@ Work:
       `dome prep`, after the real work-vault soak showed a bounded flat backlog
       still hid whether the remaining management work was urgent or merely
       undated.
+- [x] Strip parsed Obsidian task metadata markers from daily action text in
+      `dome today`, `dome prep`, and `dome agenda`, while preserving the
+      structured `dueDate` and `priority` fields, after real work-vault output
+      showed due-date and priority glyphs duplicating structured metadata.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -182,8 +182,8 @@ scenario(
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
       "Send Ada launch notes",
-      "Ask Ben about hiring budget 🔺",
-      "Draft project staffing note 📅 2026-01-06",
+      "Ask Ben about hiring budget",
+      "Draft project staffing note",
     ]);
     expect(payload.openTasks.map((task) => task.dueDate)).toEqual([
       null,
@@ -210,7 +210,7 @@ scenario(
     ).toBe(true);
     expect(payload.followups.map((task) => task.text)).toEqual([
       "Send Ada launch notes",
-      "Ask Ben about hiring budget 🔺",
+      "Ask Ben about hiring budget",
     ]);
     expect(payload.followups.map((task) => task.source)).toEqual([
       "daily",
@@ -327,7 +327,7 @@ scenario(
     expect(text.stdout).toContain("Daily note");
     expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(
-      "Ask Ben about hiring budget 🔺 (wiki/captures/2026-01-05.md:9)",
+      "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
     );
     expect(text.stdout).toContain(
       `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
@@ -345,7 +345,7 @@ scenario(
     expect(limitedText.stdout).toContain("Ship weekly update");
     expect(limitedText.stdout).toContain("Send Ada launch notes");
     expect(limitedText.stdout).not.toContain(
-      "Draft project staffing note 📅 2026-01-06",
+      "Draft project staffing note",
     );
   },
 );
