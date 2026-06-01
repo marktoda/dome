@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-29
-updated: 2026-05-29
+updated: 2026-06-01
 sources:
   - "[[wiki/syntheses/v1-claude-code-vault-plan]]"
   - "[[v1-roadmap]]"
