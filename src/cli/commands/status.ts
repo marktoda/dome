@@ -31,7 +31,11 @@
 //   - last_sync:        `started_at` of the most recent succeeded adoption or
 //                       garden run. Read-only view commands do not move it.
 //   - pending_runs:     count of ledger rows still in progress
-//                       (`queued` or `running`).
+//                       (`queued` or `running`). Transient in-flight rows are
+//                       observable but do not route attention by themselves.
+//   - orphan_runs:      count of running rows old enough for orphan-run
+//                       recovery; this is what drives `pending_runs`
+//                       attention.
 //   - failed_runs:      count of processors whose latest ledger row is a
 //                       terminal problem (`failed`, `timed_out`, or
 //                       `cancelled`).
@@ -78,11 +82,13 @@ import {
   readServeHeartbeatStatus,
   type ServeHeartbeatStatus,
 } from "../../engine/compiler-host-heartbeat";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { LedgerDb } from "../../ledger/db";
 import {
   countLatestActiveProblemRuns,
   isActiveProblemRun,
+  orphanRuns as ledgerOrphanRuns,
   queryRuns,
   type RunRow,
   type RunStatus,
@@ -166,6 +172,7 @@ type StatusSnapshot = {
   readonly raw_bytes: number;
   readonly last_sync: string | null;
   readonly pending_runs: number;
+  readonly orphan_runs: number;
   readonly failed_runs: number;
   readonly recent_processor_runs: ReadonlyArray<ProcessorRunSummary>;
   readonly serve_status: ServeHeartbeatStatus["status"];
@@ -250,6 +257,11 @@ export async function runStatus(
       runtime.ledgerDb,
       PENDING_RUN_STATUSES,
     );
+    const orphan_runs = ledgerOrphanRuns(
+      runtime.ledgerDb,
+      DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+      new Date(),
+    ).length;
     const failed_runs = countLatestActiveProblemRuns(runtime.ledgerDb);
     const recent_processor_runs = summarizeRecentProcessorRuns(
       queryRuns(runtime.ledgerDb, {
@@ -321,7 +333,7 @@ export async function runStatus(
       projectionStale: projection_stale,
       dirtyModified: analytics.dirty_modified,
       dirtyUntracked: analytics.dirty_untracked,
-      pendingRuns: pending_runs,
+      orphanRuns: orphan_runs,
       failedRuns: failed_runs,
       serveStatus: serve.status,
       diagnostics: attentionDiagnostics,
@@ -355,6 +367,7 @@ export async function runStatus(
       raw_bytes: analytics.raw_bytes,
       last_sync,
       pending_runs,
+      orphan_runs,
       failed_runs,
       recent_processor_runs,
       serve_status: serve.status,
@@ -411,7 +424,7 @@ function printStatusText(s: StatusSnapshot): void {
     `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${s.inbox_pages} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
   );
   console.log(
-    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
+    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${formatPendingRuns(s)} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
   );
   console.log(
     `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
@@ -449,6 +462,11 @@ function formatProjectionFreshness(s: StatusSnapshot): string {
   return s.projection_cache_drift ? "stale (cache drift)" : "stale";
 }
 
+function formatPendingRuns(s: StatusSnapshot): string {
+  if (s.orphan_runs === 0) return String(s.pending_runs);
+  return `${s.pending_runs} (${s.orphan_runs} stale)`;
+}
+
 function formatDiagnosticCount(s: StatusSnapshot): string {
   if (s.diagnostics === 0) return "0";
   const attention = `${s.attention_diagnostics} attention`;
@@ -464,7 +482,7 @@ function statusAttention(input: {
   readonly projectionStale: boolean;
   readonly dirtyModified: number;
   readonly dirtyUntracked: number;
-  readonly pendingRuns: number;
+  readonly orphanRuns: number;
   readonly failedRuns: number;
   readonly serveStatus: ServeHeartbeatStatus["status"];
   readonly diagnostics: number;
@@ -479,7 +497,7 @@ function statusAttention(input: {
   if (input.projectionStale) out.push("projection_stale");
   if (input.dirtyModified > 0) out.push("dirty_modified");
   if (input.dirtyUntracked > 0) out.push("dirty_untracked");
-  if (input.pendingRuns > 0) out.push("pending_runs");
+  if (input.orphanRuns > 0) out.push("pending_runs");
   if (input.failedRuns > 0) out.push("failed_runs");
   if (input.serveStatus === "stale") out.push("serve_stale");
   if (input.diagnostics > 0) out.push("diagnostics");

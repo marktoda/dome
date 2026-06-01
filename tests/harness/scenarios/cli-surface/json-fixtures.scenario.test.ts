@@ -32,6 +32,7 @@ const STATUS_KEYS = Object.freeze([
   "raw_bytes",
   "last_sync",
   "pending_runs",
+  "orphan_runs",
   "failed_runs",
   "recent_processor_runs",
   "serve_status",

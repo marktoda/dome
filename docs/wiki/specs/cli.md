@@ -195,7 +195,7 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"health":{"pendingRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"health":{"pendingRuns":0,"orphanRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
@@ -385,7 +385,11 @@ reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
-`outbox_pending`, `outbox_failed`, and `quarantined`. `diagnostics` is the
+`outbox_pending`, `outbox_failed`, and `quarantined`. The `pending_runs` count
+is the live queued/running ledger count, while `orphan_runs` is the subset of
+running rows old enough for recovery; transient in-flight view or compiler
+runs remain visible but only `orphan_runs > 0` contributes the `pending_runs`
+attention reason. `diagnostics` is the
 total unresolved diagnostic count, `content_diagnostics` is the subset with
 SourceRefs that can be repaired from markdown, and `unlocated_diagnostics`
 counts source-less rows such as runtime/compiler diagnostics that remain

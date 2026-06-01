@@ -1042,6 +1042,11 @@ Fold these into nearby milestone work when they are on-path:
       diagnostics in `status`, `sync`, and `check`, after real work-vault soak
       showed a processor timeout could be duplicated as both an engine finding
       and a markdown repair item.
+- [x] Keep transient queued/running view commands from routing
+      `pending_runs` attention, after parallel real-vault probes showed
+      `status` could route to `check` even though `check` found the engine
+      healthy; `status` and `sync` now expose stale `orphan_runs` separately
+      and only route pending-run attention for recoverable stale rows.
 
 ## V1 Exit Criteria
 

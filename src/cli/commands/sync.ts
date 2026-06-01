@@ -52,9 +52,11 @@ import {
 import { formatJson } from "../format";
 import {
   countLatestActiveProblemRuns,
+  orphanRuns as ledgerOrphanRuns,
   queryRuns,
   type RunStatus,
 } from "../../ledger/runs";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
@@ -124,6 +126,7 @@ type SyncOperationalSummary = {
 
 type SyncHealthSummary = {
   readonly pendingRuns: number;
+  readonly orphanRuns: number;
   readonly failedRuns: number;
   readonly diagnostics: number;
   readonly contentDiagnostics: number;
@@ -456,7 +459,7 @@ function syncAttention(input: {
   if (input.operational.diagnosticCount > 0) {
     out.push("operational_diagnostics");
   }
-  if (input.health.pendingRuns > 0) out.push("pending_runs");
+  if (input.health.orphanRuns > 0) out.push("pending_runs");
   if (input.health.failedRuns > 0) out.push("failed_runs");
   if (input.health.attentionDiagnostics > 0) out.push("diagnostics");
   if (input.health.questions > 0) out.push("questions");
@@ -544,6 +547,7 @@ function emptyOperationalSummary(): SyncOperationalSummary {
 function emptyHealthSummary(): SyncHealthSummary {
   return Object.freeze({
     pendingRuns: 0,
+    orphanRuns: 0,
     failedRuns: 0,
     diagnostics: 0,
     contentDiagnostics: 0,
@@ -561,6 +565,11 @@ function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
   const contentDiagnostics = diagnostics.filter(isSourceBackedDiagnostic);
   return Object.freeze({
     pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
+    orphanRuns: ledgerOrphanRuns(
+      runtime.ledgerDb,
+      DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+      new Date(),
+    ).length,
     failedRuns: countLatestActiveProblemRuns(runtime.ledgerDb),
     diagnostics: diagnostics.length,
     contentDiagnostics: contentDiagnostics.length,

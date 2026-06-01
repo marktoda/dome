@@ -104,6 +104,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "raw_bytes",
   "last_sync",
   "pending_runs",
+  "orphan_runs",
   "failed_runs",
   "recent_processor_runs",
   "serve_status",
@@ -2579,6 +2580,7 @@ describe("runStatus", () => {
     expect(parsed["raw_files"]).toBe(0);
     expect(parsed["raw_bytes"]).toBe(0);
     expect(parsed["pending_runs"]).toBe(0);
+    expect(parsed["orphan_runs"]).toBe(0);
     expect(parsed["failed_runs"]).toBe(0);
     expect(parsed["recent_processor_runs"]).toEqual([]);
     expect(parsed["serve_status"]).toBe("off");
@@ -2619,6 +2621,56 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json keeps transient pending runs observable without routing attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+    captured.out = [];
+    captured.err = [];
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    expect(ledger.ok).toBe(true);
+    if (!ledger.ok) return;
+    try {
+      const runId = newRunId(new Date(), () => "trans1");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.status.transient",
+        processorVersion: "0.0.1",
+        phase: "view",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "command",
+        triggerPayload: { command: "today" },
+        startedAt: new Date(),
+      });
+      markRunning(ledger.value.db, runId, new Date());
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["pending_runs"]).toBe(1);
+    expect(parsed["orphan_runs"]).toBe(0);
+    expect(parsed["attention"]).not.toContain("pending_runs");
+    const nextActions = parsed["next_actions"] as ReadonlyArray<{
+      readonly reasons: ReadonlyArray<string>;
+    }>;
+    expect(
+      nextActions.some((action) => action.reasons.includes("pending_runs")),
+    ).toBe(false);
   });
 
   test("--json last_sync ignores newer view processor runs", async () => {
@@ -3469,6 +3521,7 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(1);
     expect(parsed["outbox_failed"]).toBe(1);
     expect(parsed["pending_runs"]).toBe(1);
+    expect(parsed["orphan_runs"]).toBe(1);
     expect(parsed["failed_runs"]).toBe(1);
     expect(parsed["quarantined"]).toBe(1);
     expect(parsed["attention_required"]).toBe(true);

@@ -95,6 +95,7 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
+  orphanRuns: 0,
   failedRuns: 0,
   diagnostics: 0,
   contentDiagnostics: 0,
