@@ -114,6 +114,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "attention_diagnostics",
   "diagnostic_summary",
   "attention_diagnostic_summary",
+  "diagnostic_message_summary",
+  "attention_diagnostic_message_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",
@@ -2470,6 +2472,18 @@ describe("runStatus", () => {
       shown_groups: 0,
       groups: [],
     });
+    expect(parsed["diagnostic_message_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
+    expect(parsed["attention_diagnostic_message_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
@@ -2602,6 +2616,12 @@ describe("runStatus", () => {
       shown_groups: 0,
       groups: [],
     });
+    expect(record(parsed["attention_diagnostic_message_summary"])).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
     expect(parsed["attention"]).toContain("sync_needed");
     expect(parsed["attention"]).not.toContain("diagnostics");
     expect(parsed["next_actions"]).toEqual([
@@ -2670,6 +2690,12 @@ describe("runStatus", () => {
     expect(topLine).toBeDefined();
     expect(topLine).toContain("1 warning status.warning");
     expect(topLine).not.toContain("status.info");
+    const focusLine = text
+      .split("\n")
+      .find((line) => line.startsWith("diag fix"));
+    expect(focusLine).toBeDefined();
+    expect(focusLine).toContain("actionable diagnostic");
+    expect(focusLine).not.toContain("informational diagnostic");
   });
 
   test("--json mode routes diagnostics-only attention to bounded content check", async () => {
@@ -2737,6 +2763,96 @@ describe("runStatus", () => {
       group?.["firstSourceRefs"] as ReadonlyArray<Record<string, unknown>>;
     expect(firstSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
     expect(firstSourceRefs[0]?.["commit"]).toBe(adoptedCommit);
+  });
+
+  test("--json mode includes message-level diagnostic repair grouping", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    captured.out = [];
+    const head = await currentSha(f.vaultPath);
+    expect(head).not.toBeNull();
+    if (head === null) return;
+    const adoptedCommit = commitOid(head);
+    const firstRef = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+      range: { startLine: 3, endLine: 3 },
+    });
+    const secondRef = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/new.md",
+      range: { startLine: 5, endLine: 5 },
+    });
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "status.warning",
+          message: "broken target alpha",
+          sourceRefs: [firstRef],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "status.warning",
+          message: "broken target beta",
+          sourceRefs: [secondRef],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const codeSummary = record(parsed["attention_diagnostic_summary"]);
+    const codeGroups = codeSummary["groups"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(
+      codeGroups.find((group) => group["code"] === "status.warning"),
+    ).toEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "status.warning",
+        count: 2,
+      }),
+    );
+    const messageSummary = record(
+      parsed["attention_diagnostic_message_summary"],
+    );
+    expect(Number(messageSummary["group_count"])).toBeGreaterThanOrEqual(2);
+    const groups = (
+      messageSummary["groups"] as ReadonlyArray<Record<string, unknown>>
+    ).filter((group) => group["code"] === "status.warning");
+    expect(groups.map((group) => group["message"])).toEqual([
+      "broken target alpha",
+      "broken target beta",
+    ]);
+    expect(groups[0]?.["first_source_refs"]).toBe("wiki/seed.md:3");
+    expect(groups[1]?.["first_source_refs"]).toBe("wiki/new.md:5");
   });
 
   test("--json mode reports stale projection rows as attention", async () => {

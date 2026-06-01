@@ -48,6 +48,11 @@
 //   - attention_diagnostic_summary:
 //                       same grouping limited to warning/error/block rows;
 //                       text mode uses this when actionable diagnostics exist.
+//   - diagnostic_message_summary:
+//                       bounded severity/code/message grouping for repair
+//                       targets that would otherwise share one diagnostic code.
+//   - attention_diagnostic_message_summary:
+//                       same message grouping limited to warning/error/block rows.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
 //   - outbox_failed:    count of terminally-failed external-action rows.
@@ -91,6 +96,8 @@ import {
   isAttentionDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
   summarizeDiagnosticEffects,
+  summarizeDiagnosticMessages,
+  type DiagnosticMessageSummary,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
@@ -167,6 +174,8 @@ type StatusSnapshot = {
   readonly attention_diagnostics: number;
   readonly diagnostic_summary: DiagnosticSummary;
   readonly attention_diagnostic_summary: DiagnosticSummary;
+  readonly diagnostic_message_summary: DiagnosticMessageSummary;
+  readonly attention_diagnostic_message_summary: DiagnosticMessageSummary;
   readonly questions: number;
   readonly outbox_pending: number;
   readonly outbox_failed: number;
@@ -275,6 +284,16 @@ export async function runStatus(
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
+    const diagnostic_message_summary = summarizeDiagnosticMessages(
+      diagnosticRows,
+      STATUS_DIAGNOSTIC_GROUP_LIMIT,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    );
+    const attention_diagnostic_message_summary = summarizeDiagnosticMessages(
+      attentionDiagnosticRows,
+      STATUS_DIAGNOSTIC_GROUP_LIMIT,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    );
     const questions = queryQuestions(runtime.projectionDb, {
       resolved: false,
     }).length;
@@ -337,6 +356,8 @@ export async function runStatus(
       attention_diagnostics: attentionDiagnostics,
       diagnostic_summary,
       attention_diagnostic_summary,
+      diagnostic_message_summary,
+      attention_diagnostic_message_summary,
       questions,
       outbox_pending,
       outbox_failed,
@@ -390,6 +411,13 @@ function printStatusText(s: StatusSnapshot): void {
       : s.diagnostic_summary;
   if (diagnosticTop.groups.length > 0) {
     console.log(`diag top  ${formatDiagnosticTopLine(diagnosticTop)}`);
+  }
+  const diagnosticFocus =
+    s.attention_diagnostics > 0
+      ? s.attention_diagnostic_message_summary
+      : s.diagnostic_message_summary;
+  if (diagnosticFocus.groups.length > 0) {
+    console.log(`diag fix  ${formatDiagnosticFocusLine(diagnosticFocus)}`);
   }
   for (const line of formatNextActionLines(s.next_actions)) {
     console.log(line);
@@ -451,6 +479,24 @@ function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups
     .map((group) => `${group.count} ${group.severity} ${group.code}`)
     .join(" | ");
+}
+
+function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
+  const maxGroups = 2;
+  const groups = summary.groups.slice(0, maxGroups);
+  const lines = groups.map((group) =>
+    `${group.count} ${group.severity} ${group.code}: ` +
+      truncateStatusMessage(group.message)
+  );
+  const remaining = summary.group_count - groups.length;
+  if (remaining > 0) lines.push(`+${remaining} more`);
+  return lines.join(" | ");
+}
+
+function truncateStatusMessage(message: string): string {
+  const maxLength = 80;
+  if (message.length <= maxLength) return message;
+  return `${message.slice(0, maxLength - 3)}...`;
 }
 
 function formatNextActionLines(
