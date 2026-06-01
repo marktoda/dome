@@ -902,10 +902,89 @@ async function writeLocalExternalHandlerBundle(target: string): Promise<void> {
 // `dome inspect <subject>` is the v1.0 read surface for the operational
 // substrate (renamed from the pre-recut `dome doctor --show <subject>`
 // shape per [[wiki/specs/cli]] §"dome inspect"). Subject is positional,
-// not a flag; v1.0 ships four subjects (runs, diagnostics, questions,
-// outbox), each backed by an existing query function.
+// not a flag; each subject is backed by an existing runtime/query surface.
 
 describe("runInspect", () => {
+  test("subjects 'bundles' and 'processors' expose the loaded feature surface", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly processors: number;
+      readonly adoption: number;
+      readonly garden: number;
+      readonly view: number;
+      readonly command_views: number;
+      readonly model_processors: number;
+    }>;
+    const intakeBundle = bundles.find((row) => row.bundle === "dome.intake");
+    expect(intakeBundle).toEqual(
+      expect.objectContaining({
+        processors: 6,
+        adoption: 1,
+        garden: 5,
+        view: 0,
+        model_processors: 3,
+      }),
+    );
+    const dailyBundle = bundles.find((row) => row.bundle === "dome.daily");
+    expect(dailyBundle?.command_views).toBe(3);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly processor: string;
+      readonly bundle: string;
+      readonly phase: string;
+      readonly triggers: string;
+      readonly commands: string;
+      readonly capabilities: string;
+      readonly bundle_grants: string;
+      readonly execution: string;
+      readonly model: string;
+    }>;
+    const extract = processors.find(
+      (row) => row.processor === "dome.intake.extract-capture",
+    );
+    expect(extract).toEqual(
+      expect.objectContaining({
+        bundle: "dome.intake",
+        phase: "garden",
+        triggers: "signal",
+        execution: "llm",
+        model: "granted-no-provider",
+      }),
+    );
+    expect(extract?.capabilities).toContain("model.invoke");
+    expect(extract?.bundle_grants).toContain("model.invoke");
+
+    const query = processors.find(
+      (row) => row.processor === "dome.search.query",
+    );
+    expect(query).toEqual(
+      expect.objectContaining({
+        phase: "view",
+        triggers: "command",
+        commands: "query",
+        model: "none",
+      }),
+    );
+  });
+
   test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {
     const f = await makeFixture();
     fixtures.push(f);

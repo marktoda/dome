@@ -824,6 +824,9 @@ Work:
 - [x] Add omitted-row hints to bounded `dome export-context` related fact,
       diagnostic, and question sections, after real-vault handoff packets
       showed capped fact lists without saying more evidence remained.
+- [x] Add `dome inspect bundles` and `dome inspect processors`, so a vault can
+      explain its currently enabled extension suite, processor automations, and
+      model-capable LLM processors without reading SDK manifests by hand.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -139,7 +139,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Read operational substrate rows.")
     .argument(
       "<subject>",
-      "runs, diagnostics, questions, outbox, or quarantine.",
+      "bundles, processors, runs, diagnostics, questions, outbox, or quarantine.",
     )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
     .option("--summary", "Group diagnostics by severity and code.")

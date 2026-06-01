@@ -5,13 +5,15 @@
 // (so the operational databases are initialized) but does not submit a
 // Proposal, does not invoke any processor, and does not mutate state.
 //
-// v1.0 ships four subjects backed by existing query surfaces:
+// v1.0 ships subjects backed by existing runtime/query surfaces:
 //
 //   - `runs`        → `queryRuns(ledger, { limit })`
 //   - `diagnostics` → `queryDiagnostics(projection)`
 //   - `questions`   → `queryQuestionRecords(projection)`
 //   - `outbox`      → `queryOutbox(outbox)`
 //   - `quarantine`  → `executionState.quarantines()`
+//   - `bundles`     → loaded extension bundle summary
+//   - `processors`  → loaded processor/automation summary
 //
 // Exit codes:
 //   - 0 always on a clean read — including empty result sets.
@@ -19,10 +21,11 @@
 //   - 64 on usage error (unknown subject, missing positional).
 //
 // House-style notes:
-//   - `--limit N` caps the row or summary group count. Default 20.
-//     Applied at the SQL layer for `runs`; for the projection / outbox
-//     surfaces (which don't take a `limit` arg in the current query API)
-//     the cap is applied post-fetch via array slicing.
+//   - `--limit N` caps the row or summary group count. Operational row
+//     subjects default to 20; bounded metadata subjects (`bundles` and
+//     `processors`) default to the full loaded runtime set. The cap is
+//     applied at the SQL layer for `runs`; for the projection / outbox /
+//     metadata surfaces it is applied post-fetch via array slicing.
 //   - `diagnostics --summary` groups unresolved diagnostics by severity/code
 //     so noisy real vaults have a first-glance triage view.
 //   - `--json` emits structured rows.
@@ -34,6 +37,7 @@
 
 import { resolve } from "node:path";
 
+import type { Capability, Processor, Trigger } from "../../core/processor";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import { queryRuns } from "../../ledger/runs";
 import {
@@ -58,6 +62,8 @@ import { parsePositiveIntegerValue } from "../parse-options";
 
 const DEFAULT_LIMIT = 20;
 const VALID_SUBJECTS = new Set<string>([
+  "bundles",
+  "processors",
   "runs",
   "diagnostics",
   "questions",
@@ -98,20 +104,20 @@ export async function runInspect(
   const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome inspect: subject is required. Subjects: runs, diagnostics, questions, outbox, quarantine.",
+      "dome inspect: subject is required. Subjects: bundles, processors, runs, diagnostics, questions, outbox, quarantine.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome inspect: unknown subject '${subject}'. Available: runs, diagnostics, questions, outbox, quarantine.`,
+      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, diagnostics, questions, outbox, quarantine.`,
     );
     return 64;
   }
 
   const vaultPath = resolve(options.vault ?? process.cwd());
 
-  const limit = parseLimit(options.limit);
+  const limit = parseLimit(options.limit, defaultLimitForSubject(subject));
   if (limit === null) {
     console.error("dome inspect: --limit must be a positive integer.");
     return 64;
@@ -228,6 +234,55 @@ function collectRows(
   diagnosticOptions: ParsedDiagnosticOptions | null,
 ): ReadonlyArray<Row> {
   switch (subject) {
+    case "bundles": {
+      const processors = runtime.registry.all();
+      return runtime.extensions.slice(0, limit).map((extension) => {
+        const bundleProcessors = processors.filter(
+          (processor) => runtime.extensionIdFor(processor.id) === extension.name,
+        );
+        const phaseCounts = countProcessorPhases(bundleProcessors);
+        return {
+          bundle: extension.name,
+          version: extension.version,
+          processors: bundleProcessors.length,
+          adoption: phaseCounts.adoption,
+          garden: phaseCounts.garden,
+          view: phaseCounts.view,
+          scheduled: bundleProcessors.filter((processor) =>
+            processor.triggers.some((trigger) => trigger.kind === "schedule"),
+          ).length,
+          command_views: bundleProcessors.filter((processor) =>
+            processor.triggers.some((trigger) => trigger.kind === "command"),
+          ).length,
+          model_processors: bundleProcessors.filter(hasModelCapability).length,
+        };
+      });
+    }
+    case "processors": {
+      return runtime.registry.all().slice(0, limit).map((processor) => {
+        const grantedCapabilities = runtime.resolveGrants(processor.id);
+        return {
+          processor: processor.id,
+          bundle: runtime.extensionIdFor(processor.id),
+          version: processor.version,
+          phase: processor.phase,
+          triggers: formatTriggerKinds(processor.triggers),
+          commands: formatCommandTriggers(processor.triggers),
+          capabilities: formatCapabilityKinds(processor.capabilities),
+          bundle_grants: formatCapabilityKinds(grantedCapabilities),
+          execution: processor.execution?.class ?? "default",
+          model: formatModelStatus({
+            declared: processor.capabilities.some(
+              (capability) => capability.kind === "model.invoke",
+            ),
+            granted: grantedCapabilities.some(
+              (capability) => capability.kind === "model.invoke",
+            ),
+            providerConfigured: runtime.modelProvider !== undefined,
+          }),
+        };
+      });
+    }
     case "runs": {
       const runs = queryRuns(runtime.ledgerDb, { limit });
       return runs.map((r) => ({
@@ -386,6 +441,63 @@ function isDiagnosticSeverity(value: string): value is DiagnosticSeverity {
   return VALID_DIAGNOSTIC_SEVERITIES.has(value as DiagnosticSeverity);
 }
 
+function defaultLimitForSubject(subject: string): number {
+  if (subject === "bundles" || subject === "processors") {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return DEFAULT_LIMIT;
+}
+
+function countProcessorPhases(
+  processors: ReadonlyArray<Processor<unknown>>,
+): { readonly adoption: number; readonly garden: number; readonly view: number } {
+  let adoption = 0;
+  let garden = 0;
+  let view = 0;
+  for (const processor of processors) {
+    if (processor.phase === "adoption") adoption += 1;
+    if (processor.phase === "garden") garden += 1;
+    if (processor.phase === "view") view += 1;
+  }
+  return { adoption, garden, view };
+}
+
+function hasModelCapability(processor: Processor<unknown>): boolean {
+  return processor.capabilities.some(
+    (capability) => capability.kind === "model.invoke",
+  );
+}
+
+function formatTriggerKinds(triggers: ReadonlyArray<Trigger>): string {
+  return formatUnique(triggers.map((trigger) => trigger.kind));
+}
+
+function formatCommandTriggers(triggers: ReadonlyArray<Trigger>): string {
+  const commands = triggers.flatMap((trigger) =>
+    trigger.kind === "command" ? [trigger.name] : [],
+  );
+  return commands.length === 0 ? "-" : formatUnique(commands);
+}
+
+function formatCapabilityKinds(capabilities: ReadonlyArray<Capability>): string {
+  return formatUnique(capabilities.map((capability) => capability.kind));
+}
+
+function formatModelStatus(opts: {
+  readonly declared: boolean;
+  readonly granted: boolean;
+  readonly providerConfigured: boolean;
+}): string {
+  if (!opts.declared) return "none";
+  if (!opts.granted) return "declared-ungranted";
+  if (!opts.providerConfigured) return "granted-no-provider";
+  return "ready";
+}
+
+function formatUnique(values: ReadonlyArray<string>): string {
+  return [...new Set(values)].sort().join(",");
+}
+
 /**
  * Parse the `--limit` flag. Returns the default when absent, the parsed
  * integer when valid, or `null` on a malformed value (caller treats as
@@ -393,6 +505,7 @@ function isDiagnosticSeverity(value: string): value is DiagnosticSeverity {
  */
 function parseLimit(
   raw: string | number | boolean | undefined,
+  fallback: number,
 ): number | null {
-  return parsePositiveIntegerValue(raw, DEFAULT_LIMIT);
+  return parsePositiveIntegerValue(raw, fallback);
 }

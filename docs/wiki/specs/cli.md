@@ -45,7 +45,8 @@ dome rebuild                    Wipe and rebuild projection store from adopted c
 dome inspect <subject> [--limit <n>] [--json]
              [--summary] [--severity <level>] [--code <code>] [--processor <id>]
                                 Read-only view over the operational substrate.
-                                Subjects: runs, diagnostics, questions, outbox, quarantine.
+                                Subjects: bundles, processors, runs,
+                                diagnostics, questions, outbox, quarantine.
 dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
                                 Advanced engine-substrate health checks;
                                 --repair is reserved for answer-mediated mitigations.
@@ -601,6 +602,12 @@ Proposal, does not invoke any processor, and does not mutate state.
 
 Subjects (v1.0):
 
+- `bundles` — loaded extension bundle summary: version, processor counts by
+  phase, command-view count, schedule count, and model-capable processor count.
+- `processors` — loaded processor/automation summary: bundle, phase, triggers,
+  command names, declared capability kinds, bundle grant kinds, execution class,
+  and model status (`none`, `declared-ungranted`, `granted-no-provider`, or
+  `ready`).
 - `runs` — recent processor runs from `runs.db`.
 - `diagnostics` — current unresolved diagnostics from
   `projection.db.diagnostics`, including compact SourceRef locations so Claude
@@ -611,8 +618,10 @@ Subjects (v1.0):
 - `quarantine` — quarantined processor triggers from processor execution state,
   including the `quarantine_id` generation token used for safe reset.
 
-`--limit <n>` caps the row count (default 20). `--json` emits structured
-rows for cross-tool consumption.
+`--limit <n>` caps the row count. Operational row subjects default to 20;
+`bundles` and `processors` default to the full loaded runtime set because they
+are bounded by enabled extension metadata rather than unbounded operational
+history. `--json` emits structured rows for cross-tool consumption.
 
 For noisy real vaults, `dome inspect diagnostics` also accepts
 `--summary`, `--severity <info|warning|error|block>`, `--code <code>`, and
@@ -621,6 +630,9 @@ severity/code and includes the first message and SourceRef example for each
 group; `--limit` caps groups in summary mode. The filter flags apply to both
 row and summary output. They are diagnostic-only flags so `dome inspect runs
 --summary` is a usage error rather than a silently ignored option.
+`dome inspect processors --json` is the authoritative CLI answer for whether
+the currently enabled vault automation has LLM/model-capable processors: filter
+for rows whose `model` field is not `none`.
 
 Exit codes: 0 on a clean read (including empty result sets); 1 on
 runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed
