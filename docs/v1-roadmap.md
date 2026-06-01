@@ -818,6 +818,9 @@ Work:
 - [x] Compress repeated related fact predicates and diagnostic codes in
       `dome query` text output, after real-vault recall showed pages with many
       open-task or wikilink facts repeating the same label instead of a count.
+- [x] Make bounded attention-mode `dome check` text summaries say how many
+      attention diagnostics are actually rendered out of the filtered total,
+      after real-vault soak showed `showing 30 attention` above an 8-row list.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

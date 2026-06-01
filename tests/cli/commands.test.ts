@@ -1876,7 +1876,11 @@ describe("runCheck", () => {
         limit: 2,
       }),
     ).toBe(0);
-    expect(captured.out.join("\n")).toContain(
+    const text = captured.out.join("\n");
+    expect(text).toContain(
+      "content   3 diagnostic(s) | 3 attention | showing 2 of 3 attention",
+    );
+    expect(text).toContain(
       "... 1 more diagnostics (use --limit 3 to show all)",
     );
 

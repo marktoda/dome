@@ -361,9 +361,19 @@ function formatContent(report: CheckContentReport | null): string {
       : ` | ${report.attention_diagnostics} attention`;
   const filter =
     report.filter.attention
-      ? ` | showing ${report.filtered_diagnostics} attention`
+      ? formatAttentionFilter(report)
       : "";
   return `${report.diagnostics} diagnostic(s)${attention}${filter}`;
+}
+
+function formatAttentionFilter(report: CheckContentReport): string {
+  if (report.filtered_diagnostics === 0) {
+    return " | 0 attention shown";
+  }
+  if (report.items.length >= report.filtered_diagnostics) {
+    return ` | showing ${report.filtered_diagnostics} attention`;
+  }
+  return ` | showing ${report.items.length} of ${report.filtered_diagnostics} attention`;
 }
 
 function formatDecisions(report: CheckDecisionReport | null): string {

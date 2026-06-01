@@ -326,9 +326,11 @@ Default scope includes:
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
 or more scopes. `--attention` narrows content diagnostic rows and grouping to
 warning/error/block diagnostics while preserving the total diagnostic and
-attention-diagnostic counts. `--limit` bounds rows per section; text mode
-prints an omitted-row hint such as `... 22 more diagnostics (use --limit 34 to
-show all)` whenever a bounded section is truncated. `--json` emits the
+attention-diagnostic counts. `--limit` bounds rows per section; when attention
+rows are bounded, text mode renders `showing <n> of <total> attention` in the
+content summary and prints an omitted-row hint such as
+`... 22 more diagnostics (use --limit 34 to show all)` whenever a bounded
+section is truncated. `--json` emits the
 structured `dome.check/v1` payload. Diagnostic and decision items include
 both `source_refs` (a compact file/line display string for the repair loop) and
 `sourceRefs` (structured SourceRef objects for agents and other callers,
