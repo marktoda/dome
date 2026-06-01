@@ -1,10 +1,10 @@
 ---
 type: spec
-created: 2026-05-27T00:00:00.000Z
-updated: 2026-05-28T00:00:00.000Z
+created: 2026-05-27
+updated: 2026-05-28
 sources:
-  - '[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]'
-  - '[[v1]]'
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+  - "[[v1]]"
 ---
 
 # Page schema
