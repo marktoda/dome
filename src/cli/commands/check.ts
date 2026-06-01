@@ -323,8 +323,8 @@ function printReport(report: CheckReport, json: boolean): void {
   console.log(`content   ${formatContent(report.content)}`);
   console.log(`decisions ${formatDecisions(report.decisions)}`);
   printFindings(report.engine?.findings ?? []);
-  printDiagnostics(report.content?.items ?? []);
-  printQuestions(report.decisions?.items ?? []);
+  printDiagnostics(report.content);
+  printQuestions(report.decisions);
   printNextActions(report.next_actions);
 }
 
@@ -364,7 +364,8 @@ function printFindings(findings: ReadonlyArray<HealthFinding>): void {
   }
 }
 
-function printDiagnostics(items: ReadonlyArray<CheckDiagnosticItem>): void {
+function printDiagnostics(report: CheckContentReport | null): void {
+  const items = report?.items ?? [];
   if (items.length === 0) return;
   console.log("");
   console.log("Content");
@@ -372,9 +373,15 @@ function printDiagnostics(items: ReadonlyArray<CheckDiagnosticItem>): void {
     console.log(`  - [${item.severity}] ${item.code}: ${item.message}`);
     console.log(`    ${item.source_refs}`);
   }
+  appendMoreLine(
+    report?.filtered_diagnostics ?? 0,
+    items.length,
+    "diagnostics",
+  );
 }
 
-function printQuestions(items: ReadonlyArray<CheckQuestionItem>): void {
+function printQuestions(report: CheckDecisionReport | null): void {
+  const items = report?.items ?? [];
   if (items.length === 0) return;
   console.log("");
   console.log("Decisions");
@@ -384,6 +391,15 @@ function printQuestions(items: ReadonlyArray<CheckQuestionItem>): void {
     console.log(`    ${item.source_refs}`);
     console.log(`    resolve: ${item.resolveCommand}`);
   }
+  appendMoreLine(report?.questions ?? 0, items.length, "questions");
+}
+
+function appendMoreLine(total: number, shown: number, label: string): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  console.log(
+    `  ... ${remaining} more ${label} (use --limit ${total} to show all)`,
+  );
 }
 
 function printNextActions(actions: ReadonlyArray<CliNextAction>): void {

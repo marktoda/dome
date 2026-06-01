@@ -1652,6 +1652,77 @@ describe("runCheck", () => {
     ]);
   });
 
+  test("text output reports omitted bounded rows", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      for (let i = 1; i <= 3; i += 1) {
+        const ref = sourceRef({
+          commit: adoptedCommit,
+          path: `wiki/seed-${i}.md`,
+        });
+        insertDiagnostic(projection.value.db, {
+          effect: diagnosticEffect({
+            severity: "warning",
+            code: `check.warning.${i}`,
+            message: `warning diagnostic ${i}`,
+            sourceRefs: [ref],
+          }),
+          processorId: "test.check",
+          proposalId: null,
+          adoptedCommit,
+        });
+        insertQuestion(projection.value.db, {
+          effect: questionEffect({
+            question: `Resolve ${i}?`,
+            options: ["yes", "no"],
+            sourceRefs: [ref],
+            idempotencyKey: `check-question-${i}`,
+          }),
+          processorId: "test.check",
+          adoptedCommit,
+        });
+      }
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+        limit: 2,
+      }),
+    ).toBe(0);
+    expect(captured.out.join("\n")).toContain(
+      "... 1 more diagnostics (use --limit 3 to show all)",
+    );
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        decisions: true,
+        limit: 2,
+      }),
+    ).toBe(0);
+    expect(captured.out.join("\n")).toContain(
+      "... 1 more questions (use --limit 3 to show all)",
+    );
+  });
+
   test("scope flags select one check surface", async () => {
     const f = await makeFixture();
     fixtures.push(f);

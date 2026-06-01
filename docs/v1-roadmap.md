@@ -770,6 +770,9 @@ Work:
 - [x] Carry per-decision `resolveCommand` hints through `dome check` JSON and
       text rows, so multiple open decisions remain directly actionable instead
       of only the first question's next action.
+- [x] Make bounded text `dome check` sections print omitted-row hints, so a
+      recovery loop that uses `--limit` can tell whether more diagnostics or
+      decisions remain without switching to JSON.
 - [x] Make successful text `dome sync` output print durable attention and
       next-action lines, so a human does not see only "already in sync" while
       diagnostics or questions still need follow-up.
