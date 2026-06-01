@@ -978,6 +978,10 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Render null-command next actions as `manual: <description>` in text
       output, while preserving `command: null` in JSON, so the soak recovery
       loop does not show awkward `(manual) - ...` command lines.
+- [x] Add an attention-only diagnostic summary to `dome status` and use it for
+      the text `diag top` line when warning/error/block diagnostics exist, so
+      informational diagnostic volume does not compete with the immediate
+      repair target during soak.
 
 ## V1 Exit Criteria
 

@@ -45,6 +45,9 @@
 //                       diagnostics remain visible but do not route attention.
 //   - diagnostic_summary:
 //                       bounded severity/code grouping for quick triage.
+//   - attention_diagnostic_summary:
+//                       same grouping limited to warning/error/block rows;
+//                       text mode uses this when actionable diagnostics exist.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
 //   - outbox_failed:    count of terminally-failed external-action rows.
@@ -85,6 +88,7 @@ import { resolveBundleRoots } from "./sync-shared";
 
 import {
   countAttentionDiagnostics,
+  isAttentionDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
   summarizeDiagnosticEffects,
   type DiagnosticSummary,
@@ -162,6 +166,7 @@ type StatusSnapshot = {
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
   readonly diagnostic_summary: DiagnosticSummary;
+  readonly attention_diagnostic_summary: DiagnosticSummary;
   readonly questions: number;
   readonly outbox_pending: number;
   readonly outbox_failed: number;
@@ -257,10 +262,16 @@ export async function runStatus(
             capabilityPolicyHash: runtime.capabilityPolicyHash,
           });
     const diagnosticRows = queryDiagnostics(runtime.projectionDb);
+    const attentionDiagnosticRows = diagnosticRows.filter(isAttentionDiagnostic);
     const diagnostics = diagnosticRows.length;
     const attentionDiagnostics = countAttentionDiagnostics(diagnosticRows);
     const diagnostic_summary = summarizeDiagnosticEffects(
       diagnosticRows,
+      STATUS_DIAGNOSTIC_GROUP_LIMIT,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    );
+    const attention_diagnostic_summary = summarizeDiagnosticEffects(
+      attentionDiagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
@@ -325,6 +336,7 @@ export async function runStatus(
       diagnostics,
       attention_diagnostics: attentionDiagnostics,
       diagnostic_summary,
+      attention_diagnostic_summary,
       questions,
       outbox_pending,
       outbox_failed,
@@ -372,8 +384,12 @@ function printStatusText(s: StatusSnapshot): void {
   console.log(
     `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
-  if (s.diagnostic_summary.groups.length > 0) {
-    console.log(`diag top  ${formatDiagnosticTopLine(s.diagnostic_summary)}`);
+  const diagnosticTop =
+    s.attention_diagnostics > 0
+      ? s.attention_diagnostic_summary
+      : s.diagnostic_summary;
+  if (diagnosticTop.groups.length > 0) {
+    console.log(`diag top  ${formatDiagnosticTopLine(diagnosticTop)}`);
   }
   for (const line of formatNextActionLines(s.next_actions)) {
     console.log(line);

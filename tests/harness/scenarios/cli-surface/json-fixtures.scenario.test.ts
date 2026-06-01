@@ -41,6 +41,7 @@ const STATUS_KEYS = Object.freeze([
   "diagnostics",
   "attention_diagnostics",
   "diagnostic_summary",
+  "attention_diagnostic_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",

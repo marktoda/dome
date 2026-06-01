@@ -109,6 +109,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "diagnostics",
   "attention_diagnostics",
   "diagnostic_summary",
+  "attention_diagnostic_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",
@@ -2187,6 +2188,12 @@ describe("runStatus", () => {
       shown_groups: 0,
       groups: [],
     });
+    expect(parsed["attention_diagnostic_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
@@ -2313,6 +2320,12 @@ describe("runStatus", () => {
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["diagnostics"]).toBe(1);
     expect(parsed["attention_diagnostics"]).toBe(0);
+    expect(record(parsed["attention_diagnostic_summary"])).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      groups: [],
+    });
     expect(parsed["attention"]).toContain("sync_needed");
     expect(parsed["attention"]).not.toContain("diagnostics");
     expect(parsed["next_actions"]).toEqual([
@@ -2323,6 +2336,64 @@ describe("runStatus", () => {
           "Run one compiler tick to adopt pending commits or drain due operational work.",
       },
     ]);
+  });
+
+  test("text mode diagnostic top line focuses on actionable diagnostics", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    captured.out = [];
+    const head = await currentSha(f.vaultPath);
+    expect(head).not.toBeNull();
+    if (head === null) return;
+    const adoptedCommit = commitOid(head);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "status.info",
+          message: "informational diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "status.warning",
+          message: "actionable diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    const text = captured.out.join("\n");
+    const topLine = text.split("\n").find((line) => line.startsWith("diag top"));
+    expect(topLine).toBeDefined();
+    expect(topLine).toContain("1 warning status.warning");
+    expect(topLine).not.toContain("status.info");
   });
 
   test("--json mode routes diagnostics-only attention to bounded content check", async () => {
@@ -2384,6 +2455,8 @@ describe("runStatus", () => {
     const groups = summary["groups"] as ReadonlyArray<Record<string, unknown>>;
     const group = groups.find((item) => item["code"] === "status.warning");
     expect(group?.["first_source_refs"]).toContain("wiki/seed.md:3");
+    const attentionSummary = record(parsed["attention_diagnostic_summary"]);
+    expect(attentionSummary).toEqual(summary);
     const firstSourceRefs =
       group?.["firstSourceRefs"] as ReadonlyArray<Record<string, unknown>>;
     expect(firstSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
