@@ -69,7 +69,7 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       status: "optional",
     }),
     pageTypeDeclaration("source", "dome.default", {
-      url: "required",
+      url: "optional",
       author: "optional",
       external: "optional",
       published: "optional",

@@ -1,10 +1,11 @@
 // dome.markdown.lint-frontmatter — Phase 13a adoption-phase processor.
 //
-// Validates the minimal core schema of YAML frontmatter on every changed
-// markdown file: presence of a frontmatter block, presence of a `type:`
-// key, well-formed `created:` / `updated:` dates, well-formed `tags:`,
-// and parseable YAML. Diagnostic-only (no PatchEffect) — failures surface
-// as warnings; the fixed-point adoption loop converges in one iteration.
+// Validates YAML frontmatter on changed managed markdown pages. `wiki/` pages
+// must carry frontmatter and `type:`; user-owned capture/note roots may omit
+// frontmatter, but any frontmatter they do include is still checked for
+// parseability and well-formed structured fields. Diagnostic-only (no
+// PatchEffect) — failures surface as warnings; the fixed-point adoption loop
+// converges in one iteration.
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same content → same diagnostic set (every check is a
@@ -55,6 +56,10 @@ import {
   type PageTypeRegistry,
   type PageTypeSchema,
 } from "../../../../src/page-types";
+import {
+  frontmatterLintModeForPath,
+  type FrontmatterLintMode,
+} from "./path-policy";
 
 // ----- Diagnostic codes -----------------------------------------------------
 //
@@ -77,7 +82,7 @@ const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 const lintFrontmatter: Processor = defineProcessor({
   id: "dome.markdown.lint-frontmatter",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -91,9 +96,11 @@ const lintFrontmatter: Processor = defineProcessor({
       diagnostics.push(diagnosticForFinding(ctx, PAGE_TYPES_PATH, pageTypes.finding));
     }
 
-    // `file.created` fires for every added path; the only file shape that
-    // carries YAML frontmatter is markdown bodies.
-    const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+    // `file.created` fires for every added path; only managed markdown roots
+    // participate in frontmatter linting.
+    const changedMarkdown = ctx.changedPaths.filter(
+      (path) => frontmatterLintModeForPath(path) !== "ignored",
+    );
 
     for (const path of changedMarkdown) {
       const content = await ctx.snapshot.readFile(path);
@@ -101,7 +108,11 @@ const lintFrontmatter: Processor = defineProcessor({
       // to lint.
       if (content === null) continue;
 
-      const findings = lintContent(content, pageTypes.registry);
+      const findings = lintContent(
+        content,
+        pageTypes.registry,
+        frontmatterLintModeForPath(path),
+      );
       for (const f of findings) {
         diagnostics.push(diagnosticForFinding(ctx, path, f));
       }
@@ -157,8 +168,10 @@ function hasFrontmatterDelimiter(content: string): boolean {
 function lintContent(
   content: string,
   pageTypes: PageTypeRegistry,
+  mode: FrontmatterLintMode,
 ): ReadonlyArray<Finding> {
   if (!hasFrontmatterDelimiter(content)) {
+    if (mode === "optional") return [];
     return [
       {
         code: CODE_MISSING_FRONTMATTER,
@@ -184,9 +197,10 @@ function lintContent(
   }
 
   // `isEmpty: true` → `---\n---` with no content between delimiters.
-  // Treat as missing-frontmatter (the user opened a block but never
-  // populated it).
+  // Required pages report this as missing-frontmatter; optional-frontmatter
+  // roots treat it as equivalent to no metadata.
   if (matterFileIsEmpty(parsed) || Object.keys(parsed.data).length === 0) {
+    if (mode === "optional") return [];
     return [
       {
         code: CODE_MISSING_FRONTMATTER,
@@ -206,10 +220,12 @@ function lintContent(
     typeValue === null ||
     (typeof typeValue === "string" && typeValue.trim().length === 0)
   ) {
-    findings.push({
-      code: CODE_MISSING_TYPE,
-      message: "Frontmatter is missing the required `type:` key.",
-    });
+    if (mode === "required") {
+      findings.push({
+        code: CODE_MISSING_TYPE,
+        message: "Frontmatter is missing the required `type:` key.",
+      });
+    }
   } else if (typeof typeValue !== "string") {
     findings.push({
       code: CODE_MISSING_TYPE,

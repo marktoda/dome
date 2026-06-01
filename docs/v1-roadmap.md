@@ -837,6 +837,9 @@ Fold these into nearby milestone work when they are on-path:
       limits questions to high-confidence canonical content duplicates so
       template/raw/generated files and structural interview skeletons do not
       flood `dome resolve`.
+- [x] Frontmatter diagnostic precision: `dome.markdown.lint-frontmatter` now
+      requires page metadata only for managed `wiki/` pages while treating
+      user-owned `notes/`, `raw/`, and `inbox/` frontmatter as optional.
 
 ## V1 Exit Criteria
 

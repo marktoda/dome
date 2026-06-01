@@ -75,11 +75,11 @@ A page's *type* (singular) is the directory name in `wiki/` mapped through the `
 - `dome.markdown.raw-immutable` emits a blocking diagnostic if any Proposal modifies or deletes an existing `raw/` file.
 - `dome.intake`'s capture compilation writes *new* `wiki/` pages citing the raw; it never modifies the raw.
 
-Raw files carry a `type:` frontmatter naming the capture source (e.g., `type: voice-capture`, `type: research-clip`). Subdirectory structure is convention, not contract — `raw/voice/`, `raw/meetings/`, `raw/clips/` are common but not required.
+Raw files may carry `type:` frontmatter naming the capture source (e.g., `type: voice-capture`, `type: research-clip`), but frontmatter is optional in v1 because raw material is user-owned and immutable after adoption. Subdirectory structure is convention, not contract — `raw/voice/`, `raw/meetings/`, `raw/clips/` are common but not required.
 
 ## `notes/` — user-authored content
 
-`notes/` is user-owned. Dome **reads** notes; Dome does **not write** to notes. The asymmetry is by design — `notes/` is where the user keeps personal markdown that doesn't fit the wiki ontology. Lab books, personal journals, project memos.
+`notes/` is user-owned. Dome **reads** notes; Dome does **not write** to notes. The asymmetry is by design — `notes/` is where the user keeps personal markdown that doesn't fit the wiki ontology. Lab books, personal journals, project memos. Frontmatter is optional; when present, Dome validates parseable structured fields but does not require `type:`.
 
 `notes/` files do NOT emit `document.changed.notes.*` signals (the engine doesn't react to them). They emit only `vault.out-of-band-edit` for the watcher's drift-detection. The asymmetric ownership keeps the wiki / notes boundary clean.
 

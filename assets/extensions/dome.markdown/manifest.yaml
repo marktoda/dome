@@ -30,7 +30,7 @@ processors:
     module: processors/normalize-frontmatter.ts
 
   - id: dome.markdown.lint-frontmatter
-    version: 0.1.1
+    version: 0.1.2
     phase: adoption
     triggers:
       - kind: signal

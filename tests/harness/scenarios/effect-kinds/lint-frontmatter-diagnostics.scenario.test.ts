@@ -72,3 +72,63 @@ scenario(
       .toAllHaveStatus("succeeded");
   },
 );
+
+scenario(
+  {
+    name: "effect-kinds: lint-frontmatter respects managed and user-owned markdown roots",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/no-frontmatter.md": "# Managed page\n",
+        "wiki/sources/internal-scan.md":
+          "---\n" +
+          "type: source\n" +
+          "---\n" +
+          "# Internal scan\n\n" +
+          "This source is internal and has no URL.\n",
+        "notes/legacy-note.md": "# Legacy note\n",
+        "raw/legacy-source.md": "# Legacy raw source\n",
+        "inbox/raw/capture.md": "# Unstructured capture\n",
+        "templates/Meeting.md": "# Template\n",
+        "slides/workshop.md": "# Workshop\n",
+        "notes/bad-tags.md":
+          "---\n" +
+          "tags: management\n" +
+          "---\n" +
+          "# Optional frontmatter with malformed tags\n",
+      },
+      message: "add mixed markdown roots",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-frontmatter" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.tags-not-list" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-type" })
+      .toHaveCount(0);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-required-field" })
+      .toHaveCount(0);
+  },
+);

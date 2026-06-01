@@ -9,33 +9,33 @@ sources:
 
 # Page schema
 
-This spec is normative for the frontmatter contract Dome enforces on markdown pages. Each page type carries required and optional frontmatter fields; the `dome.markdown` adoption-phase processor validates them on every Proposal.
+This spec is normative for the frontmatter contract Dome enforces on managed markdown pages. Each page type carries required and optional frontmatter fields; the `dome.markdown` adoption-phase processor validates them on every Proposal.
 
 ## Universal frontmatter
 
-Every markdown page in a Dome vault carries:
+The preferred managed `wiki/` page shape is:
 
 ```yaml
 ---
 type: <singular page-type name>   # required; matches the directory under wiki/
-created: <ISO-8601 date>          # required; the page's creation timestamp
-updated: <ISO-8601 date>          # required; updated on every committed change
+created: <ISO-8601 date>          # recommended; the page's creation timestamp
+updated: <ISO-8601 date>          # recommended; updated on every committed change
 sources: [<wikilink>, ...]        # optional; explicit provenance citations
 tags: [<tag>, ...]                # optional; indexed by dome.graph.tag-index
 ---
 ```
 
-The four universal fields are required by `dome.markdown.frontmatter-required` — a missing field produces a blocking diagnostic at adoption time.
+For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates, and `dome.markdown.stale-dates` warns when `updated:` drifts from git history. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
 
 ### Type field
 
 `type:` is the **singular** form of the page's directory. A page at `wiki/entities/danny.md` carries `type: entity`. The plural directory name and the singular type are reconciled via the `pluralOf` / `singularOf` helpers in `src/page-type.ts`.
 
-For pages outside `wiki/` (raw captures, daily notes that live in `wiki/dailies/`, etc.):
-- `raw/voice/<id>.md` → `type: voice-capture` (the raw bucket convention).
+For non-default page shapes:
+- `raw/voice/<id>.md` may use `type: voice-capture` when raw frontmatter is present.
 - `wiki/dailies/2026-05-27.md` → `type: daily` (an **extension-contributed type** from the `dome.daily` bundle, not one of the four defaults — see §"Extension types (from bundles)" below).
 
-Type validation against the declared page types is the `dome.markdown.type-known` diagnostic — adoption blocks on an unknown type.
+Type validation against the declared page types is the `dome.markdown.type-unknown` warning diagnostic when known-type enforcement is active.
 
 ### Created / updated
 
@@ -90,13 +90,13 @@ type: source
 created: 2026-05-15
 updated: 2026-05-15
 sources: []
-url: "https://..."             # required for source pages
+url: "https://..."             # optional but recommended for external sources
 author: "Andrej Karpathy"      # optional
 published: 2025-11-01          # optional
 ---
 ```
 
-Sources are external citations Dome considers durable references — papers, articles, books, gists.
+Sources are durable references — papers, articles, books, gists, Slack scans, meeting captures, and other internal evidence. `url:` is recommended for external sources but optional because many management-workflow sources are internal or imported from tools without stable URLs.
 
 ### Synthesis (`wiki/syntheses/`)
 
@@ -133,7 +133,7 @@ extensions:
       prev: optional          # backlink to previous daily
 ```
 
-The `dome.markdown` processor validates `frontmatter_extras` per type — a `daily` page without `recurrence:` produces a blocking diagnostic.
+The `dome.markdown` processor validates `frontmatter_extras` per type — a `daily` page without `recurrence:` produces a warning diagnostic.
 
 ## Vault-local extension types
 
@@ -155,7 +155,7 @@ Vault-local page types are read through `ctx.snapshot.readFile(".dome/page-types
 
 Parsed via `gray-matter` at the boundary. The result is a `Record<string, unknown>` on the `Document` value; processors that need specific fields read them through the Document's accessors.
 
-Boundary validation per [[wiki/gotchas/boundary-validation-via-zod]]: the frontmatter Record gets Zod-validated against the page type's declared schema at adoption time. Validation errors become DiagnosticEffect (severity `block` for missing required fields; severity `warning` for unknown extra fields).
+Boundary validation per [[wiki/gotchas/boundary-validation-via-zod]]: the frontmatter record is validated against the page type's declared schema at adoption time. Validation errors become DiagnosticEffect warnings in v1.
 
 ## Why this design
 
