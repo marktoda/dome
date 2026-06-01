@@ -49,8 +49,8 @@ scenario(
           "",
           "# Launch",
           "",
-          "TODO: Draft launch staffing note",
-          "Follow up: Ask Ben about hiring budget",
+          "TODO: Draft launch staffing note 📅 2026-01-06",
+          "Follow up: Ask Ben about hiring budget 🔺",
           "We should follow up with Cy about review timing",
           "",
         ].join("\n"),
@@ -78,13 +78,13 @@ scenario(
       "Backlog scope: 2 open tasks, 1 followups, 1 questions",
     );
     expect(text.stdout).toContain(
-      "[followup] Ask Ben about hiring budget (wiki/captures/launch.md:9)",
+      "[followup] Ask Ben about hiring budget 🔺 (wiki/captures/launch.md:9)",
     );
     expect(text.stdout).toContain(
       "- 2 followups already listed in Start Here",
     );
     expect(text.stdout).toContain(
-      "- 1 open task already listed in Start Here",
+      "- 2 open tasks already listed in Start Here",
     );
     expect(text.stdout).toContain(
       "- 1 question already listed in Start Here",
@@ -148,6 +148,8 @@ scenario(
         readonly kind: string;
         readonly text: string;
         readonly path: string;
+        readonly dueDate: string | null;
+        readonly priority: string | null;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly markdown: string;
@@ -188,7 +190,15 @@ scenario(
     ]);
     expect(payload.planningItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
-      "Ask Ben about hiring budget",
+      "Ask Ben about hiring budget 🔺",
+    ]);
+    expect(payload.planningItems.map((item) => item.dueDate)).toEqual([
+      null,
+      null,
+    ]);
+    expect(payload.planningItems.map((item) => item.priority)).toEqual([
+      null,
+      "highest",
     ]);
     expect(payload.planningItems[0]?.sourceRefs[0]?.path).toBe(
       payload.planningItems[0]?.path,

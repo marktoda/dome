@@ -22,6 +22,7 @@ import {
   type DailyActionState,
   type DailyQuestionItem,
   type DailyTaskItem,
+  type DailyTaskPriority,
 } from "./action-state";
 
 const SCHEMA = "dome.daily.agenda-with/v1";
@@ -29,7 +30,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -120,6 +121,8 @@ type AgendaItem = {
   readonly questionId?: number;
   readonly options?: ReadonlyArray<string>;
   readonly resolveCommand?: string;
+  readonly dueDate: string | null;
+  readonly priority: DailyTaskPriority | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -175,6 +178,8 @@ function pushTaskItem(
     text: task.text,
     path: task.path,
     line: task.line,
+    dueDate: task.dueDate,
+    priority: task.priority,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
 }
@@ -196,6 +201,8 @@ function pushQuestionItem(
     questionId: question.id,
     options: Object.freeze([...question.options]),
     resolveCommand: question.resolveCommand,
+    dueDate: null,
+    priority: null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }

@@ -51,8 +51,8 @@ scenario(
           "",
           "# Capture",
           "",
-          "TODO: Draft project staffing note",
-          "Follow up: Ask Ben about hiring budget",
+          "TODO: Draft project staffing note 📅 2026-01-06",
+          "Follow up: Ask Ben about hiring budget 🔺",
           "We should follow up with Cy about review timing",
           "",
         ].join("\n"),
@@ -106,6 +106,8 @@ scenario(
         readonly line: number | null;
         readonly source: "daily" | "backlog";
         readonly followup: boolean;
+        readonly dueDate: string | null;
+        readonly priority: "highest" | "high" | "medium" | "low" | "lowest" | null;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly followups: ReadonlyArray<{
@@ -154,8 +156,20 @@ scenario(
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
       "Send Ada launch notes",
-      "Draft project staffing note",
-      "Ask Ben about hiring budget",
+      "Ask Ben about hiring budget 🔺",
+      "Draft project staffing note 📅 2026-01-06",
+    ]);
+    expect(payload.openTasks.map((task) => task.dueDate)).toEqual([
+      null,
+      null,
+      null,
+      "2026-01-06",
+    ]);
+    expect(payload.openTasks.map((task) => task.priority)).toEqual([
+      null,
+      null,
+      "highest",
+      null,
     ]);
     expect(payload.openTasks.map((task) => task.source)).toEqual([
       "daily",
@@ -170,7 +184,7 @@ scenario(
     ).toBe(true);
     expect(payload.followups.map((task) => task.text)).toEqual([
       "Send Ada launch notes",
-      "Ask Ben about hiring budget",
+      "Ask Ben about hiring budget 🔺",
     ]);
     expect(payload.followups.map((task) => task.source)).toEqual([
       "daily",
@@ -284,7 +298,7 @@ scenario(
     expect(text.stdout).toContain("Daily note");
     expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(
-      "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
+      "Ask Ben about hiring budget 🔺 (wiki/captures/2026-01-05.md:9)",
     );
     expect(text.stdout).toContain(
       `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
@@ -301,6 +315,8 @@ scenario(
     expect(limitedText.stdout).toContain("  ... 2 more open tasks");
     expect(limitedText.stdout).toContain("Ship weekly update");
     expect(limitedText.stdout).toContain("Send Ada launch notes");
-    expect(limitedText.stdout).not.toContain("Draft project staffing note");
+    expect(limitedText.stdout).not.toContain(
+      "Draft project staffing note 📅 2026-01-06",
+    );
   },
 );

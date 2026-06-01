@@ -23,7 +23,7 @@ const DEFAULT_LIMIT = 12;
 
 const today: Processor = defineProcessor({
   id: "dome.daily.today",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "view",
   triggers: [{ kind: "command", name: "today" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],

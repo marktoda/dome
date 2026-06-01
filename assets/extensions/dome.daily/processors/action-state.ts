@@ -57,8 +57,17 @@ export type DailyTaskItem = {
   readonly line: number | null;
   readonly source: DailyActionSource;
   readonly followup: boolean;
+  readonly dueDate: string | null;
+  readonly priority: DailyTaskPriority | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
+
+export type DailyTaskPriority =
+  | "highest"
+  | "high"
+  | "medium"
+  | "low"
+  | "lowest";
 
 export type DailyQuestionItem = {
   readonly id: number;
@@ -227,12 +236,16 @@ function taskItemFromFact(
 ): DailyTaskItem {
   const ref = fact.sourceRefs[0];
   const path = ref?.path ?? subjectPath(fact);
+  const text = literalToString(fact.object);
+  const metadata = taskMetadata(text);
   return Object.freeze({
-    text: literalToString(fact.object),
+    text,
     path,
     line: ref?.range?.startLine ?? null,
     source: sourceForPath(path, dailyPath),
     followup,
+    dueDate: metadata.dueDate,
+    priority: metadata.priority,
     sourceRefs: Object.freeze([...fact.sourceRefs]),
   });
 }
@@ -341,10 +354,16 @@ function compareTaskItems(a: DailyTaskItem, b: DailyTaskItem): number {
 function compareTaskItemsForDaily(
   dailyPath: string,
 ): (a: DailyTaskItem, b: DailyTaskItem) => number {
+  const date = dateFromDailyPath(dailyPath);
   return (a, b) => {
-    const priorityCmp = pathDailyPriority(a.path, dailyPath) -
+    const sourceCmp = pathDailyPriority(a.path, dailyPath) -
       pathDailyPriority(b.path, dailyPath);
-    return priorityCmp === 0 ? compareTaskItems(a, b) : priorityCmp;
+    if (sourceCmp !== 0) return sourceCmp;
+    if (a.path === dailyPath && b.path === dailyPath) {
+      return compareTaskItems(a, b);
+    }
+    const actionCmp = compareTaskActionPriority(a, b, date);
+    return actionCmp === 0 ? compareTaskItems(a, b) : actionCmp;
   };
 }
 
@@ -366,14 +385,92 @@ function compareQuestionItemsForDaily(
   dailyPath: string,
 ): (a: DailyQuestionItem, b: DailyQuestionItem) => number {
   return (a, b) => {
-    const priorityCmp = pathDailyPriority(a.path, dailyPath) -
+    const sourceCmp = pathDailyPriority(a.path, dailyPath) -
       pathDailyPriority(b.path, dailyPath);
-    return priorityCmp === 0 ? compareQuestionItems(a, b) : priorityCmp;
+    return sourceCmp === 0 ? compareQuestionItems(a, b) : sourceCmp;
   };
 }
 
 function pathDailyPriority(path: string, dailyPath: string): number {
   return path === dailyPath ? 0 : 1;
+}
+
+function compareTaskActionPriority(
+  a: DailyTaskItem,
+  b: DailyTaskItem,
+  date: string | null,
+): number {
+  const bucketCmp = taskActionBucket(a, date) - taskActionBucket(b, date);
+  if (bucketCmp !== 0) return bucketCmp;
+
+  const dueCmp = compareOptionalDate(a.dueDate, b.dueDate);
+  if (dueCmp !== 0) return dueCmp;
+
+  return taskPriorityRank(a.priority) - taskPriorityRank(b.priority);
+}
+
+function taskActionBucket(task: DailyTaskItem, date: string | null): number {
+  if (
+    task.dueDate !== null &&
+    (date === null || task.dueDate <= date)
+  ) {
+    return 0;
+  }
+  if (task.priority !== null) return 1;
+  if (task.dueDate !== null) return 2;
+  return 3;
+}
+
+function compareOptionalDate(a: string | null, b: string | null): number {
+  if (a !== null && b !== null) return a.localeCompare(b);
+  if (a !== null) return -1;
+  if (b !== null) return 1;
+  return 0;
+}
+
+function taskMetadata(text: string): {
+  readonly dueDate: string | null;
+  readonly priority: DailyTaskPriority | null;
+} {
+  return Object.freeze({
+    dueDate: taskDueDate(text),
+    priority: taskPriority(text),
+  });
+}
+
+function taskDueDate(text: string): string | null {
+  return /(?:^|\s)📅\s*(\d{4}-\d{2}-\d{2})(?=\s|$)/u.exec(text)?.[1] ??
+    null;
+}
+
+function taskPriority(text: string): DailyTaskPriority | null {
+  if (text.includes("🔺")) return "highest";
+  if (text.includes("⏫")) return "high";
+  if (text.includes("🔼")) return "medium";
+  if (text.includes("🔽")) return "low";
+  if (text.includes("⏬")) return "lowest";
+  return null;
+}
+
+function taskPriorityRank(priority: DailyTaskPriority | null): number {
+  switch (priority) {
+    case "highest":
+      return 0;
+    case "high":
+      return 1;
+    case "medium":
+      return 2;
+    case "low":
+      return 4;
+    case "lowest":
+      return 5;
+    case null:
+      return 3;
+  }
+}
+
+function dateFromDailyPath(path: string): string | null {
+  return /^wiki\/dailies\/(\d{4}-\d{2}-\d{2})\.md$/.exec(path)?.[1] ?? null;
 }
 
 function comparePathLineText(

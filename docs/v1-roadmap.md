@@ -1027,6 +1027,10 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Add explicit `omitted_groups` counts to diagnostic summary JSON for
       `dome status`, `dome check`, and diagnostic inspect summaries, matching
       the bounded-view contract used by daily and recall surfaces.
+- [x] Prioritize wider-backlog daily action rows by explicit due-date and
+      priority markers before path order, after real work-vault `today` output
+      showed dated or high-priority management tasks could be buried in a large
+      alphabetical backlog.
 
 ## V1 Exit Criteria
 

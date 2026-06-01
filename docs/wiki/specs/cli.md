@@ -632,19 +632,24 @@ while SourceRefs still point to the original markdown line.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
-Items from the target daily note sort before the wider wiki backlog, then
-path / line / text ordering keeps the remaining rows deterministic. Text mode
-renders the daily-note and backlog groups separately so a large management
-vault does not make today's own plan indistinguishable from long-running
-project/entity task debt.
+Items from the target daily note sort before the wider wiki backlog and
+preserve source line order. Wider-backlog task and followup rows then sort by
+explicit action metadata before path / line / text: due dates on or before the
+target day first, priority-only rows next, future-dated rows after that, and
+undated/unprioritized rows last. Priority markers use the Obsidian Tasks emoji
+order (`highest`, `high`, `medium`, `low`, `lowest`); due dates use
+`YYYY-MM-DD` values following the `📅` marker. Text mode renders the
+daily-note and backlog groups separately so a large management vault does not
+make today's own plan indistinguishable from long-running project/entity task
+debt.
 
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload, including
-`sourceCounts`, `shown`, `omitted`, plus per-item `source` fields. `shown` and
-`omitted` mirror the bounded arrays so agents do not need to infer truncation
-from array lengths. `--date` is for reviewing another day and for
-deterministic tests; omitted means local today.
+`sourceCounts`, `shown`, `omitted`, plus per-item `source`, `dueDate`, and
+`priority` fields. `shown` and `omitted` mirror the bounded arrays so agents do
+not need to infer truncation from array lengths. `--date` is for reviewing
+another day and for deterministic tests; omitted means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -667,7 +672,8 @@ Default text output is markdown:
 The shared daily action model is the same as `dome today`: each
 task/followup/question carries a `daily` or `backlog` source scope, items from
 the target daily note appear before wider wiki backlog within each bounded
-action section, and the "Start Here" buckets preserve their followup /
+action section, wider-backlog task/followup rows use the same due-date /
+priority ordering, and the "Start Here" buckets preserve their followup /
 question / task priority on top of that source ordering.
 
 Daily question rows in the markdown packet include the same durable row id and
@@ -677,9 +683,9 @@ acted on without a separate diagnostic command when the decision is clear.
 `--limit` bounds each rendered section, the prioritized start list, and the
 markdown packet's SourceRefs section. `--json` emits the structured
 `dome.daily.prep/v1` payload, including `shown` / `omitted` counts for the
-bounded start list and action sections, plus the markdown packet under
-`markdown`. `--date` is for prepping a chosen day and for deterministic tests;
-omitted means local today.
+bounded start list and action sections, task-derived `dueDate` / `priority`
+metadata, plus the markdown packet under `markdown`. `--date` is for prepping a
+chosen day and for deterministic tests; omitted means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -703,8 +709,9 @@ remain total counts from the source-backed daily action state; context counts
 are rendered context matches from adopted-state search. When the context search
 has more visible matches beyond the limit, text output prints an expansion hint
 and JSON sets `hasMore.context: true`. `--json` emits the structured
-`dome.daily.agenda-with/v1` payload, including the markdown packet under
-`markdown`. `--date` provides daily-note context; omitted means local today.
+`dome.daily.agenda-with/v1` payload, including task-derived `dueDate` /
+`priority` metadata and the markdown packet under `markdown`. `--date` provides
+daily-note context; omitted means local today.
 
 ### `dome rebuild`
 

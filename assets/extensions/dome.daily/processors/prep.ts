@@ -20,6 +20,7 @@ import {
   type DailyActionState,
   type DailyQuestionItem,
   type DailyTaskItem,
+  type DailyTaskPriority,
 } from "./action-state";
 
 const SCHEMA = "dome.daily.prep/v1";
@@ -27,7 +28,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -113,6 +114,8 @@ type PrepPlanningItem = {
   readonly questionId?: number;
   readonly options?: ReadonlyArray<string>;
   readonly resolveCommand?: string;
+  readonly dueDate: string | null;
+  readonly priority: DailyTaskPriority | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -156,6 +159,8 @@ function pushTaskItem(
     text: task.text,
     path: task.path,
     line: task.line,
+    dueDate: task.dueDate,
+    priority: task.priority,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
 }
@@ -176,6 +181,8 @@ function pushQuestionItem(
     questionId: question.id,
     options: Object.freeze([...question.options]),
     resolveCommand: question.resolveCommand,
+    dueDate: null,
+    priority: null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }
