@@ -821,6 +821,9 @@ Work:
 - [x] Make bounded attention-mode `dome check` text summaries say how many
       attention diagnostics are actually rendered out of the filtered total,
       after real-vault soak showed `showing 30 attention` above an 8-row list.
+- [x] Add omitted-row hints to bounded `dome export-context` related fact,
+      diagnostic, and question sections, after real-vault handoff packets
+      showed capped fact lists without saying more evidence remained.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

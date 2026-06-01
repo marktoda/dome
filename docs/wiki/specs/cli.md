@@ -449,9 +449,12 @@ portable markdown packet for another Claude session, review, or handoff.
 
 Default text output is the markdown packet itself. It includes matching paths,
 snippets, related facts, related diagnostics, related open questions with
-`dome resolve` hints, and SourceRefs. `--json` emits the structured
-`dome.search.export-context/v1` payload, including the packet under
-`markdown`.
+`dome resolve` hints, and SourceRefs. Per-match related fact, diagnostic, and
+question sections are bounded in the rendered packet and include omitted-row
+hints when more related rows remain; the structured JSON entries retain the
+full related row arrays for consumers that want all evidence. `--json` emits
+the structured `dome.search.export-context/v1` payload, including the packet
+under `markdown`.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 

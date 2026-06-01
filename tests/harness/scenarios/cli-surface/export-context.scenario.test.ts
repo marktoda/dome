@@ -33,6 +33,14 @@ scenario(
           "type: concept\n" +
           "tags:\n" +
           "  - strategy\n" +
+          "  - launch\n" +
+          "  - alpha\n" +
+          "  - ownership\n" +
+          "  - runtime\n" +
+          "  - platform\n" +
+          "  - staffing\n" +
+          "  - handoff\n" +
+          "  - planning\n" +
           "---\n" +
           "# Project Alpha\n\n" +
           "The alpha launch ownership model assigns platform runtime to Danny.\n" +
@@ -66,6 +74,7 @@ scenario(
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("dome.graph.tagged");
+    expect(text.stdout).toContain("more facts");
     expect(text.stdout).toContain("Diagnostics:");
     expect(text.stdout).toContain("dome.markdown.broken-wikilink");
     expect(text.stdout).toContain("Questions:");
@@ -109,6 +118,10 @@ scenario(
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
+    expect((alpha?.facts.length ?? 0)).toBeGreaterThan(8);
+    expect(payload.markdown).toContain(
+      `... ${(alpha?.facts.length ?? 8) - 8} more facts`,
+    );
     expect(alpha?.diagnostics.some(
       (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
     )).toBe(true);

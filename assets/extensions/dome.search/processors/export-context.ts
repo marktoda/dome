@@ -23,6 +23,7 @@ import {
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
+const MAX_RELATED_ROWS = 8;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
@@ -226,33 +227,60 @@ function renderMarkdown(
     if (entry.facts.length > 0) {
       lines.push("");
       lines.push("Facts:");
-      for (const fact of entry.facts.slice(0, 8)) {
+      const facts = entry.facts.slice(0, MAX_RELATED_ROWS);
+      for (const fact of facts) {
         const refs = fact.sourceRefs.map(formatSourceRef).join(", ");
         lines.push(`- \`${fact.predicate}\`: ${fact.object} (${refs})`);
       }
+      appendMoreLine(lines, entry.facts.length, facts.length, "facts");
     }
     if (entry.diagnostics.length > 0) {
       lines.push("");
       lines.push("Diagnostics:");
-      for (const diagnostic of entry.diagnostics.slice(0, 8)) {
+      const diagnostics = entry.diagnostics.slice(0, MAX_RELATED_ROWS);
+      for (const diagnostic of diagnostics) {
         const refs = diagnostic.sourceRefs.map(formatSourceRef).join(", ");
         lines.push(
           `- \`${diagnostic.severity}\` \`${diagnostic.code}\`: ${diagnostic.message} (${refs})`,
         );
       }
+      appendMoreLine(
+        lines,
+        entry.diagnostics.length,
+        diagnostics.length,
+        "diagnostics",
+      );
     }
     if (entry.questions.length > 0) {
       lines.push("");
       lines.push("Questions:");
-      for (const question of entry.questions.slice(0, 8)) {
+      const questions = entry.questions.slice(0, MAX_RELATED_ROWS);
+      for (const question of questions) {
         const refs = question.sourceRefs.map(formatSourceRef).join(", ");
         lines.push(`- [#${question.id}] ${question.question} (${refs})`);
         lines.push(`  resolve: ${question.resolveCommand}`);
       }
+      appendMoreLine(
+        lines,
+        entry.questions.length,
+        questions.length,
+        "questions",
+      );
     }
   }
 
   return lines.join("\n");
+}
+
+function appendMoreLine(
+  lines: string[],
+  total: number,
+  shown: number,
+  label: string,
+): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  lines.push(`- ... ${remaining} more ${label}`);
 }
 
 function parseInput(input: unknown): ExportInput {
