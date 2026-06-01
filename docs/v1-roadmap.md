@@ -1021,6 +1021,9 @@ Fold these into nearby milestone work when they are on-path:
       `dome prep --json`, matching the `dome agenda` bounded-view contract so
       agents can tell which daily sections were truncated without inferring it
       from array lengths.
+- [x] Avoid repeating `dome prep` Start Here rows in the later markdown action
+      sections, after real work-vault output showed a large backlog duplicated
+      the same first tasks in both sections.
 
 ## V1 Exit Criteria
 

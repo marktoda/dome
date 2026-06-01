@@ -654,7 +654,8 @@ Default text output is markdown:
 - a prioritized "Start Here" section that lists followups first, unresolved
   daily questions second, and other open tasks third,
 - bounded followup / task / question sections, with omitted-item hints when a
-  section is truncated,
+  section is truncated; these sections do not repeat items already shown in
+  "Start Here", and instead render an "already listed" count for those rows,
 - SourceRefs for the backing daily note and the rendered facts/questions.
 
 The shared daily action model is the same as `dome today`: each

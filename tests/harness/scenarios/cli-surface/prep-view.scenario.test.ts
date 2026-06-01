@@ -80,11 +80,21 @@ scenario(
     expect(text.stdout).toContain(
       "[followup] Ask Ben about hiring budget (wiki/captures/launch.md:9)",
     );
+    expect(text.stdout).toContain(
+      "- 2 followups already listed in Start Here",
+    );
+    expect(text.stdout).toContain(
+      "- 1 open task already listed in Start Here",
+    );
+    expect(text.stdout).toContain(
+      "- 1 question already listed in Start Here",
+    );
     expect(text.stdout).toContain("resolve: dome resolve ");
     expect(text.stdout).toContain("<track|ignore>");
     expect(text.stdout).toContain(
       "- ... 1 more open task (use --limit 4 to show all open tasks)",
     );
+    expect(occurrences(text.stdout, "Ask Ben about hiring budget")).toBe(1);
     expect(text.stdout).toContain("## SourceRefs");
 
     const json = await h.runCli([
@@ -193,6 +203,12 @@ scenario(
     expect(payload.markdown).toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain("<track|ignore>");
     expect(payload.markdown).toContain(
+      "- 2 followups already listed in Start Here",
+    );
+    expect(payload.markdown).toContain(
+      "- 1 open task already listed in Start Here",
+    );
+    expect(payload.markdown).toContain(
       "- ... 2 more open tasks (use --limit 4 to show all open tasks)",
     );
     expect(payload.markdown).toContain("wiki/captures/launch.md:9-9 @");
@@ -203,3 +219,7 @@ scenario(
     expect(payload.markdown).not.toContain("wiki/captures/launch.md:8-8 @");
   },
 );
+
+function occurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
+}

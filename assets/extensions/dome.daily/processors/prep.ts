@@ -27,7 +27,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -148,7 +148,7 @@ function pushTaskItem(
   kind: "followup" | "task",
   task: DailyTaskItem,
 ): void {
-  const key = `${task.path}\u0000${task.line ?? ""}\u0000${task.text}`;
+  const key = taskPlanningKey(kind, task);
   if (seen.has(key)) return;
   seen.add(key);
   items.push(Object.freeze({
@@ -165,7 +165,7 @@ function pushQuestionItem(
   seen: Set<string>,
   question: DailyQuestionItem,
 ): void {
-  const key = `${question.path}\u0000${question.line ?? ""}\u0000${question.question}`;
+  const key = questionPlanningKey(question);
   if (seen.has(key)) return;
   seen.add(key);
   items.push(Object.freeze({
@@ -188,6 +188,18 @@ function renderPrepMarkdown(input: {
   readonly questions: ReadonlyArray<DailyQuestionItem>;
   readonly scope: ReadonlyArray<SourceRef>;
 }): string {
+  const planningKeys = new Set(input.planningItems.map(planningItemKey));
+  const followups = input.followups.filter((task) =>
+    !planningKeys.has(taskPlanningKey("followup", task))
+  );
+  const openTasks = input.openTasks.filter((task) =>
+    !planningKeys.has(
+      taskPlanningKey(task.followup ? "followup" : "task", task),
+    )
+  );
+  const questions = input.questions.filter((question) =>
+    !planningKeys.has(questionPlanningKey(question))
+  );
   const lines: string[] = [
     `# Dome Prep: ${input.state.date}`,
     "",
@@ -210,25 +222,28 @@ function renderPrepMarkdown(input: {
   lines.push("", "## Follow-ups");
   appendTaskSection(
     lines,
-    input.followups,
+    followups,
     input.state.counts.followups,
     "followups",
+    input.followups.length - followups.length,
   );
 
   lines.push("", "## Open Tasks");
   appendTaskSection(
     lines,
-    input.openTasks,
+    openTasks,
     input.state.counts.openTasks,
     "open tasks",
+    input.openTasks.length - openTasks.length,
   );
 
   if (input.questions.length > 0) {
     lines.push("", "## Questions");
     appendQuestionSection(
       lines,
-      input.questions,
+      questions,
       input.state.counts.questions,
+      input.questions.length - questions.length,
     );
   }
 
@@ -277,10 +292,14 @@ function appendTaskSection(
   tasks: ReadonlyArray<DailyTaskItem>,
   total: number,
   label: string,
+  alreadyListed: number,
 ): void {
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && alreadyListed === 0) {
     lines.push("- none");
     return;
+  }
+  if (alreadyListed > 0) {
+    appendAlreadyListedLine(lines, alreadyListed, label);
   }
   for (const source of ["daily", "backlog"] as const) {
     const scoped = tasks.filter((task) => task.source === source);
@@ -291,14 +310,18 @@ function appendTaskSection(
       lines.push(`  - ${task.text}${marker} (${sourceLabel(task)})`);
     }
   }
-  appendMoreLine(lines, total, tasks.length, label);
+  appendMoreLine(lines, total, tasks.length + alreadyListed, label);
 }
 
 function appendQuestionSection(
   lines: string[],
   questions: ReadonlyArray<DailyQuestionItem>,
   total: number,
+  alreadyListed: number,
 ): void {
+  if (alreadyListed > 0) {
+    appendAlreadyListedLine(lines, alreadyListed, "questions");
+  }
   for (const source of ["daily", "backlog"] as const) {
     const scoped = questions.filter((question) => question.source === source);
     if (scoped.length === 0) continue;
@@ -310,7 +333,35 @@ function appendQuestionSection(
       lines.push(`    resolve: ${question.resolveCommand}`);
     }
   }
-  appendMoreLine(lines, total, questions.length, "questions");
+  appendMoreLine(lines, total, questions.length + alreadyListed, "questions");
+}
+
+function taskPlanningKey(
+  kind: "followup" | "task",
+  task: Pick<DailyTaskItem, "path" | "line" | "text">,
+): string {
+  return [kind, task.path, task.line ?? "", task.text].join("\u0000");
+}
+
+function questionPlanningKey(
+  question: Pick<DailyQuestionItem, "path" | "line" | "question">,
+): string {
+  return ["question", question.path, question.line ?? "", question.question].join(
+    "\u0000",
+  );
+}
+
+function planningItemKey(item: PrepPlanningItem): string {
+  return [item.kind, item.path, item.line ?? "", item.text].join("\u0000");
+}
+
+function appendAlreadyListedLine(
+  lines: string[],
+  count: number,
+  label: string,
+): void {
+  const itemLabel = count === 1 ? singularLabel(label) : label;
+  lines.push(`- ${count} ${itemLabel} already listed in Start Here`);
 }
 
 function formatCounts(counts: {
