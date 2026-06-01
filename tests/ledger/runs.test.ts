@@ -556,6 +556,39 @@ describe("runs lifecycle", () => {
     expect(failed[0]?.status).toBe("failed");
   });
 
+  it("queryRuns({phase}) filters by one or more phases", () => {
+    const adoption = newRunId(new Date(100), () => "adopt1");
+    const garden = newRunId(new Date(101), () => "garden");
+    const view = newRunId(new Date(102), () => "viewed");
+    for (const [id, phase] of [
+      [adoption, "adoption"],
+      [garden, "garden"],
+      [view, "view"],
+    ] as const) {
+      insertQueued(db, {
+        id,
+        proposalId: null,
+        processorId: `test.${phase}`,
+        processorVersion: "1.0.0",
+        phase,
+        inputCommit: INPUT_COMMIT,
+        triggerKind: phase === "view" ? "command" : "signal",
+        triggerPayload:
+          phase === "view"
+            ? { command: "lint" }
+            : { name: "document.changed", path: "wiki/a.md" },
+        startedAt: new Date(Number(id.split("_")[1])),
+      });
+    }
+
+    expect(queryRuns(db, { phase: "view" }).map((run) => run.id)).toEqual([
+      view,
+    ]);
+    expect(
+      queryRuns(db, { phase: ["adoption", "garden"] }).map((run) => run.id),
+    ).toEqual([garden, adoption]);
+  });
+
   it("orphanRuns + failOrphanedRuns recover a stuck-running row", () => {
     // Insert a run with a synthetic-old started_at so the orphan window
     // catches it. We bypass queue() for the timestamp control.

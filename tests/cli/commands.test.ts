@@ -1833,6 +1833,85 @@ describe("runStatus", () => {
     expect(parsed["quarantined"]).toBe(0);
   });
 
+  test("--json last_sync ignores newer view processor runs", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const adoptedCommit = commitOid(f.headSha);
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) {
+      throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    }
+    try {
+      const compilerRunId = newRunId(new Date(10), () => "synced");
+      const viewRunId = newRunId(new Date(20), () => "viewed");
+      insertQueued(ledger.value.db, {
+        id: compilerRunId,
+        proposalId: null,
+        processorId: "test.status.sync",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "sync" },
+        startedAt: new Date(10),
+      });
+      markRunning(ledger.value.db, compilerRunId, new Date(11));
+      markSucceeded(ledger.value.db, {
+        id: compilerRunId,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 1,
+        outputCommit: null,
+        finishedAt: new Date(12),
+      });
+      insertQueued(ledger.value.db, {
+        id: viewRunId,
+        proposalId: null,
+        processorId: "test.status.view",
+        processorVersion: "0.0.1",
+        phase: "view",
+        inputCommit: adoptedCommit,
+        triggerKind: "command",
+        triggerPayload: { command: "lint" },
+        startedAt: new Date(20),
+      });
+      markRunning(ledger.value.db, viewRunId, new Date(21));
+      markSucceeded(ledger.value.db, {
+        id: viewRunId,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 1,
+        outputCommit: null,
+        finishedAt: new Date(22),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["last_sync"]).toBe(new Date(10).toISOString());
+    expect(parsed["recent_processor_runs"]).toEqual([
+      expect.objectContaining({
+        processor_id: "test.status.view",
+        phase: "view",
+        latest_started_at: new Date(20).toISOString(),
+      }),
+      expect.objectContaining({
+        processor_id: "test.status.sync",
+        phase: "garden",
+        latest_started_at: new Date(10).toISOString(),
+      }),
+    ]);
+  });
+
   test("--json mode does not route info-only diagnostics to attention", async () => {
     const f = await makeFixture();
     fixtures.push(f);

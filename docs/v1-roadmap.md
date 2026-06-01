@@ -654,6 +654,9 @@ Work:
 - [x] Add spawned `bin/dome` process smoke coverage for executable init /
       sync / status and foreground `serve` SIGTERM shutdown, so the packaged
       CLI path is covered in addition to in-process handler tests.
+- [x] Keep `dome status` `last_sync` tied to successful adoption/garden
+      processor runs, not read-only view commands, so soak notes cannot mistake
+      `dome lint` or query views for compiler catch-up.
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.

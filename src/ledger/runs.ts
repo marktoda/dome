@@ -282,6 +282,7 @@ export type RunRow = {
 
 export type RunsQueryFilter = {
   readonly processorId?: string;
+  readonly phase?: ProcessorPhase | ReadonlyArray<ProcessorPhase>;
   readonly status?: RunStatus;
   /** ISO-8601 lower bound on `started_at`. */
   readonly sinceIso?: string;
@@ -616,6 +617,15 @@ export function queryRuns(
   if (filter?.processorId !== undefined) {
     clauses.push("processor_id = ?");
     params.push(filter.processorId);
+  }
+  if (filter?.phase !== undefined) {
+    const phases = Array.isArray(filter.phase) ? filter.phase : [filter.phase];
+    if (phases.length === 0) {
+      clauses.push("0 = 1");
+    } else {
+      clauses.push(`phase IN (${phases.map(() => "?").join(", ")})`);
+      params.push(...phases);
+    }
   }
   if (filter?.status !== undefined) {
     clauses.push("status = ?");

@@ -28,8 +28,8 @@
 //   - wikilinks:        total wikilink occurrences in content markdown.
 //   - raw_files:        file count under raw/.
 //   - raw_bytes:        byte count under raw/.
-//   - last_sync:        `started_at` of the most recent succeeded run
-//                       (max startedAt across queryRuns status=succeeded).
+//   - last_sync:        `started_at` of the most recent succeeded adoption or
+//                       garden run. Read-only view commands do not move it.
 //   - pending_runs:     count of ledger rows still in progress
 //                       (`queued` or `running`).
 //   - failed_runs:      count of processors whose latest ledger row is a
@@ -97,6 +97,7 @@ import { collectVaultAnalytics } from "../vault-analytics";
 
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
 const STATUS_DIAGNOSTIC_GROUP_LIMIT = 5;
+const LAST_SYNC_PHASES = Object.freeze(["adoption", "garden"] as const);
 const PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "failed",
   "timed_out",
@@ -214,15 +215,16 @@ export async function runStatus(
   try {
     const analytics = await collectVaultAnalytics(vaultPath);
 
-    // Most recent succeeded run, ordered by started_at desc (the
-    // `queryRuns` default ordering). The limit-1 cap keeps the read
-    // cheap; the result either has one row (the most recent succeeded
-    // run) or is empty (no successful adoption yet).
-    const recent = queryRuns(runtime.ledgerDb, {
+    // Most recent succeeded compiler-phase run, ordered by started_at
+    // desc (the `queryRuns` default ordering). View commands are
+    // ledgered for auditability, but they are read-only and should not
+    // make `last_sync` look like the compiler adopted or drained work.
+    const latestSyncRun = queryRuns(runtime.ledgerDb, {
+      phase: LAST_SYNC_PHASES,
       status: "succeeded",
       limit: 1,
     });
-    const last_sync = recent[0]?.startedAt ?? null;
+    const last_sync = latestSyncRun[0]?.startedAt ?? null;
 
     const pending_runs = countRunsByStatus(
       runtime.ledgerDb,

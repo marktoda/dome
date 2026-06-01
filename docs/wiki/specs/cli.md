@@ -249,6 +249,11 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
 rows, grouped by processor id. It is for status dashboards and agents that
 need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
+`last_sync` is the started-at timestamp of the newest successful adoption- or
+garden-phase run. Read-only view commands such as `dome lint`, `dome query`,
+`dome today`, `dome prep`, and `dome agenda` remain visible in
+`recent_processor_runs`, but they do not move `last_sync` because they do not
+adopt or drain compiler work.
 `attention_required` and `attention` summarize the status counters into stable
 reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
