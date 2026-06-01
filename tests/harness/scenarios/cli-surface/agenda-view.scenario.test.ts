@@ -56,6 +56,7 @@ scenario(
           "Follow up: Ask Ada about rollout risks",
           "We should follow up with Ada about review timing.",
           "Ada owns the launch staffing conversation.",
+          "- [ ] Share Ada launch checklist",
           "",
         ].join("\n"),
       },
@@ -81,6 +82,9 @@ scenario(
     expect(text.stdout).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
     );
+    expect(text.stdout).toContain(
+      "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
+    );
     expect(text.stdout).toContain("resolve: dome resolve ");
     expect(text.stdout).toContain("<track|ignore>");
     expect(text.stdout).toContain("## SourceRefs");
@@ -104,6 +108,13 @@ scenario(
         readonly agendaItems: number;
         readonly context: number;
       };
+      readonly shown: {
+        readonly agendaItems: number;
+        readonly context: number;
+      };
+      readonly omitted: {
+        readonly agendaItems: number;
+      };
       readonly agendaItems: ReadonlyArray<{
         readonly kind: string;
         readonly text: string;
@@ -118,8 +129,11 @@ scenario(
 
     expect(payload.topic).toBe("Ada");
     expect(payload.date).toBe("2026-01-05");
-    expect(payload.counts.agendaItems).toBe(4);
+    expect(payload.counts.agendaItems).toBe(5);
     expect(payload.counts.context).toBeGreaterThan(0);
+    expect(payload.shown.agendaItems).toBe(4);
+    expect(payload.shown.context).toBe(payload.context.length);
+    expect(payload.omitted.agendaItems).toBe(1);
     expect(payload.agendaItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
       "Ask Ada about rollout risks",
@@ -144,5 +158,8 @@ scenario(
     expect(payload.markdown).toContain("# Dome Agenda: Ada");
     expect(payload.markdown).toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain("<track|ignore>");
+    expect(payload.markdown).toContain(
+      "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
+    );
   },
 );

@@ -29,7 +29,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -46,7 +46,8 @@ const agendaWith: Processor = defineProcessor({
       ctx,
       inputDateOrLocalToday(ctx.input),
     );
-    const agendaItems = agendaItemsFor(actionState, input.topic, limit);
+    const allAgendaItems = agendaItemsFor(actionState, input.topic);
+    const agendaItems = Object.freeze(allAgendaItems.slice(0, limit));
     const context = ctx.projection
       .searchDocuments({ query: input.topic, limit })
       .map(contextFromMatch);
@@ -62,8 +63,15 @@ const agendaWith: Processor = defineProcessor({
       limit,
       daily: actionState.daily,
       counts: Object.freeze({
+        agendaItems: allAgendaItems.length,
+        context: context.length,
+      }),
+      shown: Object.freeze({
         agendaItems: agendaItems.length,
         context: context.length,
+      }),
+      omitted: Object.freeze({
+        agendaItems: Math.max(0, allAgendaItems.length - agendaItems.length),
       }),
       agendaItems,
       context,
@@ -71,6 +79,7 @@ const agendaWith: Processor = defineProcessor({
         topic: input.topic,
         state: actionState,
         agendaItems,
+        totalAgendaItems: allAgendaItems.length,
         context,
       }),
     });
@@ -121,7 +130,6 @@ function parseAgendaInput(input: unknown): AgendaInput {
 function agendaItemsFor(
   state: DailyActionState,
   topic: string,
-  limit: number,
 ): ReadonlyArray<AgendaItem> {
   const seen = new Set<string>();
   const items: AgendaItem[] = [];
@@ -129,19 +137,16 @@ function agendaItemsFor(
   for (const followup of state.followups) {
     if (!matchesTopic(followup.text, topic)) continue;
     pushTaskItem(items, seen, "followup", followup);
-    if (items.length >= limit) return Object.freeze(items);
   }
 
   for (const question of state.questions) {
     if (!matchesTopic(question.question, topic)) continue;
     pushQuestionItem(items, seen, question);
-    if (items.length >= limit) return Object.freeze(items);
   }
 
   for (const task of state.openTasks) {
     if (task.followup || !matchesTopic(task.text, topic)) continue;
     pushTaskItem(items, seen, "task", task);
-    if (items.length >= limit) return Object.freeze(items);
   }
 
   return Object.freeze(items);
@@ -200,13 +205,14 @@ function renderAgendaMarkdown(input: {
   readonly topic: string;
   readonly state: DailyActionState;
   readonly agendaItems: ReadonlyArray<AgendaItem>;
+  readonly totalAgendaItems: number;
   readonly context: ReadonlyArray<AgendaContextEntry>;
 }): string {
   const lines: string[] = [
     `# Dome Agenda: ${input.topic}`,
     "",
     `Daily note: ${input.state.daily.path} (${input.state.daily.exists ? "exists" : "missing"})`,
-    `Counts: ${input.agendaItems.length} agenda items, ${input.context.length} context matches`,
+    `Counts: ${input.totalAgendaItems} agenda items, ${input.context.length} context matches`,
     "",
     "## Agenda Items",
   ];
@@ -217,6 +223,7 @@ function renderAgendaMarkdown(input: {
     for (const item of input.agendaItems) {
       appendAgendaItem(lines, item);
     }
+    appendMoreLine(lines, input.totalAgendaItems, input.agendaItems.length);
   }
 
   lines.push("", "## Context");
@@ -256,6 +263,19 @@ function appendAgendaItem(lines: string[], item: AgendaItem): void {
   if (item.resolveCommand !== undefined) {
     lines.push(`  resolve: ${item.resolveCommand}`);
   }
+}
+
+function appendMoreLine(
+  lines: string[],
+  total: number,
+  shown: number,
+): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  const label = remaining === 1 ? "agenda item" : "agenda items";
+  lines.push(
+    `- ... ${remaining} more ${label} (use --limit ${total} to show all agenda items)`,
+  );
 }
 
 function matchesTopic(text: string, topic: string): boolean {

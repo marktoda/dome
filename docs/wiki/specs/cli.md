@@ -517,14 +517,18 @@ the projection.
 Default text output is markdown:
 
 - the date context and daily note path,
-- matching open agenda items with source labels,
+- matching open agenda items with source labels, preserving total agenda-item
+  counts and omitted-item hints when `--limit` truncates the section,
 - matching unresolved questions with durable row ids and `dome resolve` hints,
 - adopted-state context snippets for the person/topic,
 - SourceRefs for the backing facts, questions, and search entries.
 
-`--limit` bounds agenda items and context matches. `--json` emits the structured
-`dome.daily.agenda-with/v1` payload, including the markdown packet under
-`markdown`. `--date` provides daily-note context; omitted means local today.
+`--limit` bounds rendered agenda items and context matches. Agenda-item counts
+remain total counts from the source-backed daily action state; context counts
+are rendered context matches from adopted-state search. `--json` emits the
+structured `dome.daily.agenda-with/v1` payload, including the markdown packet
+under `markdown`. `--date` provides daily-note context; omitted means local
+today.
 
 ### `dome rebuild`
 

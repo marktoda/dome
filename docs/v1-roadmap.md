@@ -797,6 +797,9 @@ Work:
 - [x] Strip leading `#task` / `#followup` markers from daily action fact text,
       after real work-vault `today` / `prep` output showed marker syntax leaking
       into management task lists.
+- [x] Make bounded `dome agenda` preserve total agenda-item counts and
+      omitted-item hints, so common person/topic agendas do not hide additional
+      matching work behind the display limit.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
