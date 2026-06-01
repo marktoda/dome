@@ -242,6 +242,54 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.sourceRefs[0]?.path as string).toBe("notes/scratch.md");
   });
 
+  test("keeps source frontmatter links warning while source body links are info", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/sources/imported-scan.md",
+        content: [
+          "---",
+          "type: source",
+          "sources:",
+          "  - \"[[notes/missing-import-note]]\"",
+          "---",
+          "",
+          "Imported body mentions [[wiki/entities/missing-person]].",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/sources/imported-scan.md"],
+      proposal: null,
+      runId: "run-test-source-body-info",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(2);
+
+    const diagnostics = effects as DiagnosticEffect[];
+    const byTarget = new Map(
+      diagnostics.map((diagnostic) => [diagnostic.message, diagnostic]),
+    );
+    const sourceLink = [...byTarget].find(([message]) =>
+      message.includes("missing-import-note"),
+    )?.[1];
+    const bodyLink = [...byTarget].find(([message]) =>
+      message.includes("missing-person"),
+    )?.[1];
+
+    expect(sourceLink?.severity).toBe("warning");
+    expect(sourceLink?.sourceRefs[0]?.range?.startLine).toBe(4);
+    expect(bodyLink?.severity).toBe("info");
+    expect(bodyLink?.sourceRefs[0]?.range?.startLine).toBe(7);
+  });
+
   test("multiple wikilinks per file → exactly one diagnostic for the missing target", async () => {
     const f = await makeVaultWithFiles([
       {

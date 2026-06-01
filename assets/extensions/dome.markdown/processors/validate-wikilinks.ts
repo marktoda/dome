@@ -3,9 +3,10 @@
 // The first first-party adoption-phase processor with real behavior: parses
 // `[[wikilink]]` syntax in changed markdown files and emits one
 // DiagnosticEffect per wikilink whose target doesn't resolve to a markdown
-// file in the candidate snapshot's tree. Managed roots emit warnings;
-// user-owned note drafts emit info diagnostics so they stay visible without
-// routing the whole vault to attention.
+// file in the candidate snapshot's tree. Curated managed pages and
+// frontmatter evidence links emit warnings; user-owned note drafts and
+// imported source-page bodies emit info diagnostics so they stay visible
+// without routing the whole vault to attention.
 //
 // Diagnostic-only (no PatchEffect), so the fixed-point adoption loop sees no
 // patches and converges in one iteration: re-running the processor against
@@ -75,7 +76,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -107,6 +108,7 @@ const validateWikilinks: Processor = defineProcessor({
       // diagnostics for it.)
       if (content === null) continue;
 
+      const frontmatterEnd = frontmatterEndLine(content);
       const fileMatches = findWikilinks(content);
       for (const match of fileMatches) {
         const resolved = resolveWikilinkTarget(
@@ -118,7 +120,7 @@ const validateWikilinks: Processor = defineProcessor({
         );
         if (resolved !== null) continue;
 
-        // Unresolved target → emit a warning diagnostic anchored to the
+        // Unresolved target -> emit a diagnostic anchored to the
         // exact span where the wikilink appears in `changedPath`. The
         // character offsets are load-bearing: they disambiguate multiple
         // wikilinks on the same line (the diagnostic dedup key is
@@ -128,7 +130,11 @@ const validateWikilinks: Processor = defineProcessor({
         // would share a subject_hash and dedupe to a single row).
         diagnostics.push(
           diagnosticEffect({
-            severity: brokenWikilinkSeverity(changedPath),
+            severity: brokenWikilinkSeverity(
+              changedPath,
+              match.line,
+              frontmatterEnd,
+            ),
             code: "dome.markdown.broken-wikilink",
             message: `Wikilink [[${match.target}]] does not resolve to any markdown file in the vault.`,
             sourceRefs: [
@@ -198,8 +204,35 @@ function isValidatableMarkdownPath(path: string): boolean {
   return path.startsWith("inbox/");
 }
 
-function brokenWikilinkSeverity(path: string): DiagnosticEffect["severity"] {
-  return path.startsWith("notes/") ? "info" : "warning";
+function brokenWikilinkSeverity(
+  path: string,
+  line: number,
+  frontmatterEndLineValue: number | null,
+): DiagnosticEffect["severity"] {
+  if (path.startsWith("notes/")) return "info";
+  if (
+    path.startsWith("wiki/sources/") &&
+    !isFrontmatterLine(line, frontmatterEndLineValue)
+  ) {
+    return "info";
+  }
+  return "warning";
+}
+
+function isFrontmatterLine(
+  line: number,
+  frontmatterEndLineValue: number | null,
+): boolean {
+  return frontmatterEndLineValue !== null && line <= frontmatterEndLineValue;
+}
+
+function frontmatterEndLine(content: string): number | null {
+  const lines = content.split("\n");
+  if (lines[0] !== "---") return null;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i] === "---") return i + 1;
+  }
+  return null;
 }
 
 type OffsetRange = {
