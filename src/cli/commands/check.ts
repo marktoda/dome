@@ -7,6 +7,7 @@
 
 import { resolve } from "node:path";
 
+import type { SourceRef } from "../../core/source-ref";
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
@@ -83,6 +84,7 @@ type CheckDiagnosticItem = {
   readonly code: string;
   readonly message: string;
   readonly source_refs: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
 type CheckDecisionReport = {
@@ -96,6 +98,7 @@ type CheckQuestionItem = {
   readonly options: ReadonlyArray<string> | null;
   readonly processor_id: string;
   readonly source_refs: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
 export async function runCheck(
@@ -228,6 +231,7 @@ function collectContentReport(opts: {
           code: diagnostic.code,
           message: diagnostic.message,
           source_refs: formatSourceRefs(diagnostic.sourceRefs),
+          sourceRefs: diagnostic.sourceRefs,
         })
       ),
     ),
@@ -248,6 +252,7 @@ function collectDecisionReport(opts: {
           options: question.effect.options ?? null,
           processor_id: question.processorId,
           source_refs: formatSourceRefs(question.effect.sourceRefs),
+          sourceRefs: question.effect.sourceRefs,
         })
       ),
     ),

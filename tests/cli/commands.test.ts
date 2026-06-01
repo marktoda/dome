@@ -1479,6 +1479,20 @@ describe("runCheck", () => {
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(1);
     expect(record(parsed["decisions"])["questions"]).toBe(1);
+    const diagnosticItems =
+      record(parsed["content"])["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(diagnosticItems[0]?.["source_refs"]).toContain("wiki/seed.md");
+    const diagnosticSourceRefs =
+      diagnosticItems[0]?.["sourceRefs"] as ReadonlyArray<Record<string, unknown>>;
+    expect(diagnosticSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
+    expect(diagnosticSourceRefs[0]?.["commit"]).toBe(adoptedCommit);
+    const decisionItems =
+      record(parsed["decisions"])["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(decisionItems[0]?.["source_refs"]).toContain("wiki/seed.md");
+    const decisionSourceRefs =
+      decisionItems[0]?.["sourceRefs"] as ReadonlyArray<Record<string, unknown>>;
+    expect(decisionSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
+    expect(decisionSourceRefs[0]?.["commit"]).toBe(adoptedCommit);
     expect(parsed["next_actions"]).toEqual([
       {
         reasons: ["questions"],
@@ -1614,6 +1628,10 @@ describe("runCheck", () => {
     const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(items.map((item) => item["severity"])).toEqual(["warning"]);
     expect(items.map((item) => item["code"])).toEqual(["check.warning"]);
+    const sourceRefs = items[0]?.["sourceRefs"] as
+      | ReadonlyArray<Record<string, unknown>>
+      | undefined;
+    expect(sourceRefs?.[0]?.["path"]).toBe("wiki/seed.md");
     expect(parsed["status"]).toBe("attention");
   });
 

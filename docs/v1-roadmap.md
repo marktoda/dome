@@ -665,6 +665,9 @@ Work:
       only warning/error/block content diagnostics while preserving total
       diagnostic counts, avoiding advanced inspect fallback for noisy real
       vaults.
+- [x] Add structured `sourceRefs` to `dome check --json` diagnostic and
+      decision items while retaining compact `source_refs`, so Claude Code can
+      edit exact source files/lines without parsing display text.
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.

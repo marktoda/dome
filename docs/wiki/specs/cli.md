@@ -302,10 +302,12 @@ The `--engine`, `--content`, and `--decisions` flags narrow the report to one
 or more scopes. `--attention` narrows content diagnostic rows and grouping to
 warning/error/block diagnostics while preserving the total diagnostic and
 attention-diagnostic counts. `--limit` bounds rows per section. `--json` emits
-the structured `dome.check/v1` payload. Abbreviated example:
+the structured `dome.check/v1` payload. Diagnostic and decision items include
+both `source_refs` (a compact display string) and `sourceRefs` (structured
+SourceRef objects for agents and other callers). Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2},"items":[]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"..."}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the
