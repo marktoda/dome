@@ -4,8 +4,10 @@ import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
+  completedSourceBackedOpenLoopsFromMarkdown,
   dailyPathSettings,
   dailyPath,
+  openLoopIdentity,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   openTasksFromMarkdown,
@@ -261,6 +263,42 @@ describe("dome.daily shared date helpers", () => {
     expect(
       replaceOpenLoopSurfaceSection({ content: next, section }),
     ).toBe(next);
+  });
+
+  test("checked source-backed entries are durable daily resolution evidence", () => {
+    const resolved = completedSourceBackedOpenLoopsFromMarkdown({
+      path: "wiki/dailies/2026-02-28.md",
+      content: [
+        "## Open Loops",
+        "",
+        "<!-- dome.daily:open-loops:start -->",
+        "### Source-backed Open Loops",
+        "- [x] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])",
+        "<!-- dome.daily:open-loops:end -->",
+      ].join("\n"),
+    });
+
+    expect(resolved).toEqual([
+      {
+        line: 5,
+        path: "wiki/dailies/2026-02-28.md",
+        body: "Confirm Q3 plan with Eli",
+        followup: true,
+        sourcePath: "wiki/projects/alpha.md",
+      },
+    ]);
+    expect(openLoopIdentity(resolved[0]!)).toBe(
+      '["wiki/projects/alpha.md","confirm q3 plan with eli"]',
+    );
+
+    const section = openLoopSurfaceSection({
+      items: [],
+      resolvedItems: resolved,
+    });
+    expect(section).toContain("### Resolved Today");
+    expect(section).toContain(
+      "- [x] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])",
+    );
   });
 
   test("carriedForwardSection uses original provenance when available", () => {

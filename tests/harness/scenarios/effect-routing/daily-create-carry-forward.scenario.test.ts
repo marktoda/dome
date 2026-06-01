@@ -314,3 +314,115 @@ extensions:
     expect(after).toBe(before);
   },
 );
+
+scenario(
+  {
+    name: "effect-routing: dome.daily checked source-backed open loops stay resolved",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "schedule" },
+      { kind: "route", route: "garden-signal" },
+      { kind: "route", route: "garden-schedule" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Send budget update",
+          "",
+        ].join("\n"),
+      },
+      message: "add source open loop",
+    });
+
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Send budget update (from [[wiki/projects/alpha]])");
+
+    const daily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-02.md": daily.replace(
+          "- [ ] Send budget update (from [[wiki/projects/alpha]])",
+          "- [x] Send budget update (from [[wiki/projects/alpha]])",
+        ),
+      },
+      message: "complete surfaced daily open loop",
+    });
+
+    const resolved = await h.tick();
+    expect(resolved.adopted).toBe(true);
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("### Resolved Today");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [x] Send budget update (from [[wiki/projects/alpha]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toNotContain("- [ ] Send budget update (from [[wiki/projects/alpha]])");
+
+    const before = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    const settled = await h.tick();
+    expect(settled.adopted).toBe(true);
+    const after = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(after).toBe(before);
+
+    await h.advance(24 * 60 * 60 * 1000);
+    const nextDay = await h.tick();
+    expect(nextDay.adopted).toBe(true);
+    await h
+      .expectFile("wiki/dailies/2026-01-03.md")
+      .toContain("type: daily");
+    await h
+      .expectFile("wiki/dailies/2026-01-03.md")
+      .toNotContain("Send budget update");
+  },
+);

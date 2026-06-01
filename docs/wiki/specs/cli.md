@@ -733,6 +733,13 @@ block as a surface, not a new source: generated daily entries are skipped during
 fact extraction so `today` and `prep` continue to cite the original project,
 meeting, capture, or prior daily line.
 
+Checking off a generated source-backed item is still meaningful markdown
+evidence. On the next carry-forward pass, Dome keeps the checked row under
+`### Resolved Today` in that daily note and suppresses the same source/body
+identity from future daily surfaces. This lets the daily note act as a
+collaborative work queue without mutating the original source note or storing
+hidden dismissal state in `.dome/state`.
+
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
 Items from the target daily note sort before the wider vault backlog and

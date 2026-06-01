@@ -46,6 +46,14 @@ export type DailyOpenLoopSource = {
   readonly sourcePath: string;
 };
 
+export type DailyResolvedOpenLoopSource = {
+  readonly line: number;
+  readonly path: string;
+  readonly body: string;
+  readonly followup: boolean;
+  readonly sourcePath: string;
+};
+
 const DEFAULT_DAILY_PATH_SETTINGS: DailyPathSettings = Object.freeze({
   template: DEFAULT_DAILY_PATH_TEMPLATE,
 });
@@ -291,15 +299,58 @@ export function openLoopSurfaceSources(input: {
 
 export function openLoopSurfaceSection(input: {
   readonly items: ReadonlyArray<DailyOpenLoopSource>;
+  readonly resolvedItems?: ReadonlyArray<DailyResolvedOpenLoopSource>;
 }): string | null {
-  if (input.items.length === 0) return null;
-  const lines = [
-    OPEN_LOOPS_START,
-    "### Source-backed Open Loops",
-    ...input.items.map(renderOpenLoopSource),
-    OPEN_LOOPS_END,
-  ];
+  const resolvedItems = input.resolvedItems ?? [];
+  if (input.items.length === 0 && resolvedItems.length === 0) return null;
+  const lines = [OPEN_LOOPS_START];
+  if (input.items.length > 0) {
+    lines.push(
+      "### Source-backed Open Loops",
+      ...input.items.map(renderOpenLoopSource),
+    );
+  }
+  if (resolvedItems.length > 0) {
+    if (input.items.length > 0) lines.push("");
+    lines.push(
+      "### Resolved Today",
+      ...resolvedItems.map(renderResolvedOpenLoopSource),
+    );
+  }
+  lines.push(OPEN_LOOPS_END);
   return lines.join("\n");
+}
+
+export function completedSourceBackedOpenLoopsFromMarkdown(input: {
+  readonly path: string;
+  readonly content: string;
+}): ReadonlyArray<DailyResolvedOpenLoopSource> {
+  const items: DailyResolvedOpenLoopSource[] = [];
+  const lines = input.content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const item = sourceBackedCheckboxFromLine(lines[i] ?? "", i + 1);
+    if (item === null || !item.completed) continue;
+    items.push(
+      Object.freeze({
+        line: item.line,
+        path: input.path,
+        body: item.body,
+        followup: item.followup,
+        sourcePath: item.sourcePath,
+      }),
+    );
+  }
+  return Object.freeze(items);
+}
+
+export function openLoopIdentity(input: {
+  readonly sourcePath: string;
+  readonly body: string;
+}): string {
+  return JSON.stringify([
+    normalizeSourcePath(input.sourcePath),
+    normalizeOpenLoopBody(input.body),
+  ]);
 }
 
 export function replaceOpenLoopSurfaceSection(input: {
@@ -424,11 +475,68 @@ function renderOpenLoopSource(item: DailyOpenLoopSource): string {
   return `- [ ] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
 }
 
+function renderResolvedOpenLoopSource(
+  item: DailyResolvedOpenLoopSource,
+): string {
+  const followup = item.followup ? "#followup " : "";
+  return `- [x] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+}
+
+type SourceBackedCheckbox = {
+  readonly line: number;
+  readonly completed: boolean;
+  readonly body: string;
+  readonly followup: boolean;
+  readonly sourcePath: string;
+};
+
+function sourceBackedCheckboxFromLine(
+  line: string,
+  lineNumber: number,
+): SourceBackedCheckbox | null {
+  const match =
+    /^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s+\(from \[\[([^\]\n]+?)(?:\.md)?\]\]\)\s*$/.exec(
+      line,
+    );
+  if (match === null) return null;
+  const state = match[1] ?? " ";
+  const rawBody = match[2]?.trim();
+  const sourcePath = match[3]?.trim();
+  if (
+    rawBody === undefined ||
+    rawBody.length === 0 ||
+    sourcePath === undefined ||
+    sourcePath.length === 0
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    line: lineNumber,
+    completed: state.toLowerCase() === "x",
+    body: semanticActionBody(rawBody),
+    followup: isExplicitFollowup(rawBody),
+    sourcePath: normalizeSourcePath(sourcePath),
+  });
+}
+
 function semanticActionBody(body: string): string {
   const stripped = body
     .replace(/^(?:#(?:task|follow-?up)\s+)+/i, "")
     .trim();
   return stripped.length > 0 ? stripped : body;
+}
+
+function normalizeOpenLoopBody(body: string): string {
+  return semanticActionBody(body).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeSourcePath(path: string): string {
+  const trimmed = path.trim();
+  const hash = trimmed.indexOf("#");
+  const base = hash < 0 ? trimmed : trimmed.slice(0, hash);
+  const fragment = hash < 0 ? "" : trimmed.slice(hash);
+  const normalizedBase = base.endsWith(".md") ? base : `${base}.md`;
+  return `${normalizedBase}${fragment}`;
 }
 
 export function isValidDailyDate(date: DailyDate): boolean {
