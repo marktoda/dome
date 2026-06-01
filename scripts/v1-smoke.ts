@@ -71,6 +71,7 @@ type VaultSmokeResult = {
   readonly vaultPath: string;
   readonly status: StatusPayload;
   readonly doctor: DoctorPayload;
+  readonly viewSchemas: ReadonlyArray<string>;
   readonly synced: boolean;
   readonly notices: ReadonlyArray<string>;
 };
@@ -117,6 +118,11 @@ async function smokeVault(input: {
     );
   }
 
+  const viewSchemas = await smokeUserValueViews({
+    label: input.label,
+    vaultPath,
+  });
+
   if (status.attention_diagnostics > 0) {
     notices.push(`${status.attention_diagnostics} attention diagnostic(s)`);
   }
@@ -142,6 +148,7 @@ async function smokeVault(input: {
     vaultPath,
     status,
     doctor,
+    viewSchemas,
     synced,
     notices: Object.freeze(notices),
   });
@@ -181,6 +188,58 @@ async function doctorJson(vaultPath: string): Promise<DoctorPayload> {
     vaultPath,
     "--json",
   ]);
+}
+
+async function smokeUserValueViews(input: {
+  readonly label: string;
+  readonly vaultPath: string;
+}): Promise<ReadonlyArray<string>> {
+  const checks = [
+    {
+      name: "today",
+      args: ["today", "--vault", input.vaultPath, "--json"],
+      schema: "dome.daily.today/v1",
+    },
+    {
+      name: "prep",
+      args: ["prep", "--vault", input.vaultPath, "--json"],
+      schema: "dome.daily.prep/v1",
+    },
+    {
+      name: "agenda",
+      args: ["agenda", "--vault", input.vaultPath, "management", "--json"],
+      schema: "dome.daily.agenda-with/v1",
+    },
+    {
+      name: "query",
+      args: ["query", "--vault", input.vaultPath, "management", "--json"],
+      schema: "dome.search.query/v1",
+    },
+    {
+      name: "export-context",
+      args: [
+        "export-context",
+        "--vault",
+        input.vaultPath,
+        "management",
+        "--json",
+      ],
+      schema: "dome.search.export-context/v1",
+    },
+  ] as const;
+
+  const schemas: string[] = [];
+  for (const check of checks) {
+    const payload = await runDomeJson<Record<string, unknown>>(check.args);
+    if (payload.schema !== check.schema) {
+      throw new Error(
+        `${input.label}: ${check.name} returned schema ` +
+          `${String(payload.schema)}; expected ${check.schema}`,
+      );
+    }
+    schemas.push(check.schema);
+  }
+  return Object.freeze(schemas);
 }
 
 async function runDomeJson<T>(args: ReadonlyArray<string>): Promise<T> {
@@ -227,7 +286,8 @@ function printSummary(results: ReadonlyArray<VaultSmokeResult>): void {
     console.log(
       `v1-smoke: ${result.label} ok | branch ${status.branch ?? "(detached)"} ` +
         `| head ${shortOid(status.head)} | adopted ${shortOid(status.adopted)} ` +
-        `| synced ${result.synced ? "yes" : "no"} | notices ${notices}`,
+        `| synced ${result.synced ? "yes" : "no"} ` +
+        `| views ${result.viewSchemas.length} ok | notices ${notices}`,
     );
   }
 }

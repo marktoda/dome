@@ -741,6 +741,9 @@ Work:
 - [x] Expose `attention_diagnostics` in `dome status --json` and the V1 smoke
       summary so real-vault informational diagnostics do not look like
       actionable warning volume during soak.
+- [x] Extend `bun run v1:smoke` to require the V1 user-value views
+      (`today`, `prep`, `agenda`, `query`, and `export-context`) in both
+      dogfood vaults, catching stale configs before the week-long soak.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
@@ -751,7 +754,8 @@ Acceptance:
 - [x] `bunx tsc --noEmit`
 - [x] `git diff --check`
 - [x] `bin/dome status --vault docs`
-- [x] Real-vault smoke test with no manual `.dome/state` edits.
+- [x] Real-vault smoke test with no manual `.dome/state` edits and V1
+      user-value views callable.
 - [ ] Week-long real-vault soak exits without manual `.dome/state` edits or
       unexplained stuck state.
 
