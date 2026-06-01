@@ -960,6 +960,10 @@ Fold these into nearby milestone work when they are on-path:
       `serve off (run dome serve)` while leaving JSON `serve_status: "off"`
       and attention routing unchanged, so normal soak sessions see the
       foreground compiler step without making one-shot sync users look broken.
+- [x] Operational-schema false-positive hardening: `answers.db` now refreshes
+      its schema meta row with an upsert instead of a delete/insert gap, so a
+      concurrent `dome check` cannot briefly report an unverifiable
+      `answers.db` schema while another runtime is opening the same vault.
 
 ## V1 Exit Criteria
 

@@ -45,4 +45,23 @@ describe("openAnswersDb", () => {
       .get();
     expect(row?.timeout).toBe(5000);
   });
+
+  it("does not delete answers_meta when reopening a matching schema", async () => {
+    const first = await openAnswersDb({ path: dbPath });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    handles.push(first.value.db);
+
+    first.value.db.raw.run(
+      "CREATE TRIGGER fail_answers_meta_delete "
+        + "BEFORE DELETE ON answers_meta "
+        + "BEGIN SELECT RAISE(FAIL, 'answers_meta delete is not expected'); END",
+    );
+
+    const second = await openAnswersDb({ path: dbPath });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    handles.push(second.value.db);
+    expect(second.value.migration).toBe("ok");
+  });
 });

@@ -145,9 +145,9 @@ function configureSqliteConnection(db: Database): void {
 }
 
 function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {
-  db.run("DELETE FROM answers_meta");
   db.query(
-    "INSERT INTO answers_meta (schema_hash, built_at) VALUES (?, ?)",
+    "INSERT INTO answers_meta (schema_hash, built_at) VALUES (?, ?) "
+      + "ON CONFLICT(schema_hash) DO UPDATE SET built_at = excluded.built_at",
   ).run(schemaHash, new Date().toISOString());
 }
 
