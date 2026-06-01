@@ -1024,6 +1024,9 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Avoid repeating `dome prep` Start Here rows in the later markdown action
       sections, after real work-vault output showed a large backlog duplicated
       the same first tasks in both sections.
+- [x] Add explicit `omitted_groups` counts to diagnostic summary JSON for
+      `dome status`, `dome check`, and diagnostic inspect summaries, matching
+      the bounded-view contract used by daily and recall surfaces.
 
 ## V1 Exit Criteria
 

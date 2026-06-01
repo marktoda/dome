@@ -16,6 +16,7 @@ export type DiagnosticSummary = {
   readonly total: number;
   readonly group_count: number;
   readonly shown_groups: number;
+  readonly omitted_groups: number;
   readonly groups: ReadonlyArray<DiagnosticGroup>;
 };
 
@@ -32,6 +33,7 @@ export type DiagnosticMessageSummary = {
   readonly total: number;
   readonly group_count: number;
   readonly shown_groups: number;
+  readonly omitted_groups: number;
   readonly groups: ReadonlyArray<DiagnosticMessageGroup>;
 };
 
@@ -97,6 +99,7 @@ export function summarizeDiagnosticEffects(
     total: diagnostics.length,
     group_count: groups.length,
     shown_groups: Math.min(limit, groups.length),
+    omitted_groups: Math.max(0, groups.length - limit),
     groups: Object.freeze(groups.slice(0, limit)),
   });
 }
@@ -132,6 +135,7 @@ export function summarizeDiagnosticMessages(
     total: diagnostics.length,
     group_count: groups.length,
     shown_groups: Math.min(limit, groups.length),
+    omitted_groups: Math.max(0, groups.length - limit),
     groups: Object.freeze(groups.slice(0, limit)),
   });
 }

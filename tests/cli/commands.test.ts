@@ -2155,6 +2155,8 @@ describe("runCheck", () => {
     expect(content["shownItems"]).toBe(2);
     expect(content["omittedItems"]).toBe(1);
     expect((content["items"] as ReadonlyArray<unknown>).length).toBe(2);
+    expect(record(content["summary"])["omitted_groups"]).toBe(1);
+    expect(record(content["message_summary"])["omitted_groups"]).toBe(1);
 
     captured.out = [];
     expect(
@@ -2464,24 +2466,28 @@ describe("runStatus", () => {
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(parsed["attention_diagnostic_summary"]).toEqual({
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(parsed["diagnostic_message_summary"]).toEqual({
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(parsed["attention_diagnostic_message_summary"]).toEqual({
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(parsed["questions"]).toBe(0);
@@ -2614,12 +2620,14 @@ describe("runStatus", () => {
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(record(parsed["attention_diagnostic_message_summary"])).toEqual({
       total: 0,
       group_count: 0,
       shown_groups: 0,
+      omitted_groups: 0,
       groups: [],
     });
     expect(parsed["attention"]).toContain("sync_needed");
@@ -3265,6 +3273,7 @@ describe("runStatus", () => {
       total: 1,
       group_count: 1,
       shown_groups: 1,
+      omitted_groups: 0,
       groups: [
         {
           severity: "warning",

@@ -303,6 +303,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
     "total": 12,
     "group_count": 1,
     "shown_groups": 1,
+    "omitted_groups": 0,
     "groups": [
       {
         "severity": "warning",
@@ -318,6 +319,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
     "total": 12,
     "group_count": 1,
     "shown_groups": 1,
+    "omitted_groups": 0,
     "groups": [
       {
         "severity": "warning",
@@ -333,6 +335,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
     "total": 12,
     "group_count": 5,
     "shown_groups": 5,
+    "omitted_groups": 0,
     "groups": [
       {
         "severity": "warning",
@@ -348,6 +351,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
     "total": 12,
     "group_count": 5,
     "shown_groups": 5,
+    "omitted_groups": 0,
     "groups": [
       {
         "severity": "warning",
@@ -394,7 +398,9 @@ the immediate repair target. `diagnostic_message_summary` and
 severity/code/message, so a status pulse can show distinct repair targets when
 many findings share the same diagnostic code, such as several missing
 wikilink targets. Text mode renders this message-level grouping as `diag fix`.
-Diagnostic summary groups include both
+Diagnostic summary payloads include `group_count`, `shown_groups`, and
+`omitted_groups` so bounded JSON consumers do not need to infer truncation from
+array lengths. Diagnostic summary groups include both
 `first_source_refs` (compact file/line display text for the repair loop) and
 `firstSourceRefs` (structured SourceRef objects, including commit provenance).
 If diagnostics are the only check-oriented attention
@@ -466,7 +472,7 @@ record truncation evidence without inferring it from array lengths.
 Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the
