@@ -202,6 +202,20 @@ The `idempotencyKey` is what keeps the question table from filling with duplicat
 owner-needed decisions. Missing metadata is treated as `owner-needed` by
 surfaces so older questions stay conservative.
 
+Automation policy means:
+
+- `agent-safe`: a vault-aware foreground agent may answer when the response is
+  grounded in the question SourceRefs, adopted vault context, and allowed
+  options.
+- `model-safe`: a model-backed loop or harness may answer under the same
+  grounding rule, with provenance retained in the answer handler trail.
+- `owner-needed`: the question needs owner context, preference, or authority;
+  agents should surface it instead of guessing.
+
+`recommendedAnswer` is a source-preserving hint, not an instruction to bypass
+the grounding check. Open questions are advisory state and must not block
+unrelated adoption, garden work, or source edits.
+
 ## JobEffect
 
 A request to run another processor later.

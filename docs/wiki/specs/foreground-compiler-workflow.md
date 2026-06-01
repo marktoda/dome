@@ -24,8 +24,8 @@ the agent session.
 - **`dome sync`** is the blocking one-shot catch-up path. It runs the same
   compiler tick when the host is off or the user wants to wait.
 - **`dome status` / `dome check` / `dome resolve`** are the normal recovery
-  loop. They route attention, explain state, and route human decisions back
-  through normal Effect handling.
+  loop. They route attention, explain state, and route owner or agent
+  decisions back through normal Effect handling.
 - **`dome inspect` / `dome doctor` / `dome answer`** remain advanced detail
   and compatibility commands, not the daily path.
 
@@ -74,8 +74,8 @@ boundary. The useful moments to call Dome explicitly are:
 - `dome status --json` when the user wants a cheap health/adoption pulse.
 - the `dome check ...` command in status `next_actions` when status reports
   remaining attention.
-- `dome resolve <id> <value>` when the user has chosen an answer to a Dome
-  question.
+- `dome resolve <id> <value>` when a Dome question has a source-grounded
+  answer.
 - `dome query <text>` for adopted-state recall with SourceRefs.
 - `dome today` / `dome prep` / `dome agenda <person-or-topic>` for daily
   management surfaces.
@@ -119,7 +119,22 @@ When something looks wrong, use the recovery surfaces in this order:
    `check` includes engine health findings, content diagnostics with SourceRefs,
    open questions with ids/options, and its own `next_actions`.
 
-3. **Resolve engine questions:**
+3. **Route engine questions:**
+
+   `dome check --json` decision rows carry `automation_policy` plus optional
+   `risk`, `confidence`, `recommended_answer`, and `owner_needed_reason`
+   fields.
+
+   - `agent-safe` and `model-safe` questions may be resolved by a vault-aware
+     foreground agent when the answer is grounded in the listed SourceRefs,
+     current adopted vault context, and one of the question's allowed options.
+     `recommended_answer` is a hint, not authority.
+   - `owner-needed` questions, and any question without metadata, require owner
+     context. Surface the question and reason instead of guessing.
+   - Open questions do not block unrelated sync, garden work, or markdown edits.
+     Resolve what is clear and keep other work moving.
+
+4. **Resolve clear questions:**
 
    ```bash
    dome resolve <question-id> <value>
@@ -132,7 +147,7 @@ When something looks wrong, use the recovery surfaces in this order:
    applies it through the same capability-checked routing path as every other
    processor output.
 
-4. **Inspect concrete rows only when debugging:**
+5. **Inspect concrete rows only when debugging:**
 
    ```bash
    dome inspect diagnostics
@@ -145,7 +160,7 @@ When something looks wrong, use the recovery surfaces in this order:
    These commands expose row-level details and compatibility surfaces. They are
    not the first thing Claude should choose during the normal loop.
 
-5. **Rebuild only rebuildable state:**
+6. **Rebuild only rebuildable state:**
 
    ```bash
    dome rebuild

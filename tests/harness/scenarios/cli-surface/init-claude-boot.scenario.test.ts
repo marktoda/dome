@@ -47,6 +47,8 @@ scenario(
       expect(claude).toContain("dome sync --json");
       expect(claude).toContain("dome check --json");
       expect(claude).toContain("dome resolve <id> <value>");
+      expect(claude).toContain("agent-safe");
+      expect(claude).toContain("owner-needed");
       expect(claude).not.toContain("only use `dome status`");
       expect(agents).toContain("## Daily loop");
       expect(agents).toContain("Dome works at the git commit boundary");
@@ -58,6 +60,9 @@ scenario(
       expect(agents).toContain("dome check --json");
       expect(agents).toContain("dome sync --json");
       expect(agents).toContain("dome resolve <id> <value>");
+      expect(agents).toContain("agent-safe");
+      expect(agents).toContain("owner-needed");
+      expect(agents).toContain("recommended_answer");
       expect(agents).toContain("dome today");
       expect(agents).toContain("dome export-context <topic>");
       expect(agents).toContain("Advanced/debug commands");

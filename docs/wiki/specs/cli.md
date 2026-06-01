@@ -60,7 +60,7 @@ dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records the user's answer to a Dome-raised decision and dispatches answer handlers.
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
 - **Optional adopted-state views:** `dome query`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` are explicit read views when the user asks for recall, planning, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
 - **Advanced/debug surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, compatibility, extension development, and maintenance. They are not the normal Claude Code workflow.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` — command-triggered view-phase processors invoked through the shared view-command boundary.
@@ -538,12 +538,18 @@ Abbreviated example:
 `dome check` does not mutate state and does not run the compiler. When the
 report says engine work may be recoverable through a health question, run
 `dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
-`next_actions` orders safe/autonomous actions before human decision actions:
+`next_actions` orders safe/autonomous actions before unresolved decision actions:
 engine sync first, source-diagnostic review/fix paths second, unresolved
-questions last. Every decision item includes its own `resolveCommand`. The
+questions last. Open questions do not block unrelated sync or garden progress.
+Every decision item includes its own `resolveCommand`. The
 question next-action mirrors the first unresolved decision; when that decision
 has explicit options, the command includes them as the placeholder, for example
 `dome resolve 42 <retry|abandon>`; free-form decisions use `<answer>`.
+For `agent-safe` and `model-safe` rows, a vault-aware agent may run
+`resolveCommand` when the answer is grounded in the row's SourceRefs, current
+adopted vault context, and allowed options. `recommended_answer` is only a
+hint. `owner-needed` rows, and rows missing metadata, should be surfaced to the
+owner instead of guessed.
 When attention diagnostics are present and not already bounded, the diagnostic
 next action points to `dome check --content --attention --limit 50 --json` so
 an agent can safely fetch a larger bounded actionable detail list before
@@ -557,10 +563,16 @@ null-command actions as `manual: <description>` while JSON keeps the stable
 
 ### `dome resolve <question-id> [<value>]`
 
-The normal user-facing decision channel for QuestionEffects. `<question-id>` is
-the row id shown by `dome check`; `<value>` is one of the question's options
-when options are present, or free-form text otherwise. Without `<value>`,
-`dome resolve <question-id>` prints the question and options.
+The normal decision channel for QuestionEffects. `<question-id>` is the row id
+shown by `dome check`; `<value>` is one of the question's options when options
+are present, or free-form text otherwise. Without `<value>`, `dome resolve
+<question-id>` prints the question and options.
+
+`dome resolve` may be run by the owner or by a vault-aware foreground agent.
+Agent resolution is valid only for `agent-safe` / `model-safe` questions whose
+answer is grounded in the question SourceRefs and current adopted vault
+context. The command is intentionally still the only mutation path: agents must
+not edit `.dome/state/` directly, even for low-risk questions.
 
 `dome resolve` delegates to the same durable answer machinery as `dome answer`:
 it records the answer, marks the projection row resolved, and dispatches
@@ -944,11 +956,10 @@ the primary `status` / `check` / `resolve` path, with `inspect` and
 
 The low-level compatibility alias for `dome resolve`. Existing scripts and
 older docs may still call `dome answer`; the implementation is the same
-durable user-decision channel for QuestionEffects the engine has raised but
-cannot resolve autonomously.
+durable answer channel for QuestionEffects the engine has raised.
 
 **Why a single answer surface (not per-substrate verbs).** The engine
-already has a primitive for "I need a human decision" — `QuestionEffect`
+already has a primitive for "I need a durable decision" — `QuestionEffect`
 in the closed taxonomy at [[wiki/specs/effects]] §"QuestionEffect".
 When operational substrate gets stuck (outbox row terminally failed,
 processor quarantined, orphaned running row, or similar recoverable state),
@@ -961,8 +972,10 @@ the natural pattern is:
 2. **That processor emits a `QuestionEffect`** with options (for example
    `["retry", "abandon"]`), an idempotency key that names the stuck row and
    failure instance, and `sourceRefs` pointing at the substrate row's origin.
-3. **User runs `dome check --json`** to see pending questions.
-4. **User runs `dome resolve <question-id> retry`** to resolve.
+3. **Owner or agent runs `dome check --json`** to see pending questions and
+   their automation policy.
+4. **Owner or agent runs `dome resolve <question-id> retry`** to resolve when
+   the answer is grounded; owner-needed questions are surfaced instead.
 5. **A second garden-phase processor in `dome.health`** declares an
    `answer` trigger bound to both the emitting question processor and the
    idempotency-key prefix, receives `{ question, answer }`, looks up the

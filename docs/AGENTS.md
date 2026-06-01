@@ -61,10 +61,24 @@ branch. In normal use:
 - Run `dome sync --json` when status says the compiler needs to catch up.
 - Run the `dome check ...` command in `next_actions` when status says
   attention remains after sync.
-- Run `dome resolve <id> <value>` only after a Dome question is clear and the
-  user has chosen the answer.
+- Run `dome resolve <id> <value>` only after a Dome question is clear and
+  source-grounded.
 - Commit, ignore, or remove dirty draft files before expecting Dome to adopt
   them.
+
+## Resolving Dome questions
+
+`dome check --json` decision rows include `automation_policy` plus optional
+`risk`, `confidence`, `recommended_answer`, and `owner_needed_reason` fields.
+
+- `agent-safe` / `model-safe`: a vault-aware agent may resolve the question
+  without interrupting the user when the answer is grounded in the listed
+  `sourceRefs`, current vault context, and one of the allowed options. Treat
+  `recommended_answer` as a hint, not authority.
+- `owner-needed` or missing policy: do not guess. Surface the question and the
+  owner-needed reason, then keep unrelated vault work moving.
+- Always answer through `dome resolve <id> <value>`. Do not edit
+  `.dome/state/` or use `dome answer` in the normal workflow.
 
 ## Vault conventions
 

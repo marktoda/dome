@@ -342,6 +342,9 @@ describe("runInit", () => {
       expect(agentsBody).toContain("next_actions");
       expect(agentsBody).toContain("dome check --json");
       expect(agentsBody).toContain("dome resolve <id> <value>");
+      expect(agentsBody).toContain("agent-safe");
+      expect(agentsBody).toContain("owner-needed");
+      expect(agentsBody).toContain("recommended_answer");
       expect(agentsBody).toContain("dome today");
       expect(agentsBody).toContain("dome prep");
       expect(agentsBody).toContain("dome export-context <topic>");
@@ -365,6 +368,8 @@ describe("runInit", () => {
       expect(claudeBody).toContain("dome sync --json");
       expect(claudeBody).toContain("dome check --json");
       expect(claudeBody).toContain("dome resolve <id> <value>");
+      expect(claudeBody).toContain("agent-safe");
+      expect(claudeBody).toContain("owner-needed");
       expect(claudeBody).not.toContain("only use `dome status`");
       expect(captured.out.join("\n")).toContain("CLAUDE.md:");
       expect(captured.out.join("\n")).toContain("inbox/raw/:");
