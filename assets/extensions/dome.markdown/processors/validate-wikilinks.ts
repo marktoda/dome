@@ -2,8 +2,10 @@
 //
 // The first first-party adoption-phase processor with real behavior: parses
 // `[[wikilink]]` syntax in changed markdown files and emits one
-// DiagnosticEffect (severity: warning) per wikilink whose target doesn't
-// resolve to a markdown file in the candidate snapshot's tree.
+// DiagnosticEffect per wikilink whose target doesn't resolve to a markdown
+// file in the candidate snapshot's tree. Managed roots emit warnings;
+// user-owned note drafts emit info diagnostics so they stay visible without
+// routing the whole vault to attention.
 //
 // Diagnostic-only (no PatchEffect), so the fixed-point adoption loop sees no
 // patches and converges in one iteration: re-running the processor against
@@ -73,7 +75,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -126,7 +128,7 @@ const validateWikilinks: Processor = defineProcessor({
         // would share a subject_hash and dedupe to a single row).
         diagnostics.push(
           diagnosticEffect({
-            severity: "warning",
+            severity: brokenWikilinkSeverity(changedPath),
             code: "dome.markdown.broken-wikilink",
             message: `Wikilink [[${match.target}]] does not resolve to any markdown file in the vault.`,
             sourceRefs: [
@@ -194,6 +196,10 @@ function isValidatableMarkdownPath(path: string): boolean {
   if (path.startsWith("inbox/review/")) return false;
   if (path.startsWith("inbox/processed/")) return false;
   return path.startsWith("inbox/");
+}
+
+function brokenWikilinkSeverity(path: string): DiagnosticEffect["severity"] {
+  return path.startsWith("notes/") ? "info" : "warning";
 }
 
 type OffsetRange = {

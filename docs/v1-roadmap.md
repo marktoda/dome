@@ -745,7 +745,7 @@ Required for daily value:
 
 | Bundle | Status | V1 responsibility |
 |---|---|---|
-| `dome.markdown` | v1 shipped | deterministic markdown hygiene, wikilink/image/frontmatter diagnostics, raw immutability blocking, page schemas |
+| `dome.markdown` | v1 shipped | deterministic markdown hygiene, managed-page wikilink/image/frontmatter diagnostics, informational note-draft link diagnostics, raw immutability blocking, page schemas |
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
 | `dome.health` | v1 shipped | health probes surfaced through `dome check` / advanced `dome doctor`; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers resolved through `dome resolve` |

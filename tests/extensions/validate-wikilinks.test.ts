@@ -5,7 +5,8 @@
 //     resolves manifest + module + identity-cross-check.
 //   - The processor's `run` against a real git-backed vault snapshot:
 //     - Emits no diagnostics when every wikilink resolves.
-//     - Emits a `dome.markdown.broken-wikilink` warning when a target is missing.
+//     - Emits a `dome.markdown.broken-wikilink` warning when a target is missing
+//       from a managed page, and info when the source is a user-owned note draft.
 //     - Emits exactly one diagnostic per unresolved target (the resolved
 //       targets in the same file produce no false positives).
 //
@@ -212,6 +213,33 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(ref.path as string).toBe("wiki/a.md");
     expect(ref.commit).toBe(f.commit);
     expect(ref.range?.startLine).toBe(1);
+  });
+
+  test("surfaces broken note-draft wikilinks as info diagnostics", async () => {
+    const f = await makeVaultWithFiles([
+      { path: "notes/scratch.md", content: "Maybe [[future-idea]].\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/scratch.md"],
+      proposal: null,
+      runId: "run-test-note-info",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.severity).toBe("info");
+    expect(diag.code).toBe("dome.markdown.broken-wikilink");
+    expect(diag.message).toContain("future-idea");
+    expect(diag.sourceRefs[0]?.path as string).toBe("notes/scratch.md");
   });
 
   test("multiple wikilinks per file → exactly one diagnostic for the missing target", async () => {
