@@ -341,6 +341,120 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(effects.length).toBe(0);
   });
 
+  test("resolves Obsidian heading fragments against the owning markdown file", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "notes/source.md",
+        content: "See [[Property Management Software Market Analysis#Pain Points]] and [[#Local]].\n",
+      },
+      {
+        path: "notes/Property Management Software Market Analysis.md",
+        content: "# Property Management Software Market Analysis\n\n## Pain Points\n",
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/source.md"],
+      proposal: null,
+      runId: "run-test-heading-fragments",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(0);
+  });
+
+  test("resolves unique normalized title links to slugged markdown paths", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "notes/team.md",
+        content: "Working with [[Grace Danco]] and [[wiki/entities/Grace Danco]].\n",
+      },
+      { path: "wiki/entities/grace-danco.md", content: "Grace.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/team.md"],
+      proposal: null,
+      runId: "run-test-normalized-title",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(0);
+  });
+
+  test("keeps ambiguous normalized title links unresolved", async () => {
+    const f = await makeVaultWithFiles([
+      { path: "notes/team.md", content: "Working with [[Grace Danco]].\n" },
+      { path: "wiki/entities/grace-danco.md", content: "Grace entity.\n" },
+      { path: "notes/grace danco.md", content: "Grace note.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/team.md"],
+      proposal: null,
+      runId: "run-test-normalized-ambiguous",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.message).toContain("Grace Danco");
+  });
+
+  test("skips non-markdown attachment, URL, and template wikilinks", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "notes/page.md",
+        content: [
+          "Attachment [[raw/level-guide.pdf]].",
+          "Base [[Recently Updated Files.base]].",
+          "External [[https://example.com/doc#section]].",
+          "Template [[dailies/<% tp.date.now(\"YYYY-MM-DD\", +1) %>]].",
+          "Actual missing [[really-missing]].",
+          "",
+        ].join("\n"),
+      },
+      { path: "raw/level-guide.pdf", content: "not actually a pdf\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/page.md"],
+      proposal: null,
+      runId: "run-test-skip-non-markdownish",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.message).toContain("really-missing");
+    expect(diag.message).not.toContain("level-guide");
+    expect(diag.message).not.toContain("Recently Updated");
+    expect(diag.message).not.toContain("example.com");
+    expect(diag.message).not.toContain("tp.date.now");
+  });
+
   // Regression: two broken wikilinks on the same line produced one diagnostic
   // after dedup (the source-refs hash was line-level, so the second collided
   // with the first). Now each wikilink carries its own startChar/endChar in

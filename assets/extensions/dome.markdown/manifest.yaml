@@ -2,7 +2,7 @@ id: dome.markdown
 version: 0.3.0
 processors:
   - id: dome.markdown.validate-wikilinks
-    version: 0.1.1
+    version: 0.1.2
     phase: adoption
     triggers:
       - kind: signal

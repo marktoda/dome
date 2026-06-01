@@ -73,7 +73,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -87,6 +87,7 @@ const validateWikilinks: Processor = defineProcessor({
     const allMarkdownPaths = await ctx.snapshot.listMarkdownFiles();
     const pathSet = new Set<string>(allMarkdownPaths);
     const basenameIndex = buildBasenameIndex(allMarkdownPaths);
+    const normalizedIndex = buildNormalizedResolutionIndex(allMarkdownPaths);
 
     const diagnostics: DiagnosticEffect[] = [];
 
@@ -108,8 +109,10 @@ const validateWikilinks: Processor = defineProcessor({
       for (const match of fileMatches) {
         const resolved = resolveWikilinkTarget(
           match.target,
+          changedPath,
           pathSet,
           basenameIndex,
+          normalizedIndex,
         );
         if (resolved !== null) continue;
 
@@ -353,34 +356,109 @@ function buildBasenameIndex(
   return index;
 }
 
+type UniqueResolutionIndex = ReadonlyMap<string, string | null>;
+
+type NormalizedResolutionIndex = {
+  readonly paths: UniqueResolutionIndex;
+  readonly basenames: UniqueResolutionIndex;
+};
+
+function buildNormalizedResolutionIndex(
+  paths: ReadonlyArray<string>,
+): NormalizedResolutionIndex {
+  const pathIndex = new Map<string, string | null>();
+  const basenameIndex = new Map<string, string | null>();
+  for (const path of [...paths].sort()) {
+    addUniqueNormalized(pathIndex, normalizeWikilinkKey(path), path);
+    const slash = path.lastIndexOf("/");
+    const base = slash >= 0 ? path.slice(slash + 1) : path;
+    addUniqueNormalized(basenameIndex, normalizeWikilinkKey(base), path);
+  }
+  return Object.freeze({
+    paths: pathIndex,
+    basenames: basenameIndex,
+  });
+}
+
+function addUniqueNormalized(
+  index: Map<string, string | null>,
+  key: string,
+  path: string,
+): void {
+  if (key.length === 0) return;
+  if (!index.has(key)) {
+    index.set(key, path);
+    return;
+  }
+  if (index.get(key) !== path) index.set(key, null);
+}
+
+function normalizeWikilinkKey(value: string): string {
+  return decodeWikilinkComponent(value)
+    .replace(/\.md$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function decodeWikilinkComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /**
  * Resolve a wikilink target string against the candidate snapshot's markdown
  * set. Returns the resolved vault-relative path on success; null on miss.
  *
  * Resolution order:
- *   1. If `target` contains a slash, try resolving as a vault-relative path:
+ *   1. Ignore non-markdown-ish wikilinks that this processor cannot resolve
+ *      deterministically: URLs, Templater expressions, and explicit non-md
+ *      attachment extensions (`[[raw/file.pdf]]`, `[[Home.base]]`, etc.).
+ *   2. Strip heading/block fragments before resolving the owning document:
+ *      `[[page#Heading]]` resolves as `[[page]]`; `[[#Heading]]` resolves to
+ *      the current document.
+ *   3. If `target` contains a slash, try resolving as a vault-relative path:
  *      first `<target>.md`, then `<target>` verbatim. This catches the
  *      explicit-path Obsidian convention (`[[wiki/entities/danny]]` →
  *      `wiki/entities/danny.md`).
- *   2. If still unresolved AND `target` contains a slash, try suffix-match:
+ *   4. If still unresolved AND `target` contains a slash, try suffix-match:
  *      any vault path that ends with `/<target>.md` (or `/<target>`) is a
  *      candidate. This catches the partial-path Obsidian convention
  *      (`[[entities/danny]]` resolving to `wiki/entities/danny.md` —
  *      "the danny under entities/, wherever entities/ lives"). On
  *      collisions (multiple matches), returns the first; the basename
  *      index used here is insertion-ordered.
- *   3. Otherwise (bare name), look for `<target>.md` under each of the
+ *   5. If still unresolved AND `target` contains a slash, try unique
+ *      normalized full-path resolution for title/slug drift:
+ *      `[[wiki/entities/Grace Danco]]` resolves to
+ *      `wiki/entities/grace-danco.md`. Ambiguous normalized matches stay
+ *      unresolved so the warning remains.
+ *   6. Otherwise (bare name), look for `<target>.md` under each of the
  *      common roots (`wiki/`, `notes/`, `inbox/`, `captures/`) in order;
  *      first match wins.
- *   4. Fallback: basename-anywhere search — `<target>.md` matched against the
+ *   7. Fallback: basename-anywhere search — `<target>.md` matched against the
  *      basename index. Catches files in non-standard subdirs (e.g.,
  *      `wiki/people/danny.md` for `[[danny]]`).
+ *   8. Final fallback: unique normalized basename resolution for Obsidian
+ *      title/slug drift (`[[Grace Danco]]` →
+ *      `wiki/entities/grace-danco.md`). Ambiguous normalized matches stay
+ *      unresolved.
  */
 function resolveWikilinkTarget(
-  target: string,
+  rawTarget: string,
+  currentPath: string,
   pathSet: ReadonlySet<string>,
   basenameIndex: ReadonlyMap<string, ReadonlyArray<string>>,
+  normalizedIndex: NormalizedResolutionIndex,
 ): string | null {
+  if (isSkippedWikilinkTarget(rawTarget)) return currentPath;
+
+  const target = stripWikilinkFragment(rawTarget);
+  if (target.length === 0) return currentPath;
+
   if (target.includes("/")) {
     const withMd = target.endsWith(".md") ? target : `${target}.md`;
     if (pathSet.has(withMd)) return withMd;
@@ -399,6 +477,9 @@ function resolveWikilinkTarget(
       }
     }
 
+    const normalized = normalizedIndex.paths.get(normalizeWikilinkKey(withMd));
+    if (normalized !== undefined) return normalized;
+
     return null;
   }
 
@@ -414,5 +495,34 @@ function resolveWikilinkTarget(
     return basenameMatches[0] ?? null;
   }
 
+  const normalized = normalizedIndex.basenames.get(
+    normalizeWikilinkKey(filename),
+  );
+  if (normalized !== undefined) return normalized;
+
   return null;
+}
+
+function isSkippedWikilinkTarget(target: string): boolean {
+  if (isExternalUrlTarget(target)) return true;
+  if (target.includes("<%") || target.includes("%>")) return true;
+  return hasExplicitNonMarkdownExtension(target);
+}
+
+function isExternalUrlTarget(target: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(target);
+}
+
+function stripWikilinkFragment(target: string): string {
+  const hash = target.indexOf("#");
+  return hash === -1 ? target : target.slice(0, hash).trim();
+}
+
+function hasExplicitNonMarkdownExtension(target: string): boolean {
+  const pathPart = stripWikilinkFragment(target);
+  if (pathPart.length === 0) return false;
+  const basename = pathPart.slice(pathPart.lastIndexOf("/") + 1);
+  const dot = basename.lastIndexOf(".");
+  if (dot <= 0 || dot === basename.length - 1) return false;
+  return basename.slice(dot + 1).toLowerCase() !== "md";
 }
