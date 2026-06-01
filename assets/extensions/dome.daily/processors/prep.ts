@@ -16,6 +16,7 @@ import {
   collectDailyActionState,
   inputDateOrLocalToday,
   parseInputLimit,
+  uniqueSourceRefs,
   type DailyActionState,
   type DailyQuestionItem,
   type DailyTaskItem,
@@ -37,6 +38,16 @@ const prep: Processor = defineProcessor({
       inputDateOrLocalToday(ctx.input),
     );
     const planningItems = prioritizedPlanningItems(actionState, limit);
+    const followups = Object.freeze(actionState.followups.slice(0, limit));
+    const openTasks = Object.freeze(actionState.openTasks.slice(0, limit));
+    const questions = Object.freeze(actionState.questions.slice(0, limit));
+    const scope = prepScope({
+      state: actionState,
+      planningItems,
+      followups,
+      openTasks,
+      questions,
+    });
     const data = Object.freeze({
       schema: SCHEMA,
       date: actionState.date,
@@ -44,13 +55,16 @@ const prep: Processor = defineProcessor({
       daily: actionState.daily,
       counts: actionState.counts,
       planningItems,
-      followups: Object.freeze(actionState.followups.slice(0, limit)),
-      openTasks: Object.freeze(actionState.openTasks.slice(0, limit)),
-      questions: Object.freeze(actionState.questions.slice(0, limit)),
+      followups,
+      openTasks,
+      questions,
       markdown: renderPrepMarkdown({
         state: actionState,
         planningItems,
-        limit,
+        followups,
+        openTasks,
+        questions,
+        scope,
       }),
     });
 
@@ -61,7 +75,7 @@ const prep: Processor = defineProcessor({
         schema: SCHEMA,
         data,
       },
-      scope: actionState.scope,
+      scope,
     });
     return [effect];
   },
@@ -141,7 +155,10 @@ function pushQuestionItem(
 function renderPrepMarkdown(input: {
   readonly state: DailyActionState;
   readonly planningItems: ReadonlyArray<PrepPlanningItem>;
-  readonly limit: number;
+  readonly followups: ReadonlyArray<DailyTaskItem>;
+  readonly openTasks: ReadonlyArray<DailyTaskItem>;
+  readonly questions: ReadonlyArray<DailyQuestionItem>;
+  readonly scope: ReadonlyArray<SourceRef>;
 }): string {
   const lines: string[] = [
     `# Dome Prep: ${input.state.date}`,
@@ -161,20 +178,20 @@ function renderPrepMarkdown(input: {
   }
 
   lines.push("", "## Follow-ups");
-  appendTaskSection(lines, input.state.followups.slice(0, input.limit));
+  appendTaskSection(lines, input.followups);
 
   lines.push("", "## Open Tasks");
-  appendTaskSection(lines, input.state.openTasks.slice(0, input.limit));
+  appendTaskSection(lines, input.openTasks);
 
-  if (input.state.questions.length > 0) {
+  if (input.questions.length > 0) {
     lines.push("", "## Questions");
-    for (const question of input.state.questions.slice(0, input.limit)) {
+    for (const question of input.questions) {
       lines.push(`- ${question.question} (${sourceLabel(question)})`);
     }
   }
 
   lines.push("", "## SourceRefs");
-  for (const ref of input.state.scope) {
+  for (const ref of input.scope) {
     const range = ref.range === undefined
       ? ""
       : `:${ref.range.startLine}-${ref.range.endLine}`;
@@ -182,6 +199,22 @@ function renderPrepMarkdown(input: {
   }
 
   return lines.join("\n");
+}
+
+function prepScope(input: {
+  readonly state: DailyActionState;
+  readonly planningItems: ReadonlyArray<PrepPlanningItem>;
+  readonly followups: ReadonlyArray<DailyTaskItem>;
+  readonly openTasks: ReadonlyArray<DailyTaskItem>;
+  readonly questions: ReadonlyArray<DailyQuestionItem>;
+}): ReadonlyArray<SourceRef> {
+  return uniqueSourceRefs([
+    ...input.state.daily.sourceRefs,
+    ...input.planningItems.flatMap((item) => item.sourceRefs),
+    ...input.followups.flatMap((item) => item.sourceRefs),
+    ...input.openTasks.flatMap((item) => item.sourceRefs),
+    ...input.questions.flatMap((item) => item.sourceRefs),
+  ]);
 }
 
 function appendTaskSection(

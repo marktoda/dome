@@ -748,6 +748,9 @@ Work:
       make daily views defensive against duplicate task facts, after the work
       vault soak exposed repeated `dome today` task rows from overlapping
       cache-drift rebuilds.
+- [x] Bound `dome prep` markdown SourceRefs to the rendered packet, after the
+      work vault soak showed limited prep views still dumping the whole
+      available task-source set.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

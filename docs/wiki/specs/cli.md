@@ -450,12 +450,13 @@ Default text output is markdown:
 - a prioritized "Start Here" section that lists followups first, unresolved
   daily questions second, and other open tasks third,
 - bounded followup / task / question sections,
-- SourceRefs for the backing daily note and extracted facts/questions.
+- SourceRefs for the backing daily note and the rendered facts/questions.
 
-`--limit` bounds each rendered section and the prioritized start list. `--json`
-emits the structured `dome.daily.prep/v1` payload, including the markdown packet
-under `markdown`. `--date` is for prepping a chosen day and for deterministic
-tests; omitted means local today.
+`--limit` bounds each rendered section, the prioritized start list, and the
+markdown packet's SourceRefs section. `--json` emits the structured
+`dome.daily.prep/v1` payload, including the markdown packet under `markdown`.
+`--date` is for prepping a chosen day and for deterministic tests; omitted
+means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 

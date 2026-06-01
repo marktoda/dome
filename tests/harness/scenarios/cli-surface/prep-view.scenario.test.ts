@@ -123,5 +123,12 @@ scenario(
       payload.planningItems[0]?.path,
     );
     expect(payload.markdown).toContain("# Dome Prep: 2026-01-05");
+    expect(payload.markdown).toContain("wiki/captures/launch.md:8-8 @");
+    expect(payload.markdown).toContain("wiki/captures/launch.md:9-9 @");
+    expect(payload.markdown).toContain("wiki/captures/launch.md:10-10 @");
+    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md @");
+    expect(payload.markdown).not.toContain(
+      "wiki/dailies/2026-01-05.md:8-8 @",
+    );
   },
 );
