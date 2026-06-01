@@ -853,6 +853,9 @@ Work:
       when more adopted-state matches exist beyond `--limit`, so source-backed
       recall and handoff packets do not look complete when only the first few
       matches are shown.
+- [x] Add explicit bounded-item counts to `dome check --json` content and
+      decision reports, so soak notes can record how much diagnostic/decision
+      evidence was shown without inferring truncation from array lengths.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -1701,7 +1701,11 @@ describe("runCheck", () => {
       .toBeGreaterThan(0);
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(1);
+    expect(record(parsed["content"])["shownItems"]).toBe(1);
+    expect(record(parsed["content"])["omittedItems"]).toBe(0);
     expect(record(parsed["decisions"])["questions"]).toBe(1);
+    expect(record(parsed["decisions"])["shownItems"]).toBe(1);
+    expect(record(parsed["decisions"])["omittedItems"]).toBe(0);
     const diagnosticItems =
       record(parsed["content"])["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(diagnosticItems[0]?.["source_refs"]).toContain("wiki/seed.md");
@@ -1927,6 +1931,8 @@ describe("runCheck", () => {
     expect(content["diagnostics"]).toBe(2);
     expect(content["attention_diagnostics"]).toBe(1);
     expect(content["filtered_diagnostics"]).toBe(1);
+    expect(content["shownItems"]).toBe(1);
+    expect(content["omittedItems"]).toBe(0);
     expect(record(content["filter"])).toEqual({ attention: true });
     expect(record(content["summary"])["total"]).toBe(1);
     const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
@@ -2128,6 +2134,43 @@ describe("runCheck", () => {
     expect(captured.out.join("\n")).toContain(
       "... 1 more questions (use --limit 3 to show all)",
     );
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+        limit: 2,
+        json: true,
+      }),
+    ).toBe(0);
+    const contentJson = captured.out.find((l) => l.includes("\"schema\""));
+    expect(contentJson).toBeDefined();
+    if (contentJson === undefined) return;
+    const contentPayload = JSON.parse(contentJson) as Record<string, unknown>;
+    const content = record(contentPayload["content"]);
+    expect(content["shownItems"]).toBe(2);
+    expect(content["omittedItems"]).toBe(1);
+    expect((content["items"] as ReadonlyArray<unknown>).length).toBe(2);
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        decisions: true,
+        limit: 2,
+        json: true,
+      }),
+    ).toBe(0);
+    const decisionsJson = captured.out.find((l) => l.includes("\"schema\""));
+    expect(decisionsJson).toBeDefined();
+    if (decisionsJson === undefined) return;
+    const decisionsPayload = JSON.parse(decisionsJson) as Record<string, unknown>;
+    const decisions = record(decisionsPayload["decisions"]);
+    expect(decisions["shownItems"]).toBe(2);
+    expect(decisions["omittedItems"]).toBe(1);
+    expect((decisions["items"] as ReadonlyArray<unknown>).length).toBe(2);
   });
 
   test("scope flags select one check surface", async () => {

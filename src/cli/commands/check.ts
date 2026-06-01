@@ -83,6 +83,8 @@ type CheckContentReport = {
   };
   readonly summary: DiagnosticSummary;
   readonly message_summary: DiagnosticMessageSummary;
+  readonly shownItems: number;
+  readonly omittedItems: number;
   readonly items: ReadonlyArray<CheckDiagnosticItem>;
 };
 
@@ -96,6 +98,8 @@ type CheckDiagnosticItem = {
 
 type CheckDecisionReport = {
   readonly questions: number;
+  readonly shownItems: number;
+  readonly omittedItems: number;
   readonly items: ReadonlyArray<CheckQuestionItem>;
 };
 
@@ -226,6 +230,20 @@ function collectContentReport(opts: {
     : opts.diagnostics;
   const repairOrderedDiagnostics =
     sortDiagnosticsByMessagePriority(filteredDiagnostics);
+  const items = Object.freeze(
+    repairOrderedDiagnostics.slice(0, opts.limit).map((diagnostic) =>
+      Object.freeze({
+        severity: diagnostic.severity,
+        code: diagnostic.code,
+        message: diagnostic.message,
+        source_refs: formatSourceRefs(
+          diagnostic.sourceRefs,
+          RECOVERY_SOURCE_REF_FORMAT,
+        ),
+        sourceRefs: diagnostic.sourceRefs,
+      })
+    ),
+  );
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
     attention_diagnostics: countAttentionDiagnostics(opts.diagnostics),
@@ -243,20 +261,9 @@ function collectContentReport(opts: {
       opts.limit,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     ),
-    items: Object.freeze(
-      repairOrderedDiagnostics.slice(0, opts.limit).map((diagnostic) =>
-        Object.freeze({
-          severity: diagnostic.severity,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          source_refs: formatSourceRefs(
-            diagnostic.sourceRefs,
-            RECOVERY_SOURCE_REF_FORMAT,
-          ),
-          sourceRefs: diagnostic.sourceRefs,
-        })
-      ),
-    ),
+    shownItems: items.length,
+    omittedItems: Math.max(0, filteredDiagnostics.length - items.length),
+    items,
   });
 }
 
@@ -264,28 +271,31 @@ function collectDecisionReport(opts: {
   readonly questions: ReturnType<typeof queryQuestionRecords>;
   readonly limit: number;
 }): CheckDecisionReport {
+  const items = Object.freeze(
+    opts.questions.slice(0, opts.limit).map((question) => {
+      const options = question.effect.options ?? null;
+      return Object.freeze({
+        id: question.id,
+        question: question.effect.question,
+        options,
+        resolveCommand: resolveQuestionCommand({
+          id: question.id,
+          options,
+        }),
+        processor_id: question.processorId,
+        source_refs: formatSourceRefs(
+          question.effect.sourceRefs,
+          RECOVERY_SOURCE_REF_FORMAT,
+        ),
+        sourceRefs: question.effect.sourceRefs,
+      });
+    }),
+  );
   return Object.freeze({
     questions: opts.questions.length,
-    items: Object.freeze(
-      opts.questions.slice(0, opts.limit).map((question) => {
-        const options = question.effect.options ?? null;
-        return Object.freeze({
-          id: question.id,
-          question: question.effect.question,
-          options,
-          resolveCommand: resolveQuestionCommand({
-            id: question.id,
-            options,
-          }),
-          processor_id: question.processorId,
-          source_refs: formatSourceRefs(
-            question.effect.sourceRefs,
-            RECOVERY_SOURCE_REF_FORMAT,
-          ),
-          sourceRefs: question.effect.sourceRefs,
-        });
-      }),
-    ),
+    shownItems: items.length,
+    omittedItems: Math.max(0, opts.questions.length - items.length),
+    items,
   });
 }
 
