@@ -458,7 +458,8 @@ Default text output renders:
 - whether that daily note exists at the adopted ref,
 - source-backed open tasks and followups from `dome.daily.open_task` /
   `dome.daily.followup` facts,
-- unresolved `dome.daily.*` questions.
+- unresolved `dome.daily.*` questions with durable row ids, options, and
+  `dome resolve <id> <value>` hints.
 
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
@@ -480,6 +481,10 @@ Default text output is markdown:
 - bounded followup / task / question sections,
 - SourceRefs for the backing daily note and the rendered facts/questions.
 
+Daily question rows in the markdown packet include the same durable row id and
+`dome resolve <id> <value>` hint as `dome check`, so a planning packet can be
+acted on without a separate diagnostic command when the decision is clear.
+
 `--limit` bounds each rendered section, the prioritized start list, and the
 markdown packet's SourceRefs section. `--json` emits the structured
 `dome.daily.prep/v1` payload, including the markdown packet under `markdown`.
@@ -498,6 +503,7 @@ Default text output is markdown:
 
 - the date context and daily note path,
 - matching open agenda items with source labels,
+- matching unresolved questions with durable row ids and `dome resolve` hints,
 - adopted-state context snippets for the person/topic,
 - SourceRefs for the backing facts, questions, and search entries.
 

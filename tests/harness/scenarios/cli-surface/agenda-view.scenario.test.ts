@@ -81,6 +81,8 @@ scenario(
     expect(text.stdout).toContain(
       "[followup] #followup Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
     );
+    expect(text.stdout).toContain("resolve: dome resolve ");
+    expect(text.stdout).toContain("<track|ignore>");
     expect(text.stdout).toContain("## SourceRefs");
 
     const json = await h.runCli([
@@ -105,6 +107,8 @@ scenario(
       readonly agendaItems: ReadonlyArray<{
         readonly kind: string;
         readonly text: string;
+        readonly questionId?: number;
+        readonly resolveCommand?: string;
         readonly path: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
@@ -122,6 +126,13 @@ scenario(
       'Possible follow-up in wiki/projects/launch.md:10: "We should follow up with Ada about review timing.". Should Dome track this as a follow-up?',
       "Draft Ada staffing note",
     ]);
+    const questionItem = payload.agendaItems.find((item) =>
+      item.kind === "question"
+    );
+    expect(questionItem?.questionId).toBeGreaterThan(0);
+    expect(questionItem?.resolveCommand).toBe(
+      `dome resolve ${questionItem?.questionId} <track|ignore>`,
+    );
     expect(payload.agendaItems.map((item) => item.text).join("\n")).not
       .toContain("Ben");
     expect(payload.agendaItems[0]?.sourceRefs[0]?.path).toBe(
@@ -131,5 +142,7 @@ scenario(
       "wiki/projects/launch.md",
     );
     expect(payload.markdown).toContain("# Dome Agenda: Ada");
+    expect(payload.markdown).toContain("resolve: dome resolve ");
+    expect(payload.markdown).toContain("<track|ignore>");
   },
 );

@@ -183,13 +183,14 @@ CREATE TABLE questions (
 );
 ```
 
-The processor-facing QueryView exposes only Effect-level questions:
-`questions(filter)` returns `QuestionEffect[]`. CLI/recovery code uses the
-row-record accessor, which additionally exposes `id`, `processor_id`,
-`adopted_commit`, `asked_at`, `answered_at`, and `answer`. `dome check`
-prints the normal open-decision view; advanced `dome inspect questions` prints
-the raw row records. `dome resolve <id> <value>` validates the answer and sets
-`answered_at` / `answer`.
+The processor-facing QueryView exposes `ProjectionQuestion[]`: the
+`QuestionEffect` fields plus the durable row id and answer metadata. This lets
+view processors render resolve-ready daily/planning surfaces without touching
+SQLite. CLI/recovery code uses the same row-record accessor for full detail.
+`dome check` prints the normal open-decision view; advanced
+`dome inspect questions` prints the raw row records.
+`dome resolve <id> <value>` validates the answer and sets `answered_at` /
+`answer`.
 
 Design note: answer values are user input, not rebuildable markdown-derived
 facts. `projection.db.questions.answer` is a denormalized view of the current
@@ -355,7 +356,7 @@ interface ProjectionQueryView {
     severity?: "info" | "warning" | "error" | "block";
     processorId?: string;
   }): ReadonlyArray<DiagnosticEffect>;
-  questions(filter?: { resolved?: boolean }): ReadonlyArray<QuestionEffect>;
+  questions(filter?: { resolved?: boolean }): ReadonlyArray<ProjectionQuestion>;
 }
 ```
 

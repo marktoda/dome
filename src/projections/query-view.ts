@@ -27,15 +27,20 @@ import type {
   DiagnosticEffect,
   FactEffect,
   NodeRef,
-  QuestionEffect,
 } from "../core/effect";
 import { nodeRef } from "../core/effect";
-import type { ProjectionQueryView } from "../core/processor";
+import type {
+  ProjectionQueryView,
+  ProjectionQuestion,
+} from "../core/processor";
 
 import type { ProjectionDb } from "./db";
 import { queryDiagnostics } from "./diagnostics";
 import { allFacts, factsBySubject, factsByPredicate } from "./facts";
-import { queryQuestions } from "./questions";
+import {
+  queryQuestionRecords,
+  type QuestionRecord,
+} from "./questions";
 import { searchDocuments } from "./search";
 
 // ----- buildProjectionQueryView ---------------------------------------------
@@ -55,7 +60,8 @@ import { searchDocuments } from "./search";
  *         dot (mirroring `predicateNamespace` in `./facts`).
  *       - no filter → returns every fact (caller bounds the result).
  *   - `diagnostics`: delegates directly.
- *   - `questions`: delegates directly.
+ *   - `questions`: delegates to durable question records and exposes the row
+ *      id alongside the effect fields for resolve-ready views.
  */
 export function buildProjectionQueryView(
   db: ProjectionDb,
@@ -63,7 +69,10 @@ export function buildProjectionQueryView(
   return Object.freeze({
     facts: (filter) => readFacts(db, filter ?? {}),
     diagnostics: (filter) => queryDiagnostics(db, filter ?? {}),
-    questions: (filter) => queryQuestions(db, filter ?? {}),
+    questions: (filter) =>
+      Object.freeze(
+        queryQuestionRecords(db, filter ?? {}).map(questionProjectionResult),
+      ),
     searchDocuments: (filter) => searchDocuments(db, filter),
   });
 }
@@ -117,6 +126,20 @@ function readFacts(
   return allFacts(db);
 }
 
+function questionProjectionResult(
+  record: QuestionRecord,
+): ProjectionQuestion {
+  return Object.freeze({
+    ...record.effect,
+    id: record.id,
+    processorId: record.processorId,
+    adoptedCommit: record.adoptedCommit,
+    askedAt: record.askedAt,
+    answeredAt: record.answeredAt,
+    answer: record.answer,
+  });
+}
+
 /**
  * Construct a NodeRef from a generic `(kind, id)` pair. Each NodeRef
  * variant carries the id under a different field name (`page.path`,
@@ -150,4 +173,4 @@ function predicateNamespace(predicate: string): string {
 //
 // Re-export the effect types so consumers that build a query view can type
 // against this module rather than reaching into `../core/effect`.
-export type { DiagnosticEffect, FactEffect, QuestionEffect };
+export type { DiagnosticEffect, FactEffect, ProjectionQuestion };

@@ -95,7 +95,10 @@ type TodayTask = {
 };
 
 type TodayQuestion = {
+  readonly id: number;
   readonly question: string;
+  readonly options: ReadonlyArray<string>;
+  readonly resolveCommand: string;
   readonly path: string;
   readonly line: number | null;
 };
@@ -145,7 +148,10 @@ function formatTodayResult(data: unknown): string {
     lines.push("");
     lines.push("Questions");
     for (const question of today.questions) {
-      lines.push(`  - ${question.question} (${sourceLabel(question)})`);
+      lines.push(
+        `  - [#${question.id}] ${question.question} (${sourceLabel(question)})`,
+      );
+      lines.push(`    resolve: ${question.resolveCommand}`);
     }
     appendMoreLine(
       lines,
@@ -213,13 +219,33 @@ function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
   return Object.freeze(
     raw.map((item) => {
       const record = asRecord(item);
+      const id = numberOrZero(record.id);
+      const options = Object.freeze(parseStringArray(record.options));
       return Object.freeze({
+        id,
         question: stringOrEmpty(record.question),
+        options,
+        resolveCommand: stringOrEmpty(record.resolveCommand) ||
+          resolveCommandFor(id, options),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
       });
     }),
   );
+}
+
+function parseStringArray(raw: unknown): ReadonlyArray<string> {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(raw.filter((item): item is string =>
+    typeof item === "string"
+  ));
+}
+
+function resolveCommandFor(id: number, options: ReadonlyArray<string>): string {
+  const placeholder = options.length === 0
+    ? "<answer>"
+    : `<${options.join("|")}>`;
+  return `dome resolve ${id} ${placeholder}`;
 }
 
 function sourceLabel(item: {

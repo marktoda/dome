@@ -29,7 +29,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -99,6 +99,9 @@ type AgendaItem = {
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
+  readonly questionId?: number;
+  readonly options?: ReadonlyArray<string>;
+  readonly resolveCommand?: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -176,6 +179,9 @@ function pushQuestionItem(
     text: question.question,
     path: question.path,
     line: question.line,
+    questionId: question.id,
+    options: Object.freeze([...question.options]),
+    resolveCommand: question.resolveCommand,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }
@@ -209,7 +215,7 @@ function renderAgendaMarkdown(input: {
     lines.push("- No open tasks, follow-ups, or questions matched.");
   } else {
     for (const item of input.agendaItems) {
-      lines.push(`- [${item.kind}] ${item.text} (${sourceLabel(item)})`);
+      appendAgendaItem(lines, item);
     }
   }
 
@@ -237,6 +243,19 @@ function renderAgendaMarkdown(input: {
   }
 
   return lines.join("\n");
+}
+
+function appendAgendaItem(lines: string[], item: AgendaItem): void {
+  if (item.kind !== "question") {
+    lines.push(`- [${item.kind}] ${item.text} (${sourceLabel(item)})`);
+    return;
+  }
+  lines.push(
+    `- [question #${item.questionId ?? "?"}] ${item.text} (${sourceLabel(item)})`,
+  );
+  if (item.resolveCommand !== undefined) {
+    lines.push(`  resolve: ${item.resolveCommand}`);
+  }
 }
 
 function matchesTopic(text: string, topic: string): boolean {

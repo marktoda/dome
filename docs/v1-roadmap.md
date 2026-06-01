@@ -770,6 +770,10 @@ Work:
 - [x] Make successful text `dome sync` output print durable attention and
       next-action lines, so a human does not see only "already in sync" while
       diagnostics or questions still need follow-up.
+- [x] Carry durable question row ids and `dome resolve` hints through
+      `dome today`, `dome prep`, and `dome agenda`, after the real work-vault
+      soak showed daily views could surface a decision without enough
+      information to resolve it.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

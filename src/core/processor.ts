@@ -384,11 +384,13 @@ export type ProjectionQueryView = {
   }) => ReadonlyArray<DiagnosticEffect>;
 
   /**
-   * Read questions, optionally filtered by resolution status.
+   * Read questions, optionally filtered by resolution status. The effect shape
+   * is augmented with the durable projection row id so view processors can
+   * render resolve-ready surfaces without reaching for raw SQLite.
    */
   readonly questions: (filter?: {
     readonly resolved?: boolean;
-  }) => ReadonlyArray<QuestionEffect>;
+  }) => ReadonlyArray<ProjectionQuestion>;
 
   /**
    * Search adopted markdown documents through the FTS projection. The result
@@ -412,6 +414,15 @@ export type SearchDocumentResult = {
   readonly snippet: string;
   readonly rank: number;
   readonly sourceRefs: SearchDocumentEffect["sourceRefs"];
+};
+
+export type ProjectionQuestion = QuestionEffect & {
+  readonly id: number;
+  readonly processorId: string;
+  readonly adoptedCommit: CommitOid;
+  readonly askedAt: string;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
 };
 
 // ----- OperationalQueryView -------------------------------------------------

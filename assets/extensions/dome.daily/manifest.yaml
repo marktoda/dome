@@ -50,7 +50,7 @@ processors:
     module: processors/ambiguous-followup-answer.ts
 
   - id: dome.daily.today
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command
@@ -61,7 +61,7 @@ processors:
     module: processors/today.ts
 
   - id: dome.daily.prep
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command
@@ -72,7 +72,7 @@ processors:
     module: processors/prep.ts
 
   - id: dome.daily.agenda-with
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command

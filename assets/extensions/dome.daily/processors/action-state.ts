@@ -45,8 +45,10 @@ export type DailyTaskItem = {
 };
 
 export type DailyQuestionItem = {
+  readonly id: number;
   readonly question: string;
   readonly options: ReadonlyArray<string>;
+  readonly resolveCommand: string;
   readonly path: string;
   readonly line: number | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
@@ -208,16 +210,29 @@ function taskItemFromFact(
 }
 
 function questionItemFromEffect(
-  question: QuestionEffect,
+  question: QuestionEffect & { readonly id?: number },
 ): DailyQuestionItem {
   const ref = question.sourceRefs[0];
+  const id = typeof question.id === "number" && Number.isFinite(question.id)
+    ? question.id
+    : 0;
+  const options = Object.freeze([...(question.options ?? [])]);
   return Object.freeze({
+    id,
     question: question.question,
-    options: Object.freeze([...(question.options ?? [])]),
+    options,
+    resolveCommand: resolveCommandFor(id, options),
     path: ref?.path ?? "",
     line: ref?.range?.startLine ?? null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   });
+}
+
+function resolveCommandFor(id: number, options: ReadonlyArray<string>): string {
+  const placeholder = options.length === 0
+    ? "<answer>"
+    : `<${options.join("|")}>`;
+  return `dome resolve ${id} ${placeholder}`;
 }
 
 function literalToString(value: FactEffect["object"]): string {

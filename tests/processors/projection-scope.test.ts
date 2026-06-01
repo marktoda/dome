@@ -63,11 +63,32 @@ const SECRET_QUESTION = questionEffect({
   sourceRefs: [SECRET_REF],
 });
 
+const PUBLIC_PROJECTION_QUESTION = Object.freeze({
+  ...PUBLIC_QUESTION,
+  id: 1,
+  processorId: "test.questions",
+  adoptedCommit: COMMIT,
+  askedAt: "2026-01-01T00:00:00.000Z",
+  answeredAt: null,
+  answer: null,
+});
+
+const SECRET_PROJECTION_QUESTION = Object.freeze({
+  ...SECRET_QUESTION,
+  id: 2,
+  processorId: "test.questions",
+  adoptedCommit: COMMIT,
+  askedAt: "2026-01-01T00:00:00.000Z",
+  answeredAt: null,
+  answer: null,
+});
+
 const projection: ProjectionQueryView = Object.freeze({
   facts: () => Object.freeze([PUBLIC_FACT, SECRET_FACT]),
   diagnostics: () =>
     Object.freeze([PUBLIC_DIAGNOSTIC, SECRET_DIAGNOSTIC, GLOBAL_DIAGNOSTIC]),
-  questions: () => Object.freeze([PUBLIC_QUESTION, SECRET_QUESTION]),
+  questions: () =>
+    Object.freeze([PUBLIC_PROJECTION_QUESTION, SECRET_PROJECTION_QUESTION]),
   searchDocuments: () =>
     Object.freeze([
       {

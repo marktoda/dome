@@ -27,7 +27,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -88,6 +88,9 @@ type PrepPlanningItem = {
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
+  readonly questionId?: number;
+  readonly options?: ReadonlyArray<string>;
+  readonly resolveCommand?: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -148,6 +151,9 @@ function pushQuestionItem(
     text: question.question,
     path: question.path,
     line: question.line,
+    questionId: question.id,
+    options: Object.freeze([...question.options]),
+    resolveCommand: question.resolveCommand,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }
@@ -173,7 +179,7 @@ function renderPrepMarkdown(input: {
     lines.push("- No source-backed planning items found.");
   } else {
     for (const item of input.planningItems) {
-      lines.push(`- [${item.kind}] ${item.text} (${sourceLabel(item)})`);
+      appendPlanningItem(lines, item);
     }
   }
 
@@ -186,7 +192,7 @@ function renderPrepMarkdown(input: {
   if (input.questions.length > 0) {
     lines.push("", "## Questions");
     for (const question of input.questions) {
-      lines.push(`- ${question.question} (${sourceLabel(question)})`);
+      appendQuestionItem(lines, question);
     }
   }
 
@@ -199,6 +205,29 @@ function renderPrepMarkdown(input: {
   }
 
   return lines.join("\n");
+}
+
+function appendPlanningItem(lines: string[], item: PrepPlanningItem): void {
+  if (item.kind !== "question") {
+    lines.push(`- [${item.kind}] ${item.text} (${sourceLabel(item)})`);
+    return;
+  }
+  lines.push(
+    `- [question #${item.questionId ?? "?"}] ${item.text} (${sourceLabel(item)})`,
+  );
+  if (item.resolveCommand !== undefined) {
+    lines.push(`  resolve: ${item.resolveCommand}`);
+  }
+}
+
+function appendQuestionItem(
+  lines: string[],
+  question: DailyQuestionItem,
+): void {
+  lines.push(
+    `- [#${question.id}] ${question.question} (${sourceLabel(question)})`,
+  );
+  lines.push(`  resolve: ${question.resolveCommand}`);
 }
 
 function prepScope(input: {

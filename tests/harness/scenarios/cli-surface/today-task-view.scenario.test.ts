@@ -87,7 +87,10 @@ scenario(
       }>;
       readonly followups: ReadonlyArray<{ readonly text: string }>;
       readonly questions: ReadonlyArray<{
+        readonly id: number;
         readonly question: string;
+        readonly options: ReadonlyArray<string>;
+        readonly resolveCommand: string;
         readonly path: string;
       }>;
     };
@@ -118,6 +121,11 @@ scenario(
     ]);
     expect(payload.questions[0]?.question).toContain(
       "We should follow up with Cy about review timing",
+    );
+    expect(payload.questions[0]?.id).toBeGreaterThan(0);
+    expect(payload.questions[0]?.options).toEqual(["track", "ignore"]);
+    expect(payload.questions[0]?.resolveCommand).toBe(
+      `dome resolve ${payload.questions[0]?.id} <track|ignore>`,
     );
     expect(payload.questions[0]?.path).toBe("wiki/captures/2026-01-05.md");
 
@@ -168,7 +176,11 @@ scenario(
       };
       readonly openTasks: ReadonlyArray<{ readonly text: string }>;
       readonly followups: ReadonlyArray<{ readonly text: string }>;
-      readonly questions: ReadonlyArray<{ readonly question: string }>;
+      readonly questions: ReadonlyArray<{
+        readonly id: number;
+        readonly question: string;
+        readonly resolveCommand: string;
+      }>;
     };
     expect(limitedPayload.limit).toBe(2);
     expect(limitedPayload.counts.openTasks).toBe(4);
@@ -189,6 +201,9 @@ scenario(
     expect(text.stdout).toContain("4 open | 2 followups | 1 questions");
     expect(text.stdout).toContain(
       "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
+    );
+    expect(text.stdout).toContain(
+      `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
     );
 
     const limitedText = await h.runCli([

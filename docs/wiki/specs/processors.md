@@ -68,7 +68,7 @@ interface ProjectionQueryView {
     severity?: "info" | "warning" | "error" | "block";
     processorId?: string;
   }): ReadonlyArray<DiagnosticEffect>;
-  questions(filter?: { resolved?: boolean }): ReadonlyArray<QuestionEffect>;
+  questions(filter?: { resolved?: boolean }): ReadonlyArray<ProjectionQuestion>;
   searchDocuments(filter: {
     query: string;
     category?: string;
@@ -76,6 +76,15 @@ interface ProjectionQueryView {
     limit?: number;
   }): ReadonlyArray<SearchDocumentResult>;
 }
+
+type ProjectionQuestion = QuestionEffect & {
+  readonly id: number;              // durable projection row id for `dome resolve`
+  readonly processorId: string;
+  readonly adoptedCommit: CommitOid;
+  readonly askedAt: string;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
+};
 ```
 
 A `Processor` returns `Effect[]`. It does not call writers, git, sqlite, or any other mutation surface. Commit-bound content and git-derived path metadata are exposed only through `ctx.snapshot`, and the runtime scopes both by the processor's effective `read` grant. The engine routes the returned effects through capability enforcement, then applies them. This is the structural fence behind [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
