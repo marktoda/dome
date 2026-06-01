@@ -195,7 +195,7 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"health":{"pendingRuns":0,"failedRuns":0,"diagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"health":{"pendingRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
@@ -203,7 +203,8 @@ Composition (v1.0):
 sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
 the scheduled/job/outbox pump. `health` summarizes durable post-tick attention
 state, including pending/failed runs, unresolved projection diagnostics,
-open questions, failed/pending outbox rows, and quarantines. `diagnostics`
+source-backed content diagnostics, source-less unlocated diagnostics, open
+questions, failed/pending outbox rows, and quarantines. `diagnostics`
 contains adoption diagnostics plus garden and operational diagnostics; for
 `"in-sync"`, it can contain only operational diagnostics because no adoption
 ran.
@@ -385,19 +386,24 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, and `quarantined`. `diagnostics` is the
-total unresolved diagnostic count; `attention_diagnostics` is the
-warning/error/block subset. Informational diagnostics remain visible in
-`diagnostics` and `diagnostic_summary`, but only warning/error/block
-diagnostics contribute the `diagnostics` attention reason.
+total unresolved diagnostic count, `content_diagnostics` is the subset with
+SourceRefs that can be repaired from markdown, and `unlocated_diagnostics`
+counts source-less rows such as runtime/compiler diagnostics that remain
+available through `dome inspect diagnostics`. `attention_diagnostics` is the
+warning/error/block subset of source-backed content diagnostics. Informational
+diagnostics and unlocated runtime diagnostics remain visible in
+`diagnostics` / `diagnostic_summary`, but only source-backed
+warning/error/block diagnostics contribute the `diagnostics` attention reason.
 `failed_runs` counts processors whose latest run is an active terminal
 problem (`failed`, `timed_out`, or `cancelled`). Rows failed by explicit
 orphan-run recovery remain in `dome inspect runs` for forensics but do not keep
 status in attention after the recovery path has completed.
 `diagnostic_summary` groups all unresolved diagnostics;
 `attention_diagnostic_summary` uses the same schema but includes only
-warning/error/block rows. Text mode uses the attention summary for `diag top`
-when actionable diagnostics exist, so informational rows do not compete with
-the immediate repair target. `diagnostic_message_summary` and
+source-backed warning/error/block rows. Text mode uses the attention summary
+for `diag top` when actionable diagnostics exist, so informational and
+unlocated runtime rows do not compete with the immediate markdown repair
+target. `diagnostic_message_summary` and
 `attention_diagnostic_message_summary` additionally group by
 severity/code/message, so a status pulse can show distinct repair targets when
 many findings share the same diagnostic code, such as several missing
@@ -446,16 +452,17 @@ Default scope includes:
   divergence, projection cache drift, instruction drift, schema mismatches,
   failed or stuck outbox rows, orphan runs, latest active processor failures,
   quarantines, and model-provider configuration gaps;
-- **content:** unresolved DiagnosticEffect rows with bounded grouping,
-  SourceRefs, total diagnostics, and warning/error/block diagnostics that
-  require attention;
+- **content:** unresolved source-backed DiagnosticEffect rows with bounded
+  grouping, SourceRefs, total/unlocated diagnostic counters, and
+  warning/error/block content diagnostics that require attention;
 - **decisions:** unresolved QuestionEffect rows with row ids, options,
   per-row `dome resolve` commands, and SourceRefs.
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
 or more scopes. `--attention` narrows content diagnostic rows and grouping to
-warning/error/block diagnostics while preserving the total diagnostic and
-attention-diagnostic counts. `--limit` bounds rows per section; when attention
+source-backed warning/error/block diagnostics while preserving total,
+source-backed, unlocated, and attention-diagnostic counters. `--limit` bounds
+rows per section; when attention
 rows are bounded, text mode renders `showing <n> of <total> attention` in the
 content summary and prints an omitted-row hint such as
 `... 22 more diagnostics (use --limit 34 to show all)` whenever a bounded
@@ -476,7 +483,7 @@ record truncation evidence without inferring it from array lengths.
 Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"content_diagnostics":2,"unlocated_diagnostics":0,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the

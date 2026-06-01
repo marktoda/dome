@@ -100,6 +100,7 @@ import { resolveBundleRoots } from "./sync-shared";
 import {
   countAttentionDiagnostics,
   isAttentionDiagnostic,
+  isSourceBackedDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
   summarizeDiagnosticEffects,
   summarizeDiagnosticMessages,
@@ -172,6 +173,8 @@ type StatusSnapshot = {
   readonly serve_branch: string | null;
   readonly serve_updated_at: string | null;
   readonly diagnostics: number;
+  readonly content_diagnostics: number;
+  readonly unlocated_diagnostics: number;
   readonly attention_diagnostics: number;
   readonly diagnostic_summary: DiagnosticSummary;
   readonly attention_diagnostic_summary: DiagnosticSummary;
@@ -272,9 +275,14 @@ export async function runStatus(
             capabilityPolicyHash: runtime.capabilityPolicyHash,
           });
     const diagnosticRows = queryDiagnostics(runtime.projectionDb);
-    const attentionDiagnosticRows = diagnosticRows.filter(isAttentionDiagnostic);
+    const contentDiagnosticRows =
+      diagnosticRows.filter(isSourceBackedDiagnostic);
+    const unlocatedDiagnostics =
+      diagnosticRows.length - contentDiagnosticRows.length;
+    const attentionDiagnosticRows =
+      contentDiagnosticRows.filter(isAttentionDiagnostic);
     const diagnostics = diagnosticRows.length;
-    const attentionDiagnostics = countAttentionDiagnostics(diagnosticRows);
+    const attentionDiagnostics = countAttentionDiagnostics(contentDiagnosticRows);
     const diagnostic_summary = summarizeDiagnosticEffects(
       diagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
@@ -354,6 +362,8 @@ export async function runStatus(
       serve_branch: serve.branch,
       serve_updated_at: serve.updatedAt,
       diagnostics,
+      content_diagnostics: contentDiagnosticRows.length,
+      unlocated_diagnostics: unlocatedDiagnostics,
       attention_diagnostics: attentionDiagnostics,
       diagnostic_summary,
       attention_diagnostic_summary,
@@ -441,7 +451,11 @@ function formatProjectionFreshness(s: StatusSnapshot): string {
 
 function formatDiagnosticCount(s: StatusSnapshot): string {
   if (s.diagnostics === 0) return "0";
-  return `${s.diagnostics} (${s.attention_diagnostics} attention)`;
+  const attention = `${s.attention_diagnostics} attention`;
+  const unlocated = s.unlocated_diagnostics === 0
+    ? ""
+    : `, ${s.unlocated_diagnostics} unlocated`;
+  return `${s.diagnostics} (${attention}${unlocated})`;
 }
 
 function statusAttention(input: {

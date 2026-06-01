@@ -22,6 +22,7 @@ import { resolveQuestionCommand } from "../../question-resolution";
 import {
   countAttentionDiagnostics,
   formatSourceRefs,
+  isSourceBackedDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
   sortDiagnosticsByMessagePriority,
   summarizeDiagnosticEffects,
@@ -76,6 +77,8 @@ type CheckReport = {
 
 type CheckContentReport = {
   readonly diagnostics: number;
+  readonly content_diagnostics: number;
+  readonly unlocated_diagnostics: number;
   readonly attention_diagnostics: number;
   readonly filtered_diagnostics: number;
   readonly filter: {
@@ -225,9 +228,12 @@ function collectContentReport(opts: {
   readonly attentionOnly: boolean;
   readonly limit: number;
 }): CheckContentReport {
+  const contentDiagnostics = opts.diagnostics.filter(isSourceBackedDiagnostic);
+  const unlocatedDiagnostics = opts.diagnostics.length -
+    contentDiagnostics.length;
   const filteredDiagnostics = opts.attentionOnly
-    ? opts.diagnostics.filter((diagnostic) => diagnostic.severity !== "info")
-    : opts.diagnostics;
+    ? contentDiagnostics.filter((diagnostic) => diagnostic.severity !== "info")
+    : contentDiagnostics;
   const repairOrderedDiagnostics =
     sortDiagnosticsByMessagePriority(filteredDiagnostics);
   const items = Object.freeze(
@@ -246,7 +252,9 @@ function collectContentReport(opts: {
   );
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
-    attention_diagnostics: countAttentionDiagnostics(opts.diagnostics),
+    content_diagnostics: contentDiagnostics.length,
+    unlocated_diagnostics: unlocatedDiagnostics,
+    attention_diagnostics: countAttentionDiagnostics(contentDiagnostics),
     filtered_diagnostics: filteredDiagnostics.length,
     filter: Object.freeze({
       attention: opts.attentionOnly,
@@ -373,11 +381,15 @@ function formatContent(report: CheckContentReport | null): string {
     report.diagnostics === 0
       ? ""
       : ` | ${report.attention_diagnostics} attention`;
+  const unlocated =
+    report.unlocated_diagnostics === 0
+      ? ""
+      : ` | ${report.unlocated_diagnostics} unlocated`;
   const filter =
     report.filter.attention
       ? formatAttentionFilter(report)
       : "";
-  return `${report.diagnostics} diagnostic(s)${attention}${filter}`;
+  return `${report.diagnostics} diagnostic(s)${attention}${unlocated}${filter}`;
 }
 
 function formatAttentionFilter(report: CheckContentReport): string {

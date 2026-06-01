@@ -63,7 +63,10 @@ import {
   nextActionsForSync,
   type CliNextAction,
 } from "../next-actions";
-import { countAttentionDiagnostics } from "../diagnostic-summary";
+import {
+  countAttentionDiagnostics,
+  isSourceBackedDiagnostic,
+} from "../diagnostic-summary";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -123,6 +126,8 @@ type SyncHealthSummary = {
   readonly pendingRuns: number;
   readonly failedRuns: number;
   readonly diagnostics: number;
+  readonly contentDiagnostics: number;
+  readonly unlocatedDiagnostics: number;
   readonly attentionDiagnostics: number;
   readonly questions: number;
   readonly outboxPending: number;
@@ -541,6 +546,8 @@ function emptyHealthSummary(): SyncHealthSummary {
     pendingRuns: 0,
     failedRuns: 0,
     diagnostics: 0,
+    contentDiagnostics: 0,
+    unlocatedDiagnostics: 0,
     attentionDiagnostics: 0,
     questions: 0,
     outboxPending: 0,
@@ -551,11 +558,14 @@ function emptyHealthSummary(): SyncHealthSummary {
 
 function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
   const diagnostics = queryDiagnostics(runtime.projectionDb);
+  const contentDiagnostics = diagnostics.filter(isSourceBackedDiagnostic);
   return Object.freeze({
     pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
     failedRuns: countLatestActiveProblemRuns(runtime.ledgerDb),
     diagnostics: diagnostics.length,
-    attentionDiagnostics: countAttentionDiagnostics(diagnostics),
+    contentDiagnostics: contentDiagnostics.length,
+    unlocatedDiagnostics: diagnostics.length - contentDiagnostics.length,
+    attentionDiagnostics: countAttentionDiagnostics(contentDiagnostics),
     questions: queryQuestions(runtime.projectionDb, { resolved: false }).length,
     outboxPending: queryOutbox(runtime.outboxDb, { status: "pending" }).length,
     outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,

@@ -39,6 +39,8 @@ const STATUS_KEYS = Object.freeze([
   "serve_branch",
   "serve_updated_at",
   "diagnostics",
+  "content_diagnostics",
+  "unlocated_diagnostics",
   "attention_diagnostics",
   "diagnostic_summary",
   "attention_diagnostic_summary",

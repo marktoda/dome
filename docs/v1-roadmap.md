@@ -1034,6 +1034,10 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Make latest active processor failures first-class `dome check` engine
       findings, and keep orphan-run recovery failures as forensic ledger rows
       rather than persistent status attention.
+- [x] Split source-backed content diagnostics from source-less operational
+      diagnostics in `status`, `sync`, and `check`, after real work-vault soak
+      showed a processor timeout could be duplicated as both an engine finding
+      and a markdown repair item.
 
 ## V1 Exit Criteria
 

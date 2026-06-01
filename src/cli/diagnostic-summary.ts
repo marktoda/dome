@@ -62,6 +62,12 @@ export function isAttentionDiagnostic(
   return diagnostic.severity !== "info";
 }
 
+export function isSourceBackedDiagnostic(
+  diagnostic: Pick<DiagnosticEffect, "sourceRefs">,
+): boolean {
+  return diagnostic.sourceRefs.length > 0;
+}
+
 export function countAttentionDiagnostics(
   diagnostics: ReadonlyArray<Pick<DiagnosticEffect, "severity">>,
 ): number {

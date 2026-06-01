@@ -111,6 +111,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "serve_branch",
   "serve_updated_at",
   "diagnostics",
+  "content_diagnostics",
+  "unlocated_diagnostics",
   "attention_diagnostics",
   "diagnostic_summary",
   "attention_diagnostic_summary",
@@ -1801,7 +1803,56 @@ describe("runCheck", () => {
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["status"]).toBe("ok");
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
+    expect(record(parsed["content"])["content_diagnostics"]).toBe(1);
+    expect(record(parsed["content"])["unlocated_diagnostics"]).toBe(0);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(0);
+    expect(parsed["next_actions"]).toEqual([]);
+  });
+
+  test("--json keeps source-less runtime diagnostics out of content repair", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "block",
+          code: "processor.timeout",
+          message: "test.check.runtime: Processor exceeded timeout of 10ms.",
+          sourceRefs: [],
+        }),
+        processorId: "test.check.runtime",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const content = record(parsed["content"]);
+    expect(parsed["status"]).toBe("ok");
+    expect(content["diagnostics"]).toBe(1);
+    expect(content["content_diagnostics"]).toBe(0);
+    expect(content["unlocated_diagnostics"]).toBe(1);
+    expect(content["attention_diagnostics"]).toBe(0);
+    expect(content["filtered_diagnostics"]).toBe(0);
+    expect(content["items"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
   });
 
@@ -2689,6 +2740,8 @@ describe("runStatus", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["content_diagnostics"]).toBe(1);
+    expect(parsed["unlocated_diagnostics"]).toBe(0);
     expect(parsed["attention_diagnostics"]).toBe(0);
     expect(record(parsed["attention_diagnostic_summary"])).toEqual({
       total: 0,
@@ -2714,6 +2767,51 @@ describe("runStatus", () => {
           "Run one compiler tick to adopt pending commits or drain due operational work.",
       },
     ]);
+  });
+
+  test("--json mode keeps source-less runtime diagnostics out of diagnostic attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const adoptedCommit = commitOid(f.headSha);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "block",
+          code: "processor.timeout",
+          message: "test.status.runtime: Processor exceeded timeout of 10ms.",
+          sourceRefs: [],
+        }),
+        processorId: "test.status.runtime",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["content_diagnostics"]).toBe(0);
+    expect(parsed["unlocated_diagnostics"]).toBe(1);
+    expect(parsed["attention_diagnostics"]).toBe(0);
+    expect(record(parsed["diagnostic_summary"])["total"]).toBe(1);
+    expect(record(parsed["attention_diagnostic_summary"])["total"]).toBe(0);
+    expect(parsed["attention"]).toContain("sync_needed");
+    expect(parsed["attention"]).not.toContain("diagnostics");
   });
 
   test("text mode diagnostic top line focuses on actionable diagnostics", async () => {

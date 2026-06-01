@@ -97,6 +97,8 @@ const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
   failedRuns: 0,
   diagnostics: 0,
+  contentDiagnostics: 0,
+  unlocatedDiagnostics: 0,
   attentionDiagnostics: 0,
   questions: 0,
   outboxPending: 0,
@@ -228,6 +230,30 @@ async function insertSyncWarningDiagnostic(f: Fixture): Promise<void> {
         ],
       }),
       processorId: "test.sync",
+      proposalId: null,
+      adoptedCommit: commitOid(f.initialSha),
+    });
+  } finally {
+    await runtimeResult.value.close();
+  }
+}
+
+async function insertSyncUnlocatedDiagnostic(f: Fixture): Promise<void> {
+  const runtimeResult = await openVaultRuntime({
+    vaultPath: f.vaultPath,
+    bundlesRoot: f.bundlesRoot,
+  });
+  expect(runtimeResult.ok).toBe(true);
+  if (!runtimeResult.ok) return;
+  try {
+    insertDiagnostic(runtimeResult.value.projectionDb, {
+      effect: diagnosticEffect({
+        severity: "block",
+        code: "processor.timeout",
+        message: "test.sync.runtime: Processor exceeded timeout of 10ms.",
+        sourceRefs: [],
+      }),
+      processorId: "test.sync.runtime",
       proposalId: null,
       adoptedCommit: commitOid(f.initialSha),
     });
@@ -551,6 +577,7 @@ describe("runSync idempotent", () => {
     expect(parsed["health"]).toEqual({
       ...EMPTY_HEALTH_SUMMARY,
       diagnostics: 1,
+      contentDiagnostics: 1,
       attentionDiagnostics: 1,
     });
     expect(parsed["attention_required"]).toBe(true);
@@ -563,6 +590,38 @@ describe("runSync idempotent", () => {
           "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
+  }, 10_000);
+
+  test("--json reports unlocated diagnostics without routing content attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    await insertSyncUnlocatedDiagnostic(f);
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(parsed["status"]).toBe("in-sync");
+    expect(parsed["health"]).toEqual({
+      ...EMPTY_HEALTH_SUMMARY,
+      diagnostics: 1,
+      unlocatedDiagnostics: 1,
+    });
+    expect(parsed["attention"]).toEqual([]);
+    expect(parsed["next_actions"]).toEqual([]);
   }, 10_000);
 
   test("text output reports durable health attention after in-sync ticks", async () => {
