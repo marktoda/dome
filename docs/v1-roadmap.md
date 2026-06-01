@@ -720,6 +720,9 @@ Work:
       cursors and returning claimed jobs to pending without consuming retry
       budget; extend `status --json` and `sync --json` attention to reflect
       durable pending/problem run and outbox health after a tick.
+- [x] Expose `attention_diagnostics` in `dome status --json` and the V1 smoke
+      summary so real-vault informational diagnostics do not look like
+      actionable warning volume during soak.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

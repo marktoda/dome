@@ -107,6 +107,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "serve_branch",
   "serve_updated_at",
   "diagnostics",
+  "attention_diagnostics",
   "diagnostic_summary",
   "questions",
   "outbox_pending",
@@ -1819,6 +1820,7 @@ describe("runStatus", () => {
     expect(parsed["serve_branch"]).toBeNull();
     expect(parsed["serve_updated_at"]).toBeNull();
     expect(parsed["diagnostics"]).toBe(0);
+    expect(parsed["attention_diagnostics"]).toBe(0);
     expect(parsed["diagnostic_summary"]).toEqual({
       total: 0,
       group_count: 0,
@@ -1871,6 +1873,7 @@ describe("runStatus", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["attention_diagnostics"]).toBe(0);
     expect(parsed["attention"]).toContain("sync_needed");
     expect(parsed["attention"]).not.toContain("diagnostics");
     expect(parsed["next_actions"]).toEqual([
@@ -2288,6 +2291,7 @@ describe("runStatus", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["attention_diagnostics"]).toBe(1);
     expect(parsed["diagnostic_summary"]).toEqual({
       total: 1,
       group_count: 1,

@@ -40,6 +40,9 @@
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
 //   - diagnostics:      count of unresolved projection diagnostics.
+//   - attention_diagnostics:
+//                       unresolved warning/error/block diagnostics; info
+//                       diagnostics remain visible but do not route attention.
 //   - diagnostic_summary:
 //                       bounded severity/code grouping for quick triage.
 //   - questions:        count of unanswered projection questions.
@@ -154,6 +157,7 @@ type StatusSnapshot = {
   readonly serve_branch: string | null;
   readonly serve_updated_at: string | null;
   readonly diagnostics: number;
+  readonly attention_diagnostics: number;
   readonly diagnostic_summary: DiagnosticSummary;
   readonly questions: number;
   readonly outbox_pending: number;
@@ -314,6 +318,7 @@ export async function runStatus(
       serve_branch: serve.branch,
       serve_updated_at: serve.updatedAt,
       diagnostics,
+      attention_diagnostics: attentionDiagnostics,
       diagnostic_summary,
       questions,
       outbox_pending,
@@ -360,7 +365,7 @@ function printStatusText(s: StatusSnapshot): void {
     `engine    last sync ${s.last_sync ?? "(never)"} | pending ${s.pending_runs} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
   );
   console.log(
-    `health    projection ${formatProjectionFreshness(s)} | diagnostics ${s.diagnostics} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
+    `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
   if (s.diagnostic_summary.groups.length > 0) {
     console.log(`diag top  ${formatDiagnosticTopLine(s.diagnostic_summary)}`);
@@ -382,6 +387,11 @@ function formatServe(s: StatusSnapshot): string {
 function formatProjectionFreshness(s: StatusSnapshot): string {
   if (!s.projection_stale) return "fresh";
   return s.projection_cache_drift ? "stale (cache drift)" : "stale";
+}
+
+function formatDiagnosticCount(s: StatusSnapshot): string {
+  if (s.diagnostics === 0) return "0";
+  return `${s.diagnostics} (${s.attention_diagnostics} attention)`;
 }
 
 function statusAttention(input: {

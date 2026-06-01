@@ -15,6 +15,7 @@ type StatusPayload = {
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
   readonly diagnostics: number;
+  readonly attention_diagnostics: number;
   readonly questions: number;
   readonly pending_runs: number;
   readonly failed_runs: number;
@@ -71,7 +72,7 @@ type VaultSmokeResult = {
   readonly status: StatusPayload;
   readonly doctor: DoctorPayload;
   readonly synced: boolean;
-  readonly warnings: ReadonlyArray<string>;
+  readonly notices: ReadonlyArray<string>;
 };
 
 async function smokeVault(input: {
@@ -84,7 +85,7 @@ async function smokeVault(input: {
   console.log(`v1-smoke: checking ${input.label} vault at ${vaultPath}`);
 
   let status = await statusJson(vaultPath);
-  const warnings: string[] = [];
+  const notices: string[] = [];
   assertOperationallyHealthy(input.label, status);
 
   let synced = false;
@@ -116,19 +117,24 @@ async function smokeVault(input: {
     );
   }
 
-  if (status.diagnostics > 0) {
-    warnings.push(`${status.diagnostics} content diagnostic(s)`);
+  if (status.attention_diagnostics > 0) {
+    notices.push(`${status.attention_diagnostics} attention diagnostic(s)`);
+  }
+  const informationalDiagnostics =
+    status.diagnostics - status.attention_diagnostics;
+  if (informationalDiagnostics > 0) {
+    notices.push(`${informationalDiagnostics} informational diagnostic(s)`);
   }
   if (status.questions > 0) {
-    warnings.push(`${status.questions} open question(s)`);
+    notices.push(`${status.questions} open question(s)`);
   }
   if (status.dirty_modified > 0 || status.dirty_untracked > 0) {
-    warnings.push(
+    notices.push(
       `${status.dirty_modified} modified / ${status.dirty_untracked} untracked draft file(s)`,
     );
   }
   if (status.sync_needed) {
-    warnings.push(`${formatPending(status.pending_commits)} pending commit(s)`);
+    notices.push(`${formatPending(status.pending_commits)} pending commit(s)`);
   }
 
   return Object.freeze({
@@ -137,7 +143,7 @@ async function smokeVault(input: {
     status,
     doctor,
     synced,
-    warnings: Object.freeze(warnings),
+    notices: Object.freeze(notices),
   });
 }
 
@@ -216,12 +222,12 @@ function formatPending(count: number | null): string {
 function printSummary(results: ReadonlyArray<VaultSmokeResult>): void {
   for (const result of results) {
     const status = result.status;
-    const warnings =
-      result.warnings.length === 0 ? "none" : result.warnings.join("; ");
+    const notices =
+      result.notices.length === 0 ? "none" : result.notices.join("; ");
     console.log(
       `v1-smoke: ${result.label} ok | branch ${status.branch ?? "(detached)"} ` +
         `| head ${shortOid(status.head)} | adopted ${shortOid(status.adopted)} ` +
-        `| synced ${result.synced ? "yes" : "no"} | warnings ${warnings}`,
+        `| synced ${result.synced ? "yes" : "no"} | notices ${notices}`,
     );
   }
 }
