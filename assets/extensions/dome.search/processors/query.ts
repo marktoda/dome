@@ -8,7 +8,6 @@ import {
   type DiagnosticEffect,
   type Effect,
   type FactEffect,
-  type QuestionEffect,
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
@@ -17,11 +16,16 @@ import {
   type ProcessorContext,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
-import type { SourceRef } from "../../../../src/core/source-ref";
+import {
+  groupByMatchingPath,
+  questionItemFromProjection,
+  uniqueSourceRefs,
+  type SearchQuestionItem,
+} from "./related";
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -157,61 +161,15 @@ function diagnosticsForMatches(
 function questionsForMatches(
   ctx: ProcessorContext,
   matches: ReadonlyArray<SearchDocumentResult>,
-): ReadonlyMap<string, ReadonlyArray<QuestionEffect>> {
+): ReadonlyMap<string, ReadonlyArray<SearchQuestionItem>> {
   if (ctx.projection === undefined) return Object.freeze(new Map());
   const matchPaths = new Set(matches.map((match) => match.path));
   return groupByMatchingPath(
-    ctx.projection.questions({ resolved: false }),
+    ctx.projection
+      .questions({ resolved: false })
+      .map(questionItemFromProjection),
     matchPaths,
   );
-}
-
-function groupByMatchingPath<T extends { readonly sourceRefs: ReadonlyArray<SourceRef> }>(
-  rows: ReadonlyArray<T>,
-  matchPaths: ReadonlySet<string>,
-): ReadonlyMap<string, ReadonlyArray<T>> {
-  const mutable = new Map<string, T[]>();
-  for (const row of rows) {
-    const paths = new Set(
-      row.sourceRefs
-        .map((ref) => ref.path)
-        .filter((path) => matchPaths.has(path)),
-    );
-    for (const path of paths) {
-      const group = mutable.get(path);
-      if (group === undefined) {
-        mutable.set(path, [row]);
-      } else {
-        group.push(row);
-      }
-    }
-  }
-  return Object.freeze(
-    new Map([...mutable.entries()].map(([path, rows]) => [
-      path,
-      Object.freeze([...rows]),
-    ])),
-  );
-}
-
-function uniqueSourceRefs(
-  refs: ReadonlyArray<SourceRef>,
-): ReadonlyArray<SourceRef> {
-  const seen = new Set<string>();
-  const out: SourceRef[] = [];
-  for (const ref of refs) {
-    const key = [
-      ref.commit,
-      ref.path,
-      ref.range?.startLine ?? "",
-      ref.range?.endLine ?? "",
-      ref.stableId ?? "",
-    ].join("\u0000");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ref);
-  }
-  return Object.freeze(out);
 }
 
 function stringValue(value: unknown): string | null {

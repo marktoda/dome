@@ -352,6 +352,9 @@ Explicit audit/report command. It is useful when the user asks "clean up the vau
 ### `dome export-context`
 
 High-value Claude workflow command. It should produce a portable, source-backed markdown packet for handing a topic to another AI session or product. This is more important than MCP for the near-term multi-agent story.
+The packet should include not only matching snippets and facts, but also
+related diagnostics and unresolved questions with `dome resolve` hints so a
+handoff does not hide active compiler attention.
 
 ### `dome agenda`
 

@@ -19,7 +19,7 @@ processors:
     module: processors/index-text.ts
 
   - id: dome.search.query
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command
@@ -30,7 +30,7 @@ processors:
     module: processors/query.ts
 
   - id: dome.search.export-context
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command

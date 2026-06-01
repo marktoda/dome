@@ -30,15 +30,25 @@ scenario(
       files: {
         "wiki/project-alpha.md":
           "---\n" +
-          "type: project\n" +
+          "type: concept\n" +
           "tags:\n" +
           "  - strategy\n" +
           "---\n" +
           "# Project Alpha\n\n" +
-          "The alpha launch ownership model assigns platform runtime to Danny.\n",
+          "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "\n" +
+          "See [[missing-alpha-owner]].\n",
+        "wiki/project-alpha-copy.md":
+          "---\n" +
+          "type: concept\n" +
+          "---\n" +
+          "# Project Alpha\n\n" +
+          "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "\n" +
+          "See [[missing-alpha-owner]].\n",
         "wiki/project-beta.md":
           "---\n" +
-          "type: project\n" +
+          "type: concept\n" +
           "---\n" +
           "# Project Beta\n\n" +
           "The beta launch has a different staffing plan.\n",
@@ -56,6 +66,10 @@ scenario(
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("dome.graph.tagged");
+    expect(text.stdout).toContain("Diagnostics:");
+    expect(text.stdout).toContain("dome.markdown.broken-wikilink");
+    expect(text.stdout).toContain("Questions:");
+    expect(text.stdout).toContain("resolve: dome resolve ");
 
     const json = await h.runCli([
       "export-context",
@@ -76,6 +90,12 @@ scenario(
         readonly title: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
         readonly facts: ReadonlyArray<{ readonly predicate: string }>;
+        readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
+        readonly questions: ReadonlyArray<{
+          readonly id: number;
+          readonly question: string;
+          readonly resolveCommand: string;
+        }>;
       }>;
     };
 
@@ -89,5 +109,15 @@ scenario(
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
+    expect(alpha?.diagnostics.some(
+      (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
+    )).toBe(true);
+    const question = alpha?.questions.find((question) =>
+      question.question.includes("Possible duplicate pages")
+    );
+    expect(question?.id).toBeGreaterThan(0);
+    expect(question?.resolveCommand).toBe(
+      `dome resolve ${question?.id} <merge|keep separate>`,
+    );
   },
 );

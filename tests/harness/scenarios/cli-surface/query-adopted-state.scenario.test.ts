@@ -61,6 +61,8 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("wiki/project-alpha.md");
+    expect(text.stdout).toContain("Questions:");
+    expect(text.stdout).toContain("resolve: dome resolve ");
 
     const cli = await h.runCli(["query", "alpha launch", "--json"]);
     expect(cli.exitCode).toBe(0);
@@ -74,7 +76,12 @@ scenario(
         readonly type: string | null;
         readonly facts: ReadonlyArray<{ readonly predicate: string }>;
         readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
-        readonly questions: ReadonlyArray<{ readonly question: string }>;
+        readonly questions: ReadonlyArray<{
+          readonly id: number;
+          readonly question: string;
+          readonly options: ReadonlyArray<string>;
+          readonly resolveCommand: string;
+        }>;
       }>;
     };
 
@@ -98,6 +105,14 @@ scenario(
         question.question.includes("Possible duplicate pages")
       ),
     ).toBe(true);
+    const question = match?.questions.find((question) =>
+      question.question.includes("Possible duplicate pages")
+    );
+    expect(question?.id).toBeGreaterThan(0);
+    expect(question?.options).toEqual(["merge", "keep separate"]);
+    expect(question?.resolveCommand).toBe(
+      `dome resolve ${question?.id} <merge|keep separate>`,
+    );
 
     h.projection.raw.run(
       "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",

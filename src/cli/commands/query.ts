@@ -109,7 +109,14 @@ function formatQueryResult(data: unknown): string {
       lines.push(`   diagnostics: ${diagnostics}`);
     }
     if (match.questions.length > 0) {
-      lines.push(`   questions: ${match.questions.length} open`);
+      lines.push("   Questions:");
+      for (const question of match.questions.slice(0, 5)) {
+        const refs = question.sourceRefs.length === 0
+          ? ""
+          : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
+        lines.push(`     - [#${question.id}] ${question.question}${refs}`);
+        lines.push(`       resolve: ${question.resolveCommand}`);
+      }
     }
   }
   return lines.join("\n");
@@ -124,8 +131,16 @@ type QueryResultData = {
     readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
     readonly facts: ReadonlyArray<{ readonly predicate: string }>;
     readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
-    readonly questions: ReadonlyArray<{ readonly question: string }>;
+    readonly questions: ReadonlyArray<QueryQuestion>;
   }>;
+};
+
+type QueryQuestion = {
+  readonly id: number;
+  readonly question: string;
+  readonly options: ReadonlyArray<string>;
+  readonly resolveCommand: string;
+  readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
 };
 
 type QuerySourceRef = {
@@ -198,7 +213,7 @@ function parseDiagnostics(
 
 function parseQuestions(
   raw: unknown,
-): ReadonlyArray<{ readonly question: string }> {
+): ReadonlyArray<QueryQuestion> {
   if (!Array.isArray(raw)) return Object.freeze([]);
   return Object.freeze(
     raw
@@ -207,10 +222,38 @@ function parseQuestions(
           ? item as Record<string, unknown>
           : {};
         const question = stringOrEmpty(record.question);
-        return question.length > 0 ? { question } : null;
+        if (question.length === 0) return null;
+        const id = numberValue(record.id) ?? 0;
+        const options = Object.freeze(parseStringArray(record.options));
+        const resolveCommand = stringOrEmpty(record.resolveCommand) ||
+          resolveCommandFor(id, options);
+        return Object.freeze({
+          id,
+          question,
+          options,
+          resolveCommand,
+          sourceRefs: Object.freeze(parseSourceRefs(record.sourceRefs)),
+        });
       })
-      .filter((item): item is { readonly question: string } => item !== null),
+      .filter((item): item is QueryQuestion => item !== null),
   );
+}
+
+function parseStringArray(raw: unknown): ReadonlyArray<string> {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(raw.filter((item): item is string =>
+    typeof item === "string"
+  ));
+}
+
+function resolveCommandFor(
+  id: number,
+  options: ReadonlyArray<string>,
+): string {
+  const placeholder = options.length === 0
+    ? "<answer>"
+    : `<${options.join("|")}>`;
+  return `dome resolve ${id} ${placeholder}`;
 }
 
 function stringOrEmpty(value: unknown): string {

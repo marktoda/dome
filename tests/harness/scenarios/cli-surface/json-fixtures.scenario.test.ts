@@ -100,6 +100,8 @@ const EXPORT_ENTRY_KEYS = Object.freeze([
   "rank",
   "sourceRefs",
   "facts",
+  "diagnostics",
+  "questions",
 ]);
 
 scenario(
@@ -194,6 +196,8 @@ scenario(
     expect(exportEntry["path"]).toBe("wiki/project-alpha.md");
     expect(Array.isArray(exportEntry["sourceRefs"])).toBe(true);
     expect(Array.isArray(exportEntry["facts"])).toBe(true);
+    expect(Array.isArray(exportEntry["diagnostics"])).toBe(true);
+    expect(Array.isArray(exportEntry["questions"])).toBe(true);
   },
 );
 

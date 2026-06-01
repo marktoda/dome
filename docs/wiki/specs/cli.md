@@ -380,7 +380,9 @@ processor-version hash is stale. Output (text mode):
      - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
    facts: dome.graph.tagged, dome.daily.followup
    diagnostics: dome.markdown.broken-wikilink
-   questions: 1 open
+   Questions:
+     - [#42] Possible follow-up in wiki/syntheses/platform-team-ownership.md:19...
+       resolve: dome resolve 42 <track|ignore>
 
 2. 2026-05-23 (wiki/dailies/2026-05-23.md)
    Discussed platform ownership with Danny...
@@ -393,8 +395,9 @@ processor-version hash is stale. Output (text mode):
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
 Matches also include related page facts and unresolved diagnostics/questions
-whose SourceRefs point at the matched path, so recall can explain relevant
-engine state without forcing an immediate `inspect` detour.
+whose SourceRefs point at the matched path. Open questions include durable row
+ids, options, and a ready-to-run `dome resolve <id> <value>` hint so recall can
+explain relevant engine state without forcing an immediate `inspect` detour.
 
 ### `dome lint [--fail-on <severity>] [--json]`
 
@@ -429,7 +432,8 @@ the same adopted-state retrieval substrate as `dome query`, then renders a
 portable markdown packet for another Claude session, review, or handoff.
 
 Default text output is the markdown packet itself. It includes matching paths,
-snippets, related facts, and SourceRefs. `--json` emits the structured
+snippets, related facts, related diagnostics, related open questions with
+`dome resolve` hints, and SourceRefs. `--json` emits the structured
 `dome.search.export-context/v1` payload, including the packet under
 `markdown`.
 

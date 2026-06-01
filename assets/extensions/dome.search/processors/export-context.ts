@@ -2,6 +2,7 @@
 
 import {
   viewEffect,
+  type DiagnosticEffect,
   type Effect,
   type FactEffect,
   type ViewEffect,
@@ -13,13 +14,19 @@ import {
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import {
+  groupByMatchingPath,
+  questionItemFromProjection,
+  uniqueSourceRefs,
+  type SearchQuestionItem,
+} from "./related";
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -36,6 +43,17 @@ const exportContext: Processor = defineProcessor({
       query: input.topic,
       limit: input.limit,
     });
+    const matchPaths = new Set(matches.map((match) => match.path));
+    const diagnosticsByPath = groupByMatchingPath(
+      projection.diagnostics(),
+      matchPaths,
+    );
+    const questionsByPath = groupByMatchingPath(
+      projection
+        .questions({ resolved: false })
+        .map(questionItemFromProjection),
+      matchPaths,
+    );
     const entries = matches.map((match) =>
       contextEntryFromMatch(
         match,
@@ -43,12 +61,16 @@ const exportContext: Processor = defineProcessor({
           subjectKind: "page",
           subjectId: match.path,
         }),
+        diagnosticsByPath.get(match.path) ?? Object.freeze([]),
+        questionsByPath.get(match.path) ?? Object.freeze([]),
       ),
     );
     const scope = uniqueSourceRefs(
       entries.flatMap((entry) => [
         ...entry.sourceRefs,
         ...entry.facts.flatMap((fact) => fact.sourceRefs),
+        ...entry.diagnostics.flatMap((diagnostic) => diagnostic.sourceRefs),
+        ...entry.questions.flatMap((question) => question.sourceRefs),
       ]),
     );
     const data = Object.freeze({
@@ -88,6 +110,8 @@ type ContextEntry = {
   readonly rank: number;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly facts: ReadonlyArray<ContextFact>;
+  readonly diagnostics: ReadonlyArray<ContextDiagnostic>;
+  readonly questions: ReadonlyArray<ContextQuestion>;
 };
 
 type ContextFact = {
@@ -97,9 +121,27 @@ type ContextFact = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
+type ContextDiagnostic = {
+  readonly severity: DiagnosticEffect["severity"];
+  readonly code: string;
+  readonly message: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextQuestion = {
+  readonly id: number;
+  readonly question: string;
+  readonly options: ReadonlyArray<string>;
+  readonly resolveCommand: string;
+  readonly processorId: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
 function contextEntryFromMatch(
   match: SearchDocumentResult,
   facts: ReadonlyArray<FactEffect>,
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+  questions: ReadonlyArray<SearchQuestionItem>,
 ): ContextEntry {
   return Object.freeze({
     path: match.path,
@@ -120,6 +162,32 @@ function contextEntryFromMatch(
           })
         )
         .sort(compareFacts),
+    ),
+    diagnostics: Object.freeze(
+      diagnostics
+        .map((diagnostic) =>
+          Object.freeze({
+            severity: diagnostic.severity,
+            code: diagnostic.code,
+            message: diagnostic.message,
+            sourceRefs: Object.freeze([...diagnostic.sourceRefs]),
+          })
+        )
+        .sort(compareDiagnostics),
+    ),
+    questions: Object.freeze(
+      questions
+        .map((question) =>
+          Object.freeze({
+            id: question.id,
+            question: question.question,
+            options: question.options,
+            resolveCommand: question.resolveCommand,
+            processorId: question.processorId,
+            sourceRefs: Object.freeze([...question.sourceRefs]),
+          })
+        )
+        .sort(compareQuestions),
     ),
   });
 }
@@ -163,6 +231,25 @@ function renderMarkdown(
         lines.push(`- \`${fact.predicate}\`: ${fact.object} (${refs})`);
       }
     }
+    if (entry.diagnostics.length > 0) {
+      lines.push("");
+      lines.push("Diagnostics:");
+      for (const diagnostic of entry.diagnostics.slice(0, 8)) {
+        const refs = diagnostic.sourceRefs.map(formatSourceRef).join(", ");
+        lines.push(
+          `- \`${diagnostic.severity}\` \`${diagnostic.code}\`: ${diagnostic.message} (${refs})`,
+        );
+      }
+    }
+    if (entry.questions.length > 0) {
+      lines.push("");
+      lines.push("Questions:");
+      for (const question of entry.questions.slice(0, 8)) {
+        const refs = question.sourceRefs.map(formatSourceRef).join(", ");
+        lines.push(`- [#${question.id}] ${question.question} (${refs})`);
+        lines.push(`  resolve: ${question.resolveCommand}`);
+      }
+    }
   }
 
   return lines.join("\n");
@@ -189,6 +276,23 @@ function compareFacts(a: ContextFact, b: ContextFact): number {
   return predicate !== 0 ? predicate : a.object.localeCompare(b.object);
 }
 
+function compareDiagnostics(
+  a: ContextDiagnostic,
+  b: ContextDiagnostic,
+): number {
+  const severity = a.severity.localeCompare(b.severity);
+  if (severity !== 0) return severity;
+  const code = a.code.localeCompare(b.code);
+  return code !== 0 ? code : a.message.localeCompare(b.message);
+}
+
+function compareQuestions(
+  a: ContextQuestion,
+  b: ContextQuestion,
+): number {
+  return a.id - b.id;
+}
+
 function objectLabel(value: FactEffect["object"]): string {
   if (value.kind === "string") return value.value;
   if (value.kind === "number") return String(value.value);
@@ -203,26 +307,6 @@ function formatSourceRef(ref: SourceRef): string {
     ? ""
     : `:${ref.range.startLine}-${ref.range.endLine}`;
   return `${ref.path}${suffix} @ ${ref.commit.slice(0, 7)}`;
-}
-
-function uniqueSourceRefs(
-  refs: ReadonlyArray<SourceRef>,
-): ReadonlyArray<SourceRef> {
-  const seen = new Set<string>();
-  const out: SourceRef[] = [];
-  for (const ref of refs) {
-    const key = [
-      ref.commit,
-      ref.path,
-      ref.range?.startLine ?? "",
-      ref.range?.endLine ?? "",
-      ref.stableId ?? "",
-    ].join("\u0000");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ref);
-  }
-  return Object.freeze(out);
 }
 
 function stripFtsMarkers(snippet: string): string {

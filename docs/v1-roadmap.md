@@ -774,6 +774,10 @@ Work:
       `dome today`, `dome prep`, and `dome agenda`, after the real work-vault
       soak showed daily views could surface a decision without enough
       information to resolve it.
+- [x] Carry related diagnostics and open-question `dome resolve` hints through
+      `dome query` text and `dome export-context` packets, after the real
+      work-vault soak showed a handoff packet could hide a decision that
+      `status` was asking the user to handle.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
