@@ -22,6 +22,9 @@ created: <ISO-8601 date>          # recommended; the page's creation timestamp
 updated: <ISO-8601 date>          # recommended; updated on every committed change
 sources: [<wikilink>, ...]        # optional; explicit provenance citations
 tags: [<tag>, ...]                # optional; indexed by dome.graph.tag-index
+description: <short text>         # optional; human-readable summary
+name: <display name>              # optional; imported/display name
+metadata: { ... }                 # optional; import/source-specific metadata bag
 ---
 ```
 
@@ -63,6 +66,10 @@ updated: 2026-05-27
 sources: ["[[raw/voice/2026-05-15-meeting.md]]"]
 aliases: ["Danny T.", "DT"]              # optional; for fuzzy-resolve
 last_interaction: 2026-05-27             # optional; bumped by dome.intake
+description: "Team lead for..."          # optional
+name: "Danny Tan"                        # optional
+status: "active"                         # optional; lifecycle/state label
+metadata: { ... }                        # optional
 ---
 ```
 
@@ -77,6 +84,9 @@ created: 2026-05-15
 updated: 2026-05-27
 sources: ["[[wiki/dailies/2026-05-15]]"]
 tags: ["architecture", "platform-ownership"]   # optional
+description: "Why this concept matters"        # optional
+name: "Platform ownership"                     # optional
+metadata: { ... }                              # optional
 ---
 ```
 
@@ -92,6 +102,9 @@ updated: 2026-05-15
 sources: []
 url: "https://..."             # optional but recommended for external sources
 author: "Andrej Karpathy"      # optional
+description: "Reference summary" # optional
+name: "Karpathy gist"            # optional
+metadata: { ... }                # optional
 published: 2025-11-01          # optional
 ---
 ```
@@ -107,7 +120,10 @@ created: 2026-05-20
 updated: 2026-05-27
 sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
 status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
+description: "Synthesis summary"              # optional
 generated_from: "wiki/generated/intake/example.md" # optional; generated synthesis provenance
+name: "Org health synthesis"                  # optional
+metadata: { ... }                             # optional
 processor: dome.intake.synthesize-capture       # optional; generating processor id
 ---
 ```

@@ -82,7 +82,7 @@ const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 const lintFrontmatter: Processor = defineProcessor({
   id: "dome.markdown.lint-frontmatter",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },

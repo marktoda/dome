@@ -63,19 +63,32 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
   Object.freeze([
     pageTypeDeclaration("entity", "dome.default", {
       aliases: "optional",
+      description: "optional",
       last_interaction: "optional",
+      metadata: "optional",
+      name: "optional",
+      status: "optional",
     }),
     pageTypeDeclaration("concept", "dome.default", {
+      description: "optional",
+      metadata: "optional",
+      name: "optional",
       status: "optional",
     }),
     pageTypeDeclaration("source", "dome.default", {
-      url: "optional",
       author: "optional",
+      description: "optional",
       external: "optional",
+      metadata: "optional",
+      name: "optional",
       published: "optional",
+      url: "optional",
     }),
     pageTypeDeclaration("synthesis", "dome.default", {
+      description: "optional",
       generated_from: "optional",
+      metadata: "optional",
+      name: "optional",
       processor: "optional",
       status: "optional",
     }),
