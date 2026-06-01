@@ -2,10 +2,9 @@
 //
 // dome.markdown.lint-frontmatter (Phase 13a) emits one diagnostic per
 // frontmatter defect across the changed markdown files. This scenario
-// covers four of the five lint codes (missing-frontmatter, missing-type,
-// invalid-date, tags-not-list) — malformed-yaml is harder to surface in
-// a Bun integration without an explicit invalid-YAML fixture, and is
-// covered by the per-processor unit tests.
+// covers the core lint codes and severity policy — malformed-yaml is harder
+// to surface in a Bun integration without an explicit invalid-YAML fixture,
+// and is covered by the per-processor unit tests.
 
 import { expect } from "bun:test";
 
@@ -90,6 +89,9 @@ scenario(
 
     await h.userCommit({
       files: {
+        ".dome/page-types.yaml":
+          "extensions:\n" +
+          "  - name: decision\n",
         "wiki/no-frontmatter.md": "# Managed page\n",
         "wiki/sources/internal-scan.md":
           "---\n" +
@@ -97,7 +99,17 @@ scenario(
           "---\n" +
           "# Internal scan\n\n" +
           "This source is internal and has no URL.\n",
+        "wiki/unknown-type.md":
+          "---\n" +
+          "type: mystery\n" +
+          "---\n" +
+          "# Unknown managed type\n",
         "notes/legacy-note.md": "# Legacy note\n",
+        "notes/local-type.md":
+          "---\n" +
+          "type: interview\n" +
+          "---\n" +
+          "# Local note type\n",
         "raw/legacy-source.md": "# Legacy raw source\n",
         "inbox/raw/capture.md": "# Unstructured capture\n",
         "templates/Meeting.md": "# Template\n",
@@ -121,6 +133,17 @@ scenario(
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.tags-not-list" })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({
+        code: "dome.markdown.type-unknown",
+        severity: "warning",
+      })
+      .toHaveCount(1);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.type-unknown", severity: "info" })
       .toHaveCount(1);
     await h
       .expectProjection()

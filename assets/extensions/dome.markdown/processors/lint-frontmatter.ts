@@ -3,9 +3,10 @@
 // Validates YAML frontmatter on changed managed markdown pages. `wiki/` pages
 // must carry frontmatter and `type:`; user-owned capture/note roots may omit
 // frontmatter, but any frontmatter they do include is still checked for
-// parseability and well-formed structured fields. Diagnostic-only (no
-// PatchEffect) — failures surface as warnings; the fixed-point adoption loop
-// converges in one iteration.
+// parseability and well-formed structured fields. Unknown page types in those
+// optional roots are informational so user-local note/capture labels do not
+// create daily attention. Diagnostic-only (no PatchEffect) — failures surface
+// as warnings/info; the fixed-point adoption loop converges in one iteration.
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same content → same diagnostic set (every check is a
@@ -28,8 +29,9 @@
 // processors validate-wikilinks + normalize-frontmatter).
 //
 // Per [[wiki/specs/effects]] §"DiagnosticEffect", `severity: "warning"`
-// is recorded + surfaced in `dome status` / `dome inspect` but does not
-// block adoption — frontmatter hygiene is a finding, not a merge gate.
+// creates operator attention but does not block adoption. Optional-root
+// unknown-type findings use `severity: "info"` because they preserve useful
+// visibility without treating user-owned note taxonomy as curated-wiki drift.
 //
 // This file lives under `assets/` which is excluded from the root
 // `tsconfig.json`. Imports use relative paths into `src/`, resolved at
@@ -63,9 +65,9 @@ import {
 
 // ----- Diagnostic codes -----------------------------------------------------
 //
-// All five codes are emitted at `severity: "warning"` (per the bundle's
-// diagnostic-only convention). Stable across versions — downstream tooling
-// (`dome inspect diagnostics --code <X>`) consumes them.
+// Codes are stable across versions — downstream tooling
+// (`dome inspect diagnostics --code <X>`) consumes them. Severity is mostly
+// warning, except optional-root unknown `type:` values, which are info.
 
 const CODE_MISSING_FRONTMATTER = "dome.markdown.missing-frontmatter";
 const CODE_MISSING_TYPE = "dome.markdown.missing-type";
@@ -82,7 +84,7 @@ const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 const lintFrontmatter: Processor = defineProcessor({
   id: "dome.markdown.lint-frontmatter",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -93,7 +95,9 @@ const lintFrontmatter: Processor = defineProcessor({
     const diagnostics: DiagnosticEffect[] = [];
     const pageTypes = await loadPageTypeRegistry(ctx);
     if (pageTypes.finding !== null) {
-      diagnostics.push(diagnosticForFinding(ctx, PAGE_TYPES_PATH, pageTypes.finding));
+      diagnostics.push(
+        diagnosticForFinding(ctx, PAGE_TYPES_PATH, pageTypes.finding, "required"),
+      );
     }
 
     // `file.created` fires for every added path; only managed markdown roots
@@ -103,6 +107,7 @@ const lintFrontmatter: Processor = defineProcessor({
     );
 
     for (const path of changedMarkdown) {
+      const mode = frontmatterLintModeForPath(path);
       const content = await ctx.snapshot.readFile(path);
       // `null` → path deleted or never existed in the candidate; nothing
       // to lint.
@@ -111,10 +116,10 @@ const lintFrontmatter: Processor = defineProcessor({
       const findings = lintContent(
         content,
         pageTypes.registry,
-        frontmatterLintModeForPath(path),
+        mode,
       );
       for (const f of findings) {
-        diagnostics.push(diagnosticForFinding(ctx, path, f));
+        diagnostics.push(diagnosticForFinding(ctx, path, f, mode));
       }
     }
 
@@ -374,14 +379,25 @@ function diagnosticForFinding(
   ctx: ProcessorContext,
   path: string,
   finding: Finding,
+  mode: FrontmatterLintMode,
 ): DiagnosticEffect {
   const line = finding.line ?? 1;
   return diagnosticEffect({
-    severity: "warning",
+    severity: severityForFinding(finding, mode),
     code: finding.code,
     message: finding.message,
     sourceRefs: [ctx.sourceRef(path, { startLine: line, endLine: line })],
   });
+}
+
+function severityForFinding(
+  finding: Finding,
+  mode: FrontmatterLintMode,
+): DiagnosticEffect["severity"] {
+  if (mode === "optional" && finding.code === CODE_UNKNOWN_TYPE) {
+    return "info";
+  }
+  return "warning";
 }
 
 /**

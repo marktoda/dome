@@ -28,7 +28,7 @@ metadata: { ... }                 # optional; import/source-specific metadata ba
 ---
 ```
 
-For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates. On active Proposals, `dome.markdown.normalize-frontmatter` refreshes an existing managed `wiki/` page `updated:` date when it drifts from git history; during adopted-state rebuild/check, `dome.markdown.stale-dates` reports remaining stale historical pages as informational diagnostics. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
+For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates. On active Proposals, `dome.markdown.normalize-frontmatter` refreshes an existing managed `wiki/` page `updated:` date when it drifts from git history; during adopted-state rebuild/check, `dome.markdown.stale-dates` reports remaining stale historical pages as informational diagnostics. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Unknown `type:` values in those optional roots are informational, not warning attention, so user-local note and capture labels do not need to be declared as vault page types. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
 
 ### Type field
 
@@ -38,7 +38,7 @@ For non-default page shapes:
 - `raw/voice/<id>.md` may use `type: voice-capture` when raw frontmatter is present.
 - `wiki/dailies/2026-05-27.md` → `type: daily` (an **extension-contributed type** from the `dome.daily` bundle, not one of the four defaults — see §"Extension types (from bundles)" below).
 
-Type validation against the declared page types is the `dome.markdown.type-unknown` warning diagnostic when known-type enforcement is active.
+Type validation against the declared page types is the `dome.markdown.type-unknown` diagnostic when known-type enforcement is active. Managed `wiki/` pages emit it as a warning; optional roots emit it as info.
 
 ### Created / updated
 

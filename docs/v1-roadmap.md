@@ -814,7 +814,7 @@ Required for daily value:
 
 | Bundle | Status | V1 responsibility |
 |---|---|---|
-| `dome.markdown` | v1 shipped | deterministic markdown hygiene, managed-page wikilink/image/frontmatter diagnostics with close existing-page hints for likely link typos, informational note-draft and imported-source body link diagnostics, raw immutability blocking, page schemas |
+| `dome.markdown` | v1 shipped | deterministic markdown hygiene, managed-page wikilink/image/frontmatter diagnostics with close existing-page hints for likely link typos, informational note-draft and imported-source body link diagnostics, informational optional-root unknown page types, raw immutability blocking, page schemas |
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
 | `dome.health` | v1 shipped | health probes surfaced through `dome check` / advanced `dome doctor`; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers resolved through `dome resolve` |
@@ -908,7 +908,9 @@ Fold these into nearby milestone work when they are on-path:
       flood `dome resolve`.
 - [x] Frontmatter diagnostic precision: `dome.markdown.lint-frontmatter` now
       requires page metadata only for managed `wiki/` pages while treating
-      user-owned `notes/`, `raw/`, and `inbox/` frontmatter as optional.
+      user-owned `notes/`, `raw/`, and `inbox/` frontmatter as optional;
+      unknown `type:` values in those optional roots are informational so
+      local note/capture labels do not create daily attention.
 - [x] Managed-date maintenance: `dome.markdown.normalize-frontmatter` now
       refreshes existing stale `updated:` fields on managed `wiki/` pages
       during adoption, while `dome.markdown.stale-dates` remains a read-only
