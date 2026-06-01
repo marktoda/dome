@@ -764,6 +764,9 @@ Work:
 - [x] Align `dome sync --json` durable attention with `dome status --json`
       by surfacing persistent content diagnostic counts and routing
       diagnostics-only sync attention to the bounded content-check command.
+- [x] Make `dome check --json` question next actions include explicit option
+      placeholders such as `<track|ignore>`, so Claude Code does not need to
+      infer valid `dome resolve` choices from a separate payload field.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

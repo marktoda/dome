@@ -1496,9 +1496,9 @@ describe("runCheck", () => {
     expect(parsed["next_actions"]).toEqual([
       {
         reasons: ["questions"],
-        command: "dome resolve 1 <choice>",
+        command: "dome resolve 1 <yes|no>",
         description:
-          "Resolve an open Dome decision after choosing the correct option.",
+          "Resolve an open Dome decision using one of the listed options.",
       },
       {
         reasons: ["engine"],

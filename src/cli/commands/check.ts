@@ -286,6 +286,7 @@ function buildReport(input: {
         input.scopes.content && input.content?.filter.attention === true,
       questions,
       firstQuestionId: input.decisions?.items[0]?.id ?? null,
+      firstQuestionOptions: input.decisions?.items[0]?.options ?? null,
     }),
   });
 }

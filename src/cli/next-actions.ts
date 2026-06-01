@@ -142,16 +142,17 @@ export function nextActionsForCheck(input: {
   readonly diagnosticsAlreadyBounded: boolean;
   readonly questions: number;
   readonly firstQuestionId: number | null;
+  readonly firstQuestionOptions: ReadonlyArray<string> | null;
 }): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
   if (input.questions > 0) {
     out.push(Object.freeze({
       reasons: Object.freeze(["questions"]),
-      command: input.firstQuestionId === null
-        ? "dome resolve <question-id> <choice>"
-        : `dome resolve ${input.firstQuestionId} <choice>`,
-      description:
-        "Resolve an open Dome decision after choosing the correct option.",
+      command: resolveQuestionCommand({
+        id: input.firstQuestionId,
+        options: input.firstQuestionOptions,
+      }),
+      description: questionDescription(input.firstQuestionOptions),
     }));
   }
   if (input.engineFindings > 0) {
@@ -180,6 +181,30 @@ export function nextActionsForCheck(input: {
     }
   }
   return Object.freeze(out);
+}
+
+function resolveQuestionCommand(input: {
+  readonly id: number | null;
+  readonly options: ReadonlyArray<string> | null;
+}): string {
+  const id = input.id === null ? "<question-id>" : String(input.id);
+  return `dome resolve ${id} ${questionValuePlaceholder(input.options)}`;
+}
+
+function questionValuePlaceholder(
+  options: ReadonlyArray<string> | null,
+): string {
+  if (options === null || options.length === 0) return "<answer>";
+  return `<${options.join("|")}>`;
+}
+
+function questionDescription(
+  options: ReadonlyArray<string> | null,
+): string {
+  if (options === null || options.length === 0) {
+    return "Resolve an open Dome decision by providing an answer.";
+  }
+  return "Resolve an open Dome decision using one of the listed options.";
 }
 
 function pushAction(

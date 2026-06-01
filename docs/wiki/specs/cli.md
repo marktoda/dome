@@ -322,12 +322,15 @@ SourceRef objects for agents and other callers); diagnostic summary groups use
 the matching `first_source_refs` / `firstSourceRefs` pair. Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7 @ 41a98c2","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7 @ 41a98c2","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the
 report says engine work may be recoverable through a health question, run
 `dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
+When the first unresolved decision has explicit options, the question
+next-action command includes them as the placeholder, for example
+`dome resolve 42 <retry|abandon>`; free-form decisions use `<answer>`.
 When attention is content diagnostics only, the diagnostic next action points
 to `dome check --content --attention --limit 50 --json` so an agent can safely
 fetch a larger bounded actionable detail list before editing source markdown.
