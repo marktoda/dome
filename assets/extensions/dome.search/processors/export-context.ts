@@ -27,7 +27,7 @@ const MAX_RELATED_ROWS = 8;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -40,10 +40,12 @@ const exportContext: Processor = defineProcessor({
 
     const projection = ctx.projection;
     const input = parseInput(ctx.input);
-    const matches = projection.searchDocuments({
+    const searchMatches = projection.searchDocuments({
       query: input.topic,
-      limit: input.limit,
+      limit: input.limit + 1,
     });
+    const matches = Object.freeze(searchMatches.slice(0, input.limit));
+    const hasMoreEntries = searchMatches.length > matches.length;
     const matchPaths = new Set(matches.map((match) => match.path));
     const diagnosticsByPath = groupByMatchingPath(
       projection.diagnostics(),
@@ -78,7 +80,13 @@ const exportContext: Processor = defineProcessor({
       schema: SCHEMA,
       topic: input.topic,
       limit: input.limit,
-      markdown: renderMarkdown(input.topic, entries),
+      shown: Object.freeze({
+        entries: entries.length,
+      }),
+      hasMore: Object.freeze({
+        entries: hasMoreEntries,
+      }),
+      markdown: renderMarkdown(input.topic, entries, hasMoreEntries),
       entries: Object.freeze(entries),
     });
 
@@ -196,6 +204,7 @@ function contextEntryFromMatch(
 function renderMarkdown(
   topic: string,
   entries: ReadonlyArray<ContextEntry>,
+  hasMoreEntries: boolean,
 ): string {
   const lines = [
     `# Dome Context: ${topic}`,
@@ -267,6 +276,13 @@ function renderMarkdown(
         "questions",
       );
     }
+  }
+
+  if (hasMoreEntries) {
+    lines.push("");
+    lines.push(
+      "- ... more adopted-state matches exist (increase --limit to include more entries)",
+    );
   }
 
   return lines.join("\n");

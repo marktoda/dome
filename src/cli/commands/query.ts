@@ -120,11 +120,24 @@ function formatQueryResult(data: unknown): string {
       }
     }
   }
+  if (result.hasMore.matches) {
+    lines.push("");
+    lines.push(
+      "(more adopted-state matches exist; increase --limit to show more)",
+    );
+  }
   return lines.join("\n");
 }
 
 type QueryResultData = {
   readonly query: string;
+  readonly limit: number | null;
+  readonly shown: {
+    readonly matches: number;
+  };
+  readonly hasMore: {
+    readonly matches: boolean;
+  };
   readonly matches: ReadonlyArray<{
     readonly path: string;
     readonly title: string;
@@ -158,9 +171,18 @@ function parseQueryResult(data: unknown): QueryResultData {
     ? data as Record<string, unknown>
     : {};
   const query = typeof record.query === "string" ? record.query : "";
+  const shownRecord = objectRecord(record.shown);
+  const hasMoreRecord = objectRecord(record.hasMore);
   const rawMatches = Array.isArray(record.matches) ? record.matches : [];
   return Object.freeze({
     query,
+    limit: numberValue(record.limit),
+    shown: Object.freeze({
+      matches: numberValue(shownRecord.matches) ?? rawMatches.length,
+    }),
+    hasMore: Object.freeze({
+      matches: hasMoreRecord.matches === true,
+    }),
     matches: Object.freeze(
       rawMatches.map((raw) => {
         const match = raw !== null && typeof raw === "object"
@@ -178,6 +200,12 @@ function parseQueryResult(data: unknown): QueryResultData {
       }),
     ),
   });
+}
+
+function objectRecord(raw: unknown): Record<string, unknown> {
+  return raw !== null && typeof raw === "object" && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {};
 }
 
 function parseFacts(raw: unknown): ReadonlyArray<{ readonly predicate: string }> {

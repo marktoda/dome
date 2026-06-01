@@ -426,7 +426,7 @@ processor-version hash is stale. Output (text mode):
    SourceRefs:
      - wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
 
-(further matches truncated; --limit to show all)
+(more adopted-state matches exist; increase --limit to show more)
 ```
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
@@ -435,6 +435,9 @@ Matches also include related page facts and unresolved diagnostics/questions
 whose SourceRefs point at the matched path. Open questions include durable row
 ids, options, and a ready-to-run `dome resolve <id> <value>` hint so recall can
 explain relevant engine state without forcing an immediate `inspect` detour.
+The top-level `limit`, `shown.matches`, and `hasMore.matches` fields describe
+bounded result rendering; when more visible matches are detected, text mode
+prints the expansion hint above.
 Text mode summarizes repeated fact predicates and diagnostic codes with counts
 (`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
 underlying structured fact and diagnostic rows unchanged.
@@ -479,9 +482,11 @@ snippets, related facts, related diagnostics, related open questions with
 `dome resolve` hints, and SourceRefs. Per-match related fact, diagnostic, and
 question sections are bounded in the rendered packet and include omitted-row
 hints when more related rows remain; the structured JSON entries retain the
-full related row arrays for consumers that want all evidence. `--json` emits
-the structured `dome.search.export-context/v1` payload, including the packet
-under `markdown`.
+full related row arrays for consumers that want all evidence. Search-match
+entries are also bounded by `--limit`; the structured JSON includes
+`shown.entries` and `hasMore.entries`, and text mode prints an expansion hint
+when more adopted-state matches are detected. `--json` emits the structured
+`dome.search.export-context/v1` payload, including the packet under `markdown`.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 

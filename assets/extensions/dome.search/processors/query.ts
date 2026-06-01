@@ -23,9 +23,12 @@ import {
   type SearchQuestionItem,
 } from "./related";
 
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -37,12 +40,14 @@ const searchQuery: Processor = defineProcessor({
     }
 
     const input = parseQueryInput(ctx.input);
-    const matches = ctx.projection.searchDocuments({
+    const searchMatches = ctx.projection.searchDocuments({
       query: input.text,
       ...(input.category !== undefined ? { category: input.category } : {}),
       ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      limit: input.limit + 1,
     });
+    const matches = Object.freeze(searchMatches.slice(0, input.limit));
+    const hasMoreMatches = searchMatches.length > matches.length;
     const factsByPath = factsForMatches(ctx, matches);
     const diagnosticsByPath = diagnosticsForMatches(ctx, matches);
     const questionsByPath = questionsForMatches(ctx, matches);
@@ -52,6 +57,13 @@ const searchQuery: Processor = defineProcessor({
       filters: Object.freeze({
         ...(input.category !== undefined ? { category: input.category } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
+      }),
+      limit: input.limit,
+      shown: Object.freeze({
+        matches: matches.length,
+      }),
+      hasMore: Object.freeze({
+        matches: hasMoreMatches,
       }),
       matches: Object.freeze(
         matches.map((match) =>
@@ -101,7 +113,7 @@ type QueryInput = {
   readonly text: string;
   readonly category?: string;
   readonly type?: string;
-  readonly limit?: number;
+  readonly limit: number;
 };
 
 function parseQueryInput(input: unknown): QueryInput {
@@ -119,12 +131,12 @@ function parseQueryInput(input: unknown): QueryInput {
   const text = stringValue(record.text) ?? stringValue(flags.q) ?? "";
   const category = stringValue(record.category) ?? stringValue(flags.category);
   const type = stringValue(record.type) ?? stringValue(flags.type);
-  const limit = numberValue(record.limit) ?? numberValue(flags.limit);
+  const limit = clampLimit(numberValue(record.limit) ?? numberValue(flags.limit));
   return Object.freeze({
     text,
     ...(category !== null ? { category } : {}),
     ...(type !== null ? { type } : {}),
-    ...(limit !== null ? { limit } : {}),
+    limit,
   });
 }
 
@@ -183,4 +195,9 @@ function numberValue(value: unknown): number | null {
   if (typeof value !== "string" || value.trim().length === 0) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampLimit(raw: number | null): number {
+  if (raw === null || !Number.isFinite(raw)) return DEFAULT_LIMIT;
+  return Math.max(1, Math.min(MAX_LIMIT, Math.trunc(raw)));
 }

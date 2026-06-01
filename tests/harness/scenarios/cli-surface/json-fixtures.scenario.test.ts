@@ -71,7 +71,15 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "modelProviderMissing",
 ]);
 
-const QUERY_KEYS = Object.freeze(["schema", "query", "filters", "matches"]);
+const QUERY_KEYS = Object.freeze([
+  "schema",
+  "query",
+  "filters",
+  "limit",
+  "shown",
+  "hasMore",
+  "matches",
+]);
 const QUERY_MATCH_KEYS = Object.freeze([
   "path",
   "title",
@@ -89,6 +97,8 @@ const EXPORT_KEYS = Object.freeze([
   "schema",
   "topic",
   "limit",
+  "shown",
+  "hasMore",
   "markdown",
   "entries",
 ]);
@@ -176,6 +186,9 @@ scenario(
     expect(Object.keys(query)).toEqual([...QUERY_KEYS]);
     expect(query["schema"]).toBe("dome.search.query/v1");
     expect(query["query"]).toBe("alpha launch");
+    expect(query["limit"]).toBe(10);
+    expect(record(query["shown"])["matches"]).toBe(1);
+    expect(record(query["hasMore"])["matches"]).toBe(false);
     const queryMatch = firstRecord(query["matches"]);
     expect(Object.keys(queryMatch)).toEqual([...QUERY_MATCH_KEYS]);
     expect(queryMatch["path"]).toBe("wiki/project-alpha.md");
@@ -189,6 +202,8 @@ scenario(
     expect(exported["schema"]).toBe("dome.search.export-context/v1");
     expect(exported["topic"]).toBe("alpha launch");
     expect(exported["limit"]).toBe(2);
+    expect(record(exported["shown"])["entries"]).toBe(1);
+    expect(record(exported["hasMore"])["entries"]).toBe(false);
     expect(String(exported["markdown"])).toContain(
       "# Dome Context: alpha launch",
     );

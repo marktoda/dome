@@ -72,6 +72,9 @@ scenario(
 
     const payload = JSON.parse(cli.stdout) as {
       readonly query: string;
+      readonly limit: number;
+      readonly shown: { readonly matches: number };
+      readonly hasMore: { readonly matches: boolean };
       readonly matches: ReadonlyArray<{
         readonly path: string;
         readonly title: string;
@@ -88,6 +91,9 @@ scenario(
     };
 
     expect(payload.query).toBe("alpha launch");
+    expect(payload.limit).toBe(10);
+    expect(payload.shown.matches).toBe(payload.matches.length);
+    expect(payload.hasMore.matches).toBe(false);
     const paths = payload.matches.map((m) => m.path);
     expect(paths).toContain("wiki/project-alpha.md");
     expect(paths).not.toContain("wiki/other.md");
@@ -119,6 +125,38 @@ scenario(
     expect(question?.resolveCommand).toBe(
       `dome resolve ${question?.id} <merge|keep separate>`,
     );
+
+    const limitedText = await h.runCli([
+      "query",
+      "alpha launch",
+      "--limit",
+      "1",
+    ]);
+    expect(limitedText.exitCode).toBe(0);
+    expect(limitedText.stderr).toBe("");
+    expect(limitedText.stdout).toContain(
+      "more adopted-state matches exist; increase --limit to show more",
+    );
+
+    const limitedJson = await h.runCli([
+      "query",
+      "alpha launch",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(limitedJson.exitCode).toBe(0);
+    expect(limitedJson.stderr).toBe("");
+    const limitedPayload = JSON.parse(limitedJson.stdout) as {
+      readonly limit: number;
+      readonly shown: { readonly matches: number };
+      readonly hasMore: { readonly matches: boolean };
+      readonly matches: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(limitedPayload.limit).toBe(1);
+    expect(limitedPayload.shown.matches).toBe(1);
+    expect(limitedPayload.hasMore.matches).toBe(true);
+    expect(limitedPayload.matches).toHaveLength(1);
 
     h.projection.raw.run(
       "UPDATE projection_meta SET processor_versions_hash = 'stale-version-hash'",

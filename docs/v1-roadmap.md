@@ -849,6 +849,10 @@ Work:
       `next_actions`, so Claude Code can start/verify the foreground
       `dome serve` host for normal sessions without treating sync-only mode as
       broken compiler attention.
+- [x] Make bounded `dome query` and `dome export-context` result sets reveal
+      when more adopted-state matches exist beyond `--limit`, so source-backed
+      recall and handoff packets do not look complete when only the first few
+      matches are shown.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

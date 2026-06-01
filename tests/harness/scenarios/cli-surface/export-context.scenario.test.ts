@@ -93,6 +93,8 @@ scenario(
     const payload = JSON.parse(json.stdout) as {
       readonly topic: string;
       readonly limit: number;
+      readonly shown: { readonly entries: number };
+      readonly hasMore: { readonly entries: boolean };
       readonly markdown: string;
       readonly entries: ReadonlyArray<{
         readonly path: string;
@@ -110,6 +112,8 @@ scenario(
 
     expect(payload.topic).toBe("alpha launch");
     expect(payload.limit).toBe(3);
+    expect(payload.shown.entries).toBe(payload.entries.length);
+    expect(payload.hasMore.entries).toBe(false);
     expect(payload.markdown).toContain("# Dome Context: alpha launch");
     const alpha = payload.entries.find(
       (entry) => entry.path === "wiki/project-alpha.md",
@@ -131,6 +135,42 @@ scenario(
     expect(question?.id).toBeGreaterThan(0);
     expect(question?.resolveCommand).toBe(
       `dome resolve ${question?.id} <merge|keep separate>`,
+    );
+
+    const limitedText = await h.runCli([
+      "export-context",
+      "alpha launch",
+      "--limit",
+      "1",
+    ]);
+    expect(limitedText.exitCode).toBe(0);
+    expect(limitedText.stderr).toBe("");
+    expect(limitedText.stdout).toContain(
+      "more adopted-state matches exist (increase --limit to include more entries)",
+    );
+
+    const limitedJson = await h.runCli([
+      "export-context",
+      "alpha launch",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(limitedJson.exitCode).toBe(0);
+    expect(limitedJson.stderr).toBe("");
+    const limitedPayload = JSON.parse(limitedJson.stdout) as {
+      readonly limit: number;
+      readonly shown: { readonly entries: number };
+      readonly hasMore: { readonly entries: boolean };
+      readonly markdown: string;
+      readonly entries: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(limitedPayload.limit).toBe(1);
+    expect(limitedPayload.shown.entries).toBe(1);
+    expect(limitedPayload.hasMore.entries).toBe(true);
+    expect(limitedPayload.entries).toHaveLength(1);
+    expect(limitedPayload.markdown).toContain(
+      "more adopted-state matches exist (increase --limit to include more entries)",
     );
   },
 );
