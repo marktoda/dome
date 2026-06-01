@@ -242,7 +242,7 @@ health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 
 `--json` emits the same stable keys for agent consumption:
 
 ```json
-{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"projection_stale":false,"projection_cache_drift":false,"attention_required":true,"attention":["outbox_pending"],"next_actions":[{"reasons":["outbox_pending"],"command":"dome sync --json","description":"Run one compiler tick to adopt pending commits or drain due operational work."}],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":0,"attention_diagnostics":0,"diagnostic_summary":{"total":0,"group_count":0,"shown_groups":0,"groups":[]},"questions":0,"outbox_pending":2,"outbox_failed":0,"quarantined":0}
+{"vault":"/Users/mark/vaults/work","branch":"main","head":"41a98c2...","adopted":"41a98c2...","sync_needed":false,"pending_commits":0,"adopted_diverged":false,"projection_stale":false,"projection_cache_drift":false,"attention_required":true,"attention":["diagnostics"],"next_actions":[{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json."}],"dirty_modified":0,"dirty_untracked":0,"content_pages":1247,"wiki_pages":1247,"notes_pages":87,"inbox_pages":14,"wikilinks":8143,"raw_files":412,"raw_bytes":2516582,"last_sync":"2026-05-28T12:34:56.000Z","pending_runs":0,"failed_runs":0,"recent_processor_runs":[{"processor_id":"dome.daily.task-index","processor_version":"1.0.0","phase":"garden","latest_run_id":"run_...","latest_status":"succeeded","latest_started_at":"2026-05-28T12:34:56.000Z","latest_finished_at":"2026-05-28T12:34:56.140Z","latest_duration_ms":140,"recent_runs":3,"recent_problem_runs":0}],"serve_status":"running","serve_pid":12345,"serve_branch":"main","serve_updated_at":"2026-05-28T12:34:56.000Z","diagnostics":12,"attention_diagnostics":12,"diagnostic_summary":{"total":12,"group_count":1,"shown_groups":1,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":12,"first_message":"...","first_source_refs":"wiki/page.md:7 @ 41a98c2","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"questions":0,"outbox_pending":0,"outbox_failed":0,"quarantined":0}
 ```
 
 `recent_processor_runs` is a bounded summary over the newest 100 run-ledger
@@ -263,7 +263,12 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 total unresolved diagnostic count; `attention_diagnostics` is the
 warning/error/block subset. Informational diagnostics remain visible in
 `diagnostics` and `diagnostic_summary`, but only warning/error/block
-diagnostics contribute the `diagnostics` attention reason.
+diagnostics contribute the `diagnostics` attention reason. Diagnostic summary
+groups include both `first_source_refs` (compact display text) and
+`firstSourceRefs` (structured SourceRef objects). If diagnostics are the only
+check-oriented attention reason, status routes directly to
+`dome check --content --attention --limit 50 --json`; otherwise it routes to
+the broader `dome check --json` report.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
@@ -304,10 +309,11 @@ warning/error/block diagnostics while preserving the total diagnostic and
 attention-diagnostic counts. `--limit` bounds rows per section. `--json` emits
 the structured `dome.check/v1` payload. Diagnostic and decision items include
 both `source_refs` (a compact display string) and `sourceRefs` (structured
-SourceRef objects for agents and other callers). Abbreviated example:
+SourceRef objects for agents and other callers); diagnostic summary groups use
+the matching `first_source_refs` / `firstSourceRefs` pair. Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7 @ 41a98c2","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7 @ 41a98c2","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the

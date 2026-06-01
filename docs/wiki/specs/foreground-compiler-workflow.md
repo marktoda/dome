@@ -73,7 +73,8 @@ boundary. The useful moments to call Dome explicitly are:
 
 - `dome sync --json` when the user wants to block until the latest commit is adopted.
 - `dome status --json` when the user wants a cheap health/adoption pulse.
-- `dome check --json` when status reports remaining attention.
+- the `dome check ...` command in status `next_actions` when status reports
+  remaining attention.
 - `dome resolve <id> <value>` when the user has chosen an answer to a Dome
   question.
 - `dome query <text>` for adopted-state recall with SourceRefs.
@@ -104,12 +105,13 @@ When something looks wrong, use the recovery surfaces in this order:
    - `next_actions` is the canonical branch for Claude Code.
    - `dome sync --json` means the compiler needs to catch up or drain due
      work.
-   - `dome check --json` means attention remains after sync or needs a more
-     detailed explanation.
+   - a `dome check ...` command means attention remains after sync or needs a
+     more detailed explanation.
    - `git status --short` means there are uncommitted draft files; commit,
      ignore, or remove them before expecting Dome to adopt them.
 
-2. **Explain attention:**
+2. **Explain attention:** run the `dome check ...` command from
+   `next_actions`. The broad form is:
 
    ```bash
    dome check --json

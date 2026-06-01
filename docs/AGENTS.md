@@ -59,7 +59,8 @@ reason codes, and `next_actions`. Treat `next_actions` as the canonical
 branch. In normal use:
 
 - Run `dome sync --json` when status says the compiler needs to catch up.
-- Run `dome check --json` when status says attention remains after sync.
+- Run the `dome check ...` command in `next_actions` when status says
+  attention remains after sync.
 - Run `dome resolve <id> <value>` only after a Dome question is clear and the
   user has chosen the answer.
 - Commit, ignore, or remove dirty draft files before expecting Dome to adopt

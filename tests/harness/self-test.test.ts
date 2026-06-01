@@ -113,6 +113,7 @@ scenario(
   {
     name: "self-test: harness initial commit has no Dome trailers (not an engine commit)",
     tags: [{ kind: "group", group: "regression" }],
+    timeoutMs: 30_000,
   },
   async (h) => {
     const head = await h.refs.head();

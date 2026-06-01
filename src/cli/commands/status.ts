@@ -301,7 +301,7 @@ export async function runStatus(
       projection_cache_drift,
       attention_required: attention.length > 0,
       attention,
-      next_actions: nextActionsForStatus(attention),
+      next_actions: nextActionsForStatus({ attention }),
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
       content_pages: analytics.content_pages,

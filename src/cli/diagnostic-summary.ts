@@ -1,4 +1,5 @@
 import type { DiagnosticEffect } from "../core/effect";
+import type { SourceRef } from "../core/source-ref";
 
 export type DiagnosticSeverity = "info" | "warning" | "error" | "block";
 
@@ -8,6 +9,7 @@ export type DiagnosticGroup = {
   readonly count: number;
   readonly first_message: string;
   readonly first_source_refs: string;
+  readonly firstSourceRefs: ReadonlyArray<SourceRef>;
 };
 
 export type DiagnosticSummary = {
@@ -57,6 +59,7 @@ export function summarizeDiagnosticEffects(
       count: 1,
       first_message: diagnostic.message,
       first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
+      firstSourceRefs: diagnostic.sourceRefs,
     });
   }
 

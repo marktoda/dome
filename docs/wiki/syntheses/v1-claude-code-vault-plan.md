@@ -42,7 +42,7 @@ The practical promise is: "Talk to Claude Code about my day; let it edit and com
 The primary v1 interface is Claude Code sitting inside the vault repository. That means:
 
 - The vault must carry `CLAUDE.md`, or a `CLAUDE.md` shim importing `AGENTS.md`, because Claude Code reads `CLAUDE.md` rather than `AGENTS.md`.
-- The instructions must be short and operational: write markdown, commit meaningful changes, run `dome status --json` / `dome sync --json` when the user wants to wait for adoption, and follow `status.next_actions` into `dome check --json` or `dome resolve` when Dome reports trouble.
+- The instructions must be short and operational: write markdown, commit meaningful changes, run `dome status --json` / `dome sync --json` when the user wants to wait for adoption, and follow `status.next_actions` into the suggested `dome check ...` command or `dome resolve` when Dome reports trouble.
 - Dome should not assume Claude needs a bespoke write API. Native file edits plus git are the write path.
 
 External reference: Claude Code documents `CLAUDE.md` as the persistent project instruction surface and recommends importing `AGENTS.md` from `CLAUDE.md` when a repo uses both conventions: <https://code.claude.com/docs/en/memory>.
@@ -217,8 +217,8 @@ A v1 release is good enough when this scenario works on a real vault:
    - wikilink/fact/search projections,
    - diagnostics for broken or ambiguous state.
 7. If a processor needs a human decision, `dome check --json` shows it and `dome resolve` resolves it.
-8. If a processor or external action is stuck, `dome status --json` routes to `dome check --json`, which explains the issue and points to the same resolve/retry flow.
-9. Claude can optionally run `dome status --json`, `dome sync --json`, `dome check --json`, `dome today`, `dome prep`, `dome agenda <person>`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, agenda, or recall packet.
+8. If a processor or external action is stuck, `dome status --json` routes to a `dome check ...` command, which explains the issue and points to the same resolve/retry flow.
+9. Claude can optionally run `dome status --json`, `dome sync --json`, the suggested `dome check ...` command, `dome today`, `dome prep`, `dome agenda <person>`, `dome query <topic>`, or `dome export-context <topic>` when the user asks for an explicit check, planning packet, agenda, or recall packet.
 
 ## CLI shape for v1
 

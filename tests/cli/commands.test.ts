@@ -2053,6 +2053,71 @@ describe("runStatus", () => {
     ]);
   });
 
+  test("--json mode routes diagnostics-only attention to bounded content check", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    captured.out = [];
+    const head = await currentSha(f.vaultPath);
+    expect(head).not.toBeNull();
+    if (head === null) return;
+    const adoptedCommit = commitOid(head);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+      range: { startLine: 3, endLine: 3 },
+    });
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "status.warning",
+          message: "actionable diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["attention"]).toEqual(["diagnostics"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["diagnostics"],
+        command: "dome check --content --attention --limit 50 --json",
+        description:
+          "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
+      },
+    ]);
+    const summary = record(parsed["diagnostic_summary"]);
+    const groups = summary["groups"] as ReadonlyArray<Record<string, unknown>>;
+    const group = groups.find((item) => item["code"] === "status.warning");
+    expect(group?.["first_source_refs"]).toContain("wiki/seed.md:3");
+    const firstSourceRefs =
+      group?.["firstSourceRefs"] as ReadonlyArray<Record<string, unknown>>;
+    expect(firstSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
+    expect(firstSourceRefs[0]?.["commit"]).toBe(adoptedCommit);
+  });
+
   test("--json mode reports stale projection rows as attention", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -2470,6 +2535,12 @@ describe("runStatus", () => {
           count: 1,
           first_message: "status diagnostic",
           first_source_refs: `wiki/seed.md @ ${adoptedCommit.slice(0, 7)}`,
+          firstSourceRefs: [
+            {
+              commit: adoptedCommit,
+              path: "wiki/seed.md",
+            },
+          ],
         },
       ],
     });

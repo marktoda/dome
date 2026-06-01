@@ -144,14 +144,15 @@ Daily soak script, repeated for seven working days:
 - [ ] Let `dome serve` adopt it, or run `dome sync --json` to block.
 - [ ] Review `dome status --json`; record `attention_required`, `attention`,
       and `next_actions`.
-- [ ] If status routes to `dome check --json`, run it and record the engine
-      findings, content diagnostics, open decisions, and suggested next action.
+- [ ] If status routes to a `dome check ...` command, run it and record the
+      engine findings, content diagnostics, open decisions, and suggested next
+      action.
 - [ ] Use at least one user-value view for real work: `dome today`,
       `dome prep`, `dome agenda <person-or-topic>`, `dome query <topic>`, or
       `dome export-context <topic>`.
 - [ ] Resolve any open `dome.health` or intake questions through
-      `dome check --json` and `dome resolve <id> <value>`, not by editing
-      `.dome/state` directly.
+      the relevant `dome check ...` command and
+      `dome resolve <id> <value>`, not by editing `.dome/state` directly.
 
 Required evidence:
 
@@ -159,7 +160,7 @@ Required evidence:
   summary, any open questions/diagnostics, and whether manual state edits were
   needed.
 - `dome status --json` evidence before stopping each session.
-- For any stuck state, `dome check --json` plus the recovery command or code
+- For any stuck state, `dome check ...` plus the recovery command or code
   fix that resolved it.
 
 Release-blocking failures:
@@ -668,6 +669,9 @@ Work:
 - [x] Add structured `sourceRefs` to `dome check --json` diagnostic and
       decision items while retaining compact `source_refs`, so Claude Code can
       edit exact source files/lines without parsing display text.
+- [x] Route diagnostics-only `dome status --json` attention straight to the
+      bounded `dome check --content --attention --limit 50 --json` path and
+      include structured `firstSourceRefs` on diagnostic summary groups.
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.

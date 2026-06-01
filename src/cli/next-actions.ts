@@ -22,9 +22,12 @@ const CHECK_REASONS = Object.freeze([
 ]);
 
 export function nextActionsForStatus(
-  attention: ReadonlyArray<string>,
+  input: {
+    readonly attention: ReadonlyArray<string>;
+  },
 ): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
+  const { attention } = input;
   pushAction(out, attention, DIRTY_REASONS, {
     command: "git status --short",
     description:
@@ -35,11 +38,28 @@ export function nextActionsForStatus(
     description:
       "Run one compiler tick to adopt pending commits or drain due operational work.",
   });
-  pushAction(out, attention, CHECK_REASONS, {
-    command: "dome check --json",
-    description:
-      "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
-  });
+
+  const checkReasons = CHECK_REASONS.filter((reason) =>
+    attention.includes(reason),
+  );
+  const nonDiagnosticCheckReasons = checkReasons.filter(
+    (reason) => reason !== "diagnostics",
+  );
+  if (nonDiagnosticCheckReasons.length > 0) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(checkReasons),
+      command: "dome check --json",
+      description:
+        "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
+    }));
+  } else if (checkReasons.includes("diagnostics")) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(["diagnostics"]),
+      command: "dome check --content --attention --limit 50 --json",
+      description:
+        "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
+    }));
+  }
   return Object.freeze(out);
 }
 
