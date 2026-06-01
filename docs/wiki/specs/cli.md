@@ -180,8 +180,8 @@ Composition (v1.0):
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
    - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
-   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, exit 0.
-   - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block (or `--json` payload), exit 0 (adopted) or 1 (blocked).
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
+   - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block plus durable attention / next-action lines when attention remains (or the `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
 
@@ -218,6 +218,16 @@ to `dome check --content --attention --limit 50 --json`.
 outcomes. It does not suppress `--json`, usage errors, blocked-adoption
 diagnostics, or compiler-host busy messages. `--quiet` and `--verbose` are
 mutually exclusive.
+
+In text mode, successful adopted / in-sync outcomes still print durable
+attention lines after the normal result line when post-tick health needs user
+action, for example:
+
+```text
+dome sync: already in sync (abc1234 on main)
+dome sync: attention diagnostics, questions
+  next: dome check --json - Explain remaining compiler attention across engine health, content diagnostics, and open decisions.
+```
 
 `--verbose` prints typed adoption-loop progress events. When
 `--filter-processor <glob>` is present, verbose output includes only matching

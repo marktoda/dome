@@ -207,6 +207,35 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
   });
 }
 
+async function insertSyncWarningDiagnostic(f: Fixture): Promise<void> {
+  const runtimeResult = await openVaultRuntime({
+    vaultPath: f.vaultPath,
+    bundlesRoot: f.bundlesRoot,
+  });
+  expect(runtimeResult.ok).toBe(true);
+  if (!runtimeResult.ok) return;
+  try {
+    insertDiagnostic(runtimeResult.value.projectionDb, {
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "sync.warning",
+        message: "actionable diagnostic",
+        sourceRefs: [
+          sourceRef({
+            commit: commitOid(f.initialSha),
+            path: "wiki/seed.md",
+          }),
+        ],
+      }),
+      processorId: "test.sync",
+      proposalId: null,
+      adoptedCommit: commitOid(f.initialSha),
+    });
+  } finally {
+    await runtimeResult.value.close();
+  }
+}
+
 // ----- Test 1: empty-diff init ----------------------------------------------
 
 describe("runSync empty-diff init", () => {
@@ -509,32 +538,7 @@ describe("runSync idempotent", () => {
     captured.out = [];
     captured.err = [];
 
-    const runtimeResult = await openVaultRuntime({
-      vaultPath: f.vaultPath,
-      bundlesRoot: f.bundlesRoot,
-    });
-    expect(runtimeResult.ok).toBe(true);
-    if (!runtimeResult.ok) return;
-    try {
-      insertDiagnostic(runtimeResult.value.projectionDb, {
-        effect: diagnosticEffect({
-          severity: "warning",
-          code: "sync.warning",
-          message: "actionable diagnostic",
-          sourceRefs: [
-            sourceRef({
-              commit: commitOid(f.initialSha),
-              path: "wiki/seed.md",
-            }),
-          ],
-        }),
-        processorId: "test.sync",
-        proposalId: null,
-        adoptedCommit: commitOid(f.initialSha),
-      });
-    } finally {
-      await runtimeResult.value.close();
-    }
+    await insertSyncWarningDiagnostic(f);
 
     expect(await runSync({
       vault: f.vaultPath,
@@ -559,6 +563,32 @@ describe("runSync idempotent", () => {
           "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
+  }, 10_000);
+
+  test("text output reports durable health attention after in-sync ticks", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    })).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    await insertSyncWarningDiagnostic(f);
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    })).toBe(0);
+
+    const out = captured.out.join("\n");
+    expect(out).toContain("already in sync");
+    expect(out).toContain("dome sync: attention diagnostics");
+    expect(out).toContain("dome check --content --attention --limit 50 --json");
+    expect(captured.err.join("\n")).toBe("");
   }, 10_000);
 
   test("garden follow-up summaries surface sub-Proposals in text and JSON", async () => {

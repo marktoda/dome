@@ -195,10 +195,11 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
           }
         : {}),
     });
+    const result = tickResultJson(tick, collectSyncHealth(runtime));
     if (jsonMode) {
-      console.log(formatJson(tickResultJson(tick, collectSyncHealth(runtime))));
+      console.log(formatJson(result));
     } else {
-      printTickLines(tick, { quiet });
+      printTickLines(tick, { quiet, result });
     }
     return exitCodeForTick(tick);
   } finally {
@@ -221,7 +222,10 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
  */
 function printTickLines(
   tick: CompilerHostTickResult,
-  opts: { readonly quiet: boolean },
+  opts: {
+    readonly quiet: boolean;
+    readonly result: SyncJsonResult;
+  },
 ): void {
   if (tick.kind === "busy") {
     console.error(
@@ -234,6 +238,7 @@ function printTickLines(
     console.log(
       `dome sync: already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
     );
+    printSyncAttentionLines(opts.result);
     return;
   }
   if (tick.kind === "diverged") {
@@ -274,6 +279,7 @@ function printTickLines(
         `${iters} iteration${iters === 1 ? "" : "s"})`,
     );
     printHostFollowupLines("dome sync", tick.garden, tick.operational);
+    printSyncAttentionLines(opts.result);
     return;
   }
 
@@ -289,6 +295,15 @@ function printTickLines(
     console.error(
       `  ... and ${blockers.length - 5} more (see \`dome check --json\`).`,
     );
+  }
+}
+
+function printSyncAttentionLines(result: SyncJsonResult): void {
+  if (!result.attention_required) return;
+  console.log(`dome sync: attention ${result.attention.join(", ")}`);
+  for (const action of result.next_actions) {
+    const command = action.command === null ? "(manual)" : action.command;
+    console.log(`  next: ${command} - ${action.description}`);
   }
 }
 
