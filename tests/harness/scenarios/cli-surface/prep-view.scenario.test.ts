@@ -72,6 +72,12 @@ scenario(
     expect(text.stdout).toContain("# Dome Prep: 2026-01-05");
     expect(text.stdout).toContain("Daily note: wiki/dailies/2026-01-05.md");
     expect(text.stdout).toContain(
+      "Daily note scope: 2 open tasks, 1 followups, 0 questions",
+    );
+    expect(text.stdout).toContain(
+      "Backlog scope: 2 open tasks, 1 followups, 1 questions",
+    );
+    expect(text.stdout).toContain(
       "[followup] Ask Ben about hiring budget (wiki/captures/launch.md:9)",
     );
     expect(text.stdout).toContain("resolve: dome resolve ");
@@ -104,6 +110,18 @@ scenario(
         readonly followups: number;
         readonly questions: number;
       };
+      readonly sourceCounts: {
+        readonly daily: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+        readonly backlog: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+      };
       readonly planningItems: ReadonlyArray<{
         readonly kind: string;
         readonly text: string;
@@ -120,6 +138,16 @@ scenario(
     expect(payload.counts.openTasks).toBe(4);
     expect(payload.counts.followups).toBe(2);
     expect(payload.counts.questions).toBe(1);
+    expect(payload.sourceCounts.daily).toEqual({
+      openTasks: 2,
+      followups: 1,
+      questions: 0,
+    });
+    expect(payload.sourceCounts.backlog).toEqual({
+      openTasks: 2,
+      followups: 1,
+      questions: 1,
+    });
     expect(payload.planningItems.map((item) => item.kind)).toEqual([
       "followup",
       "followup",
@@ -132,6 +160,12 @@ scenario(
       payload.planningItems[0]?.path,
     );
     expect(payload.markdown).toContain("# Dome Prep: 2026-01-05");
+    expect(payload.markdown).toContain(
+      "Daily note scope: 2 open tasks, 1 followups, 0 questions",
+    );
+    expect(payload.markdown).toContain(
+      "Backlog scope: 2 open tasks, 1 followups, 1 questions",
+    );
     expect(payload.markdown).toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain("<track|ignore>");
     expect(payload.markdown).toContain(

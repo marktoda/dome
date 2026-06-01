@@ -470,7 +470,8 @@ then invokes the extension-owned command trigger `today`.
 Default text output renders:
 
 - the target date and expected daily-note path,
-- whether that daily note exists at the adopted ref,
+- whether that daily note exists at the adopted ref, plus the daily-note vs.
+  wider-backlog count split,
 - source-backed open tasks and followups from `dome.daily.open_task` /
   `dome.daily.followup` facts,
 - unresolved `dome.daily.*` questions with durable row ids, options, and
@@ -480,15 +481,19 @@ Daily action fact text is semantic task text: leading `#task`, `#followup`,
 and `#follow-up` marker tags are stripped from rendered task/followup text,
 while SourceRefs still point to the original markdown line.
 
-Within daily action sections, items from the target daily note sort before
-the wider wiki backlog, then path / line / text ordering keeps the remaining
-rows deterministic. This keeps the chosen day's own plan visible even in
-large management vaults with many project/entity tasks.
+Within daily action sections, each task/followup/question carries a source
+scope: `daily` when it comes from the target daily note, `backlog` otherwise.
+Items from the target daily note sort before the wider wiki backlog, then
+path / line / text ordering keeps the remaining rows deterministic. Text mode
+renders the daily-note and backlog groups separately so a large management
+vault does not make today's own plan indistinguishable from long-running
+project/entity task debt.
 
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
-`--json` emits the structured `dome.daily.today/v1` payload. `--date` is for
-reviewing another day and for deterministic tests; omitted means local today.
+`--json` emits the structured `dome.daily.today/v1` payload, including
+`sourceCounts` plus per-item `source` fields. `--date` is for reviewing
+another day and for deterministic tests; omitted means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -499,17 +504,19 @@ planning packet for the target day.
 Default text output is markdown:
 
 - the target daily note path and whether it exists,
-- counts for open tasks, followups, and daily questions,
+- counts for open tasks, followups, and daily questions, including the
+  daily-note vs. wider-backlog source split,
 - a prioritized "Start Here" section that lists followups first, unresolved
   daily questions second, and other open tasks third,
 - bounded followup / task / question sections, with omitted-item hints when a
   section is truncated,
 - SourceRefs for the backing daily note and the rendered facts/questions.
 
-The shared daily action ordering is the same as `dome today`: items from the
-target daily note appear before wider wiki backlog within each bounded action
-section, and the "Start Here" buckets preserve their followup / question / task
-priority on top of that source ordering.
+The shared daily action model is the same as `dome today`: each
+task/followup/question carries a `daily` or `backlog` source scope, items from
+the target daily note appear before wider wiki backlog within each bounded
+action section, and the "Start Here" buckets preserve their followup /
+question / task priority on top of that source ordering.
 
 Daily question rows in the markdown packet include the same durable row id and
 `dome resolve <id> <value>` hint as `dome check`, so a planning packet can be

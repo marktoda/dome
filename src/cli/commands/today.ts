@@ -83,15 +83,30 @@ type TodayData = {
     readonly followups: number;
     readonly questions: number;
   };
+  readonly sourceCounts: TodaySourceCounts;
   readonly openTasks: ReadonlyArray<TodayTask>;
   readonly followups: ReadonlyArray<TodayTask>;
   readonly questions: ReadonlyArray<TodayQuestion>;
+};
+
+type TodaySource = "daily" | "backlog";
+
+type TodayCounts = {
+  readonly openTasks: number;
+  readonly followups: number;
+  readonly questions: number;
+};
+
+type TodaySourceCounts = {
+  readonly daily: TodayCounts;
+  readonly backlog: TodayCounts;
 };
 
 type TodayTask = {
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
+  readonly source: TodaySource;
   readonly followup: boolean;
 };
 
@@ -102,64 +117,52 @@ type TodayQuestion = {
   readonly resolveCommand: string;
   readonly path: string;
   readonly line: number | null;
+  readonly source: TodaySource;
 };
 
 function formatTodayResult(data: unknown): string {
   const today = parseTodayData(data);
+  const dailyStatus = today.daily.exists ? "exists" : "missing";
   const lines = [
     `DOME today ${today.date}`,
-    `daily    ${today.daily.path} | ${today.daily.exists ? "exists" : "missing"}`,
+    `daily    ${today.daily.path} | ${dailyStatus} | ${
+      formatCounts(today.sourceCounts.daily)
+    }`,
+    `backlog  ${formatCounts(today.sourceCounts.backlog)}`,
     `tasks    ${today.counts.openTasks} open | ${today.counts.followups} followups | ${today.counts.questions} questions`,
   ];
 
   lines.push("");
   lines.push("Open tasks");
-  if (today.openTasks.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const task of today.openTasks) {
+  appendTaskGroups({
+    lines,
+    tasks: today.openTasks,
+    sourceCounts: today.sourceCounts,
+    total: today.counts.openTasks,
+    countKey: "openTasks",
+    itemLabel: "open tasks",
+    formatTask: (task) => {
       const marker = task.followup ? " [followup]" : "";
-      lines.push(`  - ${task.text}${marker} (${sourceLabel(task)})`);
-    }
-    appendMoreLine(
-      lines,
-      today.counts.openTasks,
-      today.openTasks.length,
-      "open tasks",
-    );
-  }
+      return `${task.text}${marker}`;
+    },
+  });
 
   lines.push("");
   lines.push("Follow-ups");
-  if (today.followups.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const task of today.followups) {
-      lines.push(`  - ${task.text} (${sourceLabel(task)})`);
-    }
-    appendMoreLine(
-      lines,
-      today.counts.followups,
-      today.followups.length,
-      "followups",
-    );
-  }
+  appendTaskGroups({
+    lines,
+    tasks: today.followups,
+    sourceCounts: today.sourceCounts,
+    total: today.counts.followups,
+    countKey: "followups",
+    itemLabel: "followups",
+    formatTask: (task) => task.text,
+  });
 
   if (today.questions.length > 0) {
     lines.push("");
     lines.push("Questions");
-    for (const question of today.questions) {
-      lines.push(
-        `  - [#${question.id}] ${question.question} (${sourceLabel(question)})`,
-      );
-      lines.push(`    resolve: ${question.resolveCommand}`);
-    }
-    appendMoreLine(
-      lines,
-      today.counts.questions,
-      today.questions.length,
-      "questions",
-    );
+    appendQuestionGroups(lines, today);
   }
 
   return lines.join("\n");
@@ -181,10 +184,87 @@ function parseTodayData(data: unknown): TodayData {
       followups: numberOrZero(counts.followups),
       questions: numberOrZero(counts.questions),
     }),
+    sourceCounts: parseSourceCounts(record.sourceCounts),
     openTasks: Object.freeze(parseTasks(record.openTasks)),
     followups: Object.freeze(parseTasks(record.followups)),
     questions: Object.freeze(parseQuestions(record.questions)),
   });
+}
+
+function appendTaskGroups(input: {
+  readonly lines: string[];
+  readonly tasks: ReadonlyArray<TodayTask>;
+  readonly sourceCounts: TodaySourceCounts;
+  readonly total: number;
+  readonly countKey: keyof TodayCounts;
+  readonly itemLabel: string;
+  readonly formatTask: (task: TodayTask) => string;
+}): void {
+  if (input.total === 0) {
+    input.lines.push("  none");
+    return;
+  }
+  for (const source of ["daily", "backlog"] as const) {
+    const totalForSource = input.sourceCounts[source][input.countKey];
+    if (totalForSource === 0) continue;
+    const tasks = input.tasks.filter((task) => task.source === source);
+    input.lines.push(`  ${sourceLabelForGroup(source)}`);
+    if (tasks.length === 0) {
+      appendMoreLine(
+        input.lines,
+        totalForSource,
+        0,
+        input.itemLabel,
+        "    ",
+        input.total,
+      );
+      continue;
+    }
+    for (const task of tasks) {
+      input.lines.push(
+        `    - ${input.formatTask(task)} (${sourceLabel(task)})`,
+      );
+    }
+    appendMoreLine(
+      input.lines,
+      totalForSource,
+      tasks.length,
+      input.itemLabel,
+      "    ",
+      input.total,
+    );
+  }
+}
+
+function appendQuestionGroups(lines: string[], today: TodayData): void {
+  for (const source of ["daily", "backlog"] as const) {
+    const totalForSource = today.sourceCounts[source].questions;
+    if (totalForSource === 0) continue;
+    const questions = today.questions.filter(
+      (question) => question.source === source,
+    );
+    lines.push(`  ${sourceLabelForGroup(source)}`);
+    for (const question of questions) {
+      const text =
+        `    - [#${question.id}] ${question.question} (${sourceLabel(question)})`;
+      lines.push(
+        text,
+      );
+      lines.push(`      resolve: ${question.resolveCommand}`);
+    }
+    appendMoreLine(
+      lines,
+      totalForSource,
+      questions.length,
+      "questions",
+      "    ",
+      today.counts.questions,
+    );
+  }
+}
+
+function sourceLabelForGroup(source: TodaySource): string {
+  return source === "daily" ? "Daily note" : "Wider wiki backlog";
 }
 
 function appendMoreLine(
@@ -192,11 +272,14 @@ function appendMoreLine(
   total: number,
   shown: number,
   label: string,
+  indent = "  ",
+  limitHintTotal = total,
 ): void {
   const remaining = total - shown;
   if (remaining <= 0) return;
+  const hint = `(use --limit ${limitHintTotal} to show all)`;
   lines.push(
-    `  ... ${remaining} more ${label} (use --limit ${total} to show all)`,
+    `${indent}... ${remaining} more ${label} ${hint}`,
   );
 }
 
@@ -209,6 +292,7 @@ function parseTasks(raw: unknown): ReadonlyArray<TodayTask> {
         text: stringOrEmpty(record.text),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
+        source: parseSource(record.source),
         followup: record.followup === true,
       });
     }),
@@ -230,9 +314,39 @@ function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
           resolveQuestionCommand({ id, options }),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
+        source: parseSource(record.source),
       });
     }),
   );
+}
+
+function parseSourceCounts(raw: unknown): TodaySourceCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    daily: parseCounts(record.daily),
+    backlog: parseCounts(record.backlog),
+  });
+}
+
+function parseCounts(raw: unknown): TodayCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    openTasks: numberOrZero(record.openTasks),
+    followups: numberOrZero(record.followups),
+    questions: numberOrZero(record.questions),
+  });
+}
+
+function parseSource(raw: unknown): TodaySource {
+  return raw === "daily" ? "daily" : "backlog";
+}
+
+function formatCounts(counts: TodayCounts): string {
+  return [
+    `${counts.openTasks} open`,
+    `${counts.followups} followups`,
+    `${counts.questions} questions`,
+  ].join(" | ");
 }
 
 function parseStringArray(raw: unknown): ReadonlyArray<string> {

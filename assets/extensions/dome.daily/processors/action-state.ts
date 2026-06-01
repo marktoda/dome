@@ -31,16 +31,31 @@ export type DailyActionState = {
     readonly followups: number;
     readonly questions: number;
   };
+  readonly sourceCounts: DailyActionSourceCounts;
   readonly openTasks: ReadonlyArray<DailyTaskItem>;
   readonly followups: ReadonlyArray<DailyTaskItem>;
   readonly questions: ReadonlyArray<DailyQuestionItem>;
   readonly scope: ReadonlyArray<SourceRef>;
 };
 
+export type DailyActionSource = "daily" | "backlog";
+
+export type DailyActionCounts = {
+  readonly openTasks: number;
+  readonly followups: number;
+  readonly questions: number;
+};
+
+export type DailyActionSourceCounts = {
+  readonly daily: DailyActionCounts;
+  readonly backlog: DailyActionCounts;
+};
+
 export type DailyTaskItem = {
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
+  readonly source: DailyActionSource;
   readonly followup: boolean;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -52,6 +67,7 @@ export type DailyQuestionItem = {
   readonly resolveCommand: string;
   readonly path: string;
   readonly line: number | null;
+  readonly source: DailyActionSource;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -79,16 +95,23 @@ export async function collectDailyActionState(
   }));
   const followupKeys = new Set(followupFacts.map(factKey));
   const openTasks = openFacts
-    .map((fact) => taskItemFromFact(fact, followupKeys.has(factKey(fact))))
+    .map((fact) =>
+      taskItemFromFact(fact, followupKeys.has(factKey(fact)), path)
+    )
     .sort(compareTaskItemsForDaily(path));
   const followups = followupFacts
-    .map((fact) => taskItemFromFact(fact, true))
+    .map((fact) => taskItemFromFact(fact, true, path))
     .sort(compareTaskItemsForDaily(path));
   const questions = ctx.projection
     .questions({ resolved: false })
     .filter((question) => question.idempotencyKey.startsWith("dome.daily."))
-    .map(questionItemFromEffect)
+    .map((question) => questionItemFromEffect(question, path))
     .sort(compareQuestionItemsForDaily(path));
+  const sourceCounts = countDailyActionSources({
+    openTasks,
+    followups,
+    questions,
+  });
 
   const scope = uniqueSourceRefs([
     ...dailySourceRefs,
@@ -109,6 +132,7 @@ export async function collectDailyActionState(
       followups: followups.length,
       questions: questions.length,
     }),
+    sourceCounts,
     openTasks: Object.freeze(openTasks),
     followups: Object.freeze(followups),
     questions: Object.freeze(questions),
@@ -199,12 +223,15 @@ function parseDateString(value: string | null): DailyDate | null {
 function taskItemFromFact(
   fact: FactEffect,
   followup: boolean,
+  dailyPath: string,
 ): DailyTaskItem {
   const ref = fact.sourceRefs[0];
+  const path = ref?.path ?? subjectPath(fact);
   return Object.freeze({
     text: literalToString(fact.object),
-    path: ref?.path ?? subjectPath(fact),
+    path,
     line: ref?.range?.startLine ?? null,
+    source: sourceForPath(path, dailyPath),
     followup,
     sourceRefs: Object.freeze([...fact.sourceRefs]),
   });
@@ -212,21 +239,53 @@ function taskItemFromFact(
 
 function questionItemFromEffect(
   question: QuestionEffect & { readonly id?: number },
+  dailyPath: string,
 ): DailyQuestionItem {
   const ref = question.sourceRefs[0];
   const id = typeof question.id === "number" && Number.isFinite(question.id)
     ? question.id
     : 0;
   const options = Object.freeze([...(question.options ?? [])]);
+  const path = ref?.path ?? "";
   return Object.freeze({
     id,
     question: question.question,
     options,
     resolveCommand: resolveQuestionCommand({ id, options }),
-    path: ref?.path ?? "",
+    path,
     line: ref?.range?.startLine ?? null,
+    source: sourceForPath(path, dailyPath),
     sourceRefs: Object.freeze([...question.sourceRefs]),
   });
+}
+
+function countDailyActionSources(input: {
+  readonly openTasks: ReadonlyArray<DailyTaskItem>;
+  readonly followups: ReadonlyArray<DailyTaskItem>;
+  readonly questions: ReadonlyArray<DailyQuestionItem>;
+}): DailyActionSourceCounts {
+  const daily = countSource(input, "daily");
+  const backlog = countSource(input, "backlog");
+  return Object.freeze({ daily, backlog });
+}
+
+function countSource(
+  input: {
+    readonly openTasks: ReadonlyArray<DailyTaskItem>;
+    readonly followups: ReadonlyArray<DailyTaskItem>;
+    readonly questions: ReadonlyArray<DailyQuestionItem>;
+  },
+  source: DailyActionSource,
+): DailyActionCounts {
+  return Object.freeze({
+    openTasks: input.openTasks.filter((item) => item.source === source).length,
+    followups: input.followups.filter((item) => item.source === source).length,
+    questions: input.questions.filter((item) => item.source === source).length,
+  });
+}
+
+function sourceForPath(path: string, dailyPath: string): DailyActionSource {
+  return path === dailyPath ? "daily" : "backlog";
 }
 
 function literalToString(value: FactEffect["object"]): string {

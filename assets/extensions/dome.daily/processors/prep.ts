@@ -54,6 +54,7 @@ const prep: Processor = defineProcessor({
       limit,
       daily: actionState.daily,
       counts: actionState.counts,
+      sourceCounts: actionState.sourceCounts,
       planningItems,
       followups,
       openTasks,
@@ -171,6 +172,8 @@ function renderPrepMarkdown(input: {
     "",
     `Daily note: ${input.state.daily.path} (${input.state.daily.exists ? "exists" : "missing"})`,
     `Counts: ${input.state.counts.openTasks} open tasks, ${input.state.counts.followups} followups, ${input.state.counts.questions} questions`,
+    `Daily note scope: ${formatCounts(input.state.sourceCounts.daily)}`,
+    `Backlog scope: ${formatCounts(input.state.sourceCounts.backlog)}`,
     "",
     "## Start Here",
   ];
@@ -201,14 +204,10 @@ function renderPrepMarkdown(input: {
 
   if (input.questions.length > 0) {
     lines.push("", "## Questions");
-    for (const question of input.questions) {
-      appendQuestionItem(lines, question);
-    }
-    appendMoreLine(
+    appendQuestionSection(
       lines,
+      input.questions,
       input.state.counts.questions,
-      input.questions.length,
-      "questions",
     );
   }
 
@@ -234,16 +233,6 @@ function appendPlanningItem(lines: string[], item: PrepPlanningItem): void {
   if (item.resolveCommand !== undefined) {
     lines.push(`  resolve: ${item.resolveCommand}`);
   }
-}
-
-function appendQuestionItem(
-  lines: string[],
-  question: DailyQuestionItem,
-): void {
-  lines.push(
-    `- [#${question.id}] ${question.question} (${sourceLabel(question)})`,
-  );
-  lines.push(`  resolve: ${question.resolveCommand}`);
 }
 
 function prepScope(input: {
@@ -272,11 +261,51 @@ function appendTaskSection(
     lines.push("- none");
     return;
   }
-  for (const task of tasks) {
-    const marker = task.followup ? " [followup]" : "";
-    lines.push(`- ${task.text}${marker} (${sourceLabel(task)})`);
+  for (const source of ["daily", "backlog"] as const) {
+    const scoped = tasks.filter((task) => task.source === source);
+    if (scoped.length === 0) continue;
+    lines.push(`- ${sourceGroupLabel(source)}`);
+    for (const task of scoped) {
+      const marker = task.followup ? " [followup]" : "";
+      lines.push(`  - ${task.text}${marker} (${sourceLabel(task)})`);
+    }
   }
   appendMoreLine(lines, total, tasks.length, label);
+}
+
+function appendQuestionSection(
+  lines: string[],
+  questions: ReadonlyArray<DailyQuestionItem>,
+  total: number,
+): void {
+  for (const source of ["daily", "backlog"] as const) {
+    const scoped = questions.filter((question) => question.source === source);
+    if (scoped.length === 0) continue;
+    lines.push(`- ${sourceGroupLabel(source)}`);
+    for (const question of scoped) {
+      lines.push(
+        `  - [#${question.id}] ${question.question} (${sourceLabel(question)})`,
+      );
+      lines.push(`    resolve: ${question.resolveCommand}`);
+    }
+  }
+  appendMoreLine(lines, total, questions.length, "questions");
+}
+
+function formatCounts(counts: {
+  readonly openTasks: number;
+  readonly followups: number;
+  readonly questions: number;
+}): string {
+  return [
+    `${counts.openTasks} open tasks`,
+    `${counts.followups} followups`,
+    `${counts.questions} questions`,
+  ].join(", ");
+}
+
+function sourceGroupLabel(source: "daily" | "backlog"): string {
+  return source === "daily" ? "Daily note" : "Wider wiki backlog";
 }
 
 function appendMoreLine(
@@ -288,8 +317,9 @@ function appendMoreLine(
   const remaining = total - shown;
   if (remaining <= 0) return;
   const itemLabel = remaining === 1 ? singularLabel(label) : label;
+  const hint = `(use --limit ${total} to show all ${label})`;
   lines.push(
-    `- ... ${remaining} more ${itemLabel} (use --limit ${total} to show all ${label})`,
+    `- ... ${remaining} more ${itemLabel} ${hint}`,
   );
 }
 

@@ -805,6 +805,9 @@ Work:
       wider wiki backlog in daily action views, after real-vault soak showed
       path sorting could hide the chosen day's own work behind concept/entity
       task debt.
+- [x] Render daily-note vs. wider-backlog source counts and groups in daily
+      action views, after real-vault soak showed a no-task daily note could
+      fall straight into a large global backlog with no visible scope boundary.
 - [x] Make bounded `dome agenda` preserve total agenda-item counts and
       omitted-item hints, so common person/topic agendas do not hide additional
       matching work behind the display limit.

@@ -78,20 +78,37 @@ scenario(
         readonly followups: number;
         readonly questions: number;
       };
+      readonly sourceCounts: {
+        readonly daily: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+        readonly backlog: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+      };
       readonly openTasks: ReadonlyArray<{
         readonly text: string;
         readonly path: string;
         readonly line: number | null;
+        readonly source: "daily" | "backlog";
         readonly followup: boolean;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
-      readonly followups: ReadonlyArray<{ readonly text: string }>;
+      readonly followups: ReadonlyArray<{
+        readonly text: string;
+        readonly source: "daily" | "backlog";
+      }>;
       readonly questions: ReadonlyArray<{
         readonly id: number;
         readonly question: string;
         readonly options: ReadonlyArray<string>;
         readonly resolveCommand: string;
         readonly path: string;
+        readonly source: "daily" | "backlog";
       }>;
     };
 
@@ -104,11 +121,27 @@ scenario(
     expect(payload.counts.openTasks).toBe(4);
     expect(payload.counts.followups).toBe(2);
     expect(payload.counts.questions).toBe(1);
+    expect(payload.sourceCounts.daily).toEqual({
+      openTasks: 2,
+      followups: 1,
+      questions: 0,
+    });
+    expect(payload.sourceCounts.backlog).toEqual({
+      openTasks: 2,
+      followups: 1,
+      questions: 1,
+    });
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
       "Send Ada launch notes",
       "Draft project staffing note",
       "Ask Ben about hiring budget",
+    ]);
+    expect(payload.openTasks.map((task) => task.source)).toEqual([
+      "daily",
+      "daily",
+      "backlog",
+      "backlog",
     ]);
     expect(
       payload.openTasks.every((task) =>
@@ -119,6 +152,10 @@ scenario(
       "Send Ada launch notes",
       "Ask Ben about hiring budget",
     ]);
+    expect(payload.followups.map((task) => task.source)).toEqual([
+      "daily",
+      "backlog",
+    ]);
     expect(payload.questions[0]?.question).toContain(
       "We should follow up with Cy about review timing",
     );
@@ -128,6 +165,7 @@ scenario(
       `dome resolve ${payload.questions[0]?.id} <track|ignore>`,
     );
     expect(payload.questions[0]?.path).toBe("wiki/captures/2026-01-05.md");
+    expect(payload.questions[0]?.source).toBe("backlog");
 
     h.projection.raw.run(
       "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
@@ -198,7 +236,13 @@ scenario(
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("DOME today 2026-01-05");
+    expect(text.stdout).toContain(
+      "daily    wiki/dailies/2026-01-05.md | exists | 2 open | 1 followups | 0 questions",
+    );
+    expect(text.stdout).toContain("backlog  2 open | 1 followups | 1 questions");
     expect(text.stdout).toContain("4 open | 2 followups | 1 questions");
+    expect(text.stdout).toContain("Daily note");
+    expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(
       "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
     );

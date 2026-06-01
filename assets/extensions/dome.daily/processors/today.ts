@@ -48,6 +48,7 @@ const today: Processor = defineProcessor({
       limit,
       daily: actionState.daily,
       counts: actionState.counts,
+      sourceCounts: actionState.sourceCounts,
       openTasks,
       followups,
       questions,
