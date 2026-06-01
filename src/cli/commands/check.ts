@@ -31,6 +31,7 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatCliNextAction,
   nextActionsForCheck,
   type CliNextAction,
 } from "../next-actions";
@@ -467,8 +468,7 @@ function printNextActions(actions: ReadonlyArray<CliNextAction>): void {
   console.log("");
   console.log("Next");
   for (const action of actions) {
-    const command = action.command === null ? "(manual)" : action.command;
-    console.log(`  - ${command} - ${action.description}`);
+    console.log(`  - ${formatCliNextAction(action)}`);
   }
 }
 

@@ -368,7 +368,9 @@ editing source markdown.
 Once `dome check` is already rendering an attention-filtered content report,
 the diagnostic next action is manual (`command: null`) and tells the caller to
 fix the listed source markdown diagnostics, commit, and run `dome sync --json`;
-it must not route back to the same bounded check command.
+it must not route back to the same bounded check command. Text renderers display
+null-command actions as `manual: <description>` while JSON keeps the stable
+`command: null` shape.
 
 ### `dome resolve <question-id> [<value>]`
 

@@ -9,6 +9,13 @@ export type CliNextAction = {
   readonly description: string;
 };
 
+export function formatCliNextAction(action: CliNextAction): string {
+  if (action.command === null) {
+    return `manual: ${action.description}`;
+  }
+  return `${action.command} - ${action.description}`;
+}
+
 const DIRTY_REASONS = Object.freeze(["dirty_modified", "dirty_untracked"]);
 const SYNC_REASONS = Object.freeze([
   "sync_needed",

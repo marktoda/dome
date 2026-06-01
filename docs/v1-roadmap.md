@@ -975,6 +975,9 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Align bounded `dome check` diagnostic rows with repeated-message groups,
       so the detailed repair list starts with the same highest-volume
       source-diagnostic targets that the grouped summary recommends fixing.
+- [x] Render null-command next actions as `manual: <description>` in text
+      output, while preserving `command: null` in JSON, so the soak recovery
+      loop does not show awkward `(manual) - ...` command lines.
 
 ## V1 Exit Criteria
 

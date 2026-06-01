@@ -54,7 +54,11 @@ import { queryRuns, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
-import { nextActionsForSync, type CliNextAction } from "../next-actions";
+import {
+  formatCliNextAction,
+  nextActionsForSync,
+  type CliNextAction,
+} from "../next-actions";
 import { countAttentionDiagnostics } from "../diagnostic-summary";
 
 // ----- Public types ---------------------------------------------------------
@@ -302,8 +306,7 @@ function printSyncAttentionLines(result: SyncJsonResult): void {
   if (!result.attention_required) return;
   console.log(`dome sync: attention ${result.attention.join(", ")}`);
   for (const action of result.next_actions) {
-    const command = action.command === null ? "(manual)" : action.command;
-    console.log(`  next: ${command} - ${action.description}`);
+    console.log(`  next: ${formatCliNextAction(action)}`);
   }
 }
 

@@ -91,6 +91,7 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatCliNextAction,
   nextActionsForStatus,
   type CliNextAction,
 } from "../next-actions";
@@ -441,9 +442,8 @@ function formatNextActionLines(
 ): ReadonlyArray<string> {
   if (actions.length === 0) return [];
   return actions.map((action, index) => {
-    const command = action.command === null ? "(manual)" : action.command;
     const prefix = index === 0 ? "next      " : "          ";
-    return `${prefix}${command} - ${action.description}`;
+    return `${prefix}${formatCliNextAction(action)}`;
   });
 }
 

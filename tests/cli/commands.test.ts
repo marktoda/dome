@@ -1826,6 +1826,10 @@ describe("runCheck", () => {
     expect(text).toContain(
       "[warning] check.repeated x2: Repeated diagnostic",
     );
+    expect(text).toContain(
+      "manual: Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
+    );
+    expect(text).not.toContain("(manual)");
   });
 
   test("text output reports omitted bounded rows", async () => {
