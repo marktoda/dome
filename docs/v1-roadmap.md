@@ -827,9 +827,10 @@ Work:
 - [x] Add `dome inspect bundles` and `dome inspect processors`, so a vault can
       explain its currently enabled extension suite, processor automations, and
       model-capable LLM processors without reading SDK manifests by hand.
-- [x] Make `dome inspect bundles` show configured disabled bundles without
-      loading them, so optional release-gate features such as `dome.intake`
-      are visible in old/default vault configs even when intentionally off.
+- [x] Make `dome inspect bundles` show configured disabled bundles from
+      manifest metadata without loading processor modules, so optional
+      release-gate features such as `dome.intake` are visible in old/default
+      vault configs even when intentionally off.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

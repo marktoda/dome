@@ -85,6 +85,13 @@ export type LoadedBundle = {
   readonly bundlePath: string;
 };
 
+export type BundleManifestSummary = {
+  readonly id: string;
+  readonly version: string;
+  readonly processors: ReadonlyArray<ProcessorDeclaration>;
+  readonly bundlePath: string;
+};
+
 /**
  * The closed set of `loadBundles` failures.
  *
@@ -204,6 +211,11 @@ export type LoadBundleRootsOpts = {
    */
   readonly bundlesRoots: ReadonlyArray<string>;
   readonly activeBundleIds?: ReadonlySet<string>;
+};
+
+export type LoadBundleManifestSummaryFromRootsOpts = {
+  readonly bundleId: string;
+  readonly bundlesRoots: ReadonlyArray<string>;
 };
 
 // ----- loadBundles ----------------------------------------------------------
@@ -339,6 +351,27 @@ export async function loadBundlesFromRoots(
   return ok(Object.freeze(loaded));
 }
 
+/**
+ * Read one bundle's validated manifest metadata from a composed root set
+ * without importing processor modules or external handlers. Later roots have
+ * precedence, matching `loadBundlesFromRoots`.
+ */
+export async function loadBundleManifestSummaryFromRoots(
+  opts: LoadBundleManifestSummaryFromRootsOpts,
+): Promise<Result<BundleManifestSummary | null, LoadBundlesError>> {
+  for (const root of [...opts.bundlesRoots].reverse()) {
+    const bundlePath = join(resolve(root), opts.bundleId);
+    try {
+      const bundleStat = await stat(bundlePath);
+      if (!bundleStat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    return readOneBundleManifestSummary(bundlePath, opts.bundleId);
+  }
+  return ok(null);
+}
+
 // ----- flattenBundleProcessors ----------------------------------------------
 
 /**
@@ -373,38 +406,9 @@ async function loadOneBundle(
   bundlePath: string,
   dirName: string,
 ): Promise<Result<LoadedBundle, LoadBundlesError>> {
-  // 1. Read the manifest file. Try `manifest.yaml` first; fall back to
-  //    `manifest.json` (some Phase 8 fixtures ship JSON to keep dev-friction
-  //    low). Any read or parse failure becomes `manifest-read-failed` with
-  //    the failing path's tail in the cause string.
-  const manifestResult = await readBundleManifest(bundlePath);
-  if (!manifestResult.ok) {
-    return err({
-      kind: "manifest-read-failed",
-      bundleId: dirName,
-      cause: manifestResult.error,
-    });
-  }
-  const rawManifest = manifestResult.value;
-
-  // 2. Validate the parsed payload. `parseManifest` runs the Zod shape
-  //    check and the phase × trigger matrix check.
-  const parsed = parseManifest(rawManifest);
-  if (!parsed.ok) {
-    return err({
-      kind: "manifest-invalid",
-      bundleId: dirName,
-      cause: parsed.error,
-    });
-  }
-  const manifest: Manifest = parsed.value;
-  if (manifest.id !== dirName) {
-    return err({
-      kind: "manifest-id-mismatch",
-      bundleDir: dirName,
-      manifestId: manifest.id,
-    });
-  }
+  const manifestResult = await readOneBundleManifest(bundlePath, dirName);
+  if (!manifestResult.ok) return err(manifestResult.error);
+  const manifest: Manifest = manifestResult.value;
   const pageTypesResult = await readBundlePageTypes(bundlePath, manifest.id);
   if (!pageTypesResult.ok) {
     return err(pageTypesResult.error);
@@ -434,6 +438,61 @@ async function loadOneBundle(
       bundlePath,
     }),
   );
+}
+
+async function readOneBundleManifestSummary(
+  bundlePath: string,
+  dirName: string,
+): Promise<Result<BundleManifestSummary, LoadBundlesError>> {
+  const manifestResult = await readOneBundleManifest(bundlePath, dirName);
+  if (!manifestResult.ok) return err(manifestResult.error);
+  const manifest = manifestResult.value;
+  return ok(
+    Object.freeze({
+      id: manifest.id,
+      version: manifest.version,
+      processors: Object.freeze([...manifest.processors]),
+      bundlePath,
+    }),
+  );
+}
+
+async function readOneBundleManifest(
+  bundlePath: string,
+  dirName: string,
+): Promise<Result<Manifest, LoadBundlesError>> {
+  // Try `manifest.yaml` first; fall back to `manifest.json` (some Phase 8
+  // fixtures ship JSON to keep dev-friction low). Any read or parse failure
+  // becomes `manifest-read-failed` with the failing path's tail in the cause
+  // string.
+  const manifestResult = await readBundleManifest(bundlePath);
+  if (!manifestResult.ok) {
+    return err({
+      kind: "manifest-read-failed",
+      bundleId: dirName,
+      cause: manifestResult.error,
+    });
+  }
+
+  // Validate the parsed payload. `parseManifest` runs the Zod shape check and
+  // the phase × trigger matrix check.
+  const parsed = parseManifest(manifestResult.value);
+  if (!parsed.ok) {
+    return err({
+      kind: "manifest-invalid",
+      bundleId: dirName,
+      cause: parsed.error,
+    });
+  }
+  const manifest: Manifest = parsed.value;
+  if (manifest.id !== dirName) {
+    return err({
+      kind: "manifest-id-mismatch",
+      bundleDir: dirName,
+      manifestId: manifest.id,
+    });
+  }
+  return ok(manifest);
 }
 
 /**

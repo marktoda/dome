@@ -12,7 +12,7 @@
 //   - `questions`   → `queryQuestionRecords(projection)`
 //   - `outbox`      → `queryOutbox(outbox)`
 //   - `quarantine`  → `executionState.quarantines()`
-//   - `bundles`     → loaded extension bundle summary
+//   - `bundles`     → configured/loaded extension bundle summary
 //   - `processors`  → loaded processor/automation summary
 //
 // Exit codes:
@@ -37,8 +37,18 @@
 
 import { resolve } from "node:path";
 
-import type { Capability, Processor, Trigger } from "../../core/processor";
+import type {
+  Capability,
+  Processor,
+  ProcessorPhase,
+  Trigger,
+} from "../../core/processor";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import {
+  loadBundleManifestSummaryFromRoots,
+  type BundleManifestSummary,
+  type LoadBundlesError,
+} from "../../extensions/loader";
 import { queryRuns } from "../../ledger/runs";
 import {
   queryDiagnostics,
@@ -47,7 +57,7 @@ import {
 import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
 
-import { resolveBundleRoots } from "./sync-shared";
+import { resolveBundleRoots, type ResolvedBundleRoots } from "./sync-shared";
 
 import {
   formatSourceRefs,
@@ -148,12 +158,17 @@ export async function runInspect(
   const runtime = runtimeResult.value;
 
   try {
+    const bundleInventory =
+      subject === "bundles"
+        ? await collectBundleManifestInventory(runtime, bundleRoots)
+        : new Map();
     let result: InspectResult;
     try {
       result = collectInspectResult({
         subject,
         runtime,
         limit,
+        bundleInventory,
         diagnosticOptions: diagnosticOptions.value,
       });
     } catch (e) {
@@ -177,6 +192,19 @@ export async function runInspect(
 // ----- internals ------------------------------------------------------------
 
 type Row = Record<string, unknown>;
+type BundleManifestInventoryEntry =
+  | {
+      readonly kind: "manifest";
+      readonly summary: BundleManifestSummary;
+    }
+  | {
+      readonly kind: "missing";
+    }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+    };
+type BundleManifestInventory = ReadonlyMap<string, BundleManifestInventoryEntry>;
 type ParsedDiagnosticOptions = {
   readonly summary: boolean;
   readonly filter: DiagnosticsFilter;
@@ -201,6 +229,7 @@ function collectInspectResult(opts: {
   readonly subject: string;
   readonly runtime: VaultRuntime;
   readonly limit: number;
+  readonly bundleInventory: BundleManifestInventory;
   readonly diagnosticOptions: ParsedDiagnosticOptions | null;
 }): InspectResult {
   if (
@@ -222,6 +251,7 @@ function collectInspectResult(opts: {
       opts.subject,
       opts.runtime,
       opts.limit,
+      opts.bundleInventory,
       opts.diagnosticOptions,
     ),
   };
@@ -231,12 +261,16 @@ function collectRows(
   subject: string,
   runtime: VaultRuntime,
   limit: number,
+  bundleInventory: BundleManifestInventory,
   diagnosticOptions: ParsedDiagnosticOptions | null,
 ): ReadonlyArray<Row> {
   switch (subject) {
     case "bundles": {
       const processors = runtime.registry.all();
-      return collectBundleRows(runtime, processors).slice(0, limit);
+      return collectBundleRows(runtime, processors, bundleInventory).slice(
+        0,
+        limit,
+      );
     }
     case "processors": {
       return runtime.registry.all().slice(0, limit).map((processor) => {
@@ -428,9 +462,43 @@ function defaultLimitForSubject(subject: string): number {
   return DEFAULT_LIMIT;
 }
 
+async function collectBundleManifestInventory(
+  runtime: VaultRuntime,
+  roots: ResolvedBundleRoots,
+): Promise<BundleManifestInventory> {
+  const loadedBundleIds = new Set(
+    runtime.extensions.map((extension) => extension.name),
+  );
+  const entries = new Map<string, BundleManifestInventoryEntry>();
+  for (const status of runtime.configuredExtensions) {
+    if (loadedBundleIds.has(status.id)) continue;
+    const result = await loadBundleManifestSummaryFromRoots({
+      bundleId: status.id,
+      bundlesRoots: [roots.bundlesRoot, ...(roots.additionalBundlesRoots ?? [])],
+    });
+    if (!result.ok) {
+      entries.set(status.id, {
+        kind: "error",
+        message: formatBundleManifestError(result.error),
+      });
+      continue;
+    }
+    if (result.value === null) {
+      entries.set(status.id, { kind: "missing" });
+      continue;
+    }
+    entries.set(status.id, {
+      kind: "manifest",
+      summary: result.value,
+    });
+  }
+  return entries;
+}
+
 function collectBundleRows(
   runtime: VaultRuntime,
   processors: ReadonlyArray<Processor<unknown>>,
+  inventory: BundleManifestInventory,
 ): ReadonlyArray<Row> {
   const rowsByBundle = new Map<string, Row>();
   for (const extension of runtime.extensions) {
@@ -458,6 +526,7 @@ function collectBundleRows(
           bundleId: status.id,
           enabled: status.enabled,
           loaded: false,
+          ...inventoryEntryForRow(inventory.get(status.id)),
         }),
     );
   }
@@ -477,6 +546,7 @@ function bundleRow(opts: {
   readonly bundleId: string;
   readonly enabled: boolean;
   readonly loaded: boolean;
+  readonly inventory?: BundleManifestInventoryEntry;
   readonly version?: string;
 }): Row {
   const bundleProcessors = opts.loaded
@@ -485,29 +555,46 @@ function bundleRow(opts: {
           opts.runtime.extensionIdFor(processor.id) === opts.bundleId,
       )
     : [];
-  const phaseCounts = countProcessorPhases(bundleProcessors);
+  const manifestProcessors =
+    opts.inventory?.kind === "manifest" ? opts.inventory.summary.processors : [];
+  const processorMetadata = opts.loaded ? bundleProcessors : manifestProcessors;
+  const phaseCounts = countProcessorPhases(processorMetadata);
   return {
     bundle: opts.bundleId,
     status: opts.enabled ? "enabled" : "disabled",
     loaded: opts.loaded,
-    version: opts.version ?? "-",
-    processors: bundleProcessors.length,
+    inventory: inventoryLabel(opts),
+    inventory_error: inventoryError(opts.inventory),
+    version: opts.version ?? manifestVersion(opts.inventory),
+    processors: processorMetadata.length,
     adoption: phaseCounts.adoption,
     garden: phaseCounts.garden,
     view: phaseCounts.view,
-    scheduled: bundleProcessors.filter((processor) =>
+    scheduled: processorMetadata.filter((processor) =>
       processor.triggers.some((trigger) => trigger.kind === "schedule"),
     ).length,
-    command_views: bundleProcessors.filter((processor) =>
+    command_views: processorMetadata.filter((processor) =>
       processor.triggers.some((trigger) => trigger.kind === "command"),
     ).length,
-    model_processors: bundleProcessors.filter(hasModelCapability).length,
+    model_processors: processorMetadata.filter(hasModelCapability).length,
   };
 }
 
+function inventoryEntryForRow(
+  inventory: BundleManifestInventoryEntry | undefined,
+):
+  | { readonly inventory: BundleManifestInventoryEntry }
+  | Record<string, never> {
+  return inventory === undefined ? {} : { inventory };
+}
+
 function countProcessorPhases(
-  processors: ReadonlyArray<Processor<unknown>>,
-): { readonly adoption: number; readonly garden: number; readonly view: number } {
+  processors: ReadonlyArray<ProcessorMetadata>,
+): {
+  readonly adoption: number;
+  readonly garden: number;
+  readonly view: number;
+} {
   let adoption = 0;
   let garden = 0;
   let view = 0;
@@ -519,10 +606,51 @@ function countProcessorPhases(
   return { adoption, garden, view };
 }
 
-function hasModelCapability(processor: Processor<unknown>): boolean {
+type ProcessorMetadata = {
+  readonly phase: ProcessorPhase;
+  readonly triggers: ReadonlyArray<Trigger>;
+  readonly capabilities: ReadonlyArray<Capability>;
+};
+
+function hasModelCapability(processor: ProcessorMetadata): boolean {
   return processor.capabilities.some(
     (capability) => capability.kind === "model.invoke",
   );
+}
+
+function inventoryLabel(opts: {
+  readonly loaded: boolean;
+  readonly inventory?: BundleManifestInventoryEntry;
+}): string {
+  if (opts.loaded) return "loaded";
+  if (opts.inventory?.kind === "manifest") return "manifest";
+  if (opts.inventory?.kind === "error") return "manifest-error";
+  return "configured";
+}
+
+function manifestVersion(
+  inventory: BundleManifestInventoryEntry | undefined,
+): string {
+  return inventory?.kind === "manifest" ? inventory.summary.version : "-";
+}
+
+function inventoryError(
+  inventory: BundleManifestInventoryEntry | undefined,
+): string {
+  return inventory?.kind === "error" ? inventory.message : "-";
+}
+
+function formatBundleManifestError(error: LoadBundlesError): string {
+  switch (error.kind) {
+    case "manifest-read-failed":
+      return `manifest-read-failed: ${error.cause}`;
+    case "manifest-invalid":
+      return `manifest-invalid: ${error.cause.kind}`;
+    case "manifest-id-mismatch":
+      return `manifest-id-mismatch: expected ${error.bundleDir}, got ${error.manifestId}`;
+    default:
+      return error.kind;
+  }
 }
 
 function formatTriggerKinds(triggers: ReadonlyArray<Trigger>): string {

@@ -603,9 +603,10 @@ Proposal, does not invoke any processor, and does not mutate state.
 Subjects (v1.0):
 
 - `bundles` — configured and loaded extension bundle summary: enabled/disabled
-  status, loaded flag, version for loaded bundles, processor counts by phase,
-  command-view count, schedule count, and enabled model-capable processor
-  count. Disabled configured bundles are listed without loading their processor
+  status, loaded flag, inventory source (`loaded`, `manifest`, `configured`,
+  or `manifest-error`), version, processor counts by phase, command-view count,
+  schedule count, and model-capable processor count. Disabled configured
+  bundles are summarized from their manifest without importing processor
   modules, so optional features such as `dome.intake` are visible without
   making disabled bundle code part of the runtime.
 - `processors` — loaded processor/automation summary: bundle, phase, triggers,

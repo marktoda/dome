@@ -1008,7 +1008,10 @@ describe("runInspect", () => {
       readonly bundle: string;
       readonly status: string;
       readonly loaded: boolean;
+      readonly inventory: string;
+      readonly version: string;
       readonly processors: number;
+      readonly garden: number;
       readonly model_processors: number;
     }>;
     const intake = bundles.find((row) => row.bundle === "dome.intake");
@@ -1016,8 +1019,11 @@ describe("runInspect", () => {
       expect.objectContaining({
         status: "disabled",
         loaded: false,
-        processors: 0,
-        model_processors: 0,
+        inventory: "manifest",
+        version: "0.4.0",
+        processors: 6,
+        garden: 5,
+        model_processors: 3,
       }),
     );
     const search = bundles.find((row) => row.bundle === "dome.search");
@@ -1043,6 +1049,72 @@ describe("runInspect", () => {
     expect(
       processors.some((row) => row.processor.startsWith("dome.intake.")),
     ).toBe(false);
+  });
+
+  test("subject 'bundles' reads disabled local manifests without importing modules", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const bundleDir = join(f.vaultPath, ".dome", "extensions", "custom.disabled");
+    await mkdir(join(bundleDir, "processors"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  custom.disabled:",
+        "    enabled: false",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify(
+        {
+          id: "custom.disabled",
+          version: "1.2.3",
+          processors: [
+            {
+              id: "custom.disabled.missing-module",
+              version: "0.0.1",
+              phase: "garden",
+              triggers: [{ kind: "schedule", cron: "* * * * *" }],
+              capabilities: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+              execution: { class: "llm" },
+              module: "processors/missing-module.ts",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly inventory: string;
+      readonly version: string;
+      readonly processors: number;
+      readonly model_processors: number;
+    }>;
+    expect(bundles).toContainEqual(
+      expect.objectContaining({
+        bundle: "custom.disabled",
+        status: "disabled",
+        loaded: false,
+        inventory: "manifest",
+        version: "1.2.3",
+        processors: 1,
+        model_processors: 1,
+      }),
+    );
   });
 
   test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {
