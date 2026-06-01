@@ -212,6 +212,7 @@ extensions:
       read:
         - "inbox/**/*.md"
         - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/intake-*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
         - "wiki/syntheses/intake-*.md"

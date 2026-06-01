@@ -122,6 +122,7 @@ sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
 status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
 description: "Synthesis summary"              # optional
 generated_from: "wiki/generated/intake/example.md" # optional; generated synthesis provenance
+input_hash: "sha256..."                         # optional; generated-input settlement hash
 name: "Org health synthesis"                  # optional
 metadata: { ... }                             # optional
 processor: dome.intake.synthesize-capture       # optional; generating processor id

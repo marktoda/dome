@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 
+import matter from "gray-matter";
 import { z } from "zod";
 
 import {
@@ -47,12 +48,16 @@ const synthesizeCapture = defineProcessorImplementation({
       const capture = await ctx.snapshot.readFile(path);
       if (capture === null) continue;
 
+      const inputHash = captureSynthesisInputHash(capture);
+      const outputPath = synthesisOutputPath(path);
+      const existing = await ctx.snapshot.readFile(outputPath);
+      if (frontmatterInputHash(existing) === inputHash) continue;
+
       const synthesis = await ctx.modelInvoke.structured({
         schemaName: MODEL_SCHEMA,
         prompt: promptForCapture(path, capture),
         parse: parseCaptureSynthesis,
       });
-      const outputPath = synthesisOutputPath(path);
       effects.push(
         patchEffect({
           mode: "auto",
@@ -61,6 +66,7 @@ const synthesizeCapture = defineProcessorImplementation({
               kind: "write",
               path: outputPath,
               content: renderSynthesisPage({
+                inputHash,
                 sourcePath: path,
                 synthesis,
               }),
@@ -83,6 +89,10 @@ export function synthesisOutputPath(path: string): string {
   const slug = stripStableDigest(slugify(stem)) || "capture";
   const digest = createHash("sha256").update(path).digest("hex").slice(0, 12);
   return `wiki/syntheses/intake-${slug}-${digest}.md`;
+}
+
+export function captureSynthesisInputHash(capture: string): string {
+  return createHash("sha256").update(capture).digest("hex");
 }
 
 function isGeneratedCapturePath(path: string): boolean {
@@ -120,6 +130,7 @@ function parseCaptureSynthesis(value: unknown): CaptureSynthesis {
 }
 
 function renderSynthesisPage(input: {
+  readonly inputHash: string;
   readonly sourcePath: string;
   readonly synthesis: CaptureSynthesis;
 }): string {
@@ -129,6 +140,7 @@ function renderSynthesisPage(input: {
     "type: synthesis",
     `sources: [${yamlString(`[[${input.sourcePath}]]`)}]`,
     `generated_from: ${yamlString(input.sourcePath)}`,
+    `input_hash: ${input.inputHash}`,
     "processor: dome.intake.synthesize-capture",
     "---",
     "",
@@ -167,6 +179,17 @@ function slugify(value: string): string {
 
 function stripStableDigest(value: string): string {
   return value.replace(/-[a-f0-9]{12}$/i, "");
+}
+
+function frontmatterInputHash(content: string | null): string | null {
+  if (content === null) return null;
+  try {
+    const parsed = matter(content);
+    const value = parsed.data.input_hash;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function yamlString(value: string): string {

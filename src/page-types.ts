@@ -87,6 +87,7 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
     pageTypeDeclaration("synthesis", "dome.default", {
       description: "optional",
       generated_from: "optional",
+      input_hash: "optional",
       metadata: "optional",
       name: "optional",
       processor: "optional",

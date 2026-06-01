@@ -10,9 +10,11 @@ import {
   targetFromLowConfidenceQuestionKey,
 } from "../../../../assets/extensions/dome.intake/processors/low-confidence-shared";
 import {
+  captureSynthesisInputHash,
   synthesisOutputPath,
 } from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
 import {
+  captureRollupInputHash,
   rollupOutputPath,
 } from "../../../../assets/extensions/dome.intake/processors/synthesize-rollup";
 import { scenario } from "../../index";
@@ -40,6 +42,7 @@ extensions:
       read:
         - "inbox/**/*.md"
         - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/intake-*.md"
       patch.auto:
         - "wiki/generated/intake/*.md"
         - "wiki/syntheses/intake-*.md"
@@ -126,6 +129,36 @@ const OLD_CAPTURE_AUTHOR = {
   email: "dome-test@example.com",
   timestamp: Date.parse("2025-12-20T00:00:00.000Z") / 1000,
 };
+const NOOP_CAPTURE_AUTHOR = {
+  name: "Dome Test",
+  email: "dome-test@example.com",
+  timestamp: Date.parse("2026-01-05T12:00:00.000Z") / 1000,
+};
+const NOOP_GENERATED_PATH = "wiki/generated/intake/noop-day.md";
+const NOOP_GENERATED_CONTENT = [
+  "---",
+  "type: capture",
+  "---",
+  "",
+  "# No-op Day",
+  "",
+  "Ada needs staffing notes. Ben owns budget follow-up.",
+  "",
+].join("\n");
+const NOOP_LAST_CHANGED_AT = "2026-01-05T12:00:00.000Z";
+const NOOP_SYNTHESIS_PATH = synthesisOutputPath(NOOP_GENERATED_PATH);
+const NOOP_ROLLUP_PATH = rollupOutputPath();
+const NOOP_SYNTHESIS_HASH = captureSynthesisInputHash(
+  NOOP_GENERATED_CONTENT,
+);
+const NOOP_ROLLUP_HASH = captureRollupInputHash([
+  {
+    path: NOOP_GENERATED_PATH,
+    body: NOOP_GENERATED_CONTENT,
+    lastChangedAt: NOOP_LAST_CHANGED_AT,
+  },
+]);
+let noopModelCalls = 0;
 
 scenario(
   {
@@ -359,18 +392,19 @@ scenario(
     expect(seed.adopted).toBe(true);
 
     const generatedPath = "wiki/generated/intake/manager-day.md";
+    const generatedContent = [
+      "---",
+      "type: capture",
+      "---",
+      "",
+      "# Manager Day",
+      "",
+      "Ada needs staffing notes. Ben owns budget follow-up.",
+      "",
+    ].join("\n");
     await h.userCommit({
       files: {
-        [generatedPath]: [
-          "---",
-          "type: capture",
-          "---",
-          "",
-          "# Manager Day",
-          "",
-          "Ada needs staffing notes. Ben owns budget follow-up.",
-          "",
-        ].join("\n"),
+        [generatedPath]: generatedContent,
       },
       message: "add generated capture",
     });
@@ -383,6 +417,9 @@ scenario(
     await h
       .expectFile(synthesisPath)
       .toContain("[[wiki/generated/intake/manager-day.md]]");
+    await h
+      .expectFile(synthesisPath)
+      .toContain(`input_hash: ${captureSynthesisInputHash(generatedContent)}`);
     await h
       .expectFile(synthesisPath)
       .toContain("- Ben owns budget follow-up");
@@ -405,6 +442,95 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.intake skips current capture syntheses without model churn",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "group", group: "convergence" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+        [NOOP_SYNTHESIS_PATH]: [
+          "---",
+          "type: synthesis",
+          `sources: ["[[${NOOP_GENERATED_PATH}]]"]`,
+          `generated_from: ${JSON.stringify(NOOP_GENERATED_PATH)}`,
+          `input_hash: ${NOOP_SYNTHESIS_HASH}`,
+          "processor: dome.intake.synthesize-capture",
+          "---",
+          "",
+          "# Existing Capture Synthesis",
+          "",
+          "Already synthesized.",
+          "",
+        ].join("\n"),
+        [NOOP_ROLLUP_PATH]: [
+          "---",
+          "type: synthesis",
+          "sources:",
+          `  - "[[${NOOP_GENERATED_PATH}]]"`,
+          `input_hash: ${NOOP_ROLLUP_HASH}`,
+          "processor: dome.intake.synthesize-rollup",
+          "---",
+          "",
+          "# Existing Rollup",
+          "",
+          "Already rolled up.",
+          "",
+        ].join("\n"),
+      },
+      modelProvider: async () => {
+        noopModelCalls += 1;
+        throw new Error("model should not be invoked for current syntheses");
+      },
+    },
+  },
+  async (h) => {
+    noopModelCalls = 0;
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [NOOP_GENERATED_PATH]: NOOP_GENERATED_CONTENT,
+      },
+      message: "add already-synthesized generated capture",
+      author: NOOP_CAPTURE_AUTHOR,
+      committer: NOOP_CAPTURE_AUTHOR,
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+    expect(noopModelCalls).toBe(0);
+    await h.expectFile(NOOP_SYNTHESIS_PATH).toContain(
+      "# Existing Capture Synthesis",
+    );
+    await h.expectFile(NOOP_ROLLUP_PATH).toContain("# Existing Rollup");
+    await h
+      .expectLedger({
+        processorId: "dome.intake.synthesize-capture",
+        status: "succeeded",
+        withOutputCommit: false,
+      })
+      .toHaveExactlyOne();
+    await h
+      .expectLedger({
+        processorId: "dome.intake.synthesize-rollup",
+        status: "succeeded",
+        withOutputCommit: false,
+      })
+      .toHaveExactlyOne();
   },
 );
 
@@ -503,6 +629,7 @@ scenario(
     await h
       .expectFile(rollupPath)
       .toContain("Recent captures point to launch staffing");
+    await h.expectFile(rollupPath).toMatch(/^input_hash: [a-f0-9]{64}$/m);
     await h
       .expectFile(rollupPath)
       .toContain("- Ada needs launch staffing support");

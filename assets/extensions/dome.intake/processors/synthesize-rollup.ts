@@ -1,5 +1,8 @@
 // dome.intake.synthesize-rollup - synthesize recent generated captures.
 
+import { createHash } from "node:crypto";
+
+import matter from "gray-matter";
 import { z } from "zod";
 
 import {
@@ -68,6 +71,10 @@ const synthesizeRollup = defineProcessorImplementation({
       ]);
     }
 
+    const inputHash = captureRollupInputHash(captures);
+    const existing = await ctx.snapshot.readFile(OUTPUT_PATH);
+    if (frontmatterInputHash(existing) === inputHash) return [];
+
     const rollup = await ctx.modelInvoke.structured({
       schemaName: MODEL_SCHEMA,
       prompt: promptForCaptures(captures),
@@ -81,7 +88,7 @@ const synthesizeRollup = defineProcessorImplementation({
           {
             kind: "write",
             path: OUTPUT_PATH,
-            content: renderRollupPage({ captures, rollup }),
+            content: renderRollupPage({ captures, inputHash, rollup }),
           },
         ],
         reason: "dome.intake: synthesize recent captures rollup",
@@ -95,6 +102,25 @@ export default synthesizeRollup;
 
 export function rollupOutputPath(): string {
   return OUTPUT_PATH;
+}
+
+export function captureRollupInputHash(
+  captures: ReadonlyArray<{
+    readonly path: string;
+    readonly body: string;
+    readonly lastChangedAt: string;
+  }>,
+): string {
+  const hash = createHash("sha256");
+  for (const capture of captures) {
+    hash.update(capture.path);
+    hash.update("\0");
+    hash.update(capture.lastChangedAt);
+    hash.update("\0");
+    hash.update(capture.body);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
 }
 
 async function recentGeneratedCaptures(
@@ -166,6 +192,7 @@ function parseCaptureRollup(value: unknown): CaptureRollup {
 
 function renderRollupPage(input: {
   readonly captures: ReadonlyArray<CaptureInput>;
+  readonly inputHash: string;
   readonly rollup: CaptureRollup;
 }): string {
   const { rollup } = input;
@@ -176,6 +203,7 @@ function renderRollupPage(input: {
     ...input.captures.map(
       (capture) => `  - ${yamlString(`[[${capture.path}]]`)}`,
     ),
+    `input_hash: ${input.inputHash}`,
     "processor: dome.intake.synthesize-rollup",
     "---",
     "",
@@ -207,6 +235,17 @@ function appendStringSection(
 
 function freezeStrings(items: ReadonlyArray<string>): ReadonlyArray<string> {
   return Object.freeze([...items]);
+}
+
+function frontmatterInputHash(content: string | null): string | null {
+  if (content === null) return null;
+  try {
+    const parsed = matter(content);
+    const value = parsed.data.input_hash;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function yamlString(value: string): string {

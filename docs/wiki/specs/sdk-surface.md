@@ -268,7 +268,7 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.intake.synthesize-capture
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: signal
@@ -279,7 +279,9 @@ processors:
         pathPattern: "wiki/generated/intake/*.md"
     capabilities:
       - kind: read
-        paths: ["wiki/generated/intake/*.md"]
+        paths:
+          - "wiki/generated/intake/*.md"
+          - "wiki/syntheses/intake-*.md"
       - kind: patch.auto
         paths: ["wiki/syntheses/intake-*.md"]
       - kind: model.invoke
@@ -351,7 +353,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through metadata-annotated questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, seeds and refreshes a filtered source-backed open-loop surface in today's daily note, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, marks ambiguous follow-up questions as agent-safe, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, routes low-confidence items through agent-safe questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, routes low-confidence items through agent-safe questions, writes input-hash-settled source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests with read-first packet overviews. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].

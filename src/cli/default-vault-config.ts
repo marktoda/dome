@@ -46,7 +46,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "question.ask": true,
     }),
     extension("dome.intake", false, {
-      read: ["inbox/**/*.md", "wiki/generated/intake/*.md"],
+      read: [
+        "inbox/**/*.md",
+        "wiki/generated/intake/*.md",
+        "wiki/syntheses/intake-*.md",
+      ],
       "patch.auto": [
         "wiki/generated/intake/*.md",
         "wiki/syntheses/intake-*.md",

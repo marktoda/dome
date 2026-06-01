@@ -30,6 +30,7 @@ describe("default page-type registry", () => {
     expectOptionalFields("synthesis", [
       "description",
       "generated_from",
+      "input_hash",
       "metadata",
       "name",
       "processor",
