@@ -35,7 +35,7 @@ scenario(
     await h.userCommit({
       files: {
         "wiki/note.md":
-          "---\nupdated: 2026-05-28\nid: note\ncreated: 2026-05-27\ntype: page\n---\n# body\n",
+          "---\nupdated: 2026-01-01\nid: note\ncreated: 2026-05-27\ntype: page\n---\n# body\n",
       },
       message: "messy frontmatter",
     });
@@ -55,7 +55,7 @@ scenario(
     // Step 4: the file is normalized (type before id).
     await h.expectFile("wiki/note.md").toMatch(/type:\s*page[\s\S]*id:\s*note/);
     await h.expectFile("wiki/note.md").toContain("created: 2026-05-27\n");
-    await h.expectFile("wiki/note.md").toContain("updated: 2026-05-28\n");
+    await h.expectFile("wiki/note.md").toContain("updated: 2026-01-01\n");
     await h.expectFile("wiki/note.md").toNotContain("T00:00:00.000Z");
   },
 );

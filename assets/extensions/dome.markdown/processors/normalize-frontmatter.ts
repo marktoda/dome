@@ -1,9 +1,10 @@
 // dome.markdown.normalize-frontmatter — Phase 12b adoption-phase processor.
 //
 // The first patch-emitting processor: normalizes YAML frontmatter on every
-// changed markdown file by reordering keys into a canonical order. Keys
-// missing from the input stay missing in the output — this processor does
-// not invent fields, only reorders the ones already present.
+// changed markdown file by reordering keys into a canonical order. For
+// managed `wiki/` pages it also refreshes an existing `updated:` field when
+// the page's git lastChangedAt date has drifted. Keys missing from the
+// input stay missing in the output — this processor does not invent fields.
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same input → same output (the key-order list and
@@ -59,6 +60,8 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { dateOnly, daysBetween } from "./frontmatter-dates";
+import { frontmatterLintModeForPath } from "./path-policy";
 
 // ----- Canonical key order --------------------------------------------------
 //
@@ -87,11 +90,13 @@ const CANONICAL_ORDER: ReadonlyArray<string> = [
   "sources",
 ];
 
+const MAX_UPDATED_DRIFT_DAYS = 1;
+
 // ----- Processor ------------------------------------------------------------
 
 const normalizeFrontmatter: Processor = defineProcessor({
   id: "dome.markdown.normalize-frontmatter",
-  version: "0.1.0",
+  version: "0.2.0",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -116,7 +121,12 @@ const normalizeFrontmatter: Processor = defineProcessor({
       // there; either way there's nothing to normalize.
       if (content === null) continue;
 
-      const normalized = normalizeContent(content);
+      const refreshedUpdated = shouldRefreshUpdated(ctx, path)
+        ? await lastChangedDate(ctx, path)
+        : null;
+      const normalized = normalizeContent(content, {
+        updatedDate: refreshedUpdated,
+      });
       // `null` signals "no frontmatter or malformed YAML" — skip without
       // emitting either a patch or a diagnostic. A separate
       // `lint-frontmatter` processor is the right home for malformed-YAML
@@ -147,7 +157,7 @@ const normalizeFrontmatter: Processor = defineProcessor({
       patchEffect({
         mode: "auto",
         changes,
-        reason: "normalize frontmatter key order",
+        reason: "normalize frontmatter key order and managed dates",
         sourceRefs,
       }),
     ];
@@ -170,7 +180,10 @@ export default normalizeFrontmatter;
  *
  * The function is pure and synchronous — no I/O, no global state.
  */
-function normalizeContent(content: string): string | null {
+function normalizeContent(
+  content: string,
+  opts: { readonly updatedDate?: string | null } = {},
+): string | null {
   let parsed: matter.GrayMatterFile<string>;
   try {
     parsed = matter(content);
@@ -193,9 +206,44 @@ function normalizeContent(content: string): string | null {
     return null;
   }
 
-  const reordered = reorderKeys(normalizeYamlScalars(parsed.data));
+  const normalizedScalars = normalizeYamlScalars(parsed.data);
+  const refreshed = refreshUpdatedDate(
+    normalizedScalars,
+    opts.updatedDate ?? null,
+  );
+  const reordered = reorderKeys(refreshed);
 
   return stringifyFrontmatter(parsed.content, reordered);
+}
+
+async function lastChangedDate(
+  ctx: ProcessorContext,
+  path: string,
+): Promise<string | null> {
+  const info = await ctx.snapshot.getFileInfo(path);
+  if (info === null) return null;
+  return dateOnly(info.lastChangedAt);
+}
+
+function shouldRefreshUpdated(ctx: ProcessorContext, path: string): boolean {
+  return (
+    ctx.proposal !== null &&
+    ctx.proposal.base !== ctx.proposal.head &&
+    frontmatterLintModeForPath(path) === "required"
+  );
+}
+
+function refreshUpdatedDate(
+  data: Record<string, unknown>,
+  updatedDate: string | null,
+): Record<string, unknown> {
+  if (updatedDate === null) return data;
+
+  const current = dateOnly(data["updated"]);
+  if (current === null) return data;
+  if (daysBetween(current, updatedDate) <= MAX_UPDATED_DRIFT_DAYS) return data;
+
+  return { ...data, updated: updatedDate };
 }
 
 function matterFileIsEmpty(file: matter.GrayMatterFile<string>): boolean {

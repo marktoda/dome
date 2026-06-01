@@ -1,9 +1,10 @@
-// dome.markdown.stale-dates — adoption-phase date freshness diagnostics.
+// dome.markdown.stale-dates — rebuild/check date freshness diagnostics.
 //
 // Compares a changed markdown page's frontmatter `updated:` date with the
 // git commit date that last changed that path in the candidate snapshot.
-// This processor deliberately emits diagnostics only; an auto-bumping
-// patcher can be added later once the page-update policy is explicit.
+// Active Proposals are repaired by normalize-frontmatter before convergence;
+// this read-only processor remains the adopted-state/rebuild check so stale
+// historical pages are still visible until they are touched or fixed.
 
 import matter from "gray-matter";
 
@@ -17,14 +18,15 @@ import {
   type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { dateOnly, daysBetween } from "./frontmatter-dates";
+import { frontmatterLintModeForPath } from "./path-policy";
 
 const CODE_STALE_UPDATED = "dome.markdown.stale-updated";
 const MAX_DRIFT_DAYS = 1;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const staleDates: Processor = defineProcessor({
   id: "dome.markdown.stale-dates",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -32,8 +34,12 @@ const staleDates: Processor = defineProcessor({
   ],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    if (!shouldDiagnoseStaleDates(ctx)) return [];
+
     const diagnostics: DiagnosticEffect[] = [];
-    const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+    const changedMarkdown = ctx.changedPaths.filter(
+      (p) => frontmatterLintModeForPath(p) === "required",
+    );
 
     for (const path of changedMarkdown) {
       const content = await ctx.snapshot.readFile(path);
@@ -93,19 +99,6 @@ function extractUpdatedDate(content: string): UpdatedDate | null {
   return { date, line };
 }
 
-function dateOnly(value: unknown): string | null {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
-}
-
 function frontmatterKeyLine(content: string, key: string): number | null {
   if (!content.startsWith("---")) return null;
   const lines = content.split(/\r?\n/);
@@ -117,13 +110,10 @@ function frontmatterKeyLine(content: string, key: string): number | null {
   return null;
 }
 
-function daysBetween(a: string, b: string): number {
-  return Math.round(
-    Math.abs(Date.parse(`${a}T00:00:00.000Z`) - Date.parse(`${b}T00:00:00.000Z`)) /
-      MS_PER_DAY,
-  );
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function shouldDiagnoseStaleDates(ctx: ProcessorContext): boolean {
+  return ctx.proposal === null || ctx.proposal.base === ctx.proposal.head;
 }

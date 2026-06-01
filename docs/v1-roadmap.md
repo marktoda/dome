@@ -840,6 +840,10 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Frontmatter diagnostic precision: `dome.markdown.lint-frontmatter` now
       requires page metadata only for managed `wiki/` pages while treating
       user-owned `notes/`, `raw/`, and `inbox/` frontmatter as optional.
+- [x] Managed-date maintenance: `dome.markdown.normalize-frontmatter` now
+      refreshes existing stale `updated:` fields on managed `wiki/` pages
+      during adoption, while `dome.markdown.stale-dates` remains a read-only
+      rebuild/check diagnostic for historical drift.
 
 ## V1 Exit Criteria
 

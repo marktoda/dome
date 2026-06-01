@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 
 import { commit, fileInfoAtCommit, initRepo, readBlob, readTree } from "../../src/git";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
+import { makeManualProposal } from "../../src/core/proposal";
 import {
   treeOid,
   type Processor,
@@ -48,6 +49,8 @@ import {
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const BASE_COMMIT = commitOid("1111111111111111111111111111111111111111");
+const HEAD_COMMIT = commitOid("2222222222222222222222222222222222222222");
 
 // ----- Fixture: a real git-backed vault ------------------------------------
 //
@@ -194,6 +197,34 @@ function expectWrite(
   return { path: ch.path, content: ch.content };
 }
 
+function fakeSnapshotForFile(opts: {
+  readonly path: string;
+  readonly content: string;
+  readonly lastChangedAt: string;
+}): Snapshot {
+  return Object.freeze({
+    commit: HEAD_COMMIT,
+    tree: treeOid("3333333333333333333333333333333333333333"),
+    readFile: async (p: string) => (p === opts.path ? opts.content : null),
+    listMarkdownFiles: async () => Object.freeze([opts.path]),
+    getFileInfo: async (p: string) =>
+      p === opts.path
+        ? {
+            lastChangedCommit: HEAD_COMMIT,
+            lastChangedAt: opts.lastChangedAt,
+          }
+        : null,
+  });
+}
+
+function manualProposalWithDrift() {
+  return makeManualProposal({
+    base: BASE_COMMIT,
+    head: HEAD_COMMIT,
+    branch: "main",
+  });
+}
+
 // ----- Tests ----------------------------------------------------------------
 
 describe("dome.markdown.normalize-frontmatter", () => {
@@ -275,7 +306,7 @@ describe("dome.markdown.normalize-frontmatter", () => {
 
     const patch = expectPatch(effects, 0);
     expect(patch.mode).toBe("auto");
-    expect(patch.reason).toBe("normalize frontmatter key order");
+    expect(patch.reason).toBe("normalize frontmatter key order and managed dates");
     expect(patch.changes.length).toBe(1);
 
     const write = expectWrite(patch.changes, 0);
@@ -450,5 +481,35 @@ describe("dome.markdown.normalize-frontmatter", () => {
     expect(write.content).toContain("updated: 2026-05-28\n");
     expect(write.content).not.toContain("T00:00:00.000Z");
     expect(write.content).not.toContain("'2026-05-27'");
+  });
+
+  test("active Proposals refresh stale updated dates on managed wiki pages", async () => {
+    const content = withFrontmatter(
+      "type: project\nupdated: 2026-05-01\n",
+      "# Project Alpha\n",
+    );
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: fakeSnapshotForFile({
+        path: "wiki/project-alpha.md",
+        content,
+        lastChangedAt: "2026-05-28T12:00:00.000Z",
+      }),
+      changedPaths: ["wiki/project-alpha.md"],
+      proposal: manualProposalWithDrift(),
+      runId: "run-nfm-updated",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    const patch = expectPatch(effects, 0);
+    const write = expectWrite(patch.changes, 0);
+
+    expect(write.path).toBe("wiki/project-alpha.md");
+    expect(write.content).toContain("updated: 2026-05-28\n");
+    expect(write.content).not.toContain("updated: 2026-05-01\n");
   });
 });

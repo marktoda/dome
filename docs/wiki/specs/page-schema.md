@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-05-28
+updated: 2026-06-01
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -25,7 +25,7 @@ tags: [<tag>, ...]                # optional; indexed by dome.graph.tag-index
 ---
 ```
 
-For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates, and `dome.markdown.stale-dates` warns when `updated:` drifts from git history. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
+For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates. On active Proposals, `dome.markdown.normalize-frontmatter` refreshes an existing managed `wiki/` page `updated:` date when it drifts from git history; during adopted-state rebuild/check, `dome.markdown.stale-dates` warns about remaining stale historical pages. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
 
 ### Type field
 
@@ -39,7 +39,7 @@ Type validation against the declared page types is the `dome.markdown.type-unkno
 
 ### Created / updated
 
-`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is expected to match the date of the page's most recent committed content change. In v1's diagnostic-only substrate, `dome.markdown.stale-dates` warns when `updated:` trails the path's git `lastChangedAt` date by more than one day; automatic date-bumping remains a later patching policy decision.
+`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is expected to match the date of the page's most recent committed content change. For managed `wiki/` pages with an existing `updated:` field, `dome.markdown.normalize-frontmatter` auto-patches drift greater than one day during adoption. `dome.markdown.stale-dates` remains a read-only rebuild/check diagnostic for adopted pages that predate the auto-bump policy or have not yet been touched.
 
 ### Sources
 

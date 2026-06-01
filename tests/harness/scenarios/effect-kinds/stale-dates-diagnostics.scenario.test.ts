@@ -1,9 +1,9 @@
 // scenarios/effect-kinds/stale-dates-diagnostics.scenario.test.ts
 //
-// Pins the snapshot metadata boundary end to end: the processor reads
-// frontmatter from the candidate tree, reads the path's last git commit date
-// through `ctx.snapshot.getFileInfo`, and emits a warning without blocking
-// adoption.
+// Pins the managed-date freshness path end to end: normalize-frontmatter reads
+// the path's last git commit date through `ctx.snapshot.getFileInfo`, refreshes
+// stale `updated:` frontmatter during the fixed-point loop, and leaves no
+// stale-date diagnostic in the adopted projection.
 
 import { expect } from "bun:test";
 
@@ -17,12 +17,13 @@ const COMMITTER = {
 
 scenario(
   {
-    name: "effect-kinds: dome.markdown.stale-dates warns when updated date trails git date",
+    name: "effect-kinds: dome.markdown refreshes stale updated dates during adoption",
     tags: [
       { kind: "group", group: "effect-kinds" },
-      { kind: "effect", effect: "diagnostic" },
+      { kind: "effect", effect: "patch" },
       { kind: "phase", phase: "adoption" },
       { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
       { kind: "trigger", trigger: "signal" },
     ],
     harness: { bundles: ["dome.markdown"] },
@@ -47,30 +48,34 @@ scenario(
 
     const result = await h.tick();
     expect(result.adopted).toBe(true);
+    expect(result.diagnosticCount).toBe(0);
+    expect(result.iterations).toBeGreaterThan(1);
 
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.stale-updated" })
-      .toHaveCount(1);
-    await h
-      .expectProjection()
-      .diagnostics({ code: "dome.markdown.stale-updated" })
-      .toContainMessage("was last changed on 2026-05-28");
+      .toHaveCount(0);
+    await h.expectFile("wiki/project-alpha.md").toNotContain("updated: 2026-05-01");
+    await h.expectFile("wiki/project-alpha.md").toMatch(/^updated: \d{4}-\d{2}-\d{2}$/m);
     await h
       .expectLedger({ processorId: "dome.markdown.stale-dates" })
+      .toAllHaveStatus("succeeded");
+    await h
+      .expectLedger({ processorId: "dome.markdown.normalize-frontmatter" })
       .toAllHaveStatus("succeeded");
   },
 );
 
 scenario(
   {
-    name: "effect-kinds: dome.markdown.stale-dates handles bulk changed pages",
+    name: "effect-kinds: dome.markdown refreshes stale updated dates in bulk",
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "group", group: "regression" },
-      { kind: "effect", effect: "diagnostic" },
+      { kind: "effect", effect: "patch" },
       { kind: "phase", phase: "adoption" },
       { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
       { kind: "trigger", trigger: "signal" },
     ],
     harness: {
@@ -93,7 +98,11 @@ scenario(
 
     const result = await h.tick();
     expect(result.adopted).toBe(true);
+    expect(result.diagnosticCount).toBe(0);
 
+    await h
+      .expectLedger({ processorId: "dome.markdown.normalize-frontmatter" })
+      .toAllHaveStatus("succeeded");
     await h
       .expectLedger({ processorId: "dome.markdown.stale-dates" })
       .toAllHaveStatus("succeeded");
@@ -104,7 +113,8 @@ scenario(
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.stale-updated" })
-      .toHaveCount(180);
+      .toHaveCount(0);
+    await h.expectFile("wiki/bulk-000.md").toNotContain("updated: 2026-05-01");
   },
 );
 
@@ -114,8 +124,7 @@ function bulkPages(count: number): Record<string, string> {
     const id = i.toString().padStart(3, "0");
     files[`wiki/bulk-${id}.md`] =
       "---\n" +
-      "type: note\n" +
-      `id: bulk-${id}\n` +
+      "type: concept\n" +
       "updated: 2026-05-01\n" +
       "---\n" +
       `# Bulk ${id}\n\n` +

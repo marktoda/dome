@@ -15,7 +15,7 @@ processors:
     module: processors/validate-wikilinks.ts
 
   - id: dome.markdown.normalize-frontmatter
-    version: 0.1.0
+    version: 0.2.0
     phase: adoption
     triggers:
       - kind: signal
@@ -70,7 +70,7 @@ processors:
     module: processors/duplicate-detection.ts
 
   - id: dome.markdown.stale-dates
-    version: 0.1.0
+    version: 0.1.1
     phase: adoption
     triggers:
       - kind: signal
