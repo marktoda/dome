@@ -331,6 +331,8 @@ describe("runInit", () => {
       expect(agentsBody).toContain("## Daily loop");
       expect(agentsBody).toContain("Commit each coherent unit of work");
       expect(agentsBody).toContain("Dome works at the git commit boundary");
+      expect(agentsBody).toContain("serve_status");
+      expect(agentsBody).toContain("foreground `dome serve` host");
       expect(agentsBody).toContain("next_actions");
       expect(agentsBody).toContain("dome check --json");
       expect(agentsBody).toContain("dome resolve <id> <value>");

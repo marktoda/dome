@@ -52,6 +52,8 @@ scenario(
       expect(agents).toContain("Dome works at the git commit boundary");
       expect(agents).toContain("dome status --json");
       expect(agents).toContain("attention_required");
+      expect(agents).toContain("serve_status");
+      expect(agents).toContain("foreground `dome serve` host");
       expect(agents).toContain("next_actions");
       expect(agents).toContain("dome check --json");
       expect(agents).toContain("dome sync --json");

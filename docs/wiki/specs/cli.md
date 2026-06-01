@@ -140,11 +140,14 @@ The shipped initialization steps:
    (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
-   path rather than polish. First-write-only — re-runs preserve any
-   user-prose section the vault owner added. `--refresh-instructions` is an
-   explicit maintenance path for old orientation files: it adds the managed
-   AGENTS user-prose delimiters when missing and prepends the `@AGENTS.md`
-   shim to CLAUDE.md when missing, preserving existing file content.
+   path rather than polish. The generated instructions tell agents to inspect
+   `serve_status` from `dome status --json` at session start, using
+   `dome sync --json` after commits when no foreground `dome serve` host is
+   running. First-write-only — re-runs preserve any user-prose section the
+   vault owner added. `--refresh-instructions` is an explicit maintenance path
+   for old orientation files: it adds the managed AGENTS user-prose delimiters
+   when missing and prepends the `@AGENTS.md` shim to CLAUDE.md when missing,
+   preserving existing file content.
 6. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
    `.dome/config.yaml`. Skipped if HEAD already resolves (re-init on a
@@ -313,7 +316,9 @@ reports. `serve_status` is read from the foreground host heartbeat file and is
 not refreshed its heartbeat within the host's configured cadence. Text mode
 annotates `serve off` as `serve off (run dome serve)` to nudge the normal
 foreground-host workflow, but `off` is not itself an attention reason because
-one-shot `dome sync` is a valid catch-up mode. Use
+one-shot `dome sync` is a valid catch-up mode. Generated AGENTS guidance tells
+Claude Code to read `serve_status` separately from `next_actions`, because
+`next_actions` is scoped to compiler attention rather than host preference. Use
 `dome check --json` for the normal explanation path and `dome inspect
 diagnostics/questions/outbox/runs` only for row-level debugging. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and

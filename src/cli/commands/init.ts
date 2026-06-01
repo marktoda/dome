@@ -465,9 +465,12 @@ changes and compiles them into adopted vault state.
 1. Talk with the user and edit markdown normally.
 2. Keep changes in ordinary vault files, usually under \`wiki/\`.
 3. Commit each coherent unit of work with git.
-4. If \`dome serve\` is running, let it adopt the commit in the background.
-5. If the user wants to wait for Dome, run \`dome sync --json\`.
-6. Run \`dome status --json\` at session boundaries or when Dome reports
+4. At session start, run \`dome status --json\` and read \`serve_status\`. If it
+   is \`off\`, use \`dome sync --json\` after commits unless the user starts a
+   foreground \`dome serve\` host in another terminal/session.
+5. If \`dome serve\` is running, let it adopt commits in the background.
+6. If the user wants to wait for Dome, run \`dome sync --json\`.
+7. Run \`dome status --json\` at session boundaries or when Dome reports
    attention. Follow its \`next_actions\`.
 
 Good commit shape:
@@ -512,10 +515,13 @@ Do not call Dome after every edit. Dome works at the git commit boundary.
 
 ## Reading Dome status
 
-\`dome status --json\` exposes \`attention_required\`, stable \`attention\`
-reason codes, and \`next_actions\`. Treat \`next_actions\` as the canonical
-branch. In normal use:
+\`dome status --json\` exposes \`serve_status\`, \`attention_required\`, stable
+\`attention\` reason codes, and \`next_actions\`. Treat \`next_actions\` as the
+canonical branch for compiler attention. In normal use:
 
+- If \`serve_status\` is \`off\`, no foreground host is adopting commits in the
+  background. Use \`dome sync --json\` after commits, or ask the user to start
+  \`dome serve\` for a foreground compiler host.
 - Run \`dome sync --json\` when status says the compiler needs to catch up.
 - Run the \`dome check ...\` command in \`next_actions\` when status says
   attention remains after sync.

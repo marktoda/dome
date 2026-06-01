@@ -845,6 +845,10 @@ Work:
 - [x] Make bounded `dome agenda` context sections reveal when more adopted
       search context exists beyond `--limit`, so people/topic prep does not
       look complete when only the first few matches are shown.
+- [x] Teach generated AGENTS.md to read `serve_status` separately from
+      `next_actions`, so Claude Code can start/verify the foreground
+      `dome serve` host for normal sessions without treating sync-only mode as
+      broken compiler attention.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
