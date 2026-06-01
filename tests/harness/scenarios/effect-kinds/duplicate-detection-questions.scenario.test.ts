@@ -69,3 +69,60 @@ scenario(
     await h.expectProjection().questions().toHaveCount(1);
   },
 );
+
+scenario(
+  {
+    name: "effect-kinds: dome.markdown.duplicate-detection ignores structural templates and raw/generated files",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "question" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "capability", capability: "read" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const interviewSkeleton =
+      "---\n" +
+      "type: note\n" +
+      "---\n" +
+      "# Candidate Information\n\n" +
+      "- Name:\n" +
+      "- Role:\n" +
+      "- Interviewer:\n\n" +
+      "**Build to Last, Iterate Fast:**\n\n" +
+      "- Evidence:\n" +
+      "- Concerns:\n\n" +
+      "**Own the Outcome:**\n\n" +
+      "- Evidence:\n" +
+      "- Concerns:\n";
+
+    const duplicateBody =
+      "# Imported capture\n\n" +
+      "This repeated generated prose should not become a duplicate question because the path is not canonical content.\n";
+
+    await h.userCommit({
+      files: {
+        "notes/Ananth - Values Interview.md": interviewSkeleton,
+        "notes/Austin Buckler Values.md": interviewSkeleton,
+        "templates/Interview - Values.md": interviewSkeleton,
+        "raw/assets/team-interview.excalidraw.md": duplicateBody,
+        "wiki/generated/imported-capture.md": `---\ntype: note\n---\n${duplicateBody}`,
+      },
+      message: "add structural interview notes and noncanonical duplicates",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h.expectProjection().questions().toHaveCount(0);
+    await h
+      .expectLedger({ processorId: "dome.markdown.duplicate-detection" })
+      .toAllHaveStatus("succeeded");
+  },
+);

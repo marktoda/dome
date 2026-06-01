@@ -345,7 +345,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 
 | Bundle | Phase × processors | Purpose |
 |---|---|---|
-| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits diagnostics on broken references/frontmatter/date issues, asks about suspected duplicates, and provides the orphan-pages view. |
+| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates; view: orphan-pages | Keeps markdown pages well-formed; emits diagnostics on broken references/frontmatter/date issues, asks about high-confidence duplicate canonical content pages, and provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes, carries open markdown checkbox tasks forward, indexes source-ref-backed wiki-page task/followup facts, and renders daily action/planning surfaces. |

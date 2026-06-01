@@ -1,10 +1,11 @@
 // dome.markdown.duplicate-detection — Phase 13b adoption-phase processor.
 //
-// Emits a QuestionEffect when a changed markdown page appears to duplicate an
-// existing page. The heuristic is intentionally conservative for v1: normalized
-// title AND normalized first paragraph must match. Fuzzy similarity can come
-// later behind an explicit library/substrate choice; this processor's job is to
-// make the question channel useful without adding a probabilistic dependency.
+// Emits a QuestionEffect when a changed canonical content page appears to
+// duplicate an existing page. The heuristic is intentionally conservative for
+// v1: normalized title, real prose, and path/title evidence must agree. Fuzzy
+// similarity can come later behind an explicit library/substrate choice; this
+// processor's job is to make the question channel useful without adding a
+// probabilistic dependency.
 
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
@@ -23,6 +24,11 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+const COMPARABLE_CONTENT_ROOTS = ["notes/", "wiki/"] as const;
+const NON_CANONICAL_CONTENT_PREFIXES = [
+  "wiki/generated/",
+] as const;
+
 const duplicateDetection: Processor = defineProcessor({
   id: "dome.markdown.duplicate-detection",
   version: "0.1.0",
@@ -40,7 +46,7 @@ const duplicateDetection: Processor = defineProcessor({
     const allPages = await readComparablePages(ctx, allMarkdown);
     const byPath = new Map(allPages.map((page) => [page.path, page]));
     const byTitle = groupByTitle(allPages);
-    const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+    const changedMarkdown = ctx.changedPaths.filter(isComparableContentPath);
     const emittedPairs = new Set<string>();
     const questions: QuestionEffect[] = [];
 
@@ -60,7 +66,7 @@ const duplicateDetection: Processor = defineProcessor({
           questionEffect({
             question:
               `Possible duplicate pages: ${changed.path} and ${other.path}. ` +
-              "They have the same normalized title and first paragraph.",
+              "They have the same normalized title and first prose paragraph, with related filenames.",
             options: ["merge", "keep separate"],
             sourceRefs: [changed.sourceRef, other.sourceRef],
             idempotencyKey:
@@ -80,6 +86,7 @@ type ComparablePage = {
   readonly path: string;
   readonly title: string;
   readonly firstParagraph: string;
+  readonly pathTokens: ReadonlySet<string>;
   readonly signature: string;
   readonly sourceRef: SourceRef;
 };
@@ -90,6 +97,7 @@ async function readComparablePages(
 ): Promise<ReadonlyArray<ComparablePage>> {
   const pages: ComparablePage[] = [];
   for (const path of paths) {
+    if (!isComparableContentPath(path)) continue;
     const content = await ctx.snapshot.readFile(path);
     if (content === null) continue;
     const extracted = extractComparableText(path, content);
@@ -98,6 +106,7 @@ async function readComparablePages(
       path,
       title: extracted.title,
       firstParagraph: extracted.firstParagraph,
+      pathTokens: filenameTokens(path),
       signature: `${extracted.title}\n${extracted.firstParagraph}`,
       sourceRef: ctx.sourceRef(path, {
         startLine: extracted.sourceLine,
@@ -109,7 +118,11 @@ async function readComparablePages(
 }
 
 function sameSignature(a: ComparablePage, b: ComparablePage): boolean {
-  return a.title === b.title && a.firstParagraph === b.firstParagraph;
+  return (
+    a.title === b.title &&
+    a.firstParagraph === b.firstParagraph &&
+    pathsLookRelated(a, b)
+  );
 }
 
 function groupByTitle(
@@ -207,7 +220,8 @@ function firstParagraph(
       inFence ||
       trimmed.length === 0 ||
       trimmed.startsWith("#") ||
-      isListOrTableLine(trimmed)
+      isListOrTableLine(trimmed) ||
+      isStructuralLabelLine(trimmed)
     ) {
       continue;
     }
@@ -215,7 +229,14 @@ function firstParagraph(
     const paragraphLines = [trimmed];
     for (let j = i + 1; j < lines.length; j++) {
       const next = (lines[j] ?? "").trim();
-      if (next.length === 0 || next.startsWith("#") || isListOrTableLine(next)) break;
+      if (
+        next.length === 0 ||
+        next.startsWith("#") ||
+        isListOrTableLine(next) ||
+        isStructuralLabelLine(next)
+      ) {
+        break;
+      }
       paragraphLines.push(next);
     }
     return { text: paragraphLines.join(" "), startIndex: i };
@@ -225,6 +246,82 @@ function firstParagraph(
 
 function isListOrTableLine(line: string): boolean {
   return /^([-*+]\s+|\d+\.\s+|>\s*|\|)/.test(line);
+}
+
+function isStructuralLabelLine(line: string): boolean {
+  const withoutFormatting = line
+    .replace(/^[*_`~\s]+/, "")
+    .replace(/[*_`~\s]+$/, "")
+    .trim();
+  if (!withoutFormatting.endsWith(":")) return false;
+  return withoutFormatting.length <= 80;
+}
+
+function isComparableContentPath(path: string): boolean {
+  if (!path.endsWith(".md")) return false;
+  if (!COMPARABLE_CONTENT_ROOTS.some((prefix) => path.startsWith(prefix))) {
+    return false;
+  }
+  return !NON_CANONICAL_CONTENT_PREFIXES.some((prefix) =>
+    path.startsWith(prefix),
+  );
+}
+
+function pathsLookRelated(a: ComparablePage, b: ComparablePage): boolean {
+  const aSlug = normalizedPathStem(a.path);
+  const bSlug = normalizedPathStem(b.path);
+  if (aSlug.length > 0 && bSlug.length > 0) {
+    if (aSlug.includes(bSlug) || bSlug.includes(aSlug)) return true;
+  }
+
+  const overlap = tokenOverlap(a.pathTokens, b.pathTokens);
+  return overlap.containment >= 0.75 || overlap.jaccard >= 0.5;
+}
+
+function normalizedPathStem(path: string): string {
+  return normalizeText(posix.basename(path, ".md")).replace(/\s+/g, "-");
+}
+
+function filenameTokens(path: string): ReadonlySet<string> {
+  const stem = normalizeText(posix.basename(path, ".md"));
+  const tokens = stem
+    .split(/[\s/-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !FILENAME_STOPWORDS.has(token));
+  return new Set(tokens);
+}
+
+const FILENAME_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "copy",
+  "draft",
+  "for",
+  "md",
+  "note",
+  "notes",
+  "of",
+  "page",
+  "the",
+  "to",
+]);
+
+function tokenOverlap(
+  a: ReadonlySet<string>,
+  b: ReadonlySet<string>,
+): { readonly containment: number; readonly jaccard: number } {
+  if (a.size === 0 || b.size === 0) return { containment: 0, jaccard: 0 };
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) intersection += 1;
+  }
+  const smaller = Math.min(a.size, b.size);
+  const union = a.size + b.size - intersection;
+  return {
+    containment: intersection / smaller,
+    jaccard: union === 0 ? 0 : intersection / union,
+  };
 }
 
 function normalizeText(text: string): string {

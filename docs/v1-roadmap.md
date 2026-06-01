@@ -833,6 +833,10 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Commit-scoped path metadata cache: `ctx.snapshot.getFileInfo` no longer
       shells out once per path, so `dome.markdown.stale-dates` can handle
       bulk real-vault adoptions without timing out.
+- [x] Duplicate-question precision: `dome.markdown.duplicate-detection` now
+      limits questions to high-confidence canonical content duplicates so
+      template/raw/generated files and structural interview skeletons do not
+      flood `dome resolve`.
 
 ## V1 Exit Criteria
 
