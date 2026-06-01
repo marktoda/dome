@@ -2673,6 +2673,78 @@ describe("runStatus", () => {
     ).toBe(false);
   });
 
+  test("text mode distinguishes transient pending runs from stale run attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+    captured.out = [];
+    captured.err = [];
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    expect(ledger.ok).toBe(true);
+    if (!ledger.ok) return;
+    try {
+      const runId = newRunId(new Date(), () => "live01");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.status.live",
+        processorVersion: "0.0.1",
+        phase: "view",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "command",
+        triggerPayload: { command: "prep" },
+        startedAt: new Date(),
+      });
+      markRunning(ledger.value.db, runId, new Date());
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+
+    const out = captured.out.join("\n");
+    expect(out).toContain("pending 1 live");
+    expect(out).not.toContain("pending 1 | failed");
+    expect(out).not.toContain("pending_runs");
+
+    const reopened = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) return;
+    try {
+      const runId = newRunId(new Date(0), () => "stale1");
+      insertQueued(reopened.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.status.stale",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "schedule",
+        triggerPayload: { test: "stale" },
+        startedAt: new Date(0),
+      });
+      markRunning(reopened.value.db, runId, new Date(0));
+    } finally {
+      reopened.value.db.close();
+    }
+
+    captured.out = [];
+    captured.err = [];
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+
+    const staleOut = captured.out.join("\n");
+    expect(staleOut).toContain("pending 2 total (1 stale)");
+    expect(staleOut).toContain("dome check --json");
+  });
+
   test("--json last_sync ignores newer view processor runs", async () => {
     const f = await makeFixture();
     fixtures.push(f);

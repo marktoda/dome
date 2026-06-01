@@ -463,8 +463,10 @@ function formatProjectionFreshness(s: StatusSnapshot): string {
 }
 
 function formatPendingRuns(s: StatusSnapshot): string {
-  if (s.orphan_runs === 0) return String(s.pending_runs);
-  return `${s.pending_runs} (${s.orphan_runs} stale)`;
+  if (s.pending_runs === 0) return "0";
+  if (s.orphan_runs === 0) return `${s.pending_runs} live`;
+  if (s.orphan_runs === s.pending_runs) return `${s.pending_runs} stale`;
+  return `${s.pending_runs} total (${s.orphan_runs} stale)`;
 }
 
 function formatDiagnosticCount(s: StatusSnapshot): string {

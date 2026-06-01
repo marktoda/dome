@@ -389,7 +389,9 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 is the live queued/running ledger count, while `orphan_runs` is the subset of
 running rows old enough for recovery; transient in-flight view or compiler
 runs remain visible but only `orphan_runs > 0` contributes the `pending_runs`
-attention reason. `diagnostics` is the
+attention reason. Text status output renders non-stale rows as `pending N live`
+and stale rows as `pending N stale` or `pending N total (M stale)` so a
+concurrent view command does not look like a stuck recovery state. `diagnostics` is the
 total unresolved diagnostic count, `content_diagnostics` is the subset with
 SourceRefs that can be repaired from markdown, and `unlocated_diagnostics`
 counts source-less rows such as runtime/compiler diagnostics that remain

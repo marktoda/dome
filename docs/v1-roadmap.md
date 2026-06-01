@@ -1047,6 +1047,10 @@ Fold these into nearby milestone work when they are on-path:
       `status` could route to `check` even though `check` found the engine
       healthy; `status` and `sync` now expose stale `orphan_runs` separately
       and only route pending-run attention for recoverable stale rows.
+- [x] Label transient text-mode pending runs as live rather than leaving the
+      engine row at bare `pending 1`, after parallel real-vault view probes
+      showed the text surface could still make in-flight view commands look
+      like a stuck compiler state.
 
 ## V1 Exit Criteria
 
