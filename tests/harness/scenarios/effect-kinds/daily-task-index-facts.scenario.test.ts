@@ -118,7 +118,7 @@ scenario(
       .facts({
         predicate: "dome.daily.open_task",
         subjectId: "wiki/dailies/2026-01-03.md",
-        objectString: "#followup Send Ada notes",
+        objectString: "Send Ada notes",
       })
       .toHaveCount(0);
     await h
@@ -542,7 +542,7 @@ scenario(
       .facts({
         predicate: "dome.daily.open_task",
         subjectId: path,
-        objectString: "#followup Follow up with Sam about hiring",
+        objectString: "Follow up with Sam about hiring",
       })
       .toHaveCount(1);
     await h
@@ -550,7 +550,7 @@ scenario(
       .facts({
         predicate: "dome.daily.followup",
         subjectId: path,
-        objectString: "#followup Follow up with Sam about hiring",
+        objectString: "Follow up with Sam about hiring",
       })
       .toHaveCount(1);
 
@@ -561,7 +561,7 @@ scenario(
       .facts({
         predicate: "dome.daily.followup",
         subjectId: path,
-        objectString: "#followup Follow up with Sam about hiring",
+        objectString: "Follow up with Sam about hiring",
       })
       .toHaveCount(1);
   },

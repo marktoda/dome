@@ -202,7 +202,7 @@ scenario(
       .facts({
         predicate: "dome.daily.followup",
         subjectId: GENERATED_CAPTURE_PATH,
-        objectString: "#followup Ask Ben about hiring budget",
+        objectString: "Ask Ben about hiring budget",
       })
       .toHaveCount(1);
 
@@ -229,7 +229,7 @@ scenario(
       "Send Ada the launch staffing note",
     );
     expect(todayPayload.followups.map((task) => task.text)).toContain(
-      "#followup Ask Ben about hiring budget",
+      "Ask Ben about hiring budget",
     );
 
     const prep = await h.runCli(["prep", "--date", "2026-01-06"]);

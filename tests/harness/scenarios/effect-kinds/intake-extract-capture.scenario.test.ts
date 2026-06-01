@@ -205,7 +205,7 @@ scenario(
       .facts({
         predicate: "dome.daily.followup",
         subjectId: OUTPUT_PATH,
-        objectString: "#followup Ask Ben about hiring budget",
+        objectString: "Ask Ben about hiring budget",
       })
       .toHaveCount(1);
 

@@ -471,6 +471,10 @@ Default text output renders:
 - unresolved `dome.daily.*` questions with durable row ids, options, and
   `dome resolve <id> <value>` hints.
 
+Daily action fact text is semantic task text: leading `#task`, `#followup`,
+and `#follow-up` marker tags are stripped from rendered task/followup text,
+while SourceRefs still point to the original markdown line.
+
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload. `--date` is for

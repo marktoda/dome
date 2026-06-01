@@ -794,6 +794,9 @@ Work:
 - [x] Make bounded `dome prep` markdown sections print omitted-item hints, after
       the real work-vault soak showed `--limit 12` could hide 85 more open
       tasks even though `dome today` already reported the omitted count.
+- [x] Strip leading `#task` / `#followup` markers from daily action fact text,
+      after real work-vault `today` / `prep` output showed marker syntax leaking
+      into management task lists.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

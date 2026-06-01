@@ -116,7 +116,7 @@ recurrence: 2026-01-01
       .facts({
         predicate: "dome.daily.followup",
         subjectId: "wiki/dailies/2026-01-02.md",
-        objectString: "#task #followup Follow up with [[wiki/entities/Ada]]",
+        objectString: "Follow up with [[wiki/entities/Ada]]",
       })
       .toHaveCount(1);
 

@@ -79,7 +79,7 @@ scenario(
       "[followup] Ask Ada about rollout risks (wiki/projects/launch.md:9)",
     );
     expect(text.stdout).toContain(
-      "[followup] #followup Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
+      "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
     );
     expect(text.stdout).toContain("resolve: dome resolve ");
     expect(text.stdout).toContain("<track|ignore>");
@@ -121,7 +121,7 @@ scenario(
     expect(payload.counts.agendaItems).toBe(4);
     expect(payload.counts.context).toBeGreaterThan(0);
     expect(payload.agendaItems.map((item) => item.text)).toEqual([
-      "#followup Send Ada launch notes",
+      "Send Ada launch notes",
       "Ask Ada about rollout risks",
       'Possible follow-up in wiki/projects/launch.md:10: "We should follow up with Ada about review timing.". Should Dome track this as a follow-up?',
       "Draft Ada staffing note",

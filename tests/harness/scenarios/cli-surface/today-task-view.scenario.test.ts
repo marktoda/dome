@@ -108,7 +108,7 @@ scenario(
       "Draft project staffing note",
       "Ask Ben about hiring budget",
       "Ship weekly update",
-      "#followup Send Ada launch notes",
+      "Send Ada launch notes",
     ]);
     expect(
       payload.openTasks.every((task) =>
@@ -117,7 +117,7 @@ scenario(
     ).toBe(true);
     expect(payload.followups.map((task) => task.text)).toEqual([
       "Ask Ben about hiring budget",
-      "#followup Send Ada launch notes",
+      "Send Ada launch notes",
     ]);
     expect(payload.questions[0]?.question).toContain(
       "We should follow up with Cy about review timing",

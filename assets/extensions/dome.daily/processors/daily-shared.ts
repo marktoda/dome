@@ -228,7 +228,7 @@ function directiveActionItemFromLine(
   return Object.freeze({
     line: lineNumber,
     text: line.trim(),
-    body,
+    body: semanticActionBody(body),
     followup:
       marker === "follow-up" ||
       marker === "followup" ||
@@ -237,9 +237,11 @@ function directiveActionItemFromLine(
 }
 
 function taskBodyFromCheckboxLine(line: string): string {
-  return stripCarryForwardSource(line)
-    .replace(/^\s*[-*]\s+\[ \]\s+/, "")
-    .trim();
+  return semanticActionBody(
+    stripCarryForwardSource(line)
+      .replace(/^\s*[-*]\s+\[ \]\s+/, "")
+      .trim(),
+  );
 }
 
 function isExplicitFollowup(line: string): boolean {
@@ -259,6 +261,13 @@ function stripCarryForwardSource(line: string): string {
 
 function carryForwardSourcePath(line: string): string | null {
   return CARRY_FORWARD_RE.exec(line)?.[1] ?? null;
+}
+
+function semanticActionBody(body: string): string {
+  const stripped = body
+    .replace(/^(?:#(?:task|follow-?up)\s+)+/i, "")
+    .trim();
+  return stripped.length > 0 ? stripped : body;
 }
 
 export function isValidDailyDate(date: DailyDate): boolean {

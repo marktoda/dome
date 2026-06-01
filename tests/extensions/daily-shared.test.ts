@@ -43,7 +43,7 @@ describe("dome.daily shared date helpers", () => {
         line: 1,
         text: "- [ ] #task Follow up",
         sourcePath: null,
-        body: "#task Follow up",
+        body: "Follow up",
         followup: false,
       },
       {
@@ -77,6 +77,7 @@ describe("dome.daily shared date helpers", () => {
       openTasksFromMarkdown(
         [
           "- [ ] #followup Send Ada launch notes",
+          "- [ ] #task #followup Confirm review timing",
           "- [ ] Follow up with Ben",
         ].join("\n"),
       ),
@@ -85,11 +86,18 @@ describe("dome.daily shared date helpers", () => {
         line: 1,
         text: "- [ ] #followup Send Ada launch notes",
         sourcePath: null,
-        body: "#followup Send Ada launch notes",
+        body: "Send Ada launch notes",
         followup: true,
       },
       {
         line: 2,
+        text: "- [ ] #task #followup Confirm review timing",
+        sourcePath: null,
+        body: "Confirm review timing",
+        followup: true,
+      },
+      {
+        line: 3,
         text: "- [ ] Follow up with Ben",
         sourcePath: null,
         body: "Follow up with Ben",
