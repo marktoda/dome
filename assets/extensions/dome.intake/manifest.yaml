@@ -1,5 +1,5 @@
 id: dome.intake
-version: 0.4.1
+version: 0.4.2
 processors:
   - id: dome.intake.capture-index
     version: 0.1.0
@@ -22,7 +22,7 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.1
+    version: 0.3.2
     phase: garden
     triggers:
       - kind: signal

@@ -198,7 +198,7 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 
 ```yaml
 id: dome.intake
-version: 0.4.1
+version: 0.4.2
 description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
 
@@ -224,7 +224,7 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.1
+    version: 0.3.2
     phase: garden
     triggers:
       - kind: signal
@@ -348,10 +348,10 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 |---|---|---|
 | `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates, raw-immutable; view: orphan-pages | Keeps markdown pages well-formed; normalizes frontmatter, refreshes managed `updated:` dates during adoption, repairs high-confidence typoed wikilinks to existing pages, emits warning diagnostics on ambiguous broken curated-page references/frontmatter and informational diagnostics for broken note-draft links, imported-source body links, optional-root unknown page types, and remaining adopted-date drift, blocks raw-file mutations, asks about high-confidence duplicate canonical content pages, and provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits graph facts for wikilinks and tags under the `dome.graph` namespace. |
-| `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through questions. |
-| `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, raises source-backed open loops into today's daily note, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
+| `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through metadata-annotated questions. |
+| `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, raises source-backed open loops into today's daily note, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, marks ambiguous follow-up questions as agent-safe, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, routes low-confidence items through questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, routes low-confidence items through agent-safe questions, writes source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests with read-first packet overviews. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].

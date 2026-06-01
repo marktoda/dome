@@ -93,6 +93,9 @@ scenario(
       "- 1 question already listed in Start Here",
     );
     expect(text.stdout).toContain("resolve: dome resolve ");
+    expect(text.stdout).toContain(
+      "policy: agent-safe; risk low; confidence 0.65",
+    );
     expect(text.stdout).toContain("<track|ignore>");
     expect(text.stdout).toContain(
       "- ... 1 more open task (use --limit 4 to show all open tasks)",
@@ -243,6 +246,9 @@ scenario(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(payload.markdown).toContain("resolve: dome resolve ");
+    expect(payload.markdown).toContain(
+      "policy: agent-safe; risk low; confidence 0.65",
+    );
     expect(payload.markdown).toContain("<track|ignore>");
     expect(payload.markdown).toContain(
       "- 2 followups already listed in Start Here",

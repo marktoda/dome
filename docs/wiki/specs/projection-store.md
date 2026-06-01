@@ -173,6 +173,7 @@ CREATE TABLE questions (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   question        TEXT NOT NULL,
   options_json    TEXT,                 -- JSON-encoded string[] | null
+  metadata_json   TEXT,                 -- JSON-encoded QuestionMetadata | null
   source_refs     TEXT NOT NULL,
   idempotency_key TEXT NOT NULL UNIQUE,
   processor_id    TEXT NOT NULL,
@@ -184,9 +185,10 @@ CREATE TABLE questions (
 ```
 
 The processor-facing QueryView exposes `ProjectionQuestion[]`: the
-`QuestionEffect` fields plus the durable row id and answer metadata. This lets
-view processors render resolve-ready daily/planning surfaces without touching
-SQLite. CLI/recovery code uses the same row-record accessor for full detail.
+`QuestionEffect` fields, including optional automation metadata, plus the
+durable row id and answer metadata. This lets view processors render
+resolve-ready daily/planning surfaces without touching SQLite. CLI/recovery
+code uses the same row-record accessor for full detail.
 `dome check` prints the normal open-decision view; advanced
 `dome inspect questions` prints the raw row records.
 `dome resolve <id> <value>` validates the answer and sets `answered_at` /

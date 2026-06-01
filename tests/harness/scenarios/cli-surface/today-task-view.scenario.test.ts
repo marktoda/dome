@@ -133,6 +133,10 @@ scenario(
         readonly question: string;
         readonly options: ReadonlyArray<string>;
         readonly resolveCommand: string;
+        readonly metadata?: {
+          readonly automationPolicy?: string;
+        };
+        readonly automationPolicy?: string;
         readonly path: string;
         readonly source: "daily" | "backlog";
       }>;
@@ -224,6 +228,8 @@ scenario(
     expect(payload.questions[0]?.resolveCommand).toBe(
       `dome resolve ${payload.questions[0]?.id} <track|ignore>`,
     );
+    expect(payload.questions[0]?.metadata?.automationPolicy).toBe("agent-safe");
+    expect(payload.questions[0]?.automationPolicy).toBe("agent-safe");
     expect(payload.questions[0]?.path).toBe("wiki/captures/2026-01-05.md");
     expect(payload.questions[0]?.source).toBe("backlog");
 

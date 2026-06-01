@@ -9,7 +9,7 @@
 //
 // House-style notes (matches src/projections/db.ts, src/projections/facts.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
-//   - JSON columns (`options_json`, `source_refs`) serialized via
+//   - JSON columns (`options_json`, `metadata_json`, `source_refs`) serialized via
 //     `JSON.stringify`; symmetric `JSON.parse` on read.
 //   - Row → QuestionEffect deserialization goes through `questionEffect`.
 //   - Returned arrays are `Object.freeze`'d.
@@ -81,20 +81,20 @@ export type AnswerQuestionResult =
 
 const INSERT_QUESTION_SQL = `
 INSERT OR IGNORE INTO questions (
-  question, options_json, source_refs, idempotency_key,
+  question, options_json, metadata_json, source_refs, idempotency_key,
   processor_id, adopted_commit, asked_at, answered_at, answer
-) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
 `.trim();
 
 const QUERY_ALL_SQL = `
-SELECT id, question, options_json, source_refs, idempotency_key,
+SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
        processor_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 ORDER BY id
 `.trim();
 
 const QUERY_RESOLVED_SQL = `
-SELECT id, question, options_json, source_refs, idempotency_key,
+SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
        processor_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE answered_at IS NOT NULL
@@ -102,7 +102,7 @@ ORDER BY id
 `.trim();
 
 const QUERY_UNRESOLVED_SQL = `
-SELECT id, question, options_json, source_refs, idempotency_key,
+SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
        processor_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE answered_at IS NULL
@@ -110,7 +110,7 @@ ORDER BY id
 `.trim();
 
 const QUERY_BY_ID_SQL = `
-SELECT id, question, options_json, source_refs, idempotency_key,
+SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
        processor_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE id = ?
@@ -151,6 +151,7 @@ type QuestionRow = {
   readonly id: number;
   readonly question: string;
   readonly options_json: string | null;
+  readonly metadata_json: string | null;
   readonly source_refs: string;
   readonly idempotency_key: string;
   readonly processor_id: string;
@@ -182,9 +183,12 @@ export function insertQuestion(
   const { effect, processorId, adoptedCommit } = opts;
   const optionsJson =
     effect.options === undefined ? null : JSON.stringify(effect.options);
+  const metadataJson =
+    effect.metadata === undefined ? null : JSON.stringify(effect.metadata);
   db.raw.query(INSERT_QUESTION_SQL).run(
     effect.question,
     optionsJson,
+    metadataJson,
     JSON.stringify(effect.sourceRefs),
     effect.idempotencyKey,
     processorId,
@@ -358,19 +362,22 @@ function rowToQuestion(row: QuestionRow): QuestionEffect {
     row.options_json === null
       ? undefined
       : (JSON.parse(row.options_json) as ReadonlyArray<string>);
-  const input: Omit<QuestionEffect, "kind"> =
-    options === undefined
-      ? {
-          question: row.question,
-          sourceRefs,
-          idempotencyKey: row.idempotency_key,
-        }
-      : {
-          question: row.question,
-          sourceRefs,
-          idempotencyKey: row.idempotency_key,
-          options,
-        };
+  const metadata =
+    row.metadata_json === null
+      ? undefined
+      : (JSON.parse(row.metadata_json) as QuestionEffect["metadata"]);
+  const input: {
+    -readonly [K in keyof Omit<QuestionEffect, "kind">]: Omit<
+      QuestionEffect,
+      "kind"
+    >[K];
+  } = {
+    question: row.question,
+    sourceRefs,
+    idempotencyKey: row.idempotency_key,
+  };
+  if (options !== undefined) input.options = options;
+  if (metadata !== undefined) input.metadata = metadata;
   return questionEffect(input);
 }
 

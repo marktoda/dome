@@ -183,6 +183,26 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
     expect(EffectSchema.parse(e).kind).toBe("question");
   });
 
+  test("QuestionEffect accepts automation metadata", () => {
+    const e = questionEffect({
+      question: "track it?",
+      options: ["track", "ignore"],
+      sourceRefs: refs,
+      idempotencyKey: "q-agent-safe",
+      metadata: {
+        risk: "low",
+        confidence: 0.75,
+        recommendedAnswer: "track",
+        automationPolicy: "agent-safe",
+      },
+    });
+    const parsed = EffectSchema.parse(e);
+    expect(parsed.kind).toBe("question");
+    if (parsed.kind !== "question") return;
+    expect(parsed.metadata?.automationPolicy).toBe("agent-safe");
+    expect(parsed.metadata?.recommendedAnswer).toBe("track");
+  });
+
   test("JobEffect", () => {
     const e = minEffects.job();
     expect(EffectSchema.parse(e).kind).toBe("job");

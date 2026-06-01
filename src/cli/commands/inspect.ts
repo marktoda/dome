@@ -342,6 +342,7 @@ function collectRows(
         status: q.answeredAt === null ? "open" : "answered",
         question: q.effect.question,
         options: q.effect.options ?? "-",
+        metadata: q.effect.metadata ?? "-",
         answer: q.answer ?? "-",
         asked_at: q.askedAt,
         answered_at: q.answeredAt ?? "-",

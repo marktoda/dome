@@ -22,7 +22,7 @@ import {
 
 const quarantineRecoveryQuestions: Processor = defineProcessor({
   id: "dome.health.quarantine-recovery-questions",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: "* * * * *" }],
   capabilities: [{ kind: "quarantine.read" }, { kind: "question.ask" }],
@@ -50,5 +50,13 @@ function questionForQuarantine(row: OperationalQuarantineRow): QuestionEffect {
     options: QUARANTINE_RECOVERY_OPTIONS,
     sourceRefs: [],
     idempotencyKey: quarantineRecoveryQuestionKey(row),
+    metadata: {
+      risk: "medium",
+      confidence: 1,
+      recommendedAnswer: "reset",
+      automationPolicy: "owner-needed",
+      ownerNeededReason:
+        "Resetting a quarantined processor can rerun work that previously failed.",
+    },
   });
 }

@@ -25,7 +25,7 @@ const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
 const taskIndex: Processor = defineProcessor({
   id: "dome.daily.task-index",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "adoption",
   triggers: [
     {
@@ -107,6 +107,12 @@ const taskIndex: Processor = defineProcessor({
               line: ambiguous.line,
               text: ambiguous.text,
             }),
+            metadata: {
+              risk: "low",
+              confidence: 0.65,
+              recommendedAnswer: "track",
+              automationPolicy: "agent-safe",
+            },
           }),
         );
       }

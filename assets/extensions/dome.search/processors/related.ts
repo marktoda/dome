@@ -2,11 +2,15 @@
 
 import type { ProjectionQuestion } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
-import { resolveQuestionCommand } from "../../../../src/question-resolution";
+import {
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../../../src/question-resolution";
 
 export type SearchQuestionItem = ProjectionQuestion & {
   readonly options: ReadonlyArray<string>;
   readonly resolveCommand: string;
+  readonly automationPolicy: string;
 };
 
 export function questionItemFromProjection(
@@ -17,6 +21,7 @@ export function questionItemFromProjection(
     ...question,
     options,
     resolveCommand: resolveQuestionCommand({ id: question.id, options }),
+    automationPolicy: questionAutomationPolicy(question.metadata),
   });
 }
 

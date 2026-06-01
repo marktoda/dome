@@ -11,7 +11,12 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 import { formatJson } from "../format";
-import { resolveQuestionCommand } from "../../question-resolution";
+import type { QuestionMetadata } from "../../core/effect";
+import {
+  questionAutomationLabel,
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../question-resolution";
 
 export type QueryCommandOptions = {
   readonly text?: string | undefined;
@@ -116,6 +121,7 @@ function formatQueryResult(data: unknown): string {
           ? ""
           : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
         lines.push(`     - [#${question.id}] ${question.question}${refs}`);
+        lines.push(`       policy: ${questionAutomationLabel(question.metadata)}`);
         lines.push(`       resolve: ${question.resolveCommand}`);
       }
     }
@@ -154,6 +160,8 @@ type QueryQuestion = {
   readonly question: string;
   readonly options: ReadonlyArray<string>;
   readonly resolveCommand: string;
+  readonly metadata: QuestionMetadata | null;
+  readonly automationPolicy: string;
   readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
 };
 
@@ -254,6 +262,7 @@ function parseQuestions(
         if (question.length === 0) return null;
         const id = numberValue(record.id) ?? 0;
         const options = Object.freeze(parseStringArray(record.options));
+        const metadata = parseQuestionMetadata(record.metadata);
         const resolveCommand = stringOrEmpty(record.resolveCommand) ||
           resolveQuestionCommand({ id, options });
         return Object.freeze({
@@ -261,11 +270,46 @@ function parseQuestions(
           question,
           options,
           resolveCommand,
+          metadata,
+          automationPolicy: stringOrEmpty(record.automationPolicy) ||
+            questionAutomationPolicy(metadata),
           sourceRefs: Object.freeze(parseSourceRefs(record.sourceRefs)),
         });
       })
       .filter((item): item is QueryQuestion => item !== null),
   );
+}
+
+function parseQuestionMetadata(raw: unknown): QuestionMetadata | null {
+  const record = objectRecord(raw);
+  if (Object.keys(record).length === 0) return null;
+  const metadata: {
+    -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
+  } = {};
+  if (
+    record.risk === "low" ||
+    record.risk === "medium" ||
+    record.risk === "high"
+  ) {
+    metadata.risk = record.risk;
+  }
+  if (typeof record.confidence === "number" && Number.isFinite(record.confidence)) {
+    metadata.confidence = record.confidence;
+  }
+  if (typeof record.recommendedAnswer === "string") {
+    metadata.recommendedAnswer = record.recommendedAnswer;
+  }
+  if (
+    record.automationPolicy === "agent-safe" ||
+    record.automationPolicy === "model-safe" ||
+    record.automationPolicy === "owner-needed"
+  ) {
+    metadata.automationPolicy = record.automationPolicy;
+  }
+  if (typeof record.ownerNeededReason === "string") {
+    metadata.ownerNeededReason = record.ownerNeededReason;
+  }
+  return Object.keys(metadata).length === 0 ? null : Object.freeze(metadata);
 }
 
 function parseStringArray(raw: unknown): ReadonlyArray<string> {

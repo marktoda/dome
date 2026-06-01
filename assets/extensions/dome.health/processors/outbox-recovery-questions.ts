@@ -23,7 +23,7 @@ import {
 
 const outboxRecoveryQuestions: Processor = defineProcessor({
   id: "dome.health.outbox-recovery-questions",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: "* * * * *" }],
   capabilities: [{ kind: "question.ask" }],
@@ -54,6 +54,14 @@ function questionForFailedRow(row: OperationalOutboxRow): QuestionEffect {
     idempotencyKey:
       `${OUTBOX_RECOVERY_QUESTION_PREFIX}${row.idempotencyKey}` +
       `${OUTBOX_RECOVERY_FAILURE_SEPARATOR}${failureToken(row)}`,
+    metadata: {
+      risk: "medium",
+      confidence: 1,
+      recommendedAnswer: "retry",
+      automationPolicy: "owner-needed",
+      ownerNeededReason:
+        "Retrying or abandoning a failed external action can affect external state.",
+    },
   });
 }
 

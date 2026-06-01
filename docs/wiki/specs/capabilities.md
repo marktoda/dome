@@ -157,7 +157,7 @@ A bundle declares its processors' capabilities in `manifest.yaml`:
 
 ```yaml
 id: dome.intake
-version: 0.4.1
+version: 0.4.2
 description: "Compile raw captures into wiki updates."
 
 processors:
@@ -171,7 +171,7 @@ processors:
         namespaces: ["dome.intake.*"]
 
   - id: dome.intake.extract-capture
-    version: 0.3.1
+    version: 0.3.2
     phase: garden
     capabilities:
       - kind: read

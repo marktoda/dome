@@ -1,7 +1,12 @@
 // cli/commands/today: first-class wrapper for the dome.daily.today view.
 
 import { formatJson } from "../format";
-import { resolveQuestionCommand } from "../../question-resolution";
+import type { QuestionMetadata } from "../../core/effect";
+import {
+  questionAutomationLabel,
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../question-resolution";
 import {
   defaultLocalDateString,
   validateDateOption,
@@ -128,6 +133,8 @@ type TodayQuestion = {
   readonly question: string;
   readonly options: ReadonlyArray<string>;
   readonly resolveCommand: string;
+  readonly metadata: QuestionMetadata | null;
+  readonly automationPolicy: string;
   readonly path: string;
   readonly line: number | null;
   readonly source: TodaySource;
@@ -265,6 +272,7 @@ function appendQuestionGroups(lines: string[], today: TodayData): void {
       lines.push(
         text,
       );
+      lines.push(`      policy: ${questionAutomationLabel(question.metadata)}`);
       lines.push(`      resolve: ${question.resolveCommand}`);
     }
     appendMoreLine(
@@ -321,18 +329,54 @@ function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
       const record = asRecord(item);
       const id = numberOrZero(record.id);
       const options = Object.freeze(parseStringArray(record.options));
+      const metadata = parseQuestionMetadata(record.metadata);
       return Object.freeze({
         id,
         question: stringOrEmpty(record.question),
         options,
         resolveCommand: stringOrEmpty(record.resolveCommand) ||
           resolveQuestionCommand({ id, options }),
+        metadata,
+        automationPolicy: stringOrEmpty(record.automationPolicy) ||
+          questionAutomationPolicy(metadata),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
         source: parseSource(record.source),
       });
     }),
   );
+}
+
+function parseQuestionMetadata(raw: unknown): QuestionMetadata | null {
+  const record = asRecord(raw);
+  if (Object.keys(record).length === 0) return null;
+  const metadata: {
+    -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
+  } = {};
+  if (
+    record.risk === "low" ||
+    record.risk === "medium" ||
+    record.risk === "high"
+  ) {
+    metadata.risk = record.risk;
+  }
+  if (typeof record.confidence === "number" && Number.isFinite(record.confidence)) {
+    metadata.confidence = record.confidence;
+  }
+  if (typeof record.recommendedAnswer === "string") {
+    metadata.recommendedAnswer = record.recommendedAnswer;
+  }
+  if (
+    record.automationPolicy === "agent-safe" ||
+    record.automationPolicy === "model-safe" ||
+    record.automationPolicy === "owner-needed"
+  ) {
+    metadata.automationPolicy = record.automationPolicy;
+  }
+  if (typeof record.ownerNeededReason === "string") {
+    metadata.ownerNeededReason = record.ownerNeededReason;
+  }
+  return Object.keys(metadata).length === 0 ? null : Object.freeze(metadata);
 }
 
 function parseSourceCounts(raw: unknown): TodaySourceCounts {

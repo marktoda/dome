@@ -28,7 +28,7 @@ const MAX_LIMIT = 50;
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],

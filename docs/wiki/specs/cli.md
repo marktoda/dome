@@ -493,7 +493,8 @@ Default scope includes:
   grouping, SourceRefs, total/unlocated diagnostic counters, and
   warning/error/block content diagnostics that require attention;
 - **decisions:** unresolved QuestionEffect rows with row ids, options,
-  per-row `dome resolve` commands, and SourceRefs.
+  per-row `dome resolve` commands, SourceRefs, and optional automation
+  metadata that separates agent/model-safe work from owner-needed decisions.
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
 or more scopes. `--attention` narrows content diagnostic rows and grouping to
@@ -519,7 +520,13 @@ a short `repair_hint` so foreground agents can batch source edits without
 guessing the intended repair route. The content `items` list follows the same
 severity/count/message priority as `message_summary`, so bounded repair rows
 start with the highest-volume grouped findings instead of newest-row insertion
-order. Content and decision reports expose
+order. Decision reports include `agent_safe_questions`,
+`model_safe_questions`, and `owner_needed_questions`; missing question metadata
+is counted as `owner-needed`. Decision items include the raw `metadata` object
+plus flattened `automation_policy`, `risk`, `confidence`,
+`recommended_answer`, and `owner_needed_reason` fields for agents that want to
+route work without understanding the full effect shape. Content and decision
+reports expose
 `shownItems` / `omittedItems` beside their bounded `items` arrays so agents can
 record truncation evidence without inferring it from array lengths.
 Abbreviated example:
@@ -641,7 +648,8 @@ portable markdown packet for another Claude session, review, or handoff.
 
 Default text output is the markdown packet itself. It starts with an overview:
 read-first paths, source-backed open loops, unresolved questions with
-`dome resolve` hints, and active diagnostics. It then includes matching paths,
+automation policy metadata and `dome resolve` hints, and active diagnostics.
+It then includes matching paths,
 snippets, related facts, related diagnostics, related open questions, and
 SourceRefs per match. Per-match related fact, diagnostic, and question sections
 are bounded in the rendered packet and include omitted-row hints when more

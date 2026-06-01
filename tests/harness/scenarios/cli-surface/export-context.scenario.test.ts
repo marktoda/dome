@@ -123,6 +123,10 @@ scenario(
         readonly unresolvedQuestions: ReadonlyArray<{
           readonly id: number;
           readonly resolveCommand: string;
+          readonly metadata?: {
+            readonly automationPolicy?: string;
+          };
+          readonly automationPolicy?: string;
         }>;
         readonly diagnostics: ReadonlyArray<{
           readonly path: string;
@@ -143,6 +147,10 @@ scenario(
           readonly id: number;
           readonly question: string;
           readonly resolveCommand: string;
+          readonly metadata?: {
+            readonly automationPolicy?: string;
+          };
+          readonly automationPolicy?: string;
         }>;
       }>;
     };
@@ -196,6 +204,8 @@ scenario(
     expect(question?.resolveCommand).toBe(
       `dome resolve ${question?.id} <merge|keep separate>`,
     );
+    expect(question?.metadata?.automationPolicy).toBe("owner-needed");
+    expect(question?.automationPolicy).toBe("owner-needed");
 
     const limitedText = await h.runCli([
       "export-context",

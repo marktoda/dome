@@ -173,6 +173,13 @@ interface QuestionEffect {
   readonly options?: ReadonlyArray<string>;  // when present, the user picks one; when absent, free-form
   readonly sourceRefs: SourceRef[];          // what prompted the question
   readonly idempotencyKey: string;           // dedup key — same question on retry produces one row
+  readonly metadata?: {
+    readonly risk?: "low" | "medium" | "high";
+    readonly confidence?: number;            // 0..1 confidence in the question framing
+    readonly recommendedAnswer?: string;     // optional source-preserving default
+    readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed";
+    readonly ownerNeededReason?: string;     // why this should reach the owner
+  };
 }
 ```
 
@@ -188,6 +195,12 @@ privileged operational handlers must use both so another question emitter
 cannot borrow their recovery capability by forging a prefix.
 
 The `idempotencyKey` is what keeps the question table from filling with duplicates when a garden processor runs repeatedly on the same input.
+
+`metadata` is advisory but source-controlled through the effect row. It lets
+`dome check`, `dome today`, `dome prep`, `dome query`, and
+`dome export-context` separate agent/model-safe resolution work from
+owner-needed decisions. Missing metadata is treated as `owner-needed` by
+surfaces so older questions stay conservative.
 
 ## JobEffect
 

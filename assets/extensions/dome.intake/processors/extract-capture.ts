@@ -374,6 +374,12 @@ function lowConfidenceQuestion(input: {
       text: input.text,
       confidence: input.confidence,
     }),
+    metadata: {
+      risk: "low",
+      confidence: input.confidence,
+      recommendedAnswer: "track",
+      automationPolicy: "agent-safe",
+    },
   });
 }
 

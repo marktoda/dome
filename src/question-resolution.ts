@@ -1,4 +1,9 @@
-// Shared formatting for user-facing question resolution hints.
+// Shared formatting/classification for user-facing question resolution hints.
+
+import type {
+  QuestionAutomationPolicy,
+  QuestionMetadata,
+} from "./core/effect";
 
 export function resolveQuestionCommand(input: {
   readonly id: number | string | null | undefined;
@@ -26,4 +31,28 @@ export function questionResolutionDescription(
     return "Resolve an open Dome decision by providing an answer.";
   }
   return "Resolve an open Dome decision using one of the listed options.";
+}
+
+export function questionAutomationPolicy(
+  metadata: QuestionMetadata | null | undefined,
+): QuestionAutomationPolicy {
+  return metadata?.automationPolicy ?? "owner-needed";
+}
+
+export function isQuestionAgentResolvable(
+  metadata: QuestionMetadata | null | undefined,
+): boolean {
+  const policy = questionAutomationPolicy(metadata);
+  return policy === "agent-safe" || policy === "model-safe";
+}
+
+export function questionAutomationLabel(
+  metadata: QuestionMetadata | null | undefined,
+): string {
+  const policy = questionAutomationPolicy(metadata);
+  const risk = metadata?.risk ?? "unknown";
+  const confidence = metadata?.confidence === undefined
+    ? "unknown"
+    : metadata.confidence.toFixed(2);
+  return `${policy}; risk ${risk}; confidence ${confidence}`;
 }

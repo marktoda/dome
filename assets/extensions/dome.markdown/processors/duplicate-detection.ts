@@ -31,7 +31,7 @@ const NON_CANONICAL_CONTENT_PREFIXES = [
 
 const duplicateDetection: Processor = defineProcessor({
   id: "dome.markdown.duplicate-detection",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -71,6 +71,14 @@ const duplicateDetection: Processor = defineProcessor({
             sourceRefs: [changed.sourceRef, other.sourceRef],
             idempotencyKey:
               `dome.markdown.duplicate-detection:${sha256(pairKey + ":" + changed.signature)}`,
+            metadata: {
+              risk: "medium",
+              confidence: 0.8,
+              recommendedAnswer: "keep separate",
+              automationPolicy: "owner-needed",
+              ownerNeededReason:
+                "Merging duplicate pages can change canonical meaning or lose context.",
+            },
           }),
         );
       }

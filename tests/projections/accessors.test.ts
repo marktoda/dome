@@ -692,6 +692,12 @@ describe("questions accessor", () => {
       sourceRefs: [REF],
       idempotencyKey: "q-row",
       options: ["yes", "no"],
+      metadata: {
+        risk: "low",
+        confidence: 0.9,
+        recommendedAnswer: "yes",
+        automationPolicy: "agent-safe",
+      },
     });
     insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
 
@@ -704,6 +710,12 @@ describe("questions accessor", () => {
     expect(record?.answeredAt).toBeNull();
     expect(record?.answer).toBeNull();
     expect(record?.effect.options).toEqual(["yes", "no"]);
+    expect(record?.effect.metadata).toEqual({
+      risk: "low",
+      confidence: 0.9,
+      recommendedAnswer: "yes",
+      automationPolicy: "agent-safe",
+    });
   });
 
   it("answerQuestionById validates options and records the answer", () => {

@@ -240,6 +240,11 @@ describe("buildSqliteSinks projection-store sinks", () => {
       question: "what is the dueDate?",
       sourceRefs: [REF],
       idempotencyKey: "q-1",
+      metadata: {
+        risk: "low",
+        confidence: 1,
+        automationPolicy: "agent-safe",
+      },
     });
     await sinks.recordQuestion({
       effect,
@@ -250,6 +255,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
     const got = queryQuestions(projectionDb);
     expect(got.length).toBe(1);
     expect(got[0]?.idempotencyKey).toBe("q-1");
+    expect(got[0]?.metadata?.automationPolicy).toBe("agent-safe");
   });
 
   it("enqueueJob writes a row visible via nextEligibleJob", async () => {

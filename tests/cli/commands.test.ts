@@ -1057,7 +1057,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.1",
+        version: "0.4.2",
         processors: 6,
         garden: 5,
         model_processors: 3,
@@ -1758,6 +1758,13 @@ describe("runCheck", () => {
           options: ["yes", "no"],
           sourceRefs: [ref],
           idempotencyKey: "check-question",
+          metadata: {
+            risk: "medium",
+            confidence: 0.8,
+            recommendedAnswer: "yes",
+            automationPolicy: "owner-needed",
+            ownerNeededReason: "Fixture needs explicit review.",
+          },
         }),
         processorId: "test.check",
         adoptedCommit,
@@ -1787,6 +1794,9 @@ describe("runCheck", () => {
     expect(record(parsed["content"])["shownItems"]).toBe(1);
     expect(record(parsed["content"])["omittedItems"]).toBe(0);
     expect(record(parsed["decisions"])["questions"]).toBe(1);
+    expect(record(parsed["decisions"])["agent_safe_questions"]).toBe(0);
+    expect(record(parsed["decisions"])["model_safe_questions"]).toBe(0);
+    expect(record(parsed["decisions"])["owner_needed_questions"]).toBe(1);
     expect(record(parsed["decisions"])["shownItems"]).toBe(1);
     expect(record(parsed["decisions"])["omittedItems"]).toBe(0);
     const diagnosticItems =
@@ -1807,6 +1817,11 @@ describe("runCheck", () => {
     );
     expect(decisionItems[0]?.["resolveCommand"]).toBe(
       "dome resolve 1 <yes|no>",
+    );
+    expect(decisionItems[0]?.["automation_policy"]).toBe("owner-needed");
+    expect(decisionItems[0]?.["recommended_answer"]).toBe("yes");
+    expect(decisionItems[0]?.["owner_needed_reason"]).toBe(
+      "Fixture needs explicit review.",
     );
     const decisionSourceRefs =
       decisionItems[0]?.["sourceRefs"] as ReadonlyArray<Record<string, unknown>>;
@@ -1837,6 +1852,9 @@ describe("runCheck", () => {
     expect(await runCheck({ vault: f.vaultPath, decisions: true })).toBe(0);
     expect(captured.out.join("\n")).toContain(
       "resolve: dome resolve 1 <yes|no>",
+    );
+    expect(captured.out.join("\n")).toContain(
+      "policy: owner-needed; risk medium; confidence 0.80",
     );
   });
 
@@ -2043,6 +2061,12 @@ describe("runCheck", () => {
           options: ["track", "ignore"],
           sourceRefs: [ref],
           idempotencyKey: "check-question",
+          metadata: {
+            risk: "low",
+            confidence: 0.7,
+            recommendedAnswer: "track",
+            automationPolicy: "agent-safe",
+          },
         }),
         processorId: "test.check",
         adoptedCommit,
@@ -2057,6 +2081,8 @@ describe("runCheck", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(record(parsed["engine"])["status"]).toBe("ok");
+    expect(record(parsed["decisions"])["agent_safe_questions"]).toBe(1);
+    expect(record(parsed["decisions"])["owner_needed_questions"]).toBe(0);
     expect(parsed["next_actions"]).toEqual([
       {
         reasons: ["diagnostics"],

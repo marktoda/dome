@@ -22,7 +22,7 @@ import {
 
 const orphanRunRecoveryQuestions: Processor = defineProcessor({
   id: "dome.health.orphan-run-recovery-questions",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: "* * * * *" }],
   capabilities: [
@@ -58,5 +58,11 @@ function questionForOrphanRun(row: OperationalRunRow): QuestionEffect {
       processorVersion: row.processorVersion,
       phase: row.phase,
     }),
+    metadata: {
+      risk: "low",
+      confidence: 1,
+      recommendedAnswer: "fail",
+      automationPolicy: "agent-safe",
+    },
   });
 }

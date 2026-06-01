@@ -1,8 +1,8 @@
 id: dome.health
-version: 0.1.0
+version: 0.1.1
 processors:
   - id: dome.health.outbox-recovery-questions
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: schedule
@@ -28,7 +28,7 @@ processors:
     module: processors/outbox-recovery-answer.ts
 
   - id: dome.health.quarantine-recovery-questions
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: schedule
@@ -51,7 +51,7 @@ processors:
     module: processors/quarantine-recovery-answer.ts
 
   - id: dome.health.orphan-run-recovery-questions
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: schedule

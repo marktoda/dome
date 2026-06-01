@@ -8,6 +8,7 @@
 import { resolve } from "node:path";
 
 import type { SourceRef } from "../../core/source-ref";
+import type { QuestionMetadata } from "../../core/effect";
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
@@ -18,7 +19,11 @@ import {
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
-import { resolveQuestionCommand } from "../../question-resolution";
+import {
+  questionAutomationLabel,
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../question-resolution";
 import {
   countAttentionDiagnostics,
   diagnosticRepairPath,
@@ -107,6 +112,9 @@ type CheckDiagnosticItem = {
 
 type CheckDecisionReport = {
   readonly questions: number;
+  readonly agent_safe_questions: number;
+  readonly model_safe_questions: number;
+  readonly owner_needed_questions: number;
   readonly shownItems: number;
   readonly omittedItems: number;
   readonly items: ReadonlyArray<CheckQuestionItem>;
@@ -117,6 +125,12 @@ type CheckQuestionItem = {
   readonly question: string;
   readonly options: ReadonlyArray<string> | null;
   readonly resolveCommand: string;
+  readonly metadata: QuestionMetadata | null;
+  readonly automation_policy: string;
+  readonly risk: string | null;
+  readonly confidence: number | null;
+  readonly recommended_answer: string | null;
+  readonly owner_needed_reason: string | null;
   readonly processor_id: string;
   readonly source_refs: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
@@ -296,6 +310,7 @@ function collectDecisionReport(opts: {
   const items = Object.freeze(
     opts.questions.slice(0, opts.limit).map((question) => {
       const options = question.effect.options ?? null;
+      const metadata = question.effect.metadata ?? null;
       return Object.freeze({
         id: question.id,
         question: question.effect.question,
@@ -304,6 +319,12 @@ function collectDecisionReport(opts: {
           id: question.id,
           options,
         }),
+        metadata,
+        automation_policy: questionAutomationPolicy(metadata),
+        risk: metadata?.risk ?? null,
+        confidence: metadata?.confidence ?? null,
+        recommended_answer: metadata?.recommendedAnswer ?? null,
+        owner_needed_reason: metadata?.ownerNeededReason ?? null,
         processor_id: question.processorId,
         source_refs: formatSourceRefs(
           question.effect.sourceRefs,
@@ -313,12 +334,39 @@ function collectDecisionReport(opts: {
       });
     }),
   );
+  const policyCounts = countQuestionPolicies(opts.questions);
   return Object.freeze({
     questions: opts.questions.length,
+    agent_safe_questions: policyCounts.agentSafe,
+    model_safe_questions: policyCounts.modelSafe,
+    owner_needed_questions: policyCounts.ownerNeeded,
     shownItems: items.length,
     omittedItems: Math.max(0, opts.questions.length - items.length),
     items,
   });
+}
+
+function countQuestionPolicies(
+  questions: ReturnType<typeof queryQuestionRecords>,
+): {
+  readonly agentSafe: number;
+  readonly modelSafe: number;
+  readonly ownerNeeded: number;
+} {
+  let agentSafe = 0;
+  let modelSafe = 0;
+  let ownerNeeded = 0;
+  for (const question of questions) {
+    const policy = questionAutomationPolicy(question.effect.metadata);
+    if (policy === "agent-safe") {
+      agentSafe += 1;
+    } else if (policy === "model-safe") {
+      modelSafe += 1;
+    } else {
+      ownerNeeded += 1;
+    }
+  }
+  return Object.freeze({ agentSafe, modelSafe, ownerNeeded });
 }
 
 function buildReport(input: {
@@ -418,7 +466,9 @@ function formatAttentionFilter(report: CheckContentReport): string {
 
 function formatDecisions(report: CheckDecisionReport | null): string {
   if (report === null) return "skipped";
-  return `${report.questions} open question(s)`;
+  const agentReady = report.agent_safe_questions + report.model_safe_questions;
+  if (report.questions === 0) return "0 open question(s)";
+  return `${report.questions} open question(s) | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
 }
 
 function printFindings(findings: ReadonlyArray<HealthFinding>): void {
@@ -498,6 +548,13 @@ function printQuestions(report: CheckDecisionReport | null): void {
   for (const item of items) {
     const options = item.options === null ? "" : ` options: ${item.options.join(", ")}`;
     console.log(`  - #${item.id}: ${item.question}${options}`);
+    console.log(`    policy: ${questionAutomationLabel(item.metadata)}`);
+    if (item.recommended_answer !== null) {
+      console.log(`    recommended: ${item.recommended_answer}`);
+    }
+    if (item.owner_needed_reason !== null) {
+      console.log(`    owner-needed: ${item.owner_needed_reason}`);
+    }
     console.log(`    ${item.source_refs}`);
     console.log(`    resolve: ${item.resolveCommand}`);
   }

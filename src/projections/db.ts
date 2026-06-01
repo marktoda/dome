@@ -183,12 +183,13 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + ")",
 
   // 5. questions — QuestionEffect rows. `idempotency_key` UNIQUE dedups
-  //    retries; `answered_at` + `answer` are populated when the user
-  //    responds.
+  //    retries; `metadata_json` carries optional automation policy hints;
+  //    `answered_at` + `answer` are populated when the user responds.
   "CREATE TABLE IF NOT EXISTS questions ("
     + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     + "question TEXT NOT NULL,"
     + "options_json TEXT,"
+    + "metadata_json TEXT,"
     + "source_refs TEXT NOT NULL,"
     + "idempotency_key TEXT NOT NULL UNIQUE,"
     + "processor_id TEXT NOT NULL,"

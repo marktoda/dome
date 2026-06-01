@@ -5,6 +5,7 @@ import {
   type DiagnosticEffect,
   type Effect,
   type FactEffect,
+  type QuestionMetadata,
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
@@ -14,6 +15,10 @@ import {
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import {
+  questionAutomationLabel,
+  questionAutomationPolicy,
+} from "../../../../src/question-resolution";
 import {
   groupByMatchingPath,
   questionItemFromProjection,
@@ -31,7 +36,7 @@ const TASK_DUE_MARKER =
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -174,6 +179,8 @@ type ContextQuestion = {
   readonly question: string;
   readonly options: ReadonlyArray<string>;
   readonly resolveCommand: string;
+  readonly metadata: QuestionMetadata | null;
+  readonly automationPolicy: string;
   readonly processorId: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -228,6 +235,8 @@ function contextEntryFromMatch(
             question: question.question,
             options: question.options,
             resolveCommand: question.resolveCommand,
+            metadata: question.metadata ?? null,
+            automationPolicy: questionAutomationPolicy(question.metadata),
             processorId: question.processorId,
             sourceRefs: Object.freeze([...question.sourceRefs]),
           })
@@ -419,6 +428,7 @@ function renderMarkdown(
       for (const question of questions) {
         const refs = question.sourceRefs.map(formatSourceRef).join(", ");
         lines.push(`- [#${question.id}] ${question.question} (${refs})`);
+        lines.push(`  policy: ${questionAutomationLabel(question.metadata)}`);
         lines.push(`  resolve: ${question.resolveCommand}`);
       }
       appendMoreLine(
@@ -469,6 +479,7 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
       lines.push(
         `- [#${question.id}] \`${question.path}\`: ${question.question} (${refs})`,
       );
+      lines.push(`  policy: ${questionAutomationLabel(question.metadata)}`);
       lines.push(`  resolve: ${question.resolveCommand}`);
     }
     lines.push("");

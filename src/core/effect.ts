@@ -211,10 +211,27 @@ export type SearchDocumentEffectInput =
       readonly sourceRefs: ReadonlyArray<SourceRef>;
     };
 
+export type QuestionRisk = "low" | "medium" | "high";
+
+export type QuestionAutomationPolicy =
+  | "agent-safe"
+  | "model-safe"
+  | "owner-needed";
+
+export type QuestionMetadata = {
+  readonly risk?: QuestionRisk;
+  readonly confidence?: number;
+  readonly recommendedAnswer?: string;
+  readonly automationPolicy?: QuestionAutomationPolicy;
+  readonly ownerNeededReason?: string;
+};
+
 /**
- * A question the processor wants to ask the user. `options`, when present,
- * constrains the answer to a multiple-choice pick; absent means free-form.
- * `idempotencyKey` de-dupes the question row on processor retries.
+ * A question the processor wants to ask the user or a vault-aware agent.
+ * `options`, when present, constrains the answer to a multiple-choice pick;
+ * absent means free-form. `idempotencyKey` de-dupes the question row on
+ * processor retries. Optional `metadata` describes whether the uncertainty is
+ * safe for an agent/model to resolve or should be escalated to the owner.
  */
 export type QuestionEffect = {
   readonly kind: "question";
@@ -222,6 +239,7 @@ export type QuestionEffect = {
   readonly options?: ReadonlyArray<string>;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly idempotencyKey: string;
+  readonly metadata?: QuestionMetadata;
 };
 
 /**
@@ -539,6 +557,18 @@ export const QuestionEffectSchema = z
     options: z.array(z.string().min(1)).optional(),
     sourceRefs: z.array(SourceRefSchema),
     idempotencyKey: z.string().min(1),
+    metadata: z
+      .object({
+        risk: z.enum(["low", "medium", "high"]).optional(),
+        confidence: z.number().min(0).max(1).optional(),
+        recommendedAnswer: z.string().min(1).optional(),
+        automationPolicy: z
+          .enum(["agent-safe", "model-safe", "owner-needed"])
+          .optional(),
+        ownerNeededReason: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -736,6 +766,7 @@ export function questionEffect(
     idempotencyKey: input.idempotencyKey,
   };
   if (input.options !== undefined) e.options = input.options;
+  if (input.metadata !== undefined) e.metadata = Object.freeze(input.metadata);
   return Object.freeze(e);
 }
 

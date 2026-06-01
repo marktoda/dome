@@ -3,6 +3,7 @@
 import {
   viewEffect,
   type Effect,
+  type QuestionMetadata,
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
@@ -11,6 +12,7 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { questionAutomationLabel } from "../../../../src/question-resolution";
 
 import {
   collectDailyActionState,
@@ -29,7 +31,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.8",
+  version: "0.1.9",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -116,6 +118,8 @@ type PrepPlanningItem = {
   readonly questionId?: number;
   readonly options?: ReadonlyArray<string>;
   readonly resolveCommand?: string;
+  readonly metadata?: QuestionMetadata | null;
+  readonly automationPolicy?: string;
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
@@ -183,6 +187,8 @@ function pushQuestionItem(
     questionId: question.id,
     options: Object.freeze([...question.options]),
     resolveCommand: question.resolveCommand,
+    metadata: question.metadata,
+    automationPolicy: question.automationPolicy,
     dueDate: null,
     priority: null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
@@ -277,6 +283,7 @@ function appendPlanningItem(lines: string[], item: PrepPlanningItem): void {
     `- [question #${item.questionId ?? "?"}] ${item.text} (${sourceLabel(item)})`,
   );
   if (item.resolveCommand !== undefined) {
+    lines.push(`  policy: ${questionAutomationLabel(item.metadata)}`);
     lines.push(`  resolve: ${item.resolveCommand}`);
   }
 }
@@ -340,6 +347,7 @@ function appendQuestionSection(
       lines.push(
         `  - [#${question.id}] ${question.question} (${sourceLabel(question)})`,
       );
+      lines.push(`    policy: ${questionAutomationLabel(question.metadata)}`);
       lines.push(`    resolve: ${question.resolveCommand}`);
     }
   }

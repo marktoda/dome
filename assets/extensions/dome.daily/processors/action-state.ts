@@ -2,11 +2,15 @@
 
 import type {
   FactEffect,
+  QuestionMetadata,
   QuestionEffect,
 } from "../../../../src/core/effect";
 import type { ProcessorContext } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
-import { resolveQuestionCommand } from "../../../../src/question-resolution";
+import {
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../../../src/question-resolution";
 
 import {
   dailyPathSettings,
@@ -90,6 +94,8 @@ export type DailyQuestionItem = {
   readonly question: string;
   readonly options: ReadonlyArray<string>;
   readonly resolveCommand: string;
+  readonly metadata: QuestionMetadata | null;
+  readonly automationPolicy: string;
   readonly path: string;
   readonly line: number | null;
   readonly source: DailyActionSource;
@@ -288,6 +294,8 @@ function questionItemFromEffect(
     question: question.question,
     options,
     resolveCommand: resolveQuestionCommand({ id, options }),
+    metadata: question.metadata ?? null,
+    automationPolicy: questionAutomationPolicy(question.metadata),
     path,
     line: ref?.range?.startLine ?? null,
     source: sourceForPath(path, dailyPath),

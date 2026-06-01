@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.0
+version: 0.4.1
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.2.0
@@ -58,7 +58,7 @@ processors:
     module: processors/broken-images.ts
 
   - id: dome.markdown.duplicate-detection
-    version: 0.1.0
+    version: 0.1.1
     phase: adoption
     triggers:
       - kind: signal
