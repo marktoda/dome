@@ -927,6 +927,7 @@ describe("runInspect", () => {
       readonly view: number;
       readonly command_views: number;
       readonly model_processors: number;
+      readonly model: string;
     }>;
     const intakeBundle = bundles.find((row) => row.bundle === "dome.intake");
     expect(intakeBundle).toEqual(
@@ -936,6 +937,7 @@ describe("runInspect", () => {
         garden: 5,
         view: 0,
         model_processors: 3,
+        model: "granted-no-provider",
       }),
     );
     const dailyBundle = bundles.find((row) => row.bundle === "dome.daily");
@@ -1013,6 +1015,7 @@ describe("runInspect", () => {
       readonly processors: number;
       readonly garden: number;
       readonly model_processors: number;
+      readonly model: string;
     }>;
     const intake = bundles.find((row) => row.bundle === "dome.intake");
     expect(intake).toEqual(
@@ -1024,6 +1027,7 @@ describe("runInspect", () => {
         processors: 6,
         garden: 5,
         model_processors: 3,
+        model: "disabled-no-provider",
       }),
     );
     const search = bundles.find((row) => row.bundle === "dome.search");
@@ -1103,6 +1107,7 @@ describe("runInspect", () => {
       readonly version: string;
       readonly processors: number;
       readonly model_processors: number;
+      readonly model: string;
     }>;
     expect(bundles).toContainEqual(
       expect.objectContaining({
@@ -1113,6 +1118,7 @@ describe("runInspect", () => {
         version: "1.2.3",
         processors: 1,
         model_processors: 1,
+        model: "disabled-no-provider",
       }),
     );
   });

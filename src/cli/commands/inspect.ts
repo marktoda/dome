@@ -558,6 +558,7 @@ function bundleRow(opts: {
   const manifestProcessors =
     opts.inventory?.kind === "manifest" ? opts.inventory.summary.processors : [];
   const processorMetadata = opts.loaded ? bundleProcessors : manifestProcessors;
+  const modelProcessors = processorMetadata.filter(hasModelCapability);
   const phaseCounts = countProcessorPhases(processorMetadata);
   return {
     bundle: opts.bundleId,
@@ -576,7 +577,17 @@ function bundleRow(opts: {
     command_views: processorMetadata.filter((processor) =>
       processor.triggers.some((trigger) => trigger.kind === "command"),
     ).length,
-    model_processors: processorMetadata.filter(hasModelCapability).length,
+    model_processors: modelProcessors.length,
+    model: formatBundleModelStatus({
+      enabled: opts.enabled,
+      modelProcessorCount: modelProcessors.length,
+      modelGranted: opts.loaded
+        ? modelProcessors.some((processor) =>
+            runtimeGrantsAllowModel(opts.runtime, processor.id),
+          )
+        : false,
+      providerConfigured: opts.runtime.modelProvider !== undefined,
+    }),
   };
 }
 
@@ -616,6 +627,32 @@ function hasModelCapability(processor: ProcessorMetadata): boolean {
   return processor.capabilities.some(
     (capability) => capability.kind === "model.invoke",
   );
+}
+
+function runtimeGrantsAllowModel(
+  runtime: VaultRuntime,
+  processorId: string,
+): boolean {
+  return runtime.resolveGrants(processorId).some(
+    (capability) => capability.kind === "model.invoke",
+  );
+}
+
+function formatBundleModelStatus(opts: {
+  readonly enabled: boolean;
+  readonly modelProcessorCount: number;
+  readonly modelGranted: boolean;
+  readonly providerConfigured: boolean;
+}): string {
+  if (opts.modelProcessorCount === 0) return "none";
+  if (!opts.enabled) {
+    return opts.providerConfigured
+      ? "disabled-provider-configured"
+      : "disabled-no-provider";
+  }
+  if (!opts.modelGranted) return "declared-ungranted";
+  if (!opts.providerConfigured) return "granted-no-provider";
+  return "ready";
 }
 
 function inventoryLabel(opts: {

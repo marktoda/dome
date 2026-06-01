@@ -605,10 +605,12 @@ Subjects (v1.0):
 - `bundles` — configured and loaded extension bundle summary: enabled/disabled
   status, loaded flag, inventory source (`loaded`, `manifest`, `configured`,
   or `manifest-error`), version, processor counts by phase, command-view count,
-  schedule count, and model-capable processor count. Disabled configured
-  bundles are summarized from their manifest without importing processor
-  modules, so optional features such as `dome.intake` are visible without
-  making disabled bundle code part of the runtime.
+  schedule count, model-capable processor count, and bundle-level model status
+  (`none`, `disabled-no-provider`, `disabled-provider-configured`,
+  `declared-ungranted`, `granted-no-provider`, or `ready`). Disabled
+  configured bundles are summarized from their manifest without importing
+  processor modules, so optional features such as `dome.intake` are visible
+  without making disabled bundle code part of the runtime.
 - `processors` — loaded processor/automation summary: bundle, phase, triggers,
   command names, declared capability kinds, bundle grant kinds, execution class,
   and model status (`none`, `declared-ungranted`, `granted-no-provider`, or

@@ -831,6 +831,10 @@ Work:
       manifest metadata without loading processor modules, so optional
       release-gate features such as `dome.intake` are visible in old/default
       vault configs even when intentionally off.
+- [x] Add bundle-level model readiness to `dome inspect bundles`, so the
+      release gate can distinguish disabled/no-provider intake from an
+      enabled, granted, provider-ready model path without reading config by
+      hand.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
