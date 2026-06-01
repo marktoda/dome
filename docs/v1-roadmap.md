@@ -758,6 +758,9 @@ Work:
       --json` from routing back to itself; once a bounded diagnostic report is
       already rendered, the next action is fixing listed source markdown,
       committing, and rerunning `dome sync --json`.
+- [x] Add `dome today --limit` and default bounded sections, after the real
+      work vault exposed that the primary daily task surface could print a
+      100-line backlog and become hard for Claude Code to scan.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

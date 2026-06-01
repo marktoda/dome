@@ -354,6 +354,11 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("today")
     .description("Render today's source-backed task surface.")
     .option("--date <YYYY-MM-DD>", "Date to render (defaults to local today).")
+    .option(
+      "--limit <n>",
+      "Maximum items per today section.",
+      parsePositiveIntegerOption,
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -361,6 +366,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       setExitCode(
         await runToday({
           date: options.date,
+          limit: options.limit,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -576,6 +582,7 @@ type ExportContextCliOptions = {
 
 type TodayCliOptions = {
   readonly date?: string;
+  readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

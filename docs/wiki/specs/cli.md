@@ -27,7 +27,7 @@ dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--j
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
-dome today [--date <YYYY-MM-DD>] [--json]
+dome today [--date <YYYY-MM-DD>] [--limit <n>] [--json]
                                 Source-backed daily task/followup surface.
 dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]
                                 Source-backed daily planning packet.
@@ -426,7 +426,7 @@ their own option shapes without changing the core CLI parser.
 Exit codes: 0 on success; 64 when no matching view processor exists or the
 vault has no usable adopted ref; 1 on runtime or dispatch failure.
 
-### `dome today [--date <YYYY-MM-DD>] [--json]`
+### `dome today [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
 Dedicated wrapper for the `dome.daily.today` view processor. The shared
 view-command boundary validates the adopted ref, refreshes stale projections,
@@ -440,6 +440,8 @@ Default text output renders:
   `dome.daily.followup` facts,
 - unresolved `dome.daily.*` questions.
 
+`--limit` bounds open-task, followup, and question rows while preserving total
+counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 

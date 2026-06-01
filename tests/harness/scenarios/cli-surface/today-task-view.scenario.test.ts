@@ -150,6 +150,38 @@ scenario(
       payload.followups.map((task) => task.text),
     );
 
+    const limited = await h.runCli([
+      "today",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+      "--json",
+    ]);
+    expect(limited.exitCode).toBe(0);
+    const limitedPayload = JSON.parse(limited.stdout) as {
+      readonly limit: number;
+      readonly counts: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
+      readonly openTasks: ReadonlyArray<{ readonly text: string }>;
+      readonly followups: ReadonlyArray<{ readonly text: string }>;
+      readonly questions: ReadonlyArray<{ readonly question: string }>;
+    };
+    expect(limitedPayload.limit).toBe(2);
+    expect(limitedPayload.counts.openTasks).toBe(4);
+    expect(limitedPayload.counts.followups).toBe(2);
+    expect(limitedPayload.counts.questions).toBe(1);
+    expect(limitedPayload.openTasks.map((task) => task.text)).toEqual(
+      payload.openTasks.slice(0, 2).map((task) => task.text),
+    );
+    expect(limitedPayload.followups.map((task) => task.text)).toEqual(
+      payload.followups.map((task) => task.text),
+    );
+    expect(limitedPayload.questions).toHaveLength(1);
+
     const text = await h.runCli(["today", "--date", "2026-01-05"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
@@ -158,5 +190,16 @@ scenario(
     expect(text.stdout).toContain(
       "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
     );
+
+    const limitedText = await h.runCli([
+      "today",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+    ]);
+    expect(limitedText.exitCode).toBe(0);
+    expect(limitedText.stdout).toContain("  ... 2 more open tasks");
+    expect(limitedText.stdout).not.toContain("Ship weekly update");
   },
 );

@@ -14,10 +14,13 @@ import {
 
 export type TodayCommandOptions = {
   readonly date?: string | undefined;
+  readonly limit?: number | undefined;
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
 };
+
+const DEFAULT_LIMIT = 12;
 
 export async function runToday(
   options: TodayCommandOptions = {},
@@ -31,7 +34,10 @@ export async function runToday(
       commandName: "today",
       expectedViewName: "dome.daily.today",
       expectedSchema: "dome.daily.today/v1",
-      commandArgs: Object.freeze({ date }),
+      commandArgs: Object.freeze({
+        date,
+        limit: options.limit ?? DEFAULT_LIMIT,
+      }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
       notFoundMessage: firstPartyViewNotFoundMessage({
@@ -66,6 +72,7 @@ export async function runToday(
 
 type TodayData = {
   readonly date: string;
+  readonly limit: number;
   readonly daily: {
     readonly path: string;
     readonly exists: boolean;
@@ -110,6 +117,12 @@ function formatTodayResult(data: unknown): string {
       const marker = task.followup ? " [followup]" : "";
       lines.push(`  - ${task.text}${marker} (${sourceLabel(task)})`);
     }
+    appendMoreLine(
+      lines,
+      today.counts.openTasks,
+      today.openTasks.length,
+      "open tasks",
+    );
   }
 
   lines.push("");
@@ -120,6 +133,12 @@ function formatTodayResult(data: unknown): string {
     for (const task of today.followups) {
       lines.push(`  - ${task.text} (${sourceLabel(task)})`);
     }
+    appendMoreLine(
+      lines,
+      today.counts.followups,
+      today.followups.length,
+      "followups",
+    );
   }
 
   if (today.questions.length > 0) {
@@ -128,6 +147,12 @@ function formatTodayResult(data: unknown): string {
     for (const question of today.questions) {
       lines.push(`  - ${question.question} (${sourceLabel(question)})`);
     }
+    appendMoreLine(
+      lines,
+      today.counts.questions,
+      today.questions.length,
+      "questions",
+    );
   }
 
   return lines.join("\n");
@@ -139,6 +164,7 @@ function parseTodayData(data: unknown): TodayData {
   const counts = asRecord(record.counts);
   return Object.freeze({
     date: stringOrEmpty(record.date),
+    limit: numberOrZero(record.limit),
     daily: Object.freeze({
       path: stringOrEmpty(daily.path),
       exists: daily.exists === true,
@@ -152,6 +178,19 @@ function parseTodayData(data: unknown): TodayData {
     followups: Object.freeze(parseTasks(record.followups)),
     questions: Object.freeze(parseQuestions(record.questions)),
   });
+}
+
+function appendMoreLine(
+  lines: string[],
+  total: number,
+  shown: number,
+  label: string,
+): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  lines.push(
+    `  ... ${remaining} more ${label} (use --limit ${total} to show all)`,
+  );
 }
 
 function parseTasks(raw: unknown): ReadonlyArray<TodayTask> {
