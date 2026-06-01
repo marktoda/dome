@@ -64,6 +64,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "failedOutbox",
   "stuckPendingOutbox",
   "orphanRuns",
+  "failedRuns",
   "quarantinedProcessors",
   "projectionCacheDrift",
   "adoptedRefDivergence",

@@ -1805,6 +1805,78 @@ describe("runCheck", () => {
     expect(parsed["next_actions"]).toEqual([]);
   });
 
+  test("--json explains latest active processor failures as engine findings", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) {
+      throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    }
+    try {
+      const runId = newRunId(new Date(10), () => "chkbad");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.check.failed",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "schedule",
+        triggerPayload: { test: "failed-run" },
+        startedAt: new Date(10),
+      });
+      markRunning(ledger.value.db, runId, new Date(11));
+      markTimedOut(ledger.value.db, {
+        id: runId,
+        error: {
+          code: "processor.timeout",
+          message: "still timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "test.check.failed",
+        },
+        durationMs: 10000,
+        finishedAt: new Date(12),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const engine = record(parsed["engine"]);
+    const summary = record(engine["summary"]);
+    expect(engine["status"]).toBe("unhealthy");
+    expect(summary["failedRuns"]).toBe(1);
+    const findings = engine["findings"] as ReadonlyArray<Record<string, unknown>>;
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: "run.latest-problem",
+        severity: "error",
+        subject: "runs",
+        id: "run_10_chkbad",
+        message: expect.stringContaining("test.check.failed"),
+      }),
+    ]);
+    expect(record(findings[0]?.["run"])["status"]).toBe("timed_out");
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["engine"],
+        command: "dome sync --json",
+        description:
+          "Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain.",
+      },
+    ]);
+  });
+
   test("--json lists actionable diagnostics before open user decisions", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -2280,6 +2352,7 @@ describe("runDoctor", () => {
         readonly findingCount: number;
         readonly failedOutbox: number;
         readonly orphanRuns: number;
+        readonly failedRuns: number;
         readonly quarantinedProcessors: number;
       };
       readonly findings: ReadonlyArray<{ readonly code: string }>;
@@ -2288,6 +2361,7 @@ describe("runDoctor", () => {
     expect(parsed.summary.findingCount).toBe(3);
     expect(parsed.summary.failedOutbox).toBe(1);
     expect(parsed.summary.orphanRuns).toBe(1);
+    expect(parsed.summary.failedRuns).toBe(0);
     expect(parsed.summary.quarantinedProcessors).toBe(1);
     expect(parsed.findings.map((finding) => finding.code)).toEqual([
       "outbox.failed",

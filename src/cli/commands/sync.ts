@@ -50,7 +50,11 @@ import {
   printHostFollowupLines,
 } from "./sync-shared";
 import { formatJson } from "../format";
-import { queryRuns, type RunStatus } from "../../ledger/runs";
+import {
+  countLatestActiveProblemRuns,
+  queryRuns,
+  type RunStatus,
+} from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
@@ -125,12 +129,6 @@ type SyncHealthSummary = {
   readonly outboxFailed: number;
   readonly quarantined: number;
 };
-
-const SYNC_PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
-  "failed",
-  "timed_out",
-  "cancelled",
-]);
 
 export type RunSyncOptions = {
   readonly vault?: string | undefined;
@@ -555,7 +553,7 @@ function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
   const diagnostics = queryDiagnostics(runtime.projectionDb);
   return Object.freeze({
     pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
-    failedRuns: countLatestProblemRuns(runtime),
+    failedRuns: countLatestActiveProblemRuns(runtime.ledgerDb),
     diagnostics: diagnostics.length,
     attentionDiagnostics: countAttentionDiagnostics(diagnostics),
     questions: queryQuestions(runtime.projectionDb, { resolved: false }).length,
@@ -563,17 +561,6 @@ function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
     outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,
     quarantined: runtime.processorRuntime.executionState.quarantines().length,
   });
-}
-
-function countLatestProblemRuns(runtime: VaultRuntime): number {
-  const seen = new Set<string>();
-  let total = 0;
-  for (const row of queryRuns(runtime.ledgerDb)) {
-    if (seen.has(row.processorId)) continue;
-    seen.add(row.processorId);
-    if (SYNC_PROBLEM_RUN_STATUSES.has(row.status)) total++;
-  }
-  return total;
 }
 
 function countRunsByStatus(

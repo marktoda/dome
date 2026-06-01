@@ -289,6 +289,12 @@ export type RunsQueryFilter = {
   readonly limit?: number;
 };
 
+export const ACTIVE_PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
+  "failed",
+  "timed_out",
+  "cancelled",
+]);
+
 export type SumCostUsdByProcessorPrefixOpts = {
   readonly processorIdPrefix: string;
   readonly sinceIso: string;
@@ -649,6 +655,37 @@ export function queryRuns(
 }
 
 /**
+ * Returns true when a terminal row should still route user/agent attention.
+ *
+ * Rows intentionally failed by the orphan-run recovery path are audit evidence
+ * that a stuck run was resolved. They remain queryable through `inspect runs`,
+ * but should not keep `status` / `check` in an unhealthy loop forever.
+ */
+export function isActiveProblemRun(
+  row: Pick<RunRow, "status" | "error">,
+): boolean {
+  return ACTIVE_PROBLEM_RUN_STATUSES.has(row.status) &&
+    !isRecoveredOrphanRun(row);
+}
+
+export function latestActiveProblemRuns(
+  db: LedgerDb,
+): ReadonlyArray<RunRow> {
+  const seen = new Set<string>();
+  const out: RunRow[] = [];
+  for (const row of queryRuns(db)) {
+    if (seen.has(row.processorId)) continue;
+    seen.add(row.processorId);
+    if (isActiveProblemRun(row)) out.push(row);
+  }
+  return Object.freeze(out);
+}
+
+export function countLatestActiveProblemRuns(db: LedgerDb): number {
+  return latestActiveProblemRuns(db).length;
+}
+
+/**
  * Read a single run by id. Returns `null` if no row exists.
  */
 export function getRun(db: LedgerDb, id: RunId): RunRow | null {
@@ -819,6 +856,14 @@ function narrowTriggerKind(s: string): TriggerKind {
     default:
       throw new Error(`ledger.runs: unknown trigger_kind '${s}'`);
   }
+}
+
+function isRecoveredOrphanRun(
+  row: Pick<RunRow, "status" | "error">,
+): boolean {
+  if (row.status !== "failed" || row.error === null) return false;
+  return row.error.startsWith("orphaned-run:") ||
+    row.error === "dome.health: mark orphaned processor run failed";
 }
 
 function durationBetween(startedAt: string, finishedAt: Date): number {

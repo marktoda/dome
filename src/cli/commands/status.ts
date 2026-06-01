@@ -80,7 +80,13 @@ import {
 } from "../../engine/compiler-host-heartbeat";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import type { LedgerDb } from "../../ledger/db";
-import { queryRuns, type RunRow, type RunStatus } from "../../ledger/runs";
+import {
+  countLatestActiveProblemRuns,
+  isActiveProblemRun,
+  queryRuns,
+  type RunRow,
+  type RunStatus,
+} from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import {
@@ -111,11 +117,6 @@ import { collectVaultAnalytics } from "../vault-analytics";
 const RECENT_PROCESSOR_RUN_LIMIT = 100;
 const STATUS_DIAGNOSTIC_GROUP_LIMIT = 5;
 const LAST_SYNC_PHASES = Object.freeze(["adoption", "garden"] as const);
-const PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
-  "failed",
-  "timed_out",
-  "cancelled",
-]);
 const PENDING_RUN_STATUSES: ReadonlyArray<RunStatus> = Object.freeze([
   "queued",
   "running",
@@ -246,7 +247,7 @@ export async function runStatus(
       runtime.ledgerDb,
       PENDING_RUN_STATUSES,
     );
-    const failed_runs = countLatestProblemRuns(runtime.ledgerDb);
+    const failed_runs = countLatestActiveProblemRuns(runtime.ledgerDb);
     const recent_processor_runs = summarizeRecentProcessorRuns(
       queryRuns(runtime.ledgerDb, {
         limit: RECENT_PROCESSOR_RUN_LIMIT,
@@ -571,12 +572,12 @@ function summarizeRecentProcessorRuns(
         latest_finished_at: row.finishedAt,
         latest_duration_ms: row.durationMs,
         recent_runs: 1,
-        recent_problem_runs: PROBLEM_RUN_STATUSES.has(row.status) ? 1 : 0,
+        recent_problem_runs: isActiveProblemRun(row) ? 1 : 0,
       });
       continue;
     }
     existing.recent_runs++;
-    if (PROBLEM_RUN_STATUSES.has(row.status)) {
+    if (isActiveProblemRun(row)) {
       existing.recent_problem_runs++;
     }
   }
@@ -596,17 +597,6 @@ function countRunsByStatus(
   let total = 0;
   for (const status of statuses) {
     total += queryRuns(ledger, { status }).length;
-  }
-  return total;
-}
-
-function countLatestProblemRuns(ledger: LedgerDb): number {
-  const seen = new Set<string>();
-  let total = 0;
-  for (const row of queryRuns(ledger)) {
-    if (seen.has(row.processorId)) continue;
-    seen.add(row.processorId);
-    if (PROBLEM_RUN_STATUSES.has(row.status)) total++;
   }
   return total;
 }

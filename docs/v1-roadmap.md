@@ -1031,6 +1031,9 @@ Fold these into nearby milestone work when they are on-path:
       priority markers before path order, after real work-vault `today` output
       showed dated or high-priority management tasks could be buried in a large
       alphabetical backlog.
+- [x] Make latest active processor failures first-class `dome check` engine
+      findings, and keep orphan-run recovery failures as forensic ledger rows
+      rather than persistent status attention.
 
 ## V1 Exit Criteria
 

@@ -326,7 +326,7 @@ extensions:
         outbox_pending: 0,
         outbox_failed: 0,
         quarantined: 0,
-        failed_runs: 1,
+        failed_runs: 0,
       }),
     );
 

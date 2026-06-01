@@ -389,6 +389,10 @@ total unresolved diagnostic count; `attention_diagnostics` is the
 warning/error/block subset. Informational diagnostics remain visible in
 `diagnostics` and `diagnostic_summary`, but only warning/error/block
 diagnostics contribute the `diagnostics` attention reason.
+`failed_runs` counts processors whose latest run is an active terminal
+problem (`failed`, `timed_out`, or `cancelled`). Rows failed by explicit
+orphan-run recovery remain in `dome inspect runs` for forensics but do not keep
+status in attention after the recovery path has completed.
 `diagnostic_summary` groups all unresolved diagnostics;
 `attention_diagnostic_summary` uses the same schema but includes only
 warning/error/block rows. Text mode uses the attention summary for `diag top`
@@ -440,8 +444,8 @@ Default scope includes:
 
 - **engine:** health findings from the operational substrate: adopted-ref
   divergence, projection cache drift, instruction drift, schema mismatches,
-  failed or stuck outbox rows, orphan runs, quarantines, and model-provider
-  configuration gaps;
+  failed or stuck outbox rows, orphan runs, latest active processor failures,
+  quarantines, and model-provider configuration gaps;
 - **content:** unresolved DiagnosticEffect rows with bounded grouping,
   SourceRefs, total diagnostics, and warning/error/block diagnostics that
   require attention;

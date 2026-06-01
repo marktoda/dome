@@ -12,7 +12,7 @@ import { Database } from "bun:sqlite";
 import { computeAnswersSchemaHash } from "../answers/db";
 import type { LedgerDb } from "../ledger/db";
 import { computeLedgerSchemaHash } from "../ledger/db";
-import { orphanRuns, type RunRow } from "../ledger/runs";
+import { latestActiveProblemRuns, orphanRuns, type RunRow } from "../ledger/runs";
 import type { OutboxDb } from "../outbox/db";
 import { computeOutboxSchemaHash } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
@@ -65,6 +65,27 @@ export type HealthFinding =
         | "phase"
         | "triggerKind"
         | "startedAt"
+      >;
+    }
+  | {
+      readonly code: "run.latest-problem";
+      readonly severity: "error";
+      readonly subject: "runs";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly run: Pick<
+        RunRow,
+        | "id"
+        | "processorId"
+        | "processorVersion"
+        | "phase"
+        | "triggerKind"
+        | "status"
+        | "startedAt"
+        | "finishedAt"
+        | "durationMs"
+        | "error"
       >;
     }
   | {
@@ -170,6 +191,7 @@ export type HealthSummary = {
   readonly failedOutbox: number;
   readonly stuckPendingOutbox: number;
   readonly orphanRuns: number;
+  readonly failedRuns: number;
   readonly quarantinedProcessors: number;
   readonly projectionCacheDrift: number;
   readonly adoptedRefDivergence: number;
@@ -219,6 +241,7 @@ export async function collectHealthReport(opts: {
   const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
     .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
   const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now);
+  const failedRuns = latestActiveProblemRuns(opts.ledger);
   const quarantined = opts.executionState.quarantines();
   const projectionDrift = projectionCacheKeysChanged(opts.projection, {
     extensionSet: opts.extensions,
@@ -253,6 +276,7 @@ export async function collectHealthReport(opts: {
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
+    ...failedRuns.map(latestProblemRunFinding),
     ...quarantined.map(quarantineFinding),
     ...projectionDrift,
     ...(adoptedDivergence === null ? [] : [adoptedDivergence]),
@@ -290,6 +314,7 @@ function buildHealthReport(
       failedOutbox: count("outbox.failed"),
       stuckPendingOutbox: count("outbox.pending-stuck"),
       orphanRuns: count("run.orphan"),
+      failedRuns: count("run.latest-problem"),
       quarantinedProcessors: count("processor.quarantined"),
       projectionCacheDrift: count("projection.cache-key-drift"),
       adoptedRefDivergence: count("adopted-ref.diverged"),
@@ -468,6 +493,35 @@ function orphanFinding(row: RunRow): HealthFinding {
       phase: row.phase,
       triggerKind: row.triggerKind,
       startedAt: row.startedAt,
+    }),
+  });
+}
+
+function latestProblemRunFinding(row: RunRow): HealthFinding {
+  return Object.freeze({
+    code: "run.latest-problem" as const,
+    severity: "error" as const,
+    subject: "runs" as const,
+    id: row.id,
+    message:
+      `Latest run ${row.id} for ${row.processorId} ended with ` +
+      `${row.status} at ${row.finishedAt ?? "(unknown finish time)"}.`,
+    recovery:
+      "Use `dome inspect runs --limit 20 --json` for row-level detail. " +
+      "If the failure has a matching source diagnostic, fix that source " +
+      "issue and commit; if it looks transient, run `dome sync --json` " +
+      "and rerun `dome check --json`.",
+    run: Object.freeze({
+      id: row.id,
+      processorId: row.processorId,
+      processorVersion: row.processorVersion,
+      phase: row.phase,
+      triggerKind: row.triggerKind,
+      status: row.status,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
+      durationMs: row.durationMs,
+      error: row.error,
     }),
   });
 }

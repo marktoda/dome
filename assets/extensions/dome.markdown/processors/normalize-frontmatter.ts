@@ -121,17 +121,21 @@ const normalizeFrontmatter: Processor = defineProcessor({
       // there; either way there's nothing to normalize.
       if (content === null) continue;
 
-      const refreshedUpdated = shouldRefreshUpdated(ctx, path)
-        ? await lastChangedDate(ctx, path)
-        : null;
-      const normalized = normalizeContent(content, {
-        updatedDate: refreshedUpdated,
-      });
+      const parsed = parseFrontmatter(content);
       // `null` signals "no frontmatter or malformed YAML" — skip without
       // emitting either a patch or a diagnostic. A separate
       // `lint-frontmatter` processor is the right home for malformed-YAML
       // diagnostics; this processor's only job is normalization.
-      if (normalized === null) continue;
+      if (parsed === null) continue;
+
+      const refreshedUpdated =
+        shouldRefreshUpdated(ctx, path) && parsed.currentUpdatedDate !== null
+          ? await lastChangedDate(ctx, path)
+          : null;
+      const normalized = stringifyFrontmatter(
+        parsed.body,
+        reorderKeys(refreshUpdatedDate(parsed.data, refreshedUpdated)),
+      );
       // Identical content means the frontmatter is already canonical;
       // emitting a no-op write would still produce a closure commit on
       // the candidate (the apply-patch path doesn't dedup at the change
@@ -169,10 +173,9 @@ export default normalizeFrontmatter;
 // ----- internals ------------------------------------------------------------
 
 /**
- * Normalize the frontmatter in `content`. Returns:
- *   - the normalized content string when the file had parseable, non-empty
- *     frontmatter (which may equal `content` if already canonical — the
- *     caller dedups);
+ * Parse and scalar-normalize the frontmatter in `content`. Returns:
+ *   - parsed body/frontmatter data when the file had parseable, non-empty
+ *     frontmatter;
  *   - `null` if the file has no frontmatter, empty frontmatter, or
  *     malformed YAML (the three "nothing to do" cases — collapsed into one
  *     return value because the processor's behavior is identical for all
@@ -180,10 +183,13 @@ export default normalizeFrontmatter;
  *
  * The function is pure and synchronous — no I/O, no global state.
  */
-function normalizeContent(
-  content: string,
-  opts: { readonly updatedDate?: string | null } = {},
-): string | null {
+type ParsedFrontmatter = {
+  readonly body: string;
+  readonly data: Record<string, unknown>;
+  readonly currentUpdatedDate: string | null;
+};
+
+function parseFrontmatter(content: string): ParsedFrontmatter | null {
   let parsed: matter.GrayMatterFile<string>;
   try {
     parsed = matter(content);
@@ -207,13 +213,11 @@ function normalizeContent(
   }
 
   const normalizedScalars = normalizeYamlScalars(parsed.data);
-  const refreshed = refreshUpdatedDate(
-    normalizedScalars,
-    opts.updatedDate ?? null,
-  );
-  const reordered = reorderKeys(refreshed);
-
-  return stringifyFrontmatter(parsed.content, reordered);
+  return Object.freeze({
+    body: parsed.content,
+    data: Object.freeze(normalizedScalars),
+    currentUpdatedDate: dateOnly(normalizedScalars["updated"]),
+  });
 }
 
 async function lastChangedDate(

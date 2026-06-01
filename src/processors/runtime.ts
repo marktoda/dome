@@ -78,6 +78,7 @@ import type {
   ProcessorContext,
   ProjectionQueryView,
   Snapshot,
+  SnapshotFileInfo,
   TreeOid,
 } from "../core/processor";
 import type { Proposal } from "../core/proposal";
@@ -632,19 +633,40 @@ export async function makeSnapshot(
   resolveTree: (commit: CommitOid) => Promise<TreeOid>,
 ): Promise<Snapshot> {
   const tree = await resolveTree(commit);
+  const readFileCache = new Map<string, Promise<string | null>>();
+  const fileInfoCache = new Map<string, Promise<SnapshotFileInfo | null>>();
+  let markdownFilesCache: Promise<ReadonlyArray<string>> | null = null;
+
   return Object.freeze({
     commit,
     tree,
-    readFile: (path: string) =>
-      readBlob({ path: vaultPath, commit, filepath: path }),
-    listMarkdownFiles: () => listMarkdownPathsInTree(vaultPath, commit),
+    readFile: (path: string) => {
+      let cached = readFileCache.get(path);
+      if (cached === undefined) {
+        cached = readBlob({ path: vaultPath, commit, filepath: path });
+        readFileCache.set(path, cached);
+      }
+      return cached;
+    },
+    listMarkdownFiles: () => {
+      markdownFilesCache ??= listMarkdownPathsInTree(vaultPath, commit);
+      return markdownFilesCache;
+    },
     getFileInfo: async (path: string) => {
-      const info = await fileInfoAtCommit({ path: vaultPath, commit, filepath: path });
-      if (info === null) return null;
-      return {
-        lastChangedCommit: commitOid(info.lastChangedCommit),
-        lastChangedAt: info.lastChangedAt,
-      };
+      let cached = fileInfoCache.get(path);
+      if (cached === undefined) {
+        cached = fileInfoAtCommit({ path: vaultPath, commit, filepath: path })
+          .then((info) =>
+            info === null
+              ? null
+              : {
+                  lastChangedCommit: commitOid(info.lastChangedCommit),
+                  lastChangedAt: info.lastChangedAt,
+                }
+          );
+        fileInfoCache.set(path, cached);
+      }
+      return cached;
     },
   });
 }

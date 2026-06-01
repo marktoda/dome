@@ -120,6 +120,7 @@ function printDoctorText(report: HealthReport): void {
     `findings  outbox ${report.summary.failedOutbox} failed | ` +
       `${report.summary.stuckPendingOutbox} stuck | ` +
       `orphans ${report.summary.orphanRuns} | ` +
+      `runs ${report.summary.failedRuns} failed | ` +
       `quarantine ${report.summary.quarantinedProcessors} | ` +
       `projection ${report.summary.projectionCacheDrift} | ` +
       `git ${report.summary.adoptedRefDivergence} | ` +

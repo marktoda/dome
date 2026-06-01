@@ -21,10 +21,12 @@ import {
 } from "../../src/ledger/capability-uses";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import {
+  countLatestActiveProblemRuns,
   failRunIfCurrent,
   failOrphanedRuns,
   getRun,
   insertQueued,
+  latestActiveProblemRuns,
   markCancelled,
   markFailed,
   markRunning,
@@ -401,6 +403,89 @@ describe("runs lifecycle", () => {
     const cancelledRows = queryRuns(db, { status: "cancelled" });
     expect(cancelledRows.length).toBe(1);
     expect(cancelledRows[0]?.id).toBe(cancelled);
+  });
+
+  it("latestActiveProblemRuns reports unresolved latest terminal problems", () => {
+    const olderFailure = newRunId(new Date(0), () => "oldbad");
+    const laterSuccess = newRunId(new Date(1), () => "newok1");
+    const latestTimeout = newRunId(new Date(2), () => "tout01");
+    const recoveredOrphan = newRunId(new Date(3), () => "orphan");
+
+    const queueFor = (id: RunId, processorId: string, startedAt: Date) => {
+      insertQueued(db, {
+        id,
+        proposalId: null,
+        processorId,
+        processorVersion: "1.0.0",
+        phase: "garden",
+        inputCommit: INPUT_COMMIT,
+        triggerKind: "schedule",
+        triggerPayload: { test: processorId },
+        startedAt,
+      });
+      markRunning(db, id, startedAt);
+    };
+
+    queueFor(
+      olderFailure,
+      "dome.test.eventually-ok",
+      new Date("2026-05-27T12:00:00.000Z"),
+    );
+    markFailed(db, {
+      id: olderFailure,
+      error: "boom before retry",
+      durationMs: 1,
+      finishedAt: new Date("2026-05-27T12:00:00.001Z"),
+    });
+
+    queueFor(
+      laterSuccess,
+      "dome.test.eventually-ok",
+      new Date("2026-05-27T12:00:01.000Z"),
+    );
+    markSucceeded(db, {
+      id: laterSuccess,
+      effectHashes: [],
+      costUsd: null,
+      durationMs: 1,
+      outputCommit: null,
+      finishedAt: new Date("2026-05-27T12:00:01.001Z"),
+    });
+
+    queueFor(
+      latestTimeout,
+      "dome.test.still-bad",
+      new Date("2026-05-27T12:00:02.000Z"),
+    );
+    markTimedOut(db, {
+      id: latestTimeout,
+      error: {
+        code: "processor.timeout",
+        message: "processor exceeded timeout of 2000ms",
+        retryable: false,
+        phase: "garden",
+        processorId: "dome.test.still-bad",
+      },
+      durationMs: 2000,
+      finishedAt: new Date("2026-05-27T12:00:04.000Z"),
+    });
+
+    queueFor(
+      recoveredOrphan,
+      "dome.test.recovered-orphan",
+      new Date("2026-05-27T12:00:03.000Z"),
+    );
+    markFailed(db, {
+      id: recoveredOrphan,
+      error: "dome.health: mark orphaned processor run failed",
+      durationMs: 1,
+      finishedAt: new Date("2026-05-27T12:00:03.001Z"),
+    });
+
+    expect(countLatestActiveProblemRuns(db)).toBe(1);
+    expect(latestActiveProblemRuns(db).map((row) => row.id)).toEqual([
+      latestTimeout,
+    ]);
   });
 
   it("new terminal transitions only apply from running", () => {
