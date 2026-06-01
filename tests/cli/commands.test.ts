@@ -2265,6 +2265,111 @@ describe("runCheck", () => {
     expect(text).not.toContain("(manual)");
   });
 
+  test("content report groups diagnostics by repair path", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      for (const path of ["wiki/a.md", "wiki/b.md"]) {
+        insertDiagnostic(projection.value.db, {
+          effect: diagnosticEffect({
+            severity: "warning",
+            code: "dome.markdown.broken-wikilink",
+            message:
+              "Wikilink [[missing-target]] does not resolve to any markdown file in the vault.",
+            sourceRefs: [
+              sourceRef({
+                commit: adoptedCommit,
+                path,
+              }),
+            ],
+          }),
+          processorId: "dome.markdown.validate-wikilinks",
+          proposalId: null,
+          adoptedCommit,
+        });
+      }
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "dome.markdown.broken-image",
+          message: "Image embed ![[missing.png]] does not resolve in the vault.",
+          sourceRefs: [
+            sourceRef({
+              commit: adoptedCommit,
+              path: "wiki/c.md",
+            }),
+          ],
+        }),
+        processorId: "dome.markdown.broken-images",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const content = record(parsed["content"]);
+    const repairSummary = record(content["repair_summary"]);
+    expect(repairSummary["total"]).toBe(3);
+    expect(repairSummary["group_count"]).toBe(2);
+    const groups = repairSummary["groups"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(groups[0]).toEqual(
+      expect.objectContaining({
+        repair_path: "link.resolve-or-create",
+        count: 2,
+        attention_count: 2,
+      }),
+    );
+    expect(groups[1]).toEqual(
+      expect.objectContaining({
+        repair_path: "asset.restore-or-relink",
+        count: 1,
+        attention_count: 1,
+      }),
+    );
+    const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(items[0]?.["repair_path"]).toBe("link.resolve-or-create");
+    expect(String(items[0]?.["repair_hint"])).toContain("Correct the wikilink");
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+      }),
+    ).toBe(0);
+    const text = captured.out.join("\n");
+    expect(text).toContain("Content repair paths");
+    expect(text).toContain("link.resolve-or-create x2");
+    expect(text).toContain("repair: link.resolve-or-create");
+  });
+
   test("text output reports omitted bounded rows", async () => {
     const f = await makeFixture();
     fixtures.push(f);

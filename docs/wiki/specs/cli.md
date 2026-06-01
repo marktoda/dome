@@ -511,10 +511,15 @@ including commit provenance); diagnostic summary groups use the matching
 `first_source_refs` / `firstSourceRefs` pair. Content reports also
 include `message_summary`, which groups diagnostics by severity/code/message so
 repeated findings such as one missing wikilink target can be handled as one
-repair task before drilling into individual source rows. The content `items`
-list follows the same severity/count/message priority as `message_summary`, so
-bounded repair rows start with the highest-volume grouped findings instead of
-newest-row insertion order. Content and decision reports expose
+repair task before drilling into individual source rows. Content reports also
+include `repair_summary`, which groups diagnostics by stable repair path such
+as `link.resolve-or-create`, `asset.restore-or-relink`, or
+`frontmatter.repair`; each diagnostic item carries the same `repair_path` plus
+a short `repair_hint` so foreground agents can batch source edits without
+guessing the intended repair route. The content `items` list follows the same
+severity/count/message priority as `message_summary`, so bounded repair rows
+start with the highest-volume grouped findings instead of newest-row insertion
+order. Content and decision reports expose
 `shownItems` / `omittedItems` beside their bounded `items` arrays so agents can
 record truncation evidence without inferring it from array lengths.
 Abbreviated example:

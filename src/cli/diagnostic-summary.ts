@@ -37,6 +37,26 @@ export type DiagnosticMessageSummary = {
   readonly groups: ReadonlyArray<DiagnosticMessageGroup>;
 };
 
+export type DiagnosticRepairPath = {
+  readonly repair_path: string;
+  readonly repair_hint: string;
+};
+
+export type DiagnosticRepairGroup = DiagnosticRepairPath & {
+  readonly count: number;
+  readonly attention_count: number;
+  readonly first_source_refs: string;
+  readonly firstSourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export type DiagnosticRepairSummary = {
+  readonly total: number;
+  readonly group_count: number;
+  readonly shown_groups: number;
+  readonly omitted_groups: number;
+  readonly groups: ReadonlyArray<DiagnosticRepairGroup>;
+};
+
 export type SourceRefFormatOptions = {
   readonly includeCommit?: boolean;
 };
@@ -146,6 +166,114 @@ export function summarizeDiagnosticMessages(
   });
 }
 
+export function summarizeDiagnosticRepairPaths(
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+  limit: number,
+  options: DiagnosticSummaryOptions = {},
+): DiagnosticRepairSummary {
+  const grouped = new Map<string, DiagnosticRepairGroup>();
+  for (const diagnostic of diagnostics) {
+    const repair = diagnosticRepairPath(diagnostic);
+    const existing = grouped.get(repair.repair_path);
+    if (existing !== undefined) {
+      grouped.set(repair.repair_path, {
+        ...existing,
+        count: existing.count + 1,
+        attention_count: existing.attention_count +
+          (isAttentionDiagnostic(diagnostic) ? 1 : 0),
+      });
+      continue;
+    }
+    grouped.set(repair.repair_path, {
+      ...repair,
+      count: 1,
+      attention_count: isAttentionDiagnostic(diagnostic) ? 1 : 0,
+      first_source_refs: formatSourceRefs(
+        diagnostic.sourceRefs,
+        options.sourceRefs,
+      ),
+      firstSourceRefs: diagnostic.sourceRefs,
+    });
+  }
+
+  const groups = [...grouped.values()].sort(compareDiagnosticRepairGroups);
+  return Object.freeze({
+    total: diagnostics.length,
+    group_count: groups.length,
+    shown_groups: Math.min(limit, groups.length),
+    omitted_groups: Math.max(0, groups.length - limit),
+    groups: Object.freeze(groups.slice(0, limit)),
+  });
+}
+
+export function diagnosticRepairPath(
+  diagnostic: Pick<DiagnosticEffect, "code" | "message">,
+): DiagnosticRepairPath {
+  if (diagnostic.code === "dome.markdown.broken-wikilink") {
+    if (diagnostic.message.includes("Did you mean")) {
+      return Object.freeze({
+        repair_path: "link.apply-suggestion",
+        repair_hint:
+          "Use the suggested existing page target, or keep the link unresolved only if that uncertainty is intentional.",
+      });
+    }
+    return Object.freeze({
+      repair_path: "link.resolve-or-create",
+      repair_hint:
+        "Correct the wikilink target, create a real stub if the concept is intentional, or preserve the uncertainty.",
+    });
+  }
+
+  if (diagnostic.code === "dome.markdown.broken-image") {
+    return Object.freeze({
+      repair_path: "asset.restore-or-relink",
+      repair_hint:
+        "Restore the referenced asset, move it to the linked path, or update the embed target.",
+    });
+  }
+
+  if (
+    diagnostic.code.startsWith("dome.markdown.") &&
+    (
+      diagnostic.code.includes("frontmatter") ||
+      diagnostic.code === "dome.markdown.missing-type" ||
+      diagnostic.code === "dome.markdown.type-unknown" ||
+      diagnostic.code === "dome.markdown.tags-not-list" ||
+      diagnostic.code === "dome.markdown.invalid-date" ||
+      diagnostic.code === "dome.markdown.missing-required-field" ||
+      diagnostic.code === "dome.markdown.unknown-frontmatter-field"
+    )
+  ) {
+    return Object.freeze({
+      repair_path: "frontmatter.repair",
+      repair_hint:
+        "Update the page frontmatter to match the configured page-type schema.",
+    });
+  }
+
+  if (diagnostic.code === "dome.markdown.stale-updated") {
+    return Object.freeze({
+      repair_path: "metadata.refresh-updated",
+      repair_hint:
+        "Run the compiler with the markdown bundle enabled, or refresh the managed updated date.",
+    });
+  }
+
+  if (diagnostic.code === "raw.immutable") {
+    return Object.freeze({
+      repair_path: "raw.revert-source-edit",
+      repair_hint:
+        "Preserve raw source material by reverting the raw-file mutation and writing derived notes elsewhere.",
+    });
+  }
+
+  return Object.freeze({
+    repair_path: "content.inspect",
+    repair_hint:
+      "Inspect the source refs and fix the source markdown issue described by the diagnostic.",
+  });
+}
+
 export function sortDiagnosticsByMessagePriority(
   diagnostics: ReadonlyArray<DiagnosticEffect>,
 ): ReadonlyArray<DiagnosticEffect> {
@@ -209,6 +337,17 @@ function compareDiagnosticMessageGroups(
   const codeOrder = a.code.localeCompare(b.code);
   if (codeOrder !== 0) return codeOrder;
   return a.message.localeCompare(b.message);
+}
+
+function compareDiagnosticRepairGroups(
+  a: DiagnosticRepairGroup,
+  b: DiagnosticRepairGroup,
+): number {
+  if (b.attention_count !== a.attention_count) {
+    return b.attention_count - a.attention_count;
+  }
+  if (b.count !== a.count) return b.count - a.count;
+  return a.repair_path.localeCompare(b.repair_path);
 }
 
 function diagnosticMessageKey(

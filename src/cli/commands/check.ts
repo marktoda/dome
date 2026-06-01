@@ -21,13 +21,16 @@ import { queryQuestionRecords } from "../../projections/questions";
 import { resolveQuestionCommand } from "../../question-resolution";
 import {
   countAttentionDiagnostics,
+  diagnosticRepairPath,
   formatSourceRefs,
   isSourceBackedDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
   sortDiagnosticsByMessagePriority,
   summarizeDiagnosticEffects,
   summarizeDiagnosticMessages,
+  summarizeDiagnosticRepairPaths,
   type DiagnosticMessageSummary,
+  type DiagnosticRepairSummary,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
@@ -86,6 +89,7 @@ type CheckContentReport = {
   };
   readonly summary: DiagnosticSummary;
   readonly message_summary: DiagnosticMessageSummary;
+  readonly repair_summary: DiagnosticRepairSummary;
   readonly shownItems: number;
   readonly omittedItems: number;
   readonly items: ReadonlyArray<CheckDiagnosticItem>;
@@ -95,6 +99,8 @@ type CheckDiagnosticItem = {
   readonly severity: string;
   readonly code: string;
   readonly message: string;
+  readonly repair_path: string;
+  readonly repair_hint: string;
   readonly source_refs: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -237,18 +243,21 @@ function collectContentReport(opts: {
   const repairOrderedDiagnostics =
     sortDiagnosticsByMessagePriority(filteredDiagnostics);
   const items = Object.freeze(
-    repairOrderedDiagnostics.slice(0, opts.limit).map((diagnostic) =>
-      Object.freeze({
+    repairOrderedDiagnostics.slice(0, opts.limit).map((diagnostic) => {
+      const repair = diagnosticRepairPath(diagnostic);
+      return Object.freeze({
         severity: diagnostic.severity,
         code: diagnostic.code,
         message: diagnostic.message,
+        repair_path: repair.repair_path,
+        repair_hint: repair.repair_hint,
         source_refs: formatSourceRefs(
           diagnostic.sourceRefs,
           RECOVERY_SOURCE_REF_FORMAT,
         ),
         sourceRefs: diagnostic.sourceRefs,
-      })
-    ),
+      });
+    }),
   );
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
@@ -265,6 +274,11 @@ function collectContentReport(opts: {
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     ),
     message_summary: summarizeDiagnosticMessages(
+      filteredDiagnostics,
+      opts.limit,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    ),
+    repair_summary: summarizeDiagnosticRepairPaths(
       filteredDiagnostics,
       opts.limit,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
@@ -422,17 +436,38 @@ function printFindings(findings: ReadonlyArray<HealthFinding>): void {
 function printDiagnostics(report: CheckContentReport | null): void {
   const items = report?.items ?? [];
   if (items.length === 0) return;
+  printDiagnosticRepairGroups(report);
   printDiagnosticMessageGroups(report);
   console.log("");
   console.log("Content");
   for (const item of items) {
     console.log(`  - [${item.severity}] ${item.code}: ${item.message}`);
+    console.log(`    repair: ${item.repair_path} - ${item.repair_hint}`);
     console.log(`    ${item.source_refs}`);
   }
   appendMoreLine(
     report?.filtered_diagnostics ?? 0,
     items.length,
     "diagnostics",
+  );
+}
+
+function printDiagnosticRepairGroups(report: CheckContentReport | null): void {
+  if (report === null) return;
+  const groups = report.repair_summary.groups;
+  if (!groups.some((group) => group.count > 1) && groups.length <= 1) return;
+  console.log("");
+  console.log("Content repair paths");
+  for (const group of groups) {
+    console.log(
+      `  - ${group.repair_path} x${group.count}: ${group.repair_hint}`,
+    );
+    console.log(`    first: ${group.first_source_refs}`);
+  }
+  appendMoreGroupsLine(
+    report.repair_summary.group_count,
+    groups.length,
+    "repair groups",
   );
 }
 
