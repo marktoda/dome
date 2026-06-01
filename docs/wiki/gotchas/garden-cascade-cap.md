@@ -1,12 +1,13 @@
 ---
 type: gotcha
 created: 2026-05-28
-updated: 2026-05-28
-severity: medium
+updated: 2026-06-01
+sources:
+  - "[[v1]]"
 coverage: off-matrix
 enforced_at: src/engine/garden.ts
 first_observed: 2026-05-28 (Phase 4a' implementation)
-sources: ["[[v1]]"]
+severity: medium
 ---
 
 # Garden cascade cap
