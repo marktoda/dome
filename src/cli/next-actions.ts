@@ -56,11 +56,16 @@ export function nextActionsForStatus(
     description:
       "Review draft working-tree changes; commit anything Dome should compile.",
   });
-  pushAction(out, attention, SYNC_REASONS, {
-    command: "dome sync --json",
-    description:
-      "Run one compiler tick to adopt pending commits or drain due operational work.",
-  });
+  const syncReasons = SYNC_REASONS.filter((reason) =>
+    attention.includes(reason),
+  );
+  if (syncReasons.length > 0) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(syncReasons),
+      command: "dome sync --json",
+      description: syncStatusDescription(syncReasons),
+    }));
+  }
 
   const checkReasons = CHECK_REASONS.filter((reason) =>
     attention.includes(reason),
@@ -84,6 +89,13 @@ export function nextActionsForStatus(
     }));
   }
   return Object.freeze(out);
+}
+
+function syncStatusDescription(reasons: ReadonlyArray<string>): string {
+  if (reasons.length === 1 && reasons[0] === "projection_stale") {
+    return "Run one compiler tick to rebuild stale projections from adopted markdown.";
+  }
+  return "Run one compiler tick to adopt pending commits or drain due operational work.";
 }
 
 export function nextActionsForSync(input: {

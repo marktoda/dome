@@ -968,6 +968,10 @@ Fold these into nearby milestone work when they are on-path:
       asks follow-up questions for sequential prose such as "follow up with
       more/additional items", after real work-vault soak surfaced a false
       decision on "potential to follow up with more."
+- [x] Clarify projection-stale status recovery: when `projection_stale` is the
+      only sync-oriented reason, `dome status --json` now describes
+      `dome sync --json` as rebuilding stale projections from adopted markdown
+      instead of only mentioning pending commits or operational work.
 
 ## V1 Exit Criteria
 

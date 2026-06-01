@@ -2422,7 +2422,7 @@ describe("runStatus", () => {
         reasons: ["projection_stale"],
         command: "dome sync --json",
         description:
-          "Run one compiler tick to adopt pending commits or drain due operational work.",
+          "Run one compiler tick to rebuild stale projections from adopted markdown.",
       },
     ]));
     expect((parsed["attention"] as ReadonlyArray<string>)[0]).toBe(

@@ -288,7 +288,9 @@ repair loop) and `firstSourceRefs` (structured SourceRef objects, including
 commit provenance). If diagnostics are the only check-oriented attention
 reason, status routes directly to
 `dome check --content --attention --limit 50 --json`; otherwise it routes to
-the broader `dome check --json` report.
+the broader `dome check --json` report. When `projection_stale` is the only
+sync-oriented reason, the `dome sync --json` next-action description names the
+projection rebuild explicitly instead of implying pending commits.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
