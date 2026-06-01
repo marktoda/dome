@@ -215,6 +215,65 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(ref.range?.startLine).toBe(1);
   });
 
+  test("suggests a close existing markdown target for typoed wikilinks", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/page.md",
+        content: "Working with [[wiki/entities/grce-danco]].\n",
+      },
+      { path: "wiki/entities/grace-danco.md", content: "Grace.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-suggestion",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.message).toContain("[[wiki/entities/grce-danco]]");
+    expect(diag.message).toContain("Did you mean [[wiki/entities/grace-danco]]?");
+  });
+
+  test("suppresses close-target hints when the best match is ambiguous", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/page.md",
+        content: "Working with [[wiki/entities/grae-danco]].\n",
+      },
+      { path: "wiki/entities/grace-danco.md", content: "Grace.\n" },
+      { path: "wiki/entities/grade-danco.md", content: "Grade.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-ambiguous-suggestion",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+
+    const diag = effects[0] as DiagnosticEffect | undefined;
+    if (diag === undefined) throw new Error("expected one diagnostic");
+    expect(diag.message).toContain("[[wiki/entities/grae-danco]]");
+    expect(diag.message).not.toContain("Did you mean");
+  });
+
   test("surfaces broken note-draft wikilinks as info diagnostics", async () => {
     const f = await makeVaultWithFiles([
       { path: "notes/scratch.md", content: "Maybe [[future-idea]].\n" },

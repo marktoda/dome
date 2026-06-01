@@ -784,6 +784,10 @@ Work:
       `dome query` text and `dome export-context` packets, after the real
       work-vault soak showed a handoff packet could hide a decision that
       `status` was asking the user to handle.
+- [x] Add close existing-page hints to broken wikilink diagnostics, after the
+      real work-vault soak showed `dome check --content --attention` was
+      correctly surfacing link debt but had no deterministic assist when a
+      broken target is a near miss for an existing page.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
@@ -810,7 +814,7 @@ Required for daily value:
 
 | Bundle | Status | V1 responsibility |
 |---|---|---|
-| `dome.markdown` | v1 shipped | deterministic markdown hygiene, managed-page wikilink/image/frontmatter diagnostics, informational note-draft and imported-source body link diagnostics, raw immutability blocking, page schemas |
+| `dome.markdown` | v1 shipped | deterministic markdown hygiene, managed-page wikilink/image/frontmatter diagnostics with close existing-page hints for likely link typos, informational note-draft and imported-source body link diagnostics, raw immutability blocking, page schemas |
 | `dome.graph` | v1 shipped | wikilink and tag facts for recall; task facts live in `dome.daily`, intake entities in `dome.intake` |
 | `dome.search` | v1 shipped | FTS indexing, adopted-state query, and source-backed export-context retrieval; embeddings remain post-v1 |
 | `dome.health` | v1 shipped | health probes surfaced through `dome check` / advanced `dome doctor`; failed-outbox retry/abandon, quarantine-reset, and orphan-run recovery question emitters and answer handlers resolved through `dome resolve` |

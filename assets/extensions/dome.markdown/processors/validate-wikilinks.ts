@@ -14,8 +14,8 @@
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same snapshot + input → same effects (the diagnostic
-//     code, message, and sourceRef are pure functions of the file content +
-//     the candidate snapshot's markdown set).
+//     code, message, closest-page hint, and sourceRef are pure functions of
+//     the file content + the candidate snapshot's markdown set).
 //   - Bounded cost: O(changed-files × wikilinks-per-file + tree-size). The
 //     markdown set is materialized once per dispatch via
 //     `ctx.snapshot.listMarkdownFiles()` and reused for every changed file.
@@ -76,7 +76,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -91,6 +91,7 @@ const validateWikilinks: Processor = defineProcessor({
     const pathSet = new Set<string>(allMarkdownPaths);
     const basenameIndex = buildBasenameIndex(allMarkdownPaths);
     const normalizedIndex = buildNormalizedResolutionIndex(allMarkdownPaths);
+    const suggestionIndex = buildWikilinkSuggestionIndex(allMarkdownPaths);
 
     const diagnostics: DiagnosticEffect[] = [];
 
@@ -119,6 +120,7 @@ const validateWikilinks: Processor = defineProcessor({
           normalizedIndex,
         );
         if (resolved !== null) continue;
+        const suggestion = suggestWikilinkTarget(match.target, suggestionIndex);
 
         // Unresolved target -> emit a diagnostic anchored to the
         // exact span where the wikilink appears in `changedPath`. The
@@ -136,7 +138,7 @@ const validateWikilinks: Processor = defineProcessor({
               frontmatterEnd,
             ),
             code: "dome.markdown.broken-wikilink",
-            message: `Wikilink [[${match.target}]] does not resolve to any markdown file in the vault.`,
+            message: brokenWikilinkMessage(match.target, suggestion),
             sourceRefs: [
               ctx.sourceRef(changedPath, {
                 startLine: match.line,
@@ -402,6 +404,14 @@ type NormalizedResolutionIndex = {
   readonly basenames: UniqueResolutionIndex;
 };
 
+type WikilinkSuggestionCandidate = {
+  readonly linkTarget: string;
+  readonly pathKey: string;
+  readonly basenameKey: string;
+};
+
+type WikilinkSuggestionIndex = ReadonlyArray<WikilinkSuggestionCandidate>;
+
 function buildNormalizedResolutionIndex(
   paths: ReadonlyArray<string>,
 ): NormalizedResolutionIndex {
@@ -417,6 +427,26 @@ function buildNormalizedResolutionIndex(
     paths: pathIndex,
     basenames: basenameIndex,
   });
+}
+
+function buildWikilinkSuggestionIndex(
+  paths: ReadonlyArray<string>,
+): WikilinkSuggestionIndex {
+  return Object.freeze(
+    [...paths]
+      .filter((path) => path.endsWith(".md"))
+      .sort()
+      .map((path) => {
+        const linkTarget = path.replace(/\.md$/i, "");
+        const slash = linkTarget.lastIndexOf("/");
+        const basename = slash >= 0 ? linkTarget.slice(slash + 1) : linkTarget;
+        return Object.freeze({
+          linkTarget,
+          pathKey: normalizeWikilinkKey(linkTarget),
+          basenameKey: normalizeWikilinkKey(basename),
+        });
+      }),
+  );
 }
 
 function addUniqueNormalized(
@@ -446,6 +476,16 @@ function decodeWikilinkComponent(value: string): string {
   } catch {
     return value;
   }
+}
+
+function brokenWikilinkMessage(
+  target: string,
+  suggestion: string | null,
+): string {
+  const base =
+    `Wikilink [[${target}]] does not resolve to any markdown file in the vault.`;
+  if (suggestion === null) return base;
+  return `${base} Did you mean [[${suggestion}]]?`;
 }
 
 /**
@@ -542,10 +582,126 @@ function resolveWikilinkTarget(
   return null;
 }
 
+function suggestWikilinkTarget(
+  rawTarget: string,
+  index: WikilinkSuggestionIndex,
+): string | null {
+  if (isSkippedWikilinkTarget(rawTarget)) return null;
+
+  const target = stripWikilinkFragment(rawTarget);
+  if (target.length === 0) return null;
+
+  const targetKey = normalizeWikilinkKey(
+    target.endsWith(".md") ? target.slice(0, -3) : target,
+  );
+  if (targetKey.length === 0) return null;
+
+  const targetHasPath = target.includes("/");
+  let best: {
+    readonly candidate: WikilinkSuggestionCandidate;
+    readonly distance: number;
+    readonly comparedLength: number;
+  } | null = null;
+  let tied = false;
+
+  for (const candidate of index) {
+    const candidateKey = targetHasPath
+      ? candidate.pathKey
+      : candidate.basenameKey;
+    if (candidateKey.length === 0 || candidateKey === targetKey) continue;
+
+    const distance = boundedLevenshteinDistance(
+      targetKey,
+      candidateKey,
+      suggestionDistanceLimit(targetKey, candidateKey),
+    );
+    if (distance === null) continue;
+    if (!isPlausibleSuggestionDistance(targetKey, candidateKey, distance)) {
+      continue;
+    }
+
+    const comparedLength = Math.max(targetKey.length, candidateKey.length);
+    if (
+      best === null ||
+      distance < best.distance ||
+      (distance === best.distance && comparedLength < best.comparedLength)
+    ) {
+      best = { candidate, distance, comparedLength };
+      tied = false;
+    } else if (
+      best !== null &&
+      distance === best.distance &&
+      comparedLength === best.comparedLength
+    ) {
+      tied = true;
+    }
+  }
+
+  return best !== null && !tied ? best.candidate.linkTarget : null;
+}
+
+function suggestionDistanceLimit(left: string, right: string): number {
+  return Math.max(2, Math.floor(Math.max(left.length, right.length) * 0.18));
+}
+
+function isPlausibleSuggestionDistance(
+  left: string,
+  right: string,
+  distance: number,
+): boolean {
+  const limit = suggestionDistanceLimit(left, right);
+  if (distance > limit) return false;
+  const shorter = Math.min(left.length, right.length);
+  if (shorter <= 4) return distance <= 1;
+  if (shorter <= 8) return distance <= 2;
+  return true;
+}
+
 function isSkippedWikilinkTarget(target: string): boolean {
   if (isExternalUrlTarget(target)) return true;
   if (target.includes("<%") || target.includes("%>")) return true;
   return hasExplicitNonMarkdownExtension(target);
+}
+
+function boundedLevenshteinDistance(
+  left: string,
+  right: string,
+  maxDistance: number,
+): number | null {
+  if (left === right) return 0;
+  if (Math.abs(left.length - right.length) > maxDistance) return null;
+  if (left.length === 0) return right.length <= maxDistance ? right.length : null;
+  if (right.length === 0) return left.length <= maxDistance ? left.length : null;
+
+  let previous = Array.from({ length: right.length + 1 }, (_, i) => i);
+  let current = new Array<number>(right.length + 1);
+
+  for (let i = 1; i <= left.length; i += 1) {
+    current[0] = i;
+    let rowMin = current[0];
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left.charCodeAt(i - 1) === right.charCodeAt(j - 1) ? 0 : 1;
+      const deletion = arrayNumberAt(previous, j) + 1;
+      const insertion = arrayNumberAt(current, j - 1) + 1;
+      const substitution = arrayNumberAt(previous, j - 1) + cost;
+      const value = Math.min(deletion, insertion, substitution);
+      current[j] = value;
+      if (value < rowMin) rowMin = value;
+    }
+    if (rowMin > maxDistance) return null;
+    [previous, current] = [current, previous];
+  }
+
+  const distance = arrayNumberAt(previous, right.length);
+  return distance <= maxDistance ? distance : null;
+}
+
+function arrayNumberAt(values: ReadonlyArray<number>, index: number): number {
+  const value = values[index];
+  if (value === undefined) {
+    throw new Error(`internal distance matrix index ${index} was not initialized`);
+  }
+  return value;
 }
 
 function isExternalUrlTarget(target: string): boolean {
