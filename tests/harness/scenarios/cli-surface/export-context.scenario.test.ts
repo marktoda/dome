@@ -244,3 +244,154 @@ scenario(
     );
   },
 );
+
+scenario(
+  {
+    name: "cli-surface: dome export-context surfaces source-backed decisions",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.search"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.intake:
+    enabled: true
+    grant:
+      read:
+        - "wiki/generated/intake/*.md"
+        - "wiki/syntheses/intake-*.md"
+      patch.auto:
+        - "wiki/syntheses/intake-*.md"
+        - "wiki/syntheses/intake-rollup.md"
+      graph.write:
+        - "dome.intake.*"
+      model.invoke:
+        modelAllowlist: ["test-model"]
+        maxDailyCostUsd: 1
+      question.ask: true
+  dome.search:
+    enabled: true
+    grant:
+      read: ["**/*.md"]
+      search.write: ["**/*.md"]
+`,
+      },
+      modelProvider: async (request) => {
+        expect(request.model).toBe("test-model");
+        if (
+          request.prompt.startsWith(
+            "Synthesize recent Dome generated intake captures",
+          )
+        ) {
+          return {
+            text: JSON.stringify({
+              title: "Alpha capture rollup",
+              thesis: "Alpha launch captures include ownership decisions.",
+              themes: ["Alpha launch ownership"],
+              risks: [],
+              nextSteps: [],
+            }),
+            costUsd: 0.01,
+          };
+        }
+        return {
+          text: JSON.stringify({
+            title: "Alpha decision synthesis",
+            thesis: "Alpha launch ownership was decided in the capture.",
+            highlights: ["Danny owns platform runtime for alpha launch"],
+            risks: [],
+            nextSteps: [],
+          }),
+          costUsd: 0.01,
+        };
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/generated/intake/alpha-decision.md": [
+          "---",
+          "type: capture",
+          "intake_items:",
+          "  - kind: decision",
+          "    text: Danny owns platform runtime for alpha launch",
+          "    confidence: 0.94",
+          "---",
+          "",
+          "# Alpha Decision Capture",
+          "",
+          "Decision: Danny owns platform runtime for the alpha launch ownership model.",
+          "",
+        ].join("\n"),
+      },
+      message: "add generated decision capture",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli([
+      "export-context",
+      "alpha launch ownership",
+      "--json",
+      "--limit",
+      "3",
+    ]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+
+    const payload = JSON.parse(json.stdout) as {
+      readonly overview: {
+        readonly readFirst: ReadonlyArray<{
+          readonly path: string;
+          readonly reason: string;
+        }>;
+        readonly decisions: ReadonlyArray<{
+          readonly path: string;
+          readonly predicate: string;
+          readonly text: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
+      };
+      readonly markdown: string;
+    };
+
+    expect(payload.markdown).toContain("## Decisions");
+    expect(payload.markdown).toContain("dome.intake.decision");
+    expect(payload.markdown).toContain(
+      "Danny owns platform runtime for alpha launch",
+    );
+    expect(payload.overview.readFirst.some((item) =>
+      item.path === "wiki/generated/intake/alpha-decision.md" &&
+      item.reason.includes("1 decision(s)")
+    )).toBe(true);
+    expect(payload.overview.decisions).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/generated/intake/alpha-decision.md",
+        predicate: "dome.intake.decision",
+        text: "Danny owns platform runtime for alpha launch",
+      }),
+    );
+    const decision = payload.overview.decisions.find(
+      (item) => item.predicate === "dome.intake.decision",
+    );
+    expect(decision?.sourceRefs[0]?.path).toBe(
+      "wiki/generated/intake/alpha-decision.md",
+    );
+  },
+);

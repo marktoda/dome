@@ -36,7 +36,7 @@ const TASK_DUE_MARKER =
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.5",
+  version: "0.1.6",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -137,6 +137,7 @@ type ContextEntry = {
 type ContextOverview = {
   readonly readFirst: ReadonlyArray<ContextReadFirst>;
   readonly openLoops: ReadonlyArray<ContextOpenLoop>;
+  readonly decisions: ReadonlyArray<ContextDecision>;
   readonly unresolvedQuestions: ReadonlyArray<ContextQuestionSummary>;
   readonly diagnostics: ReadonlyArray<ContextDiagnosticSummary>;
 };
@@ -157,6 +158,13 @@ type ContextFact = {
 };
 
 type ContextOpenLoop = {
+  readonly path: string;
+  readonly predicate: string;
+  readonly text: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextDecision = {
   readonly path: string;
   readonly predicate: string;
   readonly text: string;
@@ -265,6 +273,9 @@ function buildOverview(
     openLoops: Object.freeze(
       uniqueOpenLoops(entries).slice(0, MAX_RELATED_ROWS),
     ),
+    decisions: Object.freeze(
+      uniqueDecisions(entries).slice(0, MAX_RELATED_ROWS),
+    ),
     unresolvedQuestions: Object.freeze(
       uniqueQuestions(entries).slice(0, MAX_RELATED_ROWS),
     ),
@@ -276,11 +287,13 @@ function buildOverview(
 
 function readFirstReason(topic: string, entry: ContextEntry): string {
   const openLoops = entry.facts.filter(isOpenLoopFact).length;
+  const decisions = entry.facts.filter(isDecisionFact).length;
   const parts = [
     `matches "${topic}"`,
     entry.type === null ? null : `${entry.type} page`,
     entry.questions.length === 0 ? null : `${entry.questions.length} question(s)`,
     openLoops === 0 ? null : `${openLoops} open loop(s)`,
+    decisions === 0 ? null : `${decisions} decision(s)`,
     entry.diagnostics.length === 0
       ? null
       : `${entry.diagnostics.length} diagnostic(s)`,
@@ -296,6 +309,28 @@ function uniqueOpenLoops(
   for (const entry of entries) {
     for (const fact of entry.facts) {
       if (!isOpenLoopFact(fact)) continue;
+      const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(Object.freeze({
+        path: entry.path,
+        predicate: fact.predicate,
+        text: fact.object,
+        sourceRefs: fact.sourceRefs,
+      }));
+    }
+  }
+  return Object.freeze(out);
+}
+
+function uniqueDecisions(
+  entries: ReadonlyArray<ContextEntry>,
+): ReadonlyArray<ContextDecision> {
+  const seen = new Set<string>();
+  const out: ContextDecision[] = [];
+  for (const entry of entries) {
+    for (const fact of entry.facts) {
+      if (!isDecisionFact(fact)) continue;
       const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -356,6 +391,13 @@ function isOpenLoopFact(fact: ContextFact): boolean {
   return (
     fact.predicate === "dome.daily.open_task" ||
     fact.predicate === "dome.daily.followup"
+  );
+}
+
+function isDecisionFact(fact: ContextFact): boolean {
+  return (
+    fact.predicate === "dome.intake.decision" ||
+    fact.predicate === "dome.daily.decision"
   );
 }
 
@@ -464,6 +506,17 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
   if (overview.openLoops.length > 0) {
     lines.push("## Open Loops");
     for (const item of overview.openLoops) {
+      const refs = item.sourceRefs.map(formatSourceRef).join(", ");
+      lines.push(
+        `- \`${item.path}\` \`${item.predicate}\`: ${item.text} (${refs})`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (overview.decisions.length > 0) {
+    lines.push("## Decisions");
+    for (const item of overview.decisions) {
       const refs = item.sourceRefs.map(formatSourceRef).join(", ");
       lines.push(
         `- \`${item.path}\` \`${item.predicate}\`: ${item.text} (${refs})`,

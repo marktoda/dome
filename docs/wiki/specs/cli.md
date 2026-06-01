@@ -671,9 +671,9 @@ the same adopted-state retrieval substrate as `dome query`, then renders a
 portable markdown packet for another Claude session, review, or handoff.
 
 Default text output is the markdown packet itself. It starts with an overview:
-read-first paths, source-backed open loops, unresolved questions with
-automation policy metadata and `dome resolve` hints, and active diagnostics.
-It then includes matching paths,
+read-first paths, source-backed open loops, source-backed decisions,
+unresolved questions with automation policy metadata and `dome resolve` hints,
+and active diagnostics. It then includes matching paths,
 snippets, related facts, related diagnostics, related open questions, and
 SourceRefs per match. Per-match related fact, diagnostic, and question sections
 are bounded in the rendered packet and include omitted-row hints when more
