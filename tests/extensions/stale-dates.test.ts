@@ -11,7 +11,7 @@ const BASE_COMMIT = commitOid("1111111111111111111111111111111111111111");
 const HEAD_COMMIT = commitOid("2222222222222222222222222222222222222222");
 
 describe("dome.markdown.stale-dates", () => {
-  test("rebuild-style runs warn when updated trails git lastChangedAt", async () => {
+  test("rebuild-style runs report info when updated trails git lastChangedAt", async () => {
     const effects = await runStaleDates({
       path: "wiki/project-alpha.md",
       content:
@@ -27,6 +27,7 @@ describe("dome.markdown.stale-dates", () => {
 
     expect(effects.length).toBe(1);
     const diagnostic = expectDiagnostic(effects, 0);
+    expect(diagnostic.severity).toBe("info");
     expect(diagnostic.code).toBe("dome.markdown.stale-updated");
     expect(diagnostic.message).toContain("was last changed on 2026-05-28");
   });

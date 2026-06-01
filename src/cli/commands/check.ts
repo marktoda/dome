@@ -18,6 +18,7 @@ import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
 import {
+  countAttentionDiagnostics,
   formatSourceRefs,
   summarizeDiagnosticEffects,
   type DiagnosticSummary,
@@ -67,6 +68,7 @@ type CheckReport = {
 
 type CheckContentReport = {
   readonly diagnostics: number;
+  readonly attention_diagnostics: number;
   readonly summary: DiagnosticSummary;
   readonly items: ReadonlyArray<CheckDiagnosticItem>;
 };
@@ -203,6 +205,7 @@ function collectContentReport(opts: {
 }): CheckContentReport {
   return Object.freeze({
     diagnostics: opts.diagnostics.length,
+    attention_diagnostics: countAttentionDiagnostics(opts.diagnostics),
     summary: summarizeDiagnosticEffects(opts.diagnostics, opts.limit),
     items: Object.freeze(
       opts.diagnostics.slice(0, opts.limit).map((diagnostic) =>
@@ -245,11 +248,11 @@ function buildReport(input: {
   readonly decisions: CheckDecisionReport | null;
 }): CheckReport {
   const engineFindings = input.engine?.summary.findingCount ?? 0;
-  const diagnostics = input.content?.diagnostics ?? 0;
+  const attentionDiagnostics = input.content?.attention_diagnostics ?? 0;
   const questions = input.decisions?.questions ?? 0;
   return Object.freeze({
     schema: SCHEMA,
-    status: engineFindings > 0 || diagnostics > 0 || questions > 0
+    status: engineFindings > 0 || attentionDiagnostics > 0 || questions > 0
       ? "attention"
       : "ok",
     generatedAt: input.generatedAt,
@@ -259,7 +262,7 @@ function buildReport(input: {
     decisions: input.decisions,
     next_actions: nextActionsForCheck({
       engineFindings,
-      diagnostics,
+      diagnostics: attentionDiagnostics,
       questions,
       firstQuestionId: input.decisions?.items[0]?.id ?? null,
     }),

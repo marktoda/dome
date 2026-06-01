@@ -1476,6 +1476,7 @@ describe("runCheck", () => {
     expect(record(record(parsed["engine"])["summary"])["findingCount"])
       .toBeGreaterThan(0);
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
+    expect(record(parsed["content"])["attention_diagnostics"]).toBe(1);
     expect(record(parsed["decisions"])["questions"]).toBe(1);
     expect(parsed["next_actions"]).toEqual([
       {
@@ -1497,6 +1498,52 @@ describe("runCheck", () => {
           "Fix the source markdown issue(s), commit the change, then run dome sync --json.",
       },
     ]);
+  });
+
+  test("--json treats info-only diagnostics as visible but non-attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "check.info",
+          message: "informational diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["status"]).toBe("ok");
+    expect(record(parsed["content"])["diagnostics"]).toBe(1);
+    expect(record(parsed["content"])["attention_diagnostics"]).toBe(0);
+    expect(parsed["next_actions"]).toEqual([]);
   });
 
   test("scope flags select one check surface", async () => {
@@ -1782,6 +1829,58 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json mode does not route info-only diagnostics to attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "status.info",
+          message: "informational diagnostic",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.status",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["attention"]).toContain("sync_needed");
+    expect(parsed["attention"]).not.toContain("diagnostics");
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["sync_needed"],
+        command: "dome sync --json",
+        description:
+          "Run one compiler tick to adopt pending commits or drain due operational work.",
+      },
+    ]);
   });
 
   test("--json mode reports stale projection rows as attention", async () => {

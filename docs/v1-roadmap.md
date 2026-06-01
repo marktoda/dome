@@ -843,7 +843,7 @@ Fold these into nearby milestone work when they are on-path:
 - [x] Managed-date maintenance: `dome.markdown.normalize-frontmatter` now
       refreshes existing stale `updated:` fields on managed `wiki/` pages
       during adoption, while `dome.markdown.stale-dates` remains a read-only
-      rebuild/check diagnostic for historical drift.
+      informational rebuild/check diagnostic for historical drift.
 - [x] Default page-type schema precision: descriptive/import metadata fields
       (`description:`, `name:`, `metadata:`) are accepted on default managed
       page types, and entity `status:` is accepted, matching real

@@ -4,7 +4,8 @@
 // git commit date that last changed that path in the candidate snapshot.
 // Active Proposals are repaired by normalize-frontmatter before convergence;
 // this read-only processor remains the adopted-state/rebuild check so stale
-// historical pages are still visible until they are touched or fixed.
+// historical pages stay visible as informational diagnostics until they are
+// touched or fixed.
 
 import matter from "gray-matter";
 
@@ -26,7 +27,7 @@ const MAX_DRIFT_DAYS = 1;
 
 const staleDates: Processor = defineProcessor({
   id: "dome.markdown.stale-dates",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -59,7 +60,7 @@ const staleDates: Processor = defineProcessor({
 
       diagnostics.push(
         diagnosticEffect({
-          severity: "warning",
+          severity: "info",
           code: CODE_STALE_UPDATED,
           message:
             `Frontmatter \`updated:\` is ${updated.date}, but ${path} ` +

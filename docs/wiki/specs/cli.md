@@ -254,7 +254,9 @@ reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
-`outbox_pending`, `outbox_failed`, and `quarantined`.
+`outbox_pending`, `outbox_failed`, and `quarantined`. Informational
+diagnostics remain visible in `diagnostics` and `diagnostic_summary`, but only
+warning/error/block diagnostics contribute the `diagnostics` attention reason.
 
 The analytics are cheap first-glance counts, not a graph report:
 markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
@@ -283,8 +285,9 @@ Default scope includes:
   divergence, projection cache drift, instruction drift, schema mismatches,
   failed or stuck outbox rows, orphan runs, quarantines, and model-provider
   configuration gaps;
-- **content:** unresolved DiagnosticEffect rows with bounded grouping and
-  SourceRefs;
+- **content:** unresolved DiagnosticEffect rows with bounded grouping,
+  SourceRefs, total diagnostics, and warning/error/block diagnostics that
+  require attention;
 - **decisions:** unresolved QuestionEffect rows with row ids, options, and
   SourceRefs.
 
@@ -293,7 +296,7 @@ or more scopes. `--limit` bounds rows per section. `--json` emits the
 structured `dome.check/v1` payload. Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"summary":{"total":2},"items":[]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"..."}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2},"items":[]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"processor_id":"dome.health.outbox-recovery-questions","source_refs":"..."}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <choice>","description":"Resolve an open Dome decision after choosing the correct option."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the

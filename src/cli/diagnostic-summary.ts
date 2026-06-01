@@ -24,6 +24,18 @@ const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
   info: 3,
 };
 
+export function isAttentionDiagnostic(
+  diagnostic: Pick<DiagnosticEffect, "severity">,
+): boolean {
+  return diagnostic.severity !== "info";
+}
+
+export function countAttentionDiagnostics(
+  diagnostics: ReadonlyArray<Pick<DiagnosticEffect, "severity">>,
+): number {
+  return diagnostics.filter(isAttentionDiagnostic).length;
+}
+
 export function summarizeDiagnosticEffects(
   diagnostics: ReadonlyArray<DiagnosticEffect>,
   limit: number,

@@ -28,7 +28,7 @@ metadata: { ... }                 # optional; import/source-specific metadata ba
 ---
 ```
 
-For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates. On active Proposals, `dome.markdown.normalize-frontmatter` refreshes an existing managed `wiki/` page `updated:` date when it drifts from git history; during adopted-state rebuild/check, `dome.markdown.stale-dates` warns about remaining stale historical pages. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
+For v1, `dome.markdown.lint-frontmatter` requires frontmatter and `type:` on `wiki/` pages. `created:` and `updated:` are recommended; when present they must be parseable dates. On active Proposals, `dome.markdown.normalize-frontmatter` refreshes an existing managed `wiki/` page `updated:` date when it drifts from git history; during adopted-state rebuild/check, `dome.markdown.stale-dates` reports remaining stale historical pages as informational diagnostics. User-owned or ephemeral roots (`notes/`, `raw/`, `inbox/`) may omit frontmatter; if they include a frontmatter block, Dome still validates parseability and structured fields such as `updated:` and `tags:`. Reserved root files (`AGENTS.md`, `CLAUDE.md`, `index.md`, `log.md`), templates, assets, and external markdown are outside the frontmatter lint surface.
 
 ### Type field
 
@@ -42,7 +42,7 @@ Type validation against the declared page types is the `dome.markdown.type-unkno
 
 ### Created / updated
 
-`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is expected to match the date of the page's most recent committed content change. For managed `wiki/` pages with an existing `updated:` field, `dome.markdown.normalize-frontmatter` auto-patches drift greater than one day during adoption. `dome.markdown.stale-dates` remains a read-only rebuild/check diagnostic for adopted pages that predate the auto-bump policy or have not yet been touched.
+`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is expected to match the date of the page's most recent committed content change. For managed `wiki/` pages with an existing `updated:` field, `dome.markdown.normalize-frontmatter` auto-patches drift greater than one day during adoption. `dome.markdown.stale-dates` remains a read-only informational rebuild/check diagnostic for adopted pages that predate the auto-bump policy or have not yet been touched.
 
 ### Sources
 

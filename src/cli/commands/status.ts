@@ -81,6 +81,7 @@ import { queryQuestions } from "../../projections/questions";
 import { resolveBundleRoots } from "./sync-shared";
 
 import {
+  countAttentionDiagnostics,
   summarizeDiagnosticEffects,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
@@ -249,6 +250,7 @@ export async function runStatus(
           });
     const diagnosticRows = queryDiagnostics(runtime.projectionDb);
     const diagnostics = diagnosticRows.length;
+    const attentionDiagnostics = countAttentionDiagnostics(diagnosticRows);
     const diagnostic_summary = summarizeDiagnosticEffects(
       diagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
@@ -274,7 +276,7 @@ export async function runStatus(
       pendingRuns: pending_runs,
       failedRuns: failed_runs,
       serveStatus: serve.status,
-      diagnostics,
+      diagnostics: attentionDiagnostics,
       questions,
       outboxPending: outbox_pending,
       outboxFailed: outbox_failed,
