@@ -11,6 +11,7 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 import { formatJson } from "../format";
+import { resolveQuestionCommand } from "../../question-resolution";
 
 export type QueryCommandOptions = {
   readonly text?: string | undefined;
@@ -226,7 +227,7 @@ function parseQuestions(
         const id = numberValue(record.id) ?? 0;
         const options = Object.freeze(parseStringArray(record.options));
         const resolveCommand = stringOrEmpty(record.resolveCommand) ||
-          resolveCommandFor(id, options);
+          resolveQuestionCommand({ id, options });
         return Object.freeze({
           id,
           question,
@@ -244,16 +245,6 @@ function parseStringArray(raw: unknown): ReadonlyArray<string> {
   return Object.freeze(raw.filter((item): item is string =>
     typeof item === "string"
   ));
-}
-
-function resolveCommandFor(
-  id: number,
-  options: ReadonlyArray<string>,
-): string {
-  const placeholder = options.length === 0
-    ? "<answer>"
-    : `<${options.join("|")}>`;
-  return `dome resolve ${id} ${placeholder}`;
 }
 
 function stringOrEmpty(value: unknown): string {

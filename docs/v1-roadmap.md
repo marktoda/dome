@@ -767,6 +767,9 @@ Work:
 - [x] Make `dome check --json` question next actions include explicit option
       placeholders such as `<track|ignore>`, so Claude Code does not need to
       infer valid `dome resolve` choices from a separate payload field.
+- [x] Carry per-decision `resolveCommand` hints through `dome check` JSON and
+      text rows, so multiple open decisions remain directly actionable instead
+      of only the first question's next action.
 - [x] Make successful text `dome sync` output print durable attention and
       next-action lines, so a human does not see only "already in sync" while
       diagnostics or questions still need follow-up.

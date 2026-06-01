@@ -1489,6 +1489,9 @@ describe("runCheck", () => {
     const decisionItems =
       record(parsed["decisions"])["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(decisionItems[0]?.["source_refs"]).toContain("wiki/seed.md");
+    expect(decisionItems[0]?.["resolveCommand"]).toBe(
+      "dome resolve 1 <yes|no>",
+    );
     const decisionSourceRefs =
       decisionItems[0]?.["sourceRefs"] as ReadonlyArray<Record<string, unknown>>;
     expect(decisionSourceRefs[0]?.["path"]).toBe("wiki/seed.md");
@@ -1513,6 +1516,12 @@ describe("runCheck", () => {
           "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
+
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath, decisions: true })).toBe(0);
+    expect(captured.out.join("\n")).toContain(
+      "resolve: dome resolve 1 <yes|no>",
+    );
   });
 
   test("--json treats info-only diagnostics as visible but non-attention", async () => {

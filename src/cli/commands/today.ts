@@ -1,6 +1,7 @@
 // cli/commands/today: first-class wrapper for the dome.daily.today view.
 
 import { formatJson } from "../format";
+import { resolveQuestionCommand } from "../../question-resolution";
 import {
   defaultLocalDateString,
   validateDateOption,
@@ -226,7 +227,7 @@ function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
         question: stringOrEmpty(record.question),
         options,
         resolveCommand: stringOrEmpty(record.resolveCommand) ||
-          resolveCommandFor(id, options),
+          resolveQuestionCommand({ id, options }),
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
       });
@@ -239,13 +240,6 @@ function parseStringArray(raw: unknown): ReadonlyArray<string> {
   return Object.freeze(raw.filter((item): item is string =>
     typeof item === "string"
   ));
-}
-
-function resolveCommandFor(id: number, options: ReadonlyArray<string>): string {
-  const placeholder = options.length === 0
-    ? "<answer>"
-    : `<${options.join("|")}>`;
-  return `dome resolve ${id} ${placeholder}`;
 }
 
 function sourceLabel(item: {

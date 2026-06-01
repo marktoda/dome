@@ -18,6 +18,7 @@ import {
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
+import { resolveQuestionCommand } from "../../question-resolution";
 import {
   countAttentionDiagnostics,
   formatSourceRefs,
@@ -96,6 +97,7 @@ type CheckQuestionItem = {
   readonly id: number;
   readonly question: string;
   readonly options: ReadonlyArray<string> | null;
+  readonly resolveCommand: string;
   readonly processor_id: string;
   readonly source_refs: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
@@ -245,16 +247,21 @@ function collectDecisionReport(opts: {
   return Object.freeze({
     questions: opts.questions.length,
     items: Object.freeze(
-      opts.questions.slice(0, opts.limit).map((question) =>
-        Object.freeze({
+      opts.questions.slice(0, opts.limit).map((question) => {
+        const options = question.effect.options ?? null;
+        return Object.freeze({
           id: question.id,
           question: question.effect.question,
-          options: question.effect.options ?? null,
+          options,
+          resolveCommand: resolveQuestionCommand({
+            id: question.id,
+            options,
+          }),
           processor_id: question.processorId,
           source_refs: formatSourceRefs(question.effect.sourceRefs),
           sourceRefs: question.effect.sourceRefs,
-        })
-      ),
+        });
+      }),
     ),
   });
 }
@@ -375,6 +382,7 @@ function printQuestions(items: ReadonlyArray<CheckQuestionItem>): void {
     const options = item.options === null ? "" : ` options: ${item.options.join(", ")}`;
     console.log(`  - #${item.id}: ${item.question}${options}`);
     console.log(`    ${item.source_refs}`);
+    console.log(`    resolve: ${item.resolveCommand}`);
   }
 }
 

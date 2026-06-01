@@ -2,6 +2,7 @@
 
 import type { ProjectionQuestion } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { resolveQuestionCommand } from "../../../../src/question-resolution";
 
 export type SearchQuestionItem = ProjectionQuestion & {
   readonly options: ReadonlyArray<string>;
@@ -15,7 +16,7 @@ export function questionItemFromProjection(
   return Object.freeze({
     ...question,
     options,
-    resolveCommand: resolveCommandFor(question.id, options),
+    resolveCommand: resolveQuestionCommand({ id: question.id, options }),
   });
 }
 
@@ -67,14 +68,4 @@ export function uniqueSourceRefs(
     out.push(ref);
   }
   return Object.freeze(out);
-}
-
-function resolveCommandFor(
-  id: number,
-  options: ReadonlyArray<string>,
-): string {
-  const placeholder = options.length === 0
-    ? "<answer>"
-    : `<${options.join("|")}>`;
-  return `dome resolve ${id} ${placeholder}`;
 }

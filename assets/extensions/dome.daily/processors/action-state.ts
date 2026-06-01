@@ -6,6 +6,7 @@ import type {
 } from "../../../../src/core/effect";
 import type { ProcessorContext } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { resolveQuestionCommand } from "../../../../src/question-resolution";
 
 import {
   dailyPath,
@@ -221,18 +222,11 @@ function questionItemFromEffect(
     id,
     question: question.question,
     options,
-    resolveCommand: resolveCommandFor(id, options),
+    resolveCommand: resolveQuestionCommand({ id, options }),
     path: ref?.path ?? "",
     line: ref?.range?.startLine ?? null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   });
-}
-
-function resolveCommandFor(id: number, options: ReadonlyArray<string>): string {
-  const placeholder = options.length === 0
-    ? "<answer>"
-    : `<${options.join("|")}>`;
-  return `dome resolve ${id} ${placeholder}`;
 }
 
 function literalToString(value: FactEffect["object"]): string {

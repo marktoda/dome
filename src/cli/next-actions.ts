@@ -1,3 +1,8 @@
+import {
+  questionResolutionDescription,
+  resolveQuestionCommand,
+} from "../question-resolution";
+
 export type CliNextAction = {
   readonly reasons: ReadonlyArray<string>;
   readonly command: string | null;
@@ -152,7 +157,7 @@ export function nextActionsForCheck(input: {
         id: input.firstQuestionId,
         options: input.firstQuestionOptions,
       }),
-      description: questionDescription(input.firstQuestionOptions),
+      description: questionResolutionDescription(input.firstQuestionOptions),
     }));
   }
   if (input.engineFindings > 0) {
@@ -181,30 +186,6 @@ export function nextActionsForCheck(input: {
     }
   }
   return Object.freeze(out);
-}
-
-function resolveQuestionCommand(input: {
-  readonly id: number | null;
-  readonly options: ReadonlyArray<string> | null;
-}): string {
-  const id = input.id === null ? "<question-id>" : String(input.id);
-  return `dome resolve ${id} ${questionValuePlaceholder(input.options)}`;
-}
-
-function questionValuePlaceholder(
-  options: ReadonlyArray<string> | null,
-): string {
-  if (options === null || options.length === 0) return "<answer>";
-  return `<${options.join("|")}>`;
-}
-
-function questionDescription(
-  options: ReadonlyArray<string> | null,
-): string {
-  if (options === null || options.length === 0) {
-    return "Resolve an open Dome decision by providing an answer.";
-  }
-  return "Resolve an open Dome decision using one of the listed options.";
 }
 
 function pushAction(
