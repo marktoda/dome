@@ -188,24 +188,31 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"diagnosticCount":0},"health":{"pendingRuns":0,"failedRuns":0,"diagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
 `garden` summarizes post-adoption garden PatchEffects that spawned
 sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
-the scheduled/job/outbox pump. `diagnostics` contains adoption diagnostics plus
-garden and operational diagnostics; for `"in-sync"`, it can contain only
-operational diagnostics because no adoption ran.
+the scheduled/job/outbox pump. `health` summarizes durable post-tick attention
+state, including pending/failed runs, unresolved projection diagnostics,
+open questions, failed/pending outbox rows, and quarantines. `diagnostics`
+contains adoption diagnostics plus garden and operational diagnostics; for
+`"in-sync"`, it can contain only operational diagnostics because no adoption
+ran.
 `attention_required` is the agent-facing branch point. It is true for blocked
 or errored adoption, compiler-host busy responses, garden rejected patches,
-garden diagnostics, or operational diagnostics. `attention` contains stable
+garden diagnostics, operational diagnostics, or durable health attention such
+as unresolved warning/error/block content diagnostics and open questions.
+`attention` contains stable
 reason codes such as `adoption_blocked`, `compiler_host_busy`,
 `garden_rejected_patches`, `garden_diagnostics`, and
 `operational_diagnostics` so Claude Code can choose a recovery path without
 deriving one from counters. `next_actions` maps those reasons to the next
 command, using `dome check --json` for attention that needs explanation and
-`dome sync --json` for retry/drain cases.
+`dome sync --json` for retry/drain cases. If durable content diagnostics are
+the only check-oriented sync attention reason, the next action routes directly
+to `dome check --content --attention --limit 50 --json`.
 
 `--quiet` suppresses non-error human-readable text for adopted / in-sync
 outcomes. It does not suppress `--json`, usage errors, blocked-adoption

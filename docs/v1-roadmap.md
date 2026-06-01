@@ -761,6 +761,9 @@ Work:
 - [x] Add `dome today --limit` and default bounded sections, after the real
       work vault exposed that the primary daily task surface could print a
       100-line backlog and become hard for Claude Code to scan.
+- [x] Align `dome sync --json` durable attention with `dome status --json`
+      by surfacing persistent content diagnostic counts and routing
+      diagnostics-only sync attention to the bounded content-check command.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

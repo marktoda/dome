@@ -33,6 +33,7 @@ const SYNC_CHECK_REASONS = Object.freeze([
   "operational_diagnostics",
   "pending_runs",
   "failed_runs",
+  "diagnostics",
   "questions",
   "outbox_failed",
   "quarantined",
@@ -92,6 +93,28 @@ export function nextActionsForSync(input: {
       "Run another compiler tick after the active host or pending operational work clears.",
   });
 
+  const checkReasons = SYNC_CHECK_REASONS.filter((reason) =>
+    attention.includes(reason),
+  );
+  const nonDiagnosticCheckReasons = checkReasons.filter(
+    (reason) => reason !== "diagnostics",
+  );
+  if (nonDiagnosticCheckReasons.length > 0) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(checkReasons),
+      command: "dome check --json",
+      description:
+        "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
+    }));
+  } else if (checkReasons.includes("diagnostics")) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(["diagnostics"]),
+      command: "dome check --content --attention --limit 50 --json",
+      description:
+        "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
+    }));
+  }
+
   pushAction(out, attention, ["detached_head"], {
     command: "git status --short --branch",
     description:
@@ -108,12 +131,6 @@ export function nextActionsForSync(input: {
     command: "git log --oneline --decorate --graph --all -20",
     description:
       "Inspect rewritten branch history before choosing the adopted-ref recovery path.",
-  });
-
-  pushAction(out, attention, SYNC_CHECK_REASONS, {
-    command: "dome check --json",
-    description:
-      "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
   });
 
   return Object.freeze(out);

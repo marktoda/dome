@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 
 import { runSync } from "../../src/cli/commands/sync";
 
-import { externalActionEffect } from "../../src/core/effect";
+import { diagnosticEffect, externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo, writeRef } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
@@ -56,6 +56,7 @@ import {
   markFailed as markOutboxFailed,
   queryOutbox,
 } from "../../src/outbox/dispatch";
+import { insertDiagnostic } from "../../src/projections/diagnostics";
 
 // ----- Paths ----------------------------------------------------------------
 
@@ -95,6 +96,8 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
   failedRuns: 0,
+  diagnostics: 0,
+  attentionDiagnostics: 0,
   questions: 0,
   outboxPending: 0,
   outboxFailed: 0,
@@ -489,6 +492,71 @@ describe("runSync idempotent", () => {
         command: "dome check --json",
         description:
           "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
+      },
+    ]);
+  }, 10_000);
+
+  test("--json reports persistent content diagnostic attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      insertDiagnostic(runtimeResult.value.projectionDb, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "sync.warning",
+          message: "actionable diagnostic",
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        processorId: "test.sync",
+        proposalId: null,
+        adoptedCommit: commitOid(f.initialSha),
+      });
+    } finally {
+      await runtimeResult.value.close();
+    }
+
+    expect(await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    })).toBe(0);
+
+    const parsed = parseSingleJsonObject();
+    expect(parsed["status"]).toBe("in-sync");
+    expect(parsed["health"]).toEqual({
+      ...EMPTY_HEALTH_SUMMARY,
+      diagnostics: 1,
+      attentionDiagnostics: 1,
+    });
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(["diagnostics"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["diagnostics"],
+        command: "dome check --content --attention --limit 50 --json",
+        description:
+          "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
   }, 10_000);

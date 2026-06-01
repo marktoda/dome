@@ -52,8 +52,10 @@ import {
 import { formatJson } from "../format";
 import { queryRuns, type RunStatus } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
+import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
 import { nextActionsForSync, type CliNextAction } from "../next-actions";
+import { countAttentionDiagnostics } from "../diagnostic-summary";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -112,6 +114,8 @@ type SyncOperationalSummary = {
 type SyncHealthSummary = {
   readonly pendingRuns: number;
   readonly failedRuns: number;
+  readonly diagnostics: number;
+  readonly attentionDiagnostics: number;
   readonly questions: number;
   readonly outboxPending: number;
   readonly outboxFailed: number;
@@ -433,6 +437,7 @@ function syncAttention(input: {
   }
   if (input.health.pendingRuns > 0) out.push("pending_runs");
   if (input.health.failedRuns > 0) out.push("failed_runs");
+  if (input.health.attentionDiagnostics > 0) out.push("diagnostics");
   if (input.health.questions > 0) out.push("questions");
   if (input.health.outboxPending > 0) out.push("outbox_pending");
   if (input.health.outboxFailed > 0) out.push("outbox_failed");
@@ -519,6 +524,8 @@ function emptyHealthSummary(): SyncHealthSummary {
   return Object.freeze({
     pendingRuns: 0,
     failedRuns: 0,
+    diagnostics: 0,
+    attentionDiagnostics: 0,
     questions: 0,
     outboxPending: 0,
     outboxFailed: 0,
@@ -527,9 +534,12 @@ function emptyHealthSummary(): SyncHealthSummary {
 }
 
 function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
+  const diagnostics = queryDiagnostics(runtime.projectionDb);
   return Object.freeze({
     pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
     failedRuns: countLatestProblemRuns(runtime),
+    diagnostics: diagnostics.length,
+    attentionDiagnostics: countAttentionDiagnostics(diagnostics),
     questions: queryQuestions(runtime.projectionDb, { resolved: false }).length,
     outboxPending: queryOutbox(runtime.outboxDb, { status: "pending" }).length,
     outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,
