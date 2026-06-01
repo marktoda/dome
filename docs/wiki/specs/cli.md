@@ -515,8 +515,10 @@ project/entity task debt.
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload, including
-`sourceCounts` plus per-item `source` fields. `--date` is for reviewing
-another day and for deterministic tests; omitted means local today.
+`sourceCounts`, `shown`, `omitted`, plus per-item `source` fields. `shown` and
+`omitted` mirror the bounded arrays so agents do not need to infer truncation
+from array lengths. `--date` is for reviewing another day and for
+deterministic tests; omitted means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -547,9 +549,10 @@ acted on without a separate diagnostic command when the decision is clear.
 
 `--limit` bounds each rendered section, the prioritized start list, and the
 markdown packet's SourceRefs section. `--json` emits the structured
-`dome.daily.prep/v1` payload, including the markdown packet under `markdown`.
-`--date` is for prepping a chosen day and for deterministic tests; omitted
-means local today.
+`dome.daily.prep/v1` payload, including `shown` / `omitted` counts for the
+bounded start list and action sections, plus the markdown packet under
+`markdown`. `--date` is for prepping a chosen day and for deterministic tests;
+omitted means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 

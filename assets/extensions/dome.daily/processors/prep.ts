@@ -27,7 +27,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -37,10 +37,29 @@ const prep: Processor = defineProcessor({
       ctx,
       inputDateOrLocalToday(ctx.input),
     );
-    const planningItems = prioritizedPlanningItems(actionState, limit);
+    const allPlanningItems = prioritizedPlanningItems(
+      actionState,
+      Number.MAX_SAFE_INTEGER,
+    );
+    const planningItems = Object.freeze(allPlanningItems.slice(0, limit));
     const followups = Object.freeze(actionState.followups.slice(0, limit));
     const openTasks = Object.freeze(actionState.openTasks.slice(0, limit));
     const questions = Object.freeze(actionState.questions.slice(0, limit));
+    const shown = Object.freeze({
+      planningItems: planningItems.length,
+      followups: followups.length,
+      openTasks: openTasks.length,
+      questions: questions.length,
+    });
+    const omitted = Object.freeze({
+      planningItems: Math.max(
+        0,
+        allPlanningItems.length - shown.planningItems,
+      ),
+      followups: Math.max(0, actionState.counts.followups - shown.followups),
+      openTasks: Math.max(0, actionState.counts.openTasks - shown.openTasks),
+      questions: Math.max(0, actionState.counts.questions - shown.questions),
+    });
     const scope = prepScope({
       state: actionState,
       planningItems,
@@ -55,6 +74,8 @@ const prep: Processor = defineProcessor({
       daily: actionState.daily,
       counts: actionState.counts,
       sourceCounts: actionState.sourceCounts,
+      shown,
+      omitted,
       planningItems,
       followups,
       openTasks,

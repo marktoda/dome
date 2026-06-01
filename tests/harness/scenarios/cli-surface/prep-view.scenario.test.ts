@@ -122,6 +122,18 @@ scenario(
           readonly questions: number;
         };
       };
+      readonly shown: {
+        readonly planningItems: number;
+        readonly followups: number;
+        readonly openTasks: number;
+        readonly questions: number;
+      };
+      readonly omitted: {
+        readonly planningItems: number;
+        readonly followups: number;
+        readonly openTasks: number;
+        readonly questions: number;
+      };
       readonly planningItems: ReadonlyArray<{
         readonly kind: string;
         readonly text: string;
@@ -147,6 +159,18 @@ scenario(
       openTasks: 2,
       followups: 1,
       questions: 1,
+    });
+    expect(payload.shown).toEqual({
+      planningItems: 2,
+      followups: 2,
+      openTasks: 2,
+      questions: 1,
+    });
+    expect(payload.omitted).toEqual({
+      planningItems: 3,
+      followups: 0,
+      openTasks: 2,
+      questions: 0,
     });
     expect(payload.planningItems.map((item) => item.kind)).toEqual([
       "followup",

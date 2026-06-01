@@ -982,6 +982,10 @@ Fold these into nearby milestone work when they are on-path:
       the text `diag top` line when warning/error/block diagnostics exist, so
       informational diagnostic volume does not compete with the immediate
       repair target during soak.
+- [x] Add explicit `shown` / `omitted` counts to `dome today --json` and
+      `dome prep --json`, matching the `dome agenda` bounded-view contract so
+      agents can tell which daily sections were truncated without inferring it
+      from array lengths.
 
 ## V1 Exit Criteria
 

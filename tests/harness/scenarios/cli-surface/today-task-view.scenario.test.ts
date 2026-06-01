@@ -90,6 +90,16 @@ scenario(
           readonly questions: number;
         };
       };
+      readonly shown: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
+      readonly omitted: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
       readonly openTasks: ReadonlyArray<{
         readonly text: string;
         readonly path: string;
@@ -130,6 +140,16 @@ scenario(
       openTasks: 2,
       followups: 1,
       questions: 1,
+    });
+    expect(payload.shown).toEqual({
+      openTasks: 4,
+      followups: 2,
+      questions: 1,
+    });
+    expect(payload.omitted).toEqual({
+      openTasks: 0,
+      followups: 0,
+      questions: 0,
     });
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
@@ -212,6 +232,16 @@ scenario(
         readonly followups: number;
         readonly questions: number;
       };
+      readonly shown: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
+      readonly omitted: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
       readonly openTasks: ReadonlyArray<{ readonly text: string }>;
       readonly followups: ReadonlyArray<{ readonly text: string }>;
       readonly questions: ReadonlyArray<{
@@ -224,6 +254,16 @@ scenario(
     expect(limitedPayload.counts.openTasks).toBe(4);
     expect(limitedPayload.counts.followups).toBe(2);
     expect(limitedPayload.counts.questions).toBe(1);
+    expect(limitedPayload.shown).toEqual({
+      openTasks: 2,
+      followups: 2,
+      questions: 1,
+    });
+    expect(limitedPayload.omitted).toEqual({
+      openTasks: 2,
+      followups: 0,
+      questions: 0,
+    });
     expect(limitedPayload.openTasks.map((task) => task.text)).toEqual(
       payload.openTasks.slice(0, 2).map((task) => task.text),
     );
