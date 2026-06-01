@@ -791,6 +791,9 @@ Work:
       real work-vault soak showed `dome check --content --attention` was
       correctly surfacing link debt but had no deterministic assist when a
       broken target is a near miss for an existing page.
+- [x] Make bounded `dome prep` markdown sections print omitted-item hints, after
+      the real work-vault soak showed `--limit 12` could hide 85 more open
+      tasks even though `dome today` already reported the omitted count.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

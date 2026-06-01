@@ -488,7 +488,8 @@ Default text output is markdown:
 - counts for open tasks, followups, and daily questions,
 - a prioritized "Start Here" section that lists followups first, unresolved
   daily questions second, and other open tasks third,
-- bounded followup / task / question sections,
+- bounded followup / task / question sections, with omitted-item hints when a
+  section is truncated,
 - SourceRefs for the backing daily note and the rendered facts/questions.
 
 Daily question rows in the markdown packet include the same durable row id and

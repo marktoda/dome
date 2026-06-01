@@ -76,6 +76,9 @@ scenario(
     );
     expect(text.stdout).toContain("resolve: dome resolve ");
     expect(text.stdout).toContain("<track|ignore>");
+    expect(text.stdout).toContain(
+      "- ... 1 more open task (use --limit 4 to show all open tasks)",
+    );
     expect(text.stdout).toContain("## SourceRefs");
 
     const json = await h.runCli([
@@ -127,6 +130,9 @@ scenario(
     expect(payload.markdown).toContain("# Dome Prep: 2026-01-05");
     expect(payload.markdown).toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain("<track|ignore>");
+    expect(payload.markdown).toContain(
+      "- ... 2 more open tasks (use --limit 4 to show all open tasks)",
+    );
     expect(payload.markdown).toContain("wiki/captures/launch.md:8-8 @");
     expect(payload.markdown).toContain("wiki/captures/launch.md:9-9 @");
     expect(payload.markdown).toContain("wiki/captures/launch.md:10-10 @");

@@ -27,7 +27,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -184,16 +184,32 @@ function renderPrepMarkdown(input: {
   }
 
   lines.push("", "## Follow-ups");
-  appendTaskSection(lines, input.followups);
+  appendTaskSection(
+    lines,
+    input.followups,
+    input.state.counts.followups,
+    "followups",
+  );
 
   lines.push("", "## Open Tasks");
-  appendTaskSection(lines, input.openTasks);
+  appendTaskSection(
+    lines,
+    input.openTasks,
+    input.state.counts.openTasks,
+    "open tasks",
+  );
 
   if (input.questions.length > 0) {
     lines.push("", "## Questions");
     for (const question of input.questions) {
       appendQuestionItem(lines, question);
     }
+    appendMoreLine(
+      lines,
+      input.state.counts.questions,
+      input.questions.length,
+      "questions",
+    );
   }
 
   lines.push("", "## SourceRefs");
@@ -249,6 +265,8 @@ function prepScope(input: {
 function appendTaskSection(
   lines: string[],
   tasks: ReadonlyArray<DailyTaskItem>,
+  total: number,
+  label: string,
 ): void {
   if (tasks.length === 0) {
     lines.push("- none");
@@ -258,6 +276,28 @@ function appendTaskSection(
     const marker = task.followup ? " [followup]" : "";
     lines.push(`- ${task.text}${marker} (${sourceLabel(task)})`);
   }
+  appendMoreLine(lines, total, tasks.length, label);
+}
+
+function appendMoreLine(
+  lines: string[],
+  total: number,
+  shown: number,
+  label: string,
+): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  const itemLabel = remaining === 1 ? singularLabel(label) : label;
+  lines.push(
+    `- ... ${remaining} more ${itemLabel} (use --limit ${total} to show all ${label})`,
+  );
+}
+
+function singularLabel(label: string): string {
+  if (label === "open tasks") return "open task";
+  if (label === "questions") return "question";
+  if (label === "followups") return "followup";
+  return label;
 }
 
 function sourceLabel(item: {

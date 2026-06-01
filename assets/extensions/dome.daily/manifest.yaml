@@ -61,7 +61,7 @@ processors:
     module: processors/today.ts
 
   - id: dome.daily.prep
-    version: 0.1.1
+    version: 0.1.2
     phase: view
     triggers:
       - kind: command
