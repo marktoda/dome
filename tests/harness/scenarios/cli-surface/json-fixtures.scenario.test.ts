@@ -106,6 +106,7 @@ const EXPORT_KEYS = Object.freeze([
   "limit",
   "shown",
   "hasMore",
+  "overview",
   "markdown",
   "entries",
 ]);

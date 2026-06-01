@@ -76,6 +76,10 @@ scenario(
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("# Dome Context: alpha launch");
+    expect(text.stdout).toContain("## Read First");
+    expect(text.stdout).toContain("## Open Loops");
+    expect(text.stdout).toContain("## Unresolved Questions");
+    expect(text.stdout).toContain("## Active Diagnostics");
     expect(text.stdout).toContain("wiki/project-alpha.md");
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
@@ -107,6 +111,24 @@ scenario(
       readonly limit: number;
       readonly shown: { readonly entries: number };
       readonly hasMore: { readonly entries: boolean };
+      readonly overview: {
+        readonly readFirst: ReadonlyArray<{
+          readonly path: string;
+          readonly reason: string;
+        }>;
+        readonly openLoops: ReadonlyArray<{
+          readonly path: string;
+          readonly text: string;
+        }>;
+        readonly unresolvedQuestions: ReadonlyArray<{
+          readonly id: number;
+          readonly resolveCommand: string;
+        }>;
+        readonly diagnostics: ReadonlyArray<{
+          readonly path: string;
+          readonly code: string;
+        }>;
+      };
       readonly markdown: string;
       readonly entries: ReadonlyArray<{
         readonly path: string;
@@ -130,6 +152,22 @@ scenario(
     expect(payload.shown.entries).toBe(payload.entries.length);
     expect(payload.hasMore.entries).toBe(false);
     expect(payload.markdown).toContain("# Dome Context: alpha launch");
+    expect(payload.overview.readFirst.map((item) => item.path)).toContain(
+      "wiki/project-alpha.md",
+    );
+    expect(payload.overview.readFirst.some((item) =>
+      item.reason.includes("open loop")
+    )).toBe(true);
+    expect(payload.overview.openLoops.some((item) =>
+      item.text ===
+        "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]"
+    )).toBe(true);
+    expect(payload.overview.unresolvedQuestions.some((item) =>
+      item.resolveCommand.includes("dome resolve")
+    )).toBe(true);
+    expect(payload.overview.diagnostics.some((diagnostic) =>
+      diagnostic.code === "dome.markdown.broken-wikilink"
+    )).toBe(true);
     const alpha = payload.entries.find(
       (entry) => entry.path === "wiki/project-alpha.md",
     );

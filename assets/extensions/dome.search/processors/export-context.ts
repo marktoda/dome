@@ -31,7 +31,7 @@ const TASK_DUE_MARKER =
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -72,6 +72,7 @@ const exportContext: Processor = defineProcessor({
         questionsByPath.get(match.path) ?? Object.freeze([]),
       ),
     );
+    const overview = buildOverview(input.topic, entries);
     const scope = uniqueSourceRefs(
       entries.flatMap((entry) => [
         ...entry.sourceRefs,
@@ -90,7 +91,8 @@ const exportContext: Processor = defineProcessor({
       hasMore: Object.freeze({
         entries: hasMoreEntries,
       }),
-      markdown: renderMarkdown(input.topic, entries, hasMoreEntries),
+      overview,
+      markdown: renderMarkdown(input.topic, overview, entries, hasMoreEntries),
       entries: Object.freeze(entries),
     });
 
@@ -127,10 +129,32 @@ type ContextEntry = {
   readonly questions: ReadonlyArray<ContextQuestion>;
 };
 
+type ContextOverview = {
+  readonly readFirst: ReadonlyArray<ContextReadFirst>;
+  readonly openLoops: ReadonlyArray<ContextOpenLoop>;
+  readonly unresolvedQuestions: ReadonlyArray<ContextQuestionSummary>;
+  readonly diagnostics: ReadonlyArray<ContextDiagnosticSummary>;
+};
+
+type ContextReadFirst = {
+  readonly path: string;
+  readonly title: string;
+  readonly reason: string;
+  readonly rank: number;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
 type ContextFact = {
   readonly predicate: string;
   readonly object: string;
   readonly assertion: FactEffect["assertion"];
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextOpenLoop = {
+  readonly path: string;
+  readonly predicate: string;
+  readonly text: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -141,6 +165,10 @@ type ContextDiagnostic = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
+type ContextDiagnosticSummary = ContextDiagnostic & {
+  readonly path: string;
+};
+
 type ContextQuestion = {
   readonly id: number;
   readonly question: string;
@@ -148,6 +176,10 @@ type ContextQuestion = {
   readonly resolveCommand: string;
   readonly processorId: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextQuestionSummary = ContextQuestion & {
+  readonly path: string;
 };
 
 function contextEntryFromMatch(
@@ -205,8 +237,122 @@ function contextEntryFromMatch(
   });
 }
 
+function buildOverview(
+  topic: string,
+  entries: ReadonlyArray<ContextEntry>,
+): ContextOverview {
+  return Object.freeze({
+    readFirst: Object.freeze(
+      entries.map((entry) =>
+        Object.freeze({
+          path: entry.path,
+          title: entry.title,
+          reason: readFirstReason(topic, entry),
+          rank: entry.rank,
+          sourceRefs: entry.sourceRefs,
+        })
+      ),
+    ),
+    openLoops: Object.freeze(
+      uniqueOpenLoops(entries).slice(0, MAX_RELATED_ROWS),
+    ),
+    unresolvedQuestions: Object.freeze(
+      uniqueQuestions(entries).slice(0, MAX_RELATED_ROWS),
+    ),
+    diagnostics: Object.freeze(
+      uniqueDiagnostics(entries).slice(0, MAX_RELATED_ROWS),
+    ),
+  });
+}
+
+function readFirstReason(topic: string, entry: ContextEntry): string {
+  const openLoops = entry.facts.filter(isOpenLoopFact).length;
+  const parts = [
+    `matches "${topic}"`,
+    entry.type === null ? null : `${entry.type} page`,
+    entry.questions.length === 0 ? null : `${entry.questions.length} question(s)`,
+    openLoops === 0 ? null : `${openLoops} open loop(s)`,
+    entry.diagnostics.length === 0
+      ? null
+      : `${entry.diagnostics.length} diagnostic(s)`,
+  ].filter((part): part is string => part !== null);
+  return parts.join("; ");
+}
+
+function uniqueOpenLoops(
+  entries: ReadonlyArray<ContextEntry>,
+): ReadonlyArray<ContextOpenLoop> {
+  const seen = new Set<string>();
+  const out: ContextOpenLoop[] = [];
+  for (const entry of entries) {
+    for (const fact of entry.facts) {
+      if (!isOpenLoopFact(fact)) continue;
+      const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(Object.freeze({
+        path: entry.path,
+        predicate: fact.predicate,
+        text: fact.object,
+        sourceRefs: fact.sourceRefs,
+      }));
+    }
+  }
+  return Object.freeze(out);
+}
+
+function uniqueQuestions(
+  entries: ReadonlyArray<ContextEntry>,
+): ReadonlyArray<ContextQuestionSummary> {
+  const seen = new Set<number>();
+  const out: ContextQuestionSummary[] = [];
+  for (const entry of entries) {
+    for (const question of entry.questions) {
+      if (seen.has(question.id)) continue;
+      seen.add(question.id);
+      out.push(Object.freeze({
+        ...question,
+        path: entry.path,
+      }));
+    }
+  }
+  return Object.freeze(out);
+}
+
+function uniqueDiagnostics(
+  entries: ReadonlyArray<ContextEntry>,
+): ReadonlyArray<ContextDiagnosticSummary> {
+  const seen = new Set<string>();
+  const out: ContextDiagnosticSummary[] = [];
+  for (const entry of entries) {
+    for (const diagnostic of entry.diagnostics) {
+      const key = [
+        entry.path,
+        diagnostic.severity,
+        diagnostic.code,
+        diagnostic.message,
+      ].join("\u0000");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(Object.freeze({
+        ...diagnostic,
+        path: entry.path,
+      }));
+    }
+  }
+  return Object.freeze(out);
+}
+
+function isOpenLoopFact(fact: ContextFact): boolean {
+  return (
+    fact.predicate === "dome.daily.open_task" ||
+    fact.predicate === "dome.daily.followup"
+  );
+}
+
 function renderMarkdown(
   topic: string,
+  overview: ContextOverview,
   entries: ReadonlyArray<ContextEntry>,
   hasMoreEntries: boolean,
 ): string {
@@ -221,6 +367,8 @@ function renderMarkdown(
     lines.push("No adopted-state matches.");
     return lines.join("\n");
   }
+
+  renderOverview(lines, overview);
 
   lines.push("## Matches");
   for (const [index, entry] of entries.entries()) {
@@ -290,6 +438,52 @@ function renderMarkdown(
   }
 
   return lines.join("\n");
+}
+
+function renderOverview(lines: string[], overview: ContextOverview): void {
+  if (overview.readFirst.length > 0) {
+    lines.push("## Read First");
+    for (const [index, item] of overview.readFirst.entries()) {
+      lines.push(
+        `${index + 1}. \`${item.path}\` - ${item.title} (${item.reason})`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (overview.openLoops.length > 0) {
+    lines.push("## Open Loops");
+    for (const item of overview.openLoops) {
+      const refs = item.sourceRefs.map(formatSourceRef).join(", ");
+      lines.push(
+        `- \`${item.path}\` \`${item.predicate}\`: ${item.text} (${refs})`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (overview.unresolvedQuestions.length > 0) {
+    lines.push("## Unresolved Questions");
+    for (const question of overview.unresolvedQuestions) {
+      const refs = question.sourceRefs.map(formatSourceRef).join(", ");
+      lines.push(
+        `- [#${question.id}] \`${question.path}\`: ${question.question} (${refs})`,
+      );
+      lines.push(`  resolve: ${question.resolveCommand}`);
+    }
+    lines.push("");
+  }
+
+  if (overview.diagnostics.length > 0) {
+    lines.push("## Active Diagnostics");
+    for (const diagnostic of overview.diagnostics) {
+      const refs = diagnostic.sourceRefs.map(formatSourceRef).join(", ");
+      lines.push(
+        `- \`${diagnostic.path}\` \`${diagnostic.severity}\` \`${diagnostic.code}\`: ${diagnostic.message} (${refs})`,
+      );
+    }
+    lines.push("");
+  }
 }
 
 function appendMoreLine(

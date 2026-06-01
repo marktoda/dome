@@ -639,20 +639,21 @@ Dedicated wrapper for the `dome.search.export-context` view processor. It uses
 the same adopted-state retrieval substrate as `dome query`, then renders a
 portable markdown packet for another Claude session, review, or handoff.
 
-Default text output is the markdown packet itself. It includes matching paths,
-snippets, related facts, related diagnostics, related open questions with
-`dome resolve` hints, and SourceRefs. Per-match related fact, diagnostic, and
-question sections are bounded in the rendered packet and include omitted-row
-hints when more related rows remain; the structured JSON entries retain the
-full related row arrays for consumers that want all evidence. Daily task facts
-use the same display convention as `dome today`: parsed `📅` due-date and
-priority glyph markers are rendered as bracketed `due` / `priority` metadata
-instead of duplicated inside the task text. Search-match entries are also
-bounded by `--limit`; the structured JSON includes `shown.entries` and
-`hasMore.entries`, and text mode prints an expansion hint when more
-adopted-state matches are detected. `--json` emits the structured
-`dome.search.export-context/v1` payload, including the packet under
-`markdown`.
+Default text output is the markdown packet itself. It starts with an overview:
+read-first paths, source-backed open loops, unresolved questions with
+`dome resolve` hints, and active diagnostics. It then includes matching paths,
+snippets, related facts, related diagnostics, related open questions, and
+SourceRefs per match. Per-match related fact, diagnostic, and question sections
+are bounded in the rendered packet and include omitted-row hints when more
+related rows remain; the structured JSON entries retain the full related row
+arrays for consumers that want all evidence. Daily task facts use the same
+display convention as `dome today`: parsed `📅` due-date and priority glyph
+markers are rendered as bracketed `due` / `priority` metadata instead of
+duplicated inside the task text. Search-match entries are also bounded by
+`--limit`; the structured JSON includes `shown.entries`, `hasMore.entries`,
+`overview`, and text mode prints an expansion hint when more adopted-state
+matches are detected. `--json` emits the structured
+`dome.search.export-context/v1` payload, including the packet under `markdown`.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 
