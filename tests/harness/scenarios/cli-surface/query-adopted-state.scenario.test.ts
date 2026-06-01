@@ -37,6 +37,7 @@ scenario(
           "type: project\n" +
           "tags:\n" +
           "  - strategy\n" +
+          "  - launch\n" +
           "---\n" +
           "# Project Alpha\n\n" +
           "Roadmap notes for the alpha launch and ownership model.\n" +
@@ -61,6 +62,7 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("wiki/project-alpha.md");
+    expect(text.stdout).toContain("dome.graph.tagged x2");
     expect(text.stdout).toContain("Questions:");
     expect(text.stdout).toContain("resolve: dome resolve ");
 
@@ -95,6 +97,10 @@ scenario(
     expect(match?.type).toBe("project");
     expect(match?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
+    expect(
+      match?.facts.filter((fact) => fact.predicate === "dome.graph.tagged")
+        .length,
+    ).toBe(2);
     expect(
       match?.diagnostics.some(
         (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",

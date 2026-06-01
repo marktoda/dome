@@ -389,7 +389,7 @@ processor-version hash is stale. Output (text mode):
    Atlas owns runtime; platform owns infrastructure boundaries...
    SourceRefs:
      - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
-   facts: dome.graph.tagged, dome.daily.followup
+   facts: dome.graph.tagged, dome.daily.followup x2
    diagnostics: dome.markdown.broken-wikilink
    Questions:
      - [#42] Possible follow-up in wiki/syntheses/platform-team-ownership.md:19...
@@ -409,6 +409,9 @@ Matches also include related page facts and unresolved diagnostics/questions
 whose SourceRefs point at the matched path. Open questions include durable row
 ids, options, and a ready-to-run `dome resolve <id> <value>` hint so recall can
 explain relevant engine state without forcing an immediate `inspect` detour.
+Text mode summarizes repeated fact predicates and diagnostic codes with counts
+(`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
+underlying structured fact and diagnostic rows unchanged.
 
 ### `dome lint [--fail-on <severity>] [--json]`
 

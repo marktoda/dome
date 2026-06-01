@@ -96,17 +96,17 @@ function formatQueryResult(data: unknown): string {
       }
     }
     if (match.facts.length > 0) {
-      const facts = match.facts
-        .slice(0, 5)
-        .map((fact) => fact.predicate)
-        .join(", ");
+      const facts = summarizeLabels(
+        match.facts.map((fact) => fact.predicate),
+        5,
+      );
       lines.push(`   facts: ${facts}`);
     }
     if (match.diagnostics.length > 0) {
-      const diagnostics = match.diagnostics
-        .slice(0, 5)
-        .map((diagnostic) => diagnostic.code)
-        .join(", ");
+      const diagnostics = summarizeLabels(
+        match.diagnostics.map((diagnostic) => diagnostic.code),
+        5,
+      );
       lines.push(`   diagnostics: ${diagnostics}`);
     }
     if (match.questions.length > 0) {
@@ -289,6 +289,23 @@ function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : null;
+}
+
+function summarizeLabels(
+  labels: ReadonlyArray<string>,
+  limit: number,
+): string {
+  const counts = new Map<string, number>();
+  for (const label of labels) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  const rendered = [...counts.entries()]
+    .slice(0, limit)
+    .map(([label, count]) => count === 1 ? label : `${label} x${count}`);
+  const omitted = counts.size - rendered.length;
+  if (omitted > 0) rendered.push(`+${omitted} more`);
+  return rendered.join(", ");
 }
 
 function formatSourceRef(ref: QuerySourceRef): string {

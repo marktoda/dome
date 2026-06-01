@@ -815,6 +815,9 @@ Work:
       actionable file/line locations while preserving commit provenance in
       structured `sourceRefs`, after real-vault soak showed older diagnostic
       commits could distract from the source fix path.
+- [x] Compress repeated related fact predicates and diagnostic codes in
+      `dome query` text output, after real-vault recall showed pages with many
+      open-task or wikilink facts repeating the same label instead of a count.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.
