@@ -2,14 +2,14 @@ id: dome.daily
 version: 0.1.7
 processors:
   - id: dome.daily.create-daily
-    version: 0.1.1
+    version: 0.1.2
     phase: garden
     triggers:
       - kind: schedule
         cron: "0 6 * * *"
     capabilities:
       - kind: read
-        paths: ["wiki/dailies/*.md", "notes/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
       - kind: patch.auto
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/create-daily.ts
@@ -92,9 +92,11 @@ processors:
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.2.0
+    version: 0.2.1
     phase: garden
     triggers:
+      - kind: schedule
+        cron: "0 6 * * *"
       - kind: signal
         name: file.created
         pathPattern: "wiki/**/*.md"

@@ -28,24 +28,23 @@ import {
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   parseDailyPath,
+  rankDailyOpenLoopSurfaceItems,
   replaceOpenLoopSurfaceSection,
   type DailyDate,
+  type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
   type DailyPathSettings,
   type DailyResolvedOpenLoopSource,
 } from "./daily-shared";
 
-const MAX_OPEN_LOOP_SURFACE_ITEMS = 24;
-
-type DailyOpenLoopCandidate = DailyOpenLoopSource & {
-  readonly lastChangedAt: string;
-};
+const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.0",
+  version: "0.2.1",
   phase: "garden",
   triggers: [
+    { kind: "schedule", cron: DAILY_CRON },
     {
       kind: "signal",
       name: "file.created",
@@ -103,6 +102,7 @@ const carryForward: Processor = defineProcessor({
     const items = await collectOpenLoopSources({
       ctx,
       targetPath,
+      settings,
       resolvedIdentities,
     });
     const nextContent = replaceOpenLoopSurfaceSection({
@@ -154,16 +154,17 @@ async function targetDailyDate(
 async function collectOpenLoopSources(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
+  readonly settings: DailyPathSettings;
   readonly resolvedIdentities: ReadonlySet<string>;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
-  const { ctx, targetPath, resolvedIdentities } = input;
+  const { ctx, targetPath, settings, resolvedIdentities } = input;
   const items: DailyOpenLoopCandidate[] = [];
   for (const path of await ctx.snapshot.listMarkdownFiles()) {
     if (path === targetPath) continue;
     const content = await ctx.snapshot.readFile(path);
     if (content === null) continue;
     const info = await ctx.snapshot.getFileInfo(path);
-    for (const item of openLoopSurfaceSources({ path, content })) {
+    for (const item of openLoopSurfaceSources({ path, content, settings })) {
       if (resolvedIdentities.has(openLoopIdentity(item))) continue;
       items.push({
         ...item,
@@ -171,7 +172,7 @@ async function collectOpenLoopSources(input: {
       });
     }
   }
-  return Object.freeze(dedupeAndSortOpenLoops(items));
+  return rankDailyOpenLoopSurfaceItems(items);
 }
 
 async function collectResolvedOpenLoopIdentities(input: {
@@ -220,51 +221,8 @@ function patchSourceRefs(
   ];
 }
 
-function dedupeAndSortOpenLoops(
-  items: ReadonlyArray<DailyOpenLoopCandidate>,
-): ReadonlyArray<DailyOpenLoopSource> {
-  const seen = new Set<string>();
-  const out: DailyOpenLoopSource[] = [];
-  for (const item of [...items].sort(compareOpenLoopSources)) {
-    const key = normalizedOpenLoopKey(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(stripCandidateMetadata(item));
-    if (out.length >= MAX_OPEN_LOOP_SURFACE_ITEMS) break;
-  }
-  return Object.freeze(out);
-}
-
-function normalizedOpenLoopKey(item: DailyOpenLoopSource): string {
-  return openLoopIdentity(item);
-}
-
 function compareDailyDates(a: DailyDate, b: DailyDate): number {
   return formatDate(a).localeCompare(formatDate(b));
-}
-
-function compareOpenLoopSources(
-  a: DailyOpenLoopCandidate,
-  b: DailyOpenLoopCandidate,
-): number {
-  const changedCmp = b.lastChangedAt.localeCompare(a.lastChangedAt);
-  if (changedCmp !== 0) return changedCmp;
-  const pathCmp = a.sourcePath.localeCompare(b.sourcePath);
-  if (pathCmp !== 0) return pathCmp;
-  const lineCmp = a.line - b.line;
-  if (lineCmp !== 0) return lineCmp;
-  return a.body.localeCompare(b.body);
-}
-
-function stripCandidateMetadata(
-  item: DailyOpenLoopCandidate,
-): DailyOpenLoopSource {
-  return Object.freeze({
-    line: item.line,
-    body: item.body,
-    followup: item.followup,
-    sourcePath: item.sourcePath,
-  });
 }
 
 function uniqueResolvedOpenLoops(

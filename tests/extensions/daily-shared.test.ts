@@ -178,12 +178,14 @@ describe("dome.daily shared date helpers", () => {
         text: "TODO: Send budget update",
         body: "Send budget update",
         followup: false,
+        origin: "directive",
       },
       {
         line: 2,
         text: "- Follow up: Confirm Q3 plan with Eli",
         body: "Confirm Q3 plan with Eli",
         followup: true,
+        origin: "directive",
       },
     ]);
   });
@@ -263,6 +265,119 @@ describe("dome.daily shared date helpers", () => {
     expect(
       replaceOpenLoopSurfaceSection({ content: next, section }),
     ).toBe(next);
+  });
+
+  test("openLoopSurfaceSources filters unmarked non-daily checklists", () => {
+    expect(
+      openLoopSurfaceSources({
+        path: "wiki/entities/ada.md",
+        content: [
+          "# Ada",
+          "",
+          "- [ ] Static checklist line",
+          "- [ ] #task Marked checkbox task",
+          "- [ ] Dated checkbox task 2026-02-28",
+          "TODO: Explicit directive",
+          "Follow up: Explicit followup",
+        ].join("\n"),
+      }).map((item) => item.body),
+    ).toEqual([
+      "Marked checkbox task",
+      "Dated checkbox task 2026-02-28",
+      "Explicit directive",
+      "Explicit followup",
+    ]);
+
+    expect(
+      openLoopSurfaceSources({
+        path: "notes/2026-02-28.md",
+        settings: dailyPathSettings({ daily_path: "notes/{date}.md" }),
+        content: [
+          "# 2026-02-28",
+          "",
+          "- [ ] Plain daily checkbox still carries forward",
+        ].join("\n"),
+      }).map((item) => item.body),
+    ).toEqual(["Plain daily checkbox still carries forward"]);
+  });
+
+  test("replaceOpenLoopSurfaceSection inserts after today's tasks when present", () => {
+    const section = openLoopSurfaceSection({
+      items: [
+        {
+          line: 3,
+          body: "Ship budget update",
+          followup: false,
+          sourcePath: "wiki/projects/alpha.md",
+        },
+      ],
+    });
+    if (section === null) throw new Error("expected section");
+
+    const daily = [
+      "# Notes",
+      "",
+      "# Today's tasks",
+      "- [ ] Existing human task",
+      "",
+      "# What did I get done today?",
+      "",
+      "# Story of the day",
+      "",
+    ].join("\n");
+    const next = replaceOpenLoopSurfaceSection({ content: daily, section });
+    expect(next).toContain(
+      [
+        "# Today's tasks",
+        "- [ ] Existing human task",
+        "",
+        "## Open Loops",
+        "",
+        "<!-- dome.daily:open-loops:start -->",
+      ].join("\n"),
+    );
+    expect(next.indexOf("## Open Loops")).toBeLessThan(
+      next.indexOf("# What did I get done today?"),
+    );
+  });
+
+  test("replaceOpenLoopSurfaceSection relocates bottom-generated blocks", () => {
+    const section = openLoopSurfaceSection({
+      items: [
+        {
+          line: 3,
+          body: "Ship budget update",
+          followup: false,
+          sourcePath: "wiki/projects/alpha.md",
+        },
+      ],
+    });
+    if (section === null) throw new Error("expected section");
+
+    const daily = [
+      "# Notes",
+      "",
+      "# Today's tasks",
+      "- [ ] Existing human task",
+      "",
+      "# What did I get done today?",
+      "",
+      "# Story of the day",
+      "",
+      "## Open Loops",
+      "",
+      "<!-- dome.daily:open-loops:start -->",
+      "### Source-backed Open Loops",
+      "- [ ] Old placement (from [[wiki/projects/old]])",
+      "<!-- dome.daily:open-loops:end -->",
+    ].join("\n");
+    const next = replaceOpenLoopSurfaceSection({ content: daily, section });
+    expect(next).toContain("- [ ] Ship budget update");
+    expect(next).not.toContain("Old placement");
+    expect(next.indexOf("## Open Loops")).toBeLessThan(
+      next.indexOf("# What did I get done today?"),
+    );
+    expect(next.trimEnd().endsWith("# Story of the day")).toBe(true);
   });
 
   test("checked source-backed entries are durable daily resolution evidence", () => {

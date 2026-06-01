@@ -32,6 +32,7 @@ export type MarkdownActionItem = {
   readonly text: string;
   readonly body: string;
   readonly followup: boolean;
+  readonly origin: "checkbox" | "directive";
 };
 
 export type AmbiguousFollowup = {
@@ -44,6 +45,10 @@ export type DailyOpenLoopSource = {
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
+};
+
+export type DailyOpenLoopCandidate = DailyOpenLoopSource & {
+  readonly lastChangedAt: string;
 };
 
 export type DailyResolvedOpenLoopSource = {
@@ -186,6 +191,7 @@ export function actionItemsFromMarkdown(
           text: task.text,
           body: task.body,
           followup: task.followup,
+          origin: "checkbox" as const,
         }),
       );
       continue;
@@ -280,11 +286,18 @@ export function carriedForwardSection(input: {
 export function openLoopSurfaceSources(input: {
   readonly path: string;
   readonly content: string;
+  readonly settings?: DailyPathSettings;
 }): ReadonlyArray<DailyOpenLoopSource> {
   const generatedRanges = dailyGeneratedBlockLineRanges(input.content);
+  const isDailySource =
+    parseDailyPath(input.path, input.settings ?? DEFAULT_DAILY_PATH_SETTINGS) !==
+    null;
   const items: DailyOpenLoopSource[] = [];
   for (const item of actionItemsFromMarkdown(input.content)) {
     if (lineIsInsideRanges(item.line, generatedRanges)) continue;
+    if (!isDailySource && !isSurfaceEligibleNonDailyAction(item)) {
+      continue;
+    }
     items.push(
       Object.freeze({
         line: item.line,
@@ -353,22 +366,65 @@ export function openLoopIdentity(input: {
   ]);
 }
 
+export function rankDailyOpenLoopSurfaceItems(
+  items: ReadonlyArray<DailyOpenLoopCandidate>,
+  limit = 12,
+): ReadonlyArray<DailyOpenLoopSource> {
+  const seen = new Set<string>();
+  const out: DailyOpenLoopSource[] = [];
+  for (const item of [...items].sort(compareOpenLoopSources)) {
+    const key = openLoopIdentity(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(stripCandidateMetadata(item));
+    if (out.length >= limit) break;
+  }
+  return Object.freeze(out);
+}
+
 export function replaceOpenLoopSurfaceSection(input: {
   readonly content: string;
   readonly section: string | null;
 }): string {
   const existing = dailyGeneratedBlockRange(input.content);
   if (existing !== null) {
+    if (
+      input.section !== null &&
+      shouldRelocateExistingOpenLoopSurface(input.content, existing.start)
+    ) {
+      return insertOpenLoopSurfaceSection({
+        content: removeGeneratedOpenLoopSurface(input.content, existing),
+        section: input.section,
+      });
+    }
     const replacement = input.section === null ? "" : input.section;
     return `${input.content.slice(0, existing.start)}${replacement}${input.content.slice(existing.end)}`;
   }
   if (input.section === null) return input.content;
 
+  return insertOpenLoopSurfaceSection({
+    content: input.content,
+    section: input.section,
+  });
+}
+
+function insertOpenLoopSurfaceSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
   const openLoops = /^## Open Loops[ \t]*$/m.exec(input.content);
   if (openLoops !== null && openLoops.index !== undefined) {
     const insertAt = openLoops.index + openLoops[0].length;
     const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
     return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+
+  const todayTasks = /^#{1,3} Today's tasks[ \t]*$/im.exec(input.content);
+  if (todayTasks !== null && todayTasks.index !== undefined) {
+    const insertAt = endOfHeadingSection(input.content, todayTasks);
+    const before = input.content.slice(0, insertAt).trimEnd();
+    const after = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "");
+    return `${before}\n\n## Open Loops\n\n${input.section}\n\n${after}`;
   }
 
   const notes = /^## Notes[ \t]*$/m.exec(input.content);
@@ -436,6 +492,7 @@ function directiveActionItemFromLine(
       marker === "follow-up" ||
       marker === "followup" ||
       isExplicitFollowup(body),
+    origin: "directive",
   });
 }
 
@@ -449,6 +506,14 @@ function taskBodyFromCheckboxLine(line: string): string {
 
 function isExplicitFollowup(line: string): boolean {
   return /(^|\s)#follow-?up(\s|$)/i.test(line);
+}
+
+function isSurfaceEligibleNonDailyAction(item: MarkdownActionItem): boolean {
+  if (item.origin === "directive") return true;
+  const line = item.text;
+  return /(^|\s)#(?:task|follow-?up)(\s|$)/i.test(line) ||
+    /(?:\u{1F53A}|\u{23EB}|\u{1F53C}|\u{23EC}|\u{1F4C5})/u.test(line) ||
+    /\b\d{4}-\d{2}-\d{2}\b/.test(line);
 }
 
 function looksLikeAmbiguousFollowup(line: string): boolean {
@@ -539,6 +604,30 @@ function normalizeSourcePath(path: string): string {
   return `${normalizedBase}${fragment}`;
 }
 
+function compareOpenLoopSources(
+  a: DailyOpenLoopCandidate,
+  b: DailyOpenLoopCandidate,
+): number {
+  const changedCmp = b.lastChangedAt.localeCompare(a.lastChangedAt);
+  if (changedCmp !== 0) return changedCmp;
+  const pathCmp = a.sourcePath.localeCompare(b.sourcePath);
+  if (pathCmp !== 0) return pathCmp;
+  const lineCmp = a.line - b.line;
+  if (lineCmp !== 0) return lineCmp;
+  return a.body.localeCompare(b.body);
+}
+
+function stripCandidateMetadata(
+  item: DailyOpenLoopCandidate,
+): DailyOpenLoopSource {
+  return Object.freeze({
+    line: item.line,
+    body: item.body,
+    followup: item.followup,
+    sourcePath: item.sourcePath,
+  });
+}
+
 export function isValidDailyDate(date: DailyDate): boolean {
   const normalized = localDateParts(
     new Date(Number(date.yyyy), Number(date.mm) - 1, Number(date.dd)),
@@ -580,6 +669,90 @@ function dailyGeneratedBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
   return openLoopsBlockRange(content) ?? carriedForwardBlockRange(content);
+}
+
+function shouldRelocateExistingOpenLoopSurface(
+  content: string,
+  existingStart: number,
+): boolean {
+  if (/^#{1,3} Today's tasks[ \t]*$/im.exec(content) === null) return false;
+  const workLogHeading =
+    /^# (?:What did I get done today\?|Story of the day)[ \t]*$/im.exec(content);
+  return (
+    workLogHeading !== null &&
+    workLogHeading.index !== undefined &&
+    existingStart > workLogHeading.index
+  );
+}
+
+function removeGeneratedOpenLoopSurface(
+  content: string,
+  range: { readonly start: number; readonly end: number },
+): string {
+  const heading = precedingOpenLoopsHeadingRange(content, range.start);
+  if (heading === null || !openLoopsHeadingWouldBeEmpty(content, heading, range)) {
+    return `${content.slice(0, range.start)}${content.slice(range.end)}`;
+  }
+  const start = trimBackwardBlankLines(content, heading.start);
+  const end = trimForwardOneBlankLine(content, range.end);
+  return `${content.slice(0, start)}${content.slice(end)}`;
+}
+
+function precedingOpenLoopsHeadingRange(
+  content: string,
+  blockStart: number,
+): { readonly start: number; readonly end: number } | null {
+  const before = content.slice(0, blockStart);
+  const match = /(^|\n)(## Open Loops[ \t]*)(?:\r?\n[ \t]*)*$/m.exec(before);
+  if (match === null || match.index === undefined) return null;
+  const prefix = match[1] ?? "";
+  const heading = match[2] ?? "";
+  const start = match.index + prefix.length;
+  return Object.freeze({
+    start,
+    end: start + heading.length,
+  });
+}
+
+function openLoopsHeadingWouldBeEmpty(
+  content: string,
+  heading: { readonly end: number },
+  block: { readonly start: number; readonly end: number },
+): boolean {
+  if (content.slice(heading.end, block.start).trim().length > 0) return false;
+  const nextHeading = /^#{1,6} .+$/m.exec(content.slice(block.end));
+  const afterBlock =
+    nextHeading === null
+      ? content.slice(block.end)
+      : content.slice(block.end, block.end + nextHeading.index);
+  return afterBlock.trim().length === 0;
+}
+
+function trimBackwardBlankLines(content: string, offset: number): number {
+  let i = offset;
+  while (i > 0 && (content[i - 1] === "\n" || content[i - 1] === "\r")) {
+    i -= 1;
+  }
+  return i;
+}
+
+function trimForwardOneBlankLine(content: string, offset: number): number {
+  const match = /^(?:\r?\n){0,2}/.exec(content.slice(offset));
+  return offset + (match?.[0].length ?? 0);
+}
+
+function endOfHeadingSection(content: string, heading: RegExpExecArray): number {
+  const headingLine = heading[0] ?? "";
+  const headingLevel = headingLine.match(/^#+/)?.[0].length ?? 1;
+  const bodyStart = heading.index + headingLine.length;
+  const rest = content.slice(bodyStart);
+  const nextHeadingRe = /^#{1,6} .+$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = nextHeadingRe.exec(rest)) !== null) {
+    const level = match[0]?.match(/^#+/)?.[0].length ?? 1;
+    if (level <= headingLevel) return bodyStart + match.index;
+  }
+  return content.length;
 }
 
 function dailyGeneratedBlockLineRanges(

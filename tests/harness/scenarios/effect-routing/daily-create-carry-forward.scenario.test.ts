@@ -28,7 +28,7 @@ extensions:
   dome.daily:
     enabled: true
     grant:
-      read: ["wiki/dailies/*.md"]
+      read: ["wiki/**/*.md"]
       patch.auto: ["wiki/dailies/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
@@ -99,12 +99,6 @@ recurrence: 2026-01-01
         status: "succeeded",
       })
       .toHaveExactlyOne();
-    await h
-      .expectLedger({
-        processorId: "dome.daily.carry-forward",
-        status: "succeeded",
-      })
-      .toHaveAtLeastOne();
     await h
       .expectLedger({
         processorId: "dome.daily.task-index",
@@ -264,7 +258,8 @@ extensions:
         "wiki/meetings/staff.md": [
           "# Staff",
           "",
-          "- [ ] Review launch plan",
+          "- [ ] #task Review launch plan",
+          "- [ ] Static meeting checklist should stay local",
           "- [x] Completed item should not surface",
           "",
         ].join("\n"),
@@ -289,6 +284,9 @@ extensions:
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("- [ ] Review launch plan (from [[wiki/meetings/staff]])");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toNotContain("Static meeting checklist should stay local");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toNotContain("Completed item should not surface");

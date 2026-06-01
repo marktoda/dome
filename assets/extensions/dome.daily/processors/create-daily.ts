@@ -1,14 +1,16 @@
 // dome.daily.create-daily — create today's daily note skeleton.
 //
-// The scheduled processor only creates the daily page if it is absent.
-// Carry-forward is a separate file-created garden processor so manually
-// authored daily notes receive the same task rollover behavior.
+// The scheduled processor only creates the daily page if it is absent. It
+// seeds the open-loop surface from current source-backed actions; the
+// carry-forward processor keeps that surface fresh on source changes and
+// scheduled maintenance ticks.
 
 import {
   patchEffect,
   type Effect,
   type FileChangeInput,
 } from "../../../../src/core/effect";
+import type { SourceRef } from "../../../../src/core/source-ref";
 import {
   defineProcessor,
   type Processor,
@@ -19,8 +21,15 @@ import {
   dailyPathSettings,
   dailyPath,
   localDateParts,
+  openLoopSurfaceSection,
+  openLoopSurfaceSources,
   previousLocalDate,
+  rankDailyOpenLoopSurfaceItems,
   renderDailySkeleton,
+  replaceOpenLoopSurfaceSection,
+  type DailyOpenLoopCandidate,
+  type DailyOpenLoopSource,
+  type DailyPathSettings,
 } from "./daily-shared";
 
 const DAILY_CRON = "0 6 * * *";
@@ -33,11 +42,11 @@ type ScheduleInput = {
 
 const createDaily: Processor = defineProcessor({
   id: "dome.daily.create-daily",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: DAILY_CRON }],
   capabilities: [
-    { kind: "read", paths: ["wiki/dailies/*.md", "notes/*.md"] },
+    { kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] },
     { kind: "patch.auto", paths: ["wiki/dailies/*.md", "notes/*.md"] },
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
@@ -52,13 +61,22 @@ const createDaily: Processor = defineProcessor({
 
     const yesterdayPath = dailyPath(yesterday, settings);
     const yesterdayExists = (await ctx.snapshot.readFile(yesterdayPath)) !== null;
+    const openLoopItems = await collectOpenLoopSourcesForNewDaily({
+      ctx,
+      targetPath: todayPath,
+      settings,
+    });
+    const skeleton = renderDailySkeleton({
+      today,
+      yesterday: yesterdayExists ? yesterday : null,
+      settings,
+    });
     const change: FileChangeInput = {
       kind: "write",
       path: todayPath,
-      content: renderDailySkeleton({
-        today,
-        yesterday: yesterdayExists ? yesterday : null,
-        settings,
+      content: replaceOpenLoopSurfaceSection({
+        content: skeleton,
+        section: openLoopSurfaceSection({ items: openLoopItems }),
       }),
     };
 
@@ -67,13 +85,64 @@ const createDaily: Processor = defineProcessor({
         mode: "auto",
         changes: [change],
         reason: `dome.daily: create daily note ${todayPath}`,
-        sourceRefs: yesterdayExists ? [ctx.sourceRef(yesterdayPath)] : [],
+        sourceRefs: createDailySourceRefs({
+          ctx,
+          yesterdayExists,
+          yesterdayPath,
+          openLoopItems,
+        }),
       }),
     ];
   },
 });
 
 export default createDaily;
+
+async function collectOpenLoopSourcesForNewDaily(input: {
+  readonly ctx: ProcessorContext;
+  readonly targetPath: string;
+  readonly settings: DailyPathSettings;
+}): Promise<ReadonlyArray<DailyOpenLoopSource>> {
+  const candidates: DailyOpenLoopCandidate[] = [];
+  for (const path of await input.ctx.snapshot.listMarkdownFiles()) {
+    if (path === input.targetPath) continue;
+    const content = await input.ctx.snapshot.readFile(path);
+    if (content === null) continue;
+    const info = await input.ctx.snapshot.getFileInfo(path);
+    for (
+      const item of openLoopSurfaceSources({
+        path,
+        content,
+        settings: input.settings,
+      })
+    ) {
+      candidates.push({
+        ...item,
+        lastChangedAt: info?.lastChangedAt ?? "",
+      });
+    }
+  }
+  return rankDailyOpenLoopSurfaceItems(candidates);
+}
+
+function createDailySourceRefs(input: {
+  readonly ctx: ProcessorContext;
+  readonly yesterdayExists: boolean;
+  readonly yesterdayPath: string;
+  readonly openLoopItems: ReadonlyArray<DailyOpenLoopSource>;
+}): ReadonlyArray<SourceRef> {
+  const refs: SourceRef[] = [];
+  if (input.yesterdayExists) refs.push(input.ctx.sourceRef(input.yesterdayPath));
+  for (const item of input.openLoopItems) {
+    refs.push(
+      input.ctx.sourceRef(item.sourcePath, {
+        startLine: item.line,
+        endLine: item.line,
+      }),
+    );
+  }
+  return Object.freeze(refs);
+}
 
 function parseScheduleInput(input: unknown): ScheduleInput | null {
   if (input === null || typeof input !== "object") return null;

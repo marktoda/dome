@@ -52,7 +52,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | Intent | Status | Processor | Phase | Trigger | Effects emitted |
 |---|---|---|---|---|---|
 | "Create today's daily note" | shipped | `dome.daily.create-daily` | garden | cron `0 6 * * *` | PatchEffect (create configured daily path, default `wiki/dailies/YYYY-MM-DD.md`) |
-| "Raise source-backed open loops into today's daily note" | shipped | `dome.daily.carry-forward` | garden | markdown create/change/delete signals under readable daily/wiki roots | PatchEffect (replace a small generated `## Open Loops` block in the configured daily path) |
+| "Raise source-backed open loops into today's daily note" | shipped | `dome.daily.carry-forward` | garden | daily cron plus markdown create/change/delete signals under readable daily/wiki roots | PatchEffect (replace a small generated `## Open Loops` block in the configured daily path) |
 | "Create this week's weekly" | planned | `dome.daily.create-weekly` | garden | cron `0 6 * * MON` | PatchEffect (create wiki/weeklies/YYYY-Www.md) |
 | "Auto-lint weekly" | planned | future `dome.lint.scheduled-report` | garden (cron) | cron `0 7 * * MON` | DiagnosticEffect or PatchEffect for a durable scheduled lint report |
 | "Inbox staleness check" | shipped | `dome.intake.inbox-stale-check` | garden | hourly schedule plus inbox path signals | DiagnosticEffect (`inbox.stale` warning for files older than 168 hours) |
