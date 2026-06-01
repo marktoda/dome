@@ -1,8 +1,8 @@
 id: dome.markdown
-version: 0.3.0
+version: 0.4.0
 processors:
   - id: dome.markdown.validate-wikilinks
-    version: 0.1.5
+    version: 0.2.0
     phase: adoption
     triggers:
       - kind: signal
@@ -11,6 +11,8 @@ processors:
         name: file.created
     capabilities:
       - kind: read
+        paths: ["**/*.md"]
+      - kind: patch.auto
         paths: ["**/*.md"]
     module: processors/validate-wikilinks.ts
 

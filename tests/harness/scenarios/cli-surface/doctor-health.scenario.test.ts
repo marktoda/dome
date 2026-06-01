@@ -187,7 +187,7 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(2);
+    expect(report.summary.capabilityGrantGaps).toBe(3);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
@@ -195,7 +195,16 @@ scenario(
     expect(grantGaps.map((finding) => finding.id).sort()).toEqual([
       "dome.markdown.duplicate-detection",
       "dome.markdown.normalize-frontmatter",
+      "dome.markdown.validate-wikilinks",
     ]);
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.validate-wikilinks",
+          missingKinds: ["patch.auto"],
+        },
+      }),
+    );
     expect(grantGaps).toContainEqual(
       expect.objectContaining({
         capability: {

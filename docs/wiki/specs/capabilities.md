@@ -259,6 +259,8 @@ extensions:
         grant:
           read:
             - "**/*.md"
+          patch.auto:
+            - "wiki/**/*.md"
 
   acme.calendar-sync:
     enabled: true

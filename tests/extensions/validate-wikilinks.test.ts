@@ -5,6 +5,7 @@
 //     resolves manifest + module + identity-cross-check.
 //   - The processor's `run` against a real git-backed vault snapshot:
 //     - Emits no diagnostics when every wikilink resolves.
+//     - Emits a PatchEffect for high-confidence curated-page typo repairs.
 //     - Emits a `dome.markdown.broken-wikilink` warning when a target is missing
 //       from a managed page, and info when the source is a user-owned note draft.
 //     - Emits exactly one diagnostic per unresolved target (the resolved
@@ -28,7 +29,7 @@ import {
   type Processor,
   type Snapshot,
 } from "../../src/core/processor";
-import type { DiagnosticEffect } from "../../src/core/effect";
+import type { DiagnosticEffect, PatchEffect } from "../../src/core/effect";
 import { makeProcessorContext } from "../../src/processors/context";
 import {
   flattenBundleProcessors,
@@ -215,11 +216,11 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(ref.range?.startLine).toBe(1);
   });
 
-  test("suggests a close existing markdown target for typoed wikilinks", async () => {
+  test("auto-repairs a close existing markdown target for curated-page typoed wikilinks", async () => {
     const f = await makeVaultWithFiles([
       {
         path: "wiki/page.md",
-        content: "Working with [[wiki/entities/grce-danco]].\n",
+        content: "Working with [[wiki/entities/grce-danco#Notes|Grace]].\n",
       },
       { path: "wiki/entities/grace-danco.md", content: "Grace.\n" },
     ]);
@@ -238,10 +239,18 @@ describe("dome.markdown.validate-wikilinks", () => {
     const effects = await proc.run(ctx);
     expect(effects.length).toBe(1);
 
-    const diag = effects[0] as DiagnosticEffect | undefined;
-    if (diag === undefined) throw new Error("expected one diagnostic");
-    expect(diag.message).toContain("[[wiki/entities/grce-danco]]");
-    expect(diag.message).toContain("Did you mean [[wiki/entities/grace-danco]]?");
+    const patch = effects[0] as PatchEffect | undefined;
+    if (patch === undefined) throw new Error("expected one patch");
+    expect(patch.kind).toBe("patch");
+    expect(patch.mode).toBe("auto");
+    const change = patch.changes[0];
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") throw new Error("expected write change");
+    expect(String(change?.path)).toBe("wiki/page.md");
+    expect(change?.content).toBe(
+      "Working with [[wiki/entities/grace-danco#Notes|Grace]].\n",
+    );
+    expect(String(patch.sourceRefs[0]?.path)).toBe("wiki/page.md");
   });
 
   test("suppresses close-target hints when the best match is ambiguous", async () => {

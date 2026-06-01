@@ -78,6 +78,47 @@ scenario(
 
 scenario(
   {
+    name: "convergence: obvious broken wikilink repairs converge without diagnostics",
+    tags: [
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "patch" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "adoption" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/ref.md": "# Ref\n\nSee [[wiki/entities/grce-danco|Grace]].\n",
+        "wiki/entities/grace-danco.md": "# Grace Danco\n",
+      },
+      message: "add typoed wikilink",
+    });
+
+    const repaired = await h.tick();
+    expect(repaired.adopted).toBe(true);
+    await h
+      .expectFile("wiki/ref.md")
+      .toContain("[[wiki/entities/grace-danco|Grace]]");
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
+
+    const settled = await h.tick();
+    expect(settled.hadDrift).toBe(false);
+  },
+);
+
+scenario(
+  {
     name: "convergence: source-less processor diagnostics resolve after clean rerun",
     tags: [
       { kind: "group", group: "convergence" },

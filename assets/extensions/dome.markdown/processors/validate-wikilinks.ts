@@ -1,16 +1,11 @@
 // dome.markdown.validate-wikilinks — Phase 11d adoption-phase processor.
 //
 // The first first-party adoption-phase processor with real behavior: parses
-// `[[wikilink]]` syntax in changed markdown files and emits one
-// DiagnosticEffect per wikilink whose target doesn't resolve to a markdown
-// file in the candidate snapshot's tree. Curated managed pages and
-// frontmatter evidence links emit warnings; user-owned note drafts and
-// imported source-page bodies emit info diagnostics so they stay visible
-// without routing the whole vault to attention.
-//
-// Diagnostic-only (no PatchEffect), so the fixed-point adoption loop sees no
-// patches and converges in one iteration: re-running the processor against
-// the same content produces the same diagnostics, no new candidate emerges.
+// `[[wikilink]]` syntax in changed markdown files. Obvious curated-page typos
+// are repaired with source-backed PatchEffects; ambiguous or flexible links
+// become DiagnosticEffects. User-owned note drafts and imported source-page
+// bodies emit info diagnostics so they stay visible without routing the whole
+// vault to attention.
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same snapshot + input → same effects (the diagnostic
@@ -19,7 +14,7 @@
 //   - Bounded cost: O(changed-files × wikilinks-per-file + tree-size). The
 //     markdown set is materialized once per dispatch via
 //     `ctx.snapshot.listMarkdownFiles()` and reused for every changed file.
-//   - No LLM, no network, no patches.
+//   - No LLM, no network.
 //
 // Per [[wiki/matrices/processor-phase-x-trigger]], adoption-phase processors
 // may subscribe to `signal` triggers; we subscribe to `document.changed` (the
@@ -38,28 +33,31 @@
 
 import {
   diagnosticEffect,
+  patchEffect,
   type DiagnosticEffect,
   type Effect,
+  type FileChangeInput,
 } from "../../../../src/core/effect";
 import {
   defineProcessor,
   type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import type { SourceRef } from "../../../../src/core/source-ref";
 
 // ----- Wikilink regex -------------------------------------------------------
 //
 // Matches `[[target]]` and `[[target|display]]`. The target is captured in
-// group 1; the optional display alias is discarded (we only resolve targets).
+// group 1; group 2 preserves the optional `|display` suffix for repairs.
 //
 //   `[[`                         — literal opening braces
 //   `([^\[\]\|]+?)`              — group 1 (target): non-greedy, no `[`, `]`, `|`
-//   `(?:\|[^\[\]]+)?`            — optional `|display` alias (no inner braces)
+//   `(\|[^\[\]]+)?`              — group 2: optional `|display` alias
 //   `]]`                         — literal closing braces
 //
 // `g` so we collect all matches per file; `m` is not needed because the
 // pattern doesn't anchor to line boundaries (wikilinks may appear mid-line).
-const WIKILINK_RE = /\[\[([^\[\]\|]+?)(?:\|[^\[\]]+)?\]\]/g;
+const WIKILINK_RE = /\[\[([^\[\]\|]+?)(\|[^\[\]]+)?\]\]/g;
 
 // Common roots a bare wikilink may resolve under, in priority order. The
 // resolver checks each prefix; a target like `[[danny]]` matches `wiki/danny.md`,
@@ -76,13 +74,16 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.1.5",
+  version: "0.2.0",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
     { kind: "signal", name: "file.created" },
   ],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+  capabilities: [
+    { kind: "read", paths: ["**/*.md"] },
+    { kind: "patch.auto", paths: ["**/*.md"] },
+  ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // Materialize the candidate snapshot's markdown set once per dispatch.
     // Build a basename → set-of-paths index alongside the full-paths set so
@@ -93,7 +94,7 @@ const validateWikilinks: Processor = defineProcessor({
     const normalizedIndex = buildNormalizedResolutionIndex(allMarkdownPaths);
     const suggestionIndex = buildWikilinkSuggestionIndex(allMarkdownPaths);
 
-    const diagnostics: DiagnosticEffect[] = [];
+    const effects: Effect[] = [];
 
     // Filter changedPaths to Dome content roots. A vault may grant broad read
     // so links can resolve to historical/external markdown, but that does not
@@ -111,6 +112,8 @@ const validateWikilinks: Processor = defineProcessor({
 
       const frontmatterEnd = frontmatterEndLine(content);
       const fileMatches = findWikilinks(content);
+      const replacements: WikilinkReplacement[] = [];
+      const replacementSourceRefs: SourceRef[] = [];
       for (const match of fileMatches) {
         const resolved = resolveWikilinkTarget(
           match.target,
@@ -121,6 +124,27 @@ const validateWikilinks: Processor = defineProcessor({
         );
         if (resolved !== null) continue;
         const suggestion = suggestWikilinkTarget(match.target, suggestionIndex);
+        const sourceRef = ctx.sourceRef(changedPath, {
+          startLine: match.line,
+          endLine: match.line,
+          startChar: match.startChar,
+          endChar: match.endChar,
+        });
+        const severity = brokenWikilinkSeverity(
+          changedPath,
+          match.line,
+          frontmatterEnd,
+        );
+
+        if (severity === "warning" && suggestion !== null) {
+          replacements.push({
+            startOffset: match.startOffset,
+            endOffset: match.endOffset,
+            text: `[[${suggestion}${wikilinkFragmentSuffix(match.target)}${match.displaySuffix}]]`,
+          });
+          replacementSourceRefs.push(sourceRef);
+          continue;
+        }
 
         // Unresolved target -> emit a diagnostic anchored to the
         // exact span where the wikilink appears in `changedPath`. The
@@ -130,29 +154,34 @@ const validateWikilinks: Processor = defineProcessor({
         // subject_hash projects each SourceRef to {path, range, stableId};
         // without distinct char offsets, two broken wikilinks on one line
         // would share a subject_hash and dedupe to a single row).
-        diagnostics.push(
+        effects.push(
           diagnosticEffect({
-            severity: brokenWikilinkSeverity(
-              changedPath,
-              match.line,
-              frontmatterEnd,
-            ),
+            severity,
             code: "dome.markdown.broken-wikilink",
             message: brokenWikilinkMessage(match.target, suggestion),
-            sourceRefs: [
-              ctx.sourceRef(changedPath, {
-                startLine: match.line,
-                endLine: match.line,
-                startChar: match.startChar,
-                endChar: match.endChar,
-              }),
-            ],
+            sourceRefs: [sourceRef],
+          }),
+        );
+      }
+
+      if (replacements.length > 0) {
+        const change: FileChangeInput = {
+          kind: "write",
+          path: changedPath,
+          content: applyWikilinkReplacements(content, replacements),
+        };
+        effects.push(
+          patchEffect({
+            mode: "auto",
+            changes: [change],
+            reason: `dome.markdown: repair obvious wikilink target(s) in ${changedPath}`,
+            sourceRefs: replacementSourceRefs,
           }),
         );
       }
     }
 
-    return diagnostics;
+    return effects;
   },
 });
 
@@ -162,9 +191,18 @@ export default validateWikilinks;
 
 type WikilinkMatch = {
   readonly target: string;
+  readonly displaySuffix: string;
   readonly line: number; // 1-indexed line number where the match begins
   readonly startChar: number; // 0-indexed column of `[[` within the line
   readonly endChar: number; // 0-indexed column of one past `]]` within the line
+  readonly startOffset: number;
+  readonly endOffset: number;
+};
+
+type WikilinkReplacement = {
+  readonly startOffset: number;
+  readonly endOffset: number;
+  readonly text: string;
 };
 
 /**
@@ -188,9 +226,12 @@ function findWikilinks(content: string): ReadonlyArray<WikilinkMatch> {
     const pos = positionAt(content, m.index);
     matches.push({
       target: trimmed,
+      displaySuffix: m[2] ?? "",
       line: pos.line,
       startChar: pos.col,
       endChar: pos.col + m[0].length,
+      startOffset: m.index,
+      endOffset: m.index + m[0].length,
     });
   }
   return matches;
@@ -488,6 +529,19 @@ function brokenWikilinkMessage(
   return `${base} Did you mean [[${suggestion}]]?`;
 }
 
+function applyWikilinkReplacements(
+  content: string,
+  replacements: ReadonlyArray<WikilinkReplacement>,
+): string {
+  let next = content;
+  for (const replacement of [...replacements].sort((a, b) =>
+    b.startOffset - a.startOffset
+  )) {
+    next = `${next.slice(0, replacement.startOffset)}${replacement.text}${next.slice(replacement.endOffset)}`;
+  }
+  return next;
+}
+
 /**
  * Resolve a wikilink target string against the candidate snapshot's markdown
  * set. Returns the resolved vault-relative path on success; null on miss.
@@ -711,6 +765,11 @@ function isExternalUrlTarget(target: string): boolean {
 function stripWikilinkFragment(target: string): string {
   const hash = target.indexOf("#");
   return hash === -1 ? target : target.slice(0, hash).trim();
+}
+
+function wikilinkFragmentSuffix(target: string): string {
+  const hash = target.indexOf("#");
+  return hash === -1 ? "" : target.slice(hash).trim();
 }
 
 function hasExplicitNonMarkdownExtension(target: string): boolean {
