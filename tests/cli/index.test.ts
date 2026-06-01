@@ -111,6 +111,7 @@ describe("runCli", () => {
   test("inspect help names every shipped subject", async () => {
     expect(await runCli(["inspect", "-h"])).toBe(0);
     const out = captured.out.join("\n");
+    expect(out).toContain("--model");
     for (
       const subject of [
         "bundles",

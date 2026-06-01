@@ -146,6 +146,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--severity <level>", "Filter diagnostics by severity.")
     .option("--code <code>", "Filter diagnostics by code.")
     .option("--processor <id>", "Filter diagnostics by processor id.")
+    .option("--model", "Show only model-capable bundles or processors.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -161,6 +162,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           severity: options.severity,
           code: options.code,
           processor: options.processor,
+          model: options.model,
         }),
       );
     });
@@ -524,6 +526,7 @@ type InspectCliOptions = {
   readonly severity?: string;
   readonly code?: string;
   readonly processor?: string;
+  readonly model?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

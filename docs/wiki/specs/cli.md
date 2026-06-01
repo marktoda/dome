@@ -751,7 +751,7 @@ success or `{ status: "error", branch, adopted, error }` on failure.
 Exit codes: 0 on success; 1 on rebuild/runtime failure; 64 (EX_USAGE) on
 detached HEAD or uninitialized adopted ref.
 
-### `dome inspect <subject> [--limit <n>] [--json]`
+### `dome inspect <subject> [--limit <n>] [--model] [--json]`
 
 Read-only view over the operational substrate. The command opens the
 runtime (so the operational databases are initialized) but does not submit a
@@ -785,7 +785,11 @@ Subjects (v1.0):
 `--limit <n>` caps the row count. Operational row subjects default to 20;
 `bundles` and `processors` default to the full loaded runtime set because they
 are bounded by enabled extension metadata rather than unbounded operational
-history. `--json` emits structured rows for cross-tool consumption.
+history. `--model` is valid for `bundles` and `processors`: on `bundles` it
+shows bundles that declare model-capable processors, including disabled
+manifest-only bundles; on `processors` it shows currently loaded processors
+whose model status is not `none`. `--json` emits structured rows for
+cross-tool consumption.
 
 For noisy real vaults, `dome inspect diagnostics` also accepts
 `--summary`, `--severity <info|warning|error|block>`, `--code <code>`, and
@@ -794,9 +798,10 @@ severity/code and includes the first message and SourceRef example for each
 group; `--limit` caps groups in summary mode. The filter flags apply to both
 row and summary output. They are diagnostic-only flags so `dome inspect runs
 --summary` is a usage error rather than a silently ignored option.
-`dome inspect processors --json` is the authoritative CLI answer for whether
-the currently enabled vault automation has LLM/model-capable processors: filter
-for rows whose `model` field is not `none`.
+`dome inspect processors --model --json` is the authoritative CLI answer for
+whether the currently enabled vault automation has LLM/model-capable
+processors. `dome inspect bundles --model --json` is the broader inventory
+answer for optional configured bundles such as disabled intake.
 
 Exit codes: 0 on a clean read (including empty result sets); 1 on
 runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed

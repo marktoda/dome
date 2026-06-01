@@ -1051,6 +1051,10 @@ Fold these into nearby milestone work when they are on-path:
       engine row at bare `pending 1`, after parallel real-vault view probes
       showed the text surface could still make in-flight view commands look
       like a stuck compiler state.
+- [x] Add `dome inspect bundles --model` and
+      `dome inspect processors --model`, so real-vault soak and Claude Code can
+      answer which optional bundles declare LLM processors and which currently
+      loaded automations can invoke a model without scanning full tables.
 
 ## V1 Exit Criteria
 

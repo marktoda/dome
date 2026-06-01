@@ -29,6 +29,9 @@
 //   - `diagnostics --summary` groups unresolved diagnostics by severity/code
 //     so noisy real vaults have a first-glance triage view.
 //   - `--json` emits structured rows.
+//   - `--model` filters the bounded bundle/processor metadata surfaces to
+//     model-capable entries, so a vault can answer "which automations can use
+//     an LLM?" without scanning the full table by hand.
 //
 // Renamed from the pre-recut `dome doctor --show <subject>` in the v1.0
 // CLI surface recut (per cli.md §"dome inspect"). The previous
@@ -97,6 +100,7 @@ export type RunInspectOptions = {
   readonly severity?: string | undefined;
   readonly code?: string | undefined;
   readonly processor?: string | undefined;
+  readonly model?: boolean | undefined;
 };
 
 // ----- runInspect --------------------------------------------------------------
@@ -143,6 +147,16 @@ export async function runInspect(
     console.error(diagnosticOptions.message);
     return 64;
   }
+  if (
+    options.model === true &&
+    subject !== "bundles" &&
+    subject !== "processors"
+  ) {
+    console.error(
+      "dome inspect: --model is only valid for the bundles and processors subjects.",
+    );
+    return 64;
+  }
 
   const bundleRoots = resolveBundleRoots({
     vaultPath,
@@ -169,6 +183,7 @@ export async function runInspect(
         runtime,
         limit,
         bundleInventory,
+        modelOnly: options.model === true,
         diagnosticOptions: diagnosticOptions.value,
       });
     } catch (e) {
@@ -230,6 +245,7 @@ function collectInspectResult(opts: {
   readonly runtime: VaultRuntime;
   readonly limit: number;
   readonly bundleInventory: BundleManifestInventory;
+  readonly modelOnly: boolean;
   readonly diagnosticOptions: ParsedDiagnosticOptions | null;
 }): InspectResult {
   if (
@@ -252,6 +268,7 @@ function collectInspectResult(opts: {
       opts.runtime,
       opts.limit,
       opts.bundleInventory,
+      opts.modelOnly,
       opts.diagnosticOptions,
     ),
   };
@@ -262,18 +279,17 @@ function collectRows(
   runtime: VaultRuntime,
   limit: number,
   bundleInventory: BundleManifestInventory,
+  modelOnly: boolean,
   diagnosticOptions: ParsedDiagnosticOptions | null,
 ): ReadonlyArray<Row> {
   switch (subject) {
     case "bundles": {
       const processors = runtime.registry.all();
-      return collectBundleRows(runtime, processors, bundleInventory).slice(
-        0,
-        limit,
-      );
+      const rows = collectBundleRows(runtime, processors, bundleInventory);
+      return filterModelRows(rows, modelOnly).slice(0, limit);
     }
     case "processors": {
-      return runtime.registry.all().slice(0, limit).map((processor) => {
+      const rows = runtime.registry.all().map((processor) => {
         const grantedCapabilities = runtime.resolveGrants(processor.id);
         return {
           processor: processor.id,
@@ -296,6 +312,7 @@ function collectRows(
           }),
         };
       });
+      return filterModelRows(rows, modelOnly).slice(0, limit);
     }
     case "runs": {
       const runs = queryRuns(runtime.ledgerDb, { limit });
@@ -360,6 +377,19 @@ function collectRows(
       // Unreachable — VALID_SUBJECTS guard above enforces this.
       return [];
   }
+}
+
+function filterModelRows(
+  rows: ReadonlyArray<Row>,
+  modelOnly: boolean,
+): ReadonlyArray<Row> {
+  if (!modelOnly) return rows;
+  return rows.filter((row) => {
+    if (typeof row.model_processors === "number") {
+      return row.model_processors > 0;
+    }
+    return typeof row.model === "string" && row.model !== "none";
+  });
 }
 
 function summarizeDiagnostics(

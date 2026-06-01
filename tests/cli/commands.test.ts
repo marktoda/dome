@@ -998,6 +998,29 @@ describe("runInspect", () => {
         model: "none",
       }),
     );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const modelProcessors = JSON.parse(
+      captured.out.join("\n"),
+    ) as ReadonlyArray<{
+      readonly processor: string;
+      readonly model: string;
+    }>;
+    expect(modelProcessors.length).toBe(3);
+    expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
+      "dome.intake.extract-capture",
+      "dome.intake.synthesize-capture",
+      "dome.intake.synthesize-rollup",
+    ]);
+    expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
   });
 
   test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
@@ -1063,6 +1086,60 @@ describe("runInspect", () => {
     expect(
       processors.some((row) => row.processor.startsWith("dome.intake.")),
     ).toBe(false);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const modelBundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    expect(modelBundles).toEqual([
+      expect.objectContaining({
+        bundle: "dome.intake",
+        status: "disabled",
+        loaded: false,
+        model_processors: 3,
+        model: "disabled-no-provider",
+      }),
+    ]);
+  });
+
+  test("--model filter is only valid for bundle and processor metadata", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--model is only valid for the bundles and processors subjects",
+    );
   });
 
   test("subject 'bundles' reads disabled local manifests without importing modules", async () => {
