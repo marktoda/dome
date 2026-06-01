@@ -26,6 +26,8 @@ extensions:
         grant:
           read:
             - "**/*.md"
+          patch.auto:
+            - "**/*.md"
 
   dome.graph:
     enabled: true
