@@ -252,7 +252,11 @@ function looksLikeAmbiguousFollowup(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed.length === 0) return false;
   if (trimmed.startsWith("#")) return false;
-  return /\bfollow\s+up\s+with\b/i.test(trimmed);
+  const match = /\bfollow\s+up\s+with\s+(.+)$/i.exec(trimmed);
+  if (match === null) return false;
+  const target = (match[1] ?? "").trim().replace(/^[("'`]+/, "");
+  if (target.length === 0) return false;
+  return !/^(?:additional|extra|further|more)\b/i.test(target);
 }
 
 function stripCarryForwardSource(line: string): string {

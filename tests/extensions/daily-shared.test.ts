@@ -140,12 +140,19 @@ describe("dome.daily shared date helpers", () => {
           "- [x] Follow up with completed person",
           "- Follow up: Explicit directive",
           "We should follow up with Sam about hiring",
+          "Please follow up with other teams about staffing.",
+          "12 assets is the right starting number, with potential to follow up with more.",
+          "The first note can follow up with additional examples later.",
         ].join("\n"),
       ),
     ).toEqual([
       {
         line: 5,
         text: "We should follow up with Sam about hiring",
+      },
+      {
+        line: 6,
+        text: "Please follow up with other teams about staffing.",
       },
     ]);
   });

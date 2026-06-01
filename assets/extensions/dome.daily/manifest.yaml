@@ -15,7 +15,7 @@ processors:
     module: processors/create-daily.ts
 
   - id: dome.daily.task-index
-    version: 0.1.1
+    version: 0.1.2
     phase: adoption
     triggers:
       - kind: signal

@@ -25,7 +25,7 @@ const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
 const taskIndex: Processor = defineProcessor({
   id: "dome.daily.task-index",
-  version: "0.1.1",
+  version: "0.1.2",
   phase: "adoption",
   triggers: [
     {

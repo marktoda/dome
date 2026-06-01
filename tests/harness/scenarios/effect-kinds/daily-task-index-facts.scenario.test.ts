@@ -190,6 +190,7 @@ scenario(
           "TODO: Send budget update",
           "Follow up: Confirm Q3 plan with Eli",
           "We should follow up with Sam about hiring",
+          "12 assets is the right starting number, with potential to follow up with more.",
           "",
         ].join("\n"),
       },

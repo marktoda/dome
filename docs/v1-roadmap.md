@@ -964,6 +964,10 @@ Fold these into nearby milestone work when they are on-path:
       its schema meta row with an upsert instead of a delete/insert gap, so a
       concurrent `dome check` cannot briefly report an unverifiable
       `answers.db` schema while another runtime is opening the same vault.
+- [x] Reduce daily follow-up question noise: `dome.daily.task-index` no longer
+      asks follow-up questions for sequential prose such as "follow up with
+      more/additional items", after real work-vault soak surfaced a false
+      decision on "potential to follow up with more."
 
 ## V1 Exit Criteria
 
