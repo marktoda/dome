@@ -99,18 +99,31 @@ describe("runCli", () => {
     expect(out).toContain("--json");
   });
 
-  test("lint help exposes fail threshold and json options", async () => {
+  test("lint help exposes fail threshold, limit, and json options", async () => {
     expect(await runCli(["lint", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome lint");
     expect(out).toContain("--fail-on <severity>");
+    expect(out).toContain("--limit <n>");
     expect(out).toContain("--json");
   });
 
   test("inspect help names every shipped subject", async () => {
     expect(await runCli(["inspect", "-h"])).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("runs, diagnostics, questions, outbox, or quarantine");
+    for (
+      const subject of [
+        "bundles",
+        "processors",
+        "runs",
+        "diagnostics",
+        "questions",
+        "outbox",
+        "quarantine",
+      ]
+    ) {
+      expect(out).toContain(subject);
+    }
   });
 
   test("unknown command exits 64 with Commander usage", async () => {

@@ -31,6 +31,7 @@ import { runAnswer } from "../../src/cli/commands/answer";
 import { runCheck } from "../../src/cli/commands/check";
 import { runDoctor } from "../../src/cli/commands/doctor";
 import { runInspect } from "../../src/cli/commands/inspect";
+import { runLint } from "../../src/cli/commands/lint";
 import { runResolve } from "../../src/cli/commands/resolve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
@@ -595,7 +596,7 @@ describe("runInit", () => {
             { name: "dome.markdown", version: "0.1.0" },
           ],
           processorVersions: [
-            { id: "dome.lint.report", version: "0.1.0" },
+            { id: "dome.lint.report", version: "0.1.1" },
             { id: "dome.markdown.validate-wikilinks", version: "0.1.0" },
           ],
           capabilityPolicyHash: "test-policy",
@@ -2326,6 +2327,17 @@ async function writeDoctorConfig(f: Fixture): Promise<void> {
   );
   await writeFile(join(f.vaultPath, "CLAUDE.md"), "@AGENTS.md\n", "utf8");
 }
+
+// ----- runLint --------------------------------------------------------------
+
+describe("runLint", () => {
+  test("malformed --limit returns 64 before opening runtime", async () => {
+    expect(await runLint({ limit: "nope" })).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--limit must be a positive integer",
+    );
+  });
+});
 
 // ----- runStatus ------------------------------------------------------------
 

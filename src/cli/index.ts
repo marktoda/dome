@@ -292,6 +292,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Exit nonzero at severity: info, warning, error, block, or never.",
       parseLintFailOnOption,
     )
+    .option("--limit <n>", "Maximum issues to show.", parsePositiveIntegerOption)
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -299,6 +300,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       setExitCode(
         await runLint({
           failOn: options.failOn,
+          limit: options.limit,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -559,6 +561,7 @@ type RunCliOptions = {
 
 type LintCliOptions = {
   readonly failOn?: LintFailOn;
+  readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

@@ -839,6 +839,9 @@ Work:
       `dome inspect bundles --json` before using `inbox/raw/`, so Claude Code
       does not assume raw capture automation is safe when intake is disabled
       or missing a model provider.
+- [x] Add `dome lint --limit`, so the adopted-state lint report stays bounded
+      on noisy management vaults while preserving full issue counts and
+      fail-threshold semantics.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

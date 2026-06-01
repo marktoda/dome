@@ -25,7 +25,7 @@ const SEVERITY_ORDER = Object.freeze({
 
 const report: Processor = defineProcessor({
   id: "dome.lint.report",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "view",
   triggers: [{ kind: "command", name: "lint" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -46,21 +46,29 @@ const report: Processor = defineProcessor({
     ].sort(compareIssues));
     const counts = severityCounts(issues);
     const failed = failsThreshold(counts, input.failOn);
+    const visibleIssues = input.limit === null
+      ? issues
+      : Object.freeze(issues.slice(0, input.limit));
+    const omittedIssues = issues.length - visibleIssues.length;
     const data = Object.freeze({
       schema: SCHEMA,
       status: failed ? "fail" as const : "pass" as const,
       failOn: input.failOn,
+      limit: input.limit,
       checked: Object.freeze({
         markdownFiles: markdownFiles.length,
       }),
       counts,
-      issues,
+      shownIssues: visibleIssues.length,
+      omittedIssues,
+      issues: visibleIssues,
       markdown: renderMarkdown({
         status: failed ? "fail" : "pass",
         failOn: input.failOn,
         markdownFiles: markdownFiles.length,
         counts,
-        issues,
+        issues: visibleIssues,
+        omittedIssues,
       }),
     });
 
@@ -81,6 +89,7 @@ export default report;
 
 type LintInput = {
   readonly failOn: LintSeverityThreshold;
+  readonly limit: number | null;
 };
 
 type LintSeverity = DiagnosticEffect["severity"];
@@ -115,7 +124,9 @@ function parseInput(input: unknown): LintInput {
     : {};
   const raw = stringValue(record.failOn) ?? stringValue(flags.failOn);
   const failOn = parseThreshold(raw) ?? DEFAULT_FAIL_ON;
-  return Object.freeze({ failOn });
+  const limit = positiveIntegerValue(record.limit) ??
+    positiveIntegerValue(flags.limit);
+  return Object.freeze({ failOn, limit });
 }
 
 async function emptyMarkdownFiles(
@@ -174,6 +185,7 @@ function renderMarkdown(input: {
   readonly markdownFiles: number;
   readonly counts: LintCounts;
   readonly issues: ReadonlyArray<LintIssue>;
+  readonly omittedIssues: number;
 }): string {
   const lines = [
     "DOME lint",
@@ -194,6 +206,12 @@ function renderMarkdown(input: {
     for (const ref of issue.sourceRefs) {
       lines.push(`    ${formatSourceRef(ref)}`);
     }
+  }
+  if (input.omittedIssues > 0) {
+    const noun = input.omittedIssues === 1 ? "issue" : "issues";
+    lines.push(
+      `  ... ${input.omittedIssues} more ${noun} (use --limit ${input.counts.total} to show all)`,
+    );
   }
 
   return lines.join("\n");
@@ -255,4 +273,13 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function positiveIntegerValue(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

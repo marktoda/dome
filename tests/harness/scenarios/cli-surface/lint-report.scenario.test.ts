@@ -45,6 +45,11 @@ scenario(
     expect(text.stdout).toContain("wiki/bad.md");
     expect(text.stdout).toContain("wiki/empty.md");
 
+    const limitedText = await h.runCli(["lint", "--limit", "1"]);
+    expect(limitedText.exitCode).toBe(0);
+    expect(limitedText.stderr).toBe("");
+    expect(limitedText.stdout).toContain("more issues (use --limit");
+
     const strict = await h.runCli(["lint", "--fail-on", "warning", "--json"]);
     expect(strict.exitCode).toBe(1);
     expect(strict.stderr).toBe("");
@@ -63,6 +68,22 @@ scenario(
     expect(payload.issues.some((issue) =>
       issue.code === "dome.lint.empty-markdown-file"
     )).toBe(true);
+
+    const limitedJson = await h.runCli(["lint", "--limit", "1", "--json"]);
+    expect(limitedJson.exitCode).toBe(0);
+    expect(limitedJson.stderr).toBe("");
+    const limitedPayload = JSON.parse(limitedJson.stdout) as {
+      readonly counts: { readonly total: number };
+      readonly shownIssues: number;
+      readonly omittedIssues: number;
+      readonly issues: ReadonlyArray<{ readonly code: string }>;
+    };
+    expect(limitedPayload.counts.total).toBeGreaterThan(1);
+    expect(limitedPayload.shownIssues).toBe(1);
+    expect(limitedPayload.issues.length).toBe(1);
+    expect(limitedPayload.omittedIssues).toBe(
+      limitedPayload.counts.total - limitedPayload.shownIssues,
+    );
 
     const never = await h.runCli(["lint", "--fail-on", "never"]);
     expect(never.exitCode).toBe(0);

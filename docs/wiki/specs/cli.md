@@ -35,7 +35,7 @@ dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]
                                 Source-backed agenda for a person or topic.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
-dome lint [--fail-on <severity>] [--json]
+dome lint [--fail-on <severity>] [--limit <n>] [--json]
                                 Adopted-state hygiene report.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
@@ -434,7 +434,7 @@ Text mode summarizes repeated fact predicates and diagnostic codes with counts
 (`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
 underlying structured fact and diagnostic rows unchanged.
 
-### `dome lint [--fail-on <severity>] [--json]`
+### `dome lint [--fail-on <severity>] [--limit <n>] [--json]`
 
 Dedicated wrapper for the `dome.lint.report` view processor. It reads the
 adopted-state diagnostic projection plus deterministic snapshot checks through
@@ -456,9 +456,12 @@ Issues
 
 `--fail-on` defines the exit threshold. Values are `info`, `warning`, `error`,
 `block`, or `never`; omitted defaults to `error`, so warnings are visible
-without making the command fail. `--json` emits the structured
-`dome.lint.report/v1` payload with the same status, counts, checked-file
-summary, issues, and SourceRefs.
+without making the command fail. `--limit` bounds the rendered issue rows while
+leaving the severity counts and exit threshold based on the full adopted-state
+issue set; omitted issue counts tell the user how to expand the report.
+`--json` emits the structured `dome.lint.report/v1` payload with the same
+status, counts, checked-file summary, bounded `issues`, `shownIssues`,
+`omittedIssues`, and SourceRefs.
 
 ### `dome export-context <topic> [--limit <n>] [--json]`
 

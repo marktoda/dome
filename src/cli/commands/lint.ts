@@ -1,6 +1,7 @@
 // cli/commands/lint: first-class wrapper for the dome.lint report view.
 
 import { formatJson } from "../format";
+import { parsePositiveIntegerValue } from "../parse-options";
 import {
   firstPartyViewNotFoundMessage,
   printViewCommandMessages,
@@ -15,12 +16,19 @@ export type LintCommandOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly limit?: string | number | boolean | undefined;
 };
 
 export async function runLint(
   options: LintCommandOptions = {},
 ): Promise<number> {
   try {
+    const limit = parsePositiveIntegerValue(options.limit, null);
+    if (options.limit !== undefined && limit === null) {
+      console.error("dome lint: --limit must be a positive integer.");
+      return 64;
+    }
+
     const run = await runStructuredViewCommand({
       commandLabel: "dome lint",
       commandName: "lint",
@@ -28,6 +36,7 @@ export async function runLint(
       expectedSchema: "dome.lint.report/v1",
       commandArgs: Object.freeze({
         ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
+        ...(limit !== null ? { limit } : {}),
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,

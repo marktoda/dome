@@ -77,7 +77,7 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     const proc = lint.processors[0];
     if (proc === undefined) throw new Error("expected one processor");
     expect(proc.id).toBe("dome.lint.report");
-    expect(proc.version).toBe("0.1.0");
+    expect(proc.version).toBe("0.1.1");
     expect(proc.phase).toBe("view");
     expect(proc.triggers.length).toBe(1);
     const trigger = proc.triggers[0];

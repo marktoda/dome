@@ -2,7 +2,7 @@ id: dome.lint
 version: 0.1.0
 processors:
   - id: dome.lint.report
-    version: 0.1.0
+    version: 0.1.1
     phase: view
     triggers:
       - kind: command
