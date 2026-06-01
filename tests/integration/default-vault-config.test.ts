@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import {
+  defaultModelProviderConfig,
   defaultConfigRecord,
   defaultConfigYaml,
   FIRST_PARTY_EXTENSION_DEFAULTS,
@@ -17,6 +18,18 @@ import { loadBundles } from "../../src/extensions/loader";
 describe("default vault config", () => {
   test("rendered YAML round-trips to the typed default record", () => {
     expect(parseYaml(defaultConfigYaml())).toEqual(defaultConfigRecord());
+  });
+
+  test("model-provider YAML round-trips to the typed provider default", () => {
+    expect(parseYaml(defaultConfigYaml({ modelProvider: "anthropic" }))).toEqual(
+      defaultConfigRecord({ modelProvider: "anthropic" }),
+    );
+    const parsed = parseYaml(
+      defaultConfigYaml({ modelProvider: "anthropic" }),
+    ) as Record<string, unknown>;
+    expect(parsed.model_provider).toEqual(
+      defaultModelProviderConfig("anthropic"),
+    );
   });
 
   test("enabled first-party defaults grant every declared capability kind", async () => {

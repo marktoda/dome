@@ -37,6 +37,7 @@ import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import {
+  defaultModelProviderConfig,
   defaultConfigRecord,
   defaultConfigYaml,
 } from "../../src/cli/default-vault-config";
@@ -329,6 +330,9 @@ describe("runInit", () => {
       expect(configBody).toContain("dome.markdown");
       expect(configBody).toContain("max_iterations");
       expect(parseYaml(configBody)).toEqual(defaultConfigRecord());
+      expect(existsSync(join(target, ".dome", "model-provider.ts"))).toBe(
+        false,
+      );
 
       const agentsPath = join(target, "AGENTS.md");
       expect(existsSync(agentsPath)).toBe(true);
@@ -373,6 +377,7 @@ describe("runInit", () => {
       expect(claudeBody).not.toContain("only use `dome status`");
       expect(captured.out.join("\n")).toContain("CLAUDE.md:");
       expect(captured.out.join("\n")).toContain("inbox/raw/:");
+      expect(captured.out.join("\n")).toContain(".dome/model-provider.ts:");
 
       // Git initialized + HEAD resolves (the initial scaffold commit landed).
       expect(existsSync(join(target, ".git"))).toBe(true);
@@ -400,6 +405,67 @@ describe("runInit", () => {
         expect(ids).toContain("dome.lint");
         expect(ids).toContain("dome.markdown");
       }
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--with-model-provider anthropic writes a vault-local command provider", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-provider-"));
+    try {
+      const code = await runInit({
+        path: target,
+        modelProvider: "anthropic",
+      });
+      expect(code).toBe(0);
+
+      const configPath = join(target, ".dome", "config.yaml");
+      const providerPath = join(target, ".dome", "model-provider.ts");
+      expect(existsSync(configPath)).toBe(true);
+      expect(existsSync(providerPath)).toBe(true);
+
+      const configBody = await readFile(configPath, "utf8");
+      expect(parseYaml(configBody)).toEqual(
+        defaultConfigRecord({ modelProvider: "anthropic" }),
+      );
+      const parsedConfig = record(parseYaml(configBody));
+      expect(parsedConfig.model_provider).toEqual(
+        defaultModelProviderConfig("anthropic"),
+      );
+      const extensions = record(parsedConfig.extensions);
+      expect(record(extensions["dome.intake"]).enabled).toBe(false);
+
+      const providerBody = await readFile(providerPath, "utf8");
+      expect(providerBody.startsWith("#!/usr/bin/env bun")).toBe(true);
+      expect(providerBody).toContain("ANTHROPIC_API_KEY");
+      expect(providerBody).toContain("claude-haiku-4-5-20251001");
+      expect(providerBody).toContain("dome.model-provider.request/v1");
+
+      const head = await currentSha(target);
+      expect(head).not.toBeNull();
+      if (head !== null) {
+        expect(
+          await readBlob({
+            path: target,
+            commit: head,
+            filepath: ".dome/config.yaml",
+          }),
+        ).toBe(configBody);
+        expect(
+          await readBlob({
+            path: target,
+            commit: head,
+            filepath: ".dome/model-provider.ts",
+          }),
+        ).toBe(providerBody);
+      }
+
+      expect(await runInit({ path: target, modelProvider: "anthropic" })).toBe(
+        0,
+      );
+      expect(await readFile(configPath, "utf8")).toBe(configBody);
+      expect(await readFile(providerPath, "utf8")).toBe(providerBody);
+      expect(await currentSha(target)).toBe(head);
     } finally {
       await rm(target, { recursive: true, force: true });
     }

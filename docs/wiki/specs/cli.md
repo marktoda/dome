@@ -18,7 +18,8 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 ## The CLI surface
 
 ```text
-dome init [path]                Initialize a new vault.
+dome init [path] [--with-model-provider anthropic]
+                                Initialize a new vault.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--json]            Vault health + content dashboard.
@@ -98,7 +99,7 @@ the processor's own view payloads without imposing a first-party schema.
 
 ## Per-command specs
 
-### `dome init [path] [--refresh-config] [--refresh-instructions]`
+### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic]`
 
 Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
 hotfix: `dome init` no longer copies the shipped first-party bundles
@@ -134,9 +135,17 @@ The shipped initialization steps:
    and third-party bundle config. When it changes the file, it rewrites the YAML
    into normalized form so stale comments from older generated configs do not
    contradict the active grants.
-4. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
+4. When `--with-model-provider anthropic` is supplied, writes
+   `<vault>/.dome/model-provider.ts` and adds a command-provider stanza to
+   `.dome/config.yaml`:
+   `model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`.
+   The scaffold expects `ANTHROPIC_API_KEY` at runtime, keeps the vendor SDK
+   outside `@dome/sdk`, and does not enable `dome.intake` or any other
+   model-capable bundle. Enabling model-backed loops remains an explicit
+   config choice.
+5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
-5. Writes `<vault>/AGENTS.md` from the shipped orientation template
+6. Writes `<vault>/AGENTS.md` from the shipped orientation template
    (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
@@ -148,11 +157,11 @@ The shipped initialization steps:
    for old orientation files: it adds the managed AGENTS user-prose delimiters
    when missing and prepends the `@AGENTS.md` shim to CLAUDE.md when missing,
    preserving existing file content.
-6. Creates an initial scaffold commit (`dome init: initial scaffold`)
+7. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
-   `.dome/config.yaml`. Skipped if HEAD already resolves (re-init on a
-   vault with commits is a
-   no-op for this step).
+   `.dome/config.yaml`, plus `.dome/model-provider.ts` when the provider
+   scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
+   with commits is a no-op for this step).
 
 Deferred to v1.1:
 - `.dome/page-types.yaml` is not scaffolded by default. The page-type

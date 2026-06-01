@@ -45,6 +45,20 @@ describe("runCli", () => {
     expect(out).not.toContain("DOME status");
   });
 
+  test("init help exposes the optional model-provider scaffold", async () => {
+    expect(await runCli(["init", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("Usage: dome init");
+    expect(out).toContain("--with-model-provider <provider>");
+  });
+
+  test("init rejects unknown model-provider scaffolds", async () => {
+    expect(await runCli(["init", "--with-model-provider", "openai"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain("invalid provider; expected one of: anthropic");
+    expect(err).toContain("Usage: dome init");
+  });
+
   test("compiler host help exposes quiet output mode", async () => {
     expect(await runCli(["sync", "-h"])).toBe(0);
     expect(await runCli(["serve", "-h"])).toBe(0);

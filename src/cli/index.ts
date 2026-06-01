@@ -6,7 +6,12 @@
 // Command modules expose typed handler inputs so tests can call the handlers
 // directly without constructing Commander objects or spawning subprocesses.
 
-import { Command, CommanderError, Option } from "commander";
+import {
+  Command,
+  CommanderError,
+  InvalidArgumentError,
+  Option,
+} from "commander";
 
 import { runCheck } from "./commands/check";
 import { runAgenda } from "./commands/agenda";
@@ -89,12 +94,18 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "--refresh-instructions",
       "Repair old AGENTS.md/CLAUDE.md orientation shims.",
     )
+    .option(
+      "--with-model-provider <provider>",
+      "Write a local command model provider template (currently: anthropic).",
+      parseInitModelProviderOption,
+    )
     .action(async (path: string | undefined, options: InitCliOptions) => {
       setExitCode(
         await runInit({
           path,
           refreshConfig: options.refreshConfig,
           refreshInstructions: options.refreshInstructions,
+          modelProvider: options.withModelProvider,
         }),
       );
     });
@@ -506,6 +517,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 type InitCliOptions = {
   readonly refreshConfig?: boolean;
   readonly refreshInstructions?: boolean;
+  readonly withModelProvider?: "anthropic";
 };
 
 type CheckCliOptions = {
@@ -681,6 +693,13 @@ function parseLintFailOnOption(value: string): LintFailOn {
     EX_USAGE,
     "commander.invalidArgument",
     `error: invalid lint severity '${value}'`,
+  );
+}
+
+function parseInitModelProviderOption(value: string): "anthropic" {
+  if (value === "anthropic") return value;
+  throw new InvalidArgumentError(
+    "invalid provider; expected one of: anthropic",
   );
 }
 

@@ -118,6 +118,7 @@ Once `dome.index` ships, it should be rebuildable through `dome rebuild` when st
 ```
 <vault>/.dome/
   config.yaml             # vault config — invariant enable/disable, bundle grants, engine knobs
+  model-provider.ts       # OPTIONAL — vault-local command model provider scaffold
   page-types.yaml         # default + extension page types declared for this vault
   extensions/             # OPTIONAL — vault-local third-party bundles
     <user-installed>/     # any user-installed bundle (directory copy)
@@ -140,6 +141,10 @@ The single config file. The accepted top-level keys are `extensions`,
 open rather than being silently ignored.
 
 ```yaml
+model_provider:
+  kind: command
+  command: ["bun", ".dome/model-provider.ts"]
+
 extensions:
   dome.markdown:
     enabled: true
@@ -168,6 +173,15 @@ engine:
 git:
   auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
 ```
+
+`model_provider` is optional. `dome init --with-model-provider anthropic`
+writes a vault-local `.dome/model-provider.ts` command adapter and the stanza
+above. The command runs from the vault root, receives
+`dome.model-provider.request/v1` JSON on stdin, and writes provider-neutral JSON
+on stdout (`text`, optional `model`, optional `costUsd`). The scaffold expects
+`ANTHROPIC_API_KEY` at runtime and keeps vendor API wiring outside the SDK core.
+It does not enable `dome.intake`; model-capable bundles still require explicit
+`extensions.<bundle>.enabled: true` plus effective `model.invoke` grants.
 
 Vault identity is currently git-native (`HEAD`, current branch, and
 `refs/dome/adopted/<branch>`), not a `vault:` config block. Axiom-tier

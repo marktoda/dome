@@ -18,6 +18,8 @@ export type FirstPartyExtensionDefault = {
   readonly grant: Readonly<Record<string, DefaultGrantValue>>;
 };
 
+export type DefaultModelProvider = "anthropic";
+
 export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDefault> =
   Object.freeze([
     extension("dome.lint", true, {
@@ -71,8 +73,10 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     }),
   ]);
 
-export function defaultConfigRecord(): Record<string, unknown> {
-  return {
+export function defaultConfigRecord(opts: {
+  readonly modelProvider?: DefaultModelProvider | undefined;
+} = {}): Record<string, unknown> {
+  const record: Record<string, unknown> = {
     extensions: Object.fromEntries(
       FIRST_PARTY_EXTENSION_DEFAULTS.map((entry) => [
         entry.id,
@@ -90,11 +94,18 @@ export function defaultConfigRecord(): Record<string, unknown> {
       auto_commit_workflows: true,
     },
   };
+  if (opts.modelProvider !== undefined) {
+    record.model_provider = defaultModelProviderConfig(opts.modelProvider);
+  }
+  return record;
 }
 
-export function defaultConfigYaml(): string {
+export function defaultConfigYaml(opts: {
+  readonly modelProvider?: DefaultModelProvider | undefined;
+} = {}): string {
   return (
     DEFAULT_CONFIG_HEADER +
+    renderModelProviderConfig(opts.modelProvider) +
     "extensions:\n" +
     FIRST_PARTY_EXTENSION_DEFAULTS.map(renderExtension).join("\n") +
     "\n" +
@@ -156,6 +167,36 @@ function renderGrantValue(
 function renderScalar(value: boolean | number | string): string {
   if (typeof value === "string") return quote(value);
   return String(value);
+}
+
+export function defaultModelProviderConfig(
+  provider: DefaultModelProvider,
+): Record<string, unknown> {
+  switch (provider) {
+    case "anthropic":
+      return {
+        kind: "command",
+        command: ["bun", ".dome/model-provider.ts"],
+      };
+  }
+  const _exhaustive: never = provider;
+  return _exhaustive;
+}
+
+function renderModelProviderConfig(
+  provider: DefaultModelProvider | undefined,
+): string {
+  if (provider === undefined) return "";
+  const config = defaultModelProviderConfig(provider);
+  const command = config.command;
+  if (!Array.isArray(command)) return "";
+  return [
+    "model_provider:",
+    `  kind: ${renderScalar(String(config.kind))}`,
+    "  command:",
+    ...command.map((part) => `    - ${renderScalar(String(part))}`),
+    "",
+  ].join("\n") + "\n";
 }
 
 function quote(value: string): string {
