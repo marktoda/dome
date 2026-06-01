@@ -801,6 +801,10 @@ Work:
 - [x] Strip leading `#task` / `#followup` markers from daily action fact text,
       after real work-vault `today` / `prep` output showed marker syntax leaking
       into management task lists.
+- [x] Prioritize target daily-note tasks, followups, and questions before the
+      wider wiki backlog in daily action views, after real-vault soak showed
+      path sorting could hide the chosen day's own work behind concept/entity
+      task debt.
 - [x] Make bounded `dome agenda` preserve total agenda-item counts and
       omitted-item hints, so common person/topic agendas do not hide additional
       matching work behind the display limit.

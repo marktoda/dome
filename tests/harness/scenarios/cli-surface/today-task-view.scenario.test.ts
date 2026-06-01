@@ -105,10 +105,10 @@ scenario(
     expect(payload.counts.followups).toBe(2);
     expect(payload.counts.questions).toBe(1);
     expect(payload.openTasks.map((task) => task.text)).toEqual([
-      "Draft project staffing note",
-      "Ask Ben about hiring budget",
       "Ship weekly update",
       "Send Ada launch notes",
+      "Draft project staffing note",
+      "Ask Ben about hiring budget",
     ]);
     expect(
       payload.openTasks.every((task) =>
@@ -116,8 +116,8 @@ scenario(
       ),
     ).toBe(true);
     expect(payload.followups.map((task) => task.text)).toEqual([
-      "Ask Ben about hiring budget",
       "Send Ada launch notes",
+      "Ask Ben about hiring budget",
     ]);
     expect(payload.questions[0]?.question).toContain(
       "We should follow up with Cy about review timing",
@@ -215,6 +215,8 @@ scenario(
     ]);
     expect(limitedText.exitCode).toBe(0);
     expect(limitedText.stdout).toContain("  ... 2 more open tasks");
-    expect(limitedText.stdout).not.toContain("Ship weekly update");
+    expect(limitedText.stdout).toContain("Ship weekly update");
+    expect(limitedText.stdout).toContain("Send Ada launch notes");
+    expect(limitedText.stdout).not.toContain("Draft project staffing note");
   },
 );

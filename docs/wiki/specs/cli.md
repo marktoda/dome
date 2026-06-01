@@ -480,6 +480,11 @@ Daily action fact text is semantic task text: leading `#task`, `#followup`,
 and `#follow-up` marker tags are stripped from rendered task/followup text,
 while SourceRefs still point to the original markdown line.
 
+Within daily action sections, items from the target daily note sort before
+the wider wiki backlog, then path / line / text ordering keeps the remaining
+rows deterministic. This keeps the chosen day's own plan visible even in
+large management vaults with many project/entity tasks.
+
 `--limit` bounds open-task, followup, and question rows while preserving total
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload. `--date` is for
@@ -500,6 +505,11 @@ Default text output is markdown:
 - bounded followup / task / question sections, with omitted-item hints when a
   section is truncated,
 - SourceRefs for the backing daily note and the rendered facts/questions.
+
+The shared daily action ordering is the same as `dome today`: items from the
+target daily note appear before wider wiki backlog within each bounded action
+section, and the "Start Here" buckets preserve their followup / question / task
+priority on top of that source ordering.
 
 Daily question rows in the markdown packet include the same durable row id and
 `dome resolve <id> <value>` hint as `dome check`, so a planning packet can be

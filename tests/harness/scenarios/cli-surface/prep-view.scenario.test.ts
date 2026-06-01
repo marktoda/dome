@@ -124,6 +124,10 @@ scenario(
       "followup",
       "followup",
     ]);
+    expect(payload.planningItems.map((item) => item.text)).toEqual([
+      "Send Ada launch notes",
+      "Ask Ben about hiring budget",
+    ]);
     expect(payload.planningItems[0]?.sourceRefs[0]?.path).toBe(
       payload.planningItems[0]?.path,
     );
@@ -133,12 +137,11 @@ scenario(
     expect(payload.markdown).toContain(
       "- ... 2 more open tasks (use --limit 4 to show all open tasks)",
     );
-    expect(payload.markdown).toContain("wiki/captures/launch.md:8-8 @");
     expect(payload.markdown).toContain("wiki/captures/launch.md:9-9 @");
     expect(payload.markdown).toContain("wiki/captures/launch.md:10-10 @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md @");
-    expect(payload.markdown).not.toContain(
-      "wiki/dailies/2026-01-05.md:8-8 @",
-    );
+    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:8-8 @");
+    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:9-9 @");
+    expect(payload.markdown).not.toContain("wiki/captures/launch.md:8-8 @");
   },
 );

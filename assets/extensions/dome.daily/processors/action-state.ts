@@ -80,15 +80,15 @@ export async function collectDailyActionState(
   const followupKeys = new Set(followupFacts.map(factKey));
   const openTasks = openFacts
     .map((fact) => taskItemFromFact(fact, followupKeys.has(factKey(fact))))
-    .sort(compareTaskItems);
+    .sort(compareTaskItemsForDaily(path));
   const followups = followupFacts
     .map((fact) => taskItemFromFact(fact, true))
-    .sort(compareTaskItems);
+    .sort(compareTaskItemsForDaily(path));
   const questions = ctx.projection
     .questions({ resolved: false })
     .filter((question) => question.idempotencyKey.startsWith("dome.daily."))
     .map(questionItemFromEffect)
-    .sort(compareQuestionItems);
+    .sort(compareQuestionItemsForDaily(path));
 
   const scope = uniqueSourceRefs([
     ...dailySourceRefs,
@@ -279,6 +279,16 @@ function compareTaskItems(a: DailyTaskItem, b: DailyTaskItem): number {
   return comparePathLineText(a.path, a.line, a.text, b.path, b.line, b.text);
 }
 
+function compareTaskItemsForDaily(
+  dailyPath: string,
+): (a: DailyTaskItem, b: DailyTaskItem) => number {
+  return (a, b) => {
+    const priorityCmp = pathDailyPriority(a.path, dailyPath) -
+      pathDailyPriority(b.path, dailyPath);
+    return priorityCmp === 0 ? compareTaskItems(a, b) : priorityCmp;
+  };
+}
+
 function compareQuestionItems(
   a: DailyQuestionItem,
   b: DailyQuestionItem,
@@ -291,6 +301,20 @@ function compareQuestionItems(
     b.line,
     b.question,
   );
+}
+
+function compareQuestionItemsForDaily(
+  dailyPath: string,
+): (a: DailyQuestionItem, b: DailyQuestionItem) => number {
+  return (a, b) => {
+    const priorityCmp = pathDailyPriority(a.path, dailyPath) -
+      pathDailyPriority(b.path, dailyPath);
+    return priorityCmp === 0 ? compareQuestionItems(a, b) : priorityCmp;
+  };
+}
+
+function pathDailyPriority(path: string, dailyPath: string): number {
+  return path === dailyPath ? 0 : 1;
 }
 
 function comparePathLineText(
