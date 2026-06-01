@@ -1652,6 +1652,104 @@ describe("runCheck", () => {
     ]);
   });
 
+  test("content report groups repeated diagnostic messages", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      for (const path of ["wiki/a.md", "wiki/b.md"]) {
+        insertDiagnostic(projection.value.db, {
+          effect: diagnosticEffect({
+            severity: "warning",
+            code: "check.repeated",
+            message: "Repeated diagnostic",
+            sourceRefs: [
+              sourceRef({
+                commit: adoptedCommit,
+                path,
+              }),
+            ],
+          }),
+          processorId: "test.check",
+          proposalId: null,
+          adoptedCommit,
+        });
+      }
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "check.single",
+          message: "Single diagnostic",
+          sourceRefs: [
+            sourceRef({
+              commit: adoptedCommit,
+              path: "wiki/c.md",
+            }),
+          ],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+        json: true,
+      }),
+    ).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const content = record(parsed["content"]);
+    const messageSummary = record(content["message_summary"]);
+    expect(messageSummary["total"]).toBe(3);
+    expect(messageSummary["group_count"]).toBe(2);
+    const groups = messageSummary["groups"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(groups[0]).toEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "check.repeated",
+        message: "Repeated diagnostic",
+        count: 2,
+        first_source_refs: expect.stringContaining("wiki/"),
+      }),
+    );
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        attention: true,
+      }),
+    ).toBe(0);
+    const text = captured.out.join("\n");
+    expect(text).toContain("Content groups");
+    expect(text).toContain(
+      "[warning] check.repeated x2: Repeated diagnostic",
+    );
+  });
+
   test("text output reports omitted bounded rows", async () => {
     const f = await makeFixture();
     fixtures.push(f);

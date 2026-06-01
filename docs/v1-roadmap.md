@@ -758,6 +758,9 @@ Work:
       --json` from routing back to itself; once a bounded diagnostic report is
       already rendered, the next action is fixing listed source markdown,
       committing, and rerunning `dome sync --json`.
+- [x] Add repeated-message grouping to `dome check` content reports so real
+      vaults with many instances of the same broken target show one repair task
+      count before the row-by-row source list.
 - [x] Add `dome today --limit` and default bounded sections, after the real
       work vault exposed that the primary daily task surface could print a
       100-line backlog and become hard for Claude Code to scan.

@@ -23,6 +23,8 @@ import {
   countAttentionDiagnostics,
   formatSourceRefs,
   summarizeDiagnosticEffects,
+  summarizeDiagnosticMessages,
+  type DiagnosticMessageSummary,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
@@ -77,6 +79,7 @@ type CheckContentReport = {
     readonly attention: boolean;
   };
   readonly summary: DiagnosticSummary;
+  readonly message_summary: DiagnosticMessageSummary;
   readonly items: ReadonlyArray<CheckDiagnosticItem>;
 };
 
@@ -226,6 +229,7 @@ function collectContentReport(opts: {
       attention: opts.attentionOnly,
     }),
     summary: summarizeDiagnosticEffects(filteredDiagnostics, opts.limit),
+    message_summary: summarizeDiagnosticMessages(filteredDiagnostics, opts.limit),
     items: Object.freeze(
       filteredDiagnostics.slice(0, opts.limit).map((diagnostic) =>
         Object.freeze({
@@ -367,6 +371,7 @@ function printFindings(findings: ReadonlyArray<HealthFinding>): void {
 function printDiagnostics(report: CheckContentReport | null): void {
   const items = report?.items ?? [];
   if (items.length === 0) return;
+  printDiagnosticMessageGroups(report);
   console.log("");
   console.log("Content");
   for (const item of items) {
@@ -377,6 +382,25 @@ function printDiagnostics(report: CheckContentReport | null): void {
     report?.filtered_diagnostics ?? 0,
     items.length,
     "diagnostics",
+  );
+}
+
+function printDiagnosticMessageGroups(report: CheckContentReport | null): void {
+  if (report === null) return;
+  const groups = report.message_summary.groups;
+  if (!groups.some((group) => group.count > 1)) return;
+  console.log("");
+  console.log("Content groups");
+  for (const group of groups) {
+    console.log(
+      `  - [${group.severity}] ${group.code} x${group.count}: ${group.message}`,
+    );
+    console.log(`    first: ${group.first_source_refs}`);
+  }
+  appendMoreGroupsLine(
+    report.message_summary.group_count,
+    groups.length,
+    "groups",
   );
 }
 
@@ -392,6 +416,14 @@ function printQuestions(report: CheckDecisionReport | null): void {
     console.log(`    resolve: ${item.resolveCommand}`);
   }
   appendMoreLine(report?.questions ?? 0, items.length, "questions");
+}
+
+function appendMoreGroupsLine(total: number, shown: number, label: string): void {
+  const remaining = total - shown;
+  if (remaining <= 0) return;
+  console.log(
+    `  ... ${remaining} more ${label} (use --limit ${total} to show all ${label})`,
+  );
 }
 
 function appendMoreLine(total: number, shown: number, label: string): void {

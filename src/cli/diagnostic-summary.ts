@@ -19,6 +19,22 @@ export type DiagnosticSummary = {
   readonly groups: ReadonlyArray<DiagnosticGroup>;
 };
 
+export type DiagnosticMessageGroup = {
+  readonly severity: DiagnosticSeverity;
+  readonly code: string;
+  readonly message: string;
+  readonly count: number;
+  readonly first_source_refs: string;
+  readonly firstSourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export type DiagnosticMessageSummary = {
+  readonly total: number;
+  readonly group_count: number;
+  readonly shown_groups: number;
+  readonly groups: ReadonlyArray<DiagnosticMessageGroup>;
+};
+
 const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
   block: 0,
   error: 1,
@@ -72,6 +88,44 @@ export function summarizeDiagnosticEffects(
   });
 }
 
+export function summarizeDiagnosticMessages(
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+  limit: number,
+): DiagnosticMessageSummary {
+  const grouped = new Map<string, DiagnosticMessageGroup>();
+  for (const diagnostic of diagnostics) {
+    const key = [
+      diagnostic.severity,
+      diagnostic.code,
+      diagnostic.message,
+    ].join("\u0000");
+    const existing = grouped.get(key);
+    if (existing !== undefined) {
+      grouped.set(key, {
+        ...existing,
+        count: existing.count + 1,
+      });
+      continue;
+    }
+    grouped.set(key, {
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      count: 1,
+      first_source_refs: formatSourceRefs(diagnostic.sourceRefs),
+      firstSourceRefs: diagnostic.sourceRefs,
+    });
+  }
+
+  const groups = [...grouped.values()].sort(compareDiagnosticMessageGroups);
+  return Object.freeze({
+    total: diagnostics.length,
+    group_count: groups.length,
+    shown_groups: Math.min(limit, groups.length),
+    groups: Object.freeze(groups.slice(0, limit)),
+  });
+}
+
 export function formatSourceRefs(
   refs: ReadonlyArray<{
     readonly path: string;
@@ -84,6 +138,19 @@ export function formatSourceRefs(
 ): string {
   if (refs.length === 0) return "-";
   return refs.map(formatSourceRef).join(", ");
+}
+
+function compareDiagnosticMessageGroups(
+  a: DiagnosticMessageGroup,
+  b: DiagnosticMessageGroup,
+): number {
+  if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) {
+    return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+  }
+  if (b.count !== a.count) return b.count - a.count;
+  const codeOrder = a.code.localeCompare(b.code);
+  if (codeOrder !== 0) return codeOrder;
+  return a.message.localeCompare(b.message);
 }
 
 function compareDiagnosticGroups(
