@@ -1494,9 +1494,9 @@ describe("runCheck", () => {
       },
       {
         reasons: ["diagnostics"],
-        command: null,
+        command: "dome check --content --limit 50 --json",
         description:
-          "Fix the source markdown issue(s), commit the change, then run dome sync --json.",
+          "Review a larger bounded diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
   });

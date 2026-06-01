@@ -309,6 +309,9 @@ structured `dome.check/v1` payload. Abbreviated example:
 `dome check` does not mutate state and does not run the compiler. When the
 report says engine work may be recoverable through a health question, run
 `dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
+When attention is content diagnostics only, the diagnostic next action points
+to `dome check --content --limit 50 --json` so an agent can safely fetch a
+larger bounded detail list before editing source markdown.
 
 ### `dome resolve <question-id> [<value>]`
 

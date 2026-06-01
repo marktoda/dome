@@ -657,6 +657,10 @@ Work:
 - [x] Keep `dome status` `last_sync` tied to successful adoption/garden
       processor runs, not read-only view commands, so soak notes cannot mistake
       `dome lint` or query views for compiler catch-up.
+- [x] Give `dome check --json` diagnostic attention a concrete follow-up
+      command (`dome check --content --limit 50 --json`) instead of a null
+      manual action, so Claude Code has a safe bounded path from status to
+      row-level source fixes.
 - [x] Resolve stale source-less processor diagnostics after a later clean
       processor rerun, so historical broker blocks do not survive forever
       after grants or code paths are fixed.
