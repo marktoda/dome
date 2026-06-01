@@ -24,10 +24,14 @@ import {
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_RELATED_ROWS = 8;
+const TASK_METADATA_MARKER =
+  /(?:^|\s)(?:\u{1F4C5}\s*\d{4}-\d{2}-\d{2}|\u{1F53A}|\u{23EB}|\u{1F53C}|\u{1F53D}|\u{23EC})(?=\s|$)/gu;
+const TASK_DUE_MARKER =
+  /(?:^|\s)\u{1F4C5}\s*(\d{4}-\d{2}-\d{2})(?=\s|$)/u;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -165,7 +169,7 @@ function contextEntryFromMatch(
         .map((fact) =>
           Object.freeze({
             predicate: fact.predicate,
-            object: objectLabel(fact.object),
+            object: factObjectLabel(fact),
             assertion: fact.assertion,
             sourceRefs: Object.freeze([...fact.sourceRefs]),
           })
@@ -344,6 +348,52 @@ function objectLabel(value: FactEffect["object"]): string {
   if (value.kind === "page") return value.path;
   if (value.kind === "task") return value.stableId;
   return value.name;
+}
+
+function factObjectLabel(fact: FactEffect): string {
+  const raw = objectLabel(fact.object);
+  if (
+    fact.object.kind !== "string" ||
+    !(
+      fact.predicate === "dome.daily.open_task" ||
+      fact.predicate === "dome.daily.followup"
+    )
+  ) {
+    return raw;
+  }
+  return dailyActionLabel(raw);
+}
+
+function dailyActionLabel(text: string): string {
+  const stripped = stripDailyTaskMetadata(text);
+  const dueDate = taskDueDate(text);
+  const priority = taskPriority(text);
+  const metadata = [
+    dueDate === null ? null : `due: ${dueDate}`,
+    priority === null ? null : `priority: ${priority}`,
+  ].filter((item): item is string => item !== null);
+  return metadata.length === 0 ? stripped : `${stripped} [${metadata.join(", ")}]`;
+}
+
+function stripDailyTaskMetadata(text: string): string {
+  const stripped = text
+    .replace(TASK_METADATA_MARKER, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return stripped.length > 0 ? stripped : text;
+}
+
+function taskDueDate(text: string): string | null {
+  return TASK_DUE_MARKER.exec(text)?.[1] ?? null;
+}
+
+function taskPriority(text: string): string | null {
+  if (text.includes("\u{1F53A}")) return "highest";
+  if (text.includes("\u{23EB}")) return "high";
+  if (text.includes("\u{1F53C}")) return "medium";
+  if (text.includes("\u{1F53D}")) return "low";
+  if (text.includes("\u{23EC}")) return "lowest";
+  return null;
 }
 
 function formatSourceRef(ref: SourceRef): string {

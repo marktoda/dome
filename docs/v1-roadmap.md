@@ -864,6 +864,10 @@ Work:
       `dome today`, `dome prep`, and `dome agenda`, while preserving the
       structured `dueDate` and `priority` fields, after real work-vault output
       showed due-date and priority glyphs duplicating structured metadata.
+- [x] Apply the same task-metadata display cleanup to `dome export-context`
+      related daily facts, rendering parsed due dates and priorities as
+      explicit bracketed metadata in handoff packets instead of raw task
+      glyphs.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -13,14 +13,18 @@ scenario(
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
       { kind: "effect", effect: "view" },
       { kind: "phase", phase: "adoption" },
       { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
       { kind: "capability", capability: "search.write" },
       { kind: "trigger", trigger: "signal" },
       { kind: "trigger", trigger: "command" },
     ],
-    harness: { bundles: ["dome.markdown", "dome.graph", "dome.search"] },
+    harness: {
+      bundles: ["dome.markdown", "dome.graph", "dome.search", "dome.daily"],
+    },
   },
   async (h) => {
     const seed = await h.tick();
@@ -44,6 +48,7 @@ scenario(
           "---\n" +
           "# Project Alpha\n\n" +
           "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "- [ ] Ask Danny about alpha launch handoff 🔺 📅 2026-01-07\n" +
           "\n" +
           "See [[missing-alpha-owner]].\n",
         "wiki/project-alpha-copy.md":
@@ -52,6 +57,7 @@ scenario(
           "---\n" +
           "# Project Alpha\n\n" +
           "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "- [ ] Ask Danny about alpha launch handoff 🔺 📅 2026-01-07\n" +
           "\n" +
           "See [[missing-alpha-owner]].\n",
         "wiki/project-beta.md":
@@ -74,6 +80,12 @@ scenario(
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("dome.graph.tagged");
+    expect(text.stdout).toContain(
+      "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]",
+    );
+    expect(text.stdout).not.toContain(
+      "Ask Danny about alpha launch handoff 🔺 📅 2026-01-07",
+    );
     expect(text.stdout).toContain("more facts");
     expect(text.stdout).toContain("Diagnostics:");
     expect(text.stdout).toContain("dome.markdown.broken-wikilink");
@@ -100,7 +112,10 @@ scenario(
         readonly path: string;
         readonly title: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
-        readonly facts: ReadonlyArray<{ readonly predicate: string }>;
+        readonly facts: ReadonlyArray<{
+          readonly predicate: string;
+          readonly object: string;
+        }>;
         readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
         readonly questions: ReadonlyArray<{
           readonly id: number;
@@ -122,6 +137,13 @@ scenario(
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
+    expect(alpha?.facts).toContainEqual(
+      expect.objectContaining({
+        predicate: "dome.daily.open_task",
+        object:
+          "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]",
+      }),
+    );
     expect((alpha?.facts.length ?? 0)).toBeGreaterThan(8);
     expect(payload.markdown).toContain(
       `... ${(alpha?.facts.length ?? 8) - 8} more facts`,
