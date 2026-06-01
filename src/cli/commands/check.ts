@@ -282,6 +282,8 @@ function buildReport(input: {
     next_actions: nextActionsForCheck({
       engineFindings,
       diagnostics: attentionDiagnostics,
+      diagnosticsAlreadyBounded:
+        input.scopes.content && input.content?.filter.attention === true,
       questions,
       firstQuestionId: input.decisions?.items[0]?.id ?? null,
     }),

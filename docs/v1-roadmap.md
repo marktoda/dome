@@ -754,6 +754,10 @@ Work:
 - [x] Add `next_actions` to `dome sync --json`, after soak showed sync could
       report durable attention such as open questions without the command hint
       that status/check already provide.
+- [x] Stop attention-filtered `dome check --content --attention --limit 50
+      --json` from routing back to itself; once a bounded diagnostic report is
+      already rendered, the next action is fixing listed source markdown,
+      committing, and rerunning `dome sync --json`.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

@@ -122,6 +122,7 @@ export function nextActionsForSync(input: {
 export function nextActionsForCheck(input: {
   readonly engineFindings: number;
   readonly diagnostics: number;
+  readonly diagnosticsAlreadyBounded: boolean;
   readonly questions: number;
   readonly firstQuestionId: number | null;
 }): ReadonlyArray<CliNextAction> {
@@ -145,12 +146,21 @@ export function nextActionsForCheck(input: {
     }));
   }
   if (input.diagnostics > 0) {
-    out.push(Object.freeze({
-      reasons: Object.freeze(["diagnostics"]),
-      command: "dome check --content --attention --limit 50 --json",
-      description:
-        "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
-    }));
+    if (input.diagnosticsAlreadyBounded) {
+      out.push(Object.freeze({
+        reasons: Object.freeze(["diagnostics"]),
+        command: null,
+        description:
+          "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
+      }));
+    } else {
+      out.push(Object.freeze({
+        reasons: Object.freeze(["diagnostics"]),
+        command: "dome check --content --attention --limit 50 --json",
+        description:
+          "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
+      }));
+    }
   }
   return Object.freeze(out);
 }

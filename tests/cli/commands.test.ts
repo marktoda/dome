@@ -1633,6 +1633,14 @@ describe("runCheck", () => {
       | undefined;
     expect(sourceRefs?.[0]?.["path"]).toBe("wiki/seed.md");
     expect(parsed["status"]).toBe("attention");
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["diagnostics"],
+        command: null,
+        description:
+          "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
+      },
+    ]);
   });
 
   test("scope flags select one check surface", async () => {

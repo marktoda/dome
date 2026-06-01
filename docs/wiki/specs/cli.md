@@ -324,6 +324,10 @@ report says engine work may be recoverable through a health question, run
 When attention is content diagnostics only, the diagnostic next action points
 to `dome check --content --attention --limit 50 --json` so an agent can safely
 fetch a larger bounded actionable detail list before editing source markdown.
+Once `dome check` is already rendering an attention-filtered content report,
+the diagnostic next action is manual (`command: null`) and tells the caller to
+fix the listed source markdown diagnostics, commit, and run `dome sync --json`;
+it must not route back to the same bounded check command.
 
 ### `dome resolve <question-id> [<value>]`
 
