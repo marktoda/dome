@@ -35,7 +35,10 @@ import { runResolve } from "../../src/cli/commands/resolve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
-import { defaultConfigRecord } from "../../src/cli/default-vault-config";
+import {
+  defaultConfigRecord,
+  defaultConfigYaml,
+} from "../../src/cli/default-vault-config";
 import { loadBundles } from "../../src/extensions/loader";
 
 import {
@@ -983,6 +986,63 @@ describe("runInspect", () => {
         model: "none",
       }),
     );
+  });
+
+  test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      defaultConfigYaml(),
+    );
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly processors: number;
+      readonly model_processors: number;
+    }>;
+    const intake = bundles.find((row) => row.bundle === "dome.intake");
+    expect(intake).toEqual(
+      expect.objectContaining({
+        status: "disabled",
+        loaded: false,
+        processors: 0,
+        model_processors: 0,
+      }),
+    );
+    const search = bundles.find((row) => row.bundle === "dome.search");
+    expect(search).toEqual(
+      expect.objectContaining({
+        status: "enabled",
+        loaded: true,
+        processors: 3,
+      }),
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly processor: string;
+    }>;
+    expect(
+      processors.some((row) => row.processor.startsWith("dome.intake.")),
+    ).toBe(false);
   });
 
   test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {

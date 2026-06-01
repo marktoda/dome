@@ -64,6 +64,7 @@ import {
 import {
   computeCapabilityPolicyHash,
   loadCapabilityPolicy,
+  type ExtensionPolicyStatus,
   type CapabilityPolicy,
   type RuntimeConfig,
 } from "./capability-policy";
@@ -131,6 +132,7 @@ export type VaultRuntime = {
     readonly name: string;
     readonly version: string;
   }>;
+  readonly configuredExtensions: ReadonlyArray<ExtensionPolicyStatus>;
   readonly processorVersions: ReadonlyArray<{
     readonly id: string;
     readonly version: string;
@@ -536,6 +538,7 @@ function buildVaultRuntime(input: {
     outboxDb,
     ledgerDb,
     extensions: resolved.extensions,
+    configuredExtensions: policy.configuredExtensions,
     processorVersions: resolved.processorVersions,
     capabilityPolicyHash: settings.capabilityPolicyHash,
     registry: resolved.registry,

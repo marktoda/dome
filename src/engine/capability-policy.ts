@@ -22,6 +22,7 @@ import { err, ok, type Result } from "../types";
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
   readonly runtime: RuntimeConfig;
+  readonly configuredExtensions: ReadonlyArray<ExtensionPolicyStatus>;
   readonly enabledExtensionIds: ReadonlyArray<string>;
   readonly isExtensionEnabled: (extensionId: string) => boolean;
   readonly grantsForExtension: (
@@ -34,6 +35,11 @@ export type CapabilityPolicy = {
     extensionId: string,
     processorId: string,
   ) => ReadonlyArray<Capability>;
+};
+
+export type ExtensionPolicyStatus = {
+  readonly id: string;
+  readonly enabled: boolean;
 };
 
 export type RuntimeConfig = {
@@ -117,6 +123,7 @@ export async function loadCapabilityPolicy(
     string,
     ReadonlyMap<string, ReadonlyArray<Capability>>
   >();
+  const configuredExtensions: ExtensionPolicyStatus[] = [];
   const enabled = new Set<string>();
   if (root.extensions !== undefined) {
     const extensions = asRecord(root.extensions);
@@ -143,7 +150,12 @@ export async function loadCapabilityPolicy(
       if (extension.config !== undefined && asRecord(extension.config) === null) {
         return err(`${path} ${extensionPath}.config must be a YAML mapping`);
       }
-      if (extension.enabled !== true) {
+      const isEnabled = extension.enabled === true;
+      configuredExtensions.push(Object.freeze({
+        id: extensionId,
+        enabled: isEnabled,
+      }));
+      if (!isEnabled) {
         grants.set(extensionId, Object.freeze([]));
         processorGrants.set(extensionId, new Map());
         continue;
@@ -179,6 +191,7 @@ export async function loadCapabilityPolicy(
     Object.freeze({
       foundConfig: true,
       runtime: runtimeConfig.value,
+      configuredExtensions: sortExtensionStatuses(configuredExtensions),
       enabledExtensionIds: Object.freeze([...enabled]),
       isExtensionEnabled: (extensionId: string) => enabled.has(extensionId),
       grantsForExtension: (extensionId: string) =>
@@ -197,12 +210,21 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
   return Object.freeze({
     foundConfig,
     runtime: DEFAULT_RUNTIME_CONFIG,
+    configuredExtensions: Object.freeze([]),
     enabledExtensionIds: Object.freeze([]),
     isExtensionEnabled: () => !foundConfig,
     grantsForExtension: () => Object.freeze([]),
     processorGrantIdsForExtension: () => Object.freeze([]),
     grantsForProcessor: () => Object.freeze([]),
   });
+}
+
+function sortExtensionStatuses(
+  statuses: ReadonlyArray<ExtensionPolicyStatus>,
+): ReadonlyArray<ExtensionPolicyStatus> {
+  return Object.freeze(
+    [...statuses].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  );
 }
 
 function serializeGrantSet(grants: ReadonlyArray<Capability>): ReadonlyArray<unknown> {

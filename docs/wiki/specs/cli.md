@@ -602,8 +602,12 @@ Proposal, does not invoke any processor, and does not mutate state.
 
 Subjects (v1.0):
 
-- `bundles` — loaded extension bundle summary: version, processor counts by
-  phase, command-view count, schedule count, and model-capable processor count.
+- `bundles` — configured and loaded extension bundle summary: enabled/disabled
+  status, loaded flag, version for loaded bundles, processor counts by phase,
+  command-view count, schedule count, and enabled model-capable processor
+  count. Disabled configured bundles are listed without loading their processor
+  modules, so optional features such as `dome.intake` are visible without
+  making disabled bundle code part of the runtime.
 - `processors` — loaded processor/automation summary: bundle, phase, triggers,
   command names, declared capability kinds, bundle grant kinds, execution class,
   and model status (`none`, `declared-ungranted`, `granted-no-provider`, or

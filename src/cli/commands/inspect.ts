@@ -236,27 +236,7 @@ function collectRows(
   switch (subject) {
     case "bundles": {
       const processors = runtime.registry.all();
-      return runtime.extensions.slice(0, limit).map((extension) => {
-        const bundleProcessors = processors.filter(
-          (processor) => runtime.extensionIdFor(processor.id) === extension.name,
-        );
-        const phaseCounts = countProcessorPhases(bundleProcessors);
-        return {
-          bundle: extension.name,
-          version: extension.version,
-          processors: bundleProcessors.length,
-          adoption: phaseCounts.adoption,
-          garden: phaseCounts.garden,
-          view: phaseCounts.view,
-          scheduled: bundleProcessors.filter((processor) =>
-            processor.triggers.some((trigger) => trigger.kind === "schedule"),
-          ).length,
-          command_views: bundleProcessors.filter((processor) =>
-            processor.triggers.some((trigger) => trigger.kind === "command"),
-          ).length,
-          model_processors: bundleProcessors.filter(hasModelCapability).length,
-        };
-      });
+      return collectBundleRows(runtime, processors).slice(0, limit);
     }
     case "processors": {
       return runtime.registry.all().slice(0, limit).map((processor) => {
@@ -446,6 +426,83 @@ function defaultLimitForSubject(subject: string): number {
     return Number.MAX_SAFE_INTEGER;
   }
   return DEFAULT_LIMIT;
+}
+
+function collectBundleRows(
+  runtime: VaultRuntime,
+  processors: ReadonlyArray<Processor<unknown>>,
+): ReadonlyArray<Row> {
+  const rowsByBundle = new Map<string, Row>();
+  for (const extension of runtime.extensions) {
+    rowsByBundle.set(extension.name, bundleRow({
+      runtime,
+      processors,
+      bundleId: extension.name,
+      enabled: true,
+      loaded: true,
+      version: extension.version,
+    }));
+  }
+
+  if (runtime.configuredExtensions.length === 0) {
+    return Object.freeze([...rowsByBundle.values()]);
+  }
+
+  const rows: Row[] = [];
+  for (const status of runtime.configuredExtensions) {
+    rows.push(
+      rowsByBundle.get(status.id) ??
+        bundleRow({
+          runtime,
+          processors,
+          bundleId: status.id,
+          enabled: status.enabled,
+          loaded: false,
+        }),
+    );
+  }
+
+  for (const [bundleId, row] of rowsByBundle) {
+    if (!runtime.configuredExtensions.some((status) => status.id === bundleId)) {
+      rows.push(row);
+    }
+  }
+
+  return Object.freeze(rows);
+}
+
+function bundleRow(opts: {
+  readonly runtime: VaultRuntime;
+  readonly processors: ReadonlyArray<Processor<unknown>>;
+  readonly bundleId: string;
+  readonly enabled: boolean;
+  readonly loaded: boolean;
+  readonly version?: string;
+}): Row {
+  const bundleProcessors = opts.loaded
+    ? opts.processors.filter(
+        (processor) =>
+          opts.runtime.extensionIdFor(processor.id) === opts.bundleId,
+      )
+    : [];
+  const phaseCounts = countProcessorPhases(bundleProcessors);
+  return {
+    bundle: opts.bundleId,
+    status: opts.enabled ? "enabled" : "disabled",
+    loaded: opts.loaded,
+    version: opts.version ?? "-",
+    processors: bundleProcessors.length,
+    adoption: phaseCounts.adoption,
+    garden: phaseCounts.garden,
+    view: phaseCounts.view,
+    scheduled: bundleProcessors.filter((processor) =>
+      processor.triggers.some((trigger) => trigger.kind === "schedule"),
+    ).length,
+    command_views: bundleProcessors.filter((processor) =>
+      processor.triggers.some((trigger) => trigger.kind === "command"),
+    ).length,
+    model_processors: bundleProcessors.filter(hasModelCapability).length,
+  };
 }
 
 function countProcessorPhases(
