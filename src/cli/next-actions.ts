@@ -150,16 +150,6 @@ export function nextActionsForCheck(input: {
   readonly firstQuestionOptions: ReadonlyArray<string> | null;
 }): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
-  if (input.questions > 0) {
-    out.push(Object.freeze({
-      reasons: Object.freeze(["questions"]),
-      command: resolveQuestionCommand({
-        id: input.firstQuestionId,
-        options: input.firstQuestionOptions,
-      }),
-      description: questionResolutionDescription(input.firstQuestionOptions),
-    }));
-  }
   if (input.engineFindings > 0) {
     out.push(Object.freeze({
       reasons: Object.freeze(["engine"]),
@@ -184,6 +174,16 @@ export function nextActionsForCheck(input: {
           "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
       }));
     }
+  }
+  if (input.questions > 0) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(["questions"]),
+      command: resolveQuestionCommand({
+        id: input.firstQuestionId,
+        options: input.firstQuestionOptions,
+      }),
+      description: questionResolutionDescription(input.firstQuestionOptions),
+    }));
   }
   return Object.freeze(out);
 }

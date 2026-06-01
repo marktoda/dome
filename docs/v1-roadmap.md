@@ -114,6 +114,10 @@ V1 capability ledger:
 - [x] Unified attention path: `dome status --json` emits `next_actions`,
       `dome check --json` consolidates engine health, content diagnostics, and
       open decisions, and `dome resolve` is the primary decision verb.
+- [x] Agent-safe `dome check` next-action ordering: engine sync and
+      source-diagnostic review/fix paths are listed before unresolved user
+      decisions, so Claude Code can keep making safe progress without guessing
+      on management-specific questions.
 - [x] V1 end-to-end acceptance harness.
 - [x] Initial real-vault smoke against `docs/` and `~/vaults/work`.
 - [ ] Week-long daily workflow dogfood without manual `.dome/state` edits.

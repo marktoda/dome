@@ -1504,12 +1504,6 @@ describe("runCheck", () => {
     expect(decisionSourceRefs[0]?.["commit"]).toBe(adoptedCommit);
     expect(parsed["next_actions"]).toEqual([
       {
-        reasons: ["questions"],
-        command: "dome resolve 1 <yes|no>",
-        description:
-          "Resolve an open Dome decision using one of the listed options.",
-      },
-      {
         reasons: ["engine"],
         command: "dome sync --json",
         description:
@@ -1520,6 +1514,12 @@ describe("runCheck", () => {
         command: "dome check --content --attention --limit 50 --json",
         description:
           "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
+      },
+      {
+        reasons: ["questions"],
+        command: "dome resolve 1 <yes|no>",
+        description:
+          "Resolve an open Dome decision using one of the listed options.",
       },
     ]);
 
@@ -1574,6 +1574,72 @@ describe("runCheck", () => {
     expect(record(parsed["content"])["diagnostics"]).toBe(1);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(0);
     expect(parsed["next_actions"]).toEqual([]);
+  });
+
+  test("--json lists actionable diagnostics before open user decisions", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const ref = sourceRef({
+      commit: adoptedCommit,
+      path: "wiki/seed.md",
+    });
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "check.warning",
+          message: "fixable warning",
+          sourceRefs: [ref],
+        }),
+        processorId: "test.check",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Track this follow-up?",
+          options: ["track", "ignore"],
+          sourceRefs: [ref],
+          idempotencyKey: "check-question",
+        }),
+        processorId: "test.check",
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(record(parsed["engine"])["status"]).toBe("ok");
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["diagnostics"],
+        command: "dome check --content --attention --limit 50 --json",
+        description:
+          "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
+      },
+      {
+        reasons: ["questions"],
+        command: "dome resolve 1 <track|ignore>",
+        description:
+          "Resolve an open Dome decision using one of the listed options.",
+      },
+    ]);
   });
 
   test("--attention filters content rows while preserving total counts", async () => {

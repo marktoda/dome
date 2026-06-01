@@ -339,19 +339,22 @@ repeated findings such as one missing wikilink target can be handled as one
 repair task before drilling into individual source rows. Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"attention_diagnostics":1,"summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the
 report says engine work may be recoverable through a health question, run
 `dome sync --json` or keep `dome serve` running, then rerun `dome check --json`.
-Every decision item includes its own `resolveCommand`. The question next-action
-mirrors the first unresolved decision; when that decision has explicit options,
-the command includes them as the placeholder, for example `dome resolve 42
-<retry|abandon>`; free-form decisions use `<answer>`.
-When attention is content diagnostics only, the diagnostic next action points
-to `dome check --content --attention --limit 50 --json` so an agent can safely
-fetch a larger bounded actionable detail list before editing source markdown.
+`next_actions` orders safe/autonomous actions before human decision actions:
+engine sync first, source-diagnostic review/fix paths second, unresolved
+questions last. Every decision item includes its own `resolveCommand`. The
+question next-action mirrors the first unresolved decision; when that decision
+has explicit options, the command includes them as the placeholder, for example
+`dome resolve 42 <retry|abandon>`; free-form decisions use `<answer>`.
+When attention diagnostics are present and not already bounded, the diagnostic
+next action points to `dome check --content --attention --limit 50 --json` so
+an agent can safely fetch a larger bounded actionable detail list before
+editing source markdown.
 Once `dome check` is already rendering an attention-filtered content report,
 the diagnostic next action is manual (`command: null`) and tells the caller to
 fix the listed source markdown diagnostics, commit, and run `dome sync --json`;
