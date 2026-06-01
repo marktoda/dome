@@ -194,6 +194,18 @@ const DEFAULT_CONFIG_FOOTER = `engine:
   # requests more tightly for this vault.
   # processor_timeout_ms: 600000
   # model_call_timeout_ms: 180000
+  #
+  # Optional low-risk question auto-resolution. When enabled, Dome may answer
+  # unresolved questions that declare low risk, an allowed automation policy,
+  # sufficient confidence, and a recommended answer that is valid for the
+  # question options. Answer handlers still run through the normal garden /
+  # adoption path.
+  # auto_resolve_questions:
+  #   enabled: false
+  #   policies:
+  #     - "agent-safe"
+  #   min_confidence: 0.6
+  #   max_per_tick: 20
 
   # Auto-commit closure commits when adoption-phase processors emit
   # patches that converge. When false, processors that emit PatchEffect

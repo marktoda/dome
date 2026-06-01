@@ -225,6 +225,11 @@ engine:
   processor_timeout_ms: 300000
   model_call_timeout_ms: 120000
   auto_commit_workflows: false
+  auto_resolve_questions:
+    enabled: true
+    policies: ["agent-safe", "model-safe", "agent-safe"]
+    min_confidence: 0.7
+    max_per_tick: 4
 git:
   auto_commit_workflows: false
 extensions: {}
@@ -245,6 +250,12 @@ model_provider:
         executionCap: {
           timeoutMs: 300000,
           modelCallTimeoutMs: 120000,
+        },
+        autoResolveQuestions: {
+          enabled: true,
+          policies: ["agent-safe", "model-safe"],
+          minConfidence: 0.7,
+          maxPerTick: 4,
         },
       },
       git: { auto_commit_workflows: false },
@@ -317,6 +328,30 @@ engine:
     if (result.ok) return;
     expect(result.error).toContain(
       "engine.processor_timeout_ms must be a positive integer",
+    );
+  });
+
+  test("rejects malformed runtime question auto-resolution config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+engine:
+  auto_resolve_questions:
+    enabled: true
+    policies: ["owner-needed"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      'engine.auto_resolve_questions.policies[] must be one of "agent-safe", "model-safe"',
     );
   });
 

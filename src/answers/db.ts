@@ -1,9 +1,9 @@
-// answers-db: durable human answers for QuestionEffect rows.
+// answers-db: durable answers for QuestionEffect rows.
 //
 // Question rows in projection.db are rebuildable derived state. The human
-// decision attached to a question is not rebuildable from markdown, so this
-// store keeps answers in a separate operational SQLite file that survives
-// projection rebuilds.
+// or agent/model decision attached to a question is not rebuildable from
+// markdown, so this store keeps answers in a separate operational SQLite file
+// that survives projection rebuilds.
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";

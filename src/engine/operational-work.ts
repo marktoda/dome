@@ -10,6 +10,7 @@
 // future close/drain) from inventing its own partial lifecycle.
 
 import type { DiagnosticEffect } from "../core/effect";
+import type { AnswersDb } from "../answers/db";
 import type {
   Capability,
   ExtensionConfig,
@@ -32,7 +33,12 @@ import type { ProcessorRegistry } from "../processors/registry";
 import type { ModelProvider } from "./model-invoke";
 import type { ApplyEffectSinks } from "./apply-effect";
 import type { ApplyPatchInput } from "./apply-patch";
+import type { RuntimeQuestionAutoResolveConfig } from "./capability-policy";
 import { runQueuedJobs, type JobDrainResult } from "./jobs";
+import {
+  runQuestionAutoResolution,
+  type QuestionAutoResolutionResult,
+} from "./question-auto-resolution";
 import { runScheduler, type SchedulerResult } from "./scheduler";
 import type { EngineVault } from "./vault-shape";
 
@@ -40,6 +46,7 @@ export type OperationalWorkResult = {
   readonly scheduler: SchedulerResult;
   readonly jobs: JobDrainResult;
   readonly outbox: ReadonlyArray<ExternalDispatchResult>;
+  readonly questionAutoResolution: QuestionAutoResolutionResult;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
@@ -48,6 +55,7 @@ export async function runOperationalWork(opts: {
   readonly adopted: CommitOid;
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
+  readonly answers?: AnswersDb;
   readonly outbox: OutboxDb;
   readonly sinks: ApplyEffectSinks;
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
@@ -56,6 +64,7 @@ export async function runOperationalWork(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly externalHandlers: ExternalHandlerRegistry;
+  readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
   readonly operational?: OperationalQueryView;
   readonly ledger?: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
@@ -153,13 +162,66 @@ export async function runOperationalWork(opts: {
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
+  const questionAutoResolution =
+    opts.answers === undefined || opts.questionAutoResolve === undefined
+      ? emptyQuestionAutoResolution()
+      : await runQuestionAutoResolution({
+          config: opts.questionAutoResolve,
+          vault: opts.vault,
+          adopted: opts.currentAdopted?.() ?? opts.adopted,
+          registry: opts.registry,
+          projection: opts.projection,
+          answers: opts.answers,
+          sinks: opts.sinks,
+          resolveTree: opts.resolveTree,
+          now: opts.now,
+          resolveGrants: opts.resolveGrants,
+          extensionIdFor: opts.extensionIdFor,
+          ...(opts.operational !== undefined
+            ? { operational: opts.operational }
+            : {}),
+          ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+          ...(opts.executionState !== undefined
+            ? { executionState: opts.executionState }
+            : {}),
+          ...(opts.executionCap !== undefined
+            ? { executionCap: opts.executionCap }
+            : {}),
+          ...(opts.modelProvider !== undefined
+            ? { modelProvider: opts.modelProvider }
+            : {}),
+          ...(opts.adoptSubProposal !== undefined
+            ? { adoptSubProposal: opts.adoptSubProposal }
+            : {}),
+          ...(opts.currentAdopted !== undefined
+            ? { currentAdopted: opts.currentAdopted }
+            : {}),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+          ...(opts.applyGardenPatchToCandidate !== undefined
+            ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
+            : {}),
+        });
+
   return Object.freeze({
     scheduler,
     jobs,
     outbox,
+    questionAutoResolution,
     diagnostics: Object.freeze([
       ...scheduler.diagnostics,
       ...jobs.diagnostics,
+      ...questionAutoResolution.diagnostics,
     ]),
+  });
+}
+
+function emptyQuestionAutoResolution(): QuestionAutoResolutionResult {
+  return Object.freeze({
+    enabled: false,
+    considered: 0,
+    answered: 0,
+    skipped: 0,
+    handlerFailed: 0,
+    diagnostics: Object.freeze([]),
   });
 }

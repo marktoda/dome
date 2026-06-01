@@ -159,6 +159,11 @@ extensions:
 engine:
   max_iterations: 100             # MAX_ITER for the fixed-point loop
   auto_commit_workflows: true     # whether closure commits land automatically
+  auto_resolve_questions:          # optional; defaults to disabled
+    enabled: false
+    policies: ["agent-safe"]
+    min_confidence: 0.6
+    max_per_tick: 20
 
 git:
   auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
@@ -169,6 +174,14 @@ Vault identity is currently git-native (`HEAD`, current branch, and
 invariants are not user-toggleable. Ledger retention is not configurable in
 v1; operational databases are preserved unless the user explicitly removes
 them.
+
+`engine.auto_resolve_questions`, when enabled, lets the operational pump answer
+low-risk unresolved `QuestionEffect` rows that carry an allowed automation
+policy, a confidence at or above `min_confidence`, SourceRefs that still exist
+at the adopted ref, and a `recommendedAnswer` valid for the question options.
+The answer is recorded in `answers.db`, mirrored onto the question row, and
+dispatched through normal garden answer handlers; it does not create a second
+state-editing path.
 
 ### `page-types.yaml`
 

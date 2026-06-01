@@ -144,6 +144,7 @@ export function printHostFollowupLines(
     (operational.scheduler.fired.length > 0 ||
       operational.jobs.drained.length > 0 ||
       operational.outbox.length > 0 ||
+      operational.questionAutoResolution.answered > 0 ||
       operational.diagnostics.length > 0)
   ) {
     const line =
@@ -151,6 +152,7 @@ export function printHostFollowupLines(
       `${operational.scheduler.fired.length} scheduled, ` +
       `${operational.jobs.drained.length} jobs, ` +
       `${operational.outbox.length} outbox, ` +
+      `${operational.questionAutoResolution.answered} auto-resolved questions, ` +
       `${operational.diagnostics.length} diagnostic${operational.diagnostics.length === 1 ? "" : "s"})`;
     if (operational.diagnostics.length > 0) {
       console.error(line);

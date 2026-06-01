@@ -108,7 +108,16 @@ extensions:
         { id: "enabled.bundle.view", version: "0.1.0" },
       ]);
       expect(runtimeResult.value.config).toEqual({
-        engine: { maxIterations: 9, executionCap: {} },
+        engine: {
+          maxIterations: 9,
+          executionCap: {},
+          autoResolveQuestions: {
+            enabled: false,
+            policies: ["agent-safe"],
+            minConfidence: 0.6,
+            maxPerTick: 20,
+          },
+        },
         git: { auto_commit_workflows: false },
       });
       expect(runtimeResult.value.pageTypes.types.has("enabled-type")).toBe(true);

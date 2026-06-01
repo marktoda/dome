@@ -1,7 +1,7 @@
 // Durable question-answer accessors.
 //
 // The projection table holds current question rows; this store holds the
-// human answer by QuestionEffect.idempotencyKey so rebuilds can rehydrate
+// durable answer by QuestionEffect.idempotencyKey so rebuilds can rehydrate
 // projection state without giving processors direct write access.
 
 import type { AnswersDb } from "./db";

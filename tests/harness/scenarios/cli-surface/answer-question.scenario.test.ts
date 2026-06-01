@@ -40,6 +40,106 @@ const SLOW_ANSWER_HANDLER_BUNDLE_ROOT = join(
 
 scenario(
   {
+    name: "cli-surface: opt-in auto-resolution answers agent-safe questions through handlers",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "question" },
+      { kind: "effect", effect: "patch" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "garden" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "capability", capability: "read" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "answer" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+engine:
+  auto_resolve_questions:
+    enabled: true
+    policies:
+      - agent-safe
+    min_confidence: 0.6
+    max_per_tick: 5
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read:
+        - "wiki/**/*.md"
+        - "notes/*.md"
+      patch.auto:
+        - "wiki/**/*.md"
+        - "notes/*.md"
+      graph.write:
+        - "dome.daily.*"
+      question.ask: true
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/project.md":
+          "# Project\n\nWe should follow up with Riley\n",
+      },
+      message: "add ambiguous followup",
+    });
+
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const rows = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<{
+      readonly status: string;
+      readonly answer: string;
+      readonly metadata: { readonly automationPolicy?: string } | "-";
+    }>;
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.status).toBe("answered");
+    expect(rows[0]?.answer).toBe("track");
+    expect(rows[0]?.metadata).toEqual(
+      expect.objectContaining({ automationPolicy: "agent-safe" }),
+    );
+
+    const durableAnswer = h.answers.raw
+      .query<{
+        answer: string;
+        handler_status: string;
+        handler_attempts: number;
+      }, []>(
+        "SELECT answer, handler_status, handler_attempts FROM question_answers",
+      )
+      .get();
+    expect(durableAnswer?.answer).toBe("track");
+    expect(durableAnswer?.handler_status).toBe("handled");
+    expect(durableAnswer?.handler_attempts).toBe(1);
+
+    const handlerRun = h.ledger.raw
+      .query<{ trigger_kind: string }, []>(
+        "SELECT trigger_kind FROM runs WHERE processor_id = 'dome.daily.ambiguous-followup-answer'",
+      )
+      .get();
+    expect(handlerRun?.trigger_kind).toBe("answer");
+
+    const adopted = await h.refs.adopted();
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+    await h.expectFile("wiki/project.md", { atCommit: adopted })
+      .toContain("- [ ] #followup Follow up with Riley");
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome answer records an answer and runs answer handlers",
     tags: [
       { kind: "group", group: "cli-surface" },

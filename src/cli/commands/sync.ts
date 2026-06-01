@@ -121,6 +121,7 @@ type SyncOperationalSummary = {
   readonly scheduledCount: number;
   readonly jobCount: number;
   readonly outboxCount: number;
+  readonly autoResolvedQuestions: number;
   readonly diagnosticCount: number;
 };
 
@@ -523,6 +524,7 @@ function summarizeOperational(
     scheduledCount: operational.scheduler.fired.length,
     jobCount: operational.jobs.drained.length,
     outboxCount: operational.outbox.length,
+    autoResolvedQuestions: operational.questionAutoResolution.answered,
     diagnosticCount: operational.diagnostics.length,
   });
 }
@@ -540,6 +542,7 @@ function emptyOperationalSummary(): SyncOperationalSummary {
     scheduledCount: 0,
     jobCount: 0,
     outboxCount: 0,
+    autoResolvedQuestions: 0,
     diagnosticCount: 0,
   });
 }

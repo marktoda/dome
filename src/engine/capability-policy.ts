@@ -51,6 +51,7 @@ export type RuntimeConfig = {
   readonly engine: {
     readonly maxIterations: number;
     readonly executionCap: ExecutionPolicyCap;
+    readonly autoResolveQuestions: RuntimeQuestionAutoResolveConfig;
   };
   readonly git: {
     readonly auto_commit_workflows: boolean;
@@ -59,6 +60,13 @@ export type RuntimeConfig = {
 };
 
 export type RuntimeModelProviderConfig = CommandModelProviderConfig;
+
+export type RuntimeQuestionAutoResolveConfig = {
+  readonly enabled: boolean;
+  readonly policies: ReadonlyArray<"agent-safe" | "model-safe">;
+  readonly minConfidence: number;
+  readonly maxPerTick: number;
+};
 
 export type CommandModelProviderConfig = {
   readonly kind: "command";
@@ -299,6 +307,12 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   engine: Object.freeze({
     maxIterations: 100,
     executionCap: Object.freeze({}),
+    autoResolveQuestions: Object.freeze({
+      enabled: false,
+      policies: Object.freeze(["agent-safe"] as const),
+      minConfidence: 0.6,
+      maxPerTick: 20,
+    }),
   }),
   git: Object.freeze({
     auto_commit_workflows: true,
@@ -399,6 +413,11 @@ function parseRuntimeConfig(
     `${path} engine.auto_commit_workflows`,
   );
   if (!engineAutoCommit.ok) return err(engineAutoCommit.error);
+  const autoResolveQuestions = parseQuestionAutoResolveConfig(
+    engine.auto_resolve_questions,
+    `${path} engine.auto_resolve_questions`,
+  );
+  if (!autoResolveQuestions.ok) return err(autoResolveQuestions.error);
   const gitAutoCommit = parseOptionalBoolean(
     git.auto_commit_workflows,
     `${path} git.auto_commit_workflows`,
@@ -426,6 +445,7 @@ function parseRuntimeConfig(
             ? { modelCallTimeoutMs: modelCallTimeoutMs.value }
             : {}),
         }),
+        autoResolveQuestions: autoResolveQuestions.value,
       }),
       git: Object.freeze({
         auto_commit_workflows:
@@ -455,6 +475,7 @@ const ENGINE_KEYS = new Set([
   "auto_commit_workflows",
   "processor_timeout_ms",
   "model_call_timeout_ms",
+  "auto_resolve_questions",
 ]);
 const GIT_KEYS = new Set(["auto_commit_workflows"]);
 
@@ -484,6 +505,77 @@ function parseModelProviderConfig(
 }
 
 const MODEL_PROVIDER_KEYS = new Set(["kind", "command"]);
+const QUESTION_AUTO_RESOLVE_KEYS = new Set([
+  "enabled",
+  "policies",
+  "min_confidence",
+  "max_per_tick",
+]);
+const QUESTION_AUTO_RESOLVE_POLICIES = new Set(["agent-safe", "model-safe"]);
+
+function parseQuestionAutoResolveConfig(
+  raw: unknown,
+  label: string,
+): Result<RuntimeQuestionAutoResolveConfig, string> {
+  const fallback = DEFAULT_RUNTIME_CONFIG.engine.autoResolveQuestions;
+  if (raw === undefined) return ok(fallback);
+  const config = asRecord(raw);
+  if (config === null) return err(`${label} must be a YAML mapping`);
+  for (const key of Object.keys(config)) {
+    if (!QUESTION_AUTO_RESOLVE_KEYS.has(key)) {
+      return err(`${label}.${key} is not a known auto_resolve_questions field`);
+    }
+  }
+
+  const enabled = parseOptionalBoolean(config.enabled, `${label}.enabled`);
+  if (!enabled.ok) return err(enabled.error);
+
+  const policies =
+    config.policies === undefined
+      ? ok(fallback.policies)
+      : readRequiredStringList(config.policies, `${label}.policies`);
+  if (!policies.ok) return err(policies.error);
+  const normalizedPolicies: Array<"agent-safe" | "model-safe"> = [];
+  for (const policy of policies.value) {
+    if (!QUESTION_AUTO_RESOLVE_POLICIES.has(policy)) {
+      return err(
+        `${label}.policies[] must be one of "agent-safe", "model-safe"`,
+      );
+    }
+    if (!normalizedPolicies.includes(policy as "agent-safe" | "model-safe")) {
+      normalizedPolicies.push(policy as "agent-safe" | "model-safe");
+    }
+  }
+
+  const minConfidence =
+    config.min_confidence === undefined
+      ? ok(fallback.minConfidence)
+      : parseConfidence(config.min_confidence, `${label}.min_confidence`);
+  if (!minConfidence.ok) return err(minConfidence.error);
+
+  const maxPerTick = parsePositiveInteger(
+    config.max_per_tick,
+    `${label}.max_per_tick`,
+    fallback.maxPerTick,
+  );
+  if (!maxPerTick.ok) return err(maxPerTick.error);
+
+  return ok(
+    Object.freeze({
+      enabled: enabled.value ?? fallback.enabled,
+      policies: Object.freeze(normalizedPolicies),
+      minConfidence: minConfidence.value,
+      maxPerTick: maxPerTick.value,
+    }),
+  );
+}
+
+function parseConfidence(raw: unknown, label: string): Result<number, string> {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || raw > 1) {
+    return err(`${label} must be a number between 0 and 1`);
+  }
+  return ok(raw);
+}
 
 function parsePositiveInteger(
   raw: unknown,

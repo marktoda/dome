@@ -91,6 +91,7 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
   scheduledCount: 0,
   jobCount: 0,
   outboxCount: 0,
+  autoResolvedQuestions: 0,
   diagnosticCount: 0,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
