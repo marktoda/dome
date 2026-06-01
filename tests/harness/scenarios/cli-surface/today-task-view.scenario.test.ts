@@ -121,6 +121,35 @@ scenario(
     );
     expect(payload.questions[0]?.path).toBe("wiki/captures/2026-01-05.md");
 
+    h.projection.raw.run(
+      "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
+        + "object_json, assertion, confidence, source_refs, processor_id, "
+        + "adopted_commit, written_at) "
+        + "SELECT namespace, subject_kind, subject_id, predicate, object_json, "
+        + "assertion, confidence, source_refs, processor_id, adopted_commit, "
+        + "written_at FROM facts WHERE predicate IN "
+        + "('dome.daily.open_task', 'dome.daily.followup')",
+    );
+
+    const deduped = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(deduped.exitCode).toBe(0);
+    const dedupedPayload = JSON.parse(deduped.stdout) as {
+      readonly counts: {
+        readonly openTasks: number;
+        readonly followups: number;
+      };
+      readonly openTasks: ReadonlyArray<{ readonly text: string }>;
+      readonly followups: ReadonlyArray<{ readonly text: string }>;
+    };
+    expect(dedupedPayload.counts.openTasks).toBe(4);
+    expect(dedupedPayload.counts.followups).toBe(2);
+    expect(dedupedPayload.openTasks.map((task) => task.text)).toEqual(
+      payload.openTasks.map((task) => task.text),
+    );
+    expect(dedupedPayload.followups.map((task) => task.text)).toEqual(
+      payload.followups.map((task) => task.text),
+    );
+
     const text = await h.runCli(["today", "--date", "2026-01-05"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");

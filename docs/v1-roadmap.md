@@ -744,6 +744,10 @@ Work:
 - [x] Extend `bun run v1:smoke` to require the V1 user-value views
       (`today`, `prep`, `agenda`, `query`, and `export-context`) in both
       dogfood vaults, catching stale configs before the week-long soak.
+- [x] Serialize projection rebuilds across concurrent CLI/view processes and
+      make daily views defensive against duplicate task facts, after the work
+      vault soak exposed repeated `dome today` task rows from overlapping
+      cache-drift rebuilds.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

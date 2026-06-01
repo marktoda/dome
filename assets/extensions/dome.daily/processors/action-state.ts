@@ -68,12 +68,12 @@ export async function collectDailyActionState(
   const dailySourceRefs =
     dailyContent === null ? [] : [ctx.sourceRef(path)];
 
-  const openFacts = ctx.projection.facts({
+  const openFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: OPEN_TASK_PREDICATE,
-  });
-  const followupFacts = ctx.projection.facts({
+  }));
+  const followupFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: FOLLOWUP_PREDICATE,
-  });
+  }));
   const followupKeys = new Set(followupFacts.map(factKey));
   const openTasks = openFacts
     .map((fact) => taskItemFromFact(fact, followupKeys.has(factKey(fact))))
@@ -241,6 +241,20 @@ function factKey(fact: FactEffect): string {
     ref?.range?.startLine ?? "",
     object,
   ].join("\u0000");
+}
+
+function uniqueFactsByKey(
+  facts: ReadonlyArray<FactEffect>,
+): ReadonlyArray<FactEffect> {
+  const seen = new Set<string>();
+  const out: FactEffect[] = [];
+  for (const fact of facts) {
+    const key = factKey(fact);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(fact);
+  }
+  return Object.freeze(out);
 }
 
 function literalIdentity(value: FactEffect["object"]): string {

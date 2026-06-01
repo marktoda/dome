@@ -300,6 +300,14 @@ dome rebuild
 
 The rebuild is **idempotent** — running it twice in succession produces byte-equivalent `.db` files (modulo `written_at` timestamps). Any processor that depends on time, random values, network responses, or fresh LLM output is not eligible for automatic rebuild.
 
+Projection rebuild is also **single-writer at the host boundary**. Local
+surfaces such as `dome sync`, `dome rebuild`, and command-triggered views may
+all notice stale projection cache keys at once, especially immediately after a
+bundle/config change. They serialize on `.dome/state/locks/projection-rebuild.lock`
+before dropping and recreating projection tables, so concurrent CLI/view
+commands cannot interleave `resetProjectionDb` and effect routing into
+duplicated facts or FTS rows.
+
 The engine may run this same rebuild path automatically after adoption when a
 projection-global config file changes. For example, editing
 `.dome/page-types.yaml` can clear or create frontmatter diagnostics for pages
