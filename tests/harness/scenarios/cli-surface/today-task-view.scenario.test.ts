@@ -90,6 +90,20 @@ scenario(
           readonly questions: number;
         };
       };
+      readonly dueCounts: {
+        readonly openTasks: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+        readonly followups: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+      };
       readonly shown: {
         readonly openTasks: number;
         readonly followups: number;
@@ -142,6 +156,18 @@ scenario(
       openTasks: 2,
       followups: 1,
       questions: 1,
+    });
+    expect(payload.dueCounts.openTasks).toEqual({
+      overdue: 0,
+      today: 0,
+      upcoming: 1,
+      undated: 3,
+    });
+    expect(payload.dueCounts.followups).toEqual({
+      overdue: 0,
+      today: 0,
+      upcoming: 0,
+      undated: 2,
     });
     expect(payload.shown).toEqual({
       openTasks: 4,
@@ -295,6 +321,9 @@ scenario(
     );
     expect(text.stdout).toContain("backlog  2 open | 1 followups | 1 questions");
     expect(text.stdout).toContain("4 open | 2 followups | 1 questions");
+    expect(text.stdout).toContain(
+      "due      open 0 overdue | 0 today | 1 upcoming | 3 undated | followups 0 overdue | 0 today | 0 upcoming | 2 undated",
+    );
     expect(text.stdout).toContain("Daily note");
     expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(

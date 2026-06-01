@@ -81,8 +81,21 @@ type PrepData = {
     readonly followups: number;
     readonly questions: number;
   };
+  readonly dueCounts: PrepDueCounts;
   readonly planningItems: ReadonlyArray<PrepItem>;
   readonly markdown: string;
+};
+
+type PrepDueCounts = {
+  readonly openTasks: DueCounts;
+  readonly followups: DueCounts;
+};
+
+type DueCounts = {
+  readonly overdue: number;
+  readonly today: number;
+  readonly upcoming: number;
+  readonly undated: number;
 };
 
 type PrepItem = {
@@ -100,6 +113,7 @@ function formatPrepResult(data: unknown): string {
     `DOME prep ${prep.date}`,
     `daily    ${prep.daily.path} | ${prep.daily.exists ? "exists" : "missing"}`,
     `counts   ${prep.counts.openTasks} open tasks | ${prep.counts.followups} followups | ${prep.counts.questions} questions`,
+    `due      open tasks ${formatDueCounts(prep.dueCounts.openTasks)} | followups ${formatDueCounts(prep.dueCounts.followups)}`,
     "",
     "Start Here",
   ];
@@ -128,8 +142,27 @@ function parsePrepData(data: unknown): PrepData {
       followups: numberOrZero(counts.followups),
       questions: numberOrZero(counts.questions),
     }),
+    dueCounts: parseDueCounts(record.dueCounts),
     planningItems: Object.freeze(parseItems(record.planningItems)),
     markdown: stringOrEmpty(record.markdown),
+  });
+}
+
+function parseDueCounts(raw: unknown): PrepDueCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    openTasks: parseDueCountRecord(record.openTasks),
+    followups: parseDueCountRecord(record.followups),
+  });
+}
+
+function parseDueCountRecord(raw: unknown): DueCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    overdue: numberOrZero(record.overdue),
+    today: numberOrZero(record.today),
+    upcoming: numberOrZero(record.upcoming),
+    undated: numberOrZero(record.undated),
   });
 }
 
@@ -153,6 +186,15 @@ function sourceLabel(item: {
   readonly line: number | null;
 }): string {
   return item.line === null ? item.path : `${item.path}:${item.line}`;
+}
+
+function formatDueCounts(counts: DueCounts): string {
+  return [
+    `${counts.overdue} overdue`,
+    `${counts.today} today`,
+    `${counts.upcoming} upcoming`,
+    `${counts.undated} undated`,
+  ].join(" | ");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

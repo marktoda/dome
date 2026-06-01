@@ -32,6 +32,7 @@ export type DailyActionState = {
     readonly questions: number;
   };
   readonly sourceCounts: DailyActionSourceCounts;
+  readonly dueCounts: DailyActionDueCounts;
   readonly openTasks: ReadonlyArray<DailyTaskItem>;
   readonly followups: ReadonlyArray<DailyTaskItem>;
   readonly questions: ReadonlyArray<DailyQuestionItem>;
@@ -49,6 +50,18 @@ export type DailyActionCounts = {
 export type DailyActionSourceCounts = {
   readonly daily: DailyActionCounts;
   readonly backlog: DailyActionCounts;
+};
+
+export type DailyDueCounts = {
+  readonly overdue: number;
+  readonly today: number;
+  readonly upcoming: number;
+  readonly undated: number;
+};
+
+export type DailyActionDueCounts = {
+  readonly openTasks: DailyDueCounts;
+  readonly followups: DailyDueCounts;
 };
 
 export type DailyTaskItem = {
@@ -121,6 +134,11 @@ export async function collectDailyActionState(
     followups,
     questions,
   });
+  const dueCounts = countDailyActionDue({
+    date: dateString,
+    openTasks,
+    followups,
+  });
 
   const scope = uniqueSourceRefs([
     ...dailySourceRefs,
@@ -142,6 +160,7 @@ export async function collectDailyActionState(
       questions: questions.length,
     }),
     sourceCounts,
+    dueCounts,
     openTasks: Object.freeze(openTasks),
     followups: Object.freeze(followups),
     questions: Object.freeze(questions),
@@ -295,6 +314,41 @@ function countSource(
     followups: input.followups.filter((item) => item.source === source).length,
     questions: input.questions.filter((item) => item.source === source).length,
   });
+}
+
+function countDailyActionDue(input: {
+  readonly date: string;
+  readonly openTasks: ReadonlyArray<DailyTaskItem>;
+  readonly followups: ReadonlyArray<DailyTaskItem>;
+}): DailyActionDueCounts {
+  return Object.freeze({
+    openTasks: countDue(input.openTasks, input.date),
+    followups: countDue(input.followups, input.date),
+  });
+}
+
+function countDue(
+  tasks: ReadonlyArray<DailyTaskItem>,
+  date: string,
+): DailyDueCounts {
+  const counts = {
+    overdue: 0,
+    today: 0,
+    upcoming: 0,
+    undated: 0,
+  };
+  for (const task of tasks) {
+    if (task.dueDate === null) {
+      counts.undated += 1;
+    } else if (task.dueDate < date) {
+      counts.overdue += 1;
+    } else if (task.dueDate === date) {
+      counts.today += 1;
+    } else {
+      counts.upcoming += 1;
+    }
+  }
+  return Object.freeze(counts);
 }
 
 function sourceForPath(path: string, dailyPath: string): DailyActionSource {

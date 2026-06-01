@@ -78,6 +78,9 @@ scenario(
       "Backlog scope: 2 open tasks, 1 followups, 1 questions",
     );
     expect(text.stdout).toContain(
+      "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
+    );
+    expect(text.stdout).toContain(
       "[followup] Ask Ben about hiring budget 🔺 (wiki/captures/launch.md:9)",
     );
     expect(text.stdout).toContain(
@@ -132,6 +135,20 @@ scenario(
           readonly questions: number;
         };
       };
+      readonly dueCounts: {
+        readonly openTasks: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+        readonly followups: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+      };
       readonly shown: {
         readonly planningItems: number;
         readonly followups: number;
@@ -172,6 +189,18 @@ scenario(
       followups: 1,
       questions: 1,
     });
+    expect(payload.dueCounts.openTasks).toEqual({
+      overdue: 0,
+      today: 0,
+      upcoming: 1,
+      undated: 3,
+    });
+    expect(payload.dueCounts.followups).toEqual({
+      overdue: 0,
+      today: 0,
+      upcoming: 0,
+      undated: 2,
+    });
     expect(payload.shown).toEqual({
       planningItems: 2,
       followups: 2,
@@ -209,6 +238,9 @@ scenario(
     );
     expect(payload.markdown).toContain(
       "Backlog scope: 2 open tasks, 1 followups, 1 questions",
+    );
+    expect(payload.markdown).toContain(
+      "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(payload.markdown).toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain("<track|ignore>");

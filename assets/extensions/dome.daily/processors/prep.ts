@@ -18,6 +18,7 @@ import {
   parseInputLimit,
   uniqueSourceRefs,
   type DailyActionState,
+  type DailyDueCounts,
   type DailyQuestionItem,
   type DailyTaskItem,
   type DailyTaskPriority,
@@ -28,7 +29,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.5",
+  version: "0.1.6",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
@@ -75,6 +76,7 @@ const prep: Processor = defineProcessor({
       daily: actionState.daily,
       counts: actionState.counts,
       sourceCounts: actionState.sourceCounts,
+      dueCounts: actionState.dueCounts,
       shown,
       omitted,
       planningItems,
@@ -214,6 +216,7 @@ function renderPrepMarkdown(input: {
     `Counts: ${input.state.counts.openTasks} open tasks, ${input.state.counts.followups} followups, ${input.state.counts.questions} questions`,
     `Daily note scope: ${formatCounts(input.state.sourceCounts.daily)}`,
     `Backlog scope: ${formatCounts(input.state.sourceCounts.backlog)}`,
+    `Due: open tasks ${formatDueCounts(input.state.dueCounts.openTasks)}; followups ${formatDueCounts(input.state.dueCounts.followups)}`,
     "",
     "## Start Here",
   ];
@@ -380,6 +383,15 @@ function formatCounts(counts: {
     `${counts.openTasks} open tasks`,
     `${counts.followups} followups`,
     `${counts.questions} questions`,
+  ].join(", ");
+}
+
+function formatDueCounts(counts: DailyDueCounts): string {
+  return [
+    `${counts.overdue} overdue`,
+    `${counts.today} today`,
+    `${counts.upcoming} upcoming`,
+    `${counts.undated} undated`,
   ].join(", ");
 }
 

@@ -856,6 +856,10 @@ Work:
 - [x] Add explicit bounded-item counts to `dome check --json` content and
       decision reports, so soak notes can record how much diagnostic/decision
       evidence was shown without inferring truncation from array lengths.
+- [x] Add overdue/today/upcoming/undated due-bucket counts to `dome today` and
+      `dome prep`, after the real work-vault soak showed a bounded flat backlog
+      still hid whether the remaining management work was urgent or merely
+      undated.
 - [ ] Use Dome for one week of real daily management workflow without manual
       sqlite/JSON state edits, lost garden patches, or unexplained stuck
       state.

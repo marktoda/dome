@@ -84,6 +84,7 @@ type TodayData = {
     readonly questions: number;
   };
   readonly sourceCounts: TodaySourceCounts;
+  readonly dueCounts: TodayDueCounts;
   readonly openTasks: ReadonlyArray<TodayTask>;
   readonly followups: ReadonlyArray<TodayTask>;
   readonly questions: ReadonlyArray<TodayQuestion>;
@@ -100,6 +101,18 @@ type TodayCounts = {
 type TodaySourceCounts = {
   readonly daily: TodayCounts;
   readonly backlog: TodayCounts;
+};
+
+type TodayDueCounts = {
+  readonly openTasks: DueCounts;
+  readonly followups: DueCounts;
+};
+
+type DueCounts = {
+  readonly overdue: number;
+  readonly today: number;
+  readonly upcoming: number;
+  readonly undated: number;
 };
 
 type TodayTask = {
@@ -130,6 +143,7 @@ function formatTodayResult(data: unknown): string {
     }`,
     `backlog  ${formatCounts(today.sourceCounts.backlog)}`,
     `tasks    ${today.counts.openTasks} open | ${today.counts.followups} followups | ${today.counts.questions} questions`,
+    `due      open ${formatDueCounts(today.dueCounts.openTasks)} | followups ${formatDueCounts(today.dueCounts.followups)}`,
   ];
 
   lines.push("");
@@ -185,6 +199,7 @@ function parseTodayData(data: unknown): TodayData {
       questions: numberOrZero(counts.questions),
     }),
     sourceCounts: parseSourceCounts(record.sourceCounts),
+    dueCounts: parseDueCounts(record.dueCounts),
     openTasks: Object.freeze(parseTasks(record.openTasks)),
     followups: Object.freeze(parseTasks(record.followups)),
     questions: Object.freeze(parseQuestions(record.questions)),
@@ -328,6 +343,24 @@ function parseSourceCounts(raw: unknown): TodaySourceCounts {
   });
 }
 
+function parseDueCounts(raw: unknown): TodayDueCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    openTasks: parseDueCountRecord(record.openTasks),
+    followups: parseDueCountRecord(record.followups),
+  });
+}
+
+function parseDueCountRecord(raw: unknown): DueCounts {
+  const record = asRecord(raw);
+  return Object.freeze({
+    overdue: numberOrZero(record.overdue),
+    today: numberOrZero(record.today),
+    upcoming: numberOrZero(record.upcoming),
+    undated: numberOrZero(record.undated),
+  });
+}
+
 function parseCounts(raw: unknown): TodayCounts {
   const record = asRecord(raw);
   return Object.freeze({
@@ -346,6 +379,15 @@ function formatCounts(counts: TodayCounts): string {
     `${counts.openTasks} open`,
     `${counts.followups} followups`,
     `${counts.questions} questions`,
+  ].join(" | ");
+}
+
+function formatDueCounts(counts: DueCounts): string {
+  return [
+    `${counts.overdue} overdue`,
+    `${counts.today} today`,
+    `${counts.upcoming} upcoming`,
+    `${counts.undated} undated`,
   ].join(" | ");
 }
 
