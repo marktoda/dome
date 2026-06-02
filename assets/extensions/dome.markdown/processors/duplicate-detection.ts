@@ -23,6 +23,11 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import {
+  DUPLICATE_DETECTION_OPTIONS,
+  DUPLICATE_DETECTION_QUESTION_PREFIX,
+  DUPLICATE_KEEP_SEPARATE_ANSWER,
+} from "./duplicate-detection-shared";
 
 const COMPARABLE_CONTENT_ROOTS = ["notes/", "wiki/"] as const;
 const NON_CANONICAL_CONTENT_PREFIXES = [
@@ -67,14 +72,14 @@ const duplicateDetection: Processor = defineProcessor({
             question:
               `Possible duplicate pages: ${changed.path} and ${other.path}. ` +
               "They have the same normalized title and first prose paragraph, with related filenames.",
-            options: ["merge", "keep separate"],
+            options: DUPLICATE_DETECTION_OPTIONS,
             sourceRefs: [changed.sourceRef, other.sourceRef],
             idempotencyKey:
-              `dome.markdown.duplicate-detection:${sha256(pairKey + ":" + changed.signature)}`,
+              `${DUPLICATE_DETECTION_QUESTION_PREFIX}${sha256(pairKey + ":" + changed.signature)}`,
             metadata: {
               risk: "medium",
               confidence: 0.8,
-              recommendedAnswer: "keep separate",
+              recommendedAnswer: DUPLICATE_KEEP_SEPARATE_ANSWER,
               automationPolicy: "owner-needed",
               ownerNeededReason:
                 "Merging duplicate pages can change canonical meaning or lose context.",

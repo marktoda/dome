@@ -222,6 +222,7 @@ scenario(
     expect(answered.question.answered_at).not.toBeNull();
     expect(answered.handlers.status).toBe("handled");
     expect(answered.handlers.runs.map((run) => run.processor_id)).toEqual([
+      "dome.markdown.duplicate-detection-answer",
       "test.answer-handler.record-duplicate-answer",
     ]);
     expect(answered.handlers.sub_proposals).toBe(1);

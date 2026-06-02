@@ -187,7 +187,7 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(4);
+    expect(report.summary.capabilityGrantGaps).toBe(5);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
@@ -195,6 +195,7 @@ scenario(
     expect(grantGaps.map((finding) => finding.id).sort()).toEqual([
       "dome.markdown.ambiguous-wikilink-answer",
       "dome.markdown.duplicate-detection",
+      "dome.markdown.duplicate-detection-answer",
       "dome.markdown.normalize-frontmatter",
       "dome.markdown.validate-wikilinks",
     ]);
@@ -227,6 +228,14 @@ scenario(
         capability: {
           processorId: "dome.markdown.duplicate-detection",
           missingKinds: ["question.ask"],
+        },
+      }),
+    );
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.duplicate-detection-answer",
+          missingKinds: ["patch.auto"],
         },
       }),
     );
