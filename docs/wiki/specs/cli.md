@@ -326,6 +326,7 @@ readability option.
       "diagnostics": 0,
       "attention_diagnostics": 0,
       "drift_diagnostics": 0,
+      "noise_diagnostics": 0,
       "questions": 0,
       "agent_safe_questions": 0,
       "model_safe_questions": 0,
@@ -449,6 +450,11 @@ processor substrate. Loops are metadata, not runtime dispatch units: each row
 names the desired-state objective, its implementing processor ids, command/path
 surfaces, settlement rule, current state, and the unresolved
 diagnostics/questions/recent problem runs attributable to those processors.
+Loop diagnostic counts are disposition-aware: `diagnostics` remains the total
+unresolved attributed diagnostics, `attention_diagnostics` counts
+warning/error/block source-backed findings, `noise_diagnostics` counts
+source-backed findings classified as `noise`, and `drift_diagnostics` counts
+the remaining non-attention, non-noise findings that keep a loop unsettled.
 `processor_ids` is the complete attribution set for processor runs and
 diagnostics. `required_processor_ids` control whether a loop is inactive or
 partial. `optional_processor_ids` name opt-in contributors; inactive optional
@@ -471,7 +477,8 @@ runs). Older failed rows remain visible in `recent_processor_runs` and
 `inspect runs`, but a later successful run clears loop attention.
 `state: "quiet"` means the loop is active and has no visible drift or attention;
 `"attention"` means attention diagnostics, questions, or latest active problem runs are present;
-`"drift"` means non-attention diagnostics are visible but do not route immediate attention;
+`"drift"` means non-attention, non-noise diagnostics are visible but do not
+route immediate attention;
 `"partial"` means at least one required processor is not active while another
 required processor is active; and `"inactive"` means none of the loop's
 required processors are active.
@@ -662,6 +669,10 @@ Abbreviated example:
       "processor_ids": ["dome.health.outbox-recovery-questions"],
       "required_processor_ids": ["dome.health.outbox-recovery-questions"],
       "optional_processor_ids": [],
+      "diagnostics": 0,
+      "attention_diagnostics": 0,
+      "drift_diagnostics": 0,
+      "noise_diagnostics": 0,
       "questions": 1
     }
   ],

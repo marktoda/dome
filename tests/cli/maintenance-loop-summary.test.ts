@@ -255,6 +255,45 @@ describe("collectMaintenanceLoopSummaries", () => {
     ]);
   });
 
+  test("keeps disposition-classified noise visible without making the loop drift", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+    const historicalDailyRef = sourceRef({
+      commit: commitOid("abc123"),
+      path: "notes/2025-10-08.md",
+      range: { startLine: 3, endLine: 3 },
+    });
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: (processorId) =>
+        processorId === "test.active-processor"
+          ? [
+              diagnosticEffect({
+                severity: "info",
+                code: "dome.markdown.broken-wikilink",
+                message:
+                  "Wikilink [[dailies/2025-10-07]] does not resolve to any markdown file in the vault.",
+                sourceRefs: [historicalDailyRef],
+              }),
+            ]
+          : [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+
+    expect(summary?.state).toBe("quiet");
+    expect(summary?.diagnostics).toBe(1);
+    expect(summary?.attention_diagnostics).toBe(0);
+    expect(summary?.drift_diagnostics).toBe(0);
+    expect(summary?.noise_diagnostics).toBe(1);
+    expect(summary?.settlement.settled).toBe(true);
+    expect(summary?.settlement.failed_checks).toEqual([]);
+  });
+
   test("recovered processor runs do not keep a loop in attention", () => {
     const loop: MaintenanceLoop = {
       ...LOOP,

@@ -10,6 +10,7 @@ import type { QuestionRecord } from "../projections/questions";
 import { countQuestionAutomationPolicies } from "../question-resolution";
 import {
   countAttentionDiagnostics,
+  diagnosticDisposition,
   isSourceBackedDiagnostic,
 } from "./diagnostic-summary";
 
@@ -42,6 +43,7 @@ export type MaintenanceLoopSummary = {
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
   readonly drift_diagnostics: number;
+  readonly noise_diagnostics: number;
   readonly questions: number;
   readonly agent_safe_questions: number;
   readonly model_safe_questions: number;
@@ -102,7 +104,7 @@ export function formatMaintenanceLoopDetailLines(
       );
     }
     lines.push(
-      `    attention: ${loop.attention_diagnostics} attention diagnostic(s), ${loop.drift_diagnostics} drift diagnostic(s), ${loop.questions} question(s), ${loop.recent_problem_runs} problem run(s)`,
+      `    attention: ${loop.attention_diagnostics} attention diagnostic(s), ${loop.drift_diagnostics} drift diagnostic(s), ${loop.noise_diagnostics} noise diagnostic(s), ${loop.questions} question(s), ${loop.recent_problem_runs} problem run(s)`,
     );
     if (loop.questions > 0) {
       lines.push(
@@ -153,15 +155,22 @@ function summarizeLoop(
 
   let diagnostics = 0;
   let attentionDiagnostics = 0;
+  let noiseDiagnostics = 0;
   let recentRuns = 0;
   let recentProblemRuns = 0;
   let latestRunAt: string | null = null;
   for (const processorId of processorIds) {
     const processorDiagnostics = opts.diagnosticsByProcessor(processorId);
+    const sourceBackedDiagnostics = processorDiagnostics.filter(
+      isSourceBackedDiagnostic,
+    );
     diagnostics += processorDiagnostics.length;
     attentionDiagnostics += countAttentionDiagnostics(
-      processorDiagnostics.filter(isSourceBackedDiagnostic),
+      sourceBackedDiagnostics,
     );
+    noiseDiagnostics += sourceBackedDiagnostics.filter((diagnostic) =>
+      diagnosticDisposition(diagnostic).disposition === "noise"
+    ).length;
 
     const runs = opts.runsByProcessor(processorId);
     recentRuns += runs.length;
@@ -183,7 +192,10 @@ function summarizeLoop(
   const questionPolicyCounts = countQuestionAutomationPolicies(
     loopQuestions.map((question) => question.effect.metadata),
   );
-  const driftDiagnostics = Math.max(0, diagnostics - attentionDiagnostics);
+  const driftDiagnostics = Math.max(
+    0,
+    diagnostics - attentionDiagnostics - noiseDiagnostics,
+  );
   const settlementChecks = evaluateSettlementChecks({
     checks: loop.settlement.checks,
     requiredProcessorCount: loop.processors.length,
@@ -205,9 +217,9 @@ function summarizeLoop(
       activeRequiredProcessors: activeRequiredProcessors.length,
       missingProcessors: missingProcessors.length,
       attentionDiagnostics,
-      diagnostics,
       questions: loopQuestions.length,
       recentProblemRuns,
+      driftDiagnostics,
     }),
     question_scope: questionScope,
     processor_ids: processorIds,
@@ -228,6 +240,7 @@ function summarizeLoop(
     attention_diagnostics: attentionDiagnostics,
     questions: loopQuestions.length,
     drift_diagnostics: driftDiagnostics,
+    noise_diagnostics: noiseDiagnostics,
     agent_safe_questions: questionPolicyCounts.agentSafe,
     model_safe_questions: questionPolicyCounts.modelSafe,
     owner_needed_questions: questionPolicyCounts.ownerNeeded,
@@ -325,9 +338,9 @@ function stateForLoop(input: {
   readonly activeRequiredProcessors: number;
   readonly missingProcessors: number;
   readonly attentionDiagnostics: number;
-  readonly diagnostics: number;
   readonly questions: number;
   readonly recentProblemRuns: number;
+  readonly driftDiagnostics: number;
 }): MaintenanceLoopState {
   if (
     input.attentionDiagnostics > 0 ||
@@ -338,7 +351,7 @@ function stateForLoop(input: {
   }
   if (input.activeRequiredProcessors === 0) return "inactive";
   if (input.missingProcessors > 0) return "partial";
-  if (input.diagnostics > 0) return "drift";
+  if (input.driftDiagnostics > 0) return "drift";
   return "quiet";
 }
 
