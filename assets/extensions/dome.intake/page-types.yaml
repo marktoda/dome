@@ -3,5 +3,6 @@ extensions:
     frontmatter_extras:
       disposition: optional
       intake_items: optional
+      intake_pending_items: optional
       processed_from: optional
       source_hash: optional

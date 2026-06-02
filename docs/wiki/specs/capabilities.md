@@ -157,25 +157,29 @@ A bundle declares its processors' capabilities in `manifest.yaml`:
 
 ```yaml
 id: dome.intake
-version: 0.4.2
+version: 0.4.3
 description: "Compile raw captures into wiki updates."
 
 processors:
   - id: dome.intake.capture-index
-    version: 0.1.0
+    version: 0.1.1
     phase: adoption
     capabilities:
       - kind: read
         paths: ["wiki/generated/intake/*.md"]
       - kind: graph.write
         namespaces: ["dome.intake.*"]
+      - kind: question.ask
 
   - id: dome.intake.extract-capture
-    version: 0.3.2
+    version: 0.3.3
     phase: garden
     capabilities:
       - kind: read
-        paths: ["inbox/raw/*.md"]
+        paths:
+          - "inbox/raw/*.md"
+          - "inbox/processed/*.md"
+          - "wiki/generated/intake/*.md"
       - kind: patch.auto
         paths:
           - "wiki/generated/intake/*.md"

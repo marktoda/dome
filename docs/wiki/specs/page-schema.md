@@ -138,7 +138,7 @@ Extension bundles contribute additional page types via a bundle-root `page-types
 | Type | Bundle | Directory |
 |---|---|---|
 | `daily` | `dome.daily` | `wiki/dailies/` by default; configurable daily surfaces such as `notes/{date}.md` are supported by `dome.daily.config.daily_path` |
-| `capture` | `dome.intake` | `wiki/generated/intake/` and `inbox/processed/`; generated pages and archives carry optional `source_hash`, `disposition`, `processed_from`, and `intake_items` metadata |
+| `capture` | `dome.intake` | `wiki/generated/intake/` and `inbox/processed/`; generated pages and archives carry optional `source_hash`, `disposition`, `processed_from`, `intake_items`, and `intake_pending_items` metadata |
 | `weekly` | planned `dome.daily` | `wiki/weeklies/` |
 
 Each declared extension type may carry `frontmatter_extras:` — required or optional fields beyond the universal four. The `dome.daily` daily type, for example, requires:

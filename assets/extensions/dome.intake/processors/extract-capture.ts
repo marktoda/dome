@@ -2,7 +2,6 @@
 
 import {
   patchEffect,
-  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import {
@@ -12,15 +11,17 @@ import {
 import type { SourceRef } from "../../../../src/core/source-ref";
 import { z } from "zod";
 import {
+  currentCaptureDigest,
   captureOutputPaths,
   captureSourceHash,
   renderIntakeItemsFrontmatter,
+  renderPendingItemsFrontmatter,
   type CapturePageItem,
   type CapturePageItemKind,
+  type CapturePendingItem,
 } from "./capture-page";
 import {
-  LOW_CONFIDENCE_QUESTION_OPTIONS,
-  lowConfidenceQuestionKey,
+  lowConfidenceQuestionEffect,
   type CaptureLowConfidenceKind,
 } from "./low-confidence-shared";
 
@@ -81,13 +82,49 @@ const extractCapture = defineProcessorImplementation({
       const capture = await ctx.snapshot.readFile(path);
       if (capture === null) continue;
       const sourceHash = captureSourceHash(capture);
+      const paths = captureOutputPaths({ path, sourceHash });
+      const generatedContent = await ctx.snapshot.readFile(paths.generated);
+      const archiveContent = await ctx.snapshot.readFile(paths.archive);
+      const current = currentCaptureDigest({
+        generatedContent,
+        archiveContent,
+        sourcePath: path,
+        sourceHash,
+        capture,
+      });
+
+      if (current !== null) {
+        effects.push(
+          patchEffect({
+            mode: "auto",
+            changes: [
+              {
+                kind: "delete",
+                path,
+              },
+            ],
+            reason: `dome.intake: clear already-digested capture ${path}`,
+            sourceRefs: [ctx.sourceRef(path), ctx.sourceRef(paths.archive)],
+          }),
+          ...lowConfidenceQuestionsFromPending({
+            path,
+            sourceHash,
+            generatedPath: paths.generated,
+            pendingItems: current.pendingItems,
+            sourceRefs: [
+              ctx.sourceRef(path),
+              ctx.sourceRef(paths.generated),
+            ],
+          }),
+        );
+        continue;
+      }
 
       const extraction = await ctx.modelInvoke.structured({
         schemaName: MODEL_SCHEMA,
         prompt: promptForCapture(path, capture),
         parse: parseCaptureExtraction,
       });
-      const paths = captureOutputPaths({ path, sourceHash });
       const archive = renderArchive({ sourcePath: path, sourceHash, capture });
       const generated = renderGeneratedCapture({
         sourcePath: path,
@@ -122,7 +159,10 @@ const extractCapture = defineProcessorImplementation({
           path,
           sourceHash,
           generatedPath: paths.generated,
-          sourceRef: ctx.sourceRef(path),
+          sourceRefs: [
+            ctx.sourceRef(path),
+            ctx.sourceRef(paths.generated),
+          ],
           extraction,
         }),
       );
@@ -219,6 +259,7 @@ function renderGeneratedCapture(input: {
     "source_quote",
     extraction.sourceQuotes,
   );
+  const pendingItems = pendingCaptureItems(extraction);
   const intakeItems = [
     ...tasks,
     ...followups,
@@ -231,6 +272,7 @@ function renderGeneratedCapture(input: {
     "type: capture",
     `sources: [${yamlString(`[[${input.archivePath}]]`)}]`,
     ...renderIntakeItemsFrontmatter(intakeItems),
+    ...renderPendingItemsFrontmatter(pendingItems),
     `processed_from: ${yamlString(input.sourcePath)}`,
     `source_hash: ${yamlString(input.sourceHash)}`,
     "disposition: digested",
@@ -286,101 +328,70 @@ function highConfidenceItems(
   );
 }
 
+function pendingCaptureItems(
+  extraction: CaptureExtraction,
+): ReadonlyArray<CapturePendingItem> {
+  return Object.freeze([
+    ...lowConfidenceItems("task", extraction.tasks),
+    ...lowConfidenceItems("followup", extraction.followups),
+    ...lowConfidenceItems("decision", extraction.decisions),
+    ...lowConfidenceItems("entity", extraction.entities),
+  ]);
+}
+
 function lowConfidenceQuestions(input: {
   readonly path: string;
   readonly sourceHash: string;
   readonly generatedPath: string;
-  readonly sourceRef: SourceRef;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly extraction: CaptureExtraction;
 }): ReadonlyArray<Effect> {
-  const groups: ReadonlyArray<{
-    readonly kind: CaptureLowConfidenceKind;
-    readonly items: ReadonlyArray<ExtractedItem>;
-    readonly question: (text: string) => string;
-  }> = [
-    {
-      kind: "task",
-      items: input.extraction.tasks,
-      question: (text: string) =>
-        `Low-confidence task from ${input.path}: "${text}". ` +
-        "Should Dome track this as an open task?",
-    },
-    {
-      kind: "followup",
-      items: input.extraction.followups,
-      question: (text: string) =>
-        `Low-confidence follow-up from ${input.path}: "${text}". ` +
-        "Should Dome track this as a follow-up?",
-    },
-    {
-      kind: "decision",
-      items: input.extraction.decisions,
-      question: (text: string) =>
-        `Low-confidence decision from ${input.path}: "${text}". ` +
-        "Should Dome keep this as a decision?",
-    },
-    {
-      kind: "entity",
-      items: input.extraction.entities,
-      question: (text: string) =>
-        `Low-confidence entity from ${input.path}: "${text}". ` +
-        "Should Dome keep this entity mention?",
-    },
-  ] as const;
+  return lowConfidenceQuestionsFromPending({
+    path: input.path,
+    sourceHash: input.sourceHash,
+    generatedPath: input.generatedPath,
+    sourceRefs: input.sourceRefs,
+    pendingItems: pendingCaptureItems(input.extraction),
+  });
+}
+
+function lowConfidenceQuestionsFromPending(input: {
+  readonly path: string;
+  readonly sourceHash: string;
+  readonly generatedPath: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+  readonly pendingItems: ReadonlyArray<CapturePendingItem>;
+}): ReadonlyArray<Effect> {
   return Object.freeze(
-    groups.flatMap((group) =>
-      lowConfidenceItems(group.items).map((item) =>
-        lowConfidenceQuestion({
-          path: input.path,
-          sourceHash: input.sourceHash,
-          generatedPath: input.generatedPath,
-          sourceRef: input.sourceRef,
-          kind: group.kind,
-          text: item.text,
-          confidence: item.confidence,
-          question: group.question(item.text),
-        }),
-      ),
+    input.pendingItems.map((item) =>
+      lowConfidenceQuestionEffect({
+        path: input.path,
+        sourceHash: input.sourceHash,
+        generatedPath: input.generatedPath,
+        kind: item.kind,
+        text: item.text,
+        confidence: item.confidence,
+        sourceRefs: input.sourceRefs,
+      }),
     ),
   );
 }
 
 function lowConfidenceItems(
+  kind: CaptureLowConfidenceKind,
   items: ReadonlyArray<ExtractedItem>,
-): ReadonlyArray<ExtractedItem> {
-  return items.filter((item) => item.confidence < CONFIDENCE_THRESHOLD);
-}
-
-function lowConfidenceQuestion(input: {
-  readonly path: string;
-  readonly sourceHash: string;
-  readonly generatedPath: string;
-  readonly sourceRef: SourceRef;
-  readonly kind: CaptureLowConfidenceKind;
-  readonly text: string;
-  readonly confidence: number;
-  readonly question: string;
-}): Effect {
-  return questionEffect({
-    question: input.question,
-    options: LOW_CONFIDENCE_QUESTION_OPTIONS,
-    sourceRefs: [input.sourceRef],
-    idempotencyKey: lowConfidenceQuestionKey({
-      version: 1,
-      path: input.path,
-      sourceHash: input.sourceHash,
-      generatedPath: input.generatedPath,
-      kind: input.kind,
-      text: input.text,
-      confidence: input.confidence,
-    }),
-    metadata: {
-      risk: "low",
-      confidence: input.confidence,
-      recommendedAnswer: "track",
-      automationPolicy: "agent-safe",
-    },
-  });
+): ReadonlyArray<CapturePendingItem> {
+  return Object.freeze(
+    items
+      .filter((item) => item.confidence < CONFIDENCE_THRESHOLD)
+      .map((item) =>
+        Object.freeze({
+          kind,
+          text: item.text,
+          confidence: item.confidence,
+        }),
+      ),
+  );
 }
 
 function renderArchive(input: {

@@ -1,3 +1,6 @@
+import { questionEffect, type Effect } from "../../../../src/core/effect";
+import type { SourceRef } from "../../../../src/core/source-ref";
+
 export const LOW_CONFIDENCE_QUESTION_PREFIX =
   "dome.intake.low-confidence:";
 
@@ -23,6 +26,41 @@ export type CaptureLowConfidenceTarget = {
   readonly text: string;
   readonly confidence?: number;
 };
+
+export type CaptureLowConfidenceQuestionInput = {
+  readonly path: string;
+  readonly sourceHash: string;
+  readonly generatedPath: string;
+  readonly kind: CaptureLowConfidenceKind;
+  readonly text: string;
+  readonly confidence: number;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export function lowConfidenceQuestionEffect(
+  input: CaptureLowConfidenceQuestionInput,
+): Effect {
+  return questionEffect({
+    question: lowConfidenceQuestionText(input),
+    options: LOW_CONFIDENCE_QUESTION_OPTIONS,
+    sourceRefs: input.sourceRefs,
+    idempotencyKey: lowConfidenceQuestionKey({
+      version: 1,
+      path: input.path,
+      sourceHash: input.sourceHash,
+      generatedPath: input.generatedPath,
+      kind: input.kind,
+      text: input.text,
+      confidence: input.confidence,
+    }),
+    metadata: {
+      risk: "low",
+      confidence: input.confidence,
+      recommendedAnswer: "track",
+      automationPolicy: "agent-safe",
+    },
+  });
+}
 
 export function lowConfidenceQuestionKey(
   target: CaptureLowConfidenceTarget,
@@ -107,6 +145,33 @@ export function parseLowConfidenceAnswer(
   answer: string,
 ): CaptureLowConfidenceAnswer | null {
   return answer === "track" || answer === "ignore" ? answer : null;
+}
+
+function lowConfidenceQuestionText(
+  input: CaptureLowConfidenceQuestionInput,
+): string {
+  switch (input.kind) {
+    case "task":
+      return (
+        `Low-confidence task from ${input.path}: "${input.text}". ` +
+        "Should Dome track this as an open task?"
+      );
+    case "followup":
+      return (
+        `Low-confidence follow-up from ${input.path}: "${input.text}". ` +
+        "Should Dome track this as a follow-up?"
+      );
+    case "decision":
+      return (
+        `Low-confidence decision from ${input.path}: "${input.text}". ` +
+        "Should Dome keep this as a decision?"
+      );
+    case "entity":
+      return (
+        `Low-confidence entity from ${input.path}: "${input.text}". ` +
+        "Should Dome keep this entity mention?"
+      );
+  }
 }
 
 function isLowConfidenceKind(

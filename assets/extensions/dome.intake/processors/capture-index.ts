@@ -14,9 +14,11 @@ import {
 
 import {
   capturePageItemsFromFrontmatter,
+  capturePendingItemsFromFrontmatter,
   lineForCapturePageItem,
   type CapturePageItem,
 } from "./capture-page";
+import { lowConfidenceQuestionEffect } from "./low-confidence-shared";
 
 const PREDICATE_BY_KIND = Object.freeze({
   task: "dome.intake.task",
@@ -66,6 +68,58 @@ const captureIndex = defineProcessorImplementation({
       for (const item of items) {
         effects.push(factForItem(ctx, path, content, item));
       }
+
+      const pendingItems = capturePendingItemsFromFrontmatter(
+        parsed.data.intake_pending_items,
+      );
+      if (pendingItems === null) {
+        effects.push(
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.intake.capture-index.invalid-pending-items",
+            message:
+              `Cannot index intake questions from ${path}: ` +
+              "`intake_pending_items` must be an array of {kind, text, confidence}.",
+            sourceRefs: [ctx.sourceRef(path, lineRange(1))],
+          }),
+        );
+        continue;
+      }
+
+      const sourcePath = sourcePathFromFrontmatter(parsed.data.processed_from);
+      const sourceHash = sourceHashFromFrontmatter(parsed.data.source_hash);
+      if (
+        pendingItems.length > 0 &&
+        (sourcePath === null || sourceHash === null)
+      ) {
+        effects.push(
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.intake.capture-index.invalid-pending-source",
+            message:
+              `Cannot index intake questions from ${path}: ` +
+              "`processed_from` and `source_hash` are required.",
+            sourceRefs: [ctx.sourceRef(path, lineRange(1))],
+          }),
+        );
+        continue;
+      }
+
+      if (sourcePath !== null && sourceHash !== null) {
+        for (const item of pendingItems) {
+          effects.push(
+            lowConfidenceQuestionEffect({
+              path: sourcePath,
+              sourceHash,
+              generatedPath: path,
+              kind: item.kind,
+              text: item.text,
+              confidence: item.confidence,
+              sourceRefs: [ctx.sourceRef(path, lineRange(1))],
+            }),
+          );
+        }
+      }
     }
     return Object.freeze(effects);
   },
@@ -92,6 +146,16 @@ function factForItem(
 
 function isGeneratedCapturePath(path: string): boolean {
   return /^wiki\/generated\/intake\/[^/]+\.md$/.test(path);
+}
+
+function sourcePathFromFrontmatter(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function sourceHashFromFrontmatter(value: unknown): string | null {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value)
+    ? value
+    : null;
 }
 
 function lineRange(

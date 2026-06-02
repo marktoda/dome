@@ -13,10 +13,22 @@ export type CapturePageItem = {
   readonly confidence: number;
 };
 
+export type CapturePendingItem = {
+  readonly kind: CaptureLowConfidenceKind;
+  readonly text: string;
+  readonly confidence: number;
+};
+
 export type CaptureOutputPathInput = {
   readonly path: string;
   readonly sourceHash?: string;
 };
+
+export type CurrentCaptureDigest = {
+  readonly pendingItems: ReadonlyArray<CapturePendingItem>;
+};
+
+export const INTAKE_PENDING_ITEMS_FIELD = "intake_pending_items";
 
 const CapturePageItemSchema = z
   .object({
@@ -29,6 +41,17 @@ const CapturePageItemSchema = z
   })
   .strict();
 const CapturePageItemsSchema = z.array(CapturePageItemSchema);
+const CapturePendingItemSchema = z
+  .object({
+    kind: z.enum(["task", "followup", "decision", "entity"]),
+    text: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0),
+    confidence: z.number().min(0).max(1),
+  })
+  .strict();
+const CapturePendingItemsSchema = z.array(CapturePendingItemSchema);
 
 export function captureSourceHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
@@ -98,6 +121,29 @@ export function capturePageItemsFromFrontmatter(
   );
 }
 
+export function capturePendingItemsFromFrontmatter(
+  value: unknown,
+): ReadonlyArray<CapturePendingItem> | null {
+  if (value === undefined) return Object.freeze([]);
+  const parsed = CapturePendingItemsSchema.safeParse(value);
+  if (!parsed.success) return null;
+  return Object.freeze(
+    parsed.data.map((item) =>
+      Object.freeze({
+        kind: item.kind,
+        text: item.text,
+        confidence: item.confidence,
+      }),
+    ),
+  );
+}
+
+export function hasPendingItemsFrontmatter(
+  data: Record<string, unknown>,
+): boolean {
+  return Object.hasOwn(data, INTAKE_PENDING_ITEMS_FIELD);
+}
+
 export function renderIntakeItemsFrontmatter(
   items: ReadonlyArray<CapturePageItem>,
 ): ReadonlyArray<string> {
@@ -110,6 +156,73 @@ export function renderIntakeItemsFrontmatter(
       `    confidence: ${formatConfidence(item.confidence)}`,
     ]),
   ]);
+}
+
+export function renderPendingItemsFrontmatter(
+  items: ReadonlyArray<CapturePendingItem>,
+): ReadonlyArray<string> {
+  if (items.length === 0) {
+    return Object.freeze([`${INTAKE_PENDING_ITEMS_FIELD}: []`]);
+  }
+  return Object.freeze([
+    `${INTAKE_PENDING_ITEMS_FIELD}:`,
+    ...items.flatMap((item) => [
+      `  - kind: ${item.kind}`,
+      `    text: ${yamlString(item.text)}`,
+      `    confidence: ${formatConfidence(item.confidence)}`,
+    ]),
+  ]);
+}
+
+export function currentCaptureDigest(input: {
+  readonly generatedContent: string | null;
+  readonly archiveContent: string | null;
+  readonly sourcePath: string;
+  readonly sourceHash: string;
+  readonly capture: string;
+}): CurrentCaptureDigest | null {
+  if (input.generatedContent === null || input.archiveContent === null) {
+    return null;
+  }
+
+  let generated: matter.GrayMatterFile<string>;
+  let archive: matter.GrayMatterFile<string>;
+  try {
+    generated = matter(input.generatedContent);
+    archive = matter(input.archiveContent);
+  } catch {
+    return null;
+  }
+
+  if (
+    generated.data.type !== "capture" ||
+    generated.data.processed_from !== input.sourcePath ||
+    generated.data.source_hash !== input.sourceHash ||
+    generated.data.disposition !== "digested" ||
+    !hasPendingItemsFrontmatter(generated.data)
+  ) {
+    return null;
+  }
+
+  if (
+    archive.data.type !== "capture" ||
+    archive.data.processed_from !== input.sourcePath ||
+    archive.data.source_hash !== input.sourceHash ||
+    archive.data.disposition !== "archived" ||
+    archiveBody(archive.content) !== input.capture.trimEnd()
+  ) {
+    return null;
+  }
+
+  const pendingItems = capturePendingItemsFromFrontmatter(
+    generated.data[INTAKE_PENDING_ITEMS_FIELD],
+  );
+  if (pendingItems === null) return null;
+  return Object.freeze({ pendingItems });
+}
+
+function archiveBody(content: string): string {
+  return content.replace(/^\r?\n/, "").trimEnd();
 }
 
 export function capturePageItemLine(input: CapturePageItem): string {

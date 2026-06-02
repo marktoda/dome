@@ -159,6 +159,7 @@ const NOOP_ROLLUP_HASH = captureRollupInputHash([
   },
 ]);
 let noopModelCalls = 0;
+let extractCalls = 0;
 
 scenario(
   {
@@ -353,6 +354,92 @@ scenario(
     await h
       .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
       .toHaveCount(2);
+  },
+);
+
+scenario(
+  {
+    name: "convergence: dome.intake clears already-digested raw captures without model churn",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "question" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async (request) => {
+        if (request.prompt.startsWith("Extract a Dome capture")) {
+          extractCalls += 1;
+          return modelResponseForPrompt(request.prompt, {
+            title: "Launch uncertainty",
+            summary: "Chris may need a staffing check.",
+            tasks: [
+              { text: "Ask Chris about launch staffing", confidence: 0.45 },
+            ],
+            followups: [],
+            decisions: [],
+            entities: [],
+            sourceQuotes: [],
+          });
+        }
+        return modelResponseForPrompt(request.prompt, {
+          title: "Launch staffing synthesis",
+          summary: "A launch staffing follow-up was captured.",
+          tasks: [],
+          followups: [],
+          decisions: [],
+          entities: [],
+          sourceQuotes: [],
+        });
+      },
+    },
+  },
+  async (h) => {
+    extractCalls = 0;
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const capture = [
+      "# Capture",
+      "",
+      "Maybe Chris needs a launch staffing check.",
+      "",
+    ].join("\n");
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
+    await h.userCommit({
+      files: { [CAPTURE_PATH]: capture },
+      message: "capture uncertain day",
+    });
+    const first = await h.tick();
+    expect(first.adopted).toBe(true);
+    expect(extractCalls).toBe(1);
+    await h.expectProjection().questions().toHaveCount(1);
+
+    await h.userCommit({
+      files: { [CAPTURE_PATH]: capture },
+      message: "reintroduce same raw capture",
+    });
+    const second = await h.tick();
+    expect(second.adopted).toBe(true);
+    expect(extractCalls).toBe(1);
+    await h.expectFile(CAPTURE_PATH).toBeAbsent();
+    await h.expectFile(paths.generated).toContain("intake_pending_items:");
+    await h.expectFile(paths.archive).toContain("Maybe Chris needs");
+    await h.expectProjection().questions().toHaveCount(1);
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Ask Chris about launch staffing");
   },
 );
 
@@ -801,8 +888,12 @@ scenario(
 
     await h.expectFile(paths.generated).toContain("- [ ] Send Ada the launch staffing note");
     await h.expectFile(paths.generated).toContain("- [ ] #followup Ask Ben about hiring budget");
-    await h.expectFile(paths.generated).toNotContain("Ask Chris about launch staffing");
-    await h.expectFile(paths.generated).toNotContain("Check whether Dana needs");
+    await h.expectFile(paths.generated).toNotContain("- [ ] Ask Chris about launch staffing");
+    await h
+      .expectFile(paths.generated)
+      .toNotContain("- [ ] #followup Check whether Dana needs");
+    await h.expectFile(paths.generated).toContain("intake_pending_items:");
+    await h.expectFile(paths.generated).toContain("Ask Chris about launch staffing");
     await h
       .expectProjection()
       .facts({
@@ -859,6 +950,27 @@ scenario(
       confidence: 0.45,
     });
     expect(targets).not.toContain(null);
+
+    const sourceRefRows = h.projection.raw
+      .query<{ source_refs: string }, []>(
+        "SELECT source_refs FROM questions ORDER BY id",
+      )
+      .all();
+    expect(
+      sourceRefRows.every((row) =>
+        JSON.parse(row.source_refs).some(
+          (ref: { readonly path: string }) => ref.path === paths.generated,
+        )
+      ),
+    ).toBe(true);
+
+    const rebuild = await h.runCli(["rebuild", "--json"]);
+    expect(rebuild.exitCode).toBe(0);
+    await h.expectProjection().questions().toHaveCount(4);
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Ask Chris about launch staffing");
   },
 );
 
@@ -918,7 +1030,7 @@ scenario(
     const extracted = await h.tick();
     expect(extracted.adopted).toBe(true);
     await h.expectFile(paths.generated).toNotContain(
-      "Ask Chris about launch staffing",
+      "- [ ] Ask Chris about launch staffing",
     );
 
     const inspect = await h.runCli(["inspect", "questions", "--json"]);
@@ -1125,7 +1237,9 @@ extensions:
   dome.intake:
     enabled: true
     grant:
-      read: ["inbox/raw/*.md"]
+      read:
+        - "inbox/**/*.md"
+        - "wiki/generated/intake/*.md"
       patch.auto:
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"

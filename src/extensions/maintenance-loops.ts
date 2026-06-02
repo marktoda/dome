@@ -107,7 +107,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "raw path + raw content hash + processor version",
         noOpWhen:
-          "the current raw capture hash has a generated digest and disposition",
+          "the current raw capture hash has a matching generated digest, processed archive, disposition, and rebuildable pending-question state",
       },
       risks: [
         "LLM extraction can still produce noisy summaries even when source-hash identity is stable.",
