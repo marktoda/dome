@@ -1432,3 +1432,31 @@ Qualitative read:
 - This closes a concrete overclaim path in the final release gate. M10 can no
   longer pass on placeholder safety answers; each counted day must explicitly
   confirm the two source-preservation safety checks.
+
+## 2026-06-02 M10 Serve-Host Counter Tightening
+
+Verification action:
+
+- Audited the M10 release-soak report counters after tightening safety
+  confirmations.
+- Found that `serveHostEvidenceDays` counted any valid dated ledger section
+  with a host-evidence line, even when that day was otherwise incomplete.
+  This did not let `--require-ready` pass by itself, because complete workdays
+  also require host evidence, but it could overstate the host-evidence counter
+  in reports and preflight next actions.
+- Tightened `bun run v1:dogfood-report` so serve-host evidence contributes to
+  release readiness only for complete workdays.
+
+Measured result:
+
+- Added a regression where an incomplete workday with `Serve host: running`
+  records per-day `serveHostEvidence: true` but does not increment
+  `serveHostEvidenceDays`.
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passed with 24 tests and
+  176 assertions.
+
+Qualitative read:
+
+- This makes the release-soak counters line up with the rubric: M10 measures
+  complete workdays that used Dome with a running compiler host, not isolated
+  evidence snippets in partial entries.

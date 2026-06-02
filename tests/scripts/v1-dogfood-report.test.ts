@@ -225,9 +225,58 @@ Qualitative notes to fill after the work session:
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.completeWorkdays).toBe(0);
+    expect(report.serveHostEvidenceDays).toBe(0);
     expect(report.days[0].operationalEvidence).toBe(false);
     expect(report.days[0].serveHostEvidence).toBe(true);
     expect(report.days[0].captureEvidence).toBe(true);
+  });
+
+  test("counts serve-host evidence only from complete workdays", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality:
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.serveHostEvidenceDays).toBe(0);
+    expect(report.days[0].complete).toBe(false);
+    expect(report.days[0].serveHostEvidence).toBe(true);
+    expect(report.days[0].missingDimensions).toContain(
+      "context_packet_quality",
+    );
   });
 
   test("does not let negated status suppress counted work-surface evidence", async () => {
@@ -522,6 +571,7 @@ Qualitative notes to fill after the work session:
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.completeWorkdays).toBe(0);
+    expect(report.serveHostEvidenceDays).toBe(0);
     expect(report.days[0].operationalEvidence).toBe(false);
     expect(report.days[0].serveHostEvidence).toBe(true);
   });
@@ -834,11 +884,12 @@ Qualitative notes to fill after the work session:
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.completeWorkdays).toBe(0);
-    expect(report.serveHostEvidenceDays).toBe(1);
+    expect(report.serveHostEvidenceDays).toBe(0);
     expect(report.releaseBlockers).toEqual([{
       date: "2026-06-01",
       blockers: ["lost_or_overwritten_edits"],
     }]);
+    expect(report.days[0].serveHostEvidence).toBe(true);
     expect(report.days[0].releaseBlockers).toEqual([
       "lost_or_overwritten_edits",
     ]);

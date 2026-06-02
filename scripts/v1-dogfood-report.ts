@@ -212,7 +212,7 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   );
   const completeWorkdays = days.filter((day) => day.complete).length;
   const serveHostEvidenceDays = days.filter((day) =>
-    day.dateStatus === "valid" && day.serveHostEvidence
+    day.complete && day.serveHostEvidence
   ).length;
   const captureEvidenceDays = days.filter((day) =>
     day.complete && day.captureEvidence
