@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
+import { summarizeGateOutput } from "../../scripts/v1-release-check";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const RELEASE_CHECK_SCRIPT = join(REPO_ROOT, "scripts", "v1-release-check.ts");
@@ -74,6 +75,23 @@ describe("v1 release-check script", () => {
       ],
       ["bun", "run", "v1:dogfood-report", "--", "--require-ready"],
     ]);
+  });
+
+  test("JSON gate output summaries preserve short output and bound long output", () => {
+    const short = summarizeGateOutput("short output", 20);
+    expect(short).toEqual({
+      text: "short output",
+      chars: "short output".length,
+      truncated: false,
+      omittedChars: 0,
+    });
+
+    const long = summarizeGateOutput("0123456789abcdefghijklmnopqrstuvwxyz", 10);
+    expect(long.chars).toBe(36);
+    expect(long.truncated).toBe(true);
+    expect(long.omittedChars).toBe(26);
+    expect(long.text).toContain("omitted 26 character(s)");
+    expect(long.text.endsWith("qrstuvwxyz")).toBe(true);
   });
 });
 

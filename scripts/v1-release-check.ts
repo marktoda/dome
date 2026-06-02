@@ -30,6 +30,17 @@ type GateResult = {
   readonly stderr: string;
 };
 
+type GateReportResult = Omit<GateResult, "stdout" | "stderr"> & {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly stdoutChars: number;
+  readonly stderrChars: number;
+  readonly stdoutTruncated: boolean;
+  readonly stderrTruncated: boolean;
+  readonly stdoutOmittedChars: number;
+  readonly stderrOmittedChars: number;
+};
+
 type ReleaseCheckReport =
   | {
       readonly status: "dry-run";
@@ -42,9 +53,10 @@ type ReleaseCheckReport =
     }
   | {
       readonly status: "ready" | "not-ready";
-      readonly gates: ReadonlyArray<GateResult>;
+      readonly gates: ReadonlyArray<GateReportResult>;
     };
 
+const JSON_OUTPUT_LIMIT_CHARS = 12000;
 const repoRoot = resolve(import.meta.dir, "..");
 
 async function main(): Promise<void> {
@@ -165,10 +177,50 @@ function displayGate(gate: Gate): {
   };
 }
 
-function displayResult(result: GateResult): GateResult {
+function displayResult(result: GateResult): GateReportResult {
+  const stdout = summarizeGateOutput(result.stdout);
+  const stderr = summarizeGateOutput(result.stderr);
   return {
     ...result,
     command: displayCommand(result.command),
+    stdout: stdout.text,
+    stderr: stderr.text,
+    stdoutChars: stdout.chars,
+    stderrChars: stderr.chars,
+    stdoutTruncated: stdout.truncated,
+    stderrTruncated: stderr.truncated,
+    stdoutOmittedChars: stdout.omittedChars,
+    stderrOmittedChars: stderr.omittedChars,
+  };
+}
+
+export function summarizeGateOutput(
+  text: string,
+  limitChars = JSON_OUTPUT_LIMIT_CHARS,
+): {
+  readonly text: string;
+  readonly chars: number;
+  readonly truncated: boolean;
+  readonly omittedChars: number;
+} {
+  if (!Number.isInteger(limitChars) || limitChars < 1) {
+    throw new Error("limitChars must be a positive integer");
+  }
+  if (text.length <= limitChars) {
+    return {
+      text,
+      chars: text.length,
+      truncated: false,
+      omittedChars: 0,
+    };
+  }
+
+  const marker = `\n[... omitted ${text.length - limitChars} character(s) ...]\n`;
+  return {
+    text: `${marker}${text.slice(-limitChars)}`,
+    chars: text.length,
+    truncated: true,
+    omittedChars: text.length - limitChars,
   };
 }
 
@@ -268,8 +320,10 @@ function nodeWrite(text: string): void {
   process.stdout.write(text);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`v1-release-check: ${message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`v1-release-check: ${message}`);
+    process.exit(1);
+  });
+}

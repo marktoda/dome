@@ -1979,3 +1979,37 @@ Qualitative read:
   old daily notes can still be found by explicit date queries, but "today" now
   means the current daily surface plus active backing context instead of a pile
   of older notes that happen to contain the word.
+
+## 2026-06-02 Release-Check JSON Bound
+
+Verification action:
+
+- Ran `bun run v1:release-check -- --json` against the current repo and work
+  vault state.
+- Confirmed the implementation gate passed, but the JSON payload embedded the
+  entire `bun test` transcript in the implementation gate's stderr field. That
+  made the final V1 readiness surface too noisy for machine consumers and
+  foreground agents.
+- Changed `scripts/v1-release-check.ts` so text mode still streams full gate
+  output, while JSON reports bounded stdout/stderr tails plus `*Chars`,
+  `*Truncated`, and `*OmittedChars` metadata.
+
+Measured result:
+
+- `bun test tests/scripts/v1-release-check.test.ts` passed with 4 tests and 26
+  assertions.
+- `bun run typecheck` passed.
+- `bun run v1:release-check -- --json` still exits nonzero, as expected, while
+  M10 is not ready. The implementation gate passed and reported
+  `stderrTruncated: true`, `stderrChars: 117395`, and
+  `stderrOmittedChars: 105395` instead of embedding the full transcript.
+- The failing readiness gates remained untruncated and kept their actionable
+  details: work-vault drafts in `notes/2026-06-02.md` and `notes/tasks.md`,
+  1/10 complete workdays, 1/10 serve-host evidence days, 1/5 capture evidence
+  days, 1/12 calendar-day span, and 0 release blockers.
+
+Qualitative read:
+
+- This keeps the final V1 gate useful as a structured readiness surface:
+  release-check remains strict, but its JSON is small enough for tools and
+  agents to inspect without losing the failure details that matter.
