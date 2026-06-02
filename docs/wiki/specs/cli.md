@@ -319,8 +319,11 @@ loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
       "goal": "Active work has concise source-backed context packets for foreground agents.",
       "state": "quiet",
       "processor_ids": ["dome.search.index-text", "dome.search.query", "dome.search.export-context"],
+      "required_processor_ids": ["dome.search.index-text", "dome.search.query", "dome.search.export-context"],
+      "optional_processor_ids": [],
       "active_processors": ["dome.search.index-text", "dome.search.query", "dome.search.export-context"],
       "missing_processors": [],
+      "inactive_optional_processors": [],
       "surfaces": ["command:query", "command:export-context"],
       "settlement": {
         "key": "packet target + adopted source set + processor version",
@@ -420,6 +423,10 @@ processor substrate. Loops are metadata, not runtime dispatch units: each row
 names the desired-state objective, its implementing processor ids, command/path
 surfaces, settlement rule, current state, and the unresolved
 diagnostics/questions/recent problem runs attributable to those processors.
+`processor_ids` is the complete attribution set. `required_processor_ids`
+control whether a loop is inactive or partial. `optional_processor_ids` name
+opt-in contributors; inactive optional processors remain visible under
+`inactive_optional_processors` but do not make the loop partial.
 Question counts are split into `agent_safe_questions`,
 `model_safe_questions`, and `owner_needed_questions` using the same policy
 classification as `dome check`; missing question metadata is owner-needed.
@@ -429,8 +436,9 @@ top-level `questions` field for the unique open-question count.
 `state: "quiet"` means the loop is active and has no visible drift or attention;
 `"attention"` means attention diagnostics, questions, or recent problem runs are present;
 `"drift"` means non-attention diagnostics are visible but do not route immediate attention;
-`"partial"` means at least one referenced processor is not active; and
-`"inactive"` means none of the loop's processors are active.
+`"partial"` means at least one required processor is not active while another
+required processor is active; and `"inactive"` means none of the loop's
+required processors are active.
 `last_sync` is the started-at timestamp of the newest successful adoption- or
 garden-phase run. Read-only view commands such as `dome lint`, `dome query`,
 `dome today`, `dome prep`, and `dome agenda` remain visible in

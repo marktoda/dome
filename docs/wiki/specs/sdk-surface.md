@@ -372,9 +372,11 @@ processors into V1 maintenance loops so status/check surfaces, tests, and
 future extension authors can talk about the desired conditions those processors
 maintain.
 
-Loop metadata must name a stable loop id, goal, evidence, processor ids,
-surfaces, and a settlement rule. `validateMaintenanceLoops` checks that the
-registry references shipped processor ids and supported command surfaces. See
+Loop metadata must name a stable loop id, goal, evidence, required processor
+ids, surfaces, and a settlement rule. It may also name optional processor ids
+from opt-in bundles; inactive optional contributors are visible in status but
+do not make a loop partial. `validateMaintenanceLoops` checks that the registry
+references shipped processor ids and supported command surfaces. See
 [[wiki/specs/processors]] §"Maintenance loops" for the loop contract.
 
 ## Adding a processor

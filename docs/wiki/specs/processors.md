@@ -234,7 +234,9 @@ Required loop metadata:
 - `id` — stable namespaced identifier.
 - `goal` — the desired condition in plain language.
 - `evidence` — paths, projections, or operational rows the loop reads.
-- `processors` — processor ids that implement the loop.
+- `processors` — required processor ids that implement the loop.
+- `optionalProcessors` — optional processor ids from opt-in bundles that can
+  contribute evidence or answers without making the loop partial when disabled.
 - `surfaces` — markdown paths, CLI/view commands, projections, or status
   surfaces the loop feeds.
 - `settlement` — stable identity and no-op rule.

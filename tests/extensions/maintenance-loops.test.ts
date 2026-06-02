@@ -79,4 +79,26 @@ describe("first-party maintenance loops", () => {
       processorId: "missing.processor",
     });
   });
+
+  test("validation catches stale optional processor references", () => {
+    const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
+    if (loop === undefined) throw new Error("expected first-party loop");
+
+    const errors = validateMaintenanceLoops({
+      loops: [
+        {
+          ...loop,
+          optionalProcessors: ["missing.optional-processor"],
+        },
+      ],
+      processorIds: new Set(loop.processors),
+      commandNames: new Set(),
+    });
+
+    expect(errors).toContainEqual({
+      kind: "missing-processor",
+      loopId: loop.id,
+      processorId: "missing.optional-processor",
+    });
+  });
 });

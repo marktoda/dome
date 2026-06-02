@@ -51,7 +51,17 @@ export type MaintenanceLoop = {
   readonly id: string;
   readonly goal: string;
   readonly evidence: ReadonlyArray<MaintenanceLoopEvidence>;
+  /**
+   * Required processors for this loop. If some but not all required processors
+   * are active, status reports the loop as partial.
+   */
   readonly processors: ReadonlyArray<string>;
+  /**
+   * Optional contributors, usually from opt-in bundles. These processors can
+   * add evidence or answers for the same desired state, but their absence does
+   * not make the loop partial.
+   */
+  readonly optionalProcessors?: ReadonlyArray<string>;
   readonly surfaces: ReadonlyArray<MaintenanceLoopSurface>;
   readonly settlement: MaintenanceLoopSettlement;
   readonly risks: ReadonlyArray<string>;
@@ -236,6 +246,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.health.orphan-run-recovery-answer",
         "dome.markdown.ambiguous-wikilink-answer",
         "dome.daily.ambiguous-followup-answer",
+      ],
+      optionalProcessors: [
         "dome.intake.low-confidence-answer",
       ],
       surfaces: [
@@ -268,6 +280,10 @@ export function validateMaintenanceLoops(opts: {
       errors.push({ kind: "duplicate-loop-id", loopId: loop.id });
     }
     seen.add(loop.id);
+    const processorReferences = [
+      ...loop.processors,
+      ...(loop.optionalProcessors ?? Object.freeze([])),
+    ];
     for (const evidence of loop.evidence) {
       if (evidence.kind === "path" && !isValidVaultPattern(evidence.pattern)) {
         errors.push({
@@ -277,7 +293,7 @@ export function validateMaintenanceLoops(opts: {
         });
       }
     }
-    for (const processorId of loop.processors) {
+    for (const processorId of processorReferences) {
       if (!opts.processorIds.has(processorId)) {
         errors.push({
           kind: "missing-processor",
@@ -311,6 +327,9 @@ function freezeLoop(loop: MaintenanceLoop): MaintenanceLoop {
     ...loop,
     evidence: Object.freeze(loop.evidence.map((item) => Object.freeze(item))),
     processors: Object.freeze([...loop.processors]),
+    ...(loop.optionalProcessors !== undefined
+      ? { optionalProcessors: Object.freeze([...loop.optionalProcessors]) }
+      : {}),
     surfaces: Object.freeze(loop.surfaces.map((item) => Object.freeze(item))),
     settlement: Object.freeze({ ...loop.settlement }),
     risks: Object.freeze([...loop.risks]),

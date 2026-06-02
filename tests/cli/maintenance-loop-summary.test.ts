@@ -26,6 +26,32 @@ const LOOP: MaintenanceLoop = {
 };
 
 describe("collectMaintenanceLoopSummaries", () => {
+  test("does not mark loops partial when only optional contributors are inactive", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.required"],
+      optionalProcessors: ["test.optional"],
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.required"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+
+    expect(summary).toEqual(expect.objectContaining({
+      state: "quiet",
+      processor_ids: ["test.required", "test.optional"],
+      required_processor_ids: ["test.required"],
+      optional_processor_ids: ["test.optional"],
+      active_processors: ["test.required"],
+      missing_processors: [],
+      inactive_optional_processors: ["test.optional"],
+    }));
+  });
+
   test("keeps unresolved work attributable when a loop processor is inactive", () => {
     const ownerQuestion: QuestionRecord = {
       id: 1,
