@@ -424,3 +424,32 @@ Qualitative read:
   markdown change still goes through the existing answer-handler, garden, and
   adoption path.
 - This remains controlled smoke evidence, not full M10 release soak.
+
+## 2026-06-02 M8 Recall Smoke Tightening
+
+Dogfood action:
+
+- Tightened `bun scripts/v1-smoke.ts --sync-docs` so `query` and
+  `export-context` must do more than return the right JSON schemas.
+- The smoke now requires top recall/export results to carry source refs,
+  explainable ranking reasons/signals, and source-backed context summaries.
+- This makes M8 provenance and ranking quality part of the repeatable dogfood
+  gate for both `docs/` and the work vault.
+
+Operational result:
+
+- Passing run:
+  `v1-smoke: docs ok | branch main | head d95ae95 | adopted d95ae95 | synced no | views 5 ok | notices none`
+- Passing run:
+  `v1-smoke: work ok | branch main | head 99fac73 | adopted 99fac73 | synced no | views 5 ok | notices 46 informational diagnostic(s)`
+- `bun run typecheck` also passed after the smoke change.
+
+Qualitative read:
+
+- The current M8 boundary is coherent: `query` is source-backed recall, while
+  `export-context` is the generated answer-prep packet for foreground agents.
+- Embeddings remain deferred for V1 because the current docs/work dogfood
+  queries are served by FTS plus graph, page-type, open-loop, decision,
+  question, diagnostic, and projection-recall signals.
+- This still does not close M10. It improves repeatable evidence for recall
+  quality, but release readiness still needs elapsed work-vault usage.

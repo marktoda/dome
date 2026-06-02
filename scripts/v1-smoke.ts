@@ -32,6 +32,16 @@ type DoctorPayload = {
   };
 };
 
+type ViewCheck = {
+  readonly name: string;
+  readonly args: ReadonlyArray<string>;
+  readonly schema: string;
+  readonly validate?: (
+    label: string,
+    payload: Record<string, unknown>,
+  ) => void;
+};
+
 type SmokeOptions = {
   readonly docsVault: string;
   readonly workVault: string | null;
@@ -194,7 +204,7 @@ async function smokeUserValueViews(input: {
   readonly label: string;
   readonly vaultPath: string;
 }): Promise<ReadonlyArray<string>> {
-  const checks = [
+  const checks: ReadonlyArray<ViewCheck> = [
     {
       name: "today",
       args: ["today", "--vault", input.vaultPath, "--json"],
@@ -214,6 +224,7 @@ async function smokeUserValueViews(input: {
       name: "query",
       args: ["query", "--vault", input.vaultPath, "management", "--json"],
       schema: "dome.search.query/v1",
+      validate: validateQueryPayload,
     },
     {
       name: "export-context",
@@ -225,8 +236,9 @@ async function smokeUserValueViews(input: {
         "--json",
       ],
       schema: "dome.search.export-context/v1",
+      validate: validateExportContextPayload,
     },
-  ] as const;
+  ];
 
   const schemas: string[] = [];
   for (const check of checks) {
@@ -237,9 +249,175 @@ async function smokeUserValueViews(input: {
           `${String(payload.schema)}; expected ${check.schema}`,
       );
     }
+    check.validate?.(input.label, payload);
     schemas.push(check.schema);
   }
   return Object.freeze(schemas);
+}
+
+function validateQueryPayload(
+  label: string,
+  payload: Record<string, unknown>,
+): void {
+  const matches = nonEmptyRecordArray(payload.matches, `${label}: query.matches`);
+  const first = matches[0]!;
+  assertNonEmptyString(first.path, `${label}: query.matches[0].path`);
+  validateRanking(first.ranking, `${label}: query.matches[0].ranking`);
+  validateSourceRefs(first.sourceRefs, `${label}: query.matches[0].sourceRefs`);
+
+  const facts = optionalRecordArray(
+    first.facts,
+    `${label}: query.matches[0].facts`,
+  );
+  if (facts.length > 0) {
+    validateSourceRefs(
+      facts[0]!.sourceRefs,
+      `${label}: query.matches[0].facts[0].sourceRefs`,
+    );
+  }
+}
+
+function validateExportContextPayload(
+  label: string,
+  payload: Record<string, unknown>,
+): void {
+  const overview = record(payload.overview, `${label}: export-context.overview`);
+  const readFirst = nonEmptyRecordArray(
+    overview.readFirst,
+    `${label}: export-context.overview.readFirst`,
+  );
+  const firstRead = readFirst[0]!;
+  assertNonEmptyString(
+    firstRead.path,
+    `${label}: export-context.overview.readFirst[0].path`,
+  );
+  validateRanking(
+    firstRead.ranking,
+    `${label}: export-context.overview.readFirst[0].ranking`,
+  );
+  validateSourceRefs(
+    firstRead.sourceRefs,
+    `${label}: export-context.overview.readFirst[0].sourceRefs`,
+  );
+
+  const entries = nonEmptyRecordArray(
+    payload.entries,
+    `${label}: export-context.entries`,
+  );
+  const firstEntry = entries[0]!;
+  assertNonEmptyString(
+    firstEntry.path,
+    `${label}: export-context.entries[0].path`,
+  );
+  validateRanking(
+    firstEntry.ranking,
+    `${label}: export-context.entries[0].ranking`,
+  );
+  validateSourceRefs(
+    firstEntry.sourceRefs,
+    `${label}: export-context.entries[0].sourceRefs`,
+  );
+
+  const summary = nonEmptyRecordArray(
+    firstEntry.summary,
+    `${label}: export-context.entries[0].summary`,
+  );
+  validateSourceRefs(
+    summary[0]!.sourceRefs,
+    `${label}: export-context.entries[0].summary[0].sourceRefs`,
+  );
+
+  const markdown = assertNonEmptyString(
+    payload.markdown,
+    `${label}: export-context.markdown`,
+  );
+  if (!markdown.includes("SourceRefs:")) {
+    throw new Error(`${label}: export-context markdown omits SourceRefs`);
+  }
+}
+
+function validateRanking(value: unknown, label: string): void {
+  const ranking = record(value, label);
+  assertNumber(ranking.score, `${label}.score`);
+  const reasons = nonEmptyStringArray(ranking.reasons, `${label}.reasons`);
+  if (reasons.every((reason) => reason.trim() === "")) {
+    throw new Error(`${label}.reasons contains no explanatory text`);
+  }
+  const signals = nonEmptyRecordArray(ranking.signals, `${label}.signals`);
+  assertNonEmptyString(signals[0]!.kind, `${label}.signals[0].kind`);
+}
+
+function validateSourceRefs(value: unknown, label: string): void {
+  const refs = nonEmptyRecordArray(value, label);
+  assertNonEmptyString(refs[0]!.path, `${label}[0].path`);
+  assertNonEmptyString(refs[0]!.commit, `${label}[0].commit`);
+}
+
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function optionalRecordArray(
+  value: unknown,
+  label: string,
+): ReadonlyArray<Record<string, unknown>> {
+  if (value === undefined) {
+    return [];
+  }
+  return recordArray(value, label);
+}
+
+function nonEmptyRecordArray(
+  value: unknown,
+  label: string,
+): ReadonlyArray<Record<string, unknown>> {
+  const rows = recordArray(value, label);
+  if (rows.length === 0) {
+    throw new Error(`${label} must not be empty`);
+  }
+  return rows;
+}
+
+function recordArray(
+  value: unknown,
+  label: string,
+): ReadonlyArray<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  return value.map((item, index) => record(item, `${label}[${index}]`));
+}
+
+function nonEmptyStringArray(
+  value: unknown,
+  label: string,
+): ReadonlyArray<string> {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  const strings = value.map((item, index) =>
+    assertNonEmptyString(item, `${label}[${index}]`),
+  );
+  if (strings.length === 0) {
+    throw new Error(`${label} must not be empty`);
+  }
+  return strings;
+}
+
+function assertNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function assertNumber(value: unknown, label: string): void {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
 }
 
 async function runDomeJson<T>(args: ReadonlyArray<string>): Promise<T> {
