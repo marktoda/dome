@@ -2,10 +2,11 @@
 //
 // The first first-party adoption-phase processor with real behavior: parses
 // `[[wikilink]]` syntax in changed markdown files. Obvious curated-page typos
-// are repaired with source-backed PatchEffects; ambiguous or flexible links
-// become DiagnosticEffects. User-owned note drafts and imported source-page
-// bodies emit info diagnostics so they stay visible without routing the whole
-// vault to attention.
+// are repaired with source-backed PatchEffects; ambiguous close matches on
+// managed pages become source-backed agent-safe questions plus diagnostics;
+// flexible or note-owned links remain DiagnosticEffects. User-owned note drafts
+// and imported source-page bodies emit info diagnostics so they stay visible
+// without routing the whole vault to attention.
 //
 // Per [[wiki/specs/processors]] §"Adoption phase":
 //   - Deterministic: same snapshot + input → same effects (the diagnostic
@@ -31,12 +32,16 @@
 // runtime by Bun's dynamic-import loader (the bundle is loaded via
 // `loadBundles` in `src/extensions/loader.ts`).
 
+import { createHash } from "node:crypto";
+
 import {
   diagnosticEffect,
   patchEffect,
+  questionEffect,
   type DiagnosticEffect,
   type Effect,
   type FileChangeInput,
+  type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
   defineProcessor,
@@ -74,7 +79,7 @@ const COMMON_ROOTS: ReadonlyArray<string> = [
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.2.0",
+  version: "0.3.0",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -83,6 +88,7 @@ const validateWikilinks: Processor = defineProcessor({
   capabilities: [
     { kind: "read", paths: ["**/*.md"] },
     { kind: "patch.auto", paths: ["**/*.md"] },
+    { kind: "question.ask" },
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // Materialize the candidate snapshot's markdown set once per dispatch.
@@ -123,7 +129,12 @@ const validateWikilinks: Processor = defineProcessor({
           normalizedIndex,
         );
         if (resolved !== null) continue;
-        const suggestion = suggestWikilinkTarget(match.target, suggestionIndex);
+        const suggestions = suggestWikilinkTargets(
+          match.target,
+          suggestionIndex,
+        );
+        const suggestion =
+          suggestions.kind === "unique" ? suggestions.target : null;
         const sourceRef = ctx.sourceRef(changedPath, {
           startLine: match.line,
           endLine: match.line,
@@ -162,6 +173,18 @@ const validateWikilinks: Processor = defineProcessor({
             sourceRefs: [sourceRef],
           }),
         );
+        if (severity === "warning" && suggestions.kind === "ambiguous") {
+          effects.push(
+            ambiguousWikilinkQuestion({
+              target: match.target,
+              changedPath,
+              line: match.line,
+              startChar: match.startChar,
+              sourceRef,
+              candidates: suggestions.targets,
+            }),
+          );
+        }
       }
 
       if (replacements.length > 0) {
@@ -453,6 +476,11 @@ type WikilinkSuggestionCandidate = {
 
 type WikilinkSuggestionIndex = ReadonlyArray<WikilinkSuggestionCandidate>;
 
+type WikilinkSuggestionResult =
+  | { readonly kind: "none" }
+  | { readonly kind: "unique"; readonly target: string }
+  | { readonly kind: "ambiguous"; readonly targets: ReadonlyArray<string> };
+
 function buildNormalizedResolutionIndex(
   paths: ReadonlyArray<string>,
 ): NormalizedResolutionIndex {
@@ -636,27 +664,24 @@ function resolveWikilinkTarget(
   return null;
 }
 
-function suggestWikilinkTarget(
+function suggestWikilinkTargets(
   rawTarget: string,
   index: WikilinkSuggestionIndex,
-): string | null {
-  if (isSkippedWikilinkTarget(rawTarget)) return null;
+): WikilinkSuggestionResult {
+  if (isSkippedWikilinkTarget(rawTarget)) return { kind: "none" };
 
   const target = stripWikilinkFragment(rawTarget);
-  if (target.length === 0) return null;
+  if (target.length === 0) return { kind: "none" };
 
   const targetKey = normalizeWikilinkKey(
     target.endsWith(".md") ? target.slice(0, -3) : target,
   );
-  if (targetKey.length === 0) return null;
+  if (targetKey.length === 0) return { kind: "none" };
 
   const targetHasPath = target.includes("/");
-  let best: {
-    readonly candidate: WikilinkSuggestionCandidate;
-    readonly distance: number;
-    readonly comparedLength: number;
-  } | null = null;
-  let tied = false;
+  let bestDistance: number | null = null;
+  let bestComparedLength: number | null = null;
+  let bestTargets: string[] = [];
 
   for (const candidate of index) {
     const candidateKey = targetHasPath
@@ -676,22 +701,79 @@ function suggestWikilinkTarget(
 
     const comparedLength = Math.max(targetKey.length, candidateKey.length);
     if (
-      best === null ||
-      distance < best.distance ||
-      (distance === best.distance && comparedLength < best.comparedLength)
+      bestDistance === null ||
+      bestComparedLength === null ||
+      distance < bestDistance ||
+      (distance === bestDistance && comparedLength < bestComparedLength)
     ) {
-      best = { candidate, distance, comparedLength };
-      tied = false;
+      bestDistance = distance;
+      bestComparedLength = comparedLength;
+      bestTargets = [candidate.linkTarget];
     } else if (
-      best !== null &&
-      distance === best.distance &&
-      comparedLength === best.comparedLength
+      distance === bestDistance &&
+      comparedLength === bestComparedLength
     ) {
-      tied = true;
+      bestTargets.push(candidate.linkTarget);
     }
   }
 
-  return best !== null && !tied ? best.candidate.linkTarget : null;
+  const uniqueTargets = [...new Set(bestTargets)].sort();
+  if (uniqueTargets.length === 0) return { kind: "none" };
+  if (uniqueTargets.length === 1) {
+    const target = uniqueTargets[0];
+    if (target === undefined) return { kind: "none" };
+    return { kind: "unique", target };
+  }
+  return {
+    kind: "ambiguous",
+    targets: Object.freeze(uniqueTargets.slice(0, 5)),
+  };
+}
+
+function ambiguousWikilinkQuestion(opts: {
+  readonly target: string;
+  readonly changedPath: string;
+  readonly line: number;
+  readonly startChar: number;
+  readonly sourceRef: SourceRef;
+  readonly candidates: ReadonlyArray<string>;
+}): QuestionEffect {
+  const candidateOptions = opts.candidates.map((candidate) =>
+    wikilinkOption(candidate, opts.target)
+  );
+  const options = Object.freeze([...candidateOptions, "keep unresolved"]);
+  const candidateLinks = candidateOptions
+    .map((candidate) => `[[${candidate}]]`)
+    .join(", ");
+  return questionEffect({
+    question:
+      `Wikilink [[${opts.target}]] in ${opts.changedPath}:${opts.line} has ` +
+      `multiple plausible existing targets: ${candidateLinks}. ` +
+      "Choose a target only if the surrounding source text supports it; otherwise keep it unresolved.",
+    options,
+    sourceRefs: [opts.sourceRef],
+    idempotencyKey:
+      `dome.markdown.ambiguous-wikilink:${sha256([
+        opts.changedPath,
+        String(opts.line),
+        String(opts.startChar),
+        opts.target,
+        candidateOptions.join("|"),
+      ].join("\0"))}`,
+    metadata: {
+      risk: "medium",
+      confidence: 0.72,
+      automationPolicy: "agent-safe",
+    },
+  });
+}
+
+function wikilinkOption(candidate: string, rawTarget: string): string {
+  return `${candidate}${wikilinkFragmentSuffix(rawTarget)}`;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function suggestionDistanceLimit(left: string, right: string): number {

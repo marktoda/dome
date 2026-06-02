@@ -201,7 +201,7 @@ scenario(
       expect.objectContaining({
         capability: {
           processorId: "dome.markdown.validate-wikilinks",
-          missingKinds: ["patch.auto"],
+          missingKinds: ["patch.auto", "question.ask"],
         },
       }),
     );

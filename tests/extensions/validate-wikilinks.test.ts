@@ -29,7 +29,11 @@ import {
   type Processor,
   type Snapshot,
 } from "../../src/core/processor";
-import type { DiagnosticEffect, PatchEffect } from "../../src/core/effect";
+import type {
+  DiagnosticEffect,
+  PatchEffect,
+  QuestionEffect,
+} from "../../src/core/effect";
 import { makeProcessorContext } from "../../src/processors/context";
 import {
   flattenBundleProcessors,
@@ -253,7 +257,7 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(String(patch.sourceRefs[0]?.path)).toBe("wiki/page.md");
   });
 
-  test("suppresses close-target hints when the best match is ambiguous", async () => {
+  test("asks an agent-safe question when a managed wikilink has ambiguous close targets", async () => {
     const f = await makeVaultWithFiles([
       {
         path: "wiki/page.md",
@@ -275,12 +279,60 @@ describe("dome.markdown.validate-wikilinks", () => {
     });
 
     const effects = await proc.run(ctx);
-    expect(effects.length).toBe(1);
+    expect(effects.length).toBe(2);
 
     const diag = effects[0] as DiagnosticEffect | undefined;
     if (diag === undefined) throw new Error("expected one diagnostic");
     expect(diag.message).toContain("[[wiki/entities/grae-danco]]");
     expect(diag.message).not.toContain("Did you mean");
+
+    const question = effects[1] as QuestionEffect | undefined;
+    if (question === undefined) throw new Error("expected one question");
+    expect(question.kind).toBe("question");
+    expect(question.question).toContain("[[wiki/entities/grae-danco]]");
+    expect(question.question).toContain("[[wiki/entities/grace-danco]]");
+    expect(question.question).toContain("[[wiki/entities/grade-danco]]");
+    expect(question.options).toEqual([
+      "wiki/entities/grace-danco",
+      "wiki/entities/grade-danco",
+      "keep unresolved",
+    ]);
+    expect(question.idempotencyKey).toMatch(
+      /^dome\.markdown\.ambiguous-wikilink:/,
+    );
+    expect(question.metadata).toEqual(
+      expect.objectContaining({
+        automationPolicy: "agent-safe",
+        risk: "medium",
+      }),
+    );
+    expect(question.sourceRefs[0]?.path as string).toBe("wiki/page.md");
+  });
+
+  test("does not ask questions for ambiguous note-draft wikilinks", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "notes/scratch.md",
+        content: "Working with [[wiki/entities/grae-danco]].\n",
+      },
+      { path: "wiki/entities/grace-danco.md", content: "Grace.\n" },
+      { path: "wiki/entities/grade-danco.md", content: "Grade.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/scratch.md"],
+      proposal: null,
+      runId: "run-test-ambiguous-note",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+    expect(effects[0]?.kind).toBe("diagnostic");
   });
 
   test("surfaces broken note-draft wikilinks as info diagnostics", async () => {

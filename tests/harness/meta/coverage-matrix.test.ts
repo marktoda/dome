@@ -79,6 +79,7 @@ import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/daily-task-index-facts.scenario.test";
 import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
+import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-kinds/intake-extract-capture.scenario.test";
