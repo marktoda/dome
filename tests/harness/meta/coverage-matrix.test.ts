@@ -81,6 +81,7 @@ import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
 import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
+import "../scenarios/effect-kinds/simplify-indexes.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-kinds/intake-extract-capture.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
