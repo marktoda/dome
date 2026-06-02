@@ -1,9 +1,10 @@
 // test.answer-handler.record-duplicate-answer — harness fixture-bundle processor.
 //
-// Garden-phase answer handler used by the CLI-surface answer scenario. It
-// proves that `dome answer` does not stop at a projection-row mutation: the
-// answered question dispatches a garden processor, and that processor's
-// PatchEffect routes through the normal sub-Proposal adoption path.
+// Garden-phase answer handler used by the CLI-surface resolve/answer scenario.
+// It proves that the durable question-resolution path does not stop at a
+// projection-row mutation: the answered question dispatches a garden processor,
+// and that processor's PatchEffect routes through the normal sub-Proposal
+// adoption path.
 
 import {
   patchEffect,

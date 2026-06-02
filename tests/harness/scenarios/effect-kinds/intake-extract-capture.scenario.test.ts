@@ -1049,7 +1049,7 @@ scenario(
     if (questionId === undefined) return;
 
     const answer = await h.runCli([
-      "answer",
+      "resolve",
       String(questionId),
       "track",
       "--json",

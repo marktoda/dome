@@ -637,7 +637,7 @@ scenario(
     if (question === undefined) return;
 
     const answer = await h.runCli([
-      "answer",
+      "resolve",
       String(question.id),
       "track",
       "--json",

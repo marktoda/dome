@@ -69,7 +69,7 @@ extensions:
         "AGENTS.md": [
           "# This is a Dome vault.",
           "",
-          "Use Dome status, doctor, inspect, and answer for operational recovery.",
+          "Use Dome status, doctor, inspect, and resolve for operational recovery.",
           "",
           "<!-- BEGIN user-prose -->",
           "<!-- END user-prose -->",
@@ -389,7 +389,7 @@ async function answerQuestion(
   };
 }> {
   const answer = await successfulCli(h, [
-    "answer",
+    "resolve",
     String(id),
     value,
     "--json",

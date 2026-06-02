@@ -292,7 +292,7 @@ scenario(
     expect(questionId).toBeGreaterThan(0);
     if (questionId === undefined) return;
     const answer = await h.runCli([
-      "answer",
+      "resolve",
       String(questionId),
       "keep separate",
       "--json",

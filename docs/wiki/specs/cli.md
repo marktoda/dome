@@ -1130,8 +1130,8 @@ new answer-handler in the bundle; no new CLI command.
 **Design (complete v1).** `<question-id>` is the question row's id (from
 `dome check`). `<value>` is one of the question's options
 (when `options` is set) or free-form text (when `options` is null).
-Without `<value>`, `dome resolve <question-id>` or
-`dome answer <question-id>` prints the question and its options.
+Without `<value>`, `dome resolve <question-id>` prints the question and its
+options; the compatibility alias `dome answer <question-id>` does the same.
 
 Answering writes the durable answer to `answers.db.question_answers`, updates
 the current `projection.db.questions` row for inspect/query ergonomics, and

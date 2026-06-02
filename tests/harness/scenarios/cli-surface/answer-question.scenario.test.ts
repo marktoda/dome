@@ -1,9 +1,11 @@
 // scenarios/cli-surface/answer-question.scenario.test.ts
 //
-// `dome answer` is the public recovery channel for durable QuestionEffect
-// rows. This scenario keeps it end-to-end: a real shipped processor asks a
+// `dome resolve` is the public recovery channel for durable QuestionEffect
+// rows. These scenarios keep it end-to-end: a real shipped processor asks a
 // question, `inspect` exposes the stable row id, the CLI records the answer,
 // and an answer-triggered garden processor emits a follow-up PatchEffect.
+// The older `dome answer` command remains covered below as a compatibility
+// alias for advanced scripts.
 
 import { expect } from "bun:test";
 import { join } from "node:path";
@@ -140,7 +142,7 @@ extensions:
 
 scenario(
   {
-    name: "cli-surface: dome answer records an answer and runs answer handlers",
+    name: "cli-surface: dome resolve records an answer and runs answer handlers",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "question" },
@@ -194,7 +196,7 @@ scenario(
     expect(rows[0]?.status).toBe("open");
 
     const answer = await h.runCli([
-      "answer",
+      "resolve",
       String(questionId),
       "keep separate",
       "--json",
@@ -277,7 +279,7 @@ scenario(
       "UPDATE question_answers SET handler_status = 'skipped', handled_at = NULL",
     );
     const retry = await h.runCli([
-      "answer",
+      "resolve",
       String(questionId),
       "keep separate",
       "--json",
@@ -300,7 +302,7 @@ scenario(
 
 scenario(
   {
-    name: "cli-surface: dome answer keeps failed handler dispatch retryable",
+    name: "cli-surface: dome answer compatibility keeps failed handler dispatch retryable",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "question" },
@@ -387,7 +389,7 @@ extensions:
 
 scenario(
   {
-    name: "cli-surface: dome answer applies vault processor timeout cap to handlers",
+    name: "cli-surface: dome answer compatibility applies vault processor timeout cap to handlers",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "question" },
