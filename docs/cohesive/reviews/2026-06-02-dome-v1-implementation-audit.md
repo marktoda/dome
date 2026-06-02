@@ -473,3 +473,22 @@ Updated assessment:
 - V1 still should not be marked complete. The evidence gate now correctly says
   the implementation is green, but elapsed work-vault usefulness is not yet
   proven.
+
+## 2026-06-02 Dogfood Preflight Addendum
+
+Additional M10 setup support:
+
+- Added `bun run v1:dogfood-preflight`, a read-only internal script that checks
+  whether a vault is ready to collect the next M10 dogfood session.
+- The preflight combines `dome status`, `dome inspect bundles --model`, and the
+  dogfood report. It separates session collection readiness from final
+  release-soak readiness.
+- Current work-vault result: operational readiness is clean, but capture
+  readiness is `not-ready` because `dome.intake` is disabled, its processors
+  are not loaded, and its model status is `disabled-provider-configured`.
+
+Updated assessment:
+
+- This makes the next M10 action concrete without mutating Mark's work vault:
+  enable `dome.intake` intentionally before trying to collect capture-digestion
+  evidence.

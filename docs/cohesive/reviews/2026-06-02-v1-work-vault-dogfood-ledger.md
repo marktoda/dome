@@ -583,3 +583,31 @@ Qualitative read:
   sessions, fill the qualitative fields after the session, and re-run
   `bun run v1:dogfood-report` until the report reflects enough real work-vault
   usage.
+
+## 2026-06-02 M10 Dogfood Preflight
+
+Dogfood action:
+
+- Added `bun run v1:dogfood-preflight` as a read-only M10 session readiness
+  check.
+- Ran `bun run v1:dogfood-preflight -- --json` against the work vault.
+
+Operational result:
+
+- Collection status: `not-ready`.
+- Operational readiness: ready, with no findings.
+- Capture readiness: not ready.
+- Capture findings:
+  - `dome.intake is disabled`
+  - `dome.intake processors are not loaded`
+  - `dome.intake model status is disabled-provider-configured`
+- Release report: still `not-ready` with 0 complete workdays, 0
+  capture-evidence days, 0 complete-workday span days, and 0 release blockers.
+
+Qualitative read:
+
+- The work vault is clean enough to dogfood non-capture daily/context surfaces.
+- The missing M10 capture-digestion proof will not start accumulating until
+  `dome.intake` is intentionally enabled for the work vault.
+- This preflight is deliberately read-only; it records the setup gap without
+  changing Mark's vault configuration.
