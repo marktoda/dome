@@ -1095,6 +1095,70 @@ describe("runInspect", () => {
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
   });
 
+  test("subject 'facts' exposes source-backed projection fact provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeFile(
+      join(f.vaultPath, "wiki/new.md"),
+      "# New\n\nSee [[seed]] for the source note.\n",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "link seed note\n",
+      files: ["wiki/new.md"],
+    });
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        predicate: "dome.graph.links_to",
+        subjectKind: "page",
+        subjectId: "wiki/new.md",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly subject: string;
+      readonly predicate: string;
+      readonly object: string;
+      readonly assertion: string;
+      readonly processor: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        subject: "page:wiki/new.md",
+        predicate: "dome.graph.links_to",
+        object: "seed",
+        assertion: "extracted",
+        processor: "dome.graph.links",
+      }),
+    );
+    expect(rows[0]?.id).toBeGreaterThan(0);
+    expect(rows[0]?.adopted).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:3");
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        predicate: "dome.graph.tagged",
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+  });
+
   test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -1588,6 +1652,51 @@ describe("runInspect", () => {
     ).toBe(64);
     expect(captured.err.join("\n")).toContain(
       "only valid for the diagnostics subject",
+    );
+  });
+
+  test("fact-only flags reject other subjects", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        predicate: "dome.graph.links_to",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "only valid for the facts subject",
+    );
+  });
+
+  test("invalid fact filters return 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        subjectKind: "file",
+        subjectId: "wiki/seed.md",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--subject-kind must be one of page, task, entity",
+    );
+
+    captured.err = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        subjectKind: "page",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--subject-kind and --subject-id must be provided together",
     );
   });
 

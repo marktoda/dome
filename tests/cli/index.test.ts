@@ -126,11 +126,15 @@ describe("runCli", () => {
     expect(await runCli(["inspect", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("--model");
+    expect(out).toContain("--predicate <predicate>");
+    expect(out).toContain("--subject-kind <kind>");
+    expect(out).toContain("--subject-id <id>");
     for (
       const subject of [
         "bundles",
         "processors",
         "runs",
+        "facts",
         "diagnostics",
         "questions",
         "outbox",

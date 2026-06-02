@@ -8,6 +8,7 @@
 // v1.0 ships subjects backed by existing runtime/query surfaces:
 //
 //   - `runs`        → `queryRuns(ledger, { limit })`
+//   - `facts`       → `queryFactRecords(projection)`
 //   - `diagnostics` → `queryDiagnostics(projection)`
 //   - `questions`   → `queryQuestionRecords(projection)`
 //   - `outbox`      → `queryOutbox(outbox)`
@@ -41,6 +42,10 @@
 import { resolve } from "node:path";
 
 import type {
+  FactEffect,
+  NodeRef,
+} from "../../core/effect";
+import type {
   Capability,
   Processor,
   ProcessorPhase,
@@ -57,6 +62,10 @@ import {
   queryDiagnostics,
   type DiagnosticsFilter,
 } from "../../projections/diagnostics";
+import {
+  queryFactRecords,
+  type FactRecordFilter,
+} from "../../projections/facts";
 import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
 
@@ -78,6 +87,7 @@ const VALID_SUBJECTS = new Set<string>([
   "bundles",
   "processors",
   "runs",
+  "facts",
   "diagnostics",
   "questions",
   "outbox",
@@ -100,6 +110,9 @@ export type RunInspectOptions = {
   readonly severity?: string | undefined;
   readonly code?: string | undefined;
   readonly processor?: string | undefined;
+  readonly predicate?: string | undefined;
+  readonly subjectKind?: string | undefined;
+  readonly subjectId?: string | undefined;
   readonly model?: boolean | undefined;
 };
 
@@ -118,13 +131,13 @@ export async function runInspect(
   const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome inspect: subject is required. Subjects: bundles, processors, runs, diagnostics, questions, outbox, quarantine.",
+      "dome inspect: subject is required. Subjects: bundles, processors, runs, facts, diagnostics, questions, outbox, quarantine.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, diagnostics, questions, outbox, quarantine.`,
+      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, facts, diagnostics, questions, outbox, quarantine.`,
     );
     return 64;
   }
@@ -145,6 +158,18 @@ export async function runInspect(
   });
   if (diagnosticOptions.ok === false) {
     console.error(diagnosticOptions.message);
+    return 64;
+  }
+  const factOptions = parseFactOptions({
+    subject,
+    ...(options.predicate !== undefined ? { predicate: options.predicate } : {}),
+    ...(options.subjectKind !== undefined
+      ? { subjectKind: options.subjectKind }
+      : {}),
+    ...(options.subjectId !== undefined ? { subjectId: options.subjectId } : {}),
+  });
+  if (factOptions.ok === false) {
+    console.error(factOptions.message);
     return 64;
   }
   if (
@@ -185,6 +210,7 @@ export async function runInspect(
         bundleInventory,
         modelOnly: options.model === true,
         diagnosticOptions: diagnosticOptions.value,
+        factOptions: factOptions.value,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -228,6 +254,9 @@ type ParsedDiagnosticOptions = {
 type ParseDiagnosticOptionsResult =
   | { readonly ok: true; readonly value: ParsedDiagnosticOptions | null }
   | { readonly ok: false; readonly message: string };
+type ParseFactOptionsResult =
+  | { readonly ok: true; readonly value: FactRecordFilter | null }
+  | { readonly ok: false; readonly message: string };
 
 type InspectResult =
   | { readonly kind: "rows"; readonly rows: ReadonlyArray<Row> }
@@ -247,6 +276,7 @@ function collectInspectResult(opts: {
   readonly bundleInventory: BundleManifestInventory;
   readonly modelOnly: boolean;
   readonly diagnosticOptions: ParsedDiagnosticOptions | null;
+  readonly factOptions: FactRecordFilter | null;
 }): InspectResult {
   if (
     opts.subject === "diagnostics" &&
@@ -270,6 +300,7 @@ function collectInspectResult(opts: {
       opts.bundleInventory,
       opts.modelOnly,
       opts.diagnosticOptions,
+      opts.factOptions,
     ),
   };
 }
@@ -281,6 +312,7 @@ function collectRows(
   bundleInventory: BundleManifestInventory,
   modelOnly: boolean,
   diagnosticOptions: ParsedDiagnosticOptions | null,
+  factOptions: FactRecordFilter | null,
 ): ReadonlyArray<Row> {
   switch (subject) {
     case "bundles": {
@@ -324,6 +356,21 @@ function collectRows(
         started_at: r.startedAt,
         duration_ms: r.durationMs,
         proposal: r.proposalId,
+      }));
+    }
+    case "facts": {
+      const all = queryFactRecords(runtime.projectionDb, factOptions ?? {});
+      return all.slice(0, limit).map((fact) => ({
+        id: fact.id,
+        subject: formatNodeRef(fact.effect.subject),
+        predicate: fact.effect.predicate,
+        object: formatFactObject(fact.effect.object),
+        assertion: fact.effect.assertion,
+        confidence: fact.effect.confidence ?? "-",
+        processor: fact.processorId,
+        adopted: fact.adoptedCommit,
+        written_at: fact.writtenAt,
+        source_refs: formatSourceRefs(fact.effect.sourceRefs),
       }));
     }
     case "diagnostics": {
@@ -482,8 +529,66 @@ function parseDiagnosticOptions(opts: {
   };
 }
 
+function parseFactOptions(opts: {
+  readonly subject: string;
+  readonly predicate?: string;
+  readonly subjectKind?: string;
+  readonly subjectId?: string;
+}): ParseFactOptionsResult {
+  const hasFactOption =
+    opts.predicate !== undefined ||
+    opts.subjectKind !== undefined ||
+    opts.subjectId !== undefined;
+  if (!hasFactOption) {
+    return { ok: true, value: null };
+  }
+  if (opts.subject !== "facts") {
+    return {
+      ok: false,
+      message:
+        "dome inspect: --predicate, --subject-kind, and --subject-id are only valid for the facts subject.",
+    };
+  }
+  if (opts.subjectKind !== undefined && !isFactSubjectKind(opts.subjectKind)) {
+    return {
+      ok: false,
+      message:
+        "dome inspect facts: --subject-kind must be one of page, task, entity.",
+    };
+  }
+  if (
+    (opts.subjectKind === undefined) !== (opts.subjectId === undefined)
+  ) {
+    return {
+      ok: false,
+      message:
+        "dome inspect facts: --subject-kind and --subject-id must be provided together.",
+    };
+  }
+
+  const filter: FactRecordFilter = {
+    ...(opts.predicate !== undefined ? { predicate: opts.predicate } : {}),
+    ...(opts.subjectKind !== undefined && opts.subjectId !== undefined
+      ? {
+          subjectKind: opts.subjectKind,
+          subjectId: opts.subjectId,
+        }
+      : {}),
+  };
+  return {
+    ok: true,
+    value: Object.keys(filter).length === 0 ? null : filter,
+  };
+}
+
 function isDiagnosticSeverity(value: string): value is DiagnosticSeverity {
   return VALID_DIAGNOSTIC_SEVERITIES.has(value as DiagnosticSeverity);
+}
+
+function isFactSubjectKind(
+  value: string,
+): value is NonNullable<FactRecordFilter["subjectKind"]> {
+  return value === "page" || value === "task" || value === "entity";
 }
 
 function defaultLimitForSubject(subject: string): number {
@@ -491,6 +596,19 @@ function defaultLimitForSubject(subject: string): number {
     return Number.MAX_SAFE_INTEGER;
   }
   return DEFAULT_LIMIT;
+}
+
+function formatNodeRef(ref: NodeRef): string {
+  if (ref.kind === "page") return `page:${ref.path}`;
+  if (ref.kind === "task") return `task:${ref.stableId}`;
+  return `entity:${ref.name}`;
+}
+
+function formatFactObject(object: FactEffect["object"]): string {
+  if (object.kind === "string") return object.value;
+  if (object.kind === "number") return String(object.value);
+  if (object.kind === "date") return object.value;
+  return formatNodeRef(object);
 }
 
 async function collectBundleManifestInventory(

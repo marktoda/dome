@@ -150,13 +150,16 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Read operational substrate rows.")
     .argument(
       "<subject>",
-      "bundles, processors, runs, diagnostics, questions, outbox, or quarantine.",
+      "bundles, processors, runs, facts, diagnostics, questions, outbox, or quarantine.",
     )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
     .option("--summary", "Group diagnostics by severity and code.")
     .option("--severity <level>", "Filter diagnostics by severity.")
     .option("--code <code>", "Filter diagnostics by code.")
     .option("--processor <id>", "Filter diagnostics by processor id.")
+    .option("--predicate <predicate>", "Filter facts by predicate.")
+    .option("--subject-kind <kind>", "Filter facts by subject kind.")
+    .option("--subject-id <id>", "Filter facts by subject id.")
     .option("--model", "Show only model-capable bundles or processors.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -173,6 +176,9 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           severity: options.severity,
           code: options.code,
           processor: options.processor,
+          predicate: options.predicate,
+          subjectKind: options.subjectKind,
+          subjectId: options.subjectId,
           model: options.model,
         }),
       );
@@ -538,6 +544,9 @@ type InspectCliOptions = {
   readonly severity?: string;
   readonly code?: string;
   readonly processor?: string;
+  readonly predicate?: string;
+  readonly subjectKind?: string;
+  readonly subjectId?: string;
   readonly model?: boolean;
   readonly json?: boolean;
   readonly vault?: string;

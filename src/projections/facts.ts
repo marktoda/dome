@@ -38,6 +38,21 @@ export type ResolveStalePageFactsOpts = {
   readonly inspectedPaths: ReadonlyArray<string>;
 };
 
+export type FactRecordFilter = {
+  readonly predicate?: string;
+  readonly subjectKind?: "page" | "task" | "entity";
+  readonly subjectId?: string;
+};
+
+export type FactRecord = {
+  readonly id: number;
+  readonly effect: FactEffect;
+  readonly namespace: string;
+  readonly processorId: string;
+  readonly adoptedCommit: CommitOid;
+  readonly writtenAt: string;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_FACT_SQL = `
@@ -70,6 +85,14 @@ FROM facts
 ORDER BY id
 `.trim();
 
+const ALL_FACT_RECORDS_SQL = `
+SELECT id, namespace, subject_kind, subject_id, predicate, object_json,
+       assertion, confidence, source_refs, processor_id, adopted_commit,
+       written_at
+FROM facts
+ORDER BY id
+`.trim();
+
 const DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL = `
 DELETE FROM facts
 WHERE processor_id = ? AND subject_kind = 'page' AND subject_id = ?
@@ -86,6 +109,13 @@ type FactRow = {
   readonly assertion: string;
   readonly confidence: number | null;
   readonly source_refs: string;
+};
+
+type FactRecordRow = FactRow & {
+  readonly id: number;
+  readonly processor_id: string;
+  readonly adopted_commit: CommitOid;
+  readonly written_at: string;
 };
 
 // ----- Public functions -----------------------------------------------------
@@ -152,6 +182,23 @@ export function factsByPredicate(
 export function allFacts(db: ProjectionDb): ReadonlyArray<FactEffect> {
   const rows = db.raw.query<FactRow, []>(ALL_FACTS_SQL).all();
   return Object.freeze(rows.map(rowToFact));
+}
+
+/**
+ * Read fact rows with inspection metadata. This accessor is for debugging /
+ * provenance surfaces; processors should continue to consume `FactEffect`
+ * values through `ProjectionQueryView.facts`.
+ */
+export function queryFactRecords(
+  db: ProjectionDb,
+  filter: FactRecordFilter = {},
+): ReadonlyArray<FactRecord> {
+  const rows = db.raw.query<FactRecordRow, []>(ALL_FACT_RECORDS_SQL).all();
+  return Object.freeze(
+    rows
+      .map(rowToFactRecord)
+      .filter((record) => factRecordMatches(record, filter)),
+  );
 }
 
 /**
@@ -248,4 +295,34 @@ function rowToFact(row: FactRow): FactEffect {
           confidence: row.confidence,
         };
   return factEffect(input);
+}
+
+function rowToFactRecord(row: FactRecordRow): FactRecord {
+  return Object.freeze({
+    id: row.id,
+    effect: rowToFact(row),
+    namespace: row.namespace,
+    processorId: row.processor_id,
+    adoptedCommit: row.adopted_commit,
+    writtenAt: row.written_at,
+  });
+}
+
+function factRecordMatches(
+  record: FactRecord,
+  filter: FactRecordFilter,
+): boolean {
+  if (
+    filter.predicate !== undefined &&
+    record.effect.predicate !== filter.predicate
+  ) {
+    return false;
+  }
+  if (filter.subjectKind === undefined && filter.subjectId === undefined) {
+    return true;
+  }
+  return (
+    record.effect.subject.kind === filter.subjectKind &&
+    subjectId(record.effect.subject) === filter.subjectId
+  );
 }
