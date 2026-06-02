@@ -25,6 +25,7 @@ import {
   localDateParts,
   openLoopIdentity,
   openLoopFreshnessKey,
+  openSourceBackedOpenLoopsFromMarkdown,
   openLoopSurfaceKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
@@ -42,6 +43,7 @@ import {
 } from "./daily-shared";
 
 const DAILY_CRON = "0 6 * * *";
+const OPEN_LOOP_SURFACE_LIMIT = 12;
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
@@ -102,6 +104,12 @@ const carryForward: Processor = defineProcessor({
         content,
       }),
     );
+    const targetOpenItems = uniqueOpenLoops(
+      openSourceBackedOpenLoopsFromMarkdown({
+        path: targetPath,
+        content,
+      }),
+    );
     const settledKeys = await collectSettledOpenLoopIdentities({
       ctx,
       targetPath,
@@ -112,6 +120,7 @@ const carryForward: Processor = defineProcessor({
       ctx,
       targetPath,
       settings,
+      targetOpenItems,
       settledKeys,
     });
     const nextContent = replaceOpenLoopSurfaceSection({
@@ -181,10 +190,12 @@ async function collectOpenLoopSources(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
   readonly settings: DailyPathSettings;
+  readonly targetOpenItems: ReadonlyArray<DailyOpenLoopSource>;
   readonly settledKeys: SettledOpenLoopKeys;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
-  const { ctx, targetPath, settings, settledKeys } = input;
+  const { ctx, targetPath, settings, targetOpenItems, settledKeys } = input;
   const items: DailyOpenLoopCandidate[] = [];
+  const itemByIdentity = new Map<string, DailyOpenLoopCandidate>();
   for (const path of await ctx.snapshot.listMarkdownFiles()) {
     if (path === targetPath) continue;
     const content = await ctx.snapshot.readFile(path);
@@ -197,17 +208,23 @@ async function collectOpenLoopSources(input: {
       ) {
         continue;
       }
-      items.push({
+      const candidate: DailyOpenLoopCandidate = {
         ...item,
         lastChangedAt: openLoopFreshnessKey({
           path,
           settings,
           lastChangedAt: info?.lastChangedAt,
         }),
-      });
+      };
+      items.push(candidate);
+      itemByIdentity.set(openLoopIdentity(candidate), candidate);
     }
   }
-  return rankDailyOpenLoopSurfaceItems(items);
+  return mergeRetainedOpenLoops({
+    retainedItems: targetOpenItems,
+    itemByIdentity,
+    rankedItems: rankDailyOpenLoopSurfaceItems(items, OPEN_LOOP_SURFACE_LIMIT),
+  });
 }
 
 async function collectStartContext(input: {
@@ -272,6 +289,35 @@ type SettledOpenLoopKeys = {
   readonly surfaceKeys: ReadonlySet<string>;
 };
 
+function mergeRetainedOpenLoops(input: {
+  readonly retainedItems: ReadonlyArray<DailyOpenLoopSource>;
+  readonly itemByIdentity: ReadonlyMap<string, DailyOpenLoopCandidate>;
+  readonly rankedItems: ReadonlyArray<DailyOpenLoopSource>;
+}): ReadonlyArray<DailyOpenLoopSource> {
+  const out: DailyOpenLoopSource[] = [];
+  const identities = new Set<string>();
+  const surfaceKeys = new Set<string>();
+
+  const append = (item: DailyOpenLoopSource): void => {
+    if (out.length >= OPEN_LOOP_SURFACE_LIMIT) return;
+    const identity = openLoopIdentity(item);
+    if (identities.has(identity)) return;
+    const surfaceKey = openLoopSurfaceKey(item);
+    if (surfaceKeys.has(surfaceKey)) return;
+    identities.add(identity);
+    surfaceKeys.add(surfaceKey);
+    out.push(item);
+  };
+
+  for (const retained of input.retainedItems) {
+    const live = input.itemByIdentity.get(openLoopIdentity(retained));
+    if (live !== undefined) append(live);
+  }
+  for (const ranked of input.rankedItems) append(ranked);
+
+  return Object.freeze(out);
+}
+
 function patchSourceRefs(
   ctx: ProcessorContext,
   items: ReadonlyArray<DailyOpenLoopSource>,
@@ -310,6 +356,20 @@ function uniqueSettledOpenLoops(
 ): ReadonlyArray<DailySettledOpenLoopSource> {
   const seen = new Set<string>();
   const out: DailySettledOpenLoopSource[] = [];
+  for (const item of items) {
+    const key = openLoopIdentity(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return Object.freeze(out);
+}
+
+function uniqueOpenLoops(
+  items: ReadonlyArray<DailyOpenLoopSource>,
+): ReadonlyArray<DailyOpenLoopSource> {
+  const seen = new Set<string>();
+  const out: DailyOpenLoopSource[] = [];
   for (const item of items) {
     const key = openLoopIdentity(item);
     if (seen.has(key)) continue;

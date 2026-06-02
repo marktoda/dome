@@ -537,6 +537,117 @@ extensions:
 
 scenario(
   {
+    name: "effect-routing: dome.daily keeps current daily rows stable across fresh source changes",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      clock: new TestClock("2026-06-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    config:
+      daily_path: notes/{date}.md
+    grant:
+      read: ["notes/*.md", "wiki/**/*.md"]
+      patch.auto: ["notes/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "notes/2026-06-02.md": [
+          "# 2026-06-02",
+          "",
+          "## Open Loops",
+          "",
+          "<!-- dome.daily:open-loops:start -->",
+          "### Source-backed Open Loops",
+          "- [ ] Alpha task (from [[wiki/projects/alpha]])",
+          "- [ ] Beta task (from [[wiki/projects/beta]])",
+          "<!-- dome.daily:open-loops:end -->",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Alpha task",
+          "",
+        ].join("\n"),
+        "wiki/projects/beta.md": [
+          "# Beta",
+          "",
+          "TODO: Beta task",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/gamma.md": [
+          "# Gamma",
+          "",
+          "TODO: Gamma task",
+          "",
+        ].join("\n"),
+      },
+      message: "add fresh source loop",
+    });
+
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+
+    const daily = await readFile(
+      join(h.vaultPath, "notes/2026-06-02.md"),
+      "utf8",
+    );
+    const alpha = daily.indexOf("Alpha task");
+    const beta = daily.indexOf("Beta task");
+    const gamma = daily.indexOf("Gamma task");
+    expect(alpha).toBeGreaterThan(0);
+    expect(beta).toBeGreaterThan(alpha);
+    expect(gamma).toBeGreaterThan(beta);
+
+    const stable = await h.tick();
+    expect(stable.adopted).toBe(true);
+    await h.expectFile("notes/2026-06-02.md").toEqual(daily);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "Alpha source no longer has an open loop.",
+          "",
+        ].join("\n"),
+      },
+      message: "remove alpha source loop",
+    });
+
+    const removed = await h.tick();
+    expect(removed.adopted).toBe(true);
+    await h.expectFile("notes/2026-06-02.md").toNotContain("Alpha task");
+    await h.expectFile("notes/2026-06-02.md").toContain("Beta task");
+    await h.expectFile("notes/2026-06-02.md").toContain("Gamma task");
+  },
+);
+
+scenario(
+  {
     name: "effect-routing: dome.daily checked source-backed open loops stay resolved",
     tags: [
       { kind: "group", group: "effect-kinds" },

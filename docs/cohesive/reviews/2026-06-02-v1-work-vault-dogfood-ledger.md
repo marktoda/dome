@@ -1885,3 +1885,43 @@ Qualitative read:
 - This is a small attention-surface cleanup in the direction V1 needs: agents
   can route the next step from one structured status/preflight payload, without
   preflight growing its own git-status parser or another command surface.
+
+## 2026-06-02 Daily Surface Stability Hardening
+
+Verification action:
+
+- Re-audited the repeated same-day `dome.daily.carry-forward` commits in the
+  work vault after Mark's churn question.
+- Confirmed older commits had patched historical daily notes before the current
+  daily-targeting fix, while the latest daily carry-forward commit targeted
+  `notes/2026-06-02.md`.
+- Found the remaining stability risk: source-change triggers could still
+  rewrite the current daily `## Open Loops` block by freshness order, even when
+  the existing generated rows were still backed by live source items.
+- Changed `dome.daily.carry-forward` so it retains existing generated rows when
+  their backing source item still exists, then fills remaining slots from the
+  freshly ranked candidate set. Removed or completed source items still fall out
+  normally.
+
+Measured result:
+
+- `bun run typecheck` passed.
+- `bun test tests/harness/scenarios/effect-routing/daily-create-carry-forward.scenario.test.ts`
+  passed with 8 tests and 843 assertions.
+- `bun test tests/harness/scenarios/effect-routing/daily-create-carry-forward.scenario.test.ts
+  tests/harness/scenarios/cli-surface/today-task-view.scenario.test.ts
+  tests/harness/scenarios/cli-surface/export-context.scenario.test.ts
+  tests/harness/scenarios/cli-surface/query-adopted-state.scenario.test.ts`
+  passed with 24 tests and 3459 assertions.
+- `git diff --check` passed.
+- `bun test` passed with 1064 tests and 22517 assertions.
+- `bun run v1:smoke -- --sync-docs` passed for docs and work. Both vaults were
+  adopted-current; settlement checks were skipped because docs had this
+  in-progress source diff and the work vault had one modified daily note.
+
+Qualitative read:
+
+- This keeps the daily note closer to a stable work cockpit during the day:
+  new source-backed loops can still fill open capacity, but unrelated fresh
+  source changes should not reorder the whole generated section and create
+  noisy carry-forward commits.

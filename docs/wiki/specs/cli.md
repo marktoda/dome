@@ -945,13 +945,16 @@ runs target the compiler host's current date. Changed historical daily notes
 are evidence, not mutation targets. `dome.daily.task-index` treats those blocks
 as surfaces, not new sources: generated daily entries are skipped during fact
 extraction, but `today` and `prep` still read open source-backed rows as the
-target day's surface. When the same loop also exists as an original project, meeting,
-capture, or prior-daily fact, the view folds the rows together, counts the
-representative as `daily`, and keeps representative source refs for the daily
-surface plus the backing source. Rendered daily/prep/agenda rows use the compact
-`evidenceLabel` from that folded evidence: a generated daily row can display
-`daily.md:24; source project.md:8` instead of hiding the backing source behind a
-separate SourceRefs section.
+target day's surface. Carry-forward keeps existing generated rows in place when
+their backing source item is still live, then fills any remaining slots from the
+freshly ranked candidate set. This gives the daily cockpit stable same-day
+ordering without letting completed or deleted source items linger. When the same
+loop also exists as an original project, meeting, capture, or prior-daily fact,
+the view folds the rows together, counts the representative as `daily`, and keeps
+representative source refs for the daily surface plus the backing source.
+Rendered daily/prep/agenda rows use the compact `evidenceLabel` from that folded
+evidence: a generated daily row can display `daily.md:24; source project.md:8`
+instead of hiding the backing source behind a separate SourceRefs section.
 
 Settling a generated source-backed item is still meaningful markdown evidence.
 On the next carry-forward pass, Dome keeps `[x]` rows under
