@@ -32,7 +32,7 @@ dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
-dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
+dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
@@ -1294,7 +1294,7 @@ processor reset loop, and orphan-run fail loop as first-party processors.
 All three use the same question/answer flow rather than hidden per-substrate
 CLI verbs.
 
-### `dome serve [--vault <path>] [--bundles-root <path>] [--poll-interval-ms <n>] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]`
+### `dome serve [--vault <path>] [--bundles-root <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]`
 
 Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the host catches up by adopting the new HEAD.
 
@@ -1318,7 +1318,7 @@ Composition (v1.0):
 7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
 8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
-   can report whether the foreground compiler appears `running`, `stale`, or
+   can report whether the local compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host
    lock remains the concurrency guard.
 10. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
@@ -1331,6 +1331,16 @@ Composition (v1.0):
 summaries, operational-work summaries, and shutdown line. It still reports
 startup failures, detached-HEAD pauses, blocked adoption diagnostics, and
 unexpected tick errors. `--quiet` and `--verbose` are mutually exclusive.
+
+`--daemon` starts the same compiler host in a detached background process and
+returns after the heartbeat proves the child is running. The child writes its
+routine output to `.dome/state/serve-daemon.log` unless startup fails before
+that path is available. If a same-branch host is already running, daemon mode
+exits 0 and reports the existing pid; if another branch owns the running
+heartbeat, daemon mode exits 1 rather than starting an ambiguous host. This is
+the copyable session-start shape used by V1 dogfood preflight; a plain
+foreground `dome serve` remains useful when an operator wants the live log in a
+terminal.
 
 `--verbose` prints adoption-loop progress events. `--filter-processor <glob>`
 narrows those verbose events to matching processor ids, for example

@@ -168,6 +168,7 @@ function sessionEvidenceCommands(opts: PreflightOptions): {
   const serveCommand = Object.freeze([
     domeBin,
     "serve",
+    "--daemon",
     "--vault",
     opts.vault,
     "--quiet",

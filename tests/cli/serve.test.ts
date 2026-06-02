@@ -950,6 +950,50 @@ extensions:
     const code = await servePromise;
     expect(code).toBe(0);
   }, 10_000);
+
+  test("daemon mode starts a detached host and clears heartbeat on SIGTERM", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    let daemonPid: number | null = null;
+    try {
+      const code = await runServe({
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+        quiet: true,
+        daemon: true,
+        daemonTimeoutMs: 5_000,
+      });
+      expect(code).toBe(0);
+
+      const runningStatus = await readStatusJson(f);
+      daemonPid = runningStatus.serve_pid;
+      expect(runningStatus.serve_status).toBe("running");
+      expect(typeof daemonPid).toBe("number");
+      expect(runningStatus.serve_branch).toBe("main");
+      if (daemonPid === null) return;
+      const pid = daemonPid;
+      expect(pid).not.toBe(process.pid);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+
+      process.kill(pid, "SIGTERM");
+      await waitFor(async () => {
+        const status = await readStatusJson(f);
+        return status.serve_status === "off";
+      }, 5_000);
+      daemonPid = null;
+    } finally {
+      if (daemonPid !== null) {
+        try {
+          process.kill(daemonPid, "SIGTERM");
+        } catch {
+          // The daemon may have already exited and cleared its heartbeat.
+        }
+      }
+    }
+  }, 10_000);
 });
 
 // ----- Test 2: detached HEAD ------------------------------------------------
@@ -1009,6 +1053,31 @@ async function waitFor(
     await new Promise<void>((r) => setTimeout(r, 25));
   }
   throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
+}
+
+async function readStatusJson(fixture: Fixture): Promise<{
+  readonly serve_status: string;
+  readonly serve_pid: number | null;
+  readonly serve_branch: string | null;
+}> {
+  captured.out = [];
+  captured.err = [];
+  const statusCode = await runStatus({
+    vault: fixture.vaultPath,
+    bundlesRoot: fixture.bundlesRoot,
+    json: true,
+  });
+  expect(statusCode).toBe(0);
+  const blob = captured.out.find((line) => line.includes("\"vault\""));
+  expect(blob).toBeDefined();
+  if (blob === undefined) {
+    throw new Error("expected status JSON");
+  }
+  return JSON.parse(blob) as {
+    readonly serve_status: string;
+    readonly serve_pid: number | null;
+    readonly serve_branch: string | null;
+  };
 }
 
 async function waitForRunningProcessor(

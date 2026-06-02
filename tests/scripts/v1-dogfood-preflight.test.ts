@@ -55,6 +55,7 @@ describe("v1 dogfood preflight script", () => {
     expect(report.sessionEvidence.serveCommand).toEqual([
       DOME_BIN,
       "serve",
+      "--daemon",
       "--vault",
       vaultPath,
       "--quiet",
@@ -98,7 +99,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes(`${DOME_BIN} serve --vault`)
+        action.includes(`${DOME_BIN} serve --daemon --vault`)
       ),
     ).toBe(true);
     expect(report.nextActions).toContain(
@@ -129,7 +130,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes(`${DOME_BIN} serve --vault`)
+        action.includes(`${DOME_BIN} serve --daemon --vault`)
       ),
     ).toBe(true);
   }, { timeout: 30_000 });
@@ -175,7 +176,7 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain("Collection status: ready");
     expect(result.stdout).toContain("Session evidence:");
     expect(result.stdout).toContain("Serve command:");
-    expect(result.stdout).toContain(`${DOME_BIN} serve --vault`);
+    expect(result.stdout).toContain(`${DOME_BIN} serve --daemon --vault`);
     expect(result.stdout).toContain("Snapshot command:");
     expect(result.stdout).toContain(SNAPSHOT_SCRIPT);
     expect(result.stdout).toContain(`>> ${ledgerPath}`);
@@ -249,7 +250,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes(`${DOME_BIN} serve --vault`)
+        action.includes(`${DOME_BIN} serve --daemon --vault`)
       ),
     ).toBe(true);
   }, { timeout: 30_000 });
@@ -320,7 +321,7 @@ describe("v1 dogfood preflight script", () => {
       "collect 9 more complete M10 workday(s) (1/10)",
     );
     expect(result.stdout).toContain("Serve command:");
-    expect(result.stdout).toContain(`${DOME_BIN} serve --vault`);
+    expect(result.stdout).toContain(`${DOME_BIN} serve --daemon --vault`);
     expect(result.stdout).toContain("Commands run:");
   }, { timeout: 30_000 });
 });

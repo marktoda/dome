@@ -1805,3 +1805,49 @@ Qualitative read:
 - This keeps Dome aligned with the V1 attention model: flexible Markdown noise
   remains visible and queryable, but the default operator surface no longer
   makes non-actionable historical/optional findings look like active failure.
+
+## 2026-06-02 Serve Daemon Startup
+
+Verification action:
+
+- Re-ran V1 preflight after the previous cleanup and found the work vault was
+  operationally clean and capture-ready, but not collection-ready because
+  `dome serve` was off.
+- Tried to start the compiler host as a background process with `nohup`, and
+  found it exited before writing a heartbeat. The cause is intentional but
+  awkward for agents: `dome serve` handles `SIGHUP` as graceful shutdown so
+  abandoned terminal sessions clear stale host evidence.
+- Added `dome serve --daemon` as an option on the existing compiler-host
+  command. It starts the same host in a detached child process, waits until the
+  heartbeat proves the child is running, reports already-running same-branch
+  hosts as success, and refuses ambiguous different-branch heartbeats.
+- Updated V1 dogfood preflight to render the daemonized serve command as the
+  copyable session-start command, keeping the CLI consolidated under `serve`
+  rather than introducing a new dogfood helper command.
+
+Measured result:
+
+- `bun run typecheck` passed.
+- `bun test tests/cli/serve.test.ts tests/scripts/v1-dogfood-preflight.test.ts`
+  passed with 20 tests and 205 assertions.
+- `bun test tests/cli/serve.test.ts tests/cli/index.test.ts
+  tests/scripts/v1-dogfood-preflight.test.ts` passed with 38 tests and 308
+  assertions.
+- `bun test` passed with 1063 tests and 22539 assertions.
+- `bun run v1:smoke -- --sync-docs` passed for docs and work. Both vaults were
+  adopted-current; settlement checks were skipped because docs had this
+  in-progress source diff and the work vault had one modified daily note.
+- Restarted the work-vault compiler host through the new daemon path. `dome
+  status --vault /Users/mark.toda/vaults/work --json` reported
+  `serve_status: running`, `serve_pid: 47135`, and `serve_branch: main`.
+- `bun run v1:dogfood-preflight -- --json` showed the daemon host and capture
+  loop were ready, with release soak still not ready on elapsed M10 criteria.
+  It correctly kept collection status `not-ready` while
+  `notes/2026-06-02.md` has uncommitted foreground edits.
+
+Qualitative read:
+
+- This removes a real M10 setup trap without changing the compiler model:
+  `serve` is still the host, the heartbeat is still the evidence surface, and
+  shell-specific background-process handling is no longer required for normal
+  dogfood sessions.

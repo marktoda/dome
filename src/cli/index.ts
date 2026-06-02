@@ -446,6 +446,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       parsePositiveIntegerOption,
     )
     .option("-v, --verbose", "Print adoption progress events.")
+    .option("--daemon", "Start the compiler host in the background.")
     .option(
       "--filter-processor <glob>",
       "In verbose mode, only print matching processor ids.",
@@ -465,6 +466,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           pollIntervalMs: options.pollIntervalMs,
           verbose: options.verbose,
           quiet: options.quiet,
+          daemon: options.daemon,
           ...(options.filterProcessor !== undefined
             ? { filterProcessor: options.filterProcessor }
             : {}),
@@ -638,6 +640,7 @@ type ServeCliOptions = {
   readonly pollIntervalMs?: number;
   readonly verbose?: boolean;
   readonly quiet?: boolean;
+  readonly daemon?: boolean;
   readonly filterProcessor?: string;
   readonly vault?: string;
   readonly bundlesRoot?: string;

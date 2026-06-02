@@ -33,7 +33,9 @@
 //   - Console output goes through `console.log` / `console.error` (matching
 //     status/doctor).
 
-import { resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { closeSync, mkdirSync, openSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 import {
   openVaultRuntime,
@@ -54,6 +56,7 @@ import {
 import {
   clearServeHeartbeat,
   createServeHeartbeatHandle,
+  readServeHeartbeatStatus,
   writeServeHeartbeat,
   type ServeHeartbeatHandle,
 } from "../../engine/compiler-host-heartbeat";
@@ -75,9 +78,11 @@ import { parsePositiveIntegerValue } from "../parse-options";
  */
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_OPERATIONAL_INTERVAL_MS = 1000;
+const DEFAULT_DAEMON_START_TIMEOUT_MS = 10_000;
 const RUNTIME_CONFIG_PATH = ".dome/config.yaml";
 const RUNTIME_MODEL_PROVIDER_PATH = ".dome/model-provider.ts";
 const RUNTIME_EXTENSIONS_PREFIX = ".dome/extensions/";
+const DOME_BIN = resolve(import.meta.dir, "../../../bin/dome");
 
 // ----- Public types ---------------------------------------------------------
 
@@ -91,6 +96,9 @@ export type RunServeOptions = {
   readonly pollIntervalMs?: string | number | boolean | undefined;
   readonly verbose?: boolean | undefined;
   readonly quiet?: boolean | undefined;
+  readonly daemon?: boolean | undefined;
+  readonly daemonLog?: string | undefined;
+  readonly daemonTimeoutMs?: number | undefined;
   readonly filterProcessor?: string | undefined;
 };
 
@@ -153,6 +161,20 @@ export async function runServe(
   // adoption cycle (iteration-start, processor-result(s), iteration-end).
   const verbose = options.verbose === true;
   const quiet = options.quiet === true;
+
+  if (options.daemon === true) {
+    return startServeDaemon({
+      vaultPath,
+      bundlesRoot: options.bundlesRoot,
+      pollIntervalMs,
+      verbose,
+      quiet,
+      daemonLog: options.daemonLog,
+      daemonTimeoutMs:
+        options.daemonTimeoutMs ?? DEFAULT_DAEMON_START_TIMEOUT_MS,
+      filterProcessor: options.filterProcessor,
+    });
+  }
 
   // ----- 2. Resolve initial branch ------------------------------------------
   // A detached HEAD has no branch name; the adopted-ref substrate requires
@@ -285,6 +307,155 @@ export async function runServe(
 }
 
 // ----- Internals ------------------------------------------------------------
+
+async function startServeDaemon(input: {
+  readonly vaultPath: string;
+  readonly bundlesRoot?: string | undefined;
+  readonly pollIntervalMs: number;
+  readonly verbose: boolean;
+  readonly quiet: boolean;
+  readonly daemonLog?: string | undefined;
+  readonly daemonTimeoutMs: number;
+  readonly filterProcessor?: string | undefined;
+}): Promise<number> {
+  const currentBranch = await getCurrentBranch(input.vaultPath);
+  const existing = await readServeHeartbeatStatus({
+    vaultPath: input.vaultPath,
+  });
+  if (
+    existing.status === "running" &&
+    (currentBranch === null ||
+      existing.branch === null ||
+      existing.branch === currentBranch)
+  ) {
+    if (!input.quiet) {
+      console.log(
+        `dome serve: daemon already running pid ${existing.pid}`,
+      );
+    }
+    return 0;
+  }
+  if (
+    existing.status === "running" &&
+    currentBranch !== null &&
+    existing.branch !== null &&
+    existing.branch !== currentBranch
+  ) {
+    console.error(
+      `dome serve: daemon already running on branch ${existing.branch}; current branch is ${currentBranch}.`,
+    );
+    return 1;
+  }
+
+  const logPath = resolve(
+    input.daemonLog ?? join(input.vaultPath, ".dome", "state", "serve-daemon.log"),
+  );
+  mkdirSync(dirname(logPath), { recursive: true });
+  const logFd = openSync(logPath, "a");
+  const args = serveDaemonArgs(input);
+  const child = spawn(process.execPath, args, {
+    cwd: resolve(import.meta.dir, "../../.."),
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+  });
+  closeSync(logFd);
+
+  if (child.pid === undefined) {
+    console.error(`dome serve: failed to start daemon process (log: ${logPath})`);
+    return 1;
+  }
+
+  let childExited = false;
+  let childExitReason = "unknown exit";
+  child.once("exit", (code, signal) => {
+    childExited = true;
+    childExitReason = signal !== null
+      ? `signal ${signal}`
+      : `exit ${code ?? "unknown"}`;
+  });
+  child.unref();
+
+  const started = await waitForDaemonHeartbeat({
+    vaultPath: input.vaultPath,
+    pid: child.pid,
+    timeoutMs: input.daemonTimeoutMs,
+    childExited: () => childExited,
+  });
+
+  if (started === "running") {
+    if (!input.quiet) {
+      console.log(
+        `dome serve: daemon started pid ${child.pid} (log: ${logPath})`,
+      );
+    }
+    return 0;
+  }
+
+  if (started === "exited") {
+    console.error(
+      `dome serve: daemon exited before heartbeat (${childExitReason}; log: ${logPath})`,
+    );
+    return 1;
+  }
+
+  try {
+    process.kill(child.pid, "SIGTERM");
+  } catch {
+    // If the child exited between the timeout and kill attempt, the log path is
+    // still the useful operator artifact.
+  }
+  console.error(
+    `dome serve: daemon did not write a running heartbeat within ${input.daemonTimeoutMs}ms (log: ${logPath})`,
+  );
+  return 1;
+}
+
+function serveDaemonArgs(input: {
+  readonly vaultPath: string;
+  readonly bundlesRoot?: string | undefined;
+  readonly pollIntervalMs: number;
+  readonly verbose: boolean;
+  readonly quiet: boolean;
+  readonly filterProcessor?: string | undefined;
+}): string[] {
+  const args = [
+    DOME_BIN,
+    "serve",
+    "--vault",
+    input.vaultPath,
+    "--poll-interval-ms",
+    String(input.pollIntervalMs),
+  ];
+  if (input.bundlesRoot !== undefined) {
+    args.push("--bundles-root", input.bundlesRoot);
+  }
+  if (input.verbose) args.push("--verbose");
+  if (input.quiet) args.push("--quiet");
+  if (input.filterProcessor !== undefined) {
+    args.push("--filter-processor", input.filterProcessor);
+  }
+  return args;
+}
+
+async function waitForDaemonHeartbeat(input: {
+  readonly vaultPath: string;
+  readonly pid: number;
+  readonly timeoutMs: number;
+  readonly childExited: () => boolean;
+}): Promise<"running" | "exited" | "timeout"> {
+  const deadline = Date.now() + input.timeoutMs;
+  while (Date.now() < deadline) {
+    if (input.childExited()) return "exited";
+    const heartbeat = await readServeHeartbeatStatus({
+      vaultPath: input.vaultPath,
+    });
+    if (heartbeat.status === "running" && heartbeat.pid === input.pid) {
+      return "running";
+    }
+    await delay(100);
+  }
+  return input.childExited() ? "exited" : "timeout";
+}
 
 /**
  * The poll loop. Runs until `cancel` aborts. Each iteration:
@@ -669,6 +840,10 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     }, ms);
     signal.addEventListener("abort", onAbortSleep, { once: true });
   });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
 /**
