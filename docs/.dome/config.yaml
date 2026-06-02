@@ -28,6 +28,7 @@ extensions:
             - "**/*.md"
           patch.auto:
             - "**/*.md"
+          question.ask: true
 
   dome.graph:
     enabled: true
