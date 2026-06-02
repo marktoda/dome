@@ -316,3 +316,48 @@ Qualitative read:
 - This closes the next M4/M6 handoff gap: a foreground agent can ask the
   natural daily-work question and receive both the daily note as read-first
   context and the current daily work queue as structured overview data.
+
+## 2026-06-02 Steady-State Work-Vault Smoke
+
+Dogfood action:
+
+- Re-ran the work-vault V1 surfaces after fixing the transient `.dome/state`
+  git-status race: `status`, `check`, `today`, `query "today open loops"`,
+  and `export-context "today open loops"`.
+- Used the steady-state status after the compiler host finished the overlapping
+  `today` run.
+
+Operational result:
+
+- `status` reported `sync_needed: false`, no dirty files, no pending or failed
+  runs, no open questions, no outbox/quarantine issues, and no attention.
+- Loop states were:
+  - `dome.capture.digest`: inactive because `dome.intake` is disabled in the
+    work vault and there are no raw captures waiting.
+  - `dome.open-loop.continuity`: quiet.
+  - `dome.link-concept.coherence`: drift from 46 informational diagnostics,
+    with no attention diagnostics.
+  - `dome.context.packet`: quiet.
+  - `dome.question.continuity`: quiet.
+- `check` reported engine status `ok`. The 46 content diagnostics are known
+  informational backlog grouped under `link.resolve-or-create` and
+  `frontmatter.repair`.
+
+Daily/context result:
+
+- `today` found `notes/2026-06-02.md`, reported 221 source-backed open tasks,
+  sampled both daily-surface rows and backlog rows, and had 0 questions.
+- The current daily queue shape was 12 daily open tasks plus 209 backlog tasks;
+  24 rows were shown and 197 were omitted from the compact view.
+- `query "today open loops"` and `export-context "today open loops"` both put
+  `notes/2026-06-02.md` first via the `current daily surface` recall signal.
+- The context packet overview carried current daily cockpit open-loop rows
+  with SourceRefs to both the daily surface and backing sources.
+
+Qualitative read:
+
+- This reconfirms the M4/M6 handoff in the current work vault: daily-intent
+  foreground-agent prompts now start from the same cockpit Mark uses.
+- This does not close V1. The M10 gap remains elapsed dogfood proof across
+  real work days, especially capture digestion while `dome.intake` is enabled
+  and model-assisted consolidation/question handling are exercised.

@@ -305,3 +305,55 @@ Recommended next steps:
    quality, question burden, and any manual Claude Code maintenance Dome should
    have handled.
 4. Treat any recurring dogfood miss as the next V1 engineering gap.
+
+## 2026-06-02 Post-Audit Addendum
+
+Additional verification after the first audit:
+
+- Fixed and committed `d74542c Ignore transient Dome state in git status`.
+  The bug was a real runtime/status race: `git.statusMatrix` could observe a
+  transient `.dome/state/locks/*.compiler-host.lock` file and then throw ENOENT
+  if the compiler-host lock disappeared before isomorphic-git statted it.
+  `src/git.ts` now filters `.dome/state/**` at the git boundary while still
+  keeping committed vault configuration such as `.dome/config.yaml` visible.
+- Added regression coverage in `tests/git.test.ts` for both standalone vaults
+  and nested-vault/dogfood mode.
+- Raw `bun test` now passes with `992 pass`, `0 fail`.
+- `bun run typecheck`, `git diff --check`, and `bun scripts/v1-smoke.ts
+  --sync-docs` passed. The smoke synced the docs vault to `d74542c`; the work
+  vault remained synced with no attention findings.
+
+Current work-vault smoke evidence:
+
+- `dome status --vault ~/vaults/work --json` steady state:
+  `sync_needed: false`, no dirty files, no pending/failed runs, no open
+  questions, no outbox/quarantine issues, and no attention.
+- Maintenance loops:
+  - `dome.capture.digest`: inactive because `dome.intake` is disabled in the
+    work vault; there are currently no `inbox/raw` captures waiting.
+  - `dome.open-loop.continuity`: quiet.
+  - `dome.link-concept.coherence`: drift from 46 informational diagnostics
+    only; no attention diagnostics.
+  - `dome.context.packet`: quiet.
+  - `dome.question.continuity`: quiet.
+- `dome check --vault ~/vaults/work --json` reports engine status `ok`.
+  The 46 content diagnostics are grouped into known repair paths:
+  `link.resolve-or-create` and `frontmatter.repair`.
+- `dome today --vault ~/vaults/work --json` finds
+  `notes/2026-06-02.md`, reports 221 source-backed open tasks, samples both
+  daily-surface rows and backlog rows, and has 0 questions.
+- `dome query --vault ~/vaults/work "today open loops" --json` and
+  `dome export-context --vault ~/vaults/work "today open loops" --json` both
+  put `notes/2026-06-02.md` first via the `current daily surface` recall
+  signal. The context packet overview now carries the current daily cockpit's
+  open loops with SourceRefs to both the daily surface and backing sources.
+
+Updated assessment:
+
+- The implementation and verification gate are stronger than in the first
+  audit. The main known flaky suite failure had a concrete root cause and is
+  fixed at the correct abstraction boundary.
+- V1 still should not be marked complete. The remaining gap is still M10:
+  elapsed work-vault dogfood showing that daily notes, capture digestion,
+  context packets, and low-risk question handling improve day-to-day work over
+  plain markdown plus ad hoc foreground-agent maintenance.
