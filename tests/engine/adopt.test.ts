@@ -232,7 +232,10 @@ describe("adopt fixed-point loop", () => {
       ];
     };
     const resolvedFacts: ReadonlyArray<string>[] = [];
-    const resolvedDiagnostics: ReadonlyArray<string>[] = [];
+    const resolvedDiagnostics: Array<{
+      readonly processorId: string;
+      readonly inspectedPaths: ReadonlyArray<string>;
+    }> = [];
 
     const r = await adopt({
       vault: f.vault,
@@ -244,14 +247,20 @@ describe("adopt fixed-point loop", () => {
           resolvedFacts.push(input.inspectedPaths);
         },
         resolveDiagnostics: async (input) => {
-          resolvedDiagnostics.push(input.inspectedPaths);
+          resolvedDiagnostics.push({
+            processorId: input.processorId,
+            inspectedPaths: input.inspectedPaths,
+          });
         },
       },
     });
 
     expect(r.adopted).toBe(true);
     expect(resolvedFacts).toEqual([["wiki/visible.md"]]);
-    expect(resolvedDiagnostics).toEqual([["wiki/visible.md"]]);
+    expect(resolvedDiagnostics).toEqual([
+      { processorId: "engine.adoption", inspectedPaths: [] },
+      { processorId: "test.inspected", inspectedPaths: ["wiki/visible.md"] },
+    ]);
   });
 
   test("adopted-ref refusal rolls branch and working tree back to source head", async () => {
