@@ -172,7 +172,10 @@ extensions:
 `;
 }
 
-function fullServeWorkflowConfig(): string {
+function fullServeWorkflowConfig(
+  opts: { readonly intakeEnabled?: boolean } = {},
+): string {
+  const intakeEnabled = opts.intakeEnabled ?? true;
   return `
 model_provider:
   kind: command
@@ -207,9 +210,11 @@ extensions:
       graph.write: ["dome.daily.*"]
       question.ask: true
   dome.intake:
-    enabled: true
+    enabled: ${intakeEnabled ? "true" : "false"}
     grant:
       read:
+        - ".dome/config.yaml"
+        - ".dome/model-provider.ts"
         - "inbox/**/*.md"
         - "wiki/generated/intake/*.md"
         - "wiki/syntheses/intake-*.md"
@@ -550,6 +555,193 @@ describe("runServe smoke", () => {
     expect(status.quarantined).toBe(0);
   }, 25_000);
 
+  test("reloads runtime config while serving and digests pending captures after intake is enabled", async () => {
+    const f = await makeFixture({
+      configYaml: fullServeWorkflowConfig({ intakeEnabled: false }),
+      extraInitialFiles: {
+        [COMMAND_PROVIDER_PATH]: commandProviderSource(),
+      },
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      quiet: true,
+    });
+    expect(initCode).toBe(0);
+    await waitFor(async () => {
+      const head = await currentSha(f.vaultPath);
+      const adopted = await getAdoptedRef(f.vaultPath, "main");
+      return head !== null && adopted === head;
+    }, 3000);
+    captured.out = [];
+    captured.err = [];
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: 20,
+        quiet: true,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    await mkdir(dirname(join(f.vaultPath, SERVE_CAPTURE_PATH)), {
+      recursive: true,
+    });
+    await writeFile(
+      join(f.vaultPath, SERVE_CAPTURE_PATH),
+      SERVE_CAPTURE,
+    );
+    const rawCaptureSha = await commit({
+      path: f.vaultPath,
+      message: "capture pending serve manager day\n",
+      files: [SERVE_CAPTURE_PATH],
+    });
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === rawCaptureSha,
+      3000,
+    );
+    expect(existsSync(join(f.vaultPath, SERVE_CAPTURE_OUTPUT_PATH))).toBe(false);
+    expect(existsSync(join(f.vaultPath, SERVE_CAPTURE_ARCHIVE_PATH))).toBe(false);
+
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      fullServeWorkflowConfig({ intakeEnabled: true }),
+      "utf8",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "enable intake while serving\n",
+      files: [".dome/config.yaml"],
+    });
+
+    try {
+      await waitFor(
+        async () =>
+          existsSync(join(f.vaultPath, SERVE_CAPTURE_OUTPUT_PATH)) &&
+          existsSync(join(f.vaultPath, SERVE_CAPTURE_ARCHIVE_PATH)) &&
+          !existsSync(join(f.vaultPath, SERVE_CAPTURE_PATH)),
+        15_000,
+      );
+    } catch (error) {
+      throw new Error(
+        `serve runtime reload did not digest pending capture: ${await debugServeState(f)}`,
+        { cause: error },
+      );
+    } finally {
+      controller.abort();
+    }
+
+    const code = await servePromise;
+    expect(code).toBe(0);
+    expect(captured.err.join("\n")).toBe("");
+
+    const generated = await readFile(
+      join(f.vaultPath, SERVE_CAPTURE_OUTPUT_PATH),
+      "utf8",
+    );
+    expect(generated).toContain("# Serve command launch follow-up");
+    expect(generated).toContain("- [ ] Send Ada the launch staffing note");
+    expect(generated).toContain("- [ ] #followup Ask Ben about hiring budget");
+  }, 25_000);
+
+  test("discovers a newly-created vault-local bundle root while serving", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const initCode = await runSync({
+      vault: f.vaultPath,
+      quiet: true,
+    });
+    expect(initCode).toBe(0);
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
+    captured.out = [];
+    captured.err = [];
+
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        pollIntervalMs: 20,
+        quiet: true,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: 20,
+      },
+    );
+
+    try {
+      await writeLocalDiagnosticBundle(f.vaultPath);
+      await appendLocalBundleConfig(f.vaultPath);
+      const enableBundleSha = await commit({
+        path: f.vaultPath,
+        message: "enable local bundle while serving\n",
+        files: [
+          ".dome/config.yaml",
+          ".dome/extensions/custom.local/manifest.json",
+          ".dome/extensions/custom.local/processors/audit.ts",
+        ],
+      });
+      await waitFor(
+        async () =>
+          (await getAdoptedRef(f.vaultPath, "main")) === enableBundleSha,
+        3000,
+      );
+
+      await writeFile(
+        join(f.vaultPath, "wiki", "local.md"),
+        "# Local bundle proof\n",
+        "utf8",
+      );
+      const localPageSha = await commit({
+        path: f.vaultPath,
+        message: "add local bundle proof page\n",
+        files: ["wiki/local.md"],
+      });
+      await waitFor(
+        async () => (await getAdoptedRef(f.vaultPath, "main")) === localPageSha,
+        3000,
+      );
+    } finally {
+      controller.abort();
+    }
+
+    const code = await servePromise;
+    expect(code).toBe(0);
+    expect(captured.err.join("\n")).toBe("");
+
+    captured.out = [];
+    captured.err = [];
+    const inspectCode = await runInspect({
+      subject: "diagnostics",
+      vault: f.vaultPath,
+      code: "custom.local.seen",
+      json: true,
+    });
+    expect(inspectCode).toBe(0);
+    const diagnostics = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly code: string;
+      readonly message: string;
+    }>;
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "custom.local.seen",
+        message: "Vault-local bundle ran through the default composed root.",
+      }),
+    );
+  }, 25_000);
+
   test("drains due operational work while HEAD is already in sync", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -865,4 +1057,74 @@ async function debugServeState(fixture: Fixture): Promise<string> {
   } finally {
     ledger.value.db.close();
   }
+}
+
+async function appendLocalBundleConfig(target: string): Promise<void> {
+  const configPath = join(target, ".dome", "config.yaml");
+  const config = await readFile(configPath, "utf8");
+  const localBundleStanza = `  custom.local:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+`;
+  if (!config.includes("\nengine:\n")) {
+    await writeFile(
+      configPath,
+      config.replace("extensions:\n", `extensions:\n${localBundleStanza}`),
+      "utf8",
+    );
+    return;
+  }
+  await writeFile(
+    configPath,
+    config.replace("\nengine:\n", `\n${localBundleStanza}\nengine:\n`),
+    "utf8",
+  );
+}
+
+async function writeLocalDiagnosticBundle(target: string): Promise<void> {
+  const bundleDir = join(target, ".dome", "extensions", "custom.local");
+  const processorsDir = join(bundleDir, "processors");
+  await mkdir(processorsDir, { recursive: true });
+  await writeFile(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({
+      id: "custom.local",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "custom.local.audit",
+          version: "0.1.0",
+          phase: "adoption",
+          triggers: [
+            {
+              kind: "signal",
+              name: "file.created",
+              pathPattern: "wiki/**/*.md",
+            },
+          ],
+          capabilities: [{ kind: "read", paths: ["wiki/**/*.md"] }],
+          module: "processors/audit.ts",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(processorsDir, "audit.ts"),
+    `
+      export default {
+        async run(ctx) {
+          return [{
+            kind: "diagnostic",
+            severity: "info",
+            code: "custom.local.seen",
+            message: "Vault-local bundle ran through the default composed root.",
+            sourceRefs: [ctx.sourceRef("wiki/local.md")],
+          }];
+        },
+      };
+    `,
+    "utf8",
+  );
 }

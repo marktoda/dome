@@ -1200,15 +1200,22 @@ Composition (v1.0):
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
    - If HEAD equals the adopted ref: no adoption work; quiet in-sync ticks may still run due operational work on the host's internal cadence.
    - Otherwise: constructs a `manual`-source Proposal via `makeManualProposal({base: adopted, head: HEAD, branch})` and routes it through the engine's `adopt()`.
-4. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
-5. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
-6. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
-7. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
-8. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
+4. Before adopting a drift range that touches runtime inputs
+   (`.dome/config.yaml`, `.dome/model-provider.ts`, or vault-local
+   `.dome/extensions/**`), closes and reopens the runtime. This makes extension
+   activation, grant changes, model-provider changes, and vault-local bundle
+   changes take effect without restarting the long-running host. If reload
+   fails, adoption pauses and retries on later polls instead of compiling the
+   new commit range with stale runtime state.
+5. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
+6. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
+7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
+8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
    can report whether the foreground compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host
    lock remains the concurrency guard.
-9. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
+10. Stays running until SIGINT / SIGTERM; on shutdown, retryable in-flight
    outbox handler attempts receive the host cancellation signal and remain
    pending without consuming retry budget, then the host closes the runtime
    (releases the projection, answers, ledger, and outbox SQLite handles) and

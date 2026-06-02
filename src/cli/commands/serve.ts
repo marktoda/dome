@@ -34,9 +34,15 @@
 
 import { resolve } from "node:path";
 
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import {
+  openVaultRuntime,
+  type OpenVaultRuntimeError,
+  type OpenVaultRuntimeWithBundlesOpts,
+  type VaultRuntime,
+} from "../../engine/vault-runtime";
 import type { OperationalWorkResult } from "../../engine/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
+import { compileRange } from "../../engine/compile-range";
 
 import {
   detectDrift,
@@ -68,6 +74,9 @@ import { parsePositiveIntegerValue } from "../parse-options";
  */
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_OPERATIONAL_INTERVAL_MS = 1000;
+const RUNTIME_CONFIG_PATH = ".dome/config.yaml";
+const RUNTIME_MODEL_PROVIDER_PATH = ".dome/model-provider.ts";
+const RUNTIME_EXTENSIONS_PREFIX = ".dome/extensions/";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -100,6 +109,13 @@ export type RunServeRuntimeOptions = {
   readonly operationalIntervalMs?: number;
 };
 
+type ServeRuntimeState = {
+  current: VaultRuntime | null;
+  lastReloadError: string | null;
+};
+
+type RuntimeOptsFactory = () => OpenVaultRuntimeWithBundlesOpts;
+
 // ----- runServe -------------------------------------------------------------
 
 /**
@@ -120,11 +136,6 @@ export async function runServe(
 ): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
   const vaultPath = resolve(options.vault ?? process.cwd());
-
-  const bundleRoots = resolveBundleRoots({
-    vaultPath,
-    bundlesRoot: options.bundlesRoot,
-  });
 
   const pollIntervalMs = parsePollInterval(options.pollIntervalMs);
   if (pollIntervalMs === null) {
@@ -157,14 +168,25 @@ export async function runServe(
   }
 
   // ----- 3. Open the runtime ------------------------------------------------
-  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
+  const makeRuntimeOpts: RuntimeOptsFactory = () => ({
+    vaultPath,
+    ...resolveBundleRoots({
+      vaultPath,
+      bundlesRoot: options.bundlesRoot,
+    }),
+  });
+  const runtimeOpts = makeRuntimeOpts();
+  const runtimeResult = await openVaultRuntime(runtimeOpts);
   if (!runtimeResult.ok) {
     console.error(
       `dome serve: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
     );
     return 1;
   }
-  const runtime = runtimeResult.value;
+  const runtimeState: ServeRuntimeState = {
+    current: runtimeResult.value,
+    lastReloadError: null,
+  };
 
   // ----- 4. Print startup banner --------------------------------------------
   // The branch label is derived from the startup drift result. `in-sync`,
@@ -216,7 +238,8 @@ export async function runServe(
   // ----- 6. Run the poll loop -----------------------------------------------
   try {
     await pollLoop({
-      runtime,
+      runtimeState,
+      makeRuntimeOpts,
       vaultPath,
       pollIntervalMs,
       operationalIntervalMs:
@@ -241,7 +264,10 @@ export async function runServe(
       opts.signal.removeEventListener("abort", onAbort);
     }
     try {
-      await runtime.close();
+      if (runtimeState.current !== null) {
+        await runtimeState.current.close();
+        runtimeState.current = null;
+      }
     } finally {
       await clearServeHeartbeat({ vaultPath, handle: heartbeat });
     }
@@ -273,7 +299,8 @@ export async function runServe(
  * crashing.
  */
 async function pollLoop(input: {
-  readonly runtime: VaultRuntime;
+  readonly runtimeState: ServeRuntimeState;
+  readonly makeRuntimeOpts: RuntimeOptsFactory;
   readonly vaultPath: string;
   readonly pollIntervalMs: number;
   readonly operationalIntervalMs: number;
@@ -285,7 +312,8 @@ async function pollLoop(input: {
   readonly filterProcessor?: string | undefined;
 }): Promise<void> {
   const {
-    runtime,
+    runtimeState,
+    makeRuntimeOpts,
     vaultPath,
     pollIntervalMs,
     operationalIntervalMs,
@@ -321,6 +349,39 @@ async function pollLoop(input: {
             `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
           );
         }
+      }
+      if (
+        drift.kind === "drift" &&
+        await driftTouchesRuntimeInputs({ vaultPath, drift })
+      ) {
+        const reloaded = await reloadServeRuntime({
+          state: runtimeState,
+          makeRuntimeOpts,
+          quiet,
+        });
+        if (!reloaded) {
+          lastKind = "runtime-reload-failed";
+          await sleep(pollIntervalMs, cancel);
+          continue;
+        }
+      }
+      if (runtimeState.current === null) {
+        const reloaded = await reloadServeRuntime({
+          state: runtimeState,
+          makeRuntimeOpts,
+          quiet,
+        });
+        if (!reloaded) {
+          lastKind = "runtime-reload-failed";
+          await sleep(pollIntervalMs, cancel);
+          continue;
+        }
+      }
+      const runtime = runtimeState.current;
+      if (runtime === null) {
+        lastKind = "runtime-reload-failed";
+        await sleep(pollIntervalMs, cancel);
+        continue;
       }
       const nowMs = Date.now();
       const tick = await runCompilerHostTickWithErrorHandling({
@@ -360,6 +421,73 @@ async function pollLoop(input: {
 
     if (cancel.aborted) break;
     await sleep(pollIntervalMs, cancel);
+  }
+}
+
+async function driftTouchesRuntimeInputs(input: {
+  readonly vaultPath: string;
+  readonly drift: Extract<DriftResult, { readonly kind: "drift" }>;
+}): Promise<boolean> {
+  try {
+    const range = await compileRange({
+      vaultPath: input.vaultPath,
+      base: input.drift.info.base,
+      head: input.drift.info.head,
+    });
+    return range.changedPaths.some(isRuntimeInputPath);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`dome serve: runtime reload check threw: ${msg}`);
+    return true;
+  }
+}
+
+function isRuntimeInputPath(path: string): boolean {
+  return (
+    path === RUNTIME_CONFIG_PATH ||
+    path === RUNTIME_MODEL_PROVIDER_PATH ||
+    path.startsWith(RUNTIME_EXTENSIONS_PREFIX)
+  );
+}
+
+async function reloadServeRuntime(input: {
+  readonly state: ServeRuntimeState;
+  readonly makeRuntimeOpts: RuntimeOptsFactory;
+  readonly quiet: boolean;
+}): Promise<boolean> {
+  if (input.state.current !== null) {
+    const previous = input.state.current;
+    input.state.current = null;
+    await previous.close();
+  }
+
+  const next = await openVaultRuntime(input.makeRuntimeOpts());
+  if (!next.ok) {
+    const error = formatOpenRuntimeError(next.error);
+    if (input.state.lastReloadError !== error) {
+      console.error(
+        `dome serve: runtime reload failed (${error}); pausing adoption until config is repaired.`,
+      );
+      input.state.lastReloadError = error;
+    }
+    return false;
+  }
+
+  input.state.current = next.value;
+  input.state.lastReloadError = null;
+  if (!input.quiet) {
+    console.log("dome serve: reloaded runtime configuration");
+  }
+  return true;
+}
+
+function formatOpenRuntimeError(error: OpenVaultRuntimeError): string {
+  switch (error.kind) {
+    case "bundle-load-failed":
+    case "registry-build-failed":
+      return `${error.kind}:${error.cause.kind}`;
+    default:
+      return error.kind;
   }
 }
 
