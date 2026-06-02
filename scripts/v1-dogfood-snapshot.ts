@@ -117,6 +117,9 @@ function renderSnapshot(input: {
       `${numberValue(input.status.quarantined)} quarantined`,
   );
   lines.push(
+    `- Serve host: ${formatServeStatus(input.status)}`,
+  );
+  lines.push(
     `- Attention: ${yesNo(input.status.attention_required)}; diagnostics: ` +
       `${numberValue(input.status.diagnostics)} total / ` +
       `${numberValue(input.status.attention_diagnostics)} attention; ` +
@@ -355,6 +358,19 @@ function formatDiagnosticLocation(item: JsonRecord): string {
   if (first === undefined) return "(unknown)";
   const range = record(first.range);
   return formatPathLine(first.path, range.startLine);
+}
+
+function formatServeStatus(status: JsonRecord): string {
+  const serveStatus = stringValue(status.serve_status, "unknown");
+  if (serveStatus === "off") return "off";
+  const parts = [serveStatus];
+  const branch = stringValue(status.serve_branch, "");
+  if (branch !== "") parts.push(`branch ${branch}`);
+  const pid = numberValue(status.serve_pid);
+  if (pid > 0) parts.push(`pid ${pid}`);
+  const updatedAt = stringValue(status.serve_updated_at, "");
+  if (updatedAt !== "") parts.push(`updated ${updatedAt}`);
+  return parts.join("; ");
 }
 
 function formatStderr(stderr: string): string {

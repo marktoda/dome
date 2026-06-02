@@ -64,6 +64,7 @@ describe("v1 dogfood snapshot script", () => {
       `bin/dome today --vault ${vaultPath} --date 2026-06-02 --json`,
     );
     expect(result.stdout).toContain("Operational state:");
+    expect(result.stdout).toContain("- Serve host: off");
     expect(result.stdout).toContain("Maintenance loops:");
     expect(result.stdout).toContain("Content hygiene:");
     expect(result.stdout).toContain("- Example findings:");

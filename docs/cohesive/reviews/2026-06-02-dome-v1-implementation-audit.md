@@ -637,3 +637,20 @@ Updated assessment:
 - Normal development can continue using `bun run v1:check`.
 - Final release readiness now has one command and should remain nonzero until
   the elapsed M10 dogfood thresholds are actually met.
+
+## 2026-06-02 M10 Serve-Host Evidence Hardening
+
+Additional M10 evidence-surface hardening:
+
+- Updated `bun run v1:dogfood-snapshot` to include the current `dome serve`
+  heartbeat status from `dome status --json`.
+- The snapshot now records whether the foreground compiler host is `off`,
+  `running`, or `stale`, plus branch/pid/update details when present.
+- This makes M10's "continuously or near-continuously" criterion easier to
+  inspect from the dogfood ledger: a workday can distinguish background host
+  operation from explicit `dome sync` catch-up.
+
+Updated assessment:
+
+- This does not change engine behavior or add a product command. It strengthens
+  the evidence collected by the existing internal snapshot helper.
