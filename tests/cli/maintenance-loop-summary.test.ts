@@ -325,6 +325,11 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.state).toBe("quiet");
     expect(summary?.recent_runs).toBe(2);
     expect(summary?.recent_problem_runs).toBe(0);
+    expect(summary?.latest_run_at).toBe("2026-06-02T12:01:00.000Z");
+    expect(summary?.last_successful_run_at).toBe(
+      "2026-06-02T12:01:00.000Z",
+    );
+    expect(summary?.latest_problem_run_at).toBeNull();
     expect(summary?.settlement.settled).toBe(true);
     expect(summary?.settlement.failed_checks).toEqual([]);
   });
@@ -360,10 +365,76 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.state).toBe("attention");
     expect(summary?.recent_runs).toBe(2);
     expect(summary?.recent_problem_runs).toBe(1);
+    expect(summary?.latest_run_at).toBe("2026-06-02T12:02:00.000Z");
+    expect(summary?.last_successful_run_at).toBe(
+      "2026-06-02T12:01:00.000Z",
+    );
+    expect(summary?.latest_problem_run_at).toBe(
+      "2026-06-02T12:02:00.000Z",
+    );
     expect(summary?.settlement.settled).toBe(false);
     expect(summary?.settlement.failed_checks).toEqual([
       "no-recent-problem-runs",
     ]);
+  });
+
+  test("reports the newest successful and active problem run across processors", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.first-processor", "test.second-processor"],
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set([
+        "test.first-processor",
+        "test.second-processor",
+      ]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: (processorId) => {
+        if (processorId === "test.first-processor") {
+          return [
+            runRow({
+              processorId,
+              status: "failed",
+              startedAt: "2026-06-02T12:05:00.000Z",
+            }),
+            runRow({
+              processorId,
+              status: "succeeded",
+              startedAt: "2026-06-02T12:04:00.000Z",
+            }),
+          ];
+        }
+        if (processorId === "test.second-processor") {
+          return [
+            runRow({
+              processorId,
+              status: "succeeded",
+              startedAt: "2026-06-02T12:06:00.000Z",
+            }),
+            runRow({
+              processorId,
+              status: "timed_out",
+              startedAt: "2026-06-02T12:03:00.000Z",
+            }),
+          ];
+        }
+        return [];
+      },
+    });
+
+    expect(summary?.state).toBe("attention");
+    expect(summary?.recent_runs).toBe(4);
+    expect(summary?.recent_problem_runs).toBe(1);
+    expect(summary?.latest_run_at).toBe("2026-06-02T12:06:00.000Z");
+    expect(summary?.last_successful_run_at).toBe(
+      "2026-06-02T12:06:00.000Z",
+    );
+    expect(summary?.latest_problem_run_at).toBe(
+      "2026-06-02T12:05:00.000Z",
+    );
   });
 });
 

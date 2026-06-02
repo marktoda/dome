@@ -1650,3 +1650,35 @@ Qualitative read:
 - This closes a release-tooling quality gap. The V1 final gates now check the
   scripts that implement the smoke, dogfood, and release readiness surfaces,
   instead of relying on runtime execution to catch basic type drift.
+
+## 2026-06-02 M1 Loop Run Evidence Tightening
+
+Verification action:
+
+- Re-audited the maintenance-loop status surface against the V1 loop contract.
+- Found that loop summaries exposed `latest_run_at` and problem-run counts, but
+  not the last successful run timestamp or latest active problem-run timestamp.
+  That made dogfood snapshots less useful for distinguishing fresh healthy
+  loops from recovered or still-broken processor runs.
+- Extended `maintenance_loops` rows with `last_successful_run_at` and
+  `latest_problem_run_at`, derived from the same bounded recent-run ledger rows
+  already used for loop state.
+- Updated text `--loops` output and `v1:dogfood-snapshot` loop lines to show
+  last successful run evidence, and to show latest problem-run evidence when a
+  loop is in processor-run attention.
+
+Measured result:
+
+- Focused coverage now checks recovered runs, latest active problem runs, and
+  newest successful/problem timestamps across multi-processor loops.
+- `bunx tsc --noEmit -p tsconfig.scripts.json` passed.
+- `bun test tests/cli/maintenance-loop-summary.test.ts
+  tests/cli/commands.test.ts tests/scripts/v1-dogfood-snapshot.test.ts`
+  passed with 82 tests and 784 assertions.
+
+Qualitative read:
+
+- This makes M1/M10 evidence more audit-friendly without adding a loop
+  executor or new CLI command. A future dogfood entry can show not only whether
+  a loop is settled, but when the loop last succeeded and whether a recent
+  processor failure is still active.

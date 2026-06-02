@@ -70,6 +70,7 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stdout).toContain("diagnostics ");
     expect(result.stdout).toContain("agent-safe");
     expect(result.stdout).toContain("problem runs");
+    expect(result.stdout).toContain("last success");
     expect(result.stdout).toContain("  - processors:");
     expect(result.stdout).toContain("  - surfaces:");
     expect(result.stdout).toContain("  - no-op:");

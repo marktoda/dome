@@ -51,6 +51,8 @@ export type MaintenanceLoopSummary = {
   readonly recent_runs: number;
   readonly recent_problem_runs: number;
   readonly latest_run_at: string | null;
+  readonly last_successful_run_at: string | null;
+  readonly latest_problem_run_at: string | null;
 };
 
 export type MaintenanceLoopSettlementCheckSummary = {
@@ -122,6 +124,12 @@ export function formatMaintenanceLoopDetailLines(
     }
     lines.push(`    no-op: ${loop.settlement.no_op_when}`);
     lines.push(`    latest run: ${loop.latest_run_at ?? "(none)"}`);
+    lines.push(
+      `    last success: ${loop.last_successful_run_at ?? "(none)"}`,
+    );
+    if (loop.latest_problem_run_at !== null) {
+      lines.push(`    latest problem: ${loop.latest_problem_run_at}`);
+    }
   }
   return Object.freeze(lines);
 }
@@ -159,6 +167,8 @@ function summarizeLoop(
   let recentRuns = 0;
   let recentProblemRuns = 0;
   let latestRunAt: string | null = null;
+  let lastSuccessfulRunAt: string | null = null;
+  let latestProblemRunAt: string | null = null;
   for (const processorId of processorIds) {
     const processorDiagnostics = opts.diagnosticsByProcessor(processorId);
     const sourceBackedDiagnostics = processorDiagnostics.filter(
@@ -174,10 +184,25 @@ function summarizeLoop(
 
     const runs = opts.runsByProcessor(processorId);
     recentRuns += runs.length;
-    recentProblemRuns += latestProblemRunCount(runs);
+    const latestProblemRun = latestActiveProblemRun(runs);
+    if (latestProblemRun !== null) {
+      recentProblemRuns += 1;
+      if (
+        latestProblemRunAt === null ||
+        latestProblemRun.startedAt > latestProblemRunAt
+      ) {
+        latestProblemRunAt = latestProblemRun.startedAt;
+      }
+    }
     for (const run of runs) {
       if (latestRunAt === null || run.startedAt > latestRunAt) {
         latestRunAt = run.startedAt;
+      }
+      if (
+        run.status === "succeeded" &&
+        (lastSuccessfulRunAt === null || run.startedAt > lastSuccessfulRunAt)
+      ) {
+        lastSuccessfulRunAt = run.startedAt;
       }
     }
   }
@@ -247,6 +272,8 @@ function summarizeLoop(
     recent_runs: recentRuns,
     recent_problem_runs: recentProblemRuns,
     latest_run_at: latestRunAt,
+    last_successful_run_at: lastSuccessfulRunAt,
+    latest_problem_run_at: latestProblemRunAt,
   });
 }
 
@@ -355,14 +382,14 @@ function stateForLoop(input: {
   return "quiet";
 }
 
-function latestProblemRunCount(runs: ReadonlyArray<RunRow>): 0 | 1 {
+function latestActiveProblemRun(runs: ReadonlyArray<RunRow>): RunRow | null {
   let latest: RunRow | null = null;
   for (const run of runs) {
     if (latest === null || run.startedAt > latest.startedAt) {
       latest = run;
     }
   }
-  return latest !== null && isActiveProblemRun(latest) ? 1 : 0;
+  return latest !== null && isActiveProblemRun(latest) ? latest : null;
 }
 
 function formatSurface(surface: MaintenanceLoop["surfaces"][number]): string {

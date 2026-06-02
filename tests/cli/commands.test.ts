@@ -3260,6 +3260,7 @@ describe("runStatus", () => {
     expect(out).toContain("processors:");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
     expect(out).toContain("latest run:");
+    expect(out).toContain("last success:");
   });
 
   test("fails early when config enables a missing bundle", async () => {
@@ -3308,6 +3309,9 @@ describe("runStatus", () => {
       agent_safe_questions: 0,
       model_safe_questions: 0,
       owner_needed_questions: 0,
+      latest_run_at: null,
+      last_successful_run_at: null,
+      latest_problem_run_at: null,
     }));
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(

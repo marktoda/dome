@@ -361,15 +361,20 @@ function formatLoopSummary(loop: JsonRecord): string {
   const ownerNeeded = numberValue(loop.owner_needed_questions);
   const problemRuns = numberValue(loop.recent_problem_runs);
   const latestRun = stringValue(loop.latest_run_at, "(none)");
+  const lastSuccess = stringValue(loop.last_successful_run_at, "(none)");
+  const latestProblem = stringValue(loop.latest_problem_run_at, "");
   const questionCounts =
     `${agentSafe} agent-safe, ${modelSafe} model-safe, ${ownerNeeded} owner-needed`;
-  return [
+  const parts = [
     `- \`${id}\`: ${state}`,
     `diagnostics ${attentionDiagnostics} attention / ${driftDiagnostics} drift`,
     `questions ${questions} (${questionCounts})`,
     `problem runs ${problemRuns}`,
     `latest run ${latestRun}`,
-  ].join("; ");
+    `last success ${lastSuccess}`,
+  ];
+  if (latestProblem !== "") parts.push(`latest problem ${latestProblem}`);
+  return parts.join("; ");
 }
 
 function formatLoopProcessors(loop: JsonRecord): string {

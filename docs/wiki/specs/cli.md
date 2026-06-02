@@ -269,7 +269,8 @@ loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
 
 `--loops` expands text mode with one row per maintenance loop: state, goal,
 active/missing processors, diagnostic/question/problem-run counts, surfaces,
-settlement no-op rule, and latest run time. JSON output always includes the
+settlement no-op rule, latest run time, last successful run time, and the
+latest active problem-run time when present. JSON output always includes the
 same detail under `maintenance_loops`, so `--loops` is only a transcript-facing
 readability option.
 
@@ -475,6 +476,10 @@ inside the bounded recent-run window is still an active problem state
 (`failed`, `timed_out`, or `cancelled`, excluding health-recovered orphan
 runs). Older failed rows remain visible in `recent_processor_runs` and
 `inspect runs`, but a later successful run clears loop attention.
+`latest_run_at`, `last_successful_run_at`, and `latest_problem_run_at` expose
+the same bounded recent-run evidence per loop so dogfood snapshots can show
+freshness, recovery, and the latest unresolved processor failure without
+opening the full run ledger.
 `state: "quiet"` means the loop is active and has no visible drift or attention;
 `"attention"` means attention diagnostics, questions, or latest active problem runs are present;
 `"drift"` means non-attention, non-noise diagnostics are visible but do not
