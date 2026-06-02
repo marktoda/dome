@@ -888,3 +888,24 @@ Qualitative read:
 - This aligns the preflight with the release report: one-shot `dome sync`
   evidence can be useful supporting context, but an M10 collection session is
   not ready unless the background compiler host is actually running.
+
+## 2026-06-02 M10 Preflight Serve-Branch Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-preflight` so running host evidence only counts
+  for collection readiness when the `dome serve` heartbeat branch matches the
+  vault's current branch.
+- Added regression coverage with a synthetic live heartbeat on `other-branch`;
+  preflight reports `serve.status: running` but `serve.ready: false` and
+  top-level `status: not-ready`.
+
+Measured result:
+
+- The live work-vault preflight remains `ready` because `dome serve` is running
+  on `main`, matching the work-vault branch.
+
+Qualitative read:
+
+- This prevents an M10 session from accidentally collecting host evidence from
+  a stale or wrong-branch foreground host.

@@ -130,6 +130,8 @@ function serveCheck(status: JsonRecord): CheckSummary & {
   readonly updatedAt: string | null;
 } {
   const serveStatus = stringValue(status.serve_status, "unknown");
+  const currentBranch = nullableString(status.branch);
+  const serveBranch = nullableString(status.serve_branch);
   const findings: string[] = [];
   if (serveStatus === "off") {
     findings.push(
@@ -139,6 +141,14 @@ function serveCheck(status: JsonRecord): CheckSummary & {
     findings.push("dome serve heartbeat is stale; restart the foreground host");
   } else if (serveStatus !== "running") {
     findings.push(`dome serve status is ${serveStatus}`);
+  } else if (
+    currentBranch !== null &&
+    serveBranch !== null &&
+    serveBranch !== currentBranch
+  ) {
+    findings.push(
+      `dome serve is running on branch ${serveBranch}, but the vault is on ${currentBranch}`,
+    );
   }
 
   return {
@@ -146,7 +156,7 @@ function serveCheck(status: JsonRecord): CheckSummary & {
     findings,
     status: serveStatus,
     pid: nullableNumber(status.serve_pid),
-    branch: nullableString(status.serve_branch),
+    branch: serveBranch,
     updatedAt: nullableString(status.serve_updated_at),
   };
 }

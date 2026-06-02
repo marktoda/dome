@@ -5,6 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { commit } from "../../src/git";
+import {
+  createServeHeartbeatHandle,
+  writeServeHeartbeat,
+} from "../../src/engine/compiler-host-heartbeat";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const DOME_BIN = join(REPO_ROOT, "bin", "dome");
@@ -87,6 +91,39 @@ describe("v1 dogfood preflight script", () => {
     expect(report.serve.status).toBe("off");
     expect(report.nextActions).toContain(
       "start dome serve while dogfooding to collect host evidence",
+    );
+  }, { timeout: 30_000 });
+
+  test("requires serve host branch to match the current vault branch", async () => {
+    const vaultPath = await makeIntakeReadyVault();
+    await writeServeHeartbeat({
+      vaultPath,
+      handle: createServeHeartbeatHandle(),
+      branch: "other-branch",
+      pollIntervalMs: 10_000,
+      operationalIntervalMs: 10_000,
+    });
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.operational.ready).toBe(true);
+    expect(report.capture.ready).toBe(true);
+    expect(report.serve.ready).toBe(false);
+    expect(report.serve.status).toBe("running");
+    expect(report.serve.branch).toBe("other-branch");
+    expect(report.serve.findings).toContain(
+      "dome serve is running on branch other-branch, but the vault is on main",
     );
   }, { timeout: 30_000 });
 
