@@ -624,7 +624,7 @@ describe("runSync idempotent", () => {
     expect(parsed["status"]).toBe("in-sync");
     expect(parsed["health"]).toEqual({
       ...EMPTY_HEALTH_SUMMARY,
-      diagnostics: 1,
+      diagnostics: 0,
       unlocatedDiagnostics: 1,
     });
     expect(parsed["attention"]).toEqual([]);

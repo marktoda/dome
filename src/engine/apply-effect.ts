@@ -122,13 +122,15 @@ export type ApplyEffectSinks = {
   }) => Promise<void>;
 
   /**
-   * Optional projection-maintenance hook. After a processor re-checks a set of
-   * paths, the engine passes the diagnostic effects it emitted so the sink can
-   * mark older unresolved diagnostics for those paths as resolved.
+   * Optional projection-maintenance hook. After a processor or engine-owned
+   * recovery path re-checks a scope, the engine passes the diagnostic effects
+   * it still emits so the sink can mark older unresolved diagnostics for that
+   * scope as resolved. Processor calls include `runId`; engine-owned recovery
+   * calls may not have a processor ledger row.
    */
   readonly resolveDiagnostics?: (input: {
     readonly processorId: string;
-    readonly runId: RunId;
+    readonly runId?: RunId;
     readonly inspectedPaths: ReadonlyArray<string>;
     readonly emittedDiagnostics: ReadonlyArray<DiagnosticEffect>;
   }) => Promise<void>;

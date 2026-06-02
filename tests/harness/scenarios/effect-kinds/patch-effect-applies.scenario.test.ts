@@ -129,5 +129,20 @@ scenario(
       "utf8",
     );
     expect(workingTree).toBe(localEdit);
+
+    await h.userCommit({
+      files: { "wiki/foo.md": localEdit },
+      message: "commit local edit",
+    });
+
+    const recovered = await h.tick();
+    expect(recovered.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({
+        code: "adoption.working-tree-materialize-conflict",
+        severity: "block",
+      })
+      .toHaveCount(0);
   },
 );

@@ -784,6 +784,7 @@ export async function adopt(opts: {
     });
   }
 
+  await resolveRecoveredEngineAdoptionDiagnostics(sinks);
   await projectionBuffer.flush();
 
   return frozenResult({
@@ -793,6 +794,16 @@ export async function adopt(opts: {
     diagnostics: allDiagnostics,
     closureCommitOid,
     iterations: iteration,
+  });
+}
+
+async function resolveRecoveredEngineAdoptionDiagnostics(
+  sinks: ApplyEffectSinks,
+): Promise<void> {
+  await sinks.resolveDiagnostics?.({
+    processorId: "engine.adoption",
+    inspectedPaths: [],
+    emittedDiagnostics: [],
   });
 }
 

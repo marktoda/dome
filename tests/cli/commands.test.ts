@@ -3876,11 +3876,11 @@ describe("runStatus", () => {
     expect(blob).toBeDefined();
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
-    expect(parsed["diagnostics"]).toBe(1);
+    expect(parsed["diagnostics"]).toBe(0);
     expect(parsed["content_diagnostics"]).toBe(0);
     expect(parsed["unlocated_diagnostics"]).toBe(1);
     expect(parsed["attention_diagnostics"]).toBe(0);
-    expect(record(parsed["diagnostic_summary"])["total"]).toBe(1);
+    expect(record(parsed["diagnostic_summary"])["total"]).toBe(0);
     expect(record(parsed["attention_diagnostic_summary"])["total"]).toBe(0);
     expect(parsed["attention"]).toContain("sync_needed");
     expect(parsed["attention"]).not.toContain("diagnostics");

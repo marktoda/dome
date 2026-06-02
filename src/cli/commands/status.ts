@@ -47,7 +47,10 @@
 //                       processor health, diagnostics, questions, and runs.
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
-//   - diagnostics:      count of unresolved projection diagnostics.
+//   - diagnostics:      count of unresolved source-backed content diagnostics.
+//                       Source-less runtime diagnostics stay visible through
+//                       `unlocated_diagnostics` and `inspect diagnostics`, but
+//                       they do not pollute content repair summaries.
 //   - attention_diagnostics:
 //                       unresolved warning/error/block diagnostics; info
 //                       diagnostics remain visible but do not route attention.
@@ -321,10 +324,10 @@ export async function runStatus(
       diagnosticRows.length - contentDiagnosticRows.length;
     const attentionDiagnosticRows =
       contentDiagnosticRows.filter(isAttentionDiagnostic);
-    const diagnostics = diagnosticRows.length;
+    const diagnostics = contentDiagnosticRows.length;
     const attentionDiagnostics = countAttentionDiagnostics(contentDiagnosticRows);
     const diagnostic_summary = summarizeDiagnosticEffects(
-      diagnosticRows,
+      contentDiagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
@@ -334,7 +337,7 @@ export async function runStatus(
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
     const diagnostic_message_summary = summarizeDiagnosticMessages(
-      diagnosticRows,
+      contentDiagnosticRows,
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );

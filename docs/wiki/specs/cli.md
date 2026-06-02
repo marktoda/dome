@@ -497,14 +497,14 @@ running rows old enough for recovery; transient in-flight view or compiler
 runs remain visible but only `orphan_runs > 0` contributes the `pending_runs`
 attention reason. Text status output renders non-stale rows as `pending N live`
 and stale rows as `pending N stale` or `pending N total (M stale)` so a
-concurrent view command does not look like a stuck recovery state. `diagnostics` is the
-total unresolved diagnostic count, `content_diagnostics` is the subset with
-SourceRefs that can be repaired from markdown, and `unlocated_diagnostics`
-counts source-less rows such as runtime/compiler diagnostics that remain
-available through `dome inspect diagnostics`. `attention_diagnostics` is the
-warning/error/block subset of source-backed content diagnostics. Informational
-diagnostics and unlocated runtime diagnostics remain visible in
-`diagnostics` / `diagnostic_summary`, but only source-backed
+concurrent view command does not look like a stuck recovery state. `diagnostics`
+and `content_diagnostics` count the unresolved source-backed rows that can be
+repaired from markdown and summarized by `dome check --content`.
+`unlocated_diagnostics` separately counts source-less rows such as
+runtime/compiler diagnostics that remain available through
+`dome inspect diagnostics`. `attention_diagnostics` is the warning/error/block
+subset of source-backed content diagnostics. Informational diagnostics and
+unlocated runtime diagnostics remain visible, but only source-backed
 warning/error/block diagnostics contribute the `diagnostics` attention reason.
 `failed_runs` counts processors whose latest run is an active terminal
 problem (`failed`, `timed_out`, or `cancelled`). Rows failed by explicit

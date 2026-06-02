@@ -574,7 +574,7 @@ function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
       new Date(),
     ).length,
     failedRuns: countLatestActiveProblemRuns(runtime.ledgerDb),
-    diagnostics: diagnostics.length,
+    diagnostics: contentDiagnostics.length,
     contentDiagnostics: contentDiagnostics.length,
     unlocatedDiagnostics: diagnostics.length - contentDiagnostics.length,
     attentionDiagnostics: countAttentionDiagnostics(contentDiagnostics),
