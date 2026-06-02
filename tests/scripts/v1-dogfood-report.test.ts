@@ -26,7 +26,7 @@ describe("v1 dogfood report script", () => {
     );
   });
 
-  test("counts complete workdays and capture-evidence days", async () => {
+  test("counts complete workdays and complete capture-evidence days", async () => {
     const ledger = writeLedger(`
 # Test ledger
 
@@ -110,7 +110,7 @@ Qualitative notes to fill after the work session:
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Status: not-ready");
     expect(result.stdout).toContain("Complete workdays: 1/10");
-    expect(result.stdout).toContain("Capture-evidence days: 0/5");
+    expect(result.stdout).toContain("Complete capture-evidence days: 0/5");
     expect(result.stdout).toContain("Complete-workday span: 1/12");
   });
 
@@ -149,11 +149,48 @@ Qualitative notes to fill after the work session:
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.completeWorkdays).toBe(0);
-    expect(report.captureEvidenceDays).toBe(1);
+    expect(report.captureEvidenceDays).toBe(0);
     expect(report.days[0].complete).toBe(false);
+    expect(report.days[0].captureEvidence).toBe(true);
     expect(report.days[0].operationalEvidence).toBe(false);
     expect(report.days[0].missingDimensions).toEqual([]);
     expect(report.days[0].missingSafetyConfirmations).toEqual([]);
+  });
+
+  test("does not let partial capture-only days satisfy the capture threshold", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+${completeDay("2026-06-01", "No captures today.")}
+
+## 2026-06-02 Capture Note
+
+Qualitative notes to fill after the work session:
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/2026-06-02.md\`.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(1);
+    expect(report.captureEvidenceDays).toBe(0);
+    expect(report.days[1].complete).toBe(false);
+    expect(report.days[1].captureEvidence).toBe(true);
   });
 
   test("requires complete workdays to span the release-soak window", async () => {
@@ -283,7 +320,10 @@ function writeLedger(markdown: string): string {
   return path;
 }
 
-function completeDay(date: string): string {
+function completeDay(
+  date: string,
+  captureNote = `Processed one raw capture into \`wiki/generated/intake/${date}.md\`.`,
+): string {
   return `
 ## ${date} Work Session
 
@@ -292,7 +332,7 @@ Operational state:
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
-- Capture digestion: Processed one raw capture into \`wiki/generated/intake/${date}.md\`.
+- Capture digestion: ${captureNote}
 - Open-loop surfacing: Helpful.
 - Context packet quality: Useful.
 - Question burden: Low.

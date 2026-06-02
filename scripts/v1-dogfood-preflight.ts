@@ -233,7 +233,9 @@ function renderReport(report: PreflightReport): string {
   lines.push("Release-soak report:");
   lines.push(`- Status: ${report.release.status}`);
   lines.push(`- Complete workdays: ${report.release.completeWorkdays}`);
-  lines.push(`- Capture-evidence days: ${report.release.captureEvidenceDays}`);
+  lines.push(
+    `- Complete capture-evidence days: ${report.release.captureEvidenceDays}`,
+  );
   lines.push(`- Complete-workday span: ${report.release.spanCalendarDays}`);
   lines.push(`- Release blockers: ${report.release.releaseBlockers}`);
   lines.push("");

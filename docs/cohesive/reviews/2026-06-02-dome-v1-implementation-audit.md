@@ -445,8 +445,9 @@ Additional M10 audit support:
   new product CLI command.
 - The report groups dated ledger sections, counts only workdays with both
   measured Dome surface output and filled qualitative notes for every M10
-  dimension, separately tracks capture-evidence days, and requires complete
-  workdays to span the two-work-week release-soak window.
+  dimension, separately tracks complete workdays that also include capture
+  evidence, and requires complete workdays to span the two-work-week
+  release-soak window.
 - The parser is intentionally strict: generated snapshot prompts, controlled
   smoke prose, qualitative-only notes, partial qualitative notes, and short
   backfilled ledgers do not count as release-soak completion.
@@ -459,12 +460,12 @@ Additional M10 audit support:
   development checks fail while the release soak is still underway.
 - `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
   partial workday detection, JSON output, default threshold behavior, and
-  capture-evidence separation.
+  complete-workday capture-evidence separation.
 
 Current output:
 
 - `bun run v1:dogfood-report` reports `Status: not-ready`,
-  `Complete workdays: 1/10`, `Capture-evidence days: 1/5`, and
+  `Complete workdays: 1/10`, `Complete capture-evidence days: 1/5`, and
   `Complete-workday span: 1/12 calendar day(s)`.
 
 Updated assessment:
@@ -515,7 +516,7 @@ Updated assessment:
 - The work vault is now ready to collect the capture-digestion slice of M10.
 - V1 still should not be marked complete. The remaining gap is elapsed real
   usage: the dogfood report still needs 9 more complete workdays, 4 more
-  capture-evidence days, and an 11-day longer complete-workday span.
+  complete capture-evidence days, and an 11-day longer complete-workday span.
 
 ## 2026-06-02 First Capture Dogfood Addendum
 
@@ -544,7 +545,7 @@ Updated assessment:
   gap, the fix landed in the SDK rather than as a one-off cleanup, and the
   vault converged afterward.
 - V1 still should not be marked complete. The report remains `not-ready` at
-  1/10 complete workdays and 1/5 capture-evidence days.
+  1/10 complete workdays and 1/5 complete capture-evidence days.
 
 ## 2026-06-02 Broad V1 Verification Pass
 
@@ -562,7 +563,7 @@ Verification after the capture/question fixes and V1 evidence refresh:
   readiness as `ready`: operational readiness was clean, `dome.intake` was
   enabled and loaded, and the model status was `ready`.
 - `bun run v1:dogfood-report -- --json` reported release status `not-ready`
-  with 1/10 complete workdays, 1/5 capture-evidence days, and a 1/12
+  with 1/10 complete workdays, 1/5 complete capture-evidence days, and a 1/12
   complete-workday calendar span. There were 0 release blockers.
 
 Updated assessment:
@@ -570,3 +571,32 @@ Updated assessment:
 - The V1 implementation gates are green at the current head.
 - V1 still should not be marked complete. The remaining gap is elapsed M10
   evidence, not a known failing implementation gate.
+
+## 2026-06-02 M10 Capture-Evidence Gate Hardening
+
+Additional M10 release-gate hardening:
+
+- Tightened `bun run v1:dogfood-report` so `captureEvidenceDays` only counts
+  capture evidence from complete counted workdays. A partial capture-only
+  ledger entry can still show `captureEvidence: true` in its day details, but
+  it no longer advances the release threshold.
+- Updated the human-readable report and preflight output to label this as
+  `Complete capture-evidence days`.
+- Added regression coverage proving a partial capture note does not satisfy the
+  capture threshold, and updated the V1 plan wording to match the stricter
+  gate.
+
+Current output:
+
+- `bun run v1:dogfood-report` reports `Status: not-ready`,
+  `Complete workdays: 1/10`, `Complete capture-evidence days: 1/5`, and
+  `Complete-workday span: 1/12 calendar day(s)`.
+- `bun run v1:dogfood-preflight` reports collection status `ready`, capture
+  readiness `ready`, and release status `not-ready`.
+
+Updated assessment:
+
+- This closes an overclaim path in M10: capture-digestion credit now requires a
+  complete measured workday, not just an isolated capture mention.
+- V1 still should not be marked complete. The remaining gap is still elapsed
+  real work-vault usage.

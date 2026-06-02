@@ -136,7 +136,9 @@ async function main(): Promise<void> {
 function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   const days = parseDaySections(markdown).map((day) => analyzeDay(day));
   const completeWorkdays = days.filter((day) => day.complete).length;
-  const captureEvidenceDays = days.filter((day) => day.captureEvidence).length;
+  const captureEvidenceDays = days.filter((day) =>
+    day.complete && day.captureEvidence
+  ).length;
   const spanCalendarDays = completeWorkdaySpanDays(days);
   const releaseBlockers = days
     .filter((day) => day.releaseBlockers.length > 0)
@@ -363,7 +365,7 @@ function renderReport(report: DogfoodReport): string {
       `${report.required.completeWorkdays}`,
   );
   lines.push(
-    `Capture-evidence days: ${report.captureEvidenceDays}/` +
+    `Complete capture-evidence days: ${report.captureEvidenceDays}/` +
       `${report.required.captureEvidenceDays}`,
   );
   lines.push(
@@ -408,8 +410,8 @@ function renderReport(report: DogfoodReport): string {
   lines.push("");
   lines.push(
     "M10 is ready only when enough real work-vault days have complete rubric " +
-      "notes, those days span two real work weeks, and the capture loop has " +
-      "been exercised across a real work week with no release blockers.",
+      "notes, those days span two real work weeks, and enough complete days " +
+      "exercise the capture loop with no release blockers.",
   );
   lines.push("");
   return `${lines.join("\n")}\n`;
