@@ -545,3 +545,29 @@ Qualitative read:
   auto-resolution all work in a disposable vault.
 - This remains controlled networked smoke evidence. It does not replace the
   M10 requirement for sustained work-vault dogfood with real captures.
+
+## 2026-06-02 M10 Dogfood Report
+
+Dogfood action:
+
+- Added `bun run v1:dogfood-report` as a release-soak audit helper.
+- Ran the report against this dogfood ledger after the LLM smoke refresh.
+
+Operational result:
+
+- Current report:
+  `Status: not-ready`; `Complete workdays: 0/10`; `Capture-evidence days: 0/5`.
+- The report detected the dated 2026-06-02 evidence as partial with operational
+  evidence but no complete rubric-covered workday.
+- Controlled smoke capture paths and unfilled snapshot prompts do not count as
+  real capture-evidence days.
+
+Qualitative read:
+
+- This makes the M10 gate more honest. The ledger now has useful engineering
+  evidence, but it still lacks filled daily work-session notes for the required
+  rubric dimensions.
+- The next M10 step is to run `bun run v1:dogfood-snapshot` during actual work
+  sessions, fill the qualitative fields after the session, and re-run
+  `bun run v1:dogfood-report` until the report reflects enough real work-vault
+  usage.

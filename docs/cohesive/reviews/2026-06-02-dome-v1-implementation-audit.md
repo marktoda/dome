@@ -435,3 +435,32 @@ Updated assessment:
   uncertainty, and opt-in low-risk auto-resolution.
 - It still does not satisfy M10 because the smoke uses disposable fixtures, not
   sustained real work-vault usage.
+
+## 2026-06-02 Dogfood Report Addendum
+
+Additional M10 audit support:
+
+- Added `bun run v1:dogfood-report`, an internal script that audits the
+  work-vault dogfood ledger against the release-soak rubric without adding a
+  new product CLI command.
+- The report groups dated ledger sections, counts only workdays with filled
+  qualitative notes for every M10 dimension, and separately tracks
+  capture-evidence days.
+- The parser is intentionally strict: generated snapshot prompts, controlled
+  smoke prose, and partial qualitative notes do not count as release-soak
+  completion.
+- `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
+  partial workday detection, JSON output, default threshold behavior, and
+  capture-evidence separation.
+
+Current output:
+
+- `bun run v1:dogfood-report` reports `Status: not-ready`,
+  `Complete workdays: 0/10`, and `Capture-evidence days: 0/5`.
+
+Updated assessment:
+
+- This makes the remaining M10 gate concrete and harder to overclaim.
+- V1 still should not be marked complete. The evidence gate now correctly says
+  the implementation is green, but elapsed work-vault usefulness is not yet
+  proven.
