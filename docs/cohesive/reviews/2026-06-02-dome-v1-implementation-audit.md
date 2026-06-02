@@ -29,12 +29,13 @@ resolution improve Mark's day-to-day workflow without creating chore work.
 
 Recent local verification:
 
-- `bun run v1:check` passed end-to-end after the latest hardening pass:
+- `bun run v1:check` passed end-to-end after the latest snapshot-script
+  coverage pass:
   `bun run typecheck`, `git diff --check`, `bun test`, and `bun run v1:smoke`.
-- The full Bun suite passed with `996 pass`, `0 fail`, and `21364`
+- The full Bun suite passed with `998 pass`, `0 fail`, and `21381`
   assertions.
 - `v1-smoke` checked both the docs vault and work vault. Docs was clean at
-  head/adopted `1f54e57`; work was clean at head/adopted `99fac73`.
+  head/adopted `7be6cf7`; work was clean at head/adopted `99fac73`.
 - The smoke confirmed settled sync behavior on both vaults: clean already
   adopted vaults return `status: in-sync`, `iterations: 0`,
   `closureCommit: null`, and no garden sub-Proposals, rejected patches, or
