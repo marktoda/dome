@@ -75,6 +75,20 @@ describe("default vault config", () => {
     }
   });
 
+  test("broad first-party default path grants stay explicit", () => {
+    expect(broadDefaultPathGrants()).toEqual([
+      "dome.graph:read:**/*.md",
+      "dome.health:read:**",
+      "dome.lint:read:**/*.md",
+      "dome.markdown:patch.auto:**/*.md",
+      "dome.markdown:read:**/*.md",
+      "dome.markdown:read:**/*.{png,jpg,jpeg,gif,webp,svg,avif}",
+      "dome.markdown:read:raw/**",
+      "dome.search:read:**/*.md",
+      "dome.search:search.write:**/*.md",
+    ]);
+  });
+
   test("typed default extensions match shipped first-party bundle directories", async () => {
     const loaded = await loadBundles({ bundlesRoot: resolveShippedBundlesRoot() });
     expect(loaded.ok).toBe(true);
@@ -84,3 +98,28 @@ describe("default vault config", () => {
       .toEqual(loaded.value.map((bundle) => bundle.id).sort());
   });
 });
+
+function broadDefaultPathGrants(): ReadonlyArray<string> {
+  const pathGrantKeys = new Set([
+    "read",
+    "patch.auto",
+    "patch.propose",
+    "search.write",
+  ]);
+  const grants: string[] = [];
+  for (const entry of FIRST_PARTY_EXTENSION_DEFAULTS) {
+    for (const [capability, value] of Object.entries(entry.grant)) {
+      if (!pathGrantKeys.has(capability) || !Array.isArray(value)) continue;
+      for (const pattern of value) {
+        if (isBroadDefaultPathPattern(pattern)) {
+          grants.push(`${entry.id}:${capability}:${pattern}`);
+        }
+      }
+    }
+  }
+  return Object.freeze(grants.sort());
+}
+
+function isBroadDefaultPathPattern(pattern: string): boolean {
+  return pattern === "**" || pattern.startsWith("**/") || pattern === "raw/**";
+}

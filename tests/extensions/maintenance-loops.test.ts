@@ -101,4 +101,167 @@ describe("first-party maintenance loops", () => {
       processorId: "missing.optional-processor",
     });
   });
+
+  test("validation catches malformed loop metadata", () => {
+    const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
+    if (loop === undefined) throw new Error("expected first-party loop");
+
+    const errors = validateMaintenanceLoops({
+      loops: [
+        {
+          ...loop,
+          id: "bad loop id",
+          goal: "",
+          evidence: [],
+          processors: [],
+          surfaces: [],
+          settlement: {
+            key: "",
+            noOpWhen: "",
+          },
+          risks: [],
+        },
+      ],
+      processorIds: new Set(),
+      commandNames: new Set(),
+    });
+
+    expect(errors).toContainEqual({
+      kind: "invalid-loop-id",
+      loopId: "bad loop id",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "goal",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "evidence",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "processors",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "surfaces",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "settlement.key",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "settlement.noOpWhen",
+    });
+    expect(errors).toContainEqual({
+      kind: "empty-field",
+      loopId: "bad loop id",
+      field: "risks",
+    });
+  });
+
+  test("validation catches duplicate loop and processor references", () => {
+    const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
+    if (loop === undefined) throw new Error("expected first-party loop");
+    const [processor] = loop.processors;
+    if (processor === undefined) throw new Error("expected processor");
+
+    const errors = validateMaintenanceLoops({
+      loops: [
+        loop,
+        {
+          ...loop,
+          processors: [processor, processor],
+        },
+      ],
+      processorIds: new Set(loop.processors),
+      commandNames: commandNamesFor(loop),
+    });
+
+    expect(errors).toContainEqual({
+      kind: "duplicate-loop-id",
+      loopId: loop.id,
+    });
+    expect(errors).toContainEqual({
+      kind: "duplicate-processor",
+      loopId: loop.id,
+      processorId: processor,
+    });
+  });
+
+  test("validation catches invalid surfaces and evidence", () => {
+    const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
+    if (loop === undefined) throw new Error("expected first-party loop");
+
+    const errors = validateMaintenanceLoops({
+      loops: [
+        {
+          ...loop,
+          evidence: [
+            { kind: "path", pattern: "../outside.md" },
+            { kind: "projection", name: "unknown_table" },
+          ],
+          surfaces: [
+            { kind: "path", pattern: "/absolute.md" },
+            { kind: "command", name: "missing-command" },
+            { kind: "projection", name: "bad projection" },
+            {
+              kind: "status",
+              name: "doctor",
+            } as unknown as typeof loop.surfaces[number],
+          ],
+        },
+      ],
+      processorIds: new Set(loop.processors),
+      commandNames: new Set(),
+    });
+
+    expect(errors).toContainEqual({
+      kind: "invalid-path-pattern",
+      loopId: loop.id,
+      pattern: "../outside.md",
+    });
+    expect(errors).toContainEqual({
+      kind: "invalid-path-pattern",
+      loopId: loop.id,
+      pattern: "/absolute.md",
+    });
+    expect(errors).toContainEqual({
+      kind: "missing-command-surface",
+      loopId: loop.id,
+      commandName: "missing-command",
+    });
+    expect(errors).toContainEqual({
+      kind: "invalid-projection",
+      loopId: loop.id,
+      projectionName: "unknown_table",
+    });
+    expect(errors).toContainEqual({
+      kind: "invalid-projection",
+      loopId: loop.id,
+      projectionName: "bad projection",
+    });
+    expect(errors).toContainEqual({
+      kind: "invalid-status-surface",
+      loopId: loop.id,
+      statusName: "doctor",
+    });
+  });
 });
+
+function commandNamesFor(
+  loop: (typeof FIRST_PARTY_MAINTENANCE_LOOPS)[number],
+): ReadonlySet<string> {
+  return new Set(
+    loop.surfaces.flatMap((surface) =>
+      surface.kind === "command" ? [surface.name] : []
+    ),
+  );
+}

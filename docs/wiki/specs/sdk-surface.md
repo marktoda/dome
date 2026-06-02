@@ -400,6 +400,32 @@ The substrate scaffold catches the missing pieces:
 - `tests/integration/processor-purity.test.ts` typechecks that no processor's `run` body reaches a mutation surface.
 - `tests/integration/capability-enforcement.test.ts` exercises capability check per effect × capability pair.
 
+## Adding a maintenance loop
+
+Maintenance loops are descriptive metadata over processors, not a new runtime
+primitive. Adding one is a substrate change because it changes how `status` and
+`check` explain Dome's desired-state automation.
+
+Five file edits:
+
+1. **The processors** that actually implement the behavior, each added through
+   the normal "Adding a processor" path above.
+2. **The loop registry row** in `src/extensions/maintenance-loops.ts`, with a
+   stable id, goal, evidence, required processors, optional processors when
+   relevant, surfaces, settlement rule, and risks.
+3. **The loop validation test** in `tests/extensions/maintenance-loops.test.ts`.
+   The validator catches malformed ids, empty required metadata, duplicate
+   processor references, unsupported projection/status names, invalid path
+   patterns, stale processor ids, and stale command surfaces.
+4. **The processor spec** in `docs/wiki/specs/processors.md`, updating the
+   shipped V1 loop list or the future-loop guidance as appropriate.
+5. **Any status/check expectation** if the new loop changes the operator-facing
+   maintenance summary.
+
+Do not add a new top-level CLI command just because a loop exists. If the loop
+needs a human or agent surface, add a command-triggered view processor and use
+the existing `dome run <name>` / dedicated-wrapper pattern.
+
 ## Adding a new invariant
 
 Three file edits, paralleling the v0.5 recipe:

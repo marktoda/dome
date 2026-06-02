@@ -69,8 +69,29 @@ export type MaintenanceLoop = {
 
 export type MaintenanceLoopValidationError =
   | {
+      readonly kind: "invalid-loop-id";
+      readonly loopId: string;
+    }
+  | {
       readonly kind: "duplicate-loop-id";
       readonly loopId: string;
+    }
+  | {
+      readonly kind: "empty-field";
+      readonly loopId: string;
+      readonly field:
+        | "goal"
+        | "evidence"
+        | "processors"
+        | "surfaces"
+        | "settlement.key"
+        | "settlement.noOpWhen"
+        | "risks";
+    }
+  | {
+      readonly kind: "duplicate-processor";
+      readonly loopId: string;
+      readonly processorId: string;
     }
   | {
       readonly kind: "missing-processor";
@@ -83,10 +104,34 @@ export type MaintenanceLoopValidationError =
       readonly commandName: string;
     }
   | {
+      readonly kind: "invalid-projection";
+      readonly loopId: string;
+      readonly projectionName: string;
+    }
+  | {
+      readonly kind: "invalid-status-surface";
+      readonly loopId: string;
+      readonly statusName: string;
+    }
+  | {
       readonly kind: "invalid-path-pattern";
       readonly loopId: string;
       readonly pattern: string;
     };
+
+const LOOP_ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/;
+
+const SUPPORTED_PROJECTION_NAMES = Object.freeze([
+  "diagnostics",
+  "facts",
+  "fts_documents",
+  "questions",
+  "scheduled_jobs",
+]);
+
+const FACT_NAMESPACE_PROJECTION_RE = /^facts:[a-z0-9]+(?:[.-][a-z0-9]+)*\.\*$/;
+
+const SUPPORTED_STATUS_SURFACES = new Set(["status", "check"]);
 
 export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
   Object.freeze([
@@ -278,20 +323,77 @@ export function validateMaintenanceLoops(opts: {
   const errors: MaintenanceLoopValidationError[] = [];
   const seen = new Set<string>();
   for (const loop of opts.loops) {
+    if (!LOOP_ID_RE.test(loop.id)) {
+      errors.push({ kind: "invalid-loop-id", loopId: loop.id });
+    }
     if (seen.has(loop.id)) {
       errors.push({ kind: "duplicate-loop-id", loopId: loop.id });
     }
     seen.add(loop.id);
+    if (loop.goal.trim().length === 0) {
+      errors.push({ kind: "empty-field", loopId: loop.id, field: "goal" });
+    }
+    if (loop.evidence.length === 0) {
+      errors.push({ kind: "empty-field", loopId: loop.id, field: "evidence" });
+    }
+    if (loop.processors.length === 0) {
+      errors.push({
+        kind: "empty-field",
+        loopId: loop.id,
+        field: "processors",
+      });
+    }
+    if (loop.surfaces.length === 0) {
+      errors.push({ kind: "empty-field", loopId: loop.id, field: "surfaces" });
+    }
+    if (loop.settlement.key.trim().length === 0) {
+      errors.push({
+        kind: "empty-field",
+        loopId: loop.id,
+        field: "settlement.key",
+      });
+    }
+    if (loop.settlement.noOpWhen.trim().length === 0) {
+      errors.push({
+        kind: "empty-field",
+        loopId: loop.id,
+        field: "settlement.noOpWhen",
+      });
+    }
+    if (loop.risks.length === 0) {
+      errors.push({ kind: "empty-field", loopId: loop.id, field: "risks" });
+    }
     const processorReferences = [
       ...loop.processors,
       ...(loop.optionalProcessors ?? Object.freeze([])),
     ];
+    const seenProcessorReferences = new Set<string>();
+    for (const processorId of processorReferences) {
+      if (seenProcessorReferences.has(processorId)) {
+        errors.push({
+          kind: "duplicate-processor",
+          loopId: loop.id,
+          processorId,
+        });
+      }
+      seenProcessorReferences.add(processorId);
+    }
     for (const evidence of loop.evidence) {
       if (evidence.kind === "path" && !isValidVaultPattern(evidence.pattern)) {
         errors.push({
           kind: "invalid-path-pattern",
           loopId: loop.id,
           pattern: evidence.pattern,
+        });
+      }
+      if (
+        evidence.kind === "projection" &&
+        !isSupportedProjectionName(evidence.name)
+      ) {
+        errors.push({
+          kind: "invalid-projection",
+          loopId: loop.id,
+          projectionName: evidence.name,
         });
       }
     }
@@ -319,6 +421,26 @@ export function validateMaintenanceLoops(opts: {
           commandName: surface.name,
         });
       }
+      if (
+        surface.kind === "projection" &&
+        !isSupportedProjectionName(surface.name)
+      ) {
+        errors.push({
+          kind: "invalid-projection",
+          loopId: loop.id,
+          projectionName: surface.name,
+        });
+      }
+      if (
+        surface.kind === "status" &&
+        !SUPPORTED_STATUS_SURFACES.has(surface.name)
+      ) {
+        errors.push({
+          kind: "invalid-status-surface",
+          loopId: loop.id,
+          statusName: surface.name,
+        });
+      }
     }
   }
   return Object.freeze(errors);
@@ -342,4 +464,9 @@ function isValidVaultPattern(pattern: string): boolean {
   if (pattern.length === 0) return false;
   if (pattern.startsWith("/") || pattern.includes("\\")) return false;
   return !pattern.split("/").includes("..");
+}
+
+function isSupportedProjectionName(name: string): boolean {
+  return SUPPORTED_PROJECTION_NAMES.includes(name) ||
+    FACT_NAMESPACE_PROJECTION_RE.test(name);
 }

@@ -227,7 +227,10 @@ The V1 first-party loop registry lives in
 `src/extensions/maintenance-loops.ts`. It intentionally does not call
 processors, sequence processors, or add a workflow engine. It references
 existing processor ids and command surfaces, and tests validate that those
-references stay in lockstep with the shipped bundles.
+references stay in lockstep with the shipped bundles. The registry validator
+also rejects malformed loop ids, empty required metadata, duplicate processor
+references, invalid path patterns, unsupported projection/status names, and
+stale command surfaces.
 
 Required loop metadata:
 
@@ -253,6 +256,11 @@ The shipped V1 loops are:
 Future third-party loops may move this metadata into bundle manifests. That
 change must preserve the same boundary: loops describe maintenance objectives;
 processors execute.
+
+Adding a first-party loop follows [[wiki/specs/sdk-surface]] §"Adding a
+maintenance loop": implement the processors, add one registry row, cover it in
+`tests/extensions/maintenance-loops.test.ts`, update the specs, and avoid adding
+a new CLI command unless a command-triggered view surface is actually needed.
 
 ## First-party processors (the `dome.*` bundles)
 
