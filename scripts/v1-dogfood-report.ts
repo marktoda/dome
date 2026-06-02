@@ -9,6 +9,7 @@ type ReportOptions = {
   readonly minCaptureDays: number;
   readonly minSpanDays: number;
   readonly json: boolean;
+  readonly requireReady: boolean;
 };
 
 type Dimension = {
@@ -127,6 +128,9 @@ async function main(): Promise<void> {
   nodeWrite(
     opts.json ? `${JSON.stringify(report, null, 2)}\n` : renderReport(report),
   );
+  if (opts.requireReady && report.status !== "ready") {
+    process.exit(1);
+  }
 }
 
 function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
@@ -417,6 +421,7 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
   let minCaptureDays = 5;
   let minSpanDays = 12;
   let json = false;
+  let requireReady = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -444,6 +449,10 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
       json = true;
       continue;
     }
+    if (arg === "--require-ready") {
+      requireReady = true;
+      continue;
+    }
     if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
@@ -451,7 +460,14 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
     throw new Error(`unknown argument: ${arg}`);
   }
 
-  return Object.freeze({ ledger, minDays, minCaptureDays, minSpanDays, json });
+  return Object.freeze({
+    ledger,
+    minDays,
+    minCaptureDays,
+    minSpanDays,
+    json,
+    requireReady,
+  });
 }
 
 function readValue(
@@ -491,6 +507,7 @@ function printHelp(): void {
     "  --min-capture-days <n>     Capture-evidence threshold (default: 5).",
     "  --min-span-days <n>        Complete-workday calendar span (default: 12).",
     "  --json                     Emit machine-readable JSON.",
+    "  --require-ready            Exit nonzero unless the report is ready.",
     "  -h, --help                 Show this help.",
     "",
   ].join("\n"));

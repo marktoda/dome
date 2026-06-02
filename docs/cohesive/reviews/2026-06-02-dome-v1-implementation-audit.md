@@ -454,6 +454,9 @@ Additional M10 audit support:
   overwritten human markdown edits and manual `.dome/state` edits. Any
   non-negative answer is surfaced as a release blocker and keeps the report
   `not-ready`.
+- `bun run v1:dogfood-report -- --require-ready` now exits nonzero unless the
+  report is ready, giving M10 a mechanical final gate without making normal
+  development checks fail while the release soak is still underway.
 - `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
   partial workday detection, JSON output, default threshold behavior, and
   capture-evidence separation.

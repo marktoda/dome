@@ -552,12 +552,15 @@ Dogfood action:
 
 - Added `bun run v1:dogfood-report` as a release-soak audit helper.
 - Ran the report against this dogfood ledger after the LLM smoke refresh.
+- Added `--require-ready` so the report can serve as the final M10 gate.
 
 Operational result:
 
 - Current report:
   `Status: not-ready`; `Complete workdays: 0/10`; `Capture-evidence days: 0/5`;
   `Complete-workday span: 0/12 calendar day(s)`; `Release blockers: 0`.
+- `bun run v1:dogfood-report -- --require-ready` currently exits nonzero,
+  which is expected until the real work-vault soak is complete.
 - The report detected the dated 2026-06-02 evidence as partial with operational
   evidence but no complete rubric-covered workday and no filled safety
   confirmations.

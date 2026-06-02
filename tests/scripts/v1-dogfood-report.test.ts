@@ -233,6 +233,46 @@ Qualitative notes to fill after the work session:
       "lost_or_overwritten_edits",
     ]);
   });
+
+  test("require-ready exits nonzero for an incomplete release soak", async () => {
+    const ledger = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "2",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--require-ready",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Status: not-ready");
+  });
+
+  test("require-ready exits zero when thresholds are satisfied", async () => {
+    const ledger = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--require-ready",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Status: ready");
+  });
 });
 
 function writeLedger(markdown: string): string {
