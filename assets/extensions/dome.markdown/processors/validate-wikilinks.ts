@@ -58,8 +58,12 @@ import {
   findWikilinks,
   frontmatterEndLine,
   isValidatableMarkdownPath,
+  addWikilinkStubRequest,
+  renderWikilinkStubPage,
+  stubCandidateForWikilinkTarget,
   wikilinkFragmentSuffix,
   wikilinkReplacementText,
+  type WikilinkStubRequest,
   type WikilinkReplacement,
 } from "./wikilinks";
 
@@ -67,7 +71,7 @@ import {
 
 const validateWikilinks: Processor = defineProcessor({
   id: "dome.markdown.validate-wikilinks",
-  version: "0.3.0",
+  version: "0.4.0",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
@@ -86,6 +90,7 @@ const validateWikilinks: Processor = defineProcessor({
     const resolver = buildWikilinkResolver(allMarkdownPaths);
 
     const effects: Effect[] = [];
+    const stubRequests = new Map<string, StubRequest>();
 
     // Filter changedPaths to Dome content roots. A vault may grant broad read
     // so links can resolve to historical/external markdown, but that does not
@@ -131,6 +136,18 @@ const validateWikilinks: Processor = defineProcessor({
           });
           replacementSourceRefs.push(sourceRef);
           continue;
+        }
+
+        if (severity === "warning" && suggestions.kind === "none") {
+          const candidate = stubCandidateForWikilinkTarget(match.target);
+          if (candidate !== null) {
+            addWikilinkStubRequest(stubRequests, {
+              candidate,
+              sourcePath: changedPath,
+              sourceRef,
+            });
+            continue;
+          }
         }
 
         // Unresolved target -> emit a diagnostic anchored to the
@@ -180,6 +197,10 @@ const validateWikilinks: Processor = defineProcessor({
       }
     }
 
+    if (stubRequests.size > 0) {
+      effects.push(stubPatchEffect(stubRequests));
+    }
+
     return effects;
   },
 });
@@ -187,6 +208,8 @@ const validateWikilinks: Processor = defineProcessor({
 export default validateWikilinks;
 
 // ----- internals ------------------------------------------------------------
+
+type StubRequest = WikilinkStubRequest<SourceRef>;
 
 function ambiguousWikilinkQuestion(opts: {
   readonly target: string;
@@ -228,6 +251,27 @@ function ambiguousWikilinkQuestion(opts: {
 
 function wikilinkOption(candidate: string, rawTarget: string): string {
   return `${candidate}${wikilinkFragmentSuffix(rawTarget)}`;
+}
+
+function stubPatchEffect(
+  requests: ReadonlyMap<string, WikilinkStubRequest<SourceRef>>,
+): Effect {
+  const ordered = [...requests.values()].sort((a, b) =>
+    a.candidate.path.localeCompare(b.candidate.path)
+  );
+  return patchEffect({
+    mode: "auto",
+    changes: ordered.map((request) => ({
+      kind: "write" as const,
+      path: request.candidate.path,
+      content: renderWikilinkStubPage({
+        candidate: request.candidate,
+        sourcePaths: request.sourcePaths,
+      }),
+    })),
+    reason: "dome.markdown: create source-backed wikilink stubs",
+    sourceRefs: ordered.flatMap((request) => request.sourceRefs),
+  });
 }
 
 function sha256(value: string): string {

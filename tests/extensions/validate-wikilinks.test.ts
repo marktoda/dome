@@ -220,6 +220,49 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(ref.range?.startLine).toBe(1);
   });
 
+  test("creates a source-backed stub for explicit missing managed concept links", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "wiki/page.md",
+        content: "We need [[wiki/concepts/customer-onboarding]] soon.\n",
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/page.md"],
+      proposal: null,
+      runId: "run-test-stub-concept",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects.length).toBe(1);
+
+    const patch = effects[0] as PatchEffect | undefined;
+    if (patch === undefined) throw new Error("expected one patch");
+    expect(patch.kind).toBe("patch");
+    expect(patch.reason).toBe(
+      "dome.markdown: create source-backed wikilink stubs",
+    );
+    const change = patch.changes[0];
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") throw new Error("expected write change");
+    expect(String(change.path)).toBe(
+      "wiki/concepts/customer-onboarding.md",
+    );
+    expect(change.content).toContain("type: concept\n");
+    expect(change.content).toContain(
+      'sources:\n  - "[[wiki/page]]"\n',
+    );
+    expect(change.content).toContain("name: Customer Onboarding\n");
+    expect(change.content).toContain("# Customer Onboarding\n");
+    expect(String(patch.sourceRefs[0]?.path)).toBe("wiki/page.md");
+  });
+
   test("auto-repairs a close existing markdown target for curated-page typoed wikilinks", async () => {
     const f = await makeVaultWithFiles([
       {

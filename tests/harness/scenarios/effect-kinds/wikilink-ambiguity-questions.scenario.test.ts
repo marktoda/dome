@@ -141,3 +141,57 @@ scenario(
       .toHaveCount(0);
   },
 );
+
+scenario(
+  {
+    name: "effect-kinds: dome.markdown.validate-wikilinks creates source-backed concept stubs",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/page.md":
+          "# Page\n\nDocument [[wiki/concepts/customer-onboarding]] before launch.\n",
+      },
+      message: "add explicit missing concept link",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h
+      .expectFile("wiki/concepts/customer-onboarding.md")
+      .toContain("type: concept");
+    await h
+      .expectFile("wiki/concepts/customer-onboarding.md")
+      .toContain('sources:\n  - "[[wiki/page]]"');
+    await h
+      .expectFile("wiki/concepts/customer-onboarding.md")
+      .toContain("name: Customer Onboarding");
+    await h
+      .expectFile("wiki/concepts/customer-onboarding.md")
+      .toContain("## Source Mentions");
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
+
+    const settled = await h.tick();
+    expect(settled.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
+  },
+);

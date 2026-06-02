@@ -6,6 +6,11 @@
 // lets processors differ only in policy: adoption emits diagnostics/questions,
 // while scheduled maintenance only patches already-obvious managed-page drift.
 
+import {
+  reorderFrontmatterKeys,
+  stringifyFrontmatter,
+} from "./frontmatter-normalization";
+
 // Matches `[[target]]` and `[[target|display]]`. The target is captured in
 // group 1; group 2 preserves the optional `|display` suffix for repairs.
 const WIKILINK_RE = /\[\[([^\[\]\|]+?)(\|[^\[\]]+)?\]\]/g;
@@ -40,6 +45,18 @@ export type WikilinkSuggestionResult =
   | { readonly kind: "none" }
   | { readonly kind: "unique"; readonly target: string }
   | { readonly kind: "ambiguous"; readonly targets: ReadonlyArray<string> };
+
+export type WikilinkStubCandidate = {
+  readonly path: string;
+  readonly type: "concept" | "entity";
+  readonly name: string;
+};
+
+export type WikilinkStubRequest<TSourceRef> = {
+  readonly candidate: WikilinkStubCandidate;
+  readonly sourcePaths: ReadonlyArray<string>;
+  readonly sourceRefs: ReadonlyArray<TSourceRef>;
+};
 
 export type WikilinkResolver = {
   readonly resolve: (rawTarget: string, currentPath: string) => string | null;
@@ -160,6 +177,88 @@ export function applyWikilinkReplacements(
 export function wikilinkFragmentSuffix(target: string): string {
   const hash = target.indexOf("#");
   return hash === -1 ? "" : target.slice(hash).trim();
+}
+
+export function stubCandidateForWikilinkTarget(
+  rawTarget: string,
+): WikilinkStubCandidate | null {
+  if (isSkippedWikilinkTarget(rawTarget)) return null;
+  const target = stripWikilinkFragment(rawTarget);
+  if (target.length === 0) return null;
+  if (!target.includes("/")) return null;
+  if (target.startsWith("/") || target.includes("\\")) return null;
+
+  const path = target.endsWith(".md") ? target : `${target}.md`;
+  const segments = path.split("/");
+  if (
+    segments.some((segment) =>
+      segment.length === 0 || segment === "." || segment === ".."
+    )
+  ) {
+    return null;
+  }
+
+  const type = stubPageTypeForPath(path);
+  if (type === null) return null;
+  const basename = path.slice(path.lastIndexOf("/") + 1, -3);
+  if (basename.trim().length === 0) return null;
+  return Object.freeze({
+    path,
+    type,
+    name: displayNameForStubBasename(basename),
+  });
+}
+
+export function renderWikilinkStubPage(input: {
+  readonly candidate: WikilinkStubCandidate;
+  readonly sourcePaths: ReadonlyArray<string>;
+}): string {
+  const sources = uniqueSourcePaths(input.sourcePaths)
+    .map((path) => `[[${path.replace(/\.md$/i, "")}]]`);
+  const sourceList = sources.map((source) => `- ${source}`).join("\n");
+  const body = [
+    "",
+    `# ${input.candidate.name}`,
+    "",
+    "This source-backed stub exists because the linked page was referenced from vault sources.",
+    "",
+    "## Source Mentions",
+    "",
+    sourceList,
+    "",
+  ].join("\n");
+  return stringifyFrontmatter(
+    body,
+    reorderFrontmatterKeys({
+      type: input.candidate.type,
+      sources,
+      name: input.candidate.name,
+    }),
+  );
+}
+
+export function addWikilinkStubRequest<TSourceRef>(
+  requests: Map<string, WikilinkStubRequest<TSourceRef>>,
+  input: {
+    readonly candidate: WikilinkStubCandidate;
+    readonly sourcePath: string;
+    readonly sourceRef: TSourceRef;
+  },
+): void {
+  const existing = requests.get(input.candidate.path);
+  if (existing === undefined) {
+    requests.set(input.candidate.path, {
+      candidate: input.candidate,
+      sourcePaths: [input.sourcePath],
+      sourceRefs: [input.sourceRef],
+    });
+    return;
+  }
+  requests.set(input.candidate.path, {
+    candidate: existing.candidate,
+    sourcePaths: [...existing.sourcePaths, input.sourcePath],
+    sourceRefs: [...existing.sourceRefs, input.sourceRef],
+  });
 }
 
 function isFrontmatterLine(
@@ -599,4 +698,22 @@ function hasExplicitNonMarkdownExtension(target: string): boolean {
   const dot = basename.lastIndexOf(".");
   if (dot <= 0 || dot === basename.length - 1) return false;
   return basename.slice(dot + 1).toLowerCase() !== "md";
+}
+
+function stubPageTypeForPath(path: string): "concept" | "entity" | null {
+  if (path.startsWith("wiki/concepts/")) return "concept";
+  if (path.startsWith("wiki/entities/")) return "entity";
+  return null;
+}
+
+function displayNameForStubBasename(basename: string): string {
+  return decodeWikilinkComponent(basename)
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z]/g, (char) => char.toUpperCase());
+}
+
+function uniqueSourcePaths(paths: ReadonlyArray<string>): ReadonlyArray<string> {
+  return Object.freeze([...new Set(paths)].sort());
 }

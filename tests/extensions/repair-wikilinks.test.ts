@@ -46,6 +46,37 @@ describe("dome.markdown.repair-wikilinks", () => {
     expect(effects).toHaveLength(0);
   });
 
+  test("creates source-backed stubs for explicit managed concept links", async () => {
+    const first = await runRepairWikilinks({
+      "wiki/page.md":
+        "Document [[wiki/concepts/customer-onboarding]] before launch.\n",
+    });
+
+    expect(first).toHaveLength(1);
+    const patch = expectPatch(first, 0);
+    expect(patch.mode).toBe("auto");
+    expect(patch.reason).toBe(
+      "repair obvious managed wikilinks and create source-backed stubs",
+    );
+    expect(patch.changes).toHaveLength(1);
+    const change = expectWriteChange(patch, 0);
+    expect(String(change.path)).toBe(
+      "wiki/concepts/customer-onboarding.md",
+    );
+    expect(change.content).toContain("type: concept\n");
+    expect(change.content).toContain('sources:\n  - "[[wiki/page]]"\n');
+    expect(change.content).toContain("name: Customer Onboarding\n");
+    expect(String(patch.sourceRefs[0]?.path)).toBe("wiki/page.md");
+
+    const second = await runRepairWikilinks({
+      "wiki/page.md":
+        "Document [[wiki/concepts/customer-onboarding]] before launch.\n",
+      "wiki/concepts/customer-onboarding.md": change.content,
+    });
+
+    expect(second).toHaveLength(0);
+  });
+
   test("no-ops when rerun on its own output", async () => {
     const first = await runRepairWikilinks({
       "wiki/page.md": "Working with [[wiki/entities/grce-danco]].\n",

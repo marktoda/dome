@@ -22,8 +22,12 @@ import {
   findWikilinks,
   frontmatterEndLine,
   isValidatableMarkdownPath,
+  addWikilinkStubRequest,
+  renderWikilinkStubPage,
+  stubCandidateForWikilinkTarget,
   wikilinkReplacementText,
   type WikilinkReplacement,
+  type WikilinkStubRequest,
 } from "./wikilinks";
 
 const MAX_REPAIRED_FILES_PER_RUN = 200;
@@ -35,6 +39,7 @@ const repairWikilinks = defineProcessorImplementation({
     const paths = markdownPaths.filter(isValidatableMarkdownPath).sort();
     const changes: FileChangeInput[] = [];
     const sourceRefs: SourceRef[] = [];
+    const stubRequests = new Map<string, StubRequest>();
 
     for (const path of paths) {
       if (changes.length >= MAX_REPAIRED_FILES_PER_RUN) break;
@@ -55,7 +60,25 @@ const repairWikilinks = defineProcessorImplementation({
         }
 
         const suggestion = resolver.suggest(match.target);
-        if (suggestion.kind !== "unique") continue;
+        if (suggestion.kind !== "unique") {
+          if (suggestion.kind === "none") {
+            const candidate = stubCandidateForWikilinkTarget(match.target);
+            if (candidate !== null) {
+              const sourceRef = ctx.sourceRef(path, {
+                startLine: match.line,
+                endLine: match.line,
+                startChar: match.startChar,
+                endChar: match.endChar,
+              });
+              addWikilinkStubRequest(stubRequests, {
+                candidate,
+                sourcePath: path,
+                sourceRef,
+              });
+            }
+          }
+          continue;
+        }
 
         replacements.push({
           startOffset: match.startOffset,
@@ -80,13 +103,30 @@ const repairWikilinks = defineProcessorImplementation({
       sourceRefs.push(...replacementSourceRefs);
     }
 
+    const hasStubChanges = stubRequests.size > 0;
+    for (const request of [...stubRequests.values()].sort((a, b) =>
+      a.candidate.path.localeCompare(b.candidate.path)
+    )) {
+      changes.push({
+        kind: "write",
+        path: request.candidate.path,
+        content: renderWikilinkStubPage({
+          candidate: request.candidate,
+          sourcePaths: request.sourcePaths,
+        }),
+      });
+      sourceRefs.push(...request.sourceRefs);
+    }
+
     if (changes.length === 0) return [];
 
     return [
       patchEffect({
         mode: "auto",
         changes,
-        reason: "repair obvious managed wikilinks",
+        reason: hasStubChanges
+          ? "repair obvious managed wikilinks and create source-backed stubs"
+          : "repair obvious managed wikilinks",
         sourceRefs,
       }),
     ];
@@ -94,3 +134,5 @@ const repairWikilinks = defineProcessorImplementation({
 });
 
 export default repairWikilinks;
+
+type StubRequest = WikilinkStubRequest<SourceRef>;
