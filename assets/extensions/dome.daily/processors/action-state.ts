@@ -298,6 +298,21 @@ export function uniqueSourceRefs(
   return Object.freeze(out);
 }
 
+export function selectDailyActionRows<T extends { readonly source: DailyActionSource }>(
+  items: ReadonlyArray<T>,
+  limit: number,
+): ReadonlyArray<T> {
+  const boundedLimit = Number.isInteger(limit) && limit > 0 ? limit : 0;
+  if (boundedLimit === 0) return Object.freeze([]);
+  const daily = items
+    .filter((item) => item.source === "daily")
+    .slice(0, boundedLimit);
+  const backlog = items
+    .filter((item) => item.source === "backlog")
+    .slice(0, boundedLimit);
+  return Object.freeze([...daily, ...backlog]);
+}
+
 function parseDateString(value: string | null): DailyDate | null {
   if (value === null) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);

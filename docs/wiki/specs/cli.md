@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -871,8 +871,14 @@ daily-note and backlog groups separately so a large management vault does not
 make today's own plan indistinguishable from long-running project/entity task
 debt.
 
-`--limit` bounds open-task, followup, and question rows while preserving total
-counts, so real management vaults with large task backlogs stay readable.
+`--limit` bounds open-task, followup, and question rows per source group while
+preserving total counts, so real management vaults with large task backlogs
+stay readable without hiding the target daily note or the wider backlog
+entirely. For each action category, the processor selects up to `<limit>`
+`daily` rows and up to `<limit>` `backlog` rows after folding and sorting.
+Text mode renders omitted-row hints per source group; JSON `shown` / `omitted`
+fields report the actual bounded array lengths and may show more than
+`<limit>` rows for a category when both source groups have matching items.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
 `dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, and the folded row's
@@ -911,13 +917,18 @@ Daily question rows in the markdown packet include the same durable row id and
 `dome resolve <id> <value>` hint as `dome check`, so a planning packet can be
 acted on without a separate diagnostic command when the decision is clear.
 
-`--limit` bounds each rendered section, the prioritized start list, and the
-markdown packet's SourceRefs section. `--json` emits the structured
-`dome.daily.prep/v1` payload, including `dueCounts`, `shown` / `omitted`
-counts for the bounded start list and action sections, task-derived `dueDate` /
-`priority` / `lastChangedAt` metadata, compact `evidenceLabel` values, plus the
-markdown packet under `markdown`. `--date` is for prepping a chosen day and for
-deterministic tests; omitted means local today.
+`--limit` bounds the prioritized start list and samples detailed action
+sections per source group, using the same "up to `<limit>` daily rows plus up
+to `<limit>` backlog rows" rule as `dome today`. Detailed sections do not
+repeat rows already shown in "Start Here"; they render an "already listed"
+count and then show the remaining bounded rows by source group. The markdown
+packet's SourceRefs section is bounded by the rendered planning/action scope.
+`--json` emits the structured `dome.daily.prep/v1` payload, including
+`dueCounts`, `shown` / `omitted` counts for the bounded start list and action
+sections, task-derived `dueDate` / `priority` / `lastChangedAt` metadata,
+compact `evidenceLabel` values, plus the markdown packet under `markdown`.
+`--date` is for prepping a chosen day and for deterministic tests; omitted
+means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 

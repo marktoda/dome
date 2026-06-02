@@ -8,6 +8,154 @@ import { scenario } from "../../index";
 
 scenario(
   {
+    name: "cli-surface: dome prep samples daily and backlog detail rows within the limit",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "- [ ] Daily one",
+          "- [ ] Daily two",
+          "- [ ] Daily three",
+          "",
+        ].join("\n"),
+        "wiki/projects/backlog.md": [
+          "# Backlog",
+          "",
+          "- [ ] Backlog one",
+          "- [ ] Backlog two",
+          "- [ ] Backlog three",
+          "",
+        ].join("\n"),
+      },
+      message: "add prep daily and backlog tasks",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli([
+      "prep",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+      "--json",
+    ]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly limit: number;
+      readonly counts: { readonly openTasks: number };
+      readonly sourceCounts: {
+        readonly daily: { readonly openTasks: number };
+        readonly backlog: { readonly openTasks: number };
+      };
+      readonly shown: {
+        readonly planningItems: number;
+        readonly followups: number;
+        readonly openTasks: number;
+        readonly questions: number;
+      };
+      readonly omitted: {
+        readonly planningItems: number;
+        readonly followups: number;
+        readonly openTasks: number;
+        readonly questions: number;
+      };
+      readonly planningItems: ReadonlyArray<{
+        readonly text: string;
+        readonly path: string;
+      }>;
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly source: "daily" | "backlog";
+      }>;
+      readonly markdown: string;
+    };
+    expect(payload.limit).toBe(2);
+    expect(payload.counts.openTasks).toBe(6);
+    expect(payload.sourceCounts.daily.openTasks).toBe(3);
+    expect(payload.sourceCounts.backlog.openTasks).toBe(3);
+    expect(payload.shown).toEqual({
+      planningItems: 2,
+      followups: 0,
+      openTasks: 4,
+      questions: 0,
+    });
+    expect(payload.omitted).toEqual({
+      planningItems: 4,
+      followups: 0,
+      openTasks: 2,
+      questions: 0,
+    });
+    expect(payload.planningItems.map((item) => item.text)).toEqual([
+      "Daily one",
+      "Daily two",
+    ]);
+    expect(payload.openTasks.map((task) => task.text)).toEqual([
+      "Daily one",
+      "Daily two",
+      "Backlog one",
+      "Backlog two",
+    ]);
+    expect(payload.openTasks.map((task) => task.source)).toEqual([
+      "daily",
+      "daily",
+      "backlog",
+      "backlog",
+    ]);
+    expect(payload.markdown).toContain(
+      "- 2 open tasks already listed in Start Here",
+    );
+    expect(payload.markdown).toContain("- Wider wiki backlog");
+    expect(payload.markdown).toContain("Backlog one");
+    expect(payload.markdown).toContain("Backlog two");
+    expect(payload.markdown).not.toContain("Backlog three");
+
+    const text = await h.runCli([
+      "prep",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+    ]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain("## Start Here");
+    expect(text.stdout).toContain("[task] Daily one");
+    expect(text.stdout).toContain("[task] Daily two");
+    expect(text.stdout).toContain(
+      "- 2 open tasks already listed in Start Here",
+    );
+    expect(text.stdout).toContain("- Wider wiki backlog");
+    expect(text.stdout).toContain("Backlog one");
+    expect(text.stdout).toContain("Backlog two");
+    expect(text.stdout).not.toContain("Daily three");
+    expect(text.stdout).not.toContain("Backlog three");
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome prep renders source-backed planning context",
     tags: [
       { kind: "group", group: "cli-surface" },

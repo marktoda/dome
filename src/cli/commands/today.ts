@@ -240,7 +240,7 @@ function appendTaskGroups(input: {
         0,
         input.itemLabel,
         "    ",
-        input.total,
+        totalForSource,
       );
       continue;
     }
@@ -255,7 +255,7 @@ function appendTaskGroups(input: {
       tasks.length,
       input.itemLabel,
       "    ",
-      input.total,
+      totalForSource,
     );
   }
 }
@@ -283,7 +283,7 @@ function appendQuestionGroups(lines: string[], today: TodayData): void {
       questions.length,
       "questions",
       "    ",
-      today.counts.questions,
+      totalForSource,
     );
   }
 }
@@ -302,10 +302,18 @@ function appendMoreLine(
 ): void {
   const remaining = total - shown;
   if (remaining <= 0) return;
+  const itemLabel = remaining === 1 ? singularLabel(label) : label;
   const hint = `(use --limit ${limitHintTotal} to show all)`;
   lines.push(
-    `${indent}... ${remaining} more ${label} ${hint}`,
+    `${indent}... ${remaining} more ${itemLabel} ${hint}`,
   );
+}
+
+function singularLabel(label: string): string {
+  if (label === "open tasks") return "open task";
+  if (label === "questions") return "question";
+  if (label === "followups") return "followup";
+  return label;
 }
 
 function parseTasks(raw: unknown): ReadonlyArray<TodayTask> {

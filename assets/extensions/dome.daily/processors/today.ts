@@ -15,6 +15,7 @@ import {
   collectDailyActionState,
   inputDateOrLocalToday,
   parseInputLimit,
+  selectDailyActionRows,
   uniqueSourceRefs,
 } from "./action-state";
 
@@ -23,7 +24,7 @@ const DEFAULT_LIMIT = 12;
 
 const today: Processor = defineProcessor({
   id: "dome.daily.today",
-  version: "0.1.10",
+  version: "0.1.11",
   phase: "view",
   triggers: [{ kind: "command", name: "today" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -33,9 +34,9 @@ const today: Processor = defineProcessor({
       ctx,
       inputDateOrLocalToday(ctx.input),
     );
-    const openTasks = Object.freeze(actionState.openTasks.slice(0, limit));
-    const followups = Object.freeze(actionState.followups.slice(0, limit));
-    const questions = Object.freeze(actionState.questions.slice(0, limit));
+    const openTasks = selectDailyActionRows(actionState.openTasks, limit);
+    const followups = selectDailyActionRows(actionState.followups, limit);
+    const questions = selectDailyActionRows(actionState.questions, limit);
     const shown = Object.freeze({
       openTasks: openTasks.length,
       followups: followups.length,

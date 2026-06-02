@@ -18,6 +18,7 @@ import {
   collectDailyActionState,
   inputDateOrLocalToday,
   parseInputLimit,
+  selectDailyActionRows,
   uniqueSourceRefs,
   type DailyActionState,
   type DailyDueCounts,
@@ -31,7 +32,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.12",
+  version: "0.1.13",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -46,9 +47,9 @@ const prep: Processor = defineProcessor({
       Number.MAX_SAFE_INTEGER,
     );
     const planningItems = Object.freeze(allPlanningItems.slice(0, limit));
-    const followups = Object.freeze(actionState.followups.slice(0, limit));
-    const openTasks = Object.freeze(actionState.openTasks.slice(0, limit));
-    const questions = Object.freeze(actionState.questions.slice(0, limit));
+    const followups = selectDailyActionRows(actionState.followups, limit);
+    const openTasks = selectDailyActionRows(actionState.openTasks, limit);
+    const questions = selectDailyActionRows(actionState.questions, limit);
     const shown = Object.freeze({
       planningItems: planningItems.length,
       followups: followups.length,

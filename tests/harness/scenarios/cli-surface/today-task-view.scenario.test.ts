@@ -585,6 +585,116 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome today samples daily and backlog rows within the limit",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "- [ ] Daily one",
+          "- [ ] Daily two",
+          "- [ ] Daily three",
+          "",
+        ].join("\n"),
+        "wiki/projects/backlog.md": [
+          "# Backlog",
+          "",
+          "- [ ] Backlog one",
+          "- [ ] Backlog two",
+          "- [ ] Backlog three",
+          "",
+        ].join("\n"),
+      },
+      message: "add daily and backlog tasks",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli([
+      "today",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+      "--json",
+    ]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly limit: number;
+      readonly counts: { readonly openTasks: number };
+      readonly sourceCounts: {
+        readonly daily: { readonly openTasks: number };
+        readonly backlog: { readonly openTasks: number };
+      };
+      readonly shown: { readonly openTasks: number };
+      readonly omitted: { readonly openTasks: number };
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly source: "daily" | "backlog";
+      }>;
+    };
+    expect(payload.limit).toBe(2);
+    expect(payload.counts.openTasks).toBe(6);
+    expect(payload.sourceCounts.daily.openTasks).toBe(3);
+    expect(payload.sourceCounts.backlog.openTasks).toBe(3);
+    expect(payload.shown.openTasks).toBe(4);
+    expect(payload.omitted.openTasks).toBe(2);
+    expect(payload.openTasks.map((task) => task.text)).toEqual([
+      "Daily one",
+      "Daily two",
+      "Backlog one",
+      "Backlog two",
+    ]);
+    expect(payload.openTasks.map((task) => task.source)).toEqual([
+      "daily",
+      "daily",
+      "backlog",
+      "backlog",
+    ]);
+
+    const text = await h.runCli([
+      "today",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "2",
+    ]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain("Daily one");
+    expect(text.stdout).toContain("Daily two");
+    expect(text.stdout).not.toContain("Daily three");
+    expect(text.stdout).toContain("Backlog one");
+    expect(text.stdout).toContain("Backlog two");
+    expect(text.stdout).not.toContain("Backlog three");
+    expect(text.stdout).toContain(
+      "... 1 more open task (use --limit 3 to show all)",
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome today ranks backlog by due proximity and recency",
     tags: [
       { kind: "group", group: "cli-surface" },
