@@ -1,11 +1,11 @@
 ---
 type: spec
-created: 2026-05-28T00:00:00.000Z
-updated: 2026-05-29T00:00:00.000Z
+created: 2026-05-28
+updated: 2026-06-02
 sources:
-  - '[[wiki/specs/processors]]'
-  - '[[wiki/specs/run-ledger]]'
-  - '[[wiki/specs/effects]]'
+  - "[[wiki/specs/processors]]"
+  - "[[wiki/specs/run-ledger]]"
+  - "[[wiki/specs/effects]]"
 ---
 
 # Processor execution
