@@ -361,3 +361,36 @@ Qualitative read:
 - This does not close V1. The M10 gap remains elapsed dogfood proof across
   real work days, especially capture digestion while `dome.intake` is enabled
   and model-assisted consolidation/question handling are exercised.
+
+## 2026-06-02 Optional Anthropic Capture Smoke
+
+Dogfood action:
+
+- Added `bun run v1:llm-smoke` as an optional networked smoke for the
+  scaffolded Anthropic command-provider path.
+- The smoke creates a temporary vault with
+  `dome init --with-model-provider anthropic`, enables `dome.intake`, commits
+  one raw capture, runs `dome sync`, checks generated/archived capture output,
+  queries the adopted state, and runs a second sync pass to verify settlement.
+- The default `v1:check` gate remains offline and deterministic; this smoke is
+  for explicit local/API-backed V1 evidence.
+
+Operational result:
+
+- First attempt exposed a harness issue: the temporary vault inherited local
+  GPG commit signing and failed before Dome could run. The smoke now disables
+  signing only for its disposable git commands.
+- Second attempt digested the capture through the real Anthropic provider and
+  passed:
+  `v1-llm-smoke: ok | generated wiki/generated/intake/v1-llm-smoke-8935059556ce.md | archive inbox/processed/v1-llm-smoke-8935059556ce.md | sync_heads ca939a1 -> ca939a1 | diagnostics 0 | questions 1`.
+- The remaining question was low-risk and `agent-safe`, which is acceptable V1
+  behavior: the model path preserved uncertainty instead of silently asserting
+  the follow-up.
+
+Qualitative read:
+
+- This materially strengthens M2/M3 evidence for the real model-provider path.
+  The capture loop now has a repeatable smoke that exercises actual networked
+  model invocation without making normal tests depend on external services.
+- This still does not close M10. It proves one controlled capture path, not a
+  week of real work-vault capture digestion.
