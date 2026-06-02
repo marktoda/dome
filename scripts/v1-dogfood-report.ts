@@ -190,6 +190,16 @@ const contradictoryServeHostPatterns: readonly RegExp[] = Object.freeze([
   /\b(off|stale|stopped|not running|wrong branch|different branch|no running host)\b/i,
 ]);
 
+const serveHostBranchEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\bbranch\s+[A-Za-z0-9._/-]+\b/i,
+  /`?["']?serve_branch["']?`?\s*:\s*["']?[A-Za-z0-9._/-]+["']?/i,
+]);
+
+const serveHostPidEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\bpid\s+\d+\b/i,
+  /`?["']?serve_pid["']?`?\s*:\s*["']?\d+["']?/i,
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -563,8 +573,15 @@ function hasServeHostEvidence(text: string): boolean {
     }
     return !contradictoryServeHostPatterns.some((pattern) =>
       pattern.test(normalized)
-    );
+    ) && hasMeasuredServeHostDetails(normalized);
   });
+}
+
+function hasMeasuredServeHostDetails(line: string): boolean {
+  return (
+    serveHostBranchEvidencePatterns.some((pattern) => pattern.test(line)) &&
+    serveHostPidEvidencePatterns.some((pattern) => pattern.test(line))
+  );
 }
 
 function hasCaptureEvidence(text: string): boolean {

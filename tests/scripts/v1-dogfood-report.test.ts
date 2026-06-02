@@ -621,6 +621,51 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].serveHostEvidence).toBe(false);
   });
 
+  test("requires measured branch and pid details for serve-host evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
+- Serve host: running
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.serveHostEvidenceDays).toBe(0);
+    expect(report.days[0].operationalEvidence).toBe(true);
+    expect(report.days[0].serveHostEvidence).toBe(false);
+  });
+
   test("counts backticked verified serve status as host evidence", async () => {
     const ledger = writeLedger(`
 # Test ledger

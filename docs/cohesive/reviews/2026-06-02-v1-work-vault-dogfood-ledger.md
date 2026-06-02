@@ -1522,3 +1522,33 @@ Qualitative read:
   pins the user-facing workflow to the consolidated V1 command model, which
   keeps foreground agents pointed at context packets, query, status, check, and
   prepared markdown surfaces instead of narrow deterministic one-off views.
+
+## 2026-06-02 M10 Measured Host-Evidence Tightening
+
+Verification action:
+
+- Re-audited the M10 report host-evidence parser after confirming the real
+  dogfood snapshot emits measured heartbeat details.
+- Found one remaining overclaim path: a hand-written bare `Serve host: running`
+  line counted as serve-host evidence even without branch or PID details.
+- Tightened `bun run v1:dogfood-report` so host evidence requires both a
+  running host signal and measured branch/PID details on the evidence line.
+  This matches the `v1:dogfood-snapshot` output and `dome status --json`
+  fields while still accepting verified backticked status snippets such as
+  `serve_status: running`, `serve_pid: 123`, and `serve_branch: main`.
+
+Measured result:
+
+- Added a regression where an otherwise complete day with only
+  `Serve host: running` remains partial with 0 serve-host evidence days.
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passed with 25 tests and
+  183 assertions.
+- `bun run v1:dogfood-report -- --json` still reports the current work-vault
+  ledger as `not-ready` with 1 complete workday, 1 serve-host evidence day, 1
+  capture-evidence day, a 1-day span, and 0 release blockers.
+
+Qualitative read:
+
+- This makes M10 host evidence harder to fake accidentally and keeps the final
+  release gate aligned with measured Dome heartbeat output rather than
+  free-form optimistic notes.
