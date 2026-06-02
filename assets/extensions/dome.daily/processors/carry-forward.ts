@@ -26,6 +26,7 @@ import {
   localDateParts,
   completedSourceBackedOpenLoopsFromMarkdown,
   openLoopIdentity,
+  openLoopSurfaceKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   parseDailyPath,
@@ -45,7 +46,7 @@ const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.3",
+  version: "0.2.4",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -102,7 +103,7 @@ const carryForward: Processor = defineProcessor({
         content,
       }),
     );
-    const resolvedIdentities = await collectResolvedOpenLoopIdentities({
+    const resolvedKeys = await collectResolvedOpenLoopIdentities({
       ctx,
       targetPath,
       targetContent: content,
@@ -112,7 +113,7 @@ const carryForward: Processor = defineProcessor({
       ctx,
       targetPath,
       settings,
-      resolvedIdentities,
+      resolvedKeys,
     });
     const nextContent = replaceOpenLoopSurfaceSection({
       content: replaceDailyStartContextSection({
@@ -172,9 +173,9 @@ async function collectOpenLoopSources(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
   readonly settings: DailyPathSettings;
-  readonly resolvedIdentities: ReadonlySet<string>;
+  readonly resolvedKeys: ResolvedOpenLoopKeys;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
-  const { ctx, targetPath, settings, resolvedIdentities } = input;
+  const { ctx, targetPath, settings, resolvedKeys } = input;
   const items: DailyOpenLoopCandidate[] = [];
   for (const path of await ctx.snapshot.listMarkdownFiles()) {
     if (path === targetPath) continue;
@@ -182,7 +183,12 @@ async function collectOpenLoopSources(input: {
     if (content === null) continue;
     const info = await ctx.snapshot.getFileInfo(path);
     for (const item of openLoopSurfaceSources({ path, content, settings })) {
-      if (resolvedIdentities.has(openLoopIdentity(item))) continue;
+      if (
+        resolvedKeys.identities.has(openLoopIdentity(item)) ||
+        resolvedKeys.surfaceKeys.has(openLoopSurfaceKey(item))
+      ) {
+        continue;
+      }
       items.push({
         ...item,
         lastChangedAt: info?.lastChangedAt ?? "",
@@ -222,9 +228,12 @@ async function collectResolvedOpenLoopIdentities(input: {
   readonly targetPath: string;
   readonly targetContent: string;
   readonly targetResolvedItems: ReadonlyArray<DailyResolvedOpenLoopSource>;
-}): Promise<ReadonlySet<string>> {
-  const resolved = new Set(
+}): Promise<ResolvedOpenLoopKeys> {
+  const identities = new Set(
     input.targetResolvedItems.map((item) => openLoopIdentity(item)),
+  );
+  const surfaceKeys = new Set(
+    input.targetResolvedItems.map((item) => openLoopSurfaceKey(item)),
   );
   for (const path of await input.ctx.snapshot.listMarkdownFiles()) {
     const content =
@@ -236,11 +245,20 @@ async function collectResolvedOpenLoopIdentities(input: {
       path,
       content,
     })) {
-      resolved.add(openLoopIdentity(item));
+      identities.add(openLoopIdentity(item));
+      surfaceKeys.add(openLoopSurfaceKey(item));
     }
   }
-  return resolved;
+  return Object.freeze({
+    identities,
+    surfaceKeys,
+  });
 }
+
+type ResolvedOpenLoopKeys = {
+  readonly identities: ReadonlySet<string>;
+  readonly surfaceKeys: ReadonlySet<string>;
+};
 
 function patchSourceRefs(
   ctx: ProcessorContext,

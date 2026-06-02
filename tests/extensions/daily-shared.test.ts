@@ -11,10 +11,12 @@ import {
   openLoopIdentity,
   openLoopStableId,
   openLoopSurfaceSection,
+  openLoopSurfaceKey,
   openLoopSurfaceSources,
   openTasksFromMarkdown,
   parseDailyPath,
   previousDailyStartContext,
+  rankDailyOpenLoopSurfaceItems,
   renderDailySkeleton,
   replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
@@ -340,6 +342,55 @@ describe("dome.daily shared date helpers", () => {
     expect(
       replaceOpenLoopSurfaceSection({ content: next, section }),
     ).toBe(next);
+  });
+
+  test("rankDailyOpenLoopSurfaceItems folds repeated surface loops", () => {
+    const duplicateBody = "Send budget update";
+    expect(openLoopSurfaceKey({ body: duplicateBody })).toBe(
+      "send budget update",
+    );
+
+    const ranked = rankDailyOpenLoopSurfaceItems([
+      {
+        line: 4,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/old.md",
+          body: duplicateBody,
+        }),
+        body: duplicateBody,
+        followup: false,
+        sourcePath: "wiki/projects/old.md",
+        lastChangedAt: "2026-01-01T09:00:00.000Z",
+      },
+      {
+        line: 8,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/new.md",
+          body: duplicateBody,
+        }),
+        body: duplicateBody,
+        followup: false,
+        sourcePath: "wiki/projects/new.md",
+        lastChangedAt: "2026-01-05T09:00:00.000Z",
+      },
+      {
+        line: 2,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/other.md",
+          body: "Confirm Q3 plan",
+        }),
+        body: "Confirm Q3 plan",
+        followup: false,
+        sourcePath: "wiki/projects/other.md",
+        lastChangedAt: "2026-01-03T09:00:00.000Z",
+      },
+    ]);
+
+    expect(ranked.map((item) => item.body)).toEqual([
+      duplicateBody,
+      "Confirm Q3 plan",
+    ]);
+    expect(ranked[0]?.sourcePath).toBe("wiki/projects/new.md");
   });
 
   test("openLoopSurfaceSources filters unmarked non-daily checklists", () => {

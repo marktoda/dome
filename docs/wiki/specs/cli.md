@@ -832,21 +832,25 @@ daily line.
 
 Checking off a generated source-backed item is still meaningful markdown
 evidence. On the next carry-forward pass, Dome keeps the checked row under
-`### Resolved Today` in that daily note and suppresses the same source/body
-identity from future daily surfaces. This lets the daily note act as a
-collaborative work queue without mutating the original source note or storing
-hidden dismissal state in `.dome/state`.
+`### Resolved Today` in that daily note and suppresses both the same
+source/body identity and equivalent repeated surface loops from future daily
+surfaces. This lets the daily note act as a collaborative work queue without
+mutating the original source note or storing hidden dismissal state in
+`.dome/state`.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
-Items from the target daily note sort before the wider vault backlog and
-preserve source line order. Wider-backlog task and followup rows then sort by
-explicit action metadata before recency and path / line / text: due dates on or
-before the target day first, priority-only rows next, future-dated rows after
-that, and undated/unprioritized rows last. Within the same metadata bucket,
-overdue rows closest to the target day sort before older overdue rows, future
-rows sort soonest first, and rows from more recently changed source files sort
-before older source files. Priority markers use the Obsidian Tasks emoji order
+Repeated task/followup facts with the same semantic surface key fold into one
+display row before counts and limits are computed; the representative keeps all
+backing SourceRefs so agents can still inspect every source mention. Items from
+the target daily note sort before the wider vault backlog and preserve source
+line order. Wider-backlog task and followup rows then sort by explicit action
+metadata before recency and path / line / text: due dates on or before the
+target day first, priority-only rows next, future-dated rows after that, and
+undated/unprioritized rows last. Within the same metadata bucket, overdue rows
+closest to the target day sort before older overdue rows, future rows sort
+soonest first, and rows from more recently changed source files sort before
+older source files. Priority markers use the Obsidian Tasks emoji order
 (`highest`, `high`, `medium`, `low`, `lowest`); due dates use `YYYY-MM-DD`
 values following the `📅` marker. Text mode renders the
 daily-note and backlog groups separately so a large management vault does not
@@ -857,10 +861,10 @@ debt.
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
-`dueDate`, `priority`, and `lastChangedAt` fields. `shown` and `omitted` mirror
-the bounded arrays so agents do not need to infer truncation from array lengths.
-`--date` is for reviewing another day and for deterministic tests; omitted
-means local today.
+`dueDate`, `priority`, `lastChangedAt`, and the folded row's complete
+`sourceRefs`. `shown` and `omitted` mirror the bounded arrays so agents do not
+need to infer truncation from array lengths. `--date` is for reviewing another
+day and for deterministic tests; omitted means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 

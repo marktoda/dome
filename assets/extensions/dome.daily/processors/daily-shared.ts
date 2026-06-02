@@ -436,6 +436,10 @@ export function openLoopIdentity(input: {
   return openLoopStableId(input);
 }
 
+export function openLoopSurfaceKey(input: { readonly body: string }): string {
+  return normalizeOpenLoopBody(input.body);
+}
+
 export function openLoopStableId(input: {
   readonly sourcePath: string;
   readonly body: string;
@@ -457,11 +461,15 @@ export function rankDailyOpenLoopSurfaceItems(
   limit = 12,
 ): ReadonlyArray<DailyOpenLoopSource> {
   const seen = new Set<string>();
+  const seenSurface = new Set<string>();
   const out: DailyOpenLoopSource[] = [];
   for (const item of [...items].sort(compareOpenLoopSources)) {
     const key = openLoopIdentity(item);
     if (seen.has(key)) continue;
     seen.add(key);
+    const surfaceKey = openLoopSurfaceKey(item);
+    if (seenSurface.has(surfaceKey)) continue;
+    seenSurface.add(surfaceKey);
     out.push(stripCandidateMetadata(item));
     if (out.length >= limit) break;
   }

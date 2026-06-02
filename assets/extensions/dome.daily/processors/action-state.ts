@@ -18,6 +18,7 @@ import {
   formatDate,
   isValidDailyDate,
   localDateParts,
+  openLoopSurfaceKey,
   parseDailyPath,
   type DailyDate,
   type DailyPathSettings,
@@ -156,6 +157,8 @@ export async function collectDailyActionState(
       })
     )
     .sort(compareTaskItemsForDaily(path, settings));
+  const dedupedOpenTasks = dedupeDailyTaskItems(openTasks);
+  const dedupedFollowups = dedupeDailyTaskItems(followups);
   const questions = questionEffects
     .map((question) =>
       questionItemFromEffect({
@@ -166,20 +169,20 @@ export async function collectDailyActionState(
     )
     .sort(compareQuestionItemsForDaily(path));
   const sourceCounts = countDailyActionSources({
-    openTasks,
-    followups,
+    openTasks: dedupedOpenTasks,
+    followups: dedupedFollowups,
     questions,
   });
   const dueCounts = countDailyActionDue({
     date: dateString,
-    openTasks,
-    followups,
+    openTasks: dedupedOpenTasks,
+    followups: dedupedFollowups,
   });
 
   const scope = uniqueSourceRefs([
     ...dailySourceRefs,
-    ...openTasks.flatMap((task) => task.sourceRefs),
-    ...followups.flatMap((task) => task.sourceRefs),
+    ...dedupedOpenTasks.flatMap((task) => task.sourceRefs),
+    ...dedupedFollowups.flatMap((task) => task.sourceRefs),
     ...questions.flatMap((question) => question.sourceRefs),
   ]);
 
@@ -191,14 +194,14 @@ export async function collectDailyActionState(
       sourceRefs: Object.freeze(dailySourceRefs),
     }),
     counts: Object.freeze({
-      openTasks: openTasks.length,
-      followups: followups.length,
+      openTasks: dedupedOpenTasks.length,
+      followups: dedupedFollowups.length,
       questions: questions.length,
     }),
     sourceCounts,
     dueCounts,
-    openTasks: Object.freeze(openTasks),
-    followups: Object.freeze(followups),
+    openTasks: dedupedOpenTasks,
+    followups: dedupedFollowups,
     questions: Object.freeze(questions),
     scope,
   });
@@ -462,6 +465,44 @@ function uniqueFactsByKey(
     out.push(fact);
   }
   return Object.freeze(out);
+}
+
+function dedupeDailyTaskItems(
+  items: ReadonlyArray<DailyTaskItem>,
+): ReadonlyArray<DailyTaskItem> {
+  const bySurfaceKey = new Map<string, DailyTaskItem>();
+  for (const item of items) {
+    const key = taskSurfaceKey(item);
+    const existing = bySurfaceKey.get(key);
+    if (existing === undefined) {
+      bySurfaceKey.set(key, item);
+      continue;
+    }
+    bySurfaceKey.set(key, mergeDailyTaskItems(existing, item));
+  }
+  return Object.freeze([...bySurfaceKey.values()]);
+}
+
+function mergeDailyTaskItems(
+  primary: DailyTaskItem,
+  duplicate: DailyTaskItem,
+): DailyTaskItem {
+  return Object.freeze({
+    ...primary,
+    followup: primary.followup || duplicate.followup,
+    sourceRefs: uniqueSourceRefs([
+      ...primary.sourceRefs,
+      ...duplicate.sourceRefs,
+    ]),
+  });
+}
+
+function taskSurfaceKey(item: DailyTaskItem): string {
+  return [
+    openLoopSurfaceKey({ body: item.text }),
+    item.dueDate ?? "",
+    item.priority ?? "",
+  ].join("\u0000");
 }
 
 function literalIdentity(value: FactEffect["object"]): string {

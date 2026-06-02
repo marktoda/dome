@@ -467,6 +467,94 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome today folds repeated source-backed open loops",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/old.md": [
+          "# Old Project",
+          "",
+          "TODO: Ship Conv 1 written follow-up 📅 2026-01-04 🔺",
+          "",
+        ].join("\n"),
+      },
+      message: "add old duplicate task",
+      author: {
+        name: "dome-test",
+        email: "test@local",
+        timestamp: Date.parse("2026-01-01T09:00:00.000Z") / 1000,
+      },
+    });
+    const oldSync = await h.tick();
+    expect(oldSync.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/new.md": [
+          "# New Project",
+          "",
+          "TODO: Ship Conv 1 written follow-up 📅 2026-01-04 🔺",
+          "TODO: Draft launch staffing note",
+          "",
+        ].join("\n"),
+      },
+      message: "add fresh duplicate task",
+      author: {
+        name: "dome-test",
+        email: "test@local",
+        timestamp: Date.parse("2026-01-05T09:00:00.000Z") / 1000,
+      },
+    });
+    const newSync = await h.tick();
+    expect(newSync.adopted).toBe(true);
+
+    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly counts: { readonly openTasks: number };
+      readonly sourceCounts: {
+        readonly backlog: { readonly openTasks: number };
+      };
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly path: string;
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+    };
+
+    expect(payload.counts.openTasks).toBe(2);
+    expect(payload.sourceCounts.backlog.openTasks).toBe(2);
+    expect(payload.openTasks.map((task) => task.text)).toEqual([
+      "Ship Conv 1 written follow-up",
+      "Draft launch staffing note",
+    ]);
+    expect(payload.openTasks[0]?.path).toBe("wiki/projects/new.md");
+    expect(payload.openTasks[0]?.sourceRefs.map((ref) => ref.path).sort())
+      .toEqual(["wiki/projects/new.md", "wiki/projects/old.md"]);
+
+    const text = await h.runCli(["today", "--date", "2026-01-05"]);
+    expect(text.exitCode).toBe(0);
+    expect(occurrences(text.stdout, "Ship Conv 1 written follow-up")).toBe(1);
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome today respects configured daily note path",
     tags: [
       { kind: "group", group: "cli-surface" },
@@ -536,3 +624,8 @@ extensions:
     expect(payload.sourceCounts.backlog.openTasks).toBe(1);
   },
 );
+
+function occurrences(value: string, needle: string): number {
+  if (needle.length === 0) return 0;
+  return value.split(needle).length - 1;
+}

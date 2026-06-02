@@ -45,7 +45,7 @@ type ScheduleInput = {
 
 const createDaily: Processor = defineProcessor({
   id: "dome.daily.create-daily",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: DAILY_CRON }],
   capabilities: [

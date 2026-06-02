@@ -285,6 +285,12 @@ extensions:
           "Follow up: Confirm Q3 plan with Eli",
           "",
         ].join("\n"),
+        "wiki/projects/beta.md": [
+          "# Beta",
+          "",
+          "TODO: Send budget update",
+          "",
+        ].join("\n"),
         "wiki/meetings/staff.md": [
           "# Staff",
           "",
@@ -308,6 +314,11 @@ extensions:
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("- [ ] Send budget update (from [[wiki/projects/alpha]])");
+    const daily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(occurrences(daily, "Send budget update")).toBe(1);
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("- [ ] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])");
@@ -394,6 +405,12 @@ extensions:
           "TODO: Send budget update",
           "",
         ].join("\n"),
+        "wiki/projects/beta.md": [
+          "# Beta",
+          "",
+          "TODO: Send budget update",
+          "",
+        ].join("\n"),
       },
       message: "add source open loop",
     });
@@ -454,3 +471,8 @@ extensions:
       .toNotContain("Send budget update");
   },
 );
+
+function occurrences(value: string, needle: string): number {
+  if (needle.length === 0) return 0;
+  return value.split(needle).length - 1;
+}

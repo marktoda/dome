@@ -1,8 +1,8 @@
 id: dome.daily
-version: 0.1.10
+version: 0.1.11
 processors:
   - id: dome.daily.create-daily
-    version: 0.1.3
+    version: 0.1.4
     phase: garden
     triggers:
       - kind: schedule
@@ -59,7 +59,7 @@ processors:
     module: processors/ambiguous-followup-answer.ts
 
   - id: dome.daily.today
-    version: 0.1.8
+    version: 0.1.9
     phase: view
     triggers:
       - kind: command
@@ -70,7 +70,7 @@ processors:
     module: processors/today.ts
 
   - id: dome.daily.prep
-    version: 0.1.10
+    version: 0.1.11
     phase: view
     triggers:
       - kind: command
@@ -92,7 +92,7 @@ processors:
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.2.3
+    version: 0.2.4
     phase: garden
     triggers:
       - kind: schedule
