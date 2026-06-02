@@ -200,7 +200,6 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 id: dome.intake
 version: 0.4.4
 description: "Compile raw captures into wiki updates."
-deps: []                    # optional; future for cross-bundle dependencies
 
 processors:
   - id: dome.intake.capture-index
@@ -333,6 +332,7 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `detail:` discriminator | When it fires |
 |---|---|
 | `root-not-found` | The configured bundles root does not exist or is not a directory. |
+| `bundle-not-found` | `extensions.<bundle>.enabled: true` or an exact-root activation filter names a bundle that is absent from the selected root set. In normal CLI/runtime composition, SDK-shipped and vault-local roots are considered together before this fires. |
 | `manifest-read-failed` | A bundle has neither readable `manifest.yaml` nor `manifest.json`, or the manifest cannot be parsed. |
 | `manifest-invalid` | Zod validation fails (missing `id:`, malformed `version:`, etc.) or a phase × trigger / phase × execution / phase × capability matrix check rejects the declaration. |
 | `processor-module-path-invalid` | A manifest `module:` path is absolute, escapes the bundle root, bypasses `<bundle>/processors/`, or does not point at a `.ts` file. |
@@ -344,11 +344,10 @@ The schema is validated by Zod at bundle load. Invalid manifests fail the load w
 | `external-handler-module-load-failed` | A handler module under `external-handlers/*.ts` fails to import. |
 | `external-handler-missing-default-export` | A handler module imports but does not default-export a function. |
 | `external-handler-collision` | Two loaded bundles register handlers for the same external capability. |
-| `bundle-deps-unmet` | A `deps:` entry names a bundle not present in the selected bundles root. |
 
 ### Bundle load lifecycle
 
-The current runtime composes bundle roots in deterministic order. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`) and append `<vault>/.dome/extensions/` when that directory exists. Later roots override earlier roots by bundle id, so a vault-local bundle can intentionally replace a shipped bundle without a second extension mechanism. `--bundles-root <path>` replaces the composed default with one exact root for tests or ad-hoc development. The composed bundle set is sorted by bundle id before registry construction. Each bundle:
+The current runtime composes bundle roots in deterministic order. CLI commands use the SDK-shipped first-party root by default (`assets/extensions/`, resolved at runtime via `resolveShippedBundlesRoot()`) and append `<vault>/.dome/extensions/` when that directory exists. Later roots override earlier roots by bundle id, so a vault-local bundle can intentionally replace a shipped bundle without a second extension mechanism. `--bundles-root <path>` replaces the composed default with one exact root for tests or ad-hoc development. With `.dome/config.yaml` present, every `extensions.<bundle>.enabled: true` id must resolve in the selected root set; typos fail startup with `bundle-not-found` instead of silently degrading automation. The composed bundle set is sorted by bundle id before registry construction. Each bundle:
 
 1. **Manifest parses + validates.** Processor declarations are bound to imported processor objects.
 2. **Page-types merge.** Entries in `<bundle>/page-types.yaml` are parsed into the runtime `PageTypeRegistry` and threaded to processors as `ctx.pageTypes`; vault-local `.dome/page-types.yaml` remains candidate-bound and is read through `ctx.snapshot`. When the vault-local file changes, adoption invalidates the full projection store because schema diagnostics may change for pages outside the commit's changed-path set.
@@ -358,6 +357,11 @@ The current runtime composes bundle roots in deterministic order. CLI commands u
 6. **External handlers register** by scanning immediate `<bundle>/external-handlers/*.ts` files. The filename stem is the external capability (`calendar.write.ts` registers `calendar.write`), and the module must default-export an async-compatible handler function. Loaded-bundle handler collisions fail before runtime open. Runtime-injected handlers remain available for tests and hosts and override discovered handlers for the same capability.
 
 The bundle loader is **fail-loud**: any bundle-load failure aborts `openVault` with a structured `bundle-load-failed` error. Registry validation failures abort startup with `registry-build-failed`.
+
+V1 does not support cross-bundle dependency declarations in `manifest.yaml`.
+If a behavior depends on another bundle, model that as first-party loop
+metadata, optional processors, or explicit documentation. Future dependency
+support must preserve the same fail-loud activation behavior.
 
 ### First-party bundles
 

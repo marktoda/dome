@@ -30,9 +30,9 @@
 //     directory layout itself is unreadable) propagate.
 //
 // Out of scope for Phase 8 (future polish):
-//   - Cross-bundle dependency ordering (`deps:` field). v1 loads bundles
-//     in alphabetical-directory order; circular / dependent bundles aren't
-//     supported.
+//   - Cross-bundle dependency ordering. v1 manifests do not accept a `deps:`
+//     field; bundles load in alphabetical-directory order within a root and
+//     then in deterministic id order after root composition.
 //   - Bundle install / scaffold logic — that's `dome init` (later phase).
 //   - Scans `<bundle>/external-handlers/*.ts` and registers default-exported
 //     handler functions by filename stem. Handler collision across the selected
@@ -96,6 +96,8 @@ export type BundleManifestSummary = {
  * The closed set of `loadBundles` failures.
  *
  *   - `root-not-found`: `bundlesRoot` doesn't exist or isn't a directory.
+ *   - `bundle-not-found`: the activation filter named one or more bundles
+ *     that do not exist in the selected root set.
  *   - `manifest-read-failed`: a bundle's `manifest.{yaml,json}` was not
  *     readable (missing, permission denied, malformed YAML/JSON syntax).
  *   - `manifest-invalid`: the parsed payload failed `parseManifest` —
@@ -118,6 +120,11 @@ export type BundleManifestSummary = {
  */
 export type LoadBundlesError =
   | { readonly kind: "root-not-found"; readonly path: string }
+  | {
+      readonly kind: "bundle-not-found";
+      readonly bundleIds: ReadonlyArray<string>;
+      readonly bundlesRoots: ReadonlyArray<string>;
+    }
   | {
       readonly kind: "manifest-read-failed";
       readonly bundleId: string;
@@ -235,6 +242,12 @@ export type LoadBundleManifestSummaryFromRootsOpts = {
 export async function loadBundles(
   opts: LoadBundlesOpts,
 ): Promise<Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>> {
+  return loadBundlesInRoot({ ...opts, requireActiveBundleIds: true });
+}
+
+async function loadBundlesInRoot(
+  opts: LoadBundlesOpts & { readonly requireActiveBundleIds: boolean },
+): Promise<Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>> {
   const rootAbs = resolve(opts.bundlesRoot);
 
   // 1. Stat the root. A missing / non-directory root is a hard failure —
@@ -283,6 +296,20 @@ export async function loadBundles(
   }
   bundleDirs.sort();
 
+  if (opts.requireActiveBundleIds && opts.activeBundleIds !== undefined) {
+    const loadedIds = new Set(bundleDirs);
+    const missing = [...opts.activeBundleIds]
+      .filter((bundleId) => !loadedIds.has(bundleId))
+      .sort();
+    if (missing.length > 0) {
+      return err({
+        kind: "bundle-not-found",
+        bundleIds: Object.freeze(missing),
+        bundlesRoots: Object.freeze([rootAbs]),
+      });
+    }
+  }
+
   // 3. Load each bundle in turn. First failure aborts.
   const loaded: LoadedBundle[] = [];
   for (const dirName of bundleDirs) {
@@ -321,15 +348,31 @@ export async function loadBundlesFromRoots(
 ): Promise<Result<ReadonlyArray<LoadedBundle>, LoadBundlesError>> {
   const byId = new Map<string, LoadedBundle>();
   for (const bundlesRoot of opts.bundlesRoots) {
-    const result = await loadBundles({
+    const result = await loadBundlesInRoot({
       bundlesRoot,
       ...(opts.activeBundleIds !== undefined
         ? { activeBundleIds: opts.activeBundleIds }
         : {}),
+      requireActiveBundleIds: false,
     });
     if (!result.ok) return err(result.error);
     for (const bundle of result.value) {
       byId.set(bundle.id, bundle);
+    }
+  }
+
+  if (opts.activeBundleIds !== undefined) {
+    const missing = [...opts.activeBundleIds]
+      .filter((bundleId) => !byId.has(bundleId))
+      .sort();
+    if (missing.length > 0) {
+      return err({
+        kind: "bundle-not-found",
+        bundleIds: Object.freeze(missing),
+        bundlesRoots: Object.freeze(
+          opts.bundlesRoots.map((root) => resolve(root)),
+        ),
+      });
     }
   }
 

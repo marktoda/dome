@@ -254,6 +254,23 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     if (!result.ok) return;
     expect(result.value.map((bundle) => bundle.id)).toEqual(["active.bundle"]);
   });
+
+  test("activeBundleIds fail loudly when a requested bundle is absent from the root", async () => {
+    const root = makeTmpRoot("loader-active-missing-");
+    await writeEmptyBundle(root, "active.bundle");
+
+    const result = await loadBundles({
+      bundlesRoot: root,
+      activeBundleIds: new Set(["active.bundle", "missing.bundle"]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("bundle-not-found");
+    if (result.error.kind !== "bundle-not-found") return;
+    expect(result.error.bundleIds).toEqual(["missing.bundle"]);
+    expect(result.error.bundlesRoots).toEqual([root]);
+  });
 });
 
 describe("loadBundlesFromRoots — composed roots", () => {
@@ -291,6 +308,41 @@ describe("loadBundlesFromRoots — composed roots", () => {
     expect(result.value[0]?.id).toBe("test.override");
     expect(result.value[0]?.version).toBe("0.2.0");
     expect(result.value[0]?.bundlePath).toBe(join(localRoot, "test.override"));
+  });
+
+  test("activeBundleIds may be satisfied by any composed root", async () => {
+    const shippedRoot = makeTmpRoot("loader-roots-active-shipped-");
+    const localRoot = makeTmpRoot("loader-roots-active-local-");
+    await writeEmptyBundle(shippedRoot, "dome.lint");
+    await writeEmptyBundle(localRoot, "custom.local");
+
+    const result = await loadBundlesFromRoots({
+      bundlesRoots: [shippedRoot, localRoot],
+      activeBundleIds: new Set(["custom.local"]),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((bundle) => bundle.id)).toEqual(["custom.local"]);
+  });
+
+  test("activeBundleIds fail loudly when absent from all composed roots", async () => {
+    const shippedRoot = makeTmpRoot("loader-roots-missing-shipped-");
+    const localRoot = makeTmpRoot("loader-roots-missing-local-");
+    await writeEmptyBundle(shippedRoot, "dome.lint");
+    await writeEmptyBundle(localRoot, "custom.local");
+
+    const result = await loadBundlesFromRoots({
+      bundlesRoots: [shippedRoot, localRoot],
+      activeBundleIds: new Set(["dome.lint", "missing.bundle"]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("bundle-not-found");
+    if (result.error.kind !== "bundle-not-found") return;
+    expect(result.error.bundleIds).toEqual(["missing.bundle"]);
+    expect(result.error.bundlesRoots).toEqual([shippedRoot, localRoot]);
   });
 
   test("detects page-type collisions after cross-root composition", async () => {

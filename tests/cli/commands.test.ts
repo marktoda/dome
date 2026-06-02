@@ -3114,6 +3114,25 @@ describe("runStatus", () => {
     expect(out).toContain("serve off (run dome serve)");
   });
 
+  test("fails early when config enables a missing bundle", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  missing.bundle:",
+        "    enabled: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runStatus({ vault: f.vaultPath })).toBe(1);
+    expect(captured.err.join("\n")).toContain(
+      "openVaultRuntime failed (bundle-load-failed)",
+    );
+  });
+
   test("--json mode emits a parseable JSON object with expected keys", async () => {
     const f = await makeFixture();
     fixtures.push(f);

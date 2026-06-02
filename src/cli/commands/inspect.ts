@@ -882,6 +882,8 @@ function inventoryError(
 
 function formatBundleManifestError(error: LoadBundlesError): string {
   switch (error.kind) {
+    case "bundle-not-found":
+      return `bundle-not-found: ${error.bundleIds.join(", ")}`;
     case "manifest-read-failed":
       return `manifest-read-failed: ${error.cause}`;
     case "manifest-invalid":

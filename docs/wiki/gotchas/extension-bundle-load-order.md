@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
@@ -19,14 +19,14 @@ severity: medium
 1. **`page-type-collision`** — two bundles declare `page-types.yaml extensions:` entries with the same `name:`. Or a bundle's page-type name collides with a vault-local declaration in `<vault>/.dome/page-types.yaml`.
 2. **`duplicate-processor-id`** — two bundles register processors with the same fully qualified manifest id. First-party bundles use dotted bundle-prefixed ids such as `dome.daily.task-index`; third-party bundles should use the same convention.
 3. **`external-handler-collision`** — two bundles register handlers for the same external capability (e.g., both `acme.calendar` and `widget.cal` register `calendar.write` handlers). The user must enable one or the other.
-4. **`bundle-deps-unmet`** — a bundle's `deps:` block names a bundle not present in `<vault>/.dome/extensions/`. The bundle that depends on the missing one fails to load.
+4. **`bundle-not-found`** — `.dome/config.yaml` enables a bundle id that is not present in the selected SDK-shipped plus vault-local root set. This usually means a typo, an uninstalled third-party bundle, or an exact `--bundles-root` override that excludes the bundle.
 5. **`duplicate-command-trigger`** — two bundles register command-triggered view-phase processors with the same `triggers[].name` (the CLI surface name). Or one malformed view processor repeats the same command trigger.
 
 **Structural mitigation:** **Fail-loud startup + namespaced manifest ids.**
 
 1. **Bundle-name prefix on processor IDs.** The manifest id is fully qualified by convention. Two bundles with an `extract-capture` processor should declare ids such as `dome.intake.extract-capture` and `community.intake.extract-capture`.
-2. **Alphabetical load order.** Bundles load in alphabetical order of directory name within each tier (first-party `dome.*` first; then vault-local + third-party alphabetical). Predictable ordering means cross-bundle collisions surface at the same place every time.
-3. **Fail-loud rejection.** The loader and registry do not silently skip a colliding bundle. `openVault` returns a structured `bundle-load-failed` or `registry-build-failed` error. The nested error names the colliding sources and key.
+2. **Deterministic composition.** Bundles load in alphabetical order within each root; normal CLI/runtime use then composes SDK-shipped and vault-local roots, with vault-local bundles overriding shipped bundles by id. The composed set is sorted by bundle id before registry construction.
+3. **Fail-loud rejection.** The loader and registry do not silently skip a colliding or configured-missing bundle. `openVault` returns a structured `bundle-load-failed` or `registry-build-failed` error. The nested error names the colliding sources, missing bundle ids, or registry key.
 4. **Test coverage:** `tests/extensions/loader.test.ts` covers loader-level collisions and `tests/processors/registry.test.ts` covers command-trigger uniqueness.
 
 **Specific scenarios:**
@@ -44,12 +44,19 @@ severity: medium
 
 - **External handler collision.** Two bundles register `external-handlers/calendar.write.ts`. The user must pick one (disable the other in `.dome/config.yaml`).
 
-- **Cross-bundle dependency unmet.** `community.advanced-recall` depends on `community.basic-recall`. The user installs only the former. Load fails with `bundle-deps-unmet`; the message names the missing dep.
+- **Configured bundle missing.** `.dome/config.yaml` contains
+  `extensions.community.advanced-recall.enabled: true`, but no selected root
+  contains `community.advanced-recall/`. Runtime opening fails with
+  `bundle-load-failed: bundle-not-found`; the message names the missing bundle
+  id.
 
 **Operational notes:**
 
 - First-party `dome.*` bundles are guaranteed not to collide with each other (curated by the SDK team).
 - Third-party bundle authors should namespace their page types and processor names to avoid collision (`acme.calendar.event`, not `event`).
+- V1 manifests do not support a `deps:` field. If a bundle requires another
+  bundle, document that requirement explicitly; future dependency support must
+  preserve fail-loud activation.
 - Bundle-load and registry-build failures surface from the command or runtime open that attempted to start the vault. A v1.x `dome doctor` invocation will run the same load-validation probe ahead of time as part of its check set in the deferred `dome.health` bundle.
 
 **Related:**

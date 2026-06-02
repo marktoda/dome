@@ -484,6 +484,12 @@ async function reloadServeRuntime(input: {
 function formatOpenRuntimeError(error: OpenVaultRuntimeError): string {
   switch (error.kind) {
     case "bundle-load-failed":
+      if (error.cause.kind === "bundle-not-found") {
+        return `${error.kind}:${error.cause.kind}:${
+          error.cause.bundleIds.join(",")
+        }`;
+      }
+      return `${error.kind}:${error.cause.kind}`;
     case "registry-build-failed":
       return `${error.kind}:${error.cause.kind}`;
     default:
