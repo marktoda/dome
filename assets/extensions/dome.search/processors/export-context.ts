@@ -42,12 +42,13 @@ import {
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
+const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.8",
+  version: "0.1.9",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -187,6 +188,7 @@ type ContextEntry = {
   readonly rank: number;
   readonly ranking: SearchRanking;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
+  readonly summary: ReadonlyArray<ContextSummary>;
   readonly facts: ReadonlyArray<ContextFact>;
   readonly diagnostics: ReadonlyArray<ContextDiagnostic>;
   readonly questions: ReadonlyArray<ContextQuestion>;
@@ -214,6 +216,17 @@ type ContextFact = {
   readonly predicate: string;
   readonly object: string;
   readonly assertion: FactEffect["assertion"];
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextSummary = {
+  readonly kind:
+    | "match"
+    | "open-loop"
+    | "decision"
+    | "question"
+    | "diagnostic";
+  readonly text: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -268,56 +281,120 @@ function contextEntryFromMatch(
   questions: ReadonlyArray<SearchQuestionItem>,
   ranking: SearchRanking,
 ): ContextEntry {
+  const snippet = stripFtsMarkers(match.snippet);
+  const contextFacts = Object.freeze(
+    facts
+      .map((fact) =>
+        Object.freeze({
+          predicate: fact.predicate,
+          object: searchFactObjectLabel(fact),
+          assertion: fact.assertion,
+          sourceRefs: Object.freeze([...fact.sourceRefs]),
+        })
+      )
+      .sort(compareFacts),
+  );
+  const contextDiagnostics = Object.freeze(
+    diagnostics
+      .map((diagnostic) =>
+        Object.freeze({
+          severity: diagnostic.severity,
+          code: diagnostic.code,
+          message: diagnostic.message,
+          sourceRefs: Object.freeze([...diagnostic.sourceRefs]),
+        })
+      )
+      .sort(compareDiagnostics),
+  );
+  const contextQuestions = Object.freeze(
+    questions
+      .map((question) =>
+        Object.freeze({
+          id: question.id,
+          question: question.question,
+          options: question.options,
+          resolveCommand: question.resolveCommand,
+          metadata: question.metadata ?? null,
+          automationPolicy: questionAutomationPolicy(question.metadata),
+          processorId: question.processorId,
+          sourceRefs: Object.freeze([...question.sourceRefs]),
+        })
+      )
+      .sort(compareQuestions),
+  );
   return Object.freeze({
     path: match.path,
     title: match.title,
     category: match.category,
     type: match.type,
-    snippet: stripFtsMarkers(match.snippet),
+    snippet,
     rank: match.rank,
     ranking,
     sourceRefs: Object.freeze([...match.sourceRefs]),
-    facts: Object.freeze(
-      facts
-        .map((fact) =>
-          Object.freeze({
-            predicate: fact.predicate,
-            object: searchFactObjectLabel(fact),
-            assertion: fact.assertion,
-            sourceRefs: Object.freeze([...fact.sourceRefs]),
-          })
-        )
-        .sort(compareFacts),
-    ),
-    diagnostics: Object.freeze(
-      diagnostics
-        .map((diagnostic) =>
-          Object.freeze({
-            severity: diagnostic.severity,
-            code: diagnostic.code,
-            message: diagnostic.message,
-            sourceRefs: Object.freeze([...diagnostic.sourceRefs]),
-          })
-        )
-        .sort(compareDiagnostics),
-    ),
-    questions: Object.freeze(
-      questions
-        .map((question) =>
-          Object.freeze({
-            id: question.id,
-            question: question.question,
-            options: question.options,
-            resolveCommand: question.resolveCommand,
-            metadata: question.metadata ?? null,
-            automationPolicy: questionAutomationPolicy(question.metadata),
-            processorId: question.processorId,
-            sourceRefs: Object.freeze([...question.sourceRefs]),
-          })
-        )
-        .sort(compareQuestions),
-    ),
+    summary: sourceBackedSummary({
+      snippet,
+      sourceRefs: match.sourceRefs,
+      facts: contextFacts,
+      diagnostics: contextDiagnostics,
+      questions: contextQuestions,
+    }),
+    facts: contextFacts,
+    diagnostics: contextDiagnostics,
+    questions: contextQuestions,
   });
+}
+
+function sourceBackedSummary(input: {
+  readonly snippet: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+  readonly facts: ReadonlyArray<ContextFact>;
+  readonly diagnostics: ReadonlyArray<ContextDiagnostic>;
+  readonly questions: ReadonlyArray<ContextQuestion>;
+}): ReadonlyArray<ContextSummary> {
+  const rows: ContextSummary[] = [];
+  if (input.snippet.trim().length > 0) {
+    rows.push(Object.freeze({
+      kind: "match",
+      text: compactText(input.snippet),
+      sourceRefs: Object.freeze([...input.sourceRefs]),
+    }));
+  }
+  appendFactSummaries(rows, "decision", input.facts.filter(isSearchDecisionFact));
+  appendFactSummaries(rows, "open-loop", input.facts.filter(isSearchOpenLoopFact));
+  for (const question of input.questions) {
+    rows.push(Object.freeze({
+      kind: "question",
+      text: question.question,
+      sourceRefs: question.sourceRefs,
+    }));
+    if (rows.length >= MAX_ENTRY_SUMMARY_ROWS) break;
+  }
+  if (rows.length < MAX_ENTRY_SUMMARY_ROWS) {
+    for (const diagnostic of input.diagnostics) {
+      rows.push(Object.freeze({
+        kind: "diagnostic",
+        text: `${diagnostic.code}: ${diagnostic.message}`,
+        sourceRefs: diagnostic.sourceRefs,
+      }));
+      if (rows.length >= MAX_ENTRY_SUMMARY_ROWS) break;
+    }
+  }
+  return Object.freeze(rows.slice(0, MAX_ENTRY_SUMMARY_ROWS));
+}
+
+function appendFactSummaries(
+  rows: ContextSummary[],
+  kind: "open-loop" | "decision",
+  facts: ReadonlyArray<ContextFact>,
+): void {
+  for (const fact of facts) {
+    if (rows.length >= MAX_ENTRY_SUMMARY_ROWS) return;
+    rows.push(Object.freeze({
+      kind,
+      text: fact.object,
+      sourceRefs: fact.sourceRefs,
+    }));
+  }
 }
 
 function buildOverview(
@@ -514,6 +591,14 @@ function renderMarkdown(
     for (const ref of entry.sourceRefs) {
       lines.push(`  - \`${formatSourceRef(ref)}\``);
     }
+    if (entry.summary.length > 0) {
+      lines.push("");
+      lines.push("Summary:");
+      for (const item of entry.summary) {
+        const refs = item.sourceRefs.map(formatSourceRef).join(", ");
+        lines.push(`- \`${item.kind}\`: ${item.text} (${refs})`);
+      }
+    }
     if (entry.snippet.length > 0) {
       lines.push("");
       lines.push("> " + entry.snippet.replace(/\n/g, "\n> "));
@@ -701,6 +786,12 @@ function formatSourceRef(ref: SourceRef): string {
 
 function stripFtsMarkers(snippet: string): string {
   return snippet.replace(/\[/g, "").replace(/\]/g, "");
+}
+
+function compactText(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 220) return normalized;
+  return `${normalized.slice(0, 217).trimEnd()}...`;
 }
 
 function stringValue(value: unknown): string | null {

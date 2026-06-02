@@ -94,6 +94,8 @@ scenario(
     expect(text.stdout).toContain("- Ranking:");
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
+    expect(text.stdout).toContain("Summary:");
+    expect(text.stdout).toContain("`open-loop`: Ask Danny about alpha launch handoff");
     expect(text.stdout).toContain("dome.graph.tagged");
     expect(text.stdout).toContain(
       "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]",
@@ -159,6 +161,11 @@ scenario(
           readonly reasons: ReadonlyArray<string>;
         };
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        readonly summary: ReadonlyArray<{
+          readonly kind: string;
+          readonly text: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
         readonly facts: ReadonlyArray<{
           readonly predicate: string;
           readonly object: string;
@@ -207,6 +214,17 @@ scenario(
     expect(alpha?.ranking.score).toBeGreaterThan(0);
     expect(alpha?.ranking.reasons).toContain("open loop");
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
+    expect(alpha?.summary).toContainEqual(
+      expect.objectContaining({
+        kind: "open-loop",
+        text:
+          "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]",
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({ path: "wiki/project-alpha.md" }),
+        ]),
+      }),
+    );
+    expect(alpha?.summary.every((item) => item.sourceRefs.length > 0)).toBe(true);
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
     expect(alpha?.facts).toContainEqual(
@@ -544,6 +562,14 @@ extensions:
         }>;
       };
       readonly markdown: string;
+      readonly entries: ReadonlyArray<{
+        readonly path: string;
+        readonly summary: ReadonlyArray<{
+          readonly kind: string;
+          readonly text: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
+      }>;
     };
 
     expect(payload.markdown).toContain("## Decisions");
@@ -568,6 +594,23 @@ extensions:
     );
     expect(decision?.sourceRefs[0]?.path).toBe(
       "wiki/generated/intake/alpha-decision.md",
+    );
+    const entry = payload.entries.find(
+      (item) => item.path === "wiki/generated/intake/alpha-decision.md",
+    );
+    expect(entry?.summary).toContainEqual(
+      expect.objectContaining({
+        kind: "decision",
+        text: "Danny owns platform runtime for alpha launch",
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({
+            path: "wiki/generated/intake/alpha-decision.md",
+          }),
+        ]),
+      }),
+    );
+    expect(payload.markdown).toContain(
+      "`decision`: Danny owns platform runtime for alpha launch",
     );
   },
 );

@@ -754,11 +754,14 @@ read-first paths, source-backed open loops, source-backed decisions,
 unresolved questions with automation policy metadata and `dome resolve` hints,
 active diagnostics, and recall signals that explain projection-memory matches.
 It then includes matching paths,
-snippets, related facts, related diagnostics, related open questions, and
-SourceRefs per match. Per-match related fact, diagnostic, and question sections
-are bounded in the rendered packet and include omitted-row hints when more
-related rows remain; the structured JSON entries retain the full related row
-arrays for consumers that want all evidence. Daily task facts use the same
+source-backed summaries, snippets, related facts, related diagnostics, related
+open questions, and SourceRefs per match. Each summary row is derived only from
+the match snippet or source-backed facts/questions/diagnostics and carries its
+own SourceRefs, giving foreground agents a compact read-first reason without
+introducing an LLM-generated claim. Per-match related fact, diagnostic, and
+question sections are bounded in the rendered packet and include omitted-row
+hints when more related rows remain; the structured JSON entries retain the full
+related row arrays for consumers that want all evidence. Daily task facts use the same
 display convention as `dome today`: parsed `📅` due-date and priority glyph
 markers are rendered as bracketed `due` / `priority` metadata instead of
 duplicated inside the task text. Search-match entries use the same expanded
@@ -772,8 +775,9 @@ bounded by `--limit`; the structured JSON includes `shown.entries`,
 `hasMore.entries`, `overview`, per-entry `ranking`, and text mode prints an
 expansion hint when more adopted-state matches are detected. `--json` emits the
 structured `dome.search.export-context/v1` payload, including the packet under
-`markdown`; `overview.recallSignals` carries the same source-backed recall
-evidence for structured consumers.
+`markdown`; `entries[].summary` carries the source-backed compact summaries, and
+`overview.recallSignals` carries the same source-backed recall evidence for
+structured consumers.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 
