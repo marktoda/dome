@@ -35,6 +35,7 @@ describe("v1 dogfood report script", () => {
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -94,6 +95,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -127,6 +129,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: off
 
 Qualitative notes to fill after the work session:
@@ -161,6 +164,94 @@ Qualitative notes to fill after the work session:
     expect(report.serveHostEvidenceDays).toBe(0);
     expect(report.days[0].operationalEvidence).toBe(true);
     expect(report.days[0].serveHostEvidence).toBe(false);
+    expect(report.days[0].captureEvidence).toBe(true);
+  });
+
+  test("does not count status alone as measured work-surface evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.days[0].operationalEvidence).toBe(false);
+    expect(report.days[0].serveHostEvidence).toBe(true);
+    expect(report.days[0].captureEvidence).toBe(true);
+  });
+
+  test("does not let negated status suppress counted work-surface evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- Did not run \`bin/dome status --vault ~/vaults/work --json\`; ran \`bin/dome today --vault ~/vaults/work --json\`.
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("ready");
+    expect(report.completeWorkdays).toBe(1);
+    expect(report.days[0].operationalEvidence).toBe(true);
+    expect(report.days[0].serveHostEvidence).toBe(true);
     expect(report.days[0].captureEvidence).toBe(true);
   });
 
@@ -215,6 +306,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -232,6 +324,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -328,7 +421,7 @@ Qualitative notes to fill after the work session:
 ## 2026-06-01 Work Session
 
 Operational state:
-- Did not run \`bin/dome status --vault ~/vaults/work --json\` today.
+- Did not run \`bin/dome today --vault ~/vaults/work --json\` today.
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -372,6 +465,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; but it was stale and on the wrong branch
 
 Qualitative notes to fill after the work session:
@@ -416,6 +510,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - Verified \`bin/dome status --vault ~/vaults/work --json\` reported \`serve_status: running\`, \`serve_pid: 123\`, and \`serve_branch: main\`.
+- Ran \`bin/dome today --vault ~/vaults/work --json\`.
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -638,6 +733,7 @@ ${completeDay("2026-02-31")}
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -687,6 +783,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -733,6 +830,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
@@ -840,6 +938,7 @@ function completeDay(
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:

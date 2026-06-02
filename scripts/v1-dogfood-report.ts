@@ -153,14 +153,14 @@ const contradictorySafetyQualifierPatterns: readonly RegExp[] = Object.freeze([
 
 const operationalEvidenceLinePatterns: readonly RegExp[] = Object.freeze([
   /`bun run v1:dogfood-snapshot(?:\s|`)/,
-  /`bin\/dome (status|check|today|query|export-context)\b/,
+  /`bin\/dome (check|today|query|export-context)\b/,
   /^(?:[-*]\s*)?(?:ran\s+)?bun run v1:dogfood-snapshot\b/i,
-  /^(?:[-*]\s*)?(?:ran\s+)?bin\/dome (status|check|today|query|export-context)\b/i,
+  /^(?:[-*]\s*)?(?:ran\s+)?bin\/dome (check|today|query|export-context)\b/i,
 ]);
 
 const negativeOperationalEvidencePatterns: readonly RegExp[] = Object.freeze([
-  /\b(no|not|without|did not|didn't)\b.{0,80}\b(bun run v1:dogfood-snapshot|bin\/dome (status|check|today|query|export-context))\b/i,
-  /\b(bun run v1:dogfood-snapshot|bin\/dome (status|check|today|query|export-context))\b.{0,80}\b(not run|not used|missing|absent|unavailable|failed to run)\b/i,
+  /\b(no|not|without|did not|didn't)\b.{0,80}\b(bun run v1:dogfood-snapshot|bin\/dome (check|today|query|export-context))\b/i,
+  /\b(bun run v1:dogfood-snapshot|bin\/dome (check|today|query|export-context))\b.{0,80}\b(not run|not used|missing|absent|unavailable|failed to run)\b/i,
 ]);
 
 const serveHostEvidenceLinePatterns: readonly RegExp[] = Object.freeze([
@@ -429,19 +429,24 @@ function isNegativeConfirmation(value: string): boolean {
 
 function hasOperationalEvidence(text: string): boolean {
   return text.split(/\r?\n/).some((line) => {
-    const normalized = line.trim();
-    if (normalized === "") return false;
-    if (
-      negativeOperationalEvidencePatterns.some((pattern) =>
-        pattern.test(normalized)
-      )
-    ) {
-      return false;
-    }
-    return operationalEvidenceLinePatterns.some((pattern) =>
-      pattern.test(normalized)
-    );
+    const clauses = line.split(/;|\.\s+/);
+    return clauses.some(hasOperationalEvidenceClause);
   });
+}
+
+function hasOperationalEvidenceClause(clause: string): boolean {
+  const normalized = clause.trim();
+  if (normalized === "") return false;
+  if (
+    negativeOperationalEvidencePatterns.some((pattern) =>
+      pattern.test(normalized)
+    )
+  ) {
+    return false;
+  }
+  return operationalEvidenceLinePatterns.some((pattern) =>
+    pattern.test(normalized)
+  );
 }
 
 function hasServeHostEvidence(text: string): boolean {

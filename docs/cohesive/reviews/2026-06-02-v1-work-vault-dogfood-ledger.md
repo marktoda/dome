@@ -851,8 +851,10 @@ Verification action:
 - Tightened `bun run v1:dogfood-report` so a bare `Operational state:` heading
   no longer counts as measured Dome surface evidence.
 - Counted workdays still accept concrete evidence from
-  `bun run v1:dogfood-snapshot` or explicit `bin/dome status`, `check`,
-  `today`, `query`, or `export-context` command lines.
+  `bun run v1:dogfood-snapshot` or explicit `bin/dome check`, `today`,
+  `query`, or `export-context` command lines. `bin/dome status` remains useful
+  operational context, but no longer counts by itself as M10 work-surface
+  evidence.
 - Added regression coverage proving filled qualitative notes plus an empty
   operational heading remain `not-ready`.
 
@@ -1112,3 +1114,30 @@ Qualitative read:
 - This closes another release-soak overclaim path. M10 readiness can no longer
   be inflated by prefilled future sections or typoed calendar dates, which
   keeps the gate tied to real elapsed work-vault use.
+
+## 2026-06-02 M10 Work-Surface Evidence Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so `bin/dome status` alone no longer
+  counts as measured work-surface evidence for a complete M10 day.
+- Counted days still accept `bun run v1:dogfood-snapshot` and explicit
+  `bin/dome check`, `today`, `query`, or `export-context` command evidence.
+- Updated report fixtures so positive complete-day cases include a work
+  surface and added a regression proving a status-only day remains partial.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 22 tests and
+  150 assertions.
+- `bun run v1:check` passes with 1030 tests and 21859 assertions, plus docs
+  and work vault smoke checks.
+- `bun run v1:dogfood-preflight -- --json` reports `status: ready`; the release
+  substatus remains `not-ready` with one complete workday and no release
+  blockers.
+
+Qualitative read:
+
+- This closes another M10 overclaim path. Engine health evidence remains
+  useful context, but V1 release readiness now requires evidence that Dome's
+  actual work surfaces were exercised during the day.
