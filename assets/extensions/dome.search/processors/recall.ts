@@ -9,7 +9,10 @@ import type {
   DiagnosticEffect,
   FactEffect,
 } from "../../../../src/core/effect";
-import type { ProjectionQueryView } from "../../../../src/core/processor";
+import type {
+  ProjectionQueryView,
+  Snapshot,
+} from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import { searchFactObjectLabel } from "./labels";
 import {
@@ -21,7 +24,12 @@ import {
 
 export type SearchRecallSignal = SearchRankingRecallSignal & {
   readonly path: string;
-  readonly kind: "open-loop" | "decision" | "question" | "diagnostic";
+  readonly kind:
+    | "daily"
+    | "open-loop"
+    | "decision"
+    | "question"
+    | "diagnostic";
   readonly text: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -96,6 +104,53 @@ export function recallSignalsForTopic(input: {
   );
 }
 
+export async function dailySurfaceRecallSignalsForTopic(input: {
+  readonly snapshot: Snapshot;
+  readonly topic: string;
+  readonly sourceRef: (path: string) => SourceRef;
+  readonly now?: Date;
+}): Promise<ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>>> {
+  const dates = dailyRecallDates(input.topic, input.now ?? new Date());
+  if (dates.length === 0) return Object.freeze(new Map());
+
+  const dateByFilename = new Map(
+    dates.map((date) => [`${date.date}.md`, date]),
+  );
+  const mutable = new Map<string, SearchRecallSignal[]>();
+  for (const path of await input.snapshot.listMarkdownFiles()) {
+    const filename = path.split("/").at(-1) ?? path;
+    const date = dateByFilename.get(filename);
+    if (date === undefined) continue;
+    addRecallSignal(mutable, {
+      path,
+      kind: "daily",
+      label: date.label,
+      text: `${date.label}: ${path}`,
+      weight: 16,
+      sourceRefs: Object.freeze([input.sourceRef(path)]),
+    });
+  }
+
+  return freezeRecallSignalMap(mutable);
+}
+
+export function mergeRecallSignalMaps(
+  maps: ReadonlyArray<ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>>>,
+): ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>> {
+  const mutable = new Map<string, SearchRecallSignal[]>();
+  for (const map of maps) {
+    for (const [path, signals] of map) {
+      const existing = mutable.get(path);
+      if (existing === undefined) {
+        mutable.set(path, [...signals]);
+      } else {
+        existing.push(...signals);
+      }
+    }
+  }
+  return freezeRecallSignalMap(mutable);
+}
+
 export function prioritizedRecallPaths(
   recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>>,
   excludePaths: ReadonlySet<string>,
@@ -122,6 +177,17 @@ function recallFacts(
       projection.facts({ predicate })
     ),
   ]);
+}
+
+function freezeRecallSignalMap(
+  mutable: Map<string, SearchRecallSignal[]>,
+): ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>> {
+  return Object.freeze(
+    new Map([...mutable.entries()].map(([path, signals]) => [
+      path,
+      Object.freeze(signals),
+    ])),
+  );
 }
 
 function addRecallSignal(
@@ -162,6 +228,71 @@ function topicMatcher(topic: string): ((text: string) => boolean) | null {
     const tokens = new Set(normalizedTokens(text));
     return terms.every((term) => tokens.has(term));
   };
+}
+
+type DailyRecallDate = {
+  readonly date: string;
+  readonly label: string;
+};
+
+function dailyRecallDates(
+  topic: string,
+  now: Date,
+): ReadonlyArray<DailyRecallDate> {
+  const normalized = normalizedTokens(topic);
+  const tokens = new Set(normalized);
+  const dates = new Map<string, string>();
+  for (const explicit of explicitDates(topic)) {
+    dates.set(explicit, `daily surface for ${explicit}`);
+  }
+  if (tokens.has("today") || tokens.has("daily")) {
+    dates.set(localDateString(now), "current daily surface");
+  }
+  if (tokens.has("yesterday")) {
+    dates.set(localDateString(addDays(now, -1)), "previous daily surface");
+  }
+  if (tokens.has("tomorrow")) {
+    dates.set(localDateString(addDays(now, 1)), "next daily surface");
+  }
+  return Object.freeze(
+    [...dates.entries()].map(([date, label]) =>
+      Object.freeze({ date, label })
+    ),
+  );
+}
+
+function explicitDates(topic: string): ReadonlyArray<string> {
+  const out: string[] = [];
+  for (const match of topic.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+    const date = `${match[1]}-${match[2]}-${match[3]}`;
+    if (isRealDate(date)) out.push(date);
+  }
+  return Object.freeze(out);
+}
+
+function isRealDate(date: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (match === null) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function localDateString(date: Date): string {
+  const yyyy = String(date.getFullYear()).padStart(4, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function normalizedTokens(value: string): ReadonlyArray<string> {

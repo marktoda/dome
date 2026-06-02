@@ -27,6 +27,8 @@ import {
   type SearchQuestionItem,
 } from "./related";
 import {
+  dailySurfaceRecallSignalsForTopic,
+  mergeRecallSignalMaps,
   prioritizedRecallPaths,
   recallSignalsForTopic,
   type SearchRecallSignal,
@@ -52,7 +54,7 @@ const MAX_RECALL_PATHS = 24;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.10",
+  version: "0.1.11",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -73,12 +75,19 @@ const exportContext: Processor = defineProcessor({
     const allQuestions = projection
       .questions({ resolved: false })
       .map(questionItemFromProjection);
-    const recallSignalsByPath = recallSignalsForTopic({
-      projection,
-      topic: input.topic,
-      diagnostics: allDiagnostics,
-      questions: allQuestions,
-    });
+    const recallSignalsByPath = mergeRecallSignalMaps([
+      recallSignalsForTopic({
+        projection,
+        topic: input.topic,
+        diagnostics: allDiagnostics,
+        questions: allQuestions,
+      }),
+      await dailySurfaceRecallSignalsForTopic({
+        snapshot: ctx.snapshot,
+        topic: input.topic,
+        sourceRef: ctx.sourceRef,
+      }),
+    ]);
     const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
     const recalledPaths = prioritizedRecallPaths(
       recallSignalsByPath,

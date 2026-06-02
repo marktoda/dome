@@ -17,6 +17,13 @@ const CONTEXT_SIGNAL_BUNDLE_ROOT = join(
   "test.context-signal",
 );
 
+function localDateString(date: Date = new Date()): string {
+  const yyyy = String(date.getFullYear()).padStart(4, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 scenario(
   {
     name: "cli-surface: dome export-context returns source-backed markdown packet",
@@ -292,6 +299,96 @@ scenario(
     expect(limitedPayload.entries).toHaveLength(1);
     expect(limitedPayload.markdown).toContain(
       "more adopted-state matches exist (increase --limit to include more entries)",
+    );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome export-context recalls current daily surface for daily-intent packets",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.search"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const today = localDateString();
+    const dailyPath = `notes/${today}.md`;
+    await h.userCommit({
+      files: {
+        [dailyPath]:
+          `# ${today}\n\n` +
+          "## Open Loops\n\n" +
+          "- [ ] Handle the current launch review.\n",
+      },
+      message: "add current daily note",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const cli = await h.runCli([
+      "export-context",
+      "what should I work on today",
+      "--json",
+      "--limit",
+      "1",
+    ]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+
+    const payload = JSON.parse(cli.stdout) as {
+      readonly overview: {
+        readonly readFirst: ReadonlyArray<{
+          readonly path: string;
+          readonly reason: string;
+          readonly ranking: {
+            readonly reasons: ReadonlyArray<string>;
+          };
+        }>;
+        readonly recallSignals: ReadonlyArray<{
+          readonly path: string;
+          readonly kind: string;
+          readonly label: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
+      };
+      readonly entries: ReadonlyArray<{
+        readonly path: string;
+        readonly ranking: { readonly reasons: ReadonlyArray<string> };
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+    };
+
+    expect(payload.entries[0]?.path).toBe(dailyPath);
+    expect(payload.entries[0]?.ranking.reasons).toContain(
+      "current daily surface",
+    );
+    expect(payload.entries[0]?.sourceRefs).toContainEqual(
+      expect.objectContaining({ path: dailyPath }),
+    );
+    expect(payload.overview.readFirst[0]?.path).toBe(dailyPath);
+    expect(payload.overview.readFirst[0]?.reason).toContain(
+      "current daily surface",
+    );
+    expect(payload.overview.recallSignals).toContainEqual(
+      expect.objectContaining({
+        path: dailyPath,
+        kind: "daily",
+        label: "current daily surface",
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({ path: dailyPath }),
+        ]),
+      }),
     );
   },
 );

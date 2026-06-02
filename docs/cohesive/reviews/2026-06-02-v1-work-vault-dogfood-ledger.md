@@ -171,3 +171,48 @@ Qualitative read:
   high-degree pages.
 - The next context-packet dogfood question is quality, not payload size: did
   the packet select the right read-first files for a real task?
+
+## 2026-06-02 Daily-Intent Context Packet Recall
+
+Dogfood action:
+
+- Ran `bin/dome today --vault ~/vaults/work --json`.
+- Ran `bin/dome export-context --vault ~/vaults/work "what should I work on today" --json`.
+- Ran `bin/dome query --vault ~/vaults/work "what should I work on today" --json --limit 8`.
+
+Observed issue:
+
+- `today` correctly found the current daily note at `notes/2026-06-02.md`.
+- The daily note had 12 daily-surface open loops and source-backed evidence.
+- The generic context packet did not put `notes/2026-06-02.md` in the
+  read-first set. It prioritized older high-degree entity and synthesis pages
+  because those pages had many open-loop and graph signals.
+- This made the packet less useful than `dome today` for a natural foreground
+  agent query like "what should I work on today".
+
+Fix shipped in the SDK:
+
+- `dome.search` now adds a source-backed `current daily surface` recall signal
+  for daily-intent topics such as `today`, `daily`, `yesterday`, `tomorrow`, or
+  an explicit `YYYY-MM-DD`.
+- The recall signal is derived from existing date-named markdown files in the
+  adopted snapshot, not from working-tree state or hidden `.dome/state`.
+- `query` and `export-context` share the same temporal recall path, so the CLI
+  surfaces stay coherent.
+
+Work-vault result:
+
+- `export-context "what should I work on today"` now includes
+  `notes/2026-06-02.md` as the first read-first entry with reason
+  `current daily surface`.
+- `query "what should I work on today"` also ranks
+  `notes/2026-06-02.md` first.
+- The packet still includes high-signal entity/project pages after the daily
+  cockpit, but the day-oriented handoff prompt no longer misses the current
+  daily note.
+
+Qualitative read:
+
+- This closes a second concrete M6/M10 friction item: foreground agents asking
+  natural daily-work questions now start from the same daily surface Mark uses,
+  instead of treating the work vault like a generic FTS corpus.

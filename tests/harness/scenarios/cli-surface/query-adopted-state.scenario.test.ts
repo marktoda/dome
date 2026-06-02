@@ -20,6 +20,13 @@ const CONTEXT_SIGNAL_BUNDLE_ROOT = join(
   "test.context-signal",
 );
 
+function localDateString(date: Date = new Date()): string {
+  const yyyy = String(date.getFullYear()).padStart(4, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 scenario(
   {
     name: "cli-surface: dome query searches adopted markdown and related facts",
@@ -221,6 +228,74 @@ scenario(
     };
     expect(deletedPayload.matches.map((m) => m.path)).not.toContain(
       "wiki/project-alpha.md",
+    );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome query recalls current daily surface for daily-intent queries",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.search"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const today = localDateString();
+    const dailyPath = `notes/${today}.md`;
+    await h.userCommit({
+      files: {
+        [dailyPath]:
+          `# ${today}\n\n` +
+          "## Open Loops\n\n" +
+          "- [ ] Handle the current launch review.\n",
+      },
+      message: "add current daily note",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const cli = await h.runCli([
+      "query",
+      "what should I work on today",
+      "--json",
+      "--limit",
+      "1",
+    ]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+
+    const payload = JSON.parse(cli.stdout) as {
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly ranking: {
+          readonly reasons: ReadonlyArray<string>;
+          readonly signals: ReadonlyArray<{ readonly kind: string }>;
+        };
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+    };
+
+    expect(payload.matches[0]?.path).toBe(dailyPath);
+    expect(payload.matches[0]?.ranking.reasons).toContain(
+      "current daily surface",
+    );
+    expect(payload.matches[0]?.ranking.signals).toContainEqual(
+      expect.objectContaining({ kind: "recall" }),
+    );
+    expect(payload.matches[0]?.sourceRefs).toContainEqual(
+      expect.objectContaining({ path: dailyPath }),
     );
   },
 );

@@ -23,6 +23,8 @@ import {
 } from "./related";
 import { searchFactObjectLabel } from "./labels";
 import {
+  dailySurfaceRecallSignalsForTopic,
+  mergeRecallSignalMaps,
   prioritizedRecallPaths,
   recallSignalsForTopic,
 } from "./recall";
@@ -42,7 +44,7 @@ const MAX_RELATED_ROWS = 8;
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.5",
+  version: "0.1.6",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -64,12 +66,19 @@ const searchQuery: Processor = defineProcessor({
     const allQuestions = ctx.projection
       .questions({ resolved: false })
       .map(questionItemFromProjection);
-    const recallSignalsByPath = recallSignalsForTopic({
-      projection: ctx.projection,
-      topic: input.text,
-      diagnostics: allDiagnostics,
-      questions: allQuestions,
-    });
+    const recallSignalsByPath = mergeRecallSignalMaps([
+      recallSignalsForTopic({
+        projection: ctx.projection,
+        topic: input.text,
+        diagnostics: allDiagnostics,
+        questions: allQuestions,
+      }),
+      await dailySurfaceRecallSignalsForTopic({
+        snapshot: ctx.snapshot,
+        topic: input.text,
+        sourceRef: ctx.sourceRef,
+      }),
+    ]);
     const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
     const recalledPaths = prioritizedRecallPaths(
       recallSignalsByPath,
