@@ -327,6 +327,9 @@ loops     5 known | 3 quiet | 0 attention | 1 partial | 1 inactive
       "diagnostics": 0,
       "attention_diagnostics": 0,
       "questions": 0,
+      "agent_safe_questions": 0,
+      "model_safe_questions": 0,
+      "owner_needed_questions": 0,
       "recent_runs": 3,
       "recent_problem_runs": 0,
       "latest_run_at": "2026-05-28T12:34:56.000Z"
@@ -414,6 +417,12 @@ processor substrate. Loops are metadata, not runtime dispatch units: each row
 names the desired-state objective, its implementing processor ids, command/path
 surfaces, settlement rule, current state, and the unresolved
 diagnostics/questions/recent problem runs attributable to those processors.
+Question counts are split into `agent_safe_questions`,
+`model_safe_questions`, and `owner_needed_questions` using the same policy
+classification as `dome check`; missing question metadata is owner-needed.
+Because loops can intentionally overlap, those per-loop question counts are
+attribution counts rather than a globally deduplicated question total; use the
+top-level `questions` field for the unique open-question count.
 `state: "quiet"` means the loop is active and has no visible attention;
 `"attention"` means diagnostics, questions, or recent problem runs are present;
 `"partial"` means at least one referenced processor is not active; and
@@ -544,7 +553,7 @@ record truncation evidence without inferring it from array lengths.
 Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"content_diagnostics":2,"unlocated_diagnostics":0,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
+{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"content_diagnostics":2,"unlocated_diagnostics":0,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"agent_safe_questions":0,"model_safe_questions":0,"owner_needed_questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the

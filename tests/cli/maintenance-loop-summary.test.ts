@@ -27,7 +27,7 @@ const LOOP: MaintenanceLoop = {
 
 describe("collectMaintenanceLoopSummaries", () => {
   test("keeps unresolved work attributable when a loop processor is inactive", () => {
-    const question: QuestionRecord = {
+    const ownerQuestion: QuestionRecord = {
       id: 1,
       effect: questionEffect({
         question: "What should happen?",
@@ -39,6 +39,36 @@ describe("collectMaintenanceLoopSummaries", () => {
       askedAt: "2026-06-01T00:00:00.000Z",
       answeredAt: null,
       answer: null,
+    };
+    const agentQuestion: QuestionRecord = {
+      ...ownerQuestion,
+      id: 2,
+      effect: questionEffect({
+        question: "Can the agent handle this?",
+        sourceRefs: [REF],
+        idempotencyKey: "test-question-agent",
+        metadata: {
+          risk: "low",
+          confidence: 0.8,
+          recommendedAnswer: "yes",
+          automationPolicy: "agent-safe",
+        },
+      }),
+    };
+    const modelQuestion: QuestionRecord = {
+      ...ownerQuestion,
+      id: 3,
+      effect: questionEffect({
+        question: "Can the model handle this?",
+        sourceRefs: [REF],
+        idempotencyKey: "test-question-model",
+        metadata: {
+          risk: "low",
+          confidence: 0.9,
+          recommendedAnswer: "yes",
+          automationPolicy: "model-safe",
+        },
+      }),
     };
 
     const [summary] = collectMaintenanceLoopSummaries({
@@ -55,7 +85,7 @@ describe("collectMaintenanceLoopSummaries", () => {
               }),
             ]
           : [],
-      unresolvedQuestions: [question],
+      unresolvedQuestions: [ownerQuestion, agentQuestion, modelQuestion],
       runsByProcessor: () => [],
     });
 
@@ -65,6 +95,9 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.missing_processors).toEqual(["test.disabled-processor"]);
     expect(summary?.diagnostics).toBe(1);
     expect(summary?.attention_diagnostics).toBe(1);
-    expect(summary?.questions).toBe(1);
+    expect(summary?.questions).toBe(3);
+    expect(summary?.agent_safe_questions).toBe(1);
+    expect(summary?.model_safe_questions).toBe(1);
+    expect(summary?.owner_needed_questions).toBe(1);
   });
 });

@@ -7,6 +7,7 @@ import type { DiagnosticEffect } from "../core/effect";
 import type { MaintenanceLoop } from "../extensions/maintenance-loops";
 import { isActiveProblemRun, type RunRow } from "../ledger/runs";
 import type { QuestionRecord } from "../projections/questions";
+import { countQuestionAutomationPolicies } from "../question-resolution";
 import {
   countAttentionDiagnostics,
   isSourceBackedDiagnostic,
@@ -33,6 +34,9 @@ export type MaintenanceLoopSummary = {
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
   readonly questions: number;
+  readonly agent_safe_questions: number;
+  readonly model_safe_questions: number;
+  readonly owner_needed_questions: number;
   readonly recent_runs: number;
   readonly recent_problem_runs: number;
   readonly latest_run_at: string | null;
@@ -87,9 +91,12 @@ function summarizeLoop(
   }
 
   const processorSet = new Set(loop.processors);
-  const questions = opts.unresolvedQuestions.filter((question) =>
+  const loopQuestions = opts.unresolvedQuestions.filter((question) =>
     processorSet.has(question.processorId)
-  ).length;
+  );
+  const questionPolicyCounts = countQuestionAutomationPolicies(
+    loopQuestions.map((question) => question.effect.metadata),
+  );
 
   return Object.freeze({
     id: loop.id,
@@ -98,7 +105,7 @@ function summarizeLoop(
       activeProcessors: activeProcessors.length,
       missingProcessors: missingProcessors.length,
       attentionDiagnostics,
-      questions,
+      questions: loopQuestions.length,
       recentProblemRuns,
     }),
     processor_ids: Object.freeze([...loop.processors]),
@@ -111,7 +118,10 @@ function summarizeLoop(
     }),
     diagnostics,
     attention_diagnostics: attentionDiagnostics,
-    questions,
+    questions: loopQuestions.length,
+    agent_safe_questions: questionPolicyCounts.agentSafe,
+    model_safe_questions: questionPolicyCounts.modelSafe,
+    owner_needed_questions: questionPolicyCounts.ownerNeeded,
     recent_runs: recentRuns,
     recent_problem_runs: recentProblemRuns,
     latest_run_at: latestRunAt,

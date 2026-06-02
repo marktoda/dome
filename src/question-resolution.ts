@@ -5,6 +5,12 @@ import type {
   QuestionMetadata,
 } from "./core/effect";
 
+export type QuestionAutomationPolicyCounts = {
+  readonly agentSafe: number;
+  readonly modelSafe: number;
+  readonly ownerNeeded: number;
+};
+
 export function resolveQuestionCommand(input: {
   readonly id: number | string | null | undefined;
   readonly options: ReadonlyArray<string> | null | undefined;
@@ -44,6 +50,25 @@ export function isQuestionAgentResolvable(
 ): boolean {
   const policy = questionAutomationPolicy(metadata);
   return policy === "agent-safe" || policy === "model-safe";
+}
+
+export function countQuestionAutomationPolicies(
+  metadataItems: ReadonlyArray<QuestionMetadata | null | undefined>,
+): QuestionAutomationPolicyCounts {
+  let agentSafe = 0;
+  let modelSafe = 0;
+  let ownerNeeded = 0;
+  for (const metadata of metadataItems) {
+    const policy = questionAutomationPolicy(metadata);
+    if (policy === "agent-safe") {
+      agentSafe += 1;
+    } else if (policy === "model-safe") {
+      modelSafe += 1;
+    } else {
+      ownerNeeded += 1;
+    }
+  }
+  return Object.freeze({ agentSafe, modelSafe, ownerNeeded });
 }
 
 export function questionAutomationLabel(

@@ -20,6 +20,7 @@ import { openVaultRuntime } from "../../engine/vault-runtime";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
 import {
+  countQuestionAutomationPolicies,
   questionAutomationLabel,
   questionAutomationPolicy,
   resolveQuestionCommand,
@@ -334,7 +335,9 @@ function collectDecisionReport(opts: {
       });
     }),
   );
-  const policyCounts = countQuestionPolicies(opts.questions);
+  const policyCounts = countQuestionAutomationPolicies(
+    opts.questions.map((question) => question.effect.metadata),
+  );
   return Object.freeze({
     questions: opts.questions.length,
     agent_safe_questions: policyCounts.agentSafe,
@@ -344,29 +347,6 @@ function collectDecisionReport(opts: {
     omittedItems: Math.max(0, opts.questions.length - items.length),
     items,
   });
-}
-
-function countQuestionPolicies(
-  questions: ReturnType<typeof queryQuestionRecords>,
-): {
-  readonly agentSafe: number;
-  readonly modelSafe: number;
-  readonly ownerNeeded: number;
-} {
-  let agentSafe = 0;
-  let modelSafe = 0;
-  let ownerNeeded = 0;
-  for (const question of questions) {
-    const policy = questionAutomationPolicy(question.effect.metadata);
-    if (policy === "agent-safe") {
-      agentSafe += 1;
-    } else if (policy === "model-safe") {
-      modelSafe += 1;
-    } else {
-      ownerNeeded += 1;
-    }
-  }
-  return Object.freeze({ agentSafe, modelSafe, ownerNeeded });
 }
 
 function buildReport(input: {

@@ -2840,6 +2840,15 @@ describe("runStatus", () => {
     expect(parsed["projection_stale"]).toBe(false);
     expect(parsed["projection_cache_drift"]).toBe(false);
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
+    const loops =
+      parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
+    expect(loops).toHaveLength(5);
+    expect(loops[0]).toEqual(expect.objectContaining({
+      questions: 0,
+      agent_safe_questions: 0,
+      model_safe_questions: 0,
+      owner_needed_questions: 0,
+    }));
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual(
       expect.arrayContaining(["sync_needed"]),
@@ -3671,8 +3680,14 @@ describe("runStatus", () => {
           options: ["one", "two"],
           sourceRefs: [ref],
           idempotencyKey: "status-question",
+          metadata: {
+            risk: "low",
+            confidence: 0.75,
+            recommendedAnswer: "one",
+            automationPolicy: "agent-safe",
+          },
         }),
-        processorId: "test.status",
+        processorId: "dome.daily.ambiguous-followup-answer",
         adoptedCommit,
       });
     } finally {
@@ -3872,6 +3887,17 @@ describe("runStatus", () => {
       adoptedCommit,
     );
     expect(parsed["questions"]).toBe(1);
+    const maintenanceLoops =
+      parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
+    const openLoopSummary = maintenanceLoops.find((loop) =>
+      loop["id"] === "dome.open-loop.continuity"
+    );
+    expect(openLoopSummary).toEqual(expect.objectContaining({
+      questions: 1,
+      agent_safe_questions: 1,
+      model_safe_questions: 0,
+      owner_needed_questions: 0,
+    }));
     expect(parsed["outbox_pending"]).toBe(1);
     expect(parsed["outbox_failed"]).toBe(1);
     expect(parsed["pending_runs"]).toBe(1);
