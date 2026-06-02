@@ -198,7 +198,7 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 
 ```yaml
 id: dome.intake
-version: 0.4.3
+version: 0.4.4
 description: "Compile raw captures into wiki updates."
 deps: []                    # optional; future for cross-bundle dependencies
 
@@ -225,15 +225,29 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.3
+    version: 0.3.4
     phase: garden
     triggers:
       - kind: signal
         name: file.created
         pathPattern: "inbox/raw/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: ".dome/config.yaml"
+      - kind: signal
+        name: file.modified
+        pathPattern: ".dome/config.yaml"
+      - kind: signal
+        name: file.created
+        pathPattern: ".dome/model-provider.ts"
+      - kind: signal
+        name: file.modified
+        pathPattern: ".dome/model-provider.ts"
     capabilities:
       - kind: read
         paths:
+          - ".dome/config.yaml"
+          - ".dome/model-provider.ts"
           - "inbox/raw/*.md"
           - "inbox/processed/*.md"
           - "wiki/generated/intake/*.md"
@@ -356,7 +370,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through metadata-annotated questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, seeds and refreshes a source-backed `## Start Here` context block from yesterday's daily note, seeds and refreshes a filtered source-backed open-loop surface in today's daily note, folds repeated open-loop surface rows while preserving every backing SourceRef, renders compact evidence labels that show both daily surface rows and backing source locations, preserves settled generated rows as resolved (`[x]`) or dismissed (`[-]`) daily evidence so source-backed loops stop resurfacing without hidden state, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, gives extracted open loops stable SourceRef identities across line moves, marks ambiguous follow-up questions as agent-safe, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, persists pending low-confidence candidates in generated frontmatter, clears duplicate raw captures without model churn when matching digest/archive state already exists, routes low-confidence items through rebuildable agent-safe questions, writes input-hash-settled source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, scans pending raw captures when intake config/provider activation changes, persists pending low-confidence candidates in generated frontmatter, clears duplicate raw captures without model churn when matching digest/archive state already exists, routes low-confidence items through rebuildable agent-safe questions, writes input-hash-settled source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests with read-first packet overviews that surface open loops, decisions, questions, diagnostics, source refs, and projection recall signals for topic-matched memory that FTS alone would miss. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].

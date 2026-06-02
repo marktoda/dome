@@ -157,7 +157,7 @@ A bundle declares its processors' capabilities in `manifest.yaml`:
 
 ```yaml
 id: dome.intake
-version: 0.4.3
+version: 0.4.4
 description: "Compile raw captures into wiki updates."
 
 processors:
@@ -172,11 +172,13 @@ processors:
       - kind: question.ask
 
   - id: dome.intake.extract-capture
-    version: 0.3.3
+    version: 0.3.4
     phase: garden
     capabilities:
       - kind: read
         paths:
+          - ".dome/config.yaml"
+          - ".dome/model-provider.ts"
           - "inbox/raw/*.md"
           - "inbox/processed/*.md"
           - "wiki/generated/intake/*.md"
@@ -222,6 +224,8 @@ extensions:
     enabled: true
     grant:
       read:
+        - .dome/config.yaml
+        - .dome/model-provider.ts
         - inbox/**/*.md
         - wiki/generated/intake/*.md
         - wiki/syntheses/intake-*.md
@@ -291,7 +295,7 @@ it catches cases where an enabled processor would later skip, degrade, or
 block during capability enforcement because the bundle was installed without
 the matching grant kind.
 
-Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, synthesis-page auto-patches for source-preserving duplicate reviews, and `question.ask` for duplicate-detection plus ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, inbox/generated capture/synthesis reads, generated-page and synthesis-page patch grants, and `dome.intake.*` graph writes so low-confidence extracted items become user-mediated writes instead of silent writes, model-written syntheses remain source-linked and input-hash settled, confidence-carrying facts stay rebuildable, and stale-inbox diagnostics can inspect active inbox buckets. Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, synthesis-page auto-patches for source-preserving duplicate reviews, and `question.ask` for duplicate-detection plus ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.intake` is shipped with an opt-in disabled grant skeleton because it needs a host-injected or vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, config/provider-file activation reads, inbox/generated capture/synthesis reads, generated-page and synthesis-page patch grants, and `dome.intake.*` graph writes so pending captures can be picked up when the loop becomes model-ready, low-confidence extracted items become user-mediated writes instead of silent writes, model-written syntheses remain source-linked and input-hash settled, confidence-carrying facts stay rebuildable, and stale-inbox diagnostics can inspect active inbox buckets. Third-party bundles default to inactive until the user explicitly opts in.
 
 `tests/integration/default-vault-config.test.ts` keeps broad shipped-default
 path grants in lockstep. Any new default path grant over `**`, `**/*`, or

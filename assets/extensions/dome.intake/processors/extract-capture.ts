@@ -41,6 +41,8 @@ type ExtractedItem = {
 };
 
 const MODEL_SCHEMA = "dome.intake.extract-capture/v2";
+const CONFIG_PATH = ".dome/config.yaml";
+const MODEL_PROVIDER_PATH = ".dome/model-provider.ts";
 const CONFIDENCE_THRESHOLD = 0.82;
 const NonEmptyTrimmedString = z
   .string()
@@ -73,12 +75,15 @@ const CaptureExtractionSchema = z
 
 const extractCapture = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    const rawCapturePaths = await rawCapturePathsForRun(ctx);
+    if (rawCapturePaths.length === 0) return Object.freeze([]);
+
     if (ctx.modelInvoke === undefined) {
       throw new Error("dome.intake.extract-capture requires model.invoke");
     }
 
     const effects: Effect[] = [];
-    for (const path of ctx.changedPaths.filter(isRawCapturePath).sort()) {
+    for (const path of rawCapturePaths) {
       const capture = await ctx.snapshot.readFile(path);
       if (capture === null) continue;
       const sourceHash = captureSourceHash(capture);
@@ -173,8 +178,55 @@ const extractCapture = defineProcessorImplementation({
 
 export default extractCapture;
 
+async function rawCapturePathsForRun(
+  ctx: ProcessorContext,
+): Promise<ReadonlyArray<string>> {
+  const changedRaw = ctx.changedPaths.filter(isRawCapturePath);
+  if (isActivationRun(ctx)) {
+    return sortedUnique(
+      (await ctx.snapshot.listMarkdownFiles()).filter(isRawCapturePath),
+    );
+  }
+  return sortedUnique(changedRaw);
+}
+
+function isActivationRun(ctx: ProcessorContext): boolean {
+  return (
+    ctx.changedPaths.some(isActivationPath) ||
+    matchedSignalPaths(ctx.input).some(isActivationPath)
+  );
+}
+
+function isActivationPath(path: string): boolean {
+  return path === CONFIG_PATH || path === MODEL_PROVIDER_PATH;
+}
+
 function isRawCapturePath(path: string): boolean {
   return /^inbox\/raw\/[^/]+\.md$/.test(path);
+}
+
+function matchedSignalPaths(input: unknown): ReadonlyArray<string> {
+  if (!isRecord(input) || !Array.isArray(input.matchedTriggers)) {
+    return Object.freeze([]);
+  }
+
+  const paths: string[] = [];
+  for (const match of input.matchedTriggers) {
+    if (!isRecord(match) || !Array.isArray(match.matchedSignals)) continue;
+    for (const signal of match.matchedSignals) {
+      if (!isRecord(signal) || typeof signal.path !== "string") continue;
+      paths.push(signal.path);
+    }
+  }
+  return Object.freeze(paths);
+}
+
+function sortedUnique(paths: ReadonlyArray<string>): ReadonlyArray<string> {
+  return Object.freeze([...new Set(paths)].sort());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function promptForCapture(path: string, capture: string): string {

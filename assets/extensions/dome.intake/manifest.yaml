@@ -1,5 +1,5 @@
 id: dome.intake
-version: 0.4.3
+version: 0.4.4
 processors:
   - id: dome.intake.capture-index
     version: 0.1.1
@@ -23,15 +23,29 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.3
+    version: 0.3.4
     phase: garden
     triggers:
       - kind: signal
         name: file.created
         pathPattern: "inbox/raw/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: ".dome/config.yaml"
+      - kind: signal
+        name: file.modified
+        pathPattern: ".dome/config.yaml"
+      - kind: signal
+        name: file.created
+        pathPattern: ".dome/model-provider.ts"
+      - kind: signal
+        name: file.modified
+        pathPattern: ".dome/model-provider.ts"
     capabilities:
       - kind: read
         paths:
+          - ".dome/config.yaml"
+          - ".dome/model-provider.ts"
           - "inbox/raw/*.md"
           - "inbox/processed/*.md"
           - "wiki/generated/intake/*.md"

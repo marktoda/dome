@@ -139,6 +139,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       id: "dome.capture.digest",
       goal: "New raw captures have a source-backed disposition.",
       evidence: [
+        { kind: "path", pattern: ".dome/config.yaml" },
+        { kind: "path", pattern: ".dome/model-provider.ts" },
         { kind: "path", pattern: "inbox/raw/*.md" },
         { kind: "path", pattern: "inbox/processed/*.md" },
         { kind: "path", pattern: "wiki/generated/intake/*.md" },

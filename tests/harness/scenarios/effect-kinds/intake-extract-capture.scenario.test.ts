@@ -40,6 +40,8 @@ extensions:
     enabled: true
     grant:
       read:
+        - ".dome/config.yaml"
+        - ".dome/model-provider.ts"
         - "inbox/**/*.md"
         - "wiki/generated/intake/*.md"
         - "wiki/syntheses/intake-*.md"
@@ -78,6 +80,11 @@ model_provider:
   command: ${JSON.stringify([process.execPath, COMMAND_PROVIDER_PATH])}
 ${BASE_CONFIG}
 `;
+
+const COMMAND_PROVIDER_DISABLED_CONFIG = COMMAND_PROVIDER_CONFIG.replace(
+  "  dome.intake:\n    enabled: true",
+  "  dome.intake:\n    enabled: false",
+);
 
 const COMMAND_PROVIDER_SOURCE = `
 const request = JSON.parse(await Bun.stdin.text());
@@ -287,6 +294,78 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+  },
+);
+
+scenario(
+  {
+    name: "convergence: dome.intake digests pending raw captures when enabled later",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "fact" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": COMMAND_PROVIDER_DISABLED_CONFIG,
+        [COMMAND_PROVIDER_PATH]: COMMAND_PROVIDER_SOURCE,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        [CAPTURE_PATH]: PRIMARY_CAPTURE,
+      },
+      message: "capture while intake disabled",
+    });
+    const disabledTick = await h.tick();
+    expect(disabledTick.adopted).toBe(true);
+    await h.expectFile(CAPTURE_PATH).toContain("Need to send Ada");
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID })
+      .toHaveCount(0);
+
+    await h.userCommit({
+      files: {
+        ".dome/config.yaml": COMMAND_PROVIDER_CONFIG,
+      },
+      message: "enable intake",
+    });
+    const sync = await h.runCli(["sync", "--json"]);
+    expect(sync.exitCode).toBe(0);
+    expect(sync.stderr).toBe("");
+
+    await h.expectFile(OUTPUT_PATH).toContain("# Command launch follow-up");
+    await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
+    await h.expectFile(CAPTURE_PATH).toBeAbsent();
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Send Ada the launch staffing note",
+      })
+      .toHaveCount(1);
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
+      .toHaveExactlyOne();
+
+    const settled = await h.runCli(["sync", "--json"]);
+    expect(settled.exitCode).toBe(0);
+    await h
+      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
+      .toHaveExactlyOne();
   },
 );
 

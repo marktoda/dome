@@ -47,6 +47,8 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     }),
     extension("dome.intake", false, {
       read: [
+        ".dome/config.yaml",
+        ".dome/model-provider.ts",
         "inbox/**/*.md",
         "wiki/generated/intake/*.md",
         "wiki/syntheses/intake-*.md",
