@@ -24,6 +24,7 @@ import {
 import { searchFactObjectLabel } from "./labels";
 import {
   dailySurfaceRecallSignalsForTopic,
+  filterDailyIntentSearchMatches,
   mergeRecallSignalMaps,
   prioritizedRecallPaths,
   recallSignalsForTopic,
@@ -66,29 +67,40 @@ const searchQuery: Processor = defineProcessor({
     const allQuestions = ctx.projection
       .questions({ resolved: false })
       .map(questionItemFromProjection);
+    const topicRecallSignalsByPath = recallSignalsForTopic({
+      projection: ctx.projection,
+      topic: input.text,
+      diagnostics: allDiagnostics,
+      questions: allQuestions,
+    });
+    const dailyRecallSignalsByPath = await dailySurfaceRecallSignalsForTopic({
+      snapshot: ctx.snapshot,
+      topic: input.text,
+      sourceRef: ctx.sourceRef,
+    });
     const recallSignalsByPath = mergeRecallSignalMaps([
-      recallSignalsForTopic({
-        projection: ctx.projection,
-        topic: input.text,
-        diagnostics: allDiagnostics,
-        questions: allQuestions,
-      }),
-      await dailySurfaceRecallSignalsForTopic({
-        snapshot: ctx.snapshot,
-        topic: input.text,
-        sourceRef: ctx.sourceRef,
-      }),
+      topicRecallSignalsByPath,
+      dailyRecallSignalsByPath,
     ]);
-    const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
+    const filteredSearchMatches = filterDailyIntentSearchMatches({
+      matches: searchMatches,
+      dailyRecallSignalsByPath,
+    });
+    const searchMatchPaths = new Set(
+      filteredSearchMatches.map((match) => match.path),
+    );
     const recalledPaths = prioritizedRecallPaths(
       recallSignalsByPath,
       searchMatchPaths,
     ).slice(0, MAX_QUERY_RECALL_PATHS);
-    const recalledMatches = ctx.projection
-      .documentsByPath(recalledPaths)
-      .filter((match) => matchSatisfiesFilters(match, input));
+    const recalledMatches = filterDailyIntentSearchMatches({
+      matches: ctx.projection
+        .documentsByPath(recalledPaths)
+        .filter((match) => matchSatisfiesFilters(match, input)),
+      dailyRecallSignalsByPath,
+    });
     const candidateMatches = Object.freeze([
-      ...searchMatches,
+      ...filteredSearchMatches,
       ...recalledMatches,
     ]);
     const factsByPath = factsForMatches(ctx, candidateMatches);

@@ -37,6 +37,7 @@ import {
 } from "./related";
 import {
   dailySurfaceRecallSignalsForTopic,
+  filterDailyIntentSearchMatches,
   mergeRecallSignalMaps,
   prioritizedRecallPaths,
   recallSignalsForTopic,
@@ -84,27 +85,38 @@ const exportContext: Processor = defineProcessor({
     const allQuestions = projection
       .questions({ resolved: false })
       .map(questionItemFromProjection);
+    const topicRecallSignalsByPath = recallSignalsForTopic({
+      projection,
+      topic: input.topic,
+      diagnostics: allDiagnostics,
+      questions: allQuestions,
+    });
+    const dailyRecallSignalsByPath = await dailySurfaceRecallSignalsForTopic({
+      snapshot: ctx.snapshot,
+      topic: input.topic,
+      sourceRef: ctx.sourceRef,
+    });
     const recallSignalsByPath = mergeRecallSignalMaps([
-      recallSignalsForTopic({
-        projection,
-        topic: input.topic,
-        diagnostics: allDiagnostics,
-        questions: allQuestions,
-      }),
-      await dailySurfaceRecallSignalsForTopic({
-        snapshot: ctx.snapshot,
-        topic: input.topic,
-        sourceRef: ctx.sourceRef,
-      }),
+      topicRecallSignalsByPath,
+      dailyRecallSignalsByPath,
     ]);
-    const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
+    const filteredSearchMatches = filterDailyIntentSearchMatches({
+      matches: searchMatches,
+      dailyRecallSignalsByPath,
+    });
+    const searchMatchPaths = new Set(
+      filteredSearchMatches.map((match) => match.path),
+    );
     const recalledPaths = prioritizedRecallPaths(
       recallSignalsByPath,
       searchMatchPaths,
     ).slice(0, MAX_RECALL_PATHS);
-    const recalledMatches = projection.documentsByPath(recalledPaths);
+    const recalledMatches = filterDailyIntentSearchMatches({
+      matches: projection.documentsByPath(recalledPaths),
+      dailyRecallSignalsByPath,
+    });
     const candidateMatches = Object.freeze([
-      ...searchMatches,
+      ...filteredSearchMatches,
       ...recalledMatches,
     ]);
     const matchPaths = new Set(candidateMatches.map((match) => match.path));

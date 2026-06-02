@@ -324,6 +324,7 @@ scenario(
 
     const today = localDateString();
     const dailyPath = `notes/${today}.md`;
+    const oldDailyPath = "notes/2026-01-01.md";
     await h.userCommit({
       files: {
         [dailyPath]:
@@ -336,6 +337,14 @@ scenario(
           "<!-- dome.daily:open-loops:end -->\n\n" +
           "## Notes\n\n" +
           "- [ ] Handle the current launch review.\n",
+        [oldDailyPath]:
+          "---\n" +
+          "type: daily\n" +
+          "recurrence: 2026-01-01\n" +
+          "---\n\n" +
+          "# 2026-01-01\n\n" +
+          "What should I work on today?\n\n" +
+          "- [ ] Historical daily task should not be read-first today.\n",
         "wiki/source-project.md":
           "# Source Project\n\n" +
           "- [ ] #followup Handle source-backed launch review 🔺 " +
@@ -351,7 +360,7 @@ scenario(
       "what should I work on today",
       "--json",
       "--limit",
-      "1",
+      "4",
     ]);
     expect(cli.exitCode).toBe(0);
     expect(cli.stderr).toBe("");
@@ -387,6 +396,9 @@ scenario(
     };
 
     expect(payload.entries[0]?.path).toBe(dailyPath);
+    expect(payload.entries.map((entry) => entry.path)).not.toContain(
+      oldDailyPath,
+    );
     expect(payload.entries[0]?.ranking.reasons).toContain(
       "current daily surface",
     );
@@ -394,6 +406,9 @@ scenario(
       expect.objectContaining({ path: dailyPath }),
     );
     expect(payload.overview.readFirst[0]?.path).toBe(dailyPath);
+    expect(payload.overview.readFirst.map((item) => item.path)).not.toContain(
+      oldDailyPath,
+    );
     expect(payload.overview.readFirst[0]?.reason).toContain(
       "current daily surface",
     );

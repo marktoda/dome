@@ -1925,3 +1925,57 @@ Qualitative read:
   new source-backed loops can still fill open capacity, but unrelated fresh
   source changes should not reorder the whole generated section and create
   noisy carry-forward commits.
+
+## 2026-06-02 Daily-Intent Context Filtering
+
+Verification action:
+
+- Re-checked the live work-vault `dome export-context today --limit 6` packet
+  after the daily carry-forward stability work.
+- Found the packet correctly put `notes/2026-06-02.md` first, but the next
+  read-first slots were mostly historical daily notes such as
+  `notes/2026-05-29.md` and `notes/2026-05-28.md` because FTS/projection recall
+  treated the word "today" in old daily pages as a topic match.
+- Added a shared daily-intent candidate filter for `dome.search.query` and
+  `dome.search.export-context`: when the requested daily surface exists,
+  historical date-named daily notes are filtered out of FTS and projection
+  recall unless they are the requested surface.
+- Kept non-daily pages eligible, so active backing context can still appear
+  after the current daily surface.
+
+Measured result:
+
+- `bun run typecheck` passed.
+- `bun test tests/harness/scenarios/cli-surface/query-adopted-state.scenario.test.ts
+  tests/harness/scenarios/cli-surface/export-context.scenario.test.ts` passed
+  with 9 tests and 1395 assertions.
+- `bun test tests/harness/scenarios/cli-surface/query-adopted-state.scenario.test.ts
+  tests/harness/scenarios/cli-surface/export-context.scenario.test.ts
+  tests/harness/scenarios/cli-surface/json-fixtures.scenario.test.ts
+  tests/harness/scenarios/cli-surface/today-task-view.scenario.test.ts
+  tests/scripts/v1-smoke.test.ts` passed with 20 tests and 2821 assertions.
+- `git diff --check` passed.
+- `bun test` passed with 1064 tests and 22520 assertions.
+- `bun run v1:smoke -- --sync-docs` passed for docs and work. Both vaults
+  were adopted-current; settlement checks were skipped because docs had this
+  in-progress source diff and the work vault had two draft note changes.
+- Live work-vault `dome export-context --vault /Users/mark.toda/vaults/work
+  today --limit 6` now starts read-first with `notes/2026-06-02.md`, then
+  `notes/tasks.md` and non-daily source/entity/concept pages, with historical
+  daily notes removed from the read-first and recall-signal sections.
+- Live work-vault `dome query --vault /Users/mark.toda/vaults/work today
+  --limit 6 --json` shows the same first six paths.
+- `bun run v1:dogfood-report -- --json` still reports the M10 soak as
+  `not-ready` with 1/10 complete workdays, 1/10 serve-host evidence days, 1/5
+  capture evidence days, 1/12 calendar-day span, and 0 release blockers.
+- `bun run v1:dogfood-preflight -- --json` reports serve and capture ready,
+  but operational readiness not ready because the work vault has draft
+  `notes/2026-06-02.md` and `notes/tasks.md` changes. I left those
+  foreground/user edits untouched.
+
+Qualitative read:
+
+- This makes the daily-intent context packet a better foreground-agent handoff:
+  old daily notes can still be found by explicit date queries, but "today" now
+  means the current daily surface plus active backing context instead of a pile
+  of older notes that happen to contain the word.

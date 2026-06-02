@@ -11,6 +11,7 @@ import type {
 } from "../../../../src/core/effect";
 import type {
   ProjectionQueryView,
+  SearchDocumentResult,
   Snapshot,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -164,6 +165,27 @@ export function prioritizedRecallPaths(
       })
       .map(([path]) => path),
   );
+}
+
+export function filterDailyIntentSearchMatches(input: {
+  readonly matches: ReadonlyArray<SearchDocumentResult>;
+  readonly dailyRecallSignalsByPath: ReadonlyMap<
+    string,
+    ReadonlyArray<SearchRecallSignal>
+  >;
+}): ReadonlyArray<SearchDocumentResult> {
+  const targetDailyPaths = new Set(input.dailyRecallSignalsByPath.keys());
+  if (targetDailyPaths.size === 0) return input.matches;
+  return Object.freeze(
+    input.matches.filter((match) =>
+      !isDailySearchMatch(match) || targetDailyPaths.has(match.path)
+    ),
+  );
+}
+
+function isDailySearchMatch(match: SearchDocumentResult): boolean {
+  return match.type === "daily" ||
+    /^(?:notes|wiki\/dailies)\/\d{4}-\d{2}-\d{2}\.md$/.test(match.path);
 }
 
 function recallFacts(

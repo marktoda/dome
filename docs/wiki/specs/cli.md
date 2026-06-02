@@ -784,6 +784,10 @@ explicit `YYYY-MM-DD` also recall existing date-named markdown files for that
 day from the adopted snapshot. This makes the current daily note available as a
 read-first candidate even when its body does not literally match the user's
 natural-language query.
+When that daily-intent recall resolves a target daily surface, historical
+date-named daily notes are filtered out of FTS and projection-recall candidates
+unless they are the target daily. This prevents old daily notes that merely say
+"today" from crowding out the current daily surface and its backing context.
 It then ranks the combined candidate set before slicing to `--limit` with
 source-backed signals: page type, graph facts, open-loop facts, decisions,
 unresolved questions, active diagnostics, and projection recall signals. The
@@ -868,7 +872,11 @@ open loop, decision, unresolved question, or active diagnostic for that page,
 even if the page body itself did not match the FTS query. Daily-intent packets
 also recall existing date-named markdown files for the requested day from the
 adopted snapshot, so a foreground agent asking what to work on today sees the
-current daily surface as an explainable read-first entry. These daily-intent
+current daily surface as an explainable read-first entry. When the requested
+daily surface exists, historical date-named daily notes are filtered out of the
+packet's FTS and projection-recall candidate set unless they are that requested
+surface. This keeps old notes that happen to contain the word "today" from
+occupying read-first slots ahead of active backing context. These daily-intent
 packets also parse the recalled daily surface's hand-authored open checkboxes,
 directives, and generated source-backed open-loop rows into the overview's
 `Open Loops` section, preserving both the daily surface line SourceRef and the

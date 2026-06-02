@@ -254,12 +254,21 @@ scenario(
 
     const today = localDateString();
     const dailyPath = `notes/${today}.md`;
+    const oldDailyPath = "notes/2026-01-01.md";
     await h.userCommit({
       files: {
         [dailyPath]:
           `# ${today}\n\n` +
           "## Open Loops\n\n" +
           "- [ ] Handle the current launch review.\n",
+        [oldDailyPath]:
+          "---\n" +
+          "type: daily\n" +
+          "recurrence: 2026-01-01\n" +
+          "---\n\n" +
+          "# 2026-01-01\n\n" +
+          "What should I work on today?\n\n" +
+          "- [ ] Historical daily task should not be read-first today.\n",
       },
       message: "add current daily note",
     });
@@ -271,7 +280,7 @@ scenario(
       "what should I work on today",
       "--json",
       "--limit",
-      "1",
+      "5",
     ]);
     expect(cli.exitCode).toBe(0);
     expect(cli.stderr).toBe("");
@@ -288,6 +297,9 @@ scenario(
     };
 
     expect(payload.matches[0]?.path).toBe(dailyPath);
+    expect(payload.matches.map((match) => match.path)).not.toContain(
+      oldDailyPath,
+    );
     expect(payload.matches[0]?.ranking.reasons).toContain(
       "current daily surface",
     );
