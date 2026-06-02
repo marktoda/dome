@@ -60,6 +60,7 @@ import {
 } from "../../src/projections/schedule-cursors";
 
 const ADOPTED = commitOid("abcdef0000000000000000000000000000000000");
+const OTHER = commitOid("bbbbbb0000000000000000000000000000000000");
 const REF = sourceRef({ commit: ADOPTED, path: "wiki/x.md" });
 
 // Shared per-test handle harness. `withDb` returns a fresh ProjectionDb in an
@@ -577,6 +578,82 @@ describe("questions accessor", () => {
 
     const got = queryQuestions(db);
     expect(got.length).toBe(1);
+  });
+
+  it("insertQuestion refreshes unanswered rows for stable question keys", () => {
+    const original = questionEffect({
+      question: "possible followup at old line?",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/a.md",
+          range: { startLine: 3, endLine: 3 },
+          stableId: "dome.daily.open-loop:abc",
+        }),
+      ],
+      idempotencyKey: "q-stable",
+    });
+    const moved = questionEffect({
+      question: "possible followup at new line?",
+      sourceRefs: [
+        sourceRef({
+          commit: OTHER,
+          path: "wiki/a.md",
+          range: { startLine: 7, endLine: 7 },
+          stableId: "dome.daily.open-loop:abc",
+        }),
+      ],
+      idempotencyKey: "q-stable",
+    });
+    insertQuestion(db, { effect: original, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, { effect: moved, processorId: "p1", adoptedCommit: OTHER });
+
+    const records = queryQuestionRecords(db);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.effect.question).toBe("possible followup at new line?");
+    expect(records[0]?.adoptedCommit).toBe(OTHER);
+    expect(records[0]?.effect.sourceRefs[0]?.range?.startLine).toBe(7);
+    expect(records[0]?.effect.sourceRefs[0]?.stableId).toBe(
+      "dome.daily.open-loop:abc",
+    );
+  });
+
+  it("insertQuestion does not overwrite answered rows", () => {
+    const original = questionEffect({
+      question: "possible followup?",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/a.md",
+          range: { startLine: 3, endLine: 3 },
+        }),
+      ],
+      idempotencyKey: "q-answered-stable",
+    });
+    const moved = questionEffect({
+      question: "changed wording?",
+      sourceRefs: [
+        sourceRef({
+          commit: OTHER,
+          path: "wiki/a.md",
+          range: { startLine: 7, endLine: 7 },
+        }),
+      ],
+      idempotencyKey: "q-answered-stable",
+    });
+    insertQuestion(db, { effect: original, processorId: "p1", adoptedCommit: ADOPTED });
+    answerQuestion(db, {
+      idempotencyKey: "q-answered-stable",
+      answer: "track",
+    });
+    insertQuestion(db, { effect: moved, processorId: "p1", adoptedCommit: OTHER });
+
+    const records = queryQuestionRecords(db);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.effect.question).toBe("possible followup?");
+    expect(records[0]?.adoptedCommit).toBe(ADOPTED);
+    expect(records[0]?.effect.sourceRefs[0]?.range?.startLine).toBe(3);
+    expect(records[0]?.answer).toBe("track");
   });
 
   it("resolveStaleQuestions deletes stale questions for inspected paths", () => {

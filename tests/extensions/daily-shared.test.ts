@@ -8,6 +8,7 @@ import {
   dailyPathSettings,
   dailyPath,
   openLoopIdentity,
+  openLoopStableId,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   openTasksFromMarkdown,
@@ -306,6 +307,10 @@ describe("dome.daily shared date helpers", () => {
       items: [
         {
           line: 3,
+          stableId: openLoopStableId({
+            sourcePath: "wiki/projects/alpha.md",
+            body: "Ship budget update",
+          }),
           body: "Ship budget update",
           followup: false,
           sourcePath: "wiki/projects/alpha.md",
@@ -346,6 +351,10 @@ describe("dome.daily shared date helpers", () => {
       items: [
         {
           line: 3,
+          stableId: openLoopStableId({
+            sourcePath: "wiki/projects/alpha.md",
+            body: "Ship budget update",
+          }),
           body: "Ship budget update",
           followup: false,
           sourcePath: "wiki/projects/alpha.md",
@@ -396,15 +405,19 @@ describe("dome.daily shared date helpers", () => {
     expect(resolved).toEqual([
       {
         line: 5,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/alpha.md",
+          body: "Confirm Q3 plan with Eli",
+        }),
         path: "wiki/dailies/2026-02-28.md",
         body: "Confirm Q3 plan with Eli",
         followup: true,
         sourcePath: "wiki/projects/alpha.md",
       },
     ]);
-    expect(openLoopIdentity(resolved[0]!)).toBe(
-      '["wiki/projects/alpha.md","confirm q3 plan with eli"]',
-    );
+    const firstResolved = resolved[0];
+    if (firstResolved === undefined) throw new Error("expected resolved item");
+    expect(openLoopIdentity(firstResolved)).toBe(firstResolved.stableId);
 
     const section = openLoopSurfaceSection({
       items: [],

@@ -1,9 +1,9 @@
 // scenarios/effect-kinds/daily-task-index-facts.scenario.test.ts
 //
 // dome.daily.task-index projects explicit markdown action observations into
-// page-scoped facts. The processor intentionally does not assign stable task
-// identities yet; these scenarios lock the current projection lifecycle:
-// re-inspecting a changed/deleted page replaces stale facts for that page.
+// page-scoped facts with stable source-ref identities. Re-inspecting a
+// changed/deleted page replaces stale facts for that page, while moved action
+// lines preserve semantic identity for daily/open-loop surfaces.
 
 import { expect } from "bun:test";
 
@@ -153,6 +153,144 @@ scenario(
     await h
       .expectLedger({ processorId: "dome.daily.task-index" })
       .toAllHaveStatus("succeeded");
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.daily.task-index keeps stable identity when task lines move",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "fact" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": CONFIG,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const path = "wiki/projects/alpha.md";
+    const task = "Send Ada budget update";
+    await h.userCommit({
+      files: {
+        [path]: [
+          "# Alpha",
+          "",
+          "TODO: Send Ada budget update",
+          "",
+        ].join("\n"),
+      },
+      message: "add project task",
+    });
+    const created = await h.tick();
+    expect(created.adopted).toBe(true);
+
+    const beforeRefs = sourceRefRowsForFacts(h, {
+      predicate: "dome.daily.open_task",
+      subjectId: path,
+      objectString: task,
+    });
+    expect(beforeRefs).toHaveLength(1);
+    const before = beforeRefs[0]?.[0];
+    expect(before?.range?.startLine).toBe(3);
+    expect(typeof before?.stableId).toBe("string");
+
+    await h.userCommit({
+      files: {
+        [path]: [
+          "# Alpha",
+          "",
+          "Context line that moves the task down.",
+          "",
+          "TODO: Send Ada budget update",
+          "",
+        ].join("\n"),
+      },
+      message: "move project task",
+    });
+    const moved = await h.tick();
+    expect(moved.adopted).toBe(true);
+
+    const afterRefs = sourceRefRowsForFacts(h, {
+      predicate: "dome.daily.open_task",
+      subjectId: path,
+      objectString: task,
+    });
+    expect(afterRefs).toHaveLength(1);
+    const after = afterRefs[0]?.[0];
+    expect(after?.range?.startLine).toBe(5);
+    expect(after?.stableId).toBe(before?.stableId);
+  },
+);
+
+scenario(
+  {
+    name: "effect-kinds: dome.daily.task-index refreshes stable ambiguous followup questions",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "question" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: {
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": CONFIG,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const path = "wiki/projects/beta.md";
+    const prose = "We should follow up with Sam about hiring";
+    await h.userCommit({
+      files: {
+        [path]: ["# Beta", "", prose, ""].join("\n"),
+      },
+      message: "add ambiguous followup",
+    });
+    const created = await h.tick();
+    expect(created.adopted).toBe(true);
+
+    const before = openQuestionRows(h);
+    expect(before).toHaveLength(1);
+    expect(before[0]?.idempotency_key).toMatch(
+      /^dome\.daily\.ambiguous-followup:/,
+    );
+    expect(before[0]?.sourceRefs[0]?.range?.startLine).toBe(3);
+    expect(typeof before[0]?.sourceRefs[0]?.stableId).toBe("string");
+
+    await h.userCommit({
+      files: {
+        [path]: ["# Beta", "", "Context line.", "", prose, ""].join("\n"),
+      },
+      message: "move ambiguous followup",
+    });
+    const moved = await h.tick();
+    expect(moved.adopted).toBe(true);
+
+    const after = openQuestionRows(h);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).toBe(before[0]?.id);
+    expect(after[0]?.idempotency_key).toBe(before[0]?.idempotency_key);
+    expect(after[0]?.sourceRefs[0]?.range?.startLine).toBe(5);
+    expect(after[0]?.sourceRefs[0]?.stableId).toBe(
+      before[0]?.sourceRefs[0]?.stableId,
+    );
+    expect(after[0]?.question).toContain(`${path}:5`);
   },
 );
 
@@ -574,10 +712,26 @@ scenario(
 
 type SourceRefRow = {
   readonly source_refs: string;
+  readonly object_json?: string;
+};
+
+type QuestionRow = {
+  readonly id: number;
+  readonly question: string;
+  readonly source_refs: string;
+  readonly idempotency_key: string;
+};
+
+type OpenQuestionRow = {
+  readonly id: number;
+  readonly question: string;
+  readonly idempotency_key: string;
+  readonly sourceRefs: ReadonlyArray<SourceRefProjection>;
 };
 
 type SourceRefProjection = {
   readonly path?: unknown;
+  readonly stableId?: unknown;
   readonly range?: {
     readonly startLine?: unknown;
     readonly endLine?: unknown;
@@ -586,14 +740,50 @@ type SourceRefProjection = {
 
 function sourceRefRowsForFacts(
   h: Harness,
-  filter: { readonly predicate: string; readonly subjectId: string },
+  filter: {
+    readonly predicate: string;
+    readonly subjectId: string;
+    readonly objectString?: string;
+  },
 ): ReadonlyArray<ReadonlyArray<SourceRefProjection>> {
-  return h.projection.raw
+  const rows = h.projection.raw
     .query<SourceRefRow, [string, string]>(
-      "SELECT source_refs FROM facts WHERE predicate = ? AND subject_id = ?",
+      "SELECT source_refs, object_json FROM facts WHERE predicate = ? AND subject_id = ?",
     )
-    .all(filter.predicate, filter.subjectId)
+    .all(filter.predicate, filter.subjectId);
+  return rows
+    .filter((row) =>
+      filter.objectString === undefined ||
+      rowObjectString(row.object_json) === filter.objectString
+    )
     .map((row) => JSON.parse(row.source_refs) as SourceRefProjection[]);
+}
+
+function openQuestionRows(h: Harness): ReadonlyArray<OpenQuestionRow> {
+  return h.projection.raw
+    .query<QuestionRow, []>(
+      "SELECT id, question, source_refs, idempotency_key FROM questions WHERE answered_at IS NULL ORDER BY id",
+    )
+    .all()
+    .map((row) =>
+      Object.freeze({
+        id: row.id,
+        question: row.question,
+        idempotency_key: row.idempotency_key,
+        sourceRefs: JSON.parse(row.source_refs) as SourceRefProjection[],
+      })
+    );
+}
+
+function rowObjectString(objectJson: string | undefined): string | null {
+  if (objectJson === undefined) return null;
+  const parsed = JSON.parse(objectJson) as {
+    readonly kind?: unknown;
+    readonly value?: unknown;
+  };
+  return parsed.kind === "string" && typeof parsed.value === "string"
+    ? parsed.value
+    : null;
 }
 
 function sourceRefRowsForQuestions(

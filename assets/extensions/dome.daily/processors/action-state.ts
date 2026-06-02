@@ -385,7 +385,7 @@ function factKey(fact: FactEffect): string {
   const object = literalIdentity(fact.object);
   return [
     ref?.path ?? subjectPath(fact),
-    ref?.range?.startLine ?? "",
+    ref?.stableId ?? ref?.range?.startLine ?? "",
     object,
   ].join("\u0000");
 }

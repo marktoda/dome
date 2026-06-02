@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const CARRY_FORWARD_RE =
   /\s+\(from \[\[([^\]\n]*\d{4}-\d{2}-\d{2})(?:\.md)?\]\]\)\s*$/;
 const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
@@ -42,6 +44,7 @@ export type AmbiguousFollowup = {
 
 export type DailyOpenLoopSource = {
   readonly line: number;
+  readonly stableId: string;
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
@@ -53,6 +56,7 @@ export type DailyOpenLoopCandidate = DailyOpenLoopSource & {
 
 export type DailyResolvedOpenLoopSource = {
   readonly line: number;
+  readonly stableId: string;
   readonly path: string;
   readonly body: string;
   readonly followup: boolean;
@@ -301,6 +305,10 @@ export function openLoopSurfaceSources(input: {
     items.push(
       Object.freeze({
         line: item.line,
+        stableId: openLoopStableId({
+          sourcePath: input.path,
+          body: item.body,
+        }),
         body: item.body,
         followup: item.followup,
         sourcePath: input.path,
@@ -346,6 +354,10 @@ export function completedSourceBackedOpenLoopsFromMarkdown(input: {
     items.push(
       Object.freeze({
         line: item.line,
+        stableId: openLoopStableId({
+          sourcePath: item.sourcePath,
+          body: item.body,
+        }),
         path: input.path,
         body: item.body,
         followup: item.followup,
@@ -360,10 +372,23 @@ export function openLoopIdentity(input: {
   readonly sourcePath: string;
   readonly body: string;
 }): string {
-  return JSON.stringify([
-    normalizeSourcePath(input.sourcePath),
-    normalizeOpenLoopBody(input.body),
-  ]);
+  return openLoopStableId(input);
+}
+
+export function openLoopStableId(input: {
+  readonly sourcePath: string;
+  readonly body: string;
+}): string {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify([
+        normalizeSourcePath(input.sourcePath),
+        normalizeOpenLoopBody(input.body),
+      ]),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `dome.daily.open-loop:${hash}`;
 }
 
 export function rankDailyOpenLoopSurfaceItems(
@@ -622,6 +647,7 @@ function stripCandidateMetadata(
 ): DailyOpenLoopSource {
   return Object.freeze({
     line: item.line,
+    stableId: item.stableId,
     body: item.body,
     followup: item.followup,
     sourcePath: item.sourcePath,

@@ -757,7 +757,9 @@ and `#follow-up` marker tags are stripped from rendered task/followup text.
 Parsed Obsidian Tasks metadata markers such as `📅 YYYY-MM-DD` and priority
 glyphs are also stripped from display text once represented in structured
 `dueDate` / `priority` fields. SourceRefs still point to the original markdown
-line.
+line, and source-backed open loops also carry a stable SourceRef id derived
+from normalized source path + semantic action text so moving a task line does
+not create a new open-loop identity.
 
 The `dome.daily.carry-forward` garden processor may write a small generated
 `## Open Loops` block into the daily note. `dome.daily.task-index` treats that

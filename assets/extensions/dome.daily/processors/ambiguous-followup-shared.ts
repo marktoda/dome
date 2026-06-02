@@ -11,9 +11,9 @@ export const TRACKED_FOLLOWUPS_END =
 export type AmbiguousFollowupAnswer = "track" | "ignore";
 
 export type AmbiguousFollowupTarget = {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly path: string;
-  readonly line: number;
+  readonly line?: number;
   readonly text: string;
 };
 
@@ -104,22 +104,33 @@ function capitalize(value: string): string {
 function parseTarget(value: unknown): AmbiguousFollowupTarget | null {
   if (value === null || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  if (record.version !== 1) return null;
+  if (record.version !== 1 && record.version !== 2) return null;
   if (typeof record.path !== "string" || record.path === "") return null;
-  if (
-    typeof record.line !== "number" ||
-    !Number.isInteger(record.line) ||
-    record.line <= 0
-  ) {
+  if (record.version === 1) {
+    if (
+      typeof record.line !== "number" ||
+      !Number.isInteger(record.line) ||
+      record.line <= 0
+    ) {
+      return null;
+    }
+  } else if (record.line !== undefined) {
     return null;
   }
   if (typeof record.text !== "string" || record.text.trim() === "") {
     return null;
   }
+  if (record.version === 1) {
+    return Object.freeze({
+      version: 1,
+      path: record.path,
+      line: record.line as number,
+      text: record.text,
+    });
+  }
   return Object.freeze({
-    version: 1,
+    version: 2,
     path: record.path,
-    line: record.line,
     text: record.text,
   });
 }

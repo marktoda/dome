@@ -13,8 +13,8 @@
 //     `JSON.stringify`; symmetric `JSON.parse` on read.
 //   - Row → QuestionEffect deserialization goes through `questionEffect`.
 //   - Returned arrays are `Object.freeze`'d.
-//   - INSERT uses `INSERT OR IGNORE` to honor the `idempotency_key UNIQUE`
-//     constraint: a re-emission of the same key is a no-op.
+//   - INSERT honors the `idempotency_key UNIQUE` constraint by refreshing
+//     unanswered rows on re-emission while preserving answered rows.
 
 import type { QuestionEffect } from "../core/effect";
 import { questionEffect } from "../core/effect";
@@ -80,10 +80,18 @@ export type AnswerQuestionResult =
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_QUESTION_SQL = `
-INSERT OR IGNORE INTO questions (
+INSERT INTO questions (
   question, options_json, metadata_json, source_refs, idempotency_key,
   processor_id, adopted_commit, asked_at, answered_at, answer
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+ON CONFLICT(idempotency_key) DO UPDATE SET
+  question = excluded.question,
+  options_json = excluded.options_json,
+  metadata_json = excluded.metadata_json,
+  source_refs = excluded.source_refs,
+  processor_id = excluded.processor_id,
+  adopted_commit = excluded.adopted_commit
+WHERE questions.answered_at IS NULL
 `.trim();
 
 const QUERY_ALL_SQL = `
@@ -171,8 +179,10 @@ type QuestionStaleRow = {
 
 /**
  * Insert a QuestionEffect row. The table's `idempotency_key UNIQUE`
- * constraint means a re-emission with the same key is silently deduped via
- * `INSERT OR IGNORE` (per spec semantics for QuestionEffect.idempotencyKey).
+ * constraint means a re-emission with the same key keeps one durable row.
+ * Unanswered rows refresh their wording/source refs so semantic questions keep
+ * current provenance when source lines move; answered rows stay untouched so
+ * durable answers remain auditable.
  *
  * Throws on SQLite-level failure (disk full).
  */

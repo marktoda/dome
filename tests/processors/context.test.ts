@@ -56,6 +56,19 @@ describe("makeProcessorContext — shape and freezing", () => {
     expect(ref.path as string).toBe("wiki/x.md");
     expect(ref.range).toEqual({ startLine: 1, endLine: 5 });
   });
+
+  test("ctx.sourceRef(path, range, stableId) includes stable semantic identity", () => {
+    const ctx = makeProcessorContext(baseInput({ input: null }));
+    const ref = ctx.sourceRef(
+      "wiki/x.md",
+      { startLine: 2, endLine: 2 },
+      "dome.daily.open-loop:abc123",
+    );
+    expect(ref.commit).toBe(COMMIT);
+    expect(ref.path as string).toBe("wiki/x.md");
+    expect(ref.range).toEqual({ startLine: 2, endLine: 2 });
+    expect(ref.stableId).toBe("dome.daily.open-loop:abc123");
+  });
 });
 
 describe("makeProcessorContext — capability token", () => {

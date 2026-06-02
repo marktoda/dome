@@ -14,6 +14,7 @@ import {
 import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
+  openLoopStableId,
 } from "./daily-shared";
 import {
   AMBIGUOUS_FOLLOWUP_OPTIONS,
@@ -25,7 +26,7 @@ const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
 const taskIndex: Processor = defineProcessor({
   id: "dome.daily.task-index",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "adoption",
   triggers: [
     {
@@ -71,7 +72,11 @@ const taskIndex: Processor = defineProcessor({
       if (content === null) continue;
 
       for (const task of actionItemsFromMarkdown(content)) {
-        const ref = ctx.sourceRef(path, lineRange(task.line));
+        const stableId = openLoopStableId({
+          sourcePath: path,
+          body: task.body,
+        });
+        const ref = ctx.sourceRef(path, lineRange(task.line), stableId);
         effects.push(
           factEffect({
             subject: { kind: "page", path },
@@ -94,17 +99,22 @@ const taskIndex: Processor = defineProcessor({
         }
       }
       for (const ambiguous of ambiguousFollowupsFromMarkdown(content)) {
+        const stableId = openLoopStableId({
+          sourcePath: path,
+          body: ambiguous.text,
+        });
         effects.push(
           questionEffect({
             question:
               `Possible follow-up in ${path}:${ambiguous.line}: ` +
               `"${ambiguous.text}". Should Dome track this as a follow-up?`,
             options: AMBIGUOUS_FOLLOWUP_OPTIONS,
-            sourceRefs: [ctx.sourceRef(path, lineRange(ambiguous.line))],
+            sourceRefs: [
+              ctx.sourceRef(path, lineRange(ambiguous.line), stableId),
+            ],
             idempotencyKey: ambiguousFollowupQuestionKey({
-              version: 1,
+              version: 2,
               path,
-              line: ambiguous.line,
               text: ambiguous.text,
             }),
             metadata: {

@@ -194,7 +194,11 @@ idempotency-key prefix and the `processorId` that created the question row;
 privileged operational handlers must use both so another question emitter
 cannot borrow their recovery capability by forging a prefix.
 
-The `idempotencyKey` is what keeps the question table from filling with duplicates when a garden processor runs repeatedly on the same input.
+The `idempotencyKey` is semantic identity. It keeps the question table from
+filling with duplicates when a processor runs repeatedly on the same input.
+When the same key is re-emitted for an unanswered question, the projection row
+refreshes its wording and SourceRefs so stable questions can survive line
+moves without stale provenance. Answered rows are not overwritten.
 
 `metadata` is advisory but source-controlled through the effect row. It lets
 `dome check`, `dome today`, `dome prep`, `dome query`, and
@@ -356,7 +360,7 @@ interface SourceRef {
   readonly path: string;              // vault-relative
   readonly blob?: BlobOid;            // optional — the blob OID at the commit
   readonly range?: TextRange;         // optional — line/character range
-  readonly stableId?: string;         // optional — for facts about a marker-delimited region or a stable-id'd task
+  readonly stableId?: string;         // optional — for marker-delimited regions or semantic open-loop/task identity
 }
 
 interface TextRange {
@@ -369,7 +373,14 @@ interface TextRange {
 
 A SourceRef points to evidence inside an *adopted* commit. This is why `dome query` returns snippets that are durably resolvable — the commit OID is stable, the blob is reachable, the range is valid.
 
-Stable IDs are used sparingly: tasks (Obsidian-Tasks syntax extended with a `^id` suffix), decisions (explicit `decision:` regions), entity claims (explicit `claim:` regions), generated regions (`<!-- dome:region id="..." -->`). Default identification is path + range; stable IDs are added only when path/range identity is insufficient.
+Stable IDs are used sparingly: source-backed open loops whose line may move,
+tasks (Obsidian-Tasks syntax extended with a `^id` suffix), decisions
+(explicit `decision:` regions), entity claims (explicit `claim:` regions), and
+generated regions (`<!-- dome:region id="..." -->`). Default identification is
+path + range; stable IDs are added only when path/range identity is
+insufficient. Processor authors should prefer `ctx.sourceRef(path, range,
+stableId)` over importing the raw constructor so read-grant enforcement still
+applies.
 
 ## Effect × capability compatibility
 

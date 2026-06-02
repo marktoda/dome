@@ -124,8 +124,10 @@ const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
  *
  * The returned `sourceRef` method pre-binds the snapshot's `commit`, so
  * `ctx.sourceRef("wiki/entities/danny.md", { startLine: 1, endLine: 5 })`
- * returns a SourceRef whose `commit` is `ctx.snapshot.commit`. Thin wrapper
- * around the core `sourceRef(...)` helper.
+ * returns a SourceRef whose `commit` is `ctx.snapshot.commit`. Callers may
+ * pass a third stable-id argument for generated regions or semantic tasks
+ * whose identity should survive line moves. Thin wrapper around the core
+ * `sourceRef(...)` helper.
  *
  * Optional `modelInvoke` is only assigned when defined, so the returned
  * context is `exactOptionalPropertyTypes`-clean (no `modelInvoke: undefined`
@@ -139,15 +141,20 @@ export function makeProcessorContext<TInput>(
   opts: ProcessorContextInput<TInput>,
 ): ProcessorContext<TInput> {
   const commit = opts.snapshot.commit;
-  const boundSourceRef = (path: string, range?: TextRange): SourceRef => {
+  const boundSourceRef = (
+    path: string,
+    range?: TextRange,
+    stableId?: string,
+  ): SourceRef => {
     if (opts.canSourceRefPath?.(path) === false) {
       throw new Error(`sourceRef path is outside effective read grants: ${path}`);
     }
-    return sourceRef(
-      range !== undefined
-        ? { commit, path, range }
-        : { commit, path },
-    );
+    return sourceRef({
+      commit,
+      path,
+      ...(range !== undefined ? { range } : {}),
+      ...(stableId !== undefined ? { stableId } : {}),
+    });
   };
 
   const ctx: {

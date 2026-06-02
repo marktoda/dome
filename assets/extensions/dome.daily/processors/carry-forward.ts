@@ -41,7 +41,7 @@ const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.1",
+  version: "0.2.2",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -207,16 +207,24 @@ function patchSourceRefs(
 ): ReadonlyArray<SourceRef> {
   return [
     ...items.map((item) =>
-      ctx.sourceRef(item.sourcePath, {
-        startLine: item.line,
-        endLine: item.line,
-      })
+      ctx.sourceRef(
+        item.sourcePath,
+        {
+          startLine: item.line,
+          endLine: item.line,
+        },
+        item.stableId,
+      )
     ),
     ...resolvedItems.map((item) =>
-      ctx.sourceRef(item.path, {
-        startLine: item.line,
-        endLine: item.line,
-      })
+      ctx.sourceRef(
+        item.path,
+        {
+          startLine: item.line,
+          endLine: item.line,
+        },
+        item.stableId,
+      )
     ),
   ];
 }

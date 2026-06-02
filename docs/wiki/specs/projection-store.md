@@ -194,6 +194,13 @@ code uses the same row-record accessor for full detail.
 `dome resolve <id> <value>` validates the answer and sets `answered_at` /
 `answer`.
 
+`idempotency_key` is the semantic identity of the question. Re-emitting an
+unanswered question with the same key refreshes its wording, metadata,
+SourceRefs, processor id, and adopted commit while preserving the durable row
+id and original `asked_at`. Re-emitting an answered question with the same key
+does not overwrite the row; answered rows remain an audit surface for the
+decision that was recorded.
+
 Design note: answer values are user input, not rebuildable markdown-derived
 facts. `projection.db.questions.answer` is a denormalized view of the current
 answer for inspect/query ergonomics; the durable source of truth is

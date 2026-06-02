@@ -529,7 +529,11 @@ export type ProcessorContext<TInput = unknown> = {
   readonly projection?: ProjectionQueryView;
   readonly operational?: OperationalQueryView;
   readonly pageTypes?: PageTypeRegistry;
-  readonly sourceRef: (path: string, range?: TextRange) => SourceRef;
+  readonly sourceRef: (
+    path: string,
+    range?: TextRange,
+    stableId?: string,
+  ) => SourceRef;
 };
 
 // ----- Processor ------------------------------------------------------------
