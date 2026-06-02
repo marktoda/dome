@@ -74,6 +74,36 @@ export function formatMaintenanceLoopSummaryLine(
   return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.drift} drift | ${counts.partial} partial | ${counts.inactive} inactive`;
 }
 
+export function formatMaintenanceLoopDetailLines(
+  loops: ReadonlyArray<MaintenanceLoopSummary>,
+): ReadonlyArray<string> {
+  const lines: string[] = [];
+  for (const loop of loops) {
+    lines.push(`  - [${loop.state}] ${loop.id}: ${loop.goal}`);
+    lines.push(`    processors: ${formatProcessorCounts(loop)}`);
+    if (loop.missing_processors.length > 0) {
+      lines.push(`    missing: ${formatBoundedList(loop.missing_processors)}`);
+    }
+    if (loop.inactive_optional_processors.length > 0) {
+      lines.push(
+        `    inactive optional: ${formatBoundedList(loop.inactive_optional_processors)}`,
+      );
+    }
+    lines.push(
+      `    attention: ${loop.attention_diagnostics} attention diagnostic(s), ${loop.drift_diagnostics} drift diagnostic(s), ${loop.questions} question(s), ${loop.recent_problem_runs} problem run(s)`,
+    );
+    if (loop.questions > 0) {
+      lines.push(
+        `    questions: ${loop.agent_safe_questions} agent-safe, ${loop.model_safe_questions} model-safe, ${loop.owner_needed_questions} owner-needed`,
+      );
+    }
+    lines.push(`    surfaces: ${loop.surfaces.join(", ")}`);
+    lines.push(`    no-op: ${loop.settlement.no_op_when}`);
+    lines.push(`    latest run: ${loop.latest_run_at ?? "(none)"}`);
+  }
+  return Object.freeze(lines);
+}
+
 function summarizeLoop(
   loop: MaintenanceLoop,
   opts: {
@@ -215,4 +245,26 @@ function formatSurface(surface: MaintenanceLoop["surfaces"][number]): string {
   }
   const _exhaustive: never = surface;
   return _exhaustive;
+}
+
+function formatProcessorCounts(loop: MaintenanceLoopSummary): string {
+  const counts = [
+    `${loop.active_processors.length}/${loop.processor_ids.length} active`,
+    `${loop.required_processor_ids.length} required`,
+  ];
+  if (loop.missing_processors.length > 0) {
+    counts.push(`${loop.missing_processors.length} missing`);
+  }
+  if (loop.inactive_optional_processors.length > 0) {
+    counts.push(`${loop.inactive_optional_processors.length} inactive optional`);
+  }
+  return counts.join(", ");
+}
+
+function formatBoundedList(values: ReadonlyArray<string>): string {
+  const maxShown = 3;
+  const shown = values.slice(0, maxShown);
+  const remaining = values.length - shown.length;
+  if (remaining <= 0) return shown.join(", ");
+  return `${shown.join(", ")}, +${remaining} more`;
 }

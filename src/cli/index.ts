@@ -116,6 +116,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--engine", "Show engine health findings.")
     .option("--content", "Show adopted-state diagnostics.")
     .option("--decisions", "Show open Dome questions.")
+    .option("--loops", "Show maintenance-loop detail rows in text output.")
     .option(
       "--attention",
       "For content diagnostics, show only warning/error/block rows.",
@@ -135,6 +136,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           engine: options.engine,
           content: options.content,
           decisions: options.decisions,
+          loops: options.loops,
           attention: options.attention,
           limit: options.limit,
           orphanThresholdMs: options.orphanThresholdMs,
@@ -473,6 +475,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("status")
     .description("Vault health + content dashboard.")
+    .option("--loops", "Show maintenance-loop detail rows in text output.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -481,6 +484,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
         await runStatus({
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
+          loops: options.loops,
           json: options.json,
         }),
       );
@@ -530,6 +534,7 @@ type CheckCliOptions = {
   readonly engine?: boolean;
   readonly content?: boolean;
   readonly decisions?: boolean;
+  readonly loops?: boolean;
   readonly attention?: boolean;
   readonly limit?: number;
   readonly orphanThresholdMs?: number;
@@ -639,6 +644,7 @@ type ServeCliOptions = {
 };
 
 type StatusCliOptions = {
+  readonly loops?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

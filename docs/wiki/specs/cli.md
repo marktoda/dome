@@ -22,8 +22,8 @@ dome init [path] [--with-model-provider anthropic]
                                 Initialize a new vault.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
-dome status [--json]            Vault health + content dashboard.
-dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--json]
+dome status [--loops] [--json]  Vault health + content dashboard.
+dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit <n>] [--json]
                                 Explain compiler attention across health,
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
@@ -248,7 +248,7 @@ Exit codes: 0 on adopted / in-sync; 1 on blocked, adopted-ref divergence, or run
 
 See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
-### `dome status [--json]`
+### `dome status [--loops] [--json]`
 
 The health pulse for a vault. It is read-only and cheap enough for an
 agent or user to run at session start/end. Status intentionally combines
@@ -266,6 +266,12 @@ engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve runn
 health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
 loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
 ```
+
+`--loops` expands text mode with one row per maintenance loop: state, goal,
+active/missing processors, diagnostic/question/problem-run counts, surfaces,
+settlement no-op rule, and latest run time. JSON output always includes the
+same detail under `maintenance_loops`, so `--loops` is only a transcript-facing
+readability option.
 
 `--json` emits stable keys for agent consumption. Abbreviated shape:
 
@@ -509,7 +515,7 @@ diagnostics/questions/outbox/runs` only for row-level debugging. See
 [[wiki/specs/adoption]] §"`dome status`" for the adopted-ref framing and
 [[wiki/specs/foreground-compiler-workflow]] for the normal session pulse.
 
-### `dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--json]`
+### `dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit <n>] [--json]`
 
 The unified read-only attention report. It exists so Claude Code and a human
 operator have one "see what remains" command instead of choosing among
@@ -529,9 +535,12 @@ Default scope includes:
   metadata that separates agent/model-safe work from owner-needed decisions.
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
-or more scopes. `--attention` narrows content diagnostic rows and grouping to
-source-backed warning/error/block diagnostics while preserving total,
-source-backed, unlocated, and attention-diagnostic counters. `--limit` bounds
+or more scopes. `--loops` expands text mode with the same maintenance-loop
+detail rows as `dome status --loops`; JSON output always includes
+`maintenance_loops` when the runtime opens. `--attention` narrows content
+diagnostic rows and grouping to source-backed warning/error/block diagnostics
+while preserving total, source-backed, unlocated, and attention-diagnostic
+counters. `--limit` bounds
 rows per section; when attention
 rows are bounded, text mode renders `showing <n> of <total> attention` in the
 content summary and prints an omitted-row hint such as

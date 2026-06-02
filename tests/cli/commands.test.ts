@@ -2071,6 +2071,22 @@ describe("runCheck", () => {
     expect(out).toContain("content   0 diagnostic(s)");
     expect(out).toContain("decisions 0 open question(s)");
     expect(out).toContain("loops     5 known");
+    expect(out).not.toContain("\nLoops\n");
+  });
+
+  test("--loops prints maintenance-loop detail rows", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("loops     5 known");
+    expect(out).toContain("\nLoops\n");
+    expect(out).toContain("[inactive] dome.capture.digest");
+    expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
+    expect(out).toContain("command:export-context");
+    expect(out).toContain("no-op:");
   });
 
   test("--json reports engine findings, content diagnostics, and decisions", async () => {
@@ -3114,11 +3130,28 @@ describe("runStatus", () => {
     expect(out).toContain("links 0");
     expect(out).toContain("health    projection fresh | diagnostics 0");
     expect(out).toContain("loops     5 known");
+    expect(out).not.toContain("\nLoops\n");
     expect(out).toContain("diagnostics 0");
     expect(out).toContain("questions 0");
     expect(out).toContain("outbox 0 pending / 0 failed");
     expect(out).toContain("quarantine 0");
     expect(out).toContain("serve off (run dome serve)");
+  });
+
+  test("--loops prints maintenance-loop detail rows", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const code = await runStatus({ vault: f.vaultPath, loops: true });
+    expect(code).toBe(0);
+
+    const out = captured.out.join("\n");
+    expect(out).toContain("loops     5 known");
+    expect(out).toContain("\nLoops\n");
+    expect(out).toContain("dome.capture.digest");
+    expect(out).toContain("processors:");
+    expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
+    expect(out).toContain("latest run:");
   });
 
   test("fails early when config enables a missing bundle", async () => {

@@ -44,6 +44,7 @@ import {
 import { formatJson } from "../format";
 import {
   collectMaintenanceLoopSummaries,
+  formatMaintenanceLoopDetailLines,
   formatMaintenanceLoopSummaryLine,
   type MaintenanceLoopSummary,
 } from "../maintenance-loop-summary";
@@ -73,6 +74,7 @@ export type RunCheckOptions = {
   readonly attention?: boolean | undefined;
   readonly limit?: string | number | boolean | undefined;
   readonly orphanThresholdMs?: string | number | undefined;
+  readonly loops?: boolean | undefined;
 };
 
 type CheckScopes = {
@@ -178,7 +180,9 @@ export async function runCheck(
       }),
       engine: storageReport,
     });
-    printReport(report, options.json === true);
+    printReport(report, options.json === true, {
+      showLoopDetails: options.loops === true,
+    });
     return 0;
   }
 
@@ -252,7 +256,9 @@ export async function runCheck(
       decisions,
       maintenanceLoops: maintenance_loops,
     });
-    printReport(report, options.json === true);
+    printReport(report, options.json === true, {
+      showLoopDetails: options.loops === true,
+    });
     return 0;
   } finally {
     await runtime.close();
@@ -425,7 +431,11 @@ function reportFromUnavailableRuntime(input: {
   });
 }
 
-function printReport(report: CheckReport, json: boolean): void {
+function printReport(
+  report: CheckReport,
+  json: boolean,
+  options: { readonly showLoopDetails: boolean },
+): void {
   if (json) {
     console.log(formatJson(report));
     return;
@@ -436,10 +446,24 @@ function printReport(report: CheckReport, json: boolean): void {
   console.log(`content   ${formatContent(report.content)}`);
   console.log(`decisions ${formatDecisions(report.decisions)}`);
   console.log(`loops     ${formatLoops(report.maintenance_loops)}`);
+  if (options.showLoopDetails) {
+    printLoopDetails(report.maintenance_loops);
+  }
   printFindings(report.engine?.findings ?? []);
   printDiagnostics(report.content);
   printQuestions(report.decisions);
   printNextActions(report.next_actions);
+}
+
+function printLoopDetails(
+  loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+): void {
+  if (loops === null) return;
+  console.log("");
+  console.log("Loops");
+  for (const line of formatMaintenanceLoopDetailLines(loops)) {
+    console.log(line);
+  }
 }
 
 function formatEngine(report: HealthReport | null): string {

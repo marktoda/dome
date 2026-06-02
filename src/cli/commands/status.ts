@@ -123,6 +123,7 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatMaintenanceLoopDetailLines,
   collectMaintenanceLoopSummaries,
   formatMaintenanceLoopSummaryLine,
   type MaintenanceLoopSummary,
@@ -213,6 +214,7 @@ export type RunStatusOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly loops?: boolean | undefined;
 };
 
 // ----- runStatus ------------------------------------------------------------
@@ -430,7 +432,7 @@ export async function runStatus(
     if (options.json === true) {
       console.log(formatJson(snapshot));
     } else {
-      printStatusText(snapshot);
+      printStatusText(snapshot, { showLoopDetails: options.loops === true });
     }
     return 0;
   } finally {
@@ -445,7 +447,10 @@ export async function runStatus(
  * group facts by the question a user is asking: where is git, what is
  * in the vault, is the engine healthy?
  */
-function printStatusText(s: StatusSnapshot): void {
+function printStatusText(
+  s: StatusSnapshot,
+  options: { readonly showLoopDetails: boolean },
+): void {
   console.log("DOME status");
   console.log(`vault     ${s.vault}`);
   const syncState = s.adopted_diverged
@@ -471,6 +476,9 @@ function printStatusText(s: StatusSnapshot): void {
   console.log(
     `loops     ${formatMaintenanceLoopSummaryLine(s.maintenance_loops)}`,
   );
+  if (options.showLoopDetails) {
+    printLoopDetails(s.maintenance_loops);
+  }
   const diagnosticTop =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_summary
@@ -486,6 +494,16 @@ function printStatusText(s: StatusSnapshot): void {
     console.log(`diag fix  ${formatDiagnosticFocusLine(diagnosticFocus)}`);
   }
   for (const line of formatNextActionLines(s.next_actions)) {
+    console.log(line);
+  }
+}
+
+function printLoopDetails(
+  loops: ReadonlyArray<MaintenanceLoopSummary>,
+): void {
+  console.log("");
+  console.log("Loops");
+  for (const line of formatMaintenanceLoopDetailLines(loops)) {
     console.log(line);
   }
 }
