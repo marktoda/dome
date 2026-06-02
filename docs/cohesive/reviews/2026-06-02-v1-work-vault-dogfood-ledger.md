@@ -1141,3 +1141,52 @@ Qualitative read:
 - This closes another M10 overclaim path. Engine health evidence remains
   useful context, but V1 release readiness now requires evidence that Dome's
   actual work surfaces were exercised during the day.
+
+## 2026-06-02 Work-Surface Dogfood Follow-Up
+
+Commands run:
+
+- `bun run v1:dogfood-preflight -- --json`
+- `bun run v1:dogfood-report`
+- `bun run v1:dogfood-snapshot`
+
+Operational state:
+
+- `bun run v1:dogfood-snapshot` exercised `bin/dome check`, `today`, `query`,
+  and `export-context` against `/Users/mark.toda/vaults/work`.
+- Work vault was clean on branch `main`, with head/adopted both at `a857181`.
+- Serve host: running; branch main; pid 11698; heartbeat updated during the
+  session.
+- Operational runs: 0 pending, 0 failed, 0 failed outbox, 0 quarantined.
+- Attention: no; diagnostics: 46 total / 0 attention; questions: 0.
+
+Qualitative notes to fill after the work session:
+
+- Daily note usefulness: The daily surface remained a useful starting cockpit.
+  It showed the active M10 follow-up plus current people/project tasks from
+  `notes/2026-06-02.md` without needing manual file hunting.
+- Capture digestion: No new work-vault raw capture was processed in this
+  follow-up, but the capture loop stayed quiet and model-ready in preflight.
+- Open-loop surfacing: Open loops surfaced through both the daily note and the
+  context packet. The packet examples were traceable back to
+  `notes/2026-06-02.md` and relevant entity/source pages.
+- Context packet quality: `export-context "today open loops"` returned a
+  concise read-first set with the daily note first, then relevant source,
+  entity, and synthesis pages. This was useful enough for foreground-agent
+  orientation.
+- Question burden: No open questions were present, and no owner-needed question
+  blocked sync, status, or surface use.
+- Link/concept hygiene: Remaining drift is understood backlog: 42
+  `link.resolve-or-create` findings and 4 `frontmatter.repair` findings, all
+  informational with 0 attention diagnostics.
+- Friction / manual foreground-agent work Dome should own: M10 still depends on
+  elapsed real-world evidence collection. The engine and surfaces are behaving
+  cleanly; the remaining work is continued dogfood, not a code-path blocker.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+
+M10 read:
+
+- This is useful same-day supporting evidence, not a new elapsed workday. The
+  release report should remain `not-ready` until the ledger spans the required
+  two real work weeks.
