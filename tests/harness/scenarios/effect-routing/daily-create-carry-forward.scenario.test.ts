@@ -472,6 +472,123 @@ extensions:
   },
 );
 
+scenario(
+  {
+    name: "effect-routing: dome.daily dismissed source-backed open loops stay dismissed",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "schedule" },
+      { kind: "route", route: "garden-signal" },
+      { kind: "route", route: "garden-schedule" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Archive the launch staffing thread",
+          "",
+        ].join("\n"),
+      },
+      message: "add dismissible source open loop",
+    });
+
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain(
+        "- [ ] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+      );
+
+    const daily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-02.md": daily.replace(
+          "- [ ] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+          "- [-] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+        ),
+      },
+      message: "dismiss surfaced daily open loop",
+    });
+
+    const dismissed = await h.tick();
+    expect(dismissed.adopted).toBe(true);
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("### Dismissed Today");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain(
+        "- [-] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+      );
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toNotContain(
+        "- [ ] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+      );
+
+    const before = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    const settled = await h.tick();
+    expect(settled.adopted).toBe(true);
+    const after = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(after).toBe(before);
+
+    await h.advance(24 * 60 * 60 * 1000);
+    const nextDay = await h.tick();
+    expect(nextDay.adopted).toBe(true);
+    await h
+      .expectFile("wiki/dailies/2026-01-03.md")
+      .toContain("type: daily");
+    await h
+      .expectFile("wiki/dailies/2026-01-03.md")
+      .toNotContain("Archive the launch staffing thread");
+  },
+);
+
 function occurrences(value: string, needle: string): number {
   if (needle.length === 0) return 0;
   return value.split(needle).length - 1;

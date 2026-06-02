@@ -58,13 +58,14 @@ export type DailyOpenLoopCandidate = DailyOpenLoopSource & {
   readonly lastChangedAt: string;
 };
 
-export type DailyResolvedOpenLoopSource = {
+export type DailySettledOpenLoopSource = {
   readonly line: number;
   readonly stableId: string;
   readonly path: string;
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
+  readonly status: DailyOpenLoopSettlementStatus;
 };
 
 export type DailyStartContext = {
@@ -73,6 +74,8 @@ export type DailyStartContext = {
   readonly decisions: ReadonlyArray<string>;
   readonly story: string | null;
 };
+
+export type DailyOpenLoopSettlementStatus = "resolved" | "dismissed";
 
 const DEFAULT_DAILY_PATH_SETTINGS: DailyPathSettings = Object.freeze({
   template: DEFAULT_DAILY_PATH_TEMPLATE,
@@ -381,10 +384,10 @@ export function openLoopSurfaceSources(input: {
 
 export function openLoopSurfaceSection(input: {
   readonly items: ReadonlyArray<DailyOpenLoopSource>;
-  readonly resolvedItems?: ReadonlyArray<DailyResolvedOpenLoopSource>;
+  readonly settledItems?: ReadonlyArray<DailySettledOpenLoopSource>;
 }): string | null {
-  const resolvedItems = input.resolvedItems ?? [];
-  if (input.items.length === 0 && resolvedItems.length === 0) return null;
+  const settledItems = input.settledItems ?? [];
+  if (input.items.length === 0 && settledItems.length === 0) return null;
   const lines = [OPEN_LOOPS_START];
   if (input.items.length > 0) {
     lines.push(
@@ -392,26 +395,39 @@ export function openLoopSurfaceSection(input: {
       ...input.items.map(renderOpenLoopSource),
     );
   }
-  if (resolvedItems.length > 0) {
+  if (settledItems.length > 0) {
     if (input.items.length > 0) lines.push("");
-    lines.push(
-      "### Resolved Today",
-      ...resolvedItems.map(renderResolvedOpenLoopSource),
+    const resolved = settledItems.filter((item) => item.status === "resolved");
+    const dismissed = settledItems.filter((item) =>
+      item.status === "dismissed"
     );
+    if (resolved.length > 0) {
+      lines.push(
+        "### Resolved Today",
+        ...resolved.map(renderSettledOpenLoopSource),
+      );
+    }
+    if (dismissed.length > 0) {
+      if (resolved.length > 0) lines.push("");
+      lines.push(
+        "### Dismissed Today",
+        ...dismissed.map(renderSettledOpenLoopSource),
+      );
+    }
   }
   lines.push(OPEN_LOOPS_END);
   return lines.join("\n");
 }
 
-export function completedSourceBackedOpenLoopsFromMarkdown(input: {
+export function settledSourceBackedOpenLoopsFromMarkdown(input: {
   readonly path: string;
   readonly content: string;
-}): ReadonlyArray<DailyResolvedOpenLoopSource> {
-  const items: DailyResolvedOpenLoopSource[] = [];
+}): ReadonlyArray<DailySettledOpenLoopSource> {
+  const items: DailySettledOpenLoopSource[] = [];
   const lines = input.content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const item = sourceBackedCheckboxFromLine(lines[i] ?? "", i + 1);
-    if (item === null || !item.completed) continue;
+    if (item === null || item.status === "open") continue;
     items.push(
       Object.freeze({
         line: item.line,
@@ -423,10 +439,22 @@ export function completedSourceBackedOpenLoopsFromMarkdown(input: {
         body: item.body,
         followup: item.followup,
         sourcePath: item.sourcePath,
+        status: item.status,
       }),
     );
   }
   return Object.freeze(items);
+}
+
+export function completedSourceBackedOpenLoopsFromMarkdown(input: {
+  readonly path: string;
+  readonly content: string;
+}): ReadonlyArray<DailySettledOpenLoopSource> {
+  return Object.freeze(
+    settledSourceBackedOpenLoopsFromMarkdown(input).filter((item) =>
+      item.status === "resolved"
+    ),
+  );
 }
 
 export function openLoopIdentity(input: {
@@ -634,16 +662,17 @@ function renderOpenLoopSource(item: DailyOpenLoopSource): string {
   return `- [ ] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
 }
 
-function renderResolvedOpenLoopSource(
-  item: DailyResolvedOpenLoopSource,
+function renderSettledOpenLoopSource(
+  item: DailySettledOpenLoopSource,
 ): string {
   const followup = item.followup ? "#followup " : "";
-  return `- [x] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+  const state = item.status === "dismissed" ? "-" : "x";
+  return `- [${state}] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
 }
 
 type SourceBackedCheckbox = {
   readonly line: number;
-  readonly completed: boolean;
+  readonly status: "open" | DailyOpenLoopSettlementStatus;
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
@@ -654,7 +683,7 @@ function sourceBackedCheckboxFromLine(
   lineNumber: number,
 ): SourceBackedCheckbox | null {
   const match =
-    /^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s+\(from \[\[([^\]\n]+?)(?:\.md)?\]\]\)\s*$/.exec(
+    /^\s*[-*]\s+\[([ xX-])\]\s+(.+?)\s+\(from \[\[([^\]\n]+?)(?:\.md)?\]\]\)\s*$/.exec(
       line,
     );
   if (match === null) return null;
@@ -671,11 +700,18 @@ function sourceBackedCheckboxFromLine(
   }
   return Object.freeze({
     line: lineNumber,
-    completed: state.toLowerCase() === "x",
+    status: sourceBackedCheckboxStatus(state),
     body: semanticActionBody(rawBody),
     followup: isExplicitFollowup(rawBody),
     sourcePath: normalizeSourcePath(sourcePath),
   });
+}
+
+function sourceBackedCheckboxStatus(
+  state: string,
+): "open" | DailyOpenLoopSettlementStatus {
+  if (state === "-") return "dismissed";
+  return state.toLowerCase() === "x" ? "resolved" : "open";
 }
 
 function semanticActionBody(body: string): string {

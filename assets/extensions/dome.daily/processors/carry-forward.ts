@@ -24,7 +24,6 @@ import {
   dailyStartContextSection,
   formatDate,
   localDateParts,
-  completedSourceBackedOpenLoopsFromMarkdown,
   openLoopIdentity,
   openLoopSurfaceKey,
   openLoopSurfaceSection,
@@ -35,18 +34,19 @@ import {
   rankDailyOpenLoopSurfaceItems,
   replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
+  settledSourceBackedOpenLoopsFromMarkdown,
   type DailyDate,
   type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
   type DailyPathSettings,
-  type DailyResolvedOpenLoopSource,
+  type DailySettledOpenLoopSource,
 } from "./daily-shared";
 
 const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.4",
+  version: "0.2.5",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -97,23 +97,23 @@ const carryForward: Processor = defineProcessor({
       settings,
     });
 
-    const targetResolvedItems = uniqueResolvedOpenLoops(
-      completedSourceBackedOpenLoopsFromMarkdown({
+    const targetSettledItems = uniqueSettledOpenLoops(
+      settledSourceBackedOpenLoopsFromMarkdown({
         path: targetPath,
         content,
       }),
     );
-    const resolvedKeys = await collectResolvedOpenLoopIdentities({
+    const settledKeys = await collectSettledOpenLoopIdentities({
       ctx,
       targetPath,
       targetContent: content,
-      targetResolvedItems,
+      targetSettledItems,
     });
     const items = await collectOpenLoopSources({
       ctx,
       targetPath,
       settings,
-      resolvedKeys,
+      settledKeys,
     });
     const nextContent = replaceOpenLoopSurfaceSection({
       content: replaceDailyStartContextSection({
@@ -122,7 +122,7 @@ const carryForward: Processor = defineProcessor({
       }),
       section: openLoopSurfaceSection({
         items,
-        resolvedItems: targetResolvedItems,
+        settledItems: targetSettledItems,
       }),
     });
     if (nextContent === content) return [];
@@ -141,7 +141,7 @@ const carryForward: Processor = defineProcessor({
         sourceRefs: patchSourceRefs(
           ctx,
           items,
-          targetResolvedItems,
+          targetSettledItems,
           startContext.sourcePath,
         ),
       }),
@@ -173,9 +173,9 @@ async function collectOpenLoopSources(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
   readonly settings: DailyPathSettings;
-  readonly resolvedKeys: ResolvedOpenLoopKeys;
+  readonly settledKeys: SettledOpenLoopKeys;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
-  const { ctx, targetPath, settings, resolvedKeys } = input;
+  const { ctx, targetPath, settings, settledKeys } = input;
   const items: DailyOpenLoopCandidate[] = [];
   for (const path of await ctx.snapshot.listMarkdownFiles()) {
     if (path === targetPath) continue;
@@ -184,8 +184,8 @@ async function collectOpenLoopSources(input: {
     const info = await ctx.snapshot.getFileInfo(path);
     for (const item of openLoopSurfaceSources({ path, content, settings })) {
       if (
-        resolvedKeys.identities.has(openLoopIdentity(item)) ||
-        resolvedKeys.surfaceKeys.has(openLoopSurfaceKey(item))
+        settledKeys.identities.has(openLoopIdentity(item)) ||
+        settledKeys.surfaceKeys.has(openLoopSurfaceKey(item))
       ) {
         continue;
       }
@@ -223,17 +223,17 @@ async function collectStartContext(input: {
   });
 }
 
-async function collectResolvedOpenLoopIdentities(input: {
+async function collectSettledOpenLoopIdentities(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
   readonly targetContent: string;
-  readonly targetResolvedItems: ReadonlyArray<DailyResolvedOpenLoopSource>;
-}): Promise<ResolvedOpenLoopKeys> {
+  readonly targetSettledItems: ReadonlyArray<DailySettledOpenLoopSource>;
+}): Promise<SettledOpenLoopKeys> {
   const identities = new Set(
-    input.targetResolvedItems.map((item) => openLoopIdentity(item)),
+    input.targetSettledItems.map((item) => openLoopIdentity(item)),
   );
   const surfaceKeys = new Set(
-    input.targetResolvedItems.map((item) => openLoopSurfaceKey(item)),
+    input.targetSettledItems.map((item) => openLoopSurfaceKey(item)),
   );
   for (const path of await input.ctx.snapshot.listMarkdownFiles()) {
     const content =
@@ -241,7 +241,7 @@ async function collectResolvedOpenLoopIdentities(input: {
         ? input.targetContent
         : await input.ctx.snapshot.readFile(path);
     if (content === null) continue;
-    for (const item of completedSourceBackedOpenLoopsFromMarkdown({
+    for (const item of settledSourceBackedOpenLoopsFromMarkdown({
       path,
       content,
     })) {
@@ -255,7 +255,7 @@ async function collectResolvedOpenLoopIdentities(input: {
   });
 }
 
-type ResolvedOpenLoopKeys = {
+type SettledOpenLoopKeys = {
   readonly identities: ReadonlySet<string>;
   readonly surfaceKeys: ReadonlySet<string>;
 };
@@ -263,7 +263,7 @@ type ResolvedOpenLoopKeys = {
 function patchSourceRefs(
   ctx: ProcessorContext,
   items: ReadonlyArray<DailyOpenLoopSource>,
-  resolvedItems: ReadonlyArray<DailyResolvedOpenLoopSource>,
+  settledItems: ReadonlyArray<DailySettledOpenLoopSource>,
   startContextSourcePath: string | null,
 ): ReadonlyArray<SourceRef> {
   return [
@@ -280,7 +280,7 @@ function patchSourceRefs(
         item.stableId,
       )
     ),
-    ...resolvedItems.map((item) =>
+    ...settledItems.map((item) =>
       ctx.sourceRef(
         item.path,
         {
@@ -297,11 +297,11 @@ function compareDailyDates(a: DailyDate, b: DailyDate): number {
   return formatDate(a).localeCompare(formatDate(b));
 }
 
-function uniqueResolvedOpenLoops(
-  items: ReadonlyArray<DailyResolvedOpenLoopSource>,
-): ReadonlyArray<DailyResolvedOpenLoopSource> {
+function uniqueSettledOpenLoops(
+  items: ReadonlyArray<DailySettledOpenLoopSource>,
+): ReadonlyArray<DailySettledOpenLoopSource> {
   const seen = new Set<string>();
-  const out: DailyResolvedOpenLoopSource[] = [];
+  const out: DailySettledOpenLoopSource[] = [];
   for (const item of items) {
     const key = openLoopIdentity(item);
     if (seen.has(key)) continue;

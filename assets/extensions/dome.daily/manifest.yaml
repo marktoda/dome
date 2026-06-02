@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.1.11
+version: 0.1.12
 processors:
   - id: dome.daily.create-daily
     version: 0.1.4
@@ -92,7 +92,7 @@ processors:
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.2.4
+    version: 0.2.5
     phase: garden
     triggers:
       - kind: schedule

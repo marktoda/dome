@@ -20,6 +20,7 @@ import {
   renderDailySkeleton,
   replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
+  settledSourceBackedOpenLoopsFromMarkdown,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
 describe("dome.daily shared date helpers", () => {
@@ -538,6 +539,7 @@ describe("dome.daily shared date helpers", () => {
         body: "Confirm Q3 plan with Eli",
         followup: true,
         sourcePath: "wiki/projects/alpha.md",
+        status: "resolved",
       },
     ]);
     const firstResolved = resolved[0];
@@ -546,12 +548,56 @@ describe("dome.daily shared date helpers", () => {
 
     const section = openLoopSurfaceSection({
       items: [],
-      resolvedItems: resolved,
+      settledItems: resolved,
     });
     expect(section).toContain("### Resolved Today");
     expect(section).toContain(
       "- [x] #followup Confirm Q3 plan with Eli (from [[wiki/projects/alpha]])",
     );
+  });
+
+  test("dismissed source-backed entries are durable daily settlement evidence", () => {
+    const settled = settledSourceBackedOpenLoopsFromMarkdown({
+      path: "wiki/dailies/2026-02-28.md",
+      content: [
+        "## Open Loops",
+        "",
+        "<!-- dome.daily:open-loops:start -->",
+        "### Source-backed Open Loops",
+        "- [-] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+        "<!-- dome.daily:open-loops:end -->",
+      ].join("\n"),
+    });
+
+    expect(settled).toEqual([
+      {
+        line: 5,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/alpha.md",
+          body: "Archive the launch staffing thread",
+        }),
+        path: "wiki/dailies/2026-02-28.md",
+        body: "Archive the launch staffing thread",
+        followup: false,
+        sourcePath: "wiki/projects/alpha.md",
+        status: "dismissed",
+      },
+    ]);
+
+    const section = openLoopSurfaceSection({
+      items: [],
+      settledItems: settled,
+    });
+    expect(section).toContain("### Dismissed Today");
+    expect(section).toContain(
+      "- [-] Archive the launch staffing thread (from [[wiki/projects/alpha]])",
+    );
+    expect(
+      completedSourceBackedOpenLoopsFromMarkdown({
+        path: "wiki/dailies/2026-02-28.md",
+        content: section ?? "",
+      }),
+    ).toEqual([]);
   });
 
   test("carriedForwardSection uses original provenance when available", () => {
