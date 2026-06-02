@@ -356,6 +356,7 @@ interface ProjectionQueryView {
     type?: string;
     limit?: number;
   }): ReadonlyArray<SearchMatch>;
+  documentsByPath(paths: ReadonlyArray<string>): ReadonlyArray<SearchMatch>;
   facts(filter?: {
     predicate?: string;
     subjectKind?: "page" | "task" | "entity";
@@ -369,7 +370,7 @@ interface ProjectionQueryView {
 }
 ```
 
-The query API is read-only. View-phase processors don't write to the projection store directly — they emit ViewEffect with the assembled response; the engine returns it to the caller.
+`searchDocuments` performs FTS lookup; `documentsByPath` returns adopted search documents for exact paths already identified by projection memory such as facts, questions, or diagnostics. The query API is read-only. View-phase processors don't write to the projection store directly — they emit ViewEffect with the assembled response; the engine returns it to the caller.
 
 ## What the projection store cannot do
 

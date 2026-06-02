@@ -404,6 +404,15 @@ export type ProjectionQueryView = {
     readonly type?: string;
     readonly limit?: number;
   }) => ReadonlyArray<SearchDocumentResult>;
+
+  /**
+   * Read adopted markdown search documents by exact path. View processors use
+   * this when projection memory (facts, questions, diagnostics) identifies a
+   * relevant page that may not itself match the user's FTS query.
+   */
+  readonly documentsByPath: (
+    paths: ReadonlyArray<string>,
+  ) => ReadonlyArray<SearchDocumentResult>;
 };
 
 export type SearchDocumentResult = {

@@ -12,6 +12,7 @@ import {
   defineProcessor,
   type Processor,
   type ProcessorContext,
+  type ProjectionQueryView,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -31,12 +32,16 @@ import {
   isSearchDecisionFact,
   isSearchOpenLoopFact,
   rankSearchCandidate,
+  SEARCH_DECISION_PREDICATES,
+  SEARCH_OPEN_LOOP_PREDICATES,
   type SearchRanking,
+  type SearchRankingRecallSignal,
 } from "./ranking";
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_RELATED_ROWS = 8;
+const MAX_RECALL_PATHS = 24;
 const TASK_METADATA_MARKER =
   /(?:^|\s)(?:\u{1F4C5}\s*\d{4}-\d{2}-\d{2}|\u{1F53A}|\u{23EB}|\u{1F53C}|\u{1F53D}|\u{23EC})(?=\s|$)/gu;
 const TASK_DUE_MARKER =
@@ -44,7 +49,7 @@ const TASK_DUE_MARKER =
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.7",
+  version: "0.1.8",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -61,9 +66,29 @@ const exportContext: Processor = defineProcessor({
       query: input.topic,
       limit: expandedSearchLimit(input.limit),
     });
-    const matchPaths = new Set(searchMatches.map((match) => match.path));
+    const allDiagnostics = projection.diagnostics();
+    const allQuestions = projection
+      .questions({ resolved: false })
+      .map(questionItemFromProjection);
+    const recallSignalsByPath = recallSignalsForTopic({
+      projection,
+      topic: input.topic,
+      diagnostics: allDiagnostics,
+      questions: allQuestions,
+    });
+    const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
+    const recalledPaths = prioritizedRecallPaths(
+      recallSignalsByPath,
+      searchMatchPaths,
+    ).slice(0, MAX_RECALL_PATHS);
+    const recalledMatches = projection.documentsByPath(recalledPaths);
+    const candidateMatches = Object.freeze([
+      ...searchMatches,
+      ...recalledMatches,
+    ]);
+    const matchPaths = new Set(candidateMatches.map((match) => match.path));
     const factsByPath = new Map(
-      searchMatches.map((match) => [
+      candidateMatches.map((match) => [
         match.path,
         projection.facts({
           subjectKind: "page",
@@ -72,17 +97,15 @@ const exportContext: Processor = defineProcessor({
       ]),
     );
     const diagnosticsByPath = groupByMatchingPath(
-      projection.diagnostics(),
+      allDiagnostics,
       matchPaths,
     );
     const questionsByPath = groupByMatchingPath(
-      projection
-        .questions({ resolved: false })
-        .map(questionItemFromProjection),
+      allQuestions,
       matchPaths,
     );
     const rankedMatches = Object.freeze(
-      searchMatches
+      candidateMatches
         .map((match) =>
           Object.freeze({
             ...match,
@@ -92,6 +115,8 @@ const exportContext: Processor = defineProcessor({
               diagnostics: diagnosticsByPath.get(match.path) ??
                 Object.freeze([]),
               questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+              recallSignals: recallSignalsByPath.get(match.path) ??
+                Object.freeze([]),
             }),
             facts: factsByPath.get(match.path) ?? Object.freeze([]),
             diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),
@@ -111,7 +136,7 @@ const exportContext: Processor = defineProcessor({
         match.ranking,
       ),
     );
-    const overview = buildOverview(input.topic, entries);
+    const overview = buildOverview(input.topic, entries, recallSignalsByPath);
     const scope = uniqueSourceRefs(
       entries.flatMap((entry) => [
         ...entry.sourceRefs,
@@ -175,6 +200,7 @@ type ContextOverview = {
   readonly decisions: ReadonlyArray<ContextDecision>;
   readonly unresolvedQuestions: ReadonlyArray<ContextQuestionSummary>;
   readonly diagnostics: ReadonlyArray<ContextDiagnosticSummary>;
+  readonly recallSignals: ReadonlyArray<ContextRecallSignalSummary>;
 };
 
 type ContextReadFirst = {
@@ -217,6 +243,15 @@ type ContextDiagnostic = {
 type ContextDiagnosticSummary = ContextDiagnostic & {
   readonly path: string;
 };
+
+type ContextRecallSignal = SearchRankingRecallSignal & {
+  readonly path: string;
+  readonly kind: "open-loop" | "decision" | "question" | "diagnostic";
+  readonly text: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+type ContextRecallSignalSummary = Omit<ContextRecallSignal, "weight" | "count">;
 
 type ContextQuestion = {
   readonly id: number;
@@ -295,6 +330,7 @@ function contextEntryFromMatch(
 function buildOverview(
   topic: string,
   entries: ReadonlyArray<ContextEntry>,
+  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
 ): ContextOverview {
   return Object.freeze({
     readFirst: Object.freeze(
@@ -320,6 +356,9 @@ function buildOverview(
     ),
     diagnostics: Object.freeze(
       uniqueDiagnostics(entries).slice(0, MAX_RELATED_ROWS),
+    ),
+    recallSignals: Object.freeze(
+      uniqueRecallSignals(entries, recallSignalsByPath).slice(0, MAX_RELATED_ROWS),
     ),
   });
 }
@@ -412,6 +451,33 @@ function uniqueDiagnostics(
       out.push(Object.freeze({
         ...diagnostic,
         path: entry.path,
+      }));
+    }
+  }
+  return Object.freeze(out);
+}
+
+function uniqueRecallSignals(
+  entries: ReadonlyArray<ContextEntry>,
+  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
+): ReadonlyArray<ContextRecallSignalSummary> {
+  const seen = new Set<string>();
+  const out: ContextRecallSignalSummary[] = [];
+  for (const entry of entries) {
+    for (const signal of recallSignalsByPath.get(entry.path) ?? []) {
+      const key = [
+        signal.path,
+        signal.kind,
+        signal.text,
+      ].join("\u0000");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(Object.freeze({
+        path: signal.path,
+        kind: signal.kind,
+        label: signal.label,
+        text: signal.text,
+        sourceRefs: signal.sourceRefs,
       }));
     }
   }
@@ -571,6 +637,159 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
     }
     lines.push("");
   }
+
+  if (overview.recallSignals.length > 0) {
+    lines.push("## Recall Signals");
+    for (const signal of overview.recallSignals) {
+      const refs = signal.sourceRefs.map(formatSourceRef).join(", ");
+      lines.push(
+        `- \`${signal.path}\` ${signal.label}: ${signal.text} (${refs})`,
+      );
+    }
+    lines.push("");
+  }
+}
+
+function recallSignalsForTopic(input: {
+  readonly projection: ProjectionQueryView;
+  readonly topic: string;
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  readonly questions: ReadonlyArray<SearchQuestionItem>;
+}): ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>> {
+  const matcher = topicMatcher(input.topic);
+  if (matcher === null) return Object.freeze(new Map());
+
+  const mutable = new Map<string, ContextRecallSignal[]>();
+  for (const fact of recallFacts(input.projection)) {
+    const text = factObjectLabel(fact);
+    if (!matcher(text)) continue;
+    const kind = isSearchOpenLoopFact(fact) ? "open-loop" : "decision";
+    addRecallSignal(mutable, {
+      path: primaryRecallPath(fact.sourceRefs),
+      kind,
+      label:
+        kind === "open-loop"
+          ? "open-loop topic match"
+          : "decision topic match",
+      text,
+      weight: 8,
+      sourceRefs: fact.sourceRefs,
+    });
+  }
+
+  for (const question of input.questions) {
+    const text = [
+      question.question,
+      ...question.options,
+    ].join(" ");
+    if (!matcher(text)) continue;
+    addRecallSignal(mutable, {
+      path: primaryRecallPath(question.sourceRefs),
+      kind: "question",
+      label: "question topic match",
+      text: question.question,
+      weight: 6,
+      sourceRefs: question.sourceRefs,
+    });
+  }
+
+  for (const diagnostic of input.diagnostics) {
+    const text = `${diagnostic.code} ${diagnostic.message}`;
+    if (!matcher(text)) continue;
+    addRecallSignal(mutable, {
+      path: primaryRecallPath(diagnostic.sourceRefs),
+      kind: "diagnostic",
+      label: "diagnostic topic match",
+      text: `${diagnostic.code}: ${diagnostic.message}`,
+      weight: 2,
+      sourceRefs: diagnostic.sourceRefs,
+    });
+  }
+
+  return Object.freeze(
+    new Map([...mutable.entries()].map(([path, signals]) => [
+      path,
+      Object.freeze(signals),
+    ])),
+  );
+}
+
+function recallFacts(
+  projection: ProjectionQueryView,
+): ReadonlyArray<FactEffect> {
+  return Object.freeze([
+    ...SEARCH_OPEN_LOOP_PREDICATES.flatMap((predicate) =>
+      projection.facts({ predicate })
+    ),
+    ...SEARCH_DECISION_PREDICATES.flatMap((predicate) =>
+      projection.facts({ predicate })
+    ),
+  ]);
+}
+
+function addRecallSignal(
+  mutable: Map<string, ContextRecallSignal[]>,
+  signal: Omit<ContextRecallSignal, "path"> & { readonly path: string | null },
+): void {
+  if (signal.path === null) return;
+  const next = Object.freeze({
+    path: signal.path,
+    kind: signal.kind,
+    label: signal.label,
+    text: signal.text,
+    weight: signal.weight,
+    sourceRefs: signal.sourceRefs,
+  });
+  const signals = mutable.get(signal.path);
+  if (signals === undefined) {
+    mutable.set(signal.path, [next]);
+  } else {
+    signals.push(next);
+  }
+}
+
+function primaryRecallPath(sourceRefs: ReadonlyArray<SourceRef>): string | null {
+  return sourceRefs.find((ref) => ref.path.endsWith(".md"))?.path ?? null;
+}
+
+function prioritizedRecallPaths(
+  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
+  excludePaths: ReadonlySet<string>,
+): ReadonlyArray<string> {
+  return Object.freeze(
+    [...recallSignalsByPath.entries()]
+      .filter(([path]) => !excludePaths.has(path))
+      .sort((a, b) => {
+        const score = recallSignalWeight(b[1]) - recallSignalWeight(a[1]);
+        return score !== 0 ? score : a[0].localeCompare(b[0]);
+      })
+      .map(([path]) => path),
+  );
+}
+
+function recallSignalWeight(
+  signals: ReadonlyArray<ContextRecallSignal>,
+): number {
+  return signals.reduce((sum, signal) => sum + signal.weight, 0);
+}
+
+function topicMatcher(topic: string): ((text: string) => boolean) | null {
+  const terms = normalizedTokens(topic);
+  if (terms.length === 0) return null;
+  return (text: string) => {
+    const tokens = new Set(normalizedTokens(text));
+    return terms.every((term) => tokens.has(term));
+  };
+}
+
+function normalizedTokens(value: string): ReadonlyArray<string> {
+  return Object.freeze(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0),
+  );
 }
 
 function appendMoreLine(

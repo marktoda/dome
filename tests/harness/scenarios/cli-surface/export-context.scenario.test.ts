@@ -4,8 +4,18 @@
 // a portable markdown packet for cross-session handoff.
 
 import { expect } from "bun:test";
+import { join } from "node:path";
 
 import { scenario } from "../../index";
+
+const CONTEXT_SIGNAL_BUNDLE_ROOT = join(
+  __dirname,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.context-signal",
+);
 
 scenario(
   {
@@ -258,6 +268,136 @@ scenario(
     expect(limitedPayload.markdown).toContain(
       "more adopted-state matches exist (increase --limit to include more entries)",
     );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome export-context recalls pages through projection signals",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: [
+        "dome.markdown",
+        "dome.search",
+        { id: "test.context-signal", root: CONTEXT_SIGNAL_BUNDLE_ROOT },
+      ],
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/signal-only.md":
+          "---\n" +
+          "type: concept\n" +
+          "---\n" +
+          "# Operations Notebook\n\n" +
+          "This page intentionally avoids the packet topic in searchable prose.\n",
+      },
+      message: "add signal-only context page",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const query = await h.runCli(["query", "alpha launch", "--json"]);
+    expect(query.exitCode).toBe(0);
+    const queryPayload = JSON.parse(query.stdout) as {
+      readonly shown: { readonly matches: number };
+    };
+    expect(queryPayload.shown.matches).toBe(0);
+
+    const exported = await h.runCli([
+      "export-context",
+      "alpha launch",
+      "--json",
+      "--limit",
+      "3",
+    ]);
+    expect(exported.exitCode).toBe(0);
+    expect(exported.stderr).toBe("");
+    const payload = JSON.parse(exported.stdout) as {
+      readonly overview: {
+        readonly readFirst: ReadonlyArray<{
+          readonly path: string;
+          readonly reason: string;
+          readonly ranking: {
+            readonly reasons: ReadonlyArray<string>;
+          };
+        }>;
+        readonly openLoops: ReadonlyArray<{
+          readonly path: string;
+          readonly text: string;
+        }>;
+        readonly recallSignals: ReadonlyArray<{
+          readonly path: string;
+          readonly kind: string;
+          readonly label: string;
+          readonly text: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
+      };
+      readonly markdown: string;
+      readonly entries: ReadonlyArray<{
+        readonly path: string;
+        readonly snippet: string;
+        readonly ranking: {
+          readonly reasons: ReadonlyArray<string>;
+          readonly signals: ReadonlyArray<{ readonly kind: string }>;
+        };
+      }>;
+    };
+
+    expect(payload.entries.map((entry) => entry.path)).toContain(
+      "wiki/signal-only.md",
+    );
+    const entry = payload.entries.find((item) =>
+      item.path === "wiki/signal-only.md"
+    );
+    expect(entry?.snippet).toContain("intentionally avoids the packet topic");
+    expect(entry?.ranking.reasons).toContain("open-loop topic match");
+    expect(entry?.ranking.signals.some((signal) => signal.kind === "recall"))
+      .toBe(true);
+    expect(payload.overview.readFirst).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/signal-only.md",
+      }),
+    );
+    expect(payload.overview.readFirst.find((item) =>
+      item.path === "wiki/signal-only.md"
+    )?.reason).toContain("open-loop topic match");
+    expect(payload.overview.openLoops).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/signal-only.md",
+        text: "Call Riley about alpha launch readiness",
+      }),
+    );
+    expect(payload.overview.recallSignals).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/signal-only.md",
+        kind: "open-loop",
+        label: "open-loop topic match",
+        text: "Call Riley about alpha launch readiness",
+      }),
+    );
+    expect(payload.overview.recallSignals[0]?.sourceRefs[0]?.path).toBe(
+      "wiki/signal-only.md",
+    );
+    expect(payload.markdown).toContain("## Recall Signals");
+    expect(payload.markdown).toContain("open-loop topic match");
+    expect(payload.markdown).toContain("Call Riley about alpha launch readiness");
   },
 );
 

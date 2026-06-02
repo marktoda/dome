@@ -1,0 +1,19 @@
+id: test.context-signal
+version: 0.1.0
+processors:
+  - id: test.context-signal.emit-open-loop
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: wiki/signal-only.md
+      - kind: signal
+        name: file.created
+        pathPattern: wiki/signal-only.md
+    capabilities:
+      - kind: read
+        paths: ["wiki/signal-only.md"]
+      - kind: graph.write
+        namespaces: ["dome.daily.*"]
+    module: processors/emit-open-loop.ts

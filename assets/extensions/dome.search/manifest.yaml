@@ -1,5 +1,5 @@
 id: dome.search
-version: 0.1.5
+version: 0.1.6
 processors:
   - id: dome.search.index-text
     version: 0.1.1
@@ -30,7 +30,7 @@ processors:
     module: processors/query.ts
 
   - id: dome.search.export-context
-    version: 0.1.7
+    version: 0.1.8
     phase: view
     triggers:
       - kind: command

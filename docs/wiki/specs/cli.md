@@ -693,7 +693,8 @@ portable markdown packet for another Claude session, review, or handoff.
 Default text output is the markdown packet itself. It starts with an overview:
 read-first paths, source-backed open loops, source-backed decisions,
 unresolved questions with automation policy metadata and `dome resolve` hints,
-and active diagnostics. It then includes matching paths,
+active diagnostics, and recall signals that explain projection-memory matches.
+It then includes matching paths,
 snippets, related facts, related diagnostics, related open questions, and
 SourceRefs per match. Per-match related fact, diagnostic, and question sections
 are bounded in the rendered packet and include omitted-row hints when more
@@ -702,13 +703,18 @@ arrays for consumers that want all evidence. Daily task facts use the same
 display convention as `dome today`: parsed `📅` due-date and priority glyph
 markers are rendered as bracketed `due` / `priority` metadata instead of
 duplicated inside the task text. Search-match entries use the same expanded
-candidate ranking as `dome query`; read-first reasons and per-entry `Ranking`
-lines expose the source-backed signals that promoted an entry. Entries are also
+candidate ranking as `dome query`. The packet can also recall exact-path
+documents when projection memory has a topic-matched open loop, decision,
+unresolved question, or active diagnostic for that page, even if the page body
+itself did not match the FTS query. Read-first reasons, per-entry `Ranking`
+lines, and the overview's `Recall Signals` section expose the source-backed
+signals that promoted an entry. Entries are also
 bounded by `--limit`; the structured JSON includes `shown.entries`,
 `hasMore.entries`, `overview`, per-entry `ranking`, and text mode prints an
 expansion hint when more adopted-state matches are detected. `--json` emits the
 structured `dome.search.export-context/v1` payload, including the packet under
-`markdown`.
+`markdown`; `overview.recallSignals` carries the same source-backed recall
+evidence for structured consumers.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 

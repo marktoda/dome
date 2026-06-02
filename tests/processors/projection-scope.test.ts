@@ -110,6 +110,27 @@ const projection: ProjectionQueryView = Object.freeze({
         sourceRefs: [SECRET_REF],
       },
     ]),
+  documentsByPath: () =>
+    Object.freeze([
+      {
+        path: "public/a.md",
+        category: "page",
+        type: null,
+        title: "public",
+        snippet: "public",
+        rank: 0,
+        sourceRefs: [PUBLIC_REF],
+      },
+      {
+        path: "secret/a.md",
+        category: "page",
+        type: null,
+        title: "secret",
+        snippet: "secret",
+        rank: 1,
+        sourceRefs: [SECRET_REF],
+      },
+    ]),
 });
 
 describe("scopeProjectionQueryView", () => {

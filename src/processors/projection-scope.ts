@@ -39,6 +39,12 @@ export function scopeProjectionQueryView(
           searchResultVisible(result, canReadPath),
         ),
       ),
+    documentsByPath: (paths) =>
+      Object.freeze(
+        projection.documentsByPath(paths).filter((result) =>
+          searchResultVisible(result, canReadPath),
+        ),
+      ),
   });
 }
 

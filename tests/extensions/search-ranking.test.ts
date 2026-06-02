@@ -50,6 +50,31 @@ describe("dome.search ranking", () => {
     ]);
   });
 
+  test("scores projection recall signals ahead of weak FTS-only matches", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/signal-only.md", rank: 1_000_000_000, type: "concept" }),
+      facts: [],
+      diagnostics: [],
+      questions: [],
+      recallSignals: [
+        {
+          label: "open-loop topic match",
+          weight: 8,
+        },
+      ],
+    });
+
+    expect(ranking.score).toBe(9);
+    expect(ranking.reasons).toEqual([
+      "open-loop topic match",
+      "concept page",
+    ]);
+    expect(ranking.signals.map((signal) => signal.kind)).toEqual([
+      "recall",
+      "page-type",
+    ]);
+  });
+
   test("sorts boosted matches ahead of weaker FTS-only matches", () => {
     const ftsOnly = {
       path: "wiki/fts-only.md",

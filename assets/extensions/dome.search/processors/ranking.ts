@@ -18,14 +18,36 @@ const TYPE_WEIGHTS = Object.freeze(new Map<string, number>([
   ["index", 1],
 ]));
 
+export const SEARCH_OPEN_LOOP_PREDICATES = Object.freeze([
+  "dome.daily.open_task",
+  "dome.daily.followup",
+  "dome.intake.task",
+  "dome.intake.followup",
+]);
+
+export const SEARCH_DECISION_PREDICATES = Object.freeze([
+  "dome.intake.decision",
+  "dome.daily.decision",
+]);
+
+const SEARCH_OPEN_LOOP_PREDICATE_SET = new Set(SEARCH_OPEN_LOOP_PREDICATES);
+const SEARCH_DECISION_PREDICATE_SET = new Set(SEARCH_DECISION_PREDICATES);
+
 export type SearchRankingSignal = {
   readonly kind:
+    | "recall"
     | "page-type"
     | "open-loop"
     | "decision"
     | "question"
     | "diagnostic"
     | "graph";
+  readonly label: string;
+  readonly weight: number;
+  readonly count?: number;
+};
+
+export type SearchRankingRecallSignal = {
   readonly label: string;
   readonly weight: number;
   readonly count?: number;
@@ -47,6 +69,7 @@ export type SearchRankingInput = {
   readonly facts: ReadonlyArray<Pick<FactEffect, "predicate">>;
   readonly diagnostics: ReadonlyArray<Pick<DiagnosticEffect, "severity">>;
   readonly questions: ReadonlyArray<SearchRankingQuestion>;
+  readonly recallSignals?: ReadonlyArray<SearchRankingRecallSignal>;
 };
 
 export type RankedSearchEntry = {
@@ -64,6 +87,7 @@ export function expandedSearchLimit(limit: number): number {
 
 export function rankSearchCandidate(input: SearchRankingInput): SearchRanking {
   const signals = [
+    ...recallRankingSignals(input.recallSignals ?? Object.freeze([])),
     pageTypeSignal(input.match),
     countedSignal({
       kind: "open-loop",
@@ -124,20 +148,27 @@ export function compareRankedSearchEntries(
 export function isSearchOpenLoopFact(
   fact: Pick<FactEffect, "predicate">,
 ): boolean {
-  return (
-    fact.predicate === "dome.daily.open_task" ||
-    fact.predicate === "dome.daily.followup" ||
-    fact.predicate === "dome.intake.task" ||
-    fact.predicate === "dome.intake.followup"
-  );
+  return SEARCH_OPEN_LOOP_PREDICATE_SET.has(fact.predicate);
 }
 
 export function isSearchDecisionFact(
   fact: Pick<FactEffect, "predicate">,
 ): boolean {
-  return (
-    fact.predicate === "dome.intake.decision" ||
-    fact.predicate === "dome.daily.decision"
+  return SEARCH_DECISION_PREDICATE_SET.has(fact.predicate);
+}
+
+function recallRankingSignals(
+  signals: ReadonlyArray<SearchRankingRecallSignal>,
+): ReadonlyArray<SearchRankingSignal> {
+  return Object.freeze(
+    signals.map((signal) =>
+      Object.freeze({
+        kind: "recall" as const,
+        label: signal.label,
+        weight: signal.weight,
+        ...(signal.count !== undefined ? { count: signal.count } : {}),
+      })
+    ),
   );
 }
 

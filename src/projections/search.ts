@@ -105,6 +105,41 @@ export function searchDocuments(
   );
 }
 
+export function documentsByPath(
+  db: ProjectionDb,
+  paths: ReadonlyArray<string>,
+): ReadonlyArray<SearchDocumentResult> {
+  const uniquePaths = [...new Set(paths.filter((path) => path.length > 0))];
+  if (uniquePaths.length === 0) return Object.freeze([]);
+
+  const placeholders = uniquePaths.map(() => "?").join(", ");
+  const rows = db.raw
+    .query<PathSearchRow, string[]>(
+      "SELECT "
+        + "path, category, type, title, body, source_refs "
+        + "FROM fts_documents "
+        + `WHERE path IN (${placeholders})`,
+    )
+    .all(...uniquePaths);
+  const byPath = new Map(rows.map((row) => [row.path, row]));
+
+  return Object.freeze(
+    uniquePaths.flatMap((path) => {
+      const row = byPath.get(path);
+      if (row === undefined) return [];
+      return [{
+        path: row.path,
+        category: row.category,
+        type: row.type,
+        title: row.title,
+        snippet: snippetFromBody(row.body),
+        rank: 1_000_000_000,
+        sourceRefs: parseSourceRefs(row.source_refs),
+      }];
+    }),
+  );
+}
+
 type SearchRow = {
   readonly path: string;
   readonly category: string;
@@ -112,6 +147,15 @@ type SearchRow = {
   readonly title: string;
   readonly snippet: string;
   readonly rank: number;
+  readonly source_refs: string;
+};
+
+type PathSearchRow = {
+  readonly path: string;
+  readonly category: string;
+  readonly type: string | null;
+  readonly title: string;
+  readonly body: string;
   readonly source_refs: string;
 };
 
@@ -128,6 +172,12 @@ function toFtsQuery(raw: string): string | null {
 function clampLimit(raw: number | undefined): number {
   if (raw === undefined || !Number.isFinite(raw)) return 10;
   return Math.max(1, Math.min(50, Math.trunc(raw)));
+}
+
+function snippetFromBody(body: string): string {
+  const normalized = body.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
 function parseSourceRefs(raw: string): ReadonlyArray<SourceRef> {

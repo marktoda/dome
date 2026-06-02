@@ -41,7 +41,7 @@ import {
   queryQuestionRecords,
   type QuestionRecord,
 } from "./questions";
-import { searchDocuments } from "./search";
+import { documentsByPath, searchDocuments } from "./search";
 
 // ----- buildProjectionQueryView ---------------------------------------------
 
@@ -74,6 +74,7 @@ export function buildProjectionQueryView(
         queryQuestionRecords(db, filter ?? {}).map(questionProjectionResult),
       ),
     searchDocuments: (filter) => searchDocuments(db, filter),
+    documentsByPath: (paths) => documentsByPath(db, paths),
   });
 }
 
