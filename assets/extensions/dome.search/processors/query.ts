@@ -5,7 +5,6 @@
 
 import {
   viewEffect,
-  type DiagnosticEffect,
   type Effect,
   type FactEffect,
   type ViewEffect,
@@ -20,8 +19,11 @@ import {
   groupByMatchingPath,
   questionItemFromProjection,
   uniqueSourceRefs,
-  type SearchQuestionItem,
 } from "./related";
+import {
+  prioritizedRecallPaths,
+  recallSignalsForTopic,
+} from "./recall";
 import {
   compareRankedSearchEntries,
   expandedSearchLimit,
@@ -30,10 +32,11 @@ import {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const MAX_QUERY_RECALL_PATHS = 24;
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.4",
+  version: "0.1.5",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -51,11 +54,34 @@ const searchQuery: Processor = defineProcessor({
       ...(input.type !== undefined ? { type: input.type } : {}),
       limit: expandedSearchLimit(input.limit),
     });
-    const factsByPath = factsForMatches(ctx, searchMatches);
-    const diagnosticsByPath = diagnosticsForMatches(ctx, searchMatches);
-    const questionsByPath = questionsForMatches(ctx, searchMatches);
+    const allDiagnostics = ctx.projection.diagnostics();
+    const allQuestions = ctx.projection
+      .questions({ resolved: false })
+      .map(questionItemFromProjection);
+    const recallSignalsByPath = recallSignalsForTopic({
+      projection: ctx.projection,
+      topic: input.text,
+      diagnostics: allDiagnostics,
+      questions: allQuestions,
+    });
+    const searchMatchPaths = new Set(searchMatches.map((match) => match.path));
+    const recalledPaths = prioritizedRecallPaths(
+      recallSignalsByPath,
+      searchMatchPaths,
+    ).slice(0, MAX_QUERY_RECALL_PATHS);
+    const recalledMatches = ctx.projection
+      .documentsByPath(recalledPaths)
+      .filter((match) => matchSatisfiesFilters(match, input));
+    const candidateMatches = Object.freeze([
+      ...searchMatches,
+      ...recalledMatches,
+    ]);
+    const factsByPath = factsForMatches(ctx, candidateMatches);
+    const matchPaths = new Set(candidateMatches.map((match) => match.path));
+    const diagnosticsByPath = groupByMatchingPath(allDiagnostics, matchPaths);
+    const questionsByPath = groupByMatchingPath(allQuestions, matchPaths);
     const rankedMatches = Object.freeze(
-      searchMatches
+      candidateMatches
         .map((match) =>
           Object.freeze({
             ...match,
@@ -65,6 +91,8 @@ const searchQuery: Processor = defineProcessor({
               diagnostics: diagnosticsByPath.get(match.path) ??
                 Object.freeze([]),
               questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+              recallSignals: recallSignalsByPath.get(match.path) ??
+                Object.freeze([]),
             }),
           })
         )
@@ -114,14 +142,20 @@ const searchQuery: Processor = defineProcessor({
       },
       scope: uniqueSourceRefs([
         ...matches.flatMap((match) => [...match.sourceRefs]),
-        ...[...factsByPath.values()].flatMap((facts) =>
-          facts.flatMap((fact) => [...fact.sourceRefs])
+        ...matches.flatMap((match) =>
+          factsByPath
+            .get(match.path)
+            ?.flatMap((fact) => [...fact.sourceRefs]) ?? []
         ),
-        ...[...diagnosticsByPath.values()].flatMap((diagnostics) =>
-          diagnostics.flatMap((diagnostic) => [...diagnostic.sourceRefs])
+        ...matches.flatMap((match) =>
+          diagnosticsByPath
+            .get(match.path)
+            ?.flatMap((diagnostic) => [...diagnostic.sourceRefs]) ?? []
         ),
-        ...[...questionsByPath.values()].flatMap((questions) =>
-          questions.flatMap((question) => [...question.sourceRefs])
+        ...matches.flatMap((match) =>
+          questionsByPath
+            .get(match.path)
+            ?.flatMap((question) => [...question.sourceRefs]) ?? []
         ),
       ]),
     });
@@ -180,30 +214,17 @@ function factsForMatches(
   return out;
 }
 
-function diagnosticsForMatches(
-  ctx: ProcessorContext,
-  matches: ReadonlyArray<SearchDocumentResult>,
-): ReadonlyMap<string, ReadonlyArray<DiagnosticEffect>> {
-  if (ctx.projection === undefined) return Object.freeze(new Map());
-  const matchPaths = new Set(matches.map((match) => match.path));
-  return groupByMatchingPath(
-    ctx.projection.diagnostics(),
-    matchPaths,
-  );
-}
-
-function questionsForMatches(
-  ctx: ProcessorContext,
-  matches: ReadonlyArray<SearchDocumentResult>,
-): ReadonlyMap<string, ReadonlyArray<SearchQuestionItem>> {
-  if (ctx.projection === undefined) return Object.freeze(new Map());
-  const matchPaths = new Set(matches.map((match) => match.path));
-  return groupByMatchingPath(
-    ctx.projection
-      .questions({ resolved: false })
-      .map(questionItemFromProjection),
-    matchPaths,
-  );
+function matchSatisfiesFilters(
+  match: SearchDocumentResult,
+  input: QueryInput,
+): boolean {
+  if (input.category !== undefined && match.category !== input.category) {
+    return false;
+  }
+  if (input.type !== undefined && match.type !== input.type) {
+    return false;
+  }
+  return true;
 }
 
 function stringValue(value: unknown): string | null {

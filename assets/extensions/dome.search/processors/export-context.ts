@@ -12,7 +12,6 @@ import {
   defineProcessor,
   type Processor,
   type ProcessorContext,
-  type ProjectionQueryView,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -20,6 +19,7 @@ import {
   questionAutomationLabel,
   questionAutomationPolicy,
 } from "../../../../src/question-resolution";
+import { searchFactObjectLabel } from "./labels";
 import {
   groupByMatchingPath,
   questionItemFromProjection,
@@ -27,25 +27,23 @@ import {
   type SearchQuestionItem,
 } from "./related";
 import {
+  prioritizedRecallPaths,
+  recallSignalsForTopic,
+  type SearchRecallSignal,
+} from "./recall";
+import {
   compareRankedSearchEntries,
   expandedSearchLimit,
   isSearchDecisionFact,
   isSearchOpenLoopFact,
   rankSearchCandidate,
-  SEARCH_DECISION_PREDICATES,
-  SEARCH_OPEN_LOOP_PREDICATES,
   type SearchRanking,
-  type SearchRankingRecallSignal,
 } from "./ranking";
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
-const TASK_METADATA_MARKER =
-  /(?:^|\s)(?:\u{1F4C5}\s*\d{4}-\d{2}-\d{2}|\u{1F53A}|\u{23EB}|\u{1F53C}|\u{1F53D}|\u{23EC})(?=\s|$)/gu;
-const TASK_DUE_MARKER =
-  /(?:^|\s)\u{1F4C5}\s*(\d{4}-\d{2}-\d{2})(?=\s|$)/u;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
@@ -244,12 +242,7 @@ type ContextDiagnosticSummary = ContextDiagnostic & {
   readonly path: string;
 };
 
-type ContextRecallSignal = SearchRankingRecallSignal & {
-  readonly path: string;
-  readonly kind: "open-loop" | "decision" | "question" | "diagnostic";
-  readonly text: string;
-  readonly sourceRefs: ReadonlyArray<SourceRef>;
-};
+type ContextRecallSignal = SearchRecallSignal;
 
 type ContextRecallSignalSummary = Omit<ContextRecallSignal, "weight" | "count">;
 
@@ -289,7 +282,7 @@ function contextEntryFromMatch(
         .map((fact) =>
           Object.freeze({
             predicate: fact.predicate,
-            object: factObjectLabel(fact),
+            object: searchFactObjectLabel(fact),
             assertion: fact.assertion,
             sourceRefs: Object.freeze([...fact.sourceRefs]),
           })
@@ -650,148 +643,6 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
   }
 }
 
-function recallSignalsForTopic(input: {
-  readonly projection: ProjectionQueryView;
-  readonly topic: string;
-  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
-  readonly questions: ReadonlyArray<SearchQuestionItem>;
-}): ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>> {
-  const matcher = topicMatcher(input.topic);
-  if (matcher === null) return Object.freeze(new Map());
-
-  const mutable = new Map<string, ContextRecallSignal[]>();
-  for (const fact of recallFacts(input.projection)) {
-    const text = factObjectLabel(fact);
-    if (!matcher(text)) continue;
-    const kind = isSearchOpenLoopFact(fact) ? "open-loop" : "decision";
-    addRecallSignal(mutable, {
-      path: primaryRecallPath(fact.sourceRefs),
-      kind,
-      label:
-        kind === "open-loop"
-          ? "open-loop topic match"
-          : "decision topic match",
-      text,
-      weight: 8,
-      sourceRefs: fact.sourceRefs,
-    });
-  }
-
-  for (const question of input.questions) {
-    const text = [
-      question.question,
-      ...question.options,
-    ].join(" ");
-    if (!matcher(text)) continue;
-    addRecallSignal(mutable, {
-      path: primaryRecallPath(question.sourceRefs),
-      kind: "question",
-      label: "question topic match",
-      text: question.question,
-      weight: 6,
-      sourceRefs: question.sourceRefs,
-    });
-  }
-
-  for (const diagnostic of input.diagnostics) {
-    const text = `${diagnostic.code} ${diagnostic.message}`;
-    if (!matcher(text)) continue;
-    addRecallSignal(mutable, {
-      path: primaryRecallPath(diagnostic.sourceRefs),
-      kind: "diagnostic",
-      label: "diagnostic topic match",
-      text: `${diagnostic.code}: ${diagnostic.message}`,
-      weight: 2,
-      sourceRefs: diagnostic.sourceRefs,
-    });
-  }
-
-  return Object.freeze(
-    new Map([...mutable.entries()].map(([path, signals]) => [
-      path,
-      Object.freeze(signals),
-    ])),
-  );
-}
-
-function recallFacts(
-  projection: ProjectionQueryView,
-): ReadonlyArray<FactEffect> {
-  return Object.freeze([
-    ...SEARCH_OPEN_LOOP_PREDICATES.flatMap((predicate) =>
-      projection.facts({ predicate })
-    ),
-    ...SEARCH_DECISION_PREDICATES.flatMap((predicate) =>
-      projection.facts({ predicate })
-    ),
-  ]);
-}
-
-function addRecallSignal(
-  mutable: Map<string, ContextRecallSignal[]>,
-  signal: Omit<ContextRecallSignal, "path"> & { readonly path: string | null },
-): void {
-  if (signal.path === null) return;
-  const next = Object.freeze({
-    path: signal.path,
-    kind: signal.kind,
-    label: signal.label,
-    text: signal.text,
-    weight: signal.weight,
-    sourceRefs: signal.sourceRefs,
-  });
-  const signals = mutable.get(signal.path);
-  if (signals === undefined) {
-    mutable.set(signal.path, [next]);
-  } else {
-    signals.push(next);
-  }
-}
-
-function primaryRecallPath(sourceRefs: ReadonlyArray<SourceRef>): string | null {
-  return sourceRefs.find((ref) => ref.path.endsWith(".md"))?.path ?? null;
-}
-
-function prioritizedRecallPaths(
-  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
-  excludePaths: ReadonlySet<string>,
-): ReadonlyArray<string> {
-  return Object.freeze(
-    [...recallSignalsByPath.entries()]
-      .filter(([path]) => !excludePaths.has(path))
-      .sort((a, b) => {
-        const score = recallSignalWeight(b[1]) - recallSignalWeight(a[1]);
-        return score !== 0 ? score : a[0].localeCompare(b[0]);
-      })
-      .map(([path]) => path),
-  );
-}
-
-function recallSignalWeight(
-  signals: ReadonlyArray<ContextRecallSignal>,
-): number {
-  return signals.reduce((sum, signal) => sum + signal.weight, 0);
-}
-
-function topicMatcher(topic: string): ((text: string) => boolean) | null {
-  const terms = normalizedTokens(topic);
-  if (terms.length === 0) return null;
-  return (text: string) => {
-    const tokens = new Set(normalizedTokens(text));
-    return terms.every((term) => tokens.has(term));
-  };
-}
-
-function normalizedTokens(value: string): ReadonlyArray<string> {
-  return Object.freeze(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/g)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
-  );
-}
-
 function appendMoreLine(
   lines: string[],
   total: number,
@@ -839,61 +690,6 @@ function compareQuestions(
   b: ContextQuestion,
 ): number {
   return a.id - b.id;
-}
-
-function objectLabel(value: FactEffect["object"]): string {
-  if (value.kind === "string") return value.value;
-  if (value.kind === "number") return String(value.value);
-  if (value.kind === "date") return value.value;
-  if (value.kind === "page") return value.path;
-  if (value.kind === "task") return value.stableId;
-  return value.name;
-}
-
-function factObjectLabel(fact: FactEffect): string {
-  const raw = objectLabel(fact.object);
-  if (
-    fact.object.kind !== "string" ||
-    !(
-      fact.predicate === "dome.daily.open_task" ||
-      fact.predicate === "dome.daily.followup"
-    )
-  ) {
-    return raw;
-  }
-  return dailyActionLabel(raw);
-}
-
-function dailyActionLabel(text: string): string {
-  const stripped = stripDailyTaskMetadata(text);
-  const dueDate = taskDueDate(text);
-  const priority = taskPriority(text);
-  const metadata = [
-    dueDate === null ? null : `due: ${dueDate}`,
-    priority === null ? null : `priority: ${priority}`,
-  ].filter((item): item is string => item !== null);
-  return metadata.length === 0 ? stripped : `${stripped} [${metadata.join(", ")}]`;
-}
-
-function stripDailyTaskMetadata(text: string): string {
-  const stripped = text
-    .replace(TASK_METADATA_MARKER, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return stripped.length > 0 ? stripped : text;
-}
-
-function taskDueDate(text: string): string | null {
-  return TASK_DUE_MARKER.exec(text)?.[1] ?? null;
-}
-
-function taskPriority(text: string): string | null {
-  if (text.includes("\u{1F53A}")) return "highest";
-  if (text.includes("\u{23EB}")) return "high";
-  if (text.includes("\u{1F53C}")) return "medium";
-  if (text.includes("\u{1F53D}")) return "low";
-  if (text.includes("\u{23EC}")) return "lowest";
-  return null;
 }
 
 function formatSourceRef(ref: SourceRef): string {

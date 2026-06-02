@@ -7,8 +7,18 @@
 // and CLI rendering all run through the real runtime.
 
 import { expect } from "bun:test";
+import { join } from "node:path";
 
 import { scenario } from "../../index";
+
+const CONTEXT_SIGNAL_BUNDLE_ROOT = join(
+  __dirname,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.context-signal",
+);
 
 scenario(
   {
@@ -211,6 +221,111 @@ scenario(
     };
     expect(deletedPayload.matches.map((m) => m.path)).not.toContain(
       "wiki/project-alpha.md",
+    );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome query recalls pages through projection signals",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
+    ],
+    harness: {
+      bundles: [
+        "dome.markdown",
+        "dome.search",
+        { id: "test.context-signal", root: CONTEXT_SIGNAL_BUNDLE_ROOT },
+      ],
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/signal-only.md":
+          "---\n" +
+          "type: concept\n" +
+          "---\n" +
+          "# Operations Notebook\n\n" +
+          "This page intentionally avoids the packet topic in searchable prose.\n",
+      },
+      message: "add signal-only query page",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const text = await h.runCli(["query", "alpha launch", "--limit", "3"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("wiki/signal-only.md");
+    expect(text.stdout).toContain("why: open-loop topic match");
+    expect(text.stdout).toContain("dome.daily.open_task");
+
+    const cli = await h.runCli(["query", "alpha launch", "--json", "--limit", "3"]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+    const payload = JSON.parse(cli.stdout) as {
+      readonly shown: { readonly matches: number };
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly snippet: string;
+        readonly ranking: {
+          readonly reasons: ReadonlyArray<string>;
+          readonly signals: ReadonlyArray<{ readonly kind: string }>;
+        };
+        readonly facts: ReadonlyArray<{
+          readonly predicate: string;
+          readonly object: { readonly value?: string };
+        }>;
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+    };
+
+    expect(payload.shown.matches).toBeGreaterThan(0);
+    const entry = payload.matches.find((match) =>
+      match.path === "wiki/signal-only.md"
+    );
+    expect(entry).toBeDefined();
+    expect(entry?.snippet).toContain("intentionally avoids the packet topic");
+    expect(entry?.ranking.reasons).toContain("open-loop topic match");
+    expect(entry?.ranking.signals.some((signal) => signal.kind === "recall"))
+      .toBe(true);
+    expect(entry?.facts).toContainEqual(
+      expect.objectContaining({
+        predicate: "dome.daily.open_task",
+        object: expect.objectContaining({
+          value: "Call Riley about alpha launch readiness",
+        }),
+      }),
+    );
+    expect(entry?.sourceRefs[0]?.path).toBe("wiki/signal-only.md");
+
+    const filtered = await h.runCli([
+      "query",
+      "alpha launch",
+      "--json",
+      "--type",
+      "project",
+    ]);
+    expect(filtered.exitCode).toBe(0);
+    const filteredPayload = JSON.parse(filtered.stdout) as {
+      readonly matches: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(filteredPayload.matches.map((match) => match.path)).not.toContain(
+      "wiki/signal-only.md",
     );
   },
 );

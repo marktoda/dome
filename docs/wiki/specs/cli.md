@@ -692,20 +692,24 @@ processor-version hash is stale. Output (text mode):
 ```
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
-carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
-The processor fetches an expanded FTS candidate set before slicing to `--limit`,
-then ranks those candidates with source-backed signals: page type, graph facts,
-open-loop facts, decisions, unresolved questions, and active diagnostics. The
-legacy `rank` field remains the raw FTS rank; the `ranking` object carries
-`score`, `ftsRank`, human-readable `reasons`, and structured `signals` so
-agents can explain why a result was promoted. Matches also include related page
-facts and unresolved diagnostics/questions whose SourceRefs point at the matched
-path. Open questions include durable row ids, options, and a ready-to-run
-`dome resolve <id> <value>` hint so recall can explain relevant engine state
-without forcing an immediate `inspect` detour. The top-level `limit`,
-`shown.matches`, and `hasMore.matches` fields describe bounded result rendering;
-when more visible matches are detected, text mode prints the expansion hint
-above.
+carries SourceRefs because the search-document rows are written from
+SearchDocumentEffect. The processor fetches an expanded FTS candidate set and
+also recalls exact-path documents when projection memory has a topic-matched
+open loop, decision, unresolved question, or active diagnostic for that page.
+It then ranks the combined candidate set before slicing to `--limit` with
+source-backed signals: page type, graph facts, open-loop facts, decisions,
+unresolved questions, active diagnostics, and projection recall signals. The
+legacy `rank` field remains the raw FTS rank for FTS matches; recalled
+documents use a deliberately weak FTS rank and are promoted only by recall and
+related-state signals. The `ranking` object carries `score`, `ftsRank`,
+human-readable `reasons`, and structured `signals` so agents can explain why a
+result was promoted. Matches also include related page facts and unresolved
+diagnostics/questions whose SourceRefs point at the matched path. Open
+questions include durable row ids, options, and a ready-to-run `dome resolve
+<id> <value>` hint so recall can explain relevant engine state without forcing
+an immediate `inspect` detour. The top-level `limit`, `shown.matches`, and
+`hasMore.matches` fields describe bounded result rendering; when more visible
+matches are detected, text mode prints the expansion hint above.
 Text mode summarizes repeated fact predicates and diagnostic codes with counts
 (`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
 underlying structured fact and diagnostic rows unchanged.

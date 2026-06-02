@@ -316,8 +316,24 @@ scenario(
     expect(query.exitCode).toBe(0);
     const queryPayload = JSON.parse(query.stdout) as {
       readonly shown: { readonly matches: number };
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly ranking: {
+          readonly signals: ReadonlyArray<{ readonly kind: string }>;
+        };
+      }>;
     };
-    expect(queryPayload.shown.matches).toBe(0);
+    expect(queryPayload.shown.matches).toBe(1);
+    expect(queryPayload.matches).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/signal-only.md",
+        ranking: expect.objectContaining({
+          signals: expect.arrayContaining([
+            expect.objectContaining({ kind: "recall" }),
+          ]),
+        }),
+      }),
+    );
 
     const exported = await h.runCli([
       "export-context",
