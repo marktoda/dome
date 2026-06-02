@@ -431,6 +431,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           // closure commit of the adoption that just completed.
           inputCommit: input.adopted,
           matches,
+          ...(input.now !== undefined ? { now: input.now() } : {}),
           resolveGrants,
           extensionIdFor,
           ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
@@ -704,6 +705,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly proposal: Proposal | null;
   readonly inputCommit: CommitOid;
   readonly matches: ReadonlyArray<TriggerMatch>;
+  readonly now?: Date;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
@@ -792,7 +794,7 @@ function beginDispatch<TEnvelope>(
   const declared = opts.processor.capabilities;
   const granted = opts.resolveGrants(opts.processor.id);
   const extensionId = opts.extensionIdFor(opts.processor.id);
-  const startedAt = new Date();
+  const startedAt = opts.now ?? new Date();
   const runId: RunId =
     opts.ledger !== undefined
       ? newRunId(startedAt)
@@ -997,6 +999,7 @@ function buildExecutionContext<TEnvelope>(
             ledger: frame.ledger,
             extensionId: frame.extensionId,
             currentRunCostUsd: costUsd,
+            now: frame.startedAt,
           }),
       });
 
@@ -1006,6 +1009,7 @@ function buildExecutionContext<TEnvelope>(
         proposal: opts.proposal,
         runId: frame.runId,
         input: scopeEnvelopeForProcessor(opts.envelope, frame),
+        now: frame.startedAt,
         signal,
         canSourceRefPath: (path) =>
           readablePath(path, frame.declared, frame.granted) !== null,
@@ -1366,12 +1370,13 @@ function modelSpendForToday(opts: {
   readonly ledger: LedgerDb | undefined;
   readonly extensionId: string;
   readonly currentRunCostUsd: number;
+  readonly now: Date;
 }): number {
   const persisted = opts.ledger === undefined
     ? 0
     : sumCostUsdByProcessorPrefix(opts.ledger, {
         processorIdPrefix: opts.extensionId,
-        sinceIso: startOfLocalDay(new Date()).toISOString(),
+        sinceIso: startOfLocalDay(opts.now).toISOString(),
       });
   return persisted + opts.currentRunCostUsd;
 }

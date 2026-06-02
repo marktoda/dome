@@ -22,13 +22,11 @@ import {
   dailyPathSettings,
   dailyPath,
   dailyStartContextSection,
-  formatDate,
   localDateParts,
   openLoopIdentity,
   openLoopSurfaceKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
-  parseDailyPath,
   previousDailyStartContext,
   previousLocalDate,
   rankDailyOpenLoopSurfaceItems,
@@ -46,7 +44,7 @@ const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.5",
+  version: "0.2.6",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -87,7 +85,7 @@ const carryForward: Processor = defineProcessor({
   ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const settings = dailyPathSettings(ctx.extensionConfig);
-    const targetDate = await targetDailyDate(ctx, settings);
+    const targetDate = targetDailyDate(ctx);
     const targetPath = dailyPath(targetDate, settings);
     const content = await ctx.snapshot.readFile(targetPath);
     if (content === null) return [];
@@ -151,22 +149,31 @@ const carryForward: Processor = defineProcessor({
 
 export default carryForward;
 
-async function targetDailyDate(
-  ctx: ProcessorContext,
-  settings: DailyPathSettings,
-): Promise<DailyDate> {
-  const changedDailyDates = ctx.changedPaths
-    .map((path) => parseDailyPath(path, settings))
-    .filter((date): date is DailyDate => date !== null)
-    .sort(compareDailyDates);
-  const changedDate = changedDailyDates.at(-1);
-  if (changedDate !== undefined) return changedDate;
+type ScheduleInput = {
+  readonly kind: "schedule";
+  readonly cron: string;
+  readonly firedAt: string;
+};
 
-  const existingDailyDates = (await ctx.snapshot.listMarkdownFiles())
-    .map((path) => parseDailyPath(path, settings))
-    .filter((date): date is DailyDate => date !== null)
-    .sort(compareDailyDates);
-  return existingDailyDates.at(-1) ?? localDateParts(new Date());
+function targetDailyDate(ctx: ProcessorContext): DailyDate {
+  const scheduled = parseScheduleInput(ctx.input);
+  return localDateParts(
+    scheduled === null ? ctx.now() : new Date(scheduled.firedAt),
+  );
+}
+
+function parseScheduleInput(input: unknown): ScheduleInput | null {
+  if (input === null || typeof input !== "object") return null;
+  const record = input as Record<string, unknown>;
+  if (record.kind !== "schedule") return null;
+  if (typeof record.cron !== "string") return null;
+  if (typeof record.firedAt !== "string") return null;
+  if (Number.isNaN(new Date(record.firedAt).getTime())) return null;
+  return Object.freeze({
+    kind: "schedule",
+    cron: record.cron,
+    firedAt: new Date(record.firedAt).toISOString(),
+  });
 }
 
 async function collectOpenLoopSources(input: {
@@ -291,10 +298,6 @@ function patchSourceRefs(
       )
     ),
   ];
-}
-
-function compareDailyDates(a: DailyDate, b: DailyDate): number {
-  return formatDate(a).localeCompare(formatDate(b));
 }
 
 function uniqueSettledOpenLoops(

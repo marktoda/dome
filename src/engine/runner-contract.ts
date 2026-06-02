@@ -217,6 +217,7 @@ export type GardenPhaseRunner = (input: {
   readonly changedPaths: ReadonlyArray<string>;
   readonly signals: ReadonlyArray<SignalEvent>;
   readonly proposal: Proposal;
+  readonly now?: () => Date;
   readonly signal?: AbortSignal;
 }) => Promise<ReadonlyArray<RunnerResult>>;
 

@@ -247,6 +247,7 @@ scenario(
       { kind: "route", route: "garden-signal" },
     ],
     harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
       bundles: ["dome.daily"],
       initialFiles: {
         ".dome/config.yaml": `
@@ -351,6 +352,90 @@ extensions:
       "utf8",
     );
     expect(after).toBe(before);
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.daily signal carry-forward targets current daily note",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2025-12-15.md": [
+          "# 2025-12-15",
+          "",
+          "## Notes",
+          "",
+          "Historical note.",
+          "",
+        ].join("\n"),
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2025-12-15.md": [
+          "# 2025-12-15",
+          "",
+          "## Notes",
+          "",
+          "Historical note, edited much later.",
+          "",
+        ].join("\n"),
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Send status update",
+          "",
+        ].join("\n"),
+      },
+      message: "edit historical daily and add current backlog",
+    });
+
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- [ ] Send status update (from [[wiki/projects/alpha]])");
+    await h
+      .expectFile("wiki/dailies/2025-12-15.md")
+      .toNotContain("<!-- dome.daily:open-loops:start -->");
+    await h
+      .expectFile("wiki/dailies/2025-12-15.md")
+      .toNotContain("Send status update");
   },
 );
 

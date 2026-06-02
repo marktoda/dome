@@ -320,6 +320,7 @@ async function runGardenPhaseInner(opts: {
     changedPaths,
     signals,
     proposal,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
   });
 
   if (runnerResults.length === 0) {

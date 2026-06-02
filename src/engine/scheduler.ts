@@ -356,6 +356,7 @@ async function runSchedulerInner(opts: {
         }),
         snapshot,
         changedPaths: Object.freeze([]),
+        now: nowDate,
         // Schedule fires are not tied to a user-drift Proposal. The run
         // ledger records proposal_id = NULL; inputCommit records the adopted
         // snapshot the schedule fired against.

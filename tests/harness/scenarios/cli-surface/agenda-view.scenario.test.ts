@@ -5,7 +5,7 @@
 
 import { expect } from "bun:test";
 
-import { scenario } from "../../index";
+import { TestClock, scenario } from "../../index";
 
 scenario(
   {
@@ -24,7 +24,10 @@ scenario(
       { kind: "trigger", trigger: "signal" },
       { kind: "trigger", trigger: "command" },
     ],
-    harness: { bundles: ["dome.daily", "dome.search"] },
+    harness: {
+      clock: new TestClock("2026-01-05T15:00:00.000Z"),
+      bundles: ["dome.daily", "dome.search"],
+    },
   },
   async (h) => {
     const seed = await h.tick();

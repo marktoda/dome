@@ -34,6 +34,7 @@ const ctx = Object.freeze({
   proposal: null,
   runId: RUN_ID,
   input: null,
+  now: () => new Date("2026-01-02T00:00:00.000Z"),
   signal: new AbortController().signal,
   capabilities: Object.freeze({ __brand: "CapabilityToken" as const }) as never,
   extensionConfig: Object.freeze({}),

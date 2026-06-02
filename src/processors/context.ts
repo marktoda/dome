@@ -72,6 +72,7 @@ import type { Proposal } from "../core/proposal";
  *                      derived runs), or `null` (e.g., command runs).
  *   - `runId`        — matches the run ledger row's id.
  *   - `input`        — trigger-specific payload, typed by `TInput`.
+ *   - `now`          — stable host-clock timestamp for this invocation.
  *   - `signal`       — runtime-owned cancellation signal for this invocation.
  *   - `modelInvoke`  — present iff the processor has the `model.invoke`
  *                      capability granted by the broker; the runtime decides
@@ -85,6 +86,7 @@ export type ProcessorContextInput<TInput> = {
   readonly proposal: Proposal | null;
   readonly runId: string;
   readonly input: TInput;
+  readonly now?: Date;
   readonly signal: AbortSignal;
   readonly canSourceRefPath?: (path: string) => boolean;
   readonly modelInvoke?: ModelInvokeFn;
@@ -141,6 +143,9 @@ export function makeProcessorContext<TInput>(
   opts: ProcessorContextInput<TInput>,
 ): ProcessorContext<TInput> {
   const commit = opts.snapshot.commit;
+  const now = opts.now === undefined
+    ? new Date()
+    : new Date(opts.now.getTime());
   const boundSourceRef = (
     path: string,
     range?: TextRange,
@@ -165,6 +170,7 @@ export function makeProcessorContext<TInput>(
     proposal: opts.proposal,
     runId: opts.runId,
     input: opts.input,
+    now: () => new Date(now.getTime()),
     signal: opts.signal,
     capabilities: CAPABILITY_TOKEN,
     extensionConfig: opts.extensionConfig ?? EMPTY_EXTENSION_CONFIG,

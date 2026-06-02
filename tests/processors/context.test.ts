@@ -131,6 +131,16 @@ describe("makeProcessorContext — primary inputs round-trip", () => {
     expect(ctx.runId).toBe("run-42");
     expect(ctx.input).toBe(input);
   });
+
+  test("ctx.now returns a stable copy of the runtime timestamp", () => {
+    const now = new Date("2026-01-05T15:00:00.000Z");
+    const ctx = makeProcessorContext(baseInput({ input: null, now }));
+    expect(ctx.now().toISOString()).toBe("2026-01-05T15:00:00.000Z");
+
+    const first = ctx.now();
+    first.setUTCFullYear(2030);
+    expect(ctx.now().toISOString()).toBe("2026-01-05T15:00:00.000Z");
+  });
 });
 
 describe("makeProcessorContext — extension config", () => {

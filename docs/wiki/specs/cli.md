@@ -863,12 +863,14 @@ from normalized source path + semantic action text so moving a task line does
 not create a new open-loop identity.
 
 The `dome.daily.carry-forward` garden processor may write small generated
-blocks into the daily note: a `## Start Here` context block derived from
-yesterday's daily note, and a `## Open Loops` block derived from source-backed
-actions. `dome.daily.task-index` treats those blocks as surfaces, not new
-sources: generated daily entries are skipped during fact extraction, but
-`today` and `prep` still read open source-backed rows as the target day's
-surface. When the same loop also exists as an original project, meeting,
+blocks into the current daily note: a `## Start Here` context block derived
+from yesterday's daily note, and a `## Open Loops` block derived from
+source-backed actions. Schedule runs target the scheduled fire date; signal
+runs target the compiler host's current date. Changed historical daily notes
+are evidence, not mutation targets. `dome.daily.task-index` treats those blocks
+as surfaces, not new sources: generated daily entries are skipped during fact
+extraction, but `today` and `prep` still read open source-backed rows as the
+target day's surface. When the same loop also exists as an original project, meeting,
 capture, or prior-daily fact, the view folds the rows together, counts the
 representative as `daily`, and keeps representative source refs for the daily
 surface plus the backing source. Rendered daily/prep/agenda rows use the compact

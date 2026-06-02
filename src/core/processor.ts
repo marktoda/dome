@@ -514,7 +514,8 @@ export type ExtensionConfig = Readonly<Record<string, unknown>>;
  * The per-run context handed to a Processor's `run` method. Carries the
  * candidate snapshot, the changed-paths delta, the originating Proposal
  * (present for adoption + garden-PatchEffect-derived runs), the trigger
- * input (typed by the processor's `TInput` parameter), the cancellation
+ * input (typed by the processor's `TInput` parameter), the stable host-clock
+ * timestamp for this invocation, the cancellation
  * signal, the opaque capability token, the extension's opaque config
  * mapping, the optional model-invoke handle
  * (present iff `model.invoke` capability granted), optional query views
@@ -531,6 +532,7 @@ export type ProcessorContext<TInput = unknown> = {
   readonly proposal: Proposal | null;
   readonly runId: string;
   readonly input: TInput;
+  readonly now: () => Date;
   readonly signal: AbortSignal;
   readonly capabilities: CapabilityToken;
   readonly extensionConfig: ExtensionConfig;
