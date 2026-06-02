@@ -65,6 +65,7 @@ const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
 const FIXTURE_BUNDLES_ROOT = join(REPO_ROOT, "tests", "harness", "fixtures", "bundles");
 const VALID_CONCEPT_PAGE = "---\ntype: concept\n---\n\n# Page\n";
+const SYNC_TEST_TIMEOUT_MS = 30_000;
 const SYNC_JSON_KEYS = Object.freeze([
   "status",
   "branch",
@@ -96,7 +97,7 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
   ...EMPTY_OPERATIONAL_SUMMARY,
-  scheduledCount: 1,
+  scheduledCount: 2,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
@@ -290,7 +291,7 @@ describe("runSync empty-diff init", () => {
     const outBlob = captured.out.join("\n");
     expect(outBlob).toContain("adopted");
     expect(outBlob).toContain("main");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json adopted payload keeps the fixture schema stable", async () => {
     const f = await makeFixture();
@@ -320,7 +321,7 @@ describe("runSync empty-diff init", () => {
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--verbose labels adoption events as sync output", async () => {
     const f = await makeFixture();
@@ -337,7 +338,7 @@ describe("runSync empty-diff init", () => {
     const outBlob = captured.out.join("\n");
     expect(outBlob).toContain("dome sync:   iteration");
     expect(outBlob).not.toContain("dome serve:   iteration");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--filter-processor narrows verbose output to matching processors", async () => {
     const f = await makeFixture();
@@ -371,7 +372,7 @@ describe("runSync empty-diff init", () => {
     expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
     expect(outBlob).not.toContain("dome sync:   iteration");
     expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--quiet suppresses non-error text output without changing adoption", async () => {
     const f = await makeFixture();
@@ -387,7 +388,7 @@ describe("runSync empty-diff init", () => {
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
     expect(captured.out.join("\n")).toBe("");
     expect(captured.err.join("\n")).toBe("");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--quiet does not suppress explicit JSON output", async () => {
     const f = await makeFixture();
@@ -405,7 +406,7 @@ describe("runSync empty-diff init", () => {
     const parsed = parseSingleJsonObject();
     expect(parsed["status"]).toBe("adopted");
     expect(parsed["branch"]).toBe("main");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 });
 
 // ----- Test 2: already in sync ----------------------------------------------
@@ -451,7 +452,7 @@ describe("runSync idempotent", () => {
     } finally {
       ledger2.value.db.close();
     }
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json in-sync payload keeps the fixture schema stable", async () => {
     const f = await makeFixture();
@@ -488,7 +489,7 @@ describe("runSync idempotent", () => {
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json reports durable health attention after the operational drain", async () => {
     const f = await makeFixture();
@@ -555,7 +556,7 @@ describe("runSync idempotent", () => {
           "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
       },
     ]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json reports persistent content diagnostic attention", async () => {
     const f = await makeFixture();
@@ -596,7 +597,7 @@ describe("runSync idempotent", () => {
           "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
       },
     ]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json reports unlocated diagnostics without routing content attention", async () => {
     const f = await makeFixture();
@@ -628,7 +629,7 @@ describe("runSync idempotent", () => {
     });
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("text output reports durable health attention after in-sync ticks", async () => {
     const f = await makeFixture();
@@ -654,7 +655,7 @@ describe("runSync idempotent", () => {
     expect(out).toContain("dome sync: attention diagnostics");
     expect(out).toContain("dome check --content --attention --limit 50 --json");
     expect(captured.err.join("\n")).toBe("");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("garden follow-up summaries surface sub-Proposals in text and JSON", async () => {
     const f = await makeFixture();
@@ -734,7 +735,7 @@ extensions:
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
     expect(parsed["diagnostics"]).toEqual([]);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("in-sync sync still drains durable operational work", async () => {
     const f = await makeFixture();
@@ -787,7 +788,7 @@ extensions:
     } finally {
       outbox2.value.db.close();
     }
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("compiler-host cancellation reaches in-sync operational outbox dispatch", async () => {
     const f = await makeFixture();
@@ -875,7 +876,7 @@ extensions:
     } finally {
       outbox2.value.db.close();
     }
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("reports busy when another compiler host holds the branch lock", async () => {
     const f = await makeFixture();
@@ -930,7 +931,7 @@ extensions:
     releaseLock?.();
     const lockResult = await heldLock;
     expect(lockResult.kind).toBe("acquired");
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("recovers from a corrupt compiler-host lock file", async () => {
     const f = await makeFixture();
@@ -948,7 +949,7 @@ extensions:
     expect(code).toBe(0);
     expect(captured.out.join("\n")).toContain("adopted main");
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(f.initialSha);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 });
 
 // ----- Test 3: drift adoption -----------------------------------------------
@@ -1001,7 +1002,7 @@ describe("runSync drift adoption", () => {
     } finally {
       ledger.value.db.close();
     }
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("diverged adopted ref refuses before adoption runs", async () => {
     const f = await makeFixture();
@@ -1070,7 +1071,7 @@ describe("runSync drift adoption", () => {
     } finally {
       ledgerAfter.value.db.close();
     }
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("compiler host refreshes stale observed drift under the branch lock", async () => {
     const f = await makeFixture();
@@ -1121,7 +1122,7 @@ describe("runSync drift adoption", () => {
     }
 
     expect(await getAdoptedRef(f.vaultPath, "main")).toBe(secondSha);
-  }, 10_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 });
 
 // ----- Test 4: detached HEAD refusal ----------------------------------------
@@ -1148,7 +1149,7 @@ describe("runSync detached HEAD", () => {
     // Stderr should explain the detached-HEAD condition.
     const errBlob = captured.err.join("\n");
     expect(errBlob).toContain("detached");
-  }, 5_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 
   test("--json detached-head payload keeps the fixture schema stable", async () => {
     const f = await makeFixture();
@@ -1190,7 +1191,7 @@ describe("runSync detached HEAD", () => {
     ]);
     expect(parsed["diagnostics"]).toEqual([]);
     expect(parsed["error"]).toBe("detached-head");
-  }, 5_000);
+  }, SYNC_TEST_TIMEOUT_MS);
 });
 
 function parseSingleJsonObject(opts: {

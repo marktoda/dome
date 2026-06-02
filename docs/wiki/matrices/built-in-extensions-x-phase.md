@@ -18,7 +18,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 | Bundle | Status | Adoption phase | Garden phase | View phase |
 |---|---|---|---|---|
-| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable` | `ambiguous-wikilink-answer`; `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
+| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable` | `ambiguous-wikilink-answer`; `repair-wikilinks` (cron `5 5 * * *`); `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
 | **`dome.daily`** | shipped | shipped: `task-index` | shipped: `create-daily` (cron `0 6 * * *`), `carry-forward` (daily open-loop surface), `ambiguous-followup-answer`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
@@ -32,7 +32,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 ## Counts
 
-- **Shipped processors:** 36 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
+- **Shipped processors:** 37 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
 - **Planned processors:** listed as `planned` above; they are future pressure inside otherwise shipped bundles and do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.

@@ -174,6 +174,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       processors: [
         "dome.markdown.validate-wikilinks",
         "dome.markdown.ambiguous-wikilink-answer",
+        "dome.markdown.repair-wikilinks",
         "dome.markdown.normalize-frontmatter",
         "dome.markdown.lint-frontmatter",
         "dome.markdown.broken-images",

@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.4
+version: 0.4.5
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.3.0
@@ -30,6 +30,19 @@ processors:
       - kind: patch.auto
         paths: ["**/*.md"]
     module: processors/ambiguous-wikilink-answer.ts
+
+  - id: dome.markdown.repair-wikilinks
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "5 5 * * *"
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: patch.auto
+        paths: ["**/*.md"]
+    module: processors/repair-wikilinks.ts
 
   - id: dome.markdown.normalize-frontmatter
     version: 0.2.1

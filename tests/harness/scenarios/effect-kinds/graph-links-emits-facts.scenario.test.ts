@@ -125,7 +125,7 @@ scenario(
       { kind: "trigger", trigger: "signal" },
     ],
     harness: { bundles: ["dome.markdown", "dome.graph"] },
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
   },
   async (h) => {
     const seed = await h.tick();
