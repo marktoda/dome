@@ -38,7 +38,7 @@ import { createHash } from "node:crypto";
 
 import type { DiagnosticEffect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
-import type { CommitOid, SourceRef } from "../core/source-ref";
+import { commitOid, type CommitOid, type SourceRef } from "../core/source-ref";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -46,6 +46,7 @@ import type { ProjectionDb } from "./db";
 export type DiagnosticInsertOpts = {
   readonly effect: DiagnosticEffect;
   readonly processorId: string;
+  readonly runId?: string;
   readonly proposalId: string | null;
   readonly adoptedCommit: CommitOid;
 };
@@ -53,6 +54,17 @@ export type DiagnosticInsertOpts = {
 export type DiagnosticsFilter = {
   readonly severity?: "info" | "warning" | "error" | "block";
   readonly processorId?: string;
+};
+
+export type DiagnosticRecord = {
+  readonly id: number;
+  readonly effect: DiagnosticEffect;
+  readonly processorId: string;
+  readonly runId: string | null;
+  readonly proposalId: string | null;
+  readonly adoptedCommit: CommitOid;
+  readonly writtenAt: string;
+  readonly resolvedAt: string | null;
 };
 
 export type ResolveDiagnosticOpts = {
@@ -72,12 +84,13 @@ export type ResolveStaleDiagnosticsOpts = {
 const INSERT_DIAGNOSTIC_SQL = `
 INSERT OR IGNORE INTO diagnostics (
   severity, code, message, source_refs, subject_hash, processor_id,
-  proposal_id, adopted_commit, written_at, resolved_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+  run_id, proposal_id, adopted_commit, written_at, resolved_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 `.trim();
 
 const QUERY_ALL_SQL = `
-SELECT d.severity, d.code, d.message, d.source_refs
+SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
+       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
 FROM diagnostics d
 WHERE d.resolved_at IS NULL AND NOT EXISTS (
   SELECT 1
@@ -92,7 +105,8 @@ ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_SQL = `
-SELECT d.severity, d.code, d.message, d.source_refs
+SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
+       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
 FROM diagnostics d
 WHERE d.resolved_at IS NULL AND d.severity = ? AND NOT EXISTS (
   SELECT 1
@@ -107,7 +121,8 @@ ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_PROCESSOR_SQL = `
-SELECT d.severity, d.code, d.message, d.source_refs
+SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
+       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
 FROM diagnostics d
 WHERE d.resolved_at IS NULL AND d.processor_id = ? AND NOT EXISTS (
   SELECT 1
@@ -122,7 +137,8 @@ ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_AND_PROCESSOR_SQL = `
-SELECT d.severity, d.code, d.message, d.source_refs
+SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
+       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
 FROM diagnostics d
 WHERE d.resolved_at IS NULL AND d.severity = ? AND d.processor_id = ?
   AND NOT EXISTS (
@@ -158,10 +174,17 @@ WHERE id = ? AND resolved_at IS NULL
 // ----- Row shape ------------------------------------------------------------
 
 type DiagnosticRow = {
+  readonly id: number;
   readonly severity: string;
   readonly code: string;
   readonly message: string;
   readonly source_refs: string;
+  readonly processor_id: string;
+  readonly run_id: string | null;
+  readonly proposal_id: string | null;
+  readonly adopted_commit: string;
+  readonly written_at: string;
+  readonly resolved_at: string | null;
 };
 
 type UnresolvedDiagnosticRow = {
@@ -191,7 +214,7 @@ export function insertDiagnostic(
   db: ProjectionDb,
   opts: DiagnosticInsertOpts,
 ): void {
-  const { effect, processorId, proposalId, adoptedCommit } = opts;
+  const { effect, processorId, runId, proposalId, adoptedCommit } = opts;
   const sourceRefsJson = JSON.stringify(effect.sourceRefs);
   const subjectHash = computeSubjectHash(effect.sourceRefs);
   db.raw.query(INSERT_DIAGNOSTIC_SQL).run(
@@ -201,6 +224,7 @@ export function insertDiagnostic(
     sourceRefsJson,
     subjectHash,
     processorId,
+    runId ?? null,
     proposalId,
     adoptedCommit,
     new Date().toISOString(),
@@ -245,6 +269,20 @@ export function queryDiagnostics(
   db: ProjectionDb,
   filter?: DiagnosticsFilter,
 ): ReadonlyArray<DiagnosticEffect> {
+  return Object.freeze(
+    queryDiagnosticRecords(db, filter).map((record) => record.effect),
+  );
+}
+
+/**
+ * Read unresolved diagnostic rows with producer metadata. This is the
+ * inspection/provenance surface; processor QueryViews should normally consume
+ * `queryDiagnostics`, which exposes only the Effect-level contract.
+ */
+export function queryDiagnosticRecords(
+  db: ProjectionDb,
+  filter?: DiagnosticsFilter,
+): ReadonlyArray<DiagnosticRecord> {
   const severity = filter?.severity;
   const processorId = filter?.processorId;
 
@@ -267,7 +305,7 @@ export function queryDiagnostics(
     rows = db.raw.query<DiagnosticRow, []>(QUERY_ALL_SQL).all();
   }
 
-  return Object.freeze(rows.map(rowToDiagnostic));
+  return Object.freeze(rows.map(rowToDiagnosticRecord));
 }
 
 /**
@@ -346,6 +384,19 @@ function rowToDiagnostic(row: DiagnosticRow): DiagnosticEffect {
     code: row.code,
     message: row.message,
     sourceRefs,
+  });
+}
+
+function rowToDiagnosticRecord(row: DiagnosticRow): DiagnosticRecord {
+  return Object.freeze({
+    id: row.id,
+    effect: rowToDiagnostic(row),
+    processorId: row.processor_id,
+    runId: row.run_id,
+    proposalId: row.proposal_id,
+    adoptedCommit: commitOid(row.adopted_commit),
+    writtenAt: row.written_at,
+    resolvedAt: row.resolved_at,
   });
 }
 

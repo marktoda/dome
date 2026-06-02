@@ -93,6 +93,7 @@ extensions:
         idempotencyKey: "test.outbox-recovery:recover-retry",
       }),
       processorId: "test.health",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
     });
     insertQuestion(h.projection, {
@@ -103,6 +104,7 @@ extensions:
         idempotencyKey: "test.outbox-recovery:recover-abandon",
       }),
       processorId: "test.health",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
     });
 

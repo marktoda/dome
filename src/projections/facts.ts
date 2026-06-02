@@ -30,6 +30,7 @@ import type { ProjectionDb } from "./db";
 export type FactInsertOpts = {
   readonly effect: FactEffect;
   readonly processorId: string;
+  readonly runId: string;
   readonly adoptedCommit: CommitOid;
 };
 
@@ -49,6 +50,7 @@ export type FactRecord = {
   readonly effect: FactEffect;
   readonly namespace: string;
   readonly processorId: string;
+  readonly runId: string;
   readonly adoptedCommit: CommitOid;
   readonly writtenAt: string;
 };
@@ -58,8 +60,9 @@ export type FactRecord = {
 const INSERT_FACT_SQL = `
 INSERT INTO facts (
   namespace, subject_kind, subject_id, predicate, object_json,
-  assertion, confidence, source_refs, processor_id, adopted_commit, written_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  assertion, confidence, source_refs, processor_id, run_id, adopted_commit,
+  written_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `.trim();
 
 const FACTS_BY_SUBJECT_SQL = `
@@ -87,7 +90,7 @@ ORDER BY id
 
 const ALL_FACT_RECORDS_SQL = `
 SELECT id, namespace, subject_kind, subject_id, predicate, object_json,
-       assertion, confidence, source_refs, processor_id, adopted_commit,
+       assertion, confidence, source_refs, processor_id, run_id, adopted_commit,
        written_at
 FROM facts
 ORDER BY id
@@ -114,6 +117,7 @@ type FactRow = {
 type FactRecordRow = FactRow & {
   readonly id: number;
   readonly processor_id: string;
+  readonly run_id: string;
   readonly adopted_commit: CommitOid;
   readonly written_at: string;
 };
@@ -127,7 +131,7 @@ type FactRecordRow = FactRow & {
  * `factEffect()` Zod refinement; this function trusts the typed input.
  */
 export function insertFact(db: ProjectionDb, opts: FactInsertOpts): void {
-  const { effect, processorId, adoptedCommit } = opts;
+  const { effect, processorId, runId, adoptedCommit } = opts;
   const namespace = predicateNamespace(effect.predicate);
   db.raw.query(INSERT_FACT_SQL).run(
     namespace,
@@ -139,6 +143,7 @@ export function insertFact(db: ProjectionDb, opts: FactInsertOpts): void {
     effect.confidence ?? null,
     JSON.stringify(effect.sourceRefs),
     processorId,
+    runId,
     adoptedCommit,
     new Date().toISOString(),
   );
@@ -303,6 +308,7 @@ function rowToFactRecord(row: FactRecordRow): FactRecord {
     effect: rowToFact(row),
     namespace: row.namespace,
     processorId: row.processor_id,
+    runId: row.run_id,
     adoptedCommit: row.adopted_commit,
     writtenAt: row.written_at,
   });

@@ -45,6 +45,7 @@
 import { resolve } from "node:path";
 
 import type {
+  DiagnosticEffect,
   FactEffect,
   NodeRef,
 } from "../../core/effect";
@@ -63,7 +64,7 @@ import {
 import { queryPatchRecords } from "../../ledger/capability-uses";
 import { queryRuns } from "../../ledger/runs";
 import {
-  queryDiagnostics,
+  queryDiagnosticRecords,
   type DiagnosticsFilter,
 } from "../../projections/diagnostics";
 import {
@@ -403,18 +404,25 @@ function collectRows(
         assertion: fact.effect.assertion,
         confidence: fact.effect.confidence ?? "-",
         processor: fact.processorId,
+        run: fact.runId,
         adopted: fact.adoptedCommit,
         written_at: fact.writtenAt,
         source_refs: formatSourceRefs(fact.effect.sourceRefs),
       }));
     }
     case "diagnostics": {
-      const all = filteredDiagnostics(runtime, diagnosticOptions);
+      const all = filteredDiagnosticRecords(runtime, diagnosticOptions);
       return all.slice(0, limit).map((d) => ({
-        severity: d.severity,
-        code: d.code,
-        message: d.message,
-        source_refs: formatSourceRefs(d.sourceRefs),
+        id: d.id,
+        severity: d.effect.severity,
+        code: d.effect.code,
+        message: d.effect.message,
+        processor: d.processorId,
+        run: d.runId ?? "-",
+        proposal: d.proposalId ?? "-",
+        adopted: d.adoptedCommit,
+        written_at: d.writtenAt,
+        source_refs: formatSourceRefs(d.effect.sourceRefs),
       }));
     }
     case "questions": {
@@ -425,6 +433,10 @@ function collectRows(
         question: q.effect.question,
         options: q.effect.options ?? "-",
         metadata: q.effect.metadata ?? "-",
+        processor: q.processorId,
+        run: q.runId,
+        adopted: q.adoptedCommit,
+        source_refs: formatSourceRefs(q.effect.sourceRefs),
         answer: q.answer ?? "-",
         asked_at: q.askedAt,
         answered_at: q.answeredAt ?? "-",
@@ -487,14 +499,27 @@ function summarizeDiagnostics(
 function filteredDiagnostics(
   runtime: VaultRuntime,
   diagnosticOptions: ParsedDiagnosticOptions | null,
-): ReturnType<typeof queryDiagnostics> {
-  const diagnostics = queryDiagnostics(
+): ReadonlyArray<DiagnosticEffect> {
+  return Object.freeze(
+    filteredDiagnosticRecords(runtime, diagnosticOptions).map(
+      (record) => record.effect,
+    ),
+  );
+}
+
+function filteredDiagnosticRecords(
+  runtime: VaultRuntime,
+  diagnosticOptions: ParsedDiagnosticOptions | null,
+): ReturnType<typeof queryDiagnosticRecords> {
+  const diagnostics = queryDiagnosticRecords(
     runtime.projectionDb,
     diagnosticOptions?.filter,
   );
   const code = diagnosticOptions?.code;
   if (code === undefined) return diagnostics;
-  return Object.freeze(diagnostics.filter((d) => d.code === code));
+  return Object.freeze(
+    diagnostics.filter((record) => record.effect.code === code),
+  );
 }
 
 function jsonForResult(

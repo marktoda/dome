@@ -7,7 +7,8 @@
 // test's purpose (per the test plan).
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -174,6 +175,79 @@ describe("openProjectionDb", () => {
     expect(row.built_at).toBeNull();
   });
 
+  it("rebuilds when stored meta is current but table columns are stale", async () => {
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    const raw = new Database(dbPath);
+    try {
+      raw.run(
+        "CREATE TABLE projection_meta ("
+          + "schema_hash TEXT NOT NULL,"
+          + "adopted_commit TEXT,"
+          + "extension_set_hash TEXT,"
+          + "processor_versions_hash TEXT,"
+          + "capability_policy_hash TEXT,"
+          + "built_at TEXT,"
+          + "PRIMARY KEY (schema_hash)"
+          + ")",
+      );
+      raw.run(
+        "INSERT INTO projection_meta "
+          + "(schema_hash, adopted_commit, extension_set_hash, "
+          + "processor_versions_hash, capability_policy_hash, built_at) "
+          + "VALUES (?, NULL, NULL, NULL, NULL, NULL)",
+        [computeSchemaHash()],
+      );
+      raw.run(
+        "CREATE TABLE facts ("
+          + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+          + "namespace TEXT NOT NULL,"
+          + "subject_kind TEXT NOT NULL,"
+          + "subject_id TEXT NOT NULL,"
+          + "predicate TEXT NOT NULL,"
+          + "object_json TEXT NOT NULL,"
+          + "assertion TEXT NOT NULL,"
+          + "confidence REAL,"
+          + "source_refs TEXT NOT NULL,"
+          + "processor_id TEXT NOT NULL,"
+          + "adopted_commit TEXT NOT NULL,"
+          + "written_at TEXT NOT NULL"
+          + ")",
+      );
+      raw.run(
+        "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
+          + "object_json, assertion, source_refs, processor_id, "
+          + "adopted_commit, written_at) VALUES "
+          + "('dome.test', 'page', 'wiki/old.md', 'dome.test.p', "
+          + "'{\"kind\":\"string\",\"value\":\"x\"}', 'explicit', '[]', "
+          + "'p1', 'abc123', '2026-06-02T00:00:00.000Z')",
+      );
+    } finally {
+      raw.close();
+    }
+
+    const r = await openProjectionDb({
+      path: dbPath,
+      extensionSet: EMPTY_EXT,
+      processorVersions: EMPTY_PROCS,
+      capabilityPolicyHash: POLICY_A,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    handles.push(r.value.db);
+    expect(r.value.migration).toBe("schema-changed");
+    expect(
+      r.value.db.raw
+        .query<{ name: string }, []>("PRAGMA table_info(facts)")
+        .all()
+        .map((row) => row.name),
+    ).toContain("run_id");
+    expect(
+      r.value.db.raw
+        .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM facts")
+        .get()?.count,
+    ).toBe(0);
+  });
+
   it("resetProjectionDb wipes projection tables and markProjectionBuilt stamps cache keys", async () => {
     const exts = [{ name: "ext.a", version: "1.0.0" }];
     const procs = [{ id: "proc.a", version: "1.0.0" }];
@@ -190,10 +264,11 @@ describe("openProjectionDb", () => {
 
     r.value.db.raw.run(
       "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
-        + "object_json, assertion, source_refs, processor_id, adopted_commit, "
+        + "object_json, assertion, source_refs, processor_id, run_id, "
+        + "adopted_commit, "
         + "written_at) VALUES ('dome.test', 'page', 'wiki/x.md', "
         + "'dome.test.p', '{\"kind\":\"string\",\"value\":\"x\"}', "
-        + "'explicit', '[]', 'p1', ?, ?)",
+        + "'explicit', '[]', 'p1', 'run-test-fixture', ?, ?)",
       [adopted, new Date().toISOString()],
     );
     expect(

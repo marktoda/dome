@@ -117,6 +117,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "confidence REAL,"
     + "source_refs TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
+    + "run_id TEXT NOT NULL,"
     + "adopted_commit TEXT NOT NULL,"
     + "written_at TEXT NOT NULL"
     + ")",
@@ -175,6 +176,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "source_refs TEXT NOT NULL,"
     + "subject_hash TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
+    + "run_id TEXT,"
     + "proposal_id TEXT,"
     + "adopted_commit TEXT NOT NULL,"
     + "written_at TEXT NOT NULL,"
@@ -193,6 +195,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "source_refs TEXT NOT NULL,"
     + "idempotency_key TEXT NOT NULL UNIQUE,"
     + "processor_id TEXT NOT NULL,"
+    + "run_id TEXT NOT NULL,"
     + "adopted_commit TEXT NOT NULL,"
     + "asked_at TEXT NOT NULL,"
     + "answered_at TEXT,"
@@ -242,6 +245,110 @@ const DROP_DDL: ReadonlyArray<string> = Object.freeze([
   "DROP TABLE IF EXISTS facts",
   "DROP TABLE IF EXISTS projection_meta",
 ]);
+
+const REQUIRED_TABLE_COLUMNS: ReadonlyArray<{
+  readonly table: string;
+  readonly columns: ReadonlyArray<string>;
+}> = Object.freeze([
+  {
+    table: "facts",
+    columns: [
+      "id",
+      "namespace",
+      "subject_kind",
+      "subject_id",
+      "predicate",
+      "object_json",
+      "assertion",
+      "confidence",
+      "source_refs",
+      "processor_id",
+      "run_id",
+      "adopted_commit",
+      "written_at",
+    ],
+  },
+  {
+    table: "fts_documents",
+    columns: [
+      "path",
+      "category",
+      "type",
+      "title",
+      "body",
+      "source_refs",
+      "adopted_commit",
+    ],
+  },
+  {
+    table: "diagnostics",
+    columns: [
+      "id",
+      "severity",
+      "code",
+      "message",
+      "source_refs",
+      "subject_hash",
+      "processor_id",
+      "run_id",
+      "proposal_id",
+      "adopted_commit",
+      "written_at",
+      "resolved_at",
+    ],
+  },
+  {
+    table: "questions",
+    columns: [
+      "id",
+      "question",
+      "options_json",
+      "metadata_json",
+      "source_refs",
+      "idempotency_key",
+      "processor_id",
+      "run_id",
+      "adopted_commit",
+      "asked_at",
+      "answered_at",
+      "answer",
+    ],
+  },
+  {
+    table: "scheduled_jobs",
+    columns: [
+      "id",
+      "processor_id",
+      "input_json",
+      "run_after",
+      "idempotency_key",
+      "max_attempts",
+      "attempts",
+      "status",
+      "enqueued_at",
+      "completed_at",
+    ],
+  },
+  {
+    table: "schedule_cursors",
+    columns: ["processor_id", "cron", "last_fire", "next_fire"],
+  },
+  {
+    table: "projection_meta",
+    columns: [
+      "schema_hash",
+      "adopted_commit",
+      "extension_set_hash",
+      "processor_versions_hash",
+      "capability_policy_hash",
+      "built_at",
+    ],
+  },
+]);
+
+const PROJECTION_TABLE_NAMES = Object.freeze(
+  REQUIRED_TABLE_COLUMNS.map((entry) => entry.table),
+);
 
 // ----- sha256 helper --------------------------------------------------------
 
@@ -488,16 +595,21 @@ export async function openProjectionDb(
   //    This branch is the "fresh" path.
   const currentSchemaHash = computeSchemaHash();
   let storedSchemaHash: string | null;
+  let hasExistingProjectionState: boolean;
+  let schemaShapeMatches: boolean;
   try {
     storedSchemaHash = readStoredSchemaHash(raw);
+    hasExistingProjectionState = projectionStateExists(raw);
+    schemaShapeMatches = projectionSchemaShapeMatches(raw);
   } catch (e) {
     raw.close();
     return err({ kind: "meta-read-failed", cause: errorMessage(e) });
   }
 
-  const isFresh = storedSchemaHash === null;
+  const isFresh = storedSchemaHash === null && !hasExistingProjectionState;
   const isSchemaChanged =
-    storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash;
+    (storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash) ||
+    (hasExistingProjectionState && !schemaShapeMatches);
 
   // 4. If schema changed, wipe everything; if fresh, just apply DDL; if
   //    matched, apply DDL idempotently (CREATE ... IF NOT EXISTS is safe
@@ -732,6 +844,36 @@ function applyDdl(db: Database): void {
 
 function configureSqliteConnection(db: Database): void {
   db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+}
+
+function projectionStateExists(db: Database): boolean {
+  const placeholders = PROJECTION_TABLE_NAMES.map(() => "?").join(", ");
+  const rows = db
+    .query<{ name: string }, string[]>(
+      "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') "
+        + `AND name IN (${placeholders}) LIMIT 1`,
+    )
+    .all(...PROJECTION_TABLE_NAMES);
+  return rows.length > 0;
+}
+
+function projectionSchemaShapeMatches(db: Database): boolean {
+  for (const { table, columns } of REQUIRED_TABLE_COLUMNS) {
+    const actual = tableColumns(db, table);
+    if (actual === null) return false;
+    for (const column of columns) {
+      if (!actual.has(column)) return false;
+    }
+  }
+  return true;
+}
+
+function tableColumns(db: Database, table: string): ReadonlySet<string> | null {
+  const rows = db
+    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+    .all();
+  if (rows.length === 0) return null;
+  return new Set(rows.map((row) => row.name));
 }
 
 /**

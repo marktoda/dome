@@ -2013,3 +2013,43 @@ Qualitative read:
 - This keeps the final V1 gate useful as a structured readiness surface:
   release-check remains strict, but its JSON is small enough for tools and
   agents to inspect without losing the failure details that matter.
+
+## 2026-06-02 Projection Run Provenance
+
+Verification action:
+
+- Tightened projection provenance so generated fact and question rows store the
+  producing processor run id, while diagnostic rows store the run id when one
+  exists and keep it nullable for engine-owned diagnostics.
+- Extended `dome inspect facts`, `dome inspect diagnostics`, and
+  `dome inspect questions` so foreground agents can see processor id, run id,
+  adopted commit, and source refs for generated projection memory.
+
+Measured result:
+
+- `bun run typecheck` passed.
+- `bun test tests/projections/accessors.test.ts tests/projections/sinks.test.ts
+  tests/cli/commands.test.ts tests/cli/sync.test.ts
+  tests/cli/maintenance-loop-summary.test.ts
+  tests/harness/scenarios/cli-surface/answer-question.scenario.test.ts
+  tests/harness/scenarios/convergence/diagnostics-auto-resolve.scenario.test.ts
+  tests/harness/scenarios/effect-routing/outbox-recovery-answer.scenario.test.ts
+  tests/harness/scenarios/effect-routing/health-orphan-run-recovery.scenario.test.ts`
+  passed with 163 tests and 2386 assertions.
+- `bun test` passed with 1068 tests and 22543 assertions.
+- `bun run v1:smoke -- --sync-docs` passed after stopping the stale pre-change
+  work-vault `dome serve` host. The docs vault remained adopted-current with
+  dirty draft files, and the work vault passed settled no-source-change smoke
+  with 10 informational diagnostics.
+
+Qualitative read:
+
+- This closes a V1 inspectability gap: projection memory now answers not only
+  "what source supported this?" but also "which processor run produced this?"
+  without inventing provenance for engine diagnostics that genuinely have no
+  run ledger row.
+- The work-vault smoke also proved the projection schema-shape guard: an old
+  `projection.db` missing `run_id` columns no longer makes status/check
+  surfaces crash once the current host owns the database. A stale pre-upgrade
+  host can still race an SDK schema change, so real dogfood sessions should
+  restart `dome serve` after upgrading Dome.

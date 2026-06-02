@@ -143,12 +143,13 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
     applyPatch: opts.applyPatch,
     captureView: opts.captureView,
 
-    recordDiagnostic: async ({ effect, processorId, proposalId }) => {
+    recordDiagnostic: async ({ effect, processorId, runId, proposalId }) => {
       insertDiagnostic(opts.projectionDb, {
         effect,
         processorId,
         proposalId,
         adoptedCommit: opts.adoptedCommit,
+        ...(runId !== undefined ? { runId } : {}),
       });
     },
 
@@ -183,10 +184,11 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       });
     },
 
-    recordFact: async ({ effect, processorId }) => {
+    recordFact: async ({ effect, processorId, runId }) => {
       insertFact(opts.projectionDb, {
         effect,
         processorId,
+        runId,
         adoptedCommit: opts.adoptedCommit,
       });
     },
@@ -198,10 +200,11 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       });
     },
 
-    recordQuestion: async ({ effect, processorId }) => {
+    recordQuestion: async ({ effect, processorId, runId }) => {
       insertQuestion(opts.projectionDb, {
         effect,
         processorId,
+        runId,
         adoptedCommit: opts.adoptedCommit,
       });
     },

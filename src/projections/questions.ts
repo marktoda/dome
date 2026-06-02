@@ -26,6 +26,7 @@ import type { ProjectionDb } from "./db";
 export type QuestionInsertOpts = {
   readonly effect: QuestionEffect;
   readonly processorId: string;
+  readonly runId: string;
   readonly adoptedCommit: CommitOid;
 };
 
@@ -37,6 +38,7 @@ export type QuestionRecord = {
   readonly id: number;
   readonly effect: QuestionEffect;
   readonly processorId: string;
+  readonly runId: string;
   readonly adoptedCommit: CommitOid;
   readonly askedAt: string;
   readonly answeredAt: string | null;
@@ -82,28 +84,29 @@ export type AnswerQuestionResult =
 const INSERT_QUESTION_SQL = `
 INSERT INTO questions (
   question, options_json, metadata_json, source_refs, idempotency_key,
-  processor_id, adopted_commit, asked_at, answered_at, answer
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+  processor_id, run_id, adopted_commit, asked_at, answered_at, answer
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
 ON CONFLICT(idempotency_key) DO UPDATE SET
   question = excluded.question,
   options_json = excluded.options_json,
   metadata_json = excluded.metadata_json,
   source_refs = excluded.source_refs,
   processor_id = excluded.processor_id,
+  run_id = excluded.run_id,
   adopted_commit = excluded.adopted_commit
 WHERE questions.answered_at IS NULL
 `.trim();
 
 const QUERY_ALL_SQL = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, adopted_commit, asked_at, answered_at, answer
+       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 ORDER BY id
 `.trim();
 
 const QUERY_RESOLVED_SQL = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, adopted_commit, asked_at, answered_at, answer
+       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE answered_at IS NOT NULL
 ORDER BY id
@@ -111,7 +114,7 @@ ORDER BY id
 
 const QUERY_UNRESOLVED_SQL = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, adopted_commit, asked_at, answered_at, answer
+       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE answered_at IS NULL
 ORDER BY id
@@ -119,7 +122,7 @@ ORDER BY id
 
 const QUERY_BY_ID_SQL = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, adopted_commit, asked_at, answered_at, answer
+       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
 FROM questions
 WHERE id = ?
 `.trim();
@@ -163,6 +166,7 @@ type QuestionRow = {
   readonly source_refs: string;
   readonly idempotency_key: string;
   readonly processor_id: string;
+  readonly run_id: string;
   readonly adopted_commit: string;
   readonly asked_at: string;
   readonly answered_at: string | null;
@@ -190,7 +194,7 @@ export function insertQuestion(
   db: ProjectionDb,
   opts: QuestionInsertOpts,
 ): void {
-  const { effect, processorId, adoptedCommit } = opts;
+  const { effect, processorId, runId, adoptedCommit } = opts;
   const optionsJson =
     effect.options === undefined ? null : JSON.stringify(effect.options);
   const metadataJson =
@@ -202,6 +206,7 @@ export function insertQuestion(
     JSON.stringify(effect.sourceRefs),
     effect.idempotencyKey,
     processorId,
+    runId,
     adoptedCommit,
     new Date().toISOString(),
   );
@@ -359,6 +364,7 @@ function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
     id: row.id,
     effect: rowToQuestion(row),
     processorId: row.processor_id,
+    runId: row.run_id,
     adoptedCommit: commitOid(row.adopted_commit),
     askedAt: row.asked_at,
     answeredAt: row.answered_at,

@@ -28,10 +28,12 @@ import {
   factsByPredicate,
   factsBySubject,
   insertFact,
+  queryFactRecords,
   resolveStalePageFacts,
 } from "../../src/projections/facts";
 import {
   insertDiagnostic,
+  queryDiagnosticRecords,
   queryDiagnostics,
   resolveDiagnostic,
   resolveStaleDiagnostics,
@@ -105,7 +107,12 @@ describe("facts accessor", () => {
       assertion: "explicit",
       sourceRefs: [REF],
     });
-    insertFact(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const got = factsBySubject(db, { kind: "page", path: "wiki/alice.md" });
     expect(got.length).toBe(1);
@@ -123,7 +130,12 @@ describe("facts accessor", () => {
       assertion: "explicit",
       sourceRefs: [REF],
     });
-    insertFact(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const got = factsBySubject(db, { kind: "task", stableId: "task-42" });
     expect(got.length).toBe(1);
@@ -138,7 +150,12 @@ describe("facts accessor", () => {
       assertion: "explicit",
       sourceRefs: [REF],
     });
-    insertFact(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const got = factsBySubject(db, { kind: "entity", name: "Acme Corp" });
     expect(got.length).toBe(1);
@@ -160,8 +177,18 @@ describe("facts accessor", () => {
       assertion: "explicit",
       sourceRefs: [REF],
     });
-    insertFact(db, { effect: a, processorId: "p1", adoptedCommit: ADOPTED });
-    insertFact(db, { effect: b, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, {
+      effect: a,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertFact(db, {
+      effect: b,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const got = factsByPredicate(db, "dome.tasks", "dome.tasks.dueDate");
     expect(got.length).toBe(1);
@@ -183,12 +210,26 @@ describe("facts accessor", () => {
       assertion: "explicit",
       sourceRefs: [REF],
     });
-    insertFact(db, { effect: a, processorId: "p1", adoptedCommit: ADOPTED });
-    insertFact(db, { effect: b, processorId: "p1", adoptedCommit: ADOPTED });
+    insertFact(db, {
+      effect: a,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertFact(db, {
+      effect: b,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     expect(allFacts(db).map((fact) => fact.predicate)).toEqual([
       "dome.tasks.dueDate",
       "dome.tasks.status",
+    ]);
+    expect(queryFactRecords(db).map((record) => record.runId)).toEqual([
+      "run-test-fixture",
+      "run-test-fixture",
     ]);
   });
 
@@ -225,21 +266,25 @@ describe("facts accessor", () => {
     insertFact(db, {
       effect: stale,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     insertFact(db, {
       effect: otherPath,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     insertFact(db, {
       effect: otherProcessor,
       processorId: "p2",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     insertFact(db, {
       effect: entity,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
 
@@ -275,6 +320,7 @@ describe("diagnostics accessor", () => {
         sourceRefs: [REF],
       }),
       processorId: "p1",
+      runId: "run-diagnostics-first",
       proposalId: "prop_1",
       adoptedCommit: ADOPTED,
     });
@@ -286,6 +332,7 @@ describe("diagnostics accessor", () => {
         sourceRefs: [REF],
       }),
       processorId: "p1",
+      runId: "run-diagnostics-second",
       proposalId: "prop_1",
       adoptedCommit: ADOPTED,
     });
@@ -297,6 +344,7 @@ describe("diagnostics accessor", () => {
         sourceRefs: [REF],
       }),
       processorId: "p1",
+      runId: "run-diagnostics-third",
       proposalId: "prop_1",
       adoptedCommit: ADOPTED,
     });
@@ -306,6 +354,29 @@ describe("diagnostics accessor", () => {
     expect(got[0]?.code).toBe("third");
     expect(got[1]?.code).toBe("second");
     expect(got[2]?.code).toBe("first");
+    expect(queryDiagnosticRecords(db).map((record) => record.runId)).toEqual([
+      "run-diagnostics-third",
+      "run-diagnostics-second",
+      "run-diagnostics-first",
+    ]);
+  });
+
+  it("queryDiagnosticRecords preserves nullable run provenance for engine diagnostics", () => {
+    insertDiagnostic(db, {
+      effect: diagnosticEffect({
+        severity: "info",
+        code: "engine-owned",
+        message: "engine-owned diagnostic",
+        sourceRefs: [],
+      }),
+      processorId: "engine.test",
+      proposalId: null,
+      adoptedCommit: ADOPTED,
+    });
+
+    const [record] = queryDiagnosticRecords(db);
+    expect(record?.processorId).toBe("engine.test");
+    expect(record?.runId).toBeNull();
   });
 
   it("insertDiagnostic is idempotent on (processorId, code, proposalId, sourceRefs)", () => {
@@ -675,8 +746,18 @@ describe("questions accessor", () => {
       sourceRefs: [REF],
       idempotencyKey: "q-1",
     });
-    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
-    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const got = queryQuestions(db);
     expect(got.length).toBe(1);
@@ -707,12 +788,23 @@ describe("questions accessor", () => {
       ],
       idempotencyKey: "q-stable",
     });
-    insertQuestion(db, { effect: original, processorId: "p1", adoptedCommit: ADOPTED });
-    insertQuestion(db, { effect: moved, processorId: "p1", adoptedCommit: OTHER });
+    insertQuestion(db, {
+      effect: original,
+      processorId: "p1",
+      runId: "run-old-question",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: moved,
+      processorId: "p1",
+      runId: "run-new-question",
+      adoptedCommit: OTHER,
+    });
 
     const records = queryQuestionRecords(db);
     expect(records).toHaveLength(1);
     expect(records[0]?.effect.question).toBe("possible followup at new line?");
+    expect(records[0]?.runId).toBe("run-new-question");
     expect(records[0]?.adoptedCommit).toBe(OTHER);
     expect(records[0]?.effect.sourceRefs[0]?.range?.startLine).toBe(7);
     expect(records[0]?.effect.sourceRefs[0]?.stableId).toBe(
@@ -743,12 +835,22 @@ describe("questions accessor", () => {
       ],
       idempotencyKey: "q-answered-stable",
     });
-    insertQuestion(db, { effect: original, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect: original,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
     answerQuestion(db, {
       idempotencyKey: "q-answered-stable",
       answer: "track",
     });
-    insertQuestion(db, { effect: moved, processorId: "p1", adoptedCommit: OTHER });
+    insertQuestion(db, {
+      effect: moved,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: OTHER,
+    });
 
     const records = queryQuestionRecords(db);
     expect(records).toHaveLength(1);
@@ -777,16 +879,19 @@ describe("questions accessor", () => {
     insertQuestion(db, {
       effect: stale,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     insertQuestion(db, {
       effect: keptPath,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     insertQuestion(db, {
       effect: keptProcessor,
       processorId: "p2",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
 
@@ -817,6 +922,7 @@ describe("questions accessor", () => {
     insertQuestion(db, {
       effect: original,
       processorId: "p1",
+      runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
 
@@ -843,8 +949,18 @@ describe("questions accessor", () => {
       sourceRefs: [REF],
       idempotencyKey: "q-u",
     });
-    insertQuestion(db, { effect: a, processorId: "p1", adoptedCommit: ADOPTED });
-    insertQuestion(db, { effect: u, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect: a,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: u,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
     answerQuestion(db, { idempotencyKey: "q-a", answer: "yes" });
 
     const got = queryQuestions(db, { resolved: true });
@@ -858,7 +974,12 @@ describe("questions accessor", () => {
       sourceRefs: [REF],
       idempotencyKey: "q-1",
     });
-    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     expect(queryQuestions(db, { resolved: true }).length).toBe(0);
     answerQuestion(db, { idempotencyKey: "q-1", answer: "the answer" });
@@ -878,13 +999,19 @@ describe("questions accessor", () => {
         automationPolicy: "agent-safe",
       },
     });
-    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
 
     const records = queryQuestionRecords(db);
     expect(records.length).toBe(1);
     const record = records[0];
     expect(record?.id).toBeGreaterThan(0);
     expect(record?.processorId).toBe("p1");
+    expect(record?.runId).toBe("run-test-fixture");
     expect(record?.adoptedCommit).toBe(ADOPTED);
     expect(record?.answeredAt).toBeNull();
     expect(record?.answer).toBeNull();
@@ -904,7 +1031,12 @@ describe("questions accessor", () => {
       idempotencyKey: "q-choice",
       options: ["keep", "merge"],
     });
-    insertQuestion(db, { effect, processorId: "p1", adoptedCommit: ADOPTED });
+    insertQuestion(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
     const record = queryQuestionRecords(db)[0];
     expect(record).toBeDefined();
     if (record === undefined) return;

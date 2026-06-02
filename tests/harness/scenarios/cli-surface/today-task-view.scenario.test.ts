@@ -244,9 +244,9 @@ scenario(
     h.projection.raw.run(
       "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
         + "object_json, assertion, confidence, source_refs, processor_id, "
-        + "adopted_commit, written_at) "
+        + "run_id, adopted_commit, written_at) "
         + "SELECT namespace, subject_kind, subject_id, predicate, object_json, "
-        + "assertion, confidence, source_refs, processor_id, adopted_commit, "
+        + "assertion, confidence, source_refs, processor_id, run_id, adopted_commit, "
         + "written_at FROM facts WHERE predicate IN "
         + "('dome.daily.open_task', 'dome.daily.followup')",
     );

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -88,6 +88,7 @@ CREATE TABLE facts (
   confidence      REAL,                 -- nullable; required for inferred/generated
   source_refs     TEXT NOT NULL,        -- JSON-encoded SourceRef[]
   processor_id    TEXT NOT NULL,
+  run_id          TEXT NOT NULL,        -- RunRecord row that produced this claim
   adopted_commit  TEXT NOT NULL,
   written_at      TEXT NOT NULL
 );
@@ -96,7 +97,10 @@ CREATE INDEX facts_by_namespace ON facts(namespace);
 CREATE INDEX facts_by_predicate ON facts(namespace, predicate);
 ```
 
-Writes scoped by `graph.write` capability per [[wiki/specs/capabilities]] §"graph.write".
+Writes scoped by `graph.write` capability per [[wiki/specs/capabilities]]
+§"graph.write". `processor_id`, `run_id`, `source_refs`, and
+`adopted_commit` make generated claims explainable from `dome inspect facts`
+without treating the projection store as source of truth.
 
 Incremental adoption resolves stale page-subject facts at the same boundary as
 diagnostic auto-resolve: after a processor succeeds, before its new FactEffects
@@ -148,6 +152,7 @@ CREATE TABLE diagnostics (
   source_refs       TEXT NOT NULL,        -- JSON-encoded SourceRef[]
   subject_hash      TEXT NOT NULL,        -- sha256-hex of {path,range,stableId} per ref; dedup discriminator
   processor_id      TEXT NOT NULL,
+  run_id            TEXT,                 -- nullable for engine-created diagnostics without a run
   proposal_id       TEXT,                 -- nullable; null for diagnostics not tied to a proposal
   adopted_commit    TEXT NOT NULL,
   written_at        TEXT NOT NULL,
@@ -155,6 +160,12 @@ CREATE TABLE diagnostics (
   UNIQUE (processor_id, code, proposal_id, subject_hash)
 );
 ```
+
+`processor_id`, `run_id`, `proposal_id`, `adopted_commit`, and
+`source_refs` are the diagnostic provenance surface. Processor-emitted rows
+carry the emitting run id. Engine-created diagnostics that are not associated
+with a processor ledger row keep `run_id` null and remain inspectable as
+engine-owned rows.
 
 `subject_hash` is **content-based identity**, not provenance-based: each SourceRef projects to `{ path, range, stableId }` before hashing, dropping `commit` and `blob`. The discriminator's purpose is "is this the same finding on the same vault span?" — a question the candidate commit is independent of. Two diagnostics anchored to `wiki/foo.md` line 3 hash to the same `subject_hash` whether they were emitted against the user's commit or against a closure commit that advanced the candidate; the `UNIQUE` constraint then collapses the re-emission via `INSERT OR IGNORE`.
 
@@ -191,6 +202,7 @@ CREATE TABLE questions (
   source_refs     TEXT NOT NULL,
   idempotency_key TEXT NOT NULL UNIQUE,
   processor_id    TEXT NOT NULL,
+  run_id          TEXT NOT NULL,        -- RunRecord row that emitted this question
   adopted_commit  TEXT NOT NULL,
   asked_at        TEXT NOT NULL,
   answered_at     TEXT,                 -- nullable
@@ -210,10 +222,10 @@ code uses the same row-record accessor for full detail.
 
 `idempotency_key` is the semantic identity of the question. Re-emitting an
 unanswered question with the same key refreshes its wording, metadata,
-SourceRefs, processor id, and adopted commit while preserving the durable row
-id and original `asked_at`. Re-emitting an answered question with the same key
-does not overwrite the row; answered rows remain an audit surface for the
-decision that was recorded.
+SourceRefs, processor id, run id, and adopted commit while preserving the
+durable row id and original `asked_at`. Re-emitting an answered question with
+the same key does not overwrite the row; answered rows remain an audit surface
+for the decision that was recorded.
 
 Design note: answer values are user input, not rebuildable markdown-derived
 facts. `projection.db.questions.answer` is a denormalized view of the current
@@ -354,7 +366,17 @@ Schema migrations are **the rebuild**. The projection store does not carry a sch
 dome: projection schema changed (v3 → v4); rebuilding (~30s for this vault)...
 ```
 
-The schema version is the sha256 of the concatenated `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` statements. A version row in `projection_meta` stores it. Mismatch → wipe + rebuild.
+The schema version is the sha256 of the concatenated `CREATE TABLE` /
+`CREATE INDEX` / `CREATE VIRTUAL TABLE` statements. A version row in
+`projection_meta` stores it. Mismatch → wipe + rebuild.
+
+The opener also validates the live projection table shape before any
+projection-backed surface reads rows. This is intentionally redundant with the
+schema hash: it catches old or partially migrated `projection.db` files whose
+`projection_meta` row is missing, misleading, or written by a pre-upgrade host.
+Missing required projection columns are treated the same as a schema mismatch:
+wipe the rebuildable projection tables, recreate the current schema, and report
+the projection as stale so the host/CLI can rebuild from adopted markdown.
 
 This is what [[wiki/gotchas/projection-schema-skew]] documents — and the automatic rebuild is the mitigation. The user never edits schemas; they just see a "rebuilding..." message after a SDK upgrade.
 

@@ -348,6 +348,7 @@ extensions:
         idempotencyKey: "test.invalid-answer-handler:bad-output",
       }),
       processorId: "test.ask",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
     });
 
@@ -434,6 +435,7 @@ extensions:
         idempotencyKey: "test.slow-answer-handler:timeout",
       }),
       processorId: "test.ask",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
     });
 

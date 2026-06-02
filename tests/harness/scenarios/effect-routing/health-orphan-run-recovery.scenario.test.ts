@@ -92,6 +92,7 @@ extensions:
 
     insertQuestion(h.projection, {
       processorId: "test.forged-question",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
       effect: questionEffect({
         question: "Forged health recovery question",
@@ -177,6 +178,7 @@ extensions:
 
     insertQuestion(h.projection, {
       processorId: "dome.health.orphan-run-recovery-questions",
+      runId: "run-test-fixture",
       adoptedCommit: commitOid(adopted),
       effect: questionEffect({
         question: "Stale health recovery question",

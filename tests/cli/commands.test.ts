@@ -1220,6 +1220,7 @@ describe("runInspect", () => {
       readonly object: string;
       readonly assertion: string;
       readonly processor: string;
+      readonly run: string;
       readonly adopted: string;
       readonly source_refs: string;
     }>;
@@ -1234,6 +1235,7 @@ describe("runInspect", () => {
       }),
     );
     expect(rows[0]?.id).toBeGreaterThan(0);
+    expect(rows[0]?.run).toMatch(/^run_/);
     expect(rows[0]?.adopted).toMatch(/^[0-9a-f]{40}$/);
     expect(rows[0]?.source_refs).toContain("wiki/new.md:3");
 
@@ -1548,6 +1550,7 @@ describe("runInspect", () => {
           ],
         }),
         processorId: "test.cli",
+        runId: "run-cli-diagnostic",
         proposalId: "prop_cli",
         adoptedCommit: commitOid(f.headSha),
       });
@@ -1556,11 +1559,32 @@ describe("runInspect", () => {
     }
 
     expect(
-      await runInspect({ subject: "diagnostics", vault: f.vaultPath }),
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        json: true,
+      }),
     ).toBe(0);
-    const out = captured.out.join("\n");
-    expect(out).toContain("test.diagnostic");
-    expect(out).toContain("wiki/new.md:3-5");
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly code: string;
+      readonly processor: string;
+      readonly run: string;
+      readonly proposal: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        code: "test.diagnostic",
+        processor: "test.cli",
+        run: "run-cli-diagnostic",
+        proposal: "prop_cli",
+      }),
+    );
+    expect(rows[0]?.id).toBeGreaterThan(0);
+    expect(rows[0]?.adopted).toBe(f.headSha);
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:3-5");
   });
 
   test("diagnostics --summary groups by severity and code", async () => {
@@ -1737,6 +1761,71 @@ describe("runInspect", () => {
         { subject: "outbox", vault: f.vaultPath },
       ),
     ).toBe(0);
+  });
+
+  test("subject 'questions' exposes producer and source provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      const adopted = commitOid(f.headSha);
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Resolve this source-backed uncertainty?",
+          sourceRefs: [
+            sourceRef({
+              commit: adopted,
+              path: "wiki/new.md",
+              range: { startLine: 1, endLine: 1 },
+            }),
+          ],
+          idempotencyKey: "inspect-question-provenance",
+          metadata: {
+            risk: "low",
+            confidence: 0.9,
+            automationPolicy: "agent-safe",
+          },
+        }),
+        processorId: "test.question",
+        runId: "run-cli-question",
+        adoptedCommit: adopted,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "questions",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly question: string;
+      readonly processor: string;
+      readonly run: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        question: "Resolve this source-backed uncertainty?",
+        processor: "test.question",
+        run: "run-cli-question",
+        adopted: f.headSha,
+      }),
+    );
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:1");
   });
 
   test("corrupt operational JSON returns a clear state-read failure", async () => {
@@ -1917,6 +2006,7 @@ describe("runAnswer", () => {
     insertQuestion(projection.value.db, {
       effect,
       processorId: "test.cli",
+      runId: "run-test-fixture",
       adoptedCommit: adopted,
     });
     const id = queryQuestionRecords(projection.value.db)[0]?.id;
@@ -1970,6 +2060,7 @@ describe("runAnswer", () => {
         options: ["yes", "no"],
       }),
       processorId: "test.cli",
+      runId: "run-test-fixture",
       adoptedCommit: adopted,
     });
     const id = queryQuestionRecords(projection.value.db)[0]?.id;
@@ -2026,6 +2117,7 @@ describe("runResolve", () => {
         options: ["track", "ignore"],
       }),
       processorId: "test.cli",
+      runId: "run-test-fixture",
       adoptedCommit: adopted,
     });
     const id = queryQuestionRecords(projection.value.db)[0]?.id;
@@ -2139,6 +2231,7 @@ describe("runCheck", () => {
           },
         }),
         processorId: "test.check",
+        runId: "run-test-fixture",
         adoptedCommit,
       });
     } finally {
@@ -2468,6 +2561,7 @@ describe("runCheck", () => {
           },
         }),
         processorId: "test.check",
+        runId: "run-test-fixture",
         adoptedCommit,
       });
     } finally {
@@ -2954,6 +3048,7 @@ describe("runCheck", () => {
             idempotencyKey: `check-question-${i}`,
           }),
           processorId: "test.check",
+          runId: "run-test-fixture",
           adoptedCommit,
         });
       }
@@ -4402,6 +4497,7 @@ describe("runStatus", () => {
           },
         }),
         processorId: "dome.daily.ambiguous-followup-answer",
+        runId: "run-test-fixture",
         adoptedCommit,
       });
     } finally {
