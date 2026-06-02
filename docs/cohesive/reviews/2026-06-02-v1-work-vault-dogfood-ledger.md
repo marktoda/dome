@@ -843,3 +843,26 @@ Qualitative read:
 - This closes an M10 overclaim path: final release readiness cannot be reached
   from manual one-shot sync evidence alone. Counted workdays now need to show
   the background compiler host was running.
+
+## 2026-06-02 M10 Operational-Evidence Gate Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so a bare `Operational state:` heading
+  no longer counts as measured Dome surface evidence.
+- Counted workdays still accept concrete evidence from
+  `bun run v1:dogfood-snapshot` or explicit `bin/dome status`, `check`,
+  `today`, `query`, or `export-context` command lines.
+- Added regression coverage proving filled qualitative notes plus an empty
+  operational heading remain `not-ready`.
+
+Measured result:
+
+- `bun run v1:dogfood-report -- --json` still reports `completeWorkdays: 1`,
+  `serveHostEvidenceDays: 1`, `captureEvidenceDays: 1`,
+  `spanCalendarDays: 1`, and `status: not-ready`.
+
+Qualitative read:
+
+- This closes another M10 overclaim path: release readiness now requires actual
+  measured Dome surface evidence, not just the presence of a template heading.

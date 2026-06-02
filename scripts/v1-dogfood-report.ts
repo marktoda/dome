@@ -347,8 +347,7 @@ function isNegativeConfirmation(value: string): boolean {
 function hasOperationalEvidence(text: string): boolean {
   return (
     /\bbun run v1:dogfood-snapshot\b/.test(text) ||
-    /\bbin\/dome (status|check|today|query|export-context)\b/.test(text) ||
-    /^Operational state:/m.test(text)
+    /\bbin\/dome (status|check|today|query|export-context)\b/.test(text)
   );
 }
 
