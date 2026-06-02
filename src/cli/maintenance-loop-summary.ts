@@ -17,6 +17,7 @@ export type MaintenanceLoopState =
   | "inactive"
   | "partial"
   | "attention"
+  | "drift"
   | "quiet";
 
 export type MaintenanceLoopSummary = {
@@ -33,6 +34,7 @@ export type MaintenanceLoopSummary = {
   };
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
+  readonly drift_diagnostics: number;
   readonly questions: number;
   readonly agent_safe_questions: number;
   readonly model_safe_questions: number;
@@ -105,6 +107,7 @@ function summarizeLoop(
       activeProcessors: activeProcessors.length,
       missingProcessors: missingProcessors.length,
       attentionDiagnostics,
+      diagnostics,
       questions: loopQuestions.length,
       recentProblemRuns,
     }),
@@ -119,6 +122,7 @@ function summarizeLoop(
     diagnostics,
     attention_diagnostics: attentionDiagnostics,
     questions: loopQuestions.length,
+    drift_diagnostics: Math.max(0, diagnostics - attentionDiagnostics),
     agent_safe_questions: questionPolicyCounts.agentSafe,
     model_safe_questions: questionPolicyCounts.modelSafe,
     owner_needed_questions: questionPolicyCounts.ownerNeeded,
@@ -132,6 +136,7 @@ function stateForLoop(input: {
   readonly activeProcessors: number;
   readonly missingProcessors: number;
   readonly attentionDiagnostics: number;
+  readonly diagnostics: number;
   readonly questions: number;
   readonly recentProblemRuns: number;
 }): MaintenanceLoopState {
@@ -144,6 +149,7 @@ function stateForLoop(input: {
   }
   if (input.activeProcessors === 0) return "inactive";
   if (input.missingProcessors > 0) return "partial";
+  if (input.diagnostics > 0) return "drift";
   return "quiet";
 }
 

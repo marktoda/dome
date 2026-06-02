@@ -95,9 +95,40 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.missing_processors).toEqual(["test.disabled-processor"]);
     expect(summary?.diagnostics).toBe(1);
     expect(summary?.attention_diagnostics).toBe(1);
+    expect(summary?.drift_diagnostics).toBe(0);
     expect(summary?.questions).toBe(3);
     expect(summary?.agent_safe_questions).toBe(1);
     expect(summary?.model_safe_questions).toBe(1);
     expect(summary?.owner_needed_questions).toBe(1);
+  });
+
+  test("reports info-only diagnostics as drift instead of quiet attention", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: (processorId) =>
+        processorId === "test.active-processor"
+          ? [
+              diagnosticEffect({
+                severity: "info",
+                code: "test.info",
+                message: "Visible maintenance drift",
+                sourceRefs: [REF],
+              }),
+            ]
+          : [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+
+    expect(summary?.state).toBe("drift");
+    expect(summary?.diagnostics).toBe(1);
+    expect(summary?.attention_diagnostics).toBe(0);
+    expect(summary?.drift_diagnostics).toBe(1);
   });
 });

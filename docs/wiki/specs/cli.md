@@ -278,7 +278,7 @@ draft     0 modified | 0 untracked
 content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
 engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
 health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
-loops     5 known | 3 quiet | 0 attention | 1 partial | 1 inactive
+loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
 ```
 
 `--json` emits stable keys for agent consumption. Abbreviated shape:
@@ -328,6 +328,7 @@ loops     5 known | 3 quiet | 0 attention | 1 partial | 1 inactive
       },
       "diagnostics": 0,
       "attention_diagnostics": 0,
+      "drift_diagnostics": 0,
       "questions": 0,
       "agent_safe_questions": 0,
       "model_safe_questions": 0,
@@ -425,8 +426,9 @@ classification as `dome check`; missing question metadata is owner-needed.
 Because loops can intentionally overlap, those per-loop question counts are
 attribution counts rather than a globally deduplicated question total; use the
 top-level `questions` field for the unique open-question count.
-`state: "quiet"` means the loop is active and has no visible attention;
-`"attention"` means diagnostics, questions, or recent problem runs are present;
+`state: "quiet"` means the loop is active and has no visible drift or attention;
+`"attention"` means attention diagnostics, questions, or recent problem runs are present;
+`"drift"` means non-attention diagnostics are visible but do not route immediate attention;
 `"partial"` means at least one referenced processor is not active; and
 `"inactive"` means none of the loop's processors are active.
 `last_sync` is the started-at timestamp of the newest successful adoption- or

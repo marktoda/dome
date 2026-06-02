@@ -482,13 +482,14 @@ function formatMaintenanceLoopLine(
   const counts = {
     quiet: 0,
     attention: 0,
+    drift: 0,
     partial: 0,
     inactive: 0,
   };
   for (const loop of loops) {
     counts[loop.state] += 1;
   }
-  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.partial} partial | ${counts.inactive} inactive`;
+  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.drift} drift | ${counts.partial} partial | ${counts.inactive} inactive`;
 }
 
 function formatServe(s: StatusSnapshot): string {
