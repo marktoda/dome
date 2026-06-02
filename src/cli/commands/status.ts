@@ -61,6 +61,12 @@
 //                       targets that would otherwise share one diagnostic code.
 //   - attention_diagnostic_message_summary:
 //                       same message grouping limited to warning/error/block rows.
+//   - diagnostic_disposition_summary:
+//                       bounded grouping by who/what should handle each content
+//                       diagnostic: auto-fixable, agent-fixable, owner-needed,
+//                       or noise.
+//   - attention_diagnostic_disposition_summary:
+//                       same disposition grouping limited to warning/error/block rows.
 //   - questions:        count of unanswered projection questions.
 //   - outbox_pending:   count of pending external-action rows.
 //   - outbox_failed:    count of terminally-failed external-action rows.
@@ -116,8 +122,10 @@ import {
   isAttentionDiagnostic,
   isSourceBackedDiagnostic,
   RECOVERY_SOURCE_REF_FORMAT,
+  summarizeDiagnosticDispositions,
   summarizeDiagnosticEffects,
   summarizeDiagnosticMessages,
+  type DiagnosticDispositionSummary,
   type DiagnosticMessageSummary,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
@@ -204,6 +212,8 @@ type StatusSnapshot = {
   readonly attention_diagnostic_summary: DiagnosticSummary;
   readonly diagnostic_message_summary: DiagnosticMessageSummary;
   readonly attention_diagnostic_message_summary: DiagnosticMessageSummary;
+  readonly diagnostic_disposition_summary: DiagnosticDispositionSummary;
+  readonly attention_diagnostic_disposition_summary: DiagnosticDispositionSummary;
   readonly questions: number;
   readonly outbox_pending: number;
   readonly outbox_failed: number;
@@ -333,6 +343,17 @@ export async function runStatus(
       STATUS_DIAGNOSTIC_GROUP_LIMIT,
       { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
     );
+    const diagnostic_disposition_summary = summarizeDiagnosticDispositions(
+      contentDiagnosticRows,
+      STATUS_DIAGNOSTIC_GROUP_LIMIT,
+      { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+    );
+    const attention_diagnostic_disposition_summary =
+      summarizeDiagnosticDispositions(
+        attentionDiagnosticRows,
+        STATUS_DIAGNOSTIC_GROUP_LIMIT,
+        { sourceRefs: RECOVERY_SOURCE_REF_FORMAT },
+      );
     const unresolvedQuestions = queryQuestionRecords(runtime.projectionDb, {
       resolved: false,
     });
@@ -423,6 +444,8 @@ export async function runStatus(
       attention_diagnostic_summary,
       diagnostic_message_summary,
       attention_diagnostic_message_summary,
+      diagnostic_disposition_summary,
+      attention_diagnostic_disposition_summary,
       questions,
       outbox_pending,
       outbox_failed,
@@ -492,6 +515,15 @@ function printStatusText(
       : s.diagnostic_message_summary;
   if (diagnosticFocus.groups.length > 0) {
     console.log(`diag fix  ${formatDiagnosticFocusLine(diagnosticFocus)}`);
+  }
+  const diagnosticDisposition =
+    s.attention_diagnostics > 0
+      ? s.attention_diagnostic_disposition_summary
+      : s.diagnostic_disposition_summary;
+  if (diagnosticDisposition.groups.length > 0) {
+    console.log(
+      `diag plan ${formatDiagnosticDispositionLine(diagnosticDisposition)}`,
+    );
   }
   for (const line of formatNextActionLines(s.next_actions)) {
     console.log(line);
@@ -623,6 +655,21 @@ function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
   const remaining = summary.group_count - groups.length;
   if (remaining > 0) lines.push(`+${remaining} more`);
   return lines.join(" | ");
+}
+
+function formatDiagnosticDispositionLine(
+  summary: DiagnosticDispositionSummary,
+): string {
+  const counts = new Map<string, number>();
+  for (const group of summary.groups) {
+    counts.set(
+      group.disposition,
+      (counts.get(group.disposition) ?? 0) + group.count,
+    );
+  }
+  return [...counts]
+    .map(([disposition, count]) => `${count} ${disposition}`)
+    .join(" | ");
 }
 
 function truncateStatusMessage(message: string): string {

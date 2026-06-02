@@ -122,6 +122,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "attention_diagnostic_summary",
   "diagnostic_message_summary",
   "attention_diagnostic_message_summary",
+  "diagnostic_disposition_summary",
+  "attention_diagnostic_disposition_summary",
   "questions",
   "outbox_pending",
   "outbox_failed",
@@ -2763,9 +2765,30 @@ describe("runCheck", () => {
         attention_count: 1,
       }),
     );
+    const dispositionSummary = record(content["disposition_summary"]);
+    expect(dispositionSummary["total"]).toBe(3);
+    const dispositionGroups = dispositionSummary["groups"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(
+      dispositionGroups.every((group) =>
+        group["disposition"] === "agent-fixable"
+      ),
+    ).toBe(true);
+    expect(
+      dispositionGroups.reduce((sum, group) => sum + Number(group["count"]), 0),
+    ).toBe(3);
+    expect(
+      dispositionGroups.reduce(
+        (sum, group) => sum + Number(group["attention_count"]),
+        0,
+      ),
+    ).toBe(3);
     const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(items[0]?.["repair_path"]).toBe("link.resolve-or-create");
     expect(String(items[0]?.["repair_hint"])).toContain("Correct the wikilink");
+    expect(items[0]?.["disposition"]).toBe("agent-fixable");
+    expect(String(items[0]?.["disposition_hint"])).toContain("foreground agent");
 
     captured.out = [];
     expect(
@@ -2776,9 +2799,94 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
+    expect(text).toContain("Content dispositions");
+    expect(text).toContain("agent-fixable x2");
+    expect(text).toContain("disposition: agent-fixable");
     expect(text).toContain("Content repair paths");
     expect(text).toContain("link.resolve-or-create x2");
     expect(text).toContain("repair: link.resolve-or-create");
+  });
+
+  test("content report classifies optional-root diagnostic noise", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const adoptedCommit = commitOid(f.headSha);
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "dome.markdown.broken-wikilink",
+          message:
+            "Wikilink [[dailies/2025-10-07]] does not resolve to any markdown file in the vault.",
+          sourceRefs: [
+            sourceRef({
+              commit: adoptedCommit,
+              path: "notes/2025-10-08.md",
+            }),
+          ],
+        }),
+        processorId: "dome.markdown.validate-wikilinks",
+        proposalId: null,
+        adoptedCommit,
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "info",
+          code: "dome.markdown.type-unknown",
+          message:
+            "Frontmatter `type:` references unknown page type \"interview_outline\".",
+          sourceRefs: [
+            sourceRef({
+              commit: adoptedCommit,
+              path: "notes/interview.md",
+            }),
+          ],
+        }),
+        processorId: "dome.markdown.lint-frontmatter",
+        proposalId: null,
+        adoptedCommit,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const content = record(parsed["content"]);
+    const dispositionSummary = record(content["disposition_summary"]);
+    expect(dispositionSummary["total"]).toBe(2);
+    expect(dispositionSummary["group_count"]).toBe(2);
+    const groups = dispositionSummary["groups"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    expect(groups.map((group) => group["disposition"])).toEqual([
+      "noise",
+      "noise",
+    ]);
+    expect(groups.reduce((sum, group) => sum + Number(group["count"]), 0))
+      .toBe(2);
+    expect(groups.every((group) => group["attention_count"] === 0)).toBe(true);
+    const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
+    expect(items.every((item) => item["disposition"] === "noise")).toBe(true);
   });
 
   test("text output reports omitted bounded rows", async () => {
@@ -3261,6 +3369,20 @@ describe("runStatus", () => {
       omitted_groups: 0,
       groups: [],
     });
+    expect(parsed["diagnostic_disposition_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      omitted_groups: 0,
+      groups: [],
+    });
+    expect(parsed["attention_diagnostic_disposition_summary"]).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      omitted_groups: 0,
+      groups: [],
+    });
     expect(parsed["questions"]).toBe(0);
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
@@ -3693,6 +3815,20 @@ describe("runStatus", () => {
       omitted_groups: 0,
       groups: [],
     });
+    expect(record(parsed["attention_diagnostic_disposition_summary"])).toEqual({
+      total: 0,
+      group_count: 0,
+      shown_groups: 0,
+      omitted_groups: 0,
+      groups: [],
+    });
+    const dispositionSummary = record(parsed["diagnostic_disposition_summary"]);
+    expect(dispositionSummary["total"]).toBe(1);
+    expect(dispositionSummary["group_count"]).toBe(1);
+    expect(
+      (dispositionSummary["groups"] as ReadonlyArray<Record<string, unknown>>)
+        [0]?.["disposition"],
+    ).toBe("agent-fixable");
     expect(parsed["attention"]).toContain("sync_needed");
     expect(parsed["attention"]).not.toContain("diagnostics");
     expect(parsed["next_actions"]).toEqual([

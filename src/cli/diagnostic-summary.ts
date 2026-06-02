@@ -57,6 +57,32 @@ export type DiagnosticRepairSummary = {
   readonly groups: ReadonlyArray<DiagnosticRepairGroup>;
 };
 
+export type DiagnosticDispositionKind =
+  | "auto-fixable"
+  | "agent-fixable"
+  | "owner-needed"
+  | "noise";
+
+export type DiagnosticDisposition = {
+  readonly disposition: DiagnosticDispositionKind;
+  readonly disposition_hint: string;
+};
+
+export type DiagnosticDispositionGroup = DiagnosticDisposition & {
+  readonly count: number;
+  readonly attention_count: number;
+  readonly first_source_refs: string;
+  readonly firstSourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export type DiagnosticDispositionSummary = {
+  readonly total: number;
+  readonly group_count: number;
+  readonly shown_groups: number;
+  readonly omitted_groups: number;
+  readonly groups: ReadonlyArray<DiagnosticDispositionGroup>;
+};
+
 export type SourceRefFormatOptions = {
   readonly includeCommit?: boolean;
 };
@@ -70,6 +96,13 @@ const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
   error: 1,
   warning: 2,
   info: 3,
+};
+
+const DISPOSITION_RANK: Record<DiagnosticDispositionKind, number> = {
+  "owner-needed": 0,
+  "agent-fixable": 1,
+  "auto-fixable": 2,
+  noise: 3,
 };
 
 export const RECOVERY_SOURCE_REF_FORMAT: SourceRefFormatOptions = Object.freeze({
@@ -206,6 +239,47 @@ export function summarizeDiagnosticRepairPaths(
   });
 }
 
+export function summarizeDiagnosticDispositions(
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+  limit: number,
+  options: DiagnosticSummaryOptions = {},
+): DiagnosticDispositionSummary {
+  const grouped = new Map<string, DiagnosticDispositionGroup>();
+  for (const diagnostic of diagnostics) {
+    const disposition = diagnosticDisposition(diagnostic);
+    const key = diagnosticDispositionKey(disposition);
+    const existing = grouped.get(key);
+    if (existing !== undefined) {
+      grouped.set(key, {
+        ...existing,
+        count: existing.count + 1,
+        attention_count: existing.attention_count +
+          (isAttentionDiagnostic(diagnostic) ? 1 : 0),
+      });
+      continue;
+    }
+    grouped.set(key, {
+      ...disposition,
+      count: 1,
+      attention_count: isAttentionDiagnostic(diagnostic) ? 1 : 0,
+      first_source_refs: formatSourceRefs(
+        diagnostic.sourceRefs,
+        options.sourceRefs,
+      ),
+      firstSourceRefs: diagnostic.sourceRefs,
+    });
+  }
+
+  const groups = [...grouped.values()].sort(compareDiagnosticDispositionGroups);
+  return Object.freeze({
+    total: diagnostics.length,
+    group_count: groups.length,
+    shown_groups: Math.min(limit, groups.length),
+    omitted_groups: Math.max(0, groups.length - limit),
+    groups: Object.freeze(groups.slice(0, limit)),
+  });
+}
+
 export function diagnosticRepairPath(
   diagnostic: Pick<DiagnosticEffect, "code" | "message">,
 ): DiagnosticRepairPath {
@@ -271,6 +345,111 @@ export function diagnosticRepairPath(
     repair_path: "content.inspect",
     repair_hint:
       "Inspect the source refs and fix the source markdown issue described by the diagnostic.",
+  });
+}
+
+export function diagnosticDisposition(
+  diagnostic: Pick<
+    DiagnosticEffect,
+    "severity" | "code" | "message" | "sourceRefs"
+  >,
+): DiagnosticDisposition {
+  if (diagnostic.severity === "block") {
+    return Object.freeze({
+      disposition: "owner-needed",
+      disposition_hint:
+        "This blocks adoption or source preservation; inspect the source refs before asking Dome to continue.",
+    });
+  }
+
+  if (diagnostic.code === "raw.immutable") {
+    return Object.freeze({
+      disposition: "owner-needed",
+      disposition_hint:
+        "Raw source material changed; decide whether to revert it or move the derived content elsewhere.",
+    });
+  }
+
+  if (diagnostic.code === "dome.markdown.stale-updated") {
+    return Object.freeze({
+      disposition: "auto-fixable",
+      disposition_hint:
+        "The markdown maintenance loop can refresh this metadata on a scheduled compiler pass.",
+    });
+  }
+
+  if (
+    diagnostic.code === "dome.markdown.type-unknown" &&
+    diagnostic.severity === "info" &&
+    diagnostic.sourceRefs.every((ref) => isOptionalMarkdownRoot(ref.path))
+  ) {
+    return Object.freeze({
+      disposition: "noise",
+      disposition_hint:
+        "Optional-root note frontmatter uses a local type label; no action is required unless the label should become a real page type.",
+    });
+  }
+
+  if (
+    diagnostic.code === "dome.markdown.broken-wikilink" &&
+    diagnostic.severity === "info" &&
+    diagnostic.sourceRefs.every((ref) => isOptionalMarkdownRoot(ref.path)) &&
+    isHistoricalDailyTarget(wikilinkTarget(diagnostic.message))
+  ) {
+    return Object.freeze({
+      disposition: "noise",
+      disposition_hint:
+        "Historical daily-note navigation points at a missing optional daily page; create it only if that missing date needs real content.",
+    });
+  }
+
+  if (diagnostic.code === "dome.markdown.broken-wikilink") {
+    return Object.freeze({
+      disposition: "agent-fixable",
+      disposition_hint:
+        "A vault-aware foreground agent can usually rename the link, create a source-backed stub, or leave the uncertainty intentional.",
+    });
+  }
+
+  if (diagnostic.code === "dome.markdown.broken-image") {
+    return Object.freeze({
+      disposition: "agent-fixable",
+      disposition_hint:
+        "A foreground agent can restore the asset, move it to the linked path, or update the embed target.",
+    });
+  }
+
+  if (
+    diagnostic.code.startsWith("dome.markdown.") &&
+    (
+      diagnostic.code.includes("frontmatter") ||
+      diagnostic.code === "dome.markdown.missing-type" ||
+      diagnostic.code === "dome.markdown.type-unknown" ||
+      diagnostic.code === "dome.markdown.tags-not-list" ||
+      diagnostic.code === "dome.markdown.invalid-date" ||
+      diagnostic.code === "dome.markdown.missing-required-field" ||
+      diagnostic.code === "dome.markdown.unknown-frontmatter-field"
+    )
+  ) {
+    return Object.freeze({
+      disposition: "agent-fixable",
+      disposition_hint:
+        "A foreground agent can align the page frontmatter with the configured page-type schema.",
+    });
+  }
+
+  if (diagnostic.severity === "info") {
+    return Object.freeze({
+      disposition: "agent-fixable",
+      disposition_hint:
+        "Informational content hygiene; a foreground agent can inspect the source refs and clean it up opportunistically.",
+    });
+  }
+
+  return Object.freeze({
+    disposition: "owner-needed",
+    disposition_hint:
+      "This diagnostic needs explicit attention because Dome cannot infer a safe source-preserving repair.",
   });
 }
 
@@ -350,6 +529,20 @@ function compareDiagnosticRepairGroups(
   return a.repair_path.localeCompare(b.repair_path);
 }
 
+function compareDiagnosticDispositionGroups(
+  a: DiagnosticDispositionGroup,
+  b: DiagnosticDispositionGroup,
+): number {
+  if (b.attention_count !== a.attention_count) {
+    return b.attention_count - a.attention_count;
+  }
+  const dispositionOrder =
+    DISPOSITION_RANK[a.disposition] - DISPOSITION_RANK[b.disposition];
+  if (dispositionOrder !== 0) return dispositionOrder;
+  if (b.count !== a.count) return b.count - a.count;
+  return a.disposition.localeCompare(b.disposition);
+}
+
 function diagnosticMessageKey(
   diagnostic: Pick<DiagnosticEffect, "severity" | "code" | "message">,
 ): string {
@@ -358,6 +551,32 @@ function diagnosticMessageKey(
     diagnostic.code,
     diagnostic.message,
   ].join("\u0000");
+}
+
+function diagnosticDispositionKey(
+  disposition: DiagnosticDisposition,
+): string {
+  return [
+    disposition.disposition,
+    disposition.disposition_hint,
+  ].join("\u0000");
+}
+
+function isOptionalMarkdownRoot(path: string): boolean {
+  return path.startsWith("notes/") ||
+    path.startsWith("inbox/") ||
+    path.startsWith("raw/");
+}
+
+function wikilinkTarget(message: string): string | null {
+  const match = /\[\[([^\]\n]+)\]\]/.exec(message);
+  const target = match?.[1]?.split("|")[0]?.split("#")[0]?.trim();
+  return target === undefined || target.length === 0 ? null : target;
+}
+
+function isHistoricalDailyTarget(target: string | null): boolean {
+  return target !== null &&
+    /^(?:dailies|notes)\/\d{4}-\d{2}-\d{2}$/.test(target);
 }
 
 function compareDiagnosticGroups(

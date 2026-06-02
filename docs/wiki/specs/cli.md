@@ -401,6 +401,38 @@ readability option.
       }
     ]
   },
+  "diagnostic_disposition_summary": {
+    "total": 12,
+    "group_count": 2,
+    "shown_groups": 2,
+    "omitted_groups": 0,
+    "groups": [
+      {
+        "disposition": "agent-fixable",
+        "disposition_hint": "A vault-aware foreground agent can usually rename the link, create a source-backed stub, or leave the uncertainty intentional.",
+        "count": 9,
+        "attention_count": 9,
+        "first_source_refs": "wiki/page.md:7",
+        "firstSourceRefs": [{"commit": "41a98c2...", "path": "wiki/page.md"}]
+      }
+    ]
+  },
+  "attention_diagnostic_disposition_summary": {
+    "total": 12,
+    "group_count": 2,
+    "shown_groups": 2,
+    "omitted_groups": 0,
+    "groups": [
+      {
+        "disposition": "agent-fixable",
+        "disposition_hint": "A vault-aware foreground agent can usually rename the link, create a source-backed stub, or leave the uncertainty intentional.",
+        "count": 9,
+        "attention_count": 9,
+        "first_source_refs": "wiki/page.md:7",
+        "firstSourceRefs": [{"commit": "41a98c2...", "path": "wiki/page.md"}]
+      }
+    ]
+  },
   "questions": 0,
   "outbox_pending": 0,
   "outbox_failed": 0,
@@ -488,6 +520,13 @@ target. `diagnostic_message_summary` and
 severity/code/message, so a status pulse can show distinct repair targets when
 many findings share the same diagnostic code, such as several missing
 wikilink targets. Text mode renders this message-level grouping as `diag fix`.
+`diagnostic_disposition_summary` and
+`attention_diagnostic_disposition_summary` classify source-backed content
+diagnostics by who/what should handle them: `auto-fixable`, `agent-fixable`,
+`owner-needed`, or `noise`. Disposition groups carry a short
+`disposition_hint`, counts, attention counts, and first source refs. JSON keeps
+separate groups when the same disposition has different hints; text mode
+aggregates those groups by disposition as `diag plan`.
 Diagnostic summary payloads include `group_count`, `shown_groups`, and
 `omitted_groups` so bounded JSON consumers do not need to infer truncation from
 array lengths. Diagnostic summary groups include both
@@ -566,7 +605,12 @@ a short `repair_hint` so foreground agents can batch source edits without
 guessing the intended repair route. The content `items` list follows the same
 severity/count/message priority as `message_summary`, so bounded repair rows
 start with the highest-volume grouped findings instead of newest-row insertion
-order. Decision reports include `agent_safe_questions`,
+order. Content reports also include `disposition_summary`, which classifies
+each source-backed diagnostic as `auto-fixable`, `agent-fixable`,
+`owner-needed`, or `noise`. Each diagnostic item carries the same
+`disposition` and `disposition_hint`, making the remaining backlog explicit for
+foreground agents and M10 dogfood evidence. Decision reports include
+`agent_safe_questions`,
 `model_safe_questions`, and `owner_needed_questions`; missing question metadata
 is counted as `owner-needed`. Decision items include the raw `metadata` object
 plus flattened `automation_policy`, `risk`, `confidence`,
@@ -597,9 +641,10 @@ Abbreviated example:
     "summary": {"total": 2, "groups": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "count": 1}]},
     "message_summary": {"total": 2, "groups": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "message": "...", "count": 1}]},
     "repair_summary": {"total": 2, "groups": [{"repair_path": "link.resolve-or-create", "count": 1}]},
+    "disposition_summary": {"total": 2, "groups": [{"disposition": "agent-fixable", "count": 1}]},
     "shownItems": 1,
     "omittedItems": 0,
-    "items": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "message": "...", "source_refs": "wiki/page.md:7"}]
+    "items": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "message": "...", "repair_path": "link.resolve-or-create", "disposition": "agent-fixable", "source_refs": "wiki/page.md:7"}]
   },
   "decisions": {
     "questions": 1,

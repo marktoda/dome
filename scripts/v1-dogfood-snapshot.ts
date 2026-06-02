@@ -146,12 +146,21 @@ function renderSnapshot(input: {
   }
 
   const content = record(input.check.content);
+  const dispositionSummary = record(content.disposition_summary);
+  const dispositionGroups = recordArray(dispositionSummary.groups);
   const repairSummary = record(content.repair_summary);
   const repairGroups = recordArray(repairSummary.groups);
   const contentItems = recordArray(content.items);
-  if (repairGroups.length > 0) {
+  if (dispositionGroups.length > 0 || repairGroups.length > 0) {
     lines.push("");
     lines.push("Content hygiene:");
+    for (const group of dispositionGroups.slice(0, 5)) {
+      lines.push(
+        `- ${stringValue(group.disposition, "(unknown)")}: ` +
+          `${numberValue(group.count)} finding(s), ` +
+          `${numberValue(group.attention_count)} attention`,
+      );
+    }
     for (const group of repairGroups.slice(0, 5)) {
       lines.push(
         `- ${stringValue(group.repair_path, "(unknown)")}: ` +
