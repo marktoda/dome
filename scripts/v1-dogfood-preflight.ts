@@ -23,7 +23,12 @@ type CheckSummary = {
 
 type PreflightReport = {
   readonly vault: string;
+  readonly ledger: string;
   readonly status: "ready" | "not-ready";
+  readonly sessionEvidence: {
+    readonly snapshotCommand: ReadonlyArray<string>;
+    readonly appendCommand: string;
+  };
   readonly operational: CheckSummary;
   readonly serve: CheckSummary & {
     readonly status: string;
@@ -132,9 +137,12 @@ function buildReport(input: {
     release,
   });
   const ready = operational.ready && serve.ready && capture.ready;
+  const sessionEvidence = sessionEvidenceCommands(input.opts);
   return {
     vault: input.opts.vault,
+    ledger: input.opts.ledger,
     status: ready ? "ready" : "not-ready",
+    sessionEvidence,
     operational,
     serve,
     capture,
@@ -142,6 +150,28 @@ function buildReport(input: {
     nextActions,
     commands: input.commands.map((command) => command.command),
   };
+}
+
+function sessionEvidenceCommands(opts: PreflightOptions): {
+  readonly snapshotCommand: ReadonlyArray<string>;
+  readonly appendCommand: string;
+} {
+  const snapshotCommand = Object.freeze([
+    "bun",
+    "run",
+    "v1:dogfood-snapshot",
+    "--",
+    "--vault",
+    opts.vault,
+    "--date",
+    localDateString(),
+  ]);
+  const renderedSnapshotCommand = snapshotCommand.map(formatShellArg).join(" ");
+  return Object.freeze({
+    snapshotCommand,
+    appendCommand:
+      `${renderedSnapshotCommand} >> ${formatShellArg(opts.ledger)}`,
+  });
 }
 
 function serveCheck(status: JsonRecord): CheckSummary & {
@@ -351,6 +381,7 @@ function renderReport(report: PreflightReport): string {
   lines.push("# V1 M10 Dogfood Preflight");
   lines.push("");
   lines.push(`Vault: \`${report.vault}\``);
+  lines.push(`Ledger: \`${report.ledger}\``);
   lines.push(`Collection status: ${report.status}`);
   lines.push("");
   lines.push("Operational readiness:");
@@ -396,6 +427,12 @@ function renderReport(report: PreflightReport): string {
       }
     }
   }
+  lines.push("");
+  lines.push("Session evidence:");
+  lines.push(`- Snapshot command: \`${report.sessionEvidence.appendCommand}\``);
+  lines.push(
+    "- Fill the qualitative prompts after the work session before counting the day.",
+  );
   lines.push("");
   lines.push("Next actions:");
   for (const action of report.nextActions) {
@@ -567,6 +604,18 @@ function formatCommandArg(value: string): string {
   return /^[A-Za-z0-9_@%+=:,./~-]+$/.test(value)
     ? value
     : JSON.stringify(value);
+}
+
+function formatShellArg(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function localDateString(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function printHelp(): void {

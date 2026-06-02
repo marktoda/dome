@@ -1323,3 +1323,28 @@ Qualitative read:
   Instead of just saying a loop was quiet or inactive, the snapshot now leaves
   enough evidence to see which desired-state objective was involved and why it
   should have settled.
+
+## 2026-06-02 M10 Preflight Session Evidence Command
+
+Verification action:
+
+- Added structured `sessionEvidence` to `bun run v1:dogfood-preflight`, with
+  the snapshot argv and a shell-ready append command for the configured
+  dogfood ledger.
+- Rendered the same command in Markdown preflight output under `Session
+  evidence`, so a ready work vault gives the operator a concrete end-of-session
+  command instead of only abstract remaining-count guidance.
+
+Measured result:
+
+- Live preflight against the work vault renders:
+  `bun run v1:dogfood-snapshot -- --vault /Users/mark.toda/vaults/work
+  --date 2026-06-02 >> /Users/mark.toda/dev/dome/docs/cohesive/reviews/2026-06-02-v1-work-vault-dogfood-ledger.md`.
+- JSON preflight includes `sessionEvidence.snapshotCommand` and
+  `sessionEvidence.appendCommand` for foreground agents.
+
+Qualitative read:
+
+- This makes the soak loop easier to run daily. Preflight now answers both
+  "can I collect evidence?" and "what exact command should I run when the
+  session is done?"

@@ -50,6 +50,21 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stderr).toBe("");
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
+    expect(report.ledger).toBe(ledgerPath);
+    expect(report.sessionEvidence.snapshotCommand).toEqual([
+      "bun",
+      "run",
+      "v1:dogfood-snapshot",
+      "--",
+      "--vault",
+      vaultPath,
+      "--date",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    ]);
+    expect(report.sessionEvidence.appendCommand).toContain(
+      "bun run v1:dogfood-snapshot -- --vault",
+    );
+    expect(report.sessionEvidence.appendCommand).toContain(`>> ${ledgerPath}`);
     expect(report.operational.ready).toBe(true);
     expect(report.serve.ready).toBe(false);
     expect(report.serve.status).toBe("off");
@@ -145,6 +160,10 @@ describe("v1 dogfood preflight script", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Collection status: ready");
+    expect(result.stdout).toContain("Session evidence:");
+    expect(result.stdout).toContain("Snapshot command:");
+    expect(result.stdout).toContain("bun run v1:dogfood-snapshot");
+    expect(result.stdout).toContain(`>> ${ledgerPath}`);
     expect(result.stdout).toContain("Release-soak report:");
     expect(result.stdout).toContain("- Status: not-ready");
   }, { timeout: 30_000 });
