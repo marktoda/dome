@@ -545,3 +545,28 @@ Updated assessment:
   vault converged afterward.
 - V1 still should not be marked complete. The report remains `not-ready` at
   1/10 complete workdays and 1/5 capture-evidence days.
+
+## 2026-06-02 Broad V1 Verification Pass
+
+Verification after the capture/question fixes and V1 evidence refresh:
+
+- `bun test` passed with 1012 tests, 0 failures, 21700 assertions, and 160
+  files.
+- `bun run typecheck` passed.
+- `git diff --check` passed.
+- `bun scripts/v1-smoke.ts --sync-docs` passed for both the docs vault and the
+  work vault. Docs was clean at head/adopted `5987e55`; the work vault was
+  clean at head/adopted `5716af7` with 5 checked views ok and the known 46
+  informational diagnostics.
+- `bun run v1:dogfood-preflight -- --json` reported session collection
+  readiness as `ready`: operational readiness was clean, `dome.intake` was
+  enabled and loaded, and the model status was `ready`.
+- `bun run v1:dogfood-report -- --json` reported release status `not-ready`
+  with 1/10 complete workdays, 1/5 capture-evidence days, and a 1/12
+  complete-workday calendar span. There were 0 release blockers.
+
+Updated assessment:
+
+- The V1 implementation gates are green at the current head.
+- V1 still should not be marked complete. The remaining gap is elapsed M10
+  evidence, not a known failing implementation gate.
