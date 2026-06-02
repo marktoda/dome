@@ -26,7 +26,6 @@ const CHECK_REASONS = Object.freeze([
   "adopted_ref_diverged",
   "pending_runs",
   "failed_runs",
-  "serve_stale",
   "diagnostics",
   "questions",
   "outbox_failed",
@@ -70,6 +69,11 @@ export function nextActionsForStatus(
       "Raw captures are waiting but the capture digestion loop is inactive " +
       "or not model-ready; inspect dome.intake, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
+  });
+  pushAction(out, attention, ["serve_stale"], {
+    command: "dome serve",
+    description:
+      "Restart the foreground compiler host so it can refresh the stale serve heartbeat.",
   });
   const syncReasons = SYNC_REASONS.filter((reason) =>
     attention.includes(reason),

@@ -228,7 +228,10 @@ function serveCheck(status: JsonRecord): CheckSummary & {
 function operationalCheck(status: JsonRecord): CheckSummary {
   const findings: string[] = [];
   if (status.sync_needed === true) findings.push("vault has pending sync work");
-  if (status.attention_required === true) {
+  if (
+    status.attention_required === true &&
+    hasNonServeAttention(status.attention)
+  ) {
     findings.push("status requires operator attention");
   }
   const dirtyModified = numberValue(status.dirty_modified);
@@ -255,6 +258,14 @@ function operationalCheck(status: JsonRecord): CheckSummary {
     ready: findings.length === 0,
     findings,
   };
+}
+
+function hasNonServeAttention(value: unknown): boolean {
+  if (!Array.isArray(value)) return true;
+  if (value.length === 0) return true;
+  return value.some(
+    (item) => typeof item !== "string" || item !== "serve_stale",
+  );
 }
 
 function captureCheck(

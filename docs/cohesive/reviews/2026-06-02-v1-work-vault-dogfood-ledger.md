@@ -1460,3 +1460,40 @@ Qualitative read:
 - This makes the release-soak counters line up with the rubric: M10 measures
   complete workdays that used Dome with a running compiler host, not isolated
   evidence snippets in partial entries.
+
+## 2026-06-02 M10 Stale-Host Action Routing
+
+Verification action:
+
+- Cleaned up a stale work-vault `dome serve` heartbeat left by a dead host
+  process, then used that dogfood finding to audit the operator-facing action
+  path.
+- Found that `dome status --json` routed `serve_stale` to the generic
+  `dome check --json` action, and `bun run v1:dogfood-preflight` double-counted
+  the same stale host as a generic operational readiness finding.
+- Tightened the CLI surface so `serve_stale` points directly at `dome serve`,
+  while preflight reports stale host evidence only under serve-host readiness.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts` passed with 9 tests
+  and 128 assertions.
+- `bun test tests/cli/commands.test.ts --test-name-pattern
+  "stale serve heartbeat|invalid serve heartbeat"` passed with 2 tests and 16
+  assertions.
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts
+  tests/cli/commands.test.ts` passed with 81 tests and 824 assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` passed.
+- `bun run v1:smoke -- --sync-docs` passed for the docs and work vaults. The
+  work vault was settled at `d839d0f` with 10 informational diagnostics and no
+  attention required.
+- `bun run v1:dogfood-preflight -- --json` now reports operational readiness
+  `true`, capture readiness `true`, serve status `off`, and the expected
+  next action to start `dome serve` for real dogfood host evidence.
+
+Qualitative read:
+
+- This keeps the M10 session setup surface cohesive. A stale or stopped
+  compiler host is a host-operation problem with one obvious action, not a
+  request for a foreground agent to inspect content diagnostics.

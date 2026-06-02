@@ -4182,6 +4182,15 @@ describe("runStatus", () => {
     expect(parsed["serve_pid"]).toBe(process.pid);
     expect(parsed["serve_branch"]).toBe("main");
     expect(typeof parsed["serve_updated_at"]).toBe("string");
+    expect(parsed["attention"]).toContain("serve_stale");
+    expect(parsed["next_actions"]).toEqual(expect.arrayContaining([
+      {
+        reasons: ["serve_stale"],
+        command: "dome serve",
+        description:
+          "Restart the foreground compiler host so it can refresh the stale serve heartbeat.",
+      },
+    ]));
   });
 
   test("--json mode reports invalid serve heartbeat as stale", async () => {
@@ -4200,6 +4209,15 @@ describe("runStatus", () => {
     expect(parsed["serve_pid"]).toBeNull();
     expect(parsed["serve_branch"]).toBeNull();
     expect(parsed["serve_updated_at"]).toBeNull();
+    expect(parsed["attention"]).toContain("serve_stale");
+    expect(parsed["next_actions"]).toEqual(expect.arrayContaining([
+      {
+        reasons: ["serve_stale"],
+        command: "dome serve",
+        description:
+          "Restart the foreground compiler host so it can refresh the stale serve heartbeat.",
+      },
+    ]));
   });
 
   test("--json mode reports sync drift and pending commit count", async () => {

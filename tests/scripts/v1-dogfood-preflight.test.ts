@@ -211,6 +211,51 @@ describe("v1 dogfood preflight script", () => {
     );
   }, { timeout: 30_000 });
 
+  test("routes stale serve heartbeat through serve readiness only", async () => {
+    const vaultPath = await makeIntakeReadyVault();
+    await writeServeHeartbeat({
+      vaultPath,
+      handle: createServeHeartbeatHandle(
+        new Date("2026-01-01T00:00:00.000Z"),
+      ),
+      branch: "main",
+      pollIntervalMs: 20,
+      operationalIntervalMs: 20,
+      now: new Date(Date.now() - 10_000),
+    });
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.operational.ready).toBe(true);
+    expect(report.operational.findings).toEqual([]);
+    expect(report.capture.ready).toBe(true);
+    expect(report.serve.ready).toBe(false);
+    expect(report.serve.status).toBe("stale");
+    expect(report.serve.findings).toContain(
+      "dome serve heartbeat is stale; restart the foreground host",
+    );
+    expect(report.nextActions).not.toContain(
+      "Explain remaining compiler attention across engine health, content diagnostics, and open decisions. (dome check --json)",
+    );
+    expect(
+      report.nextActions.some((action: string) =>
+        action.includes("start dome serve while dogfooding") &&
+        action.includes("bin/dome serve --vault")
+      ),
+    ).toBe(true);
+  }, { timeout: 30_000 });
+
   test("requires serve host branch to match the current vault branch", async () => {
     const vaultPath = await makeIntakeReadyVault();
     await writeServeHeartbeat({
