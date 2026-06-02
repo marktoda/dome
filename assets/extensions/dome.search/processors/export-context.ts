@@ -20,16 +20,14 @@ import {
   questionAutomationPolicy,
 } from "../../../../src/question-resolution";
 import {
-  searchDailyActionLabel,
   searchFactObjectLabel,
 } from "./labels";
 import {
-  actionItemsFromMarkdown,
-  openLoopStableId,
+  dailySurfaceOpenLoopsForContext,
+  type DailySurfaceContextOpenLoop,
+} from "./daily-surface";
+import {
   openLoopSurfaceKey,
-  openSourceBackedOpenLoopsFromMarkdown,
-  type DailyOpenLoopSource,
-  type MarkdownActionItem,
 } from "../../dome.daily/processors/daily-shared";
 import {
   groupByMatchingPath,
@@ -61,7 +59,6 @@ const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
-const MAX_DAILY_SURFACE_PATHS = 3;
 const MAX_RECALL_PATHS = 24;
 
 const exportContext: Processor = defineProcessor({
@@ -164,6 +161,7 @@ const exportContext: Processor = defineProcessor({
     const dailySurfaceOpenLoops = await dailySurfaceOpenLoopsForContext({
       ctx,
       recallSignalsByPath,
+      maxRows: MAX_RELATED_ROWS,
     });
     const overview = buildOverview(
       input.topic,
@@ -294,6 +292,8 @@ type ContextOpenLoop = {
   readonly text: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
+
+type PinnedContextOpenLoop = ContextOpenLoop | DailySurfaceContextOpenLoop;
 
 type ContextDecision = {
   readonly path: string;
@@ -516,7 +516,7 @@ function buildOverview(
   topic: string,
   entries: ReadonlyArray<ContextEntry>,
   recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
-  pinnedOpenLoops: ReadonlyArray<ContextOpenLoop> = Object.freeze([]),
+  pinnedOpenLoops: ReadonlyArray<PinnedContextOpenLoop> = Object.freeze([]),
 ): ContextOverview {
   return Object.freeze({
     readFirst: Object.freeze(
@@ -563,7 +563,7 @@ function readFirstReason(topic: string, entry: ContextEntry): string {
 function uniqueOpenLoops(
   entries: ReadonlyArray<ContextEntry>,
   topic: string,
-  pinned: ReadonlyArray<ContextOpenLoop> = Object.freeze([]),
+  pinned: ReadonlyArray<PinnedContextOpenLoop> = Object.freeze([]),
 ): ReadonlyArray<ContextOpenLoop> {
   const seen = new Set<string>();
   const out: ContextOpenLoop[] = [];
@@ -598,123 +598,6 @@ function uniqueOpenLoops(
     out.push(item);
   }
   return Object.freeze(out);
-}
-
-async function dailySurfaceOpenLoopsForContext(input: {
-  readonly ctx: ProcessorContext;
-  readonly recallSignalsByPath: ReadonlyMap<
-    string,
-    ReadonlyArray<ContextRecallSignal>
-  >;
-}): Promise<ReadonlyArray<ContextOpenLoop>> {
-  const paths = dailySurfacePaths(input.recallSignalsByPath);
-  const out: ContextOpenLoop[] = [];
-  const seen = new Set<string>();
-  for (const path of paths) {
-    const content = await input.ctx.snapshot.readFile(path);
-    if (content === null) continue;
-    const items = dailySurfaceActionItems(path, content);
-    for (const item of items) {
-      const loop = contextOpenLoopFromDailySurfaceItem(input.ctx, path, item);
-      const key = openLoopOverviewKey(loop);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(loop);
-      if (out.length >= MAX_RELATED_ROWS) return Object.freeze(out);
-    }
-  }
-  return Object.freeze(out);
-}
-
-function dailySurfacePaths(
-  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
-): ReadonlyArray<string> {
-  return Object.freeze(
-    [...recallSignalsByPath.entries()]
-      .filter(([, signals]) => signals.some((signal) => signal.kind === "daily"))
-      .sort((a, b) => {
-        const weightCmp = maxDailySignalWeight(b[1]) -
-          maxDailySignalWeight(a[1]);
-        return weightCmp !== 0 ? weightCmp : a[0].localeCompare(b[0]);
-      })
-      .map(([path]) => path)
-      .slice(0, MAX_DAILY_SURFACE_PATHS),
-  );
-}
-
-function maxDailySignalWeight(
-  signals: ReadonlyArray<ContextRecallSignal>,
-): number {
-  return signals
-    .filter((signal) => signal.kind === "daily")
-    .reduce((max, signal) => Math.max(max, signal.weight), 0);
-}
-
-type DailySurfaceActionItem = DailyOpenLoopSource & {
-  readonly sourceBacked: boolean;
-};
-
-function dailySurfaceActionItems(
-  path: string,
-  content: string,
-): ReadonlyArray<DailySurfaceActionItem> {
-  const sourceBacked = openSourceBackedOpenLoopsFromMarkdown({
-    path,
-    content,
-  }).map((item) =>
-    Object.freeze({
-      ...item,
-      sourceBacked: true,
-    })
-  );
-  const direct = actionItemsFromMarkdown(content).map((item) =>
-    dailySurfaceActionItemFromMarkdownItem(path, item)
-  );
-  return Object.freeze(
-    [...sourceBacked, ...direct].sort((a, b) =>
-      a.line - b.line || a.body.localeCompare(b.body)
-    ),
-  );
-}
-
-function dailySurfaceActionItemFromMarkdownItem(
-  path: string,
-  item: MarkdownActionItem,
-): DailySurfaceActionItem {
-  return Object.freeze({
-    line: item.line,
-    stableId: openLoopStableId({ sourcePath: path, body: item.body }),
-    body: item.body,
-    followup: item.followup,
-    sourcePath: path,
-    sourceBacked: false,
-  });
-}
-
-function contextOpenLoopFromDailySurfaceItem(
-  ctx: ProcessorContext,
-  path: string,
-  item: DailySurfaceActionItem,
-): ContextOpenLoop {
-  const surfaceRef = ctx.sourceRef(
-    path,
-    { startLine: item.line, endLine: item.line },
-    item.stableId,
-  );
-  const sourceRefs = uniqueSourceRefs([
-    surfaceRef,
-    ...(item.sourceBacked && item.sourcePath !== path
-      ? [ctx.sourceRef(item.sourcePath, undefined, item.stableId)]
-      : []),
-  ]);
-  return Object.freeze({
-    path,
-    predicate: item.followup
-      ? "dome.daily.followup"
-      : "dome.daily.open_task",
-    text: searchDailyActionLabel(item.body),
-    sourceRefs,
-  });
 }
 
 function openLoopOverviewKey(item: ContextOpenLoop): string {
