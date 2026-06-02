@@ -168,6 +168,52 @@ describe("modelInvokeForProcessor", () => {
     expect(parsed.answer).toBe(42);
   });
 
+  test("structured accepts a single whole-response JSON code fence", async () => {
+    const invoke = buildInvoke({
+      provider: async () => ({
+        text: "```json\n{\"answer\":42}\n```",
+      }),
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    const parsed = await invoke.structured({
+      prompt: "json",
+      schemaName: "answer/v1",
+      parse: (value) => {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          (value as { readonly answer?: unknown }).answer === 42
+        ) {
+          return value as { readonly answer: 42 };
+        }
+        throw new Error("answer missing");
+      },
+    });
+
+    expect(parsed.answer).toBe(42);
+  });
+
+  test("structured rejects fenced JSON with extra prose", async () => {
+    const invoke = buildInvoke({
+      provider: async () => ({
+        text: "Here is the JSON:\n```json\n{\"answer\":42}\n```",
+      }),
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(
+      invoke.structured({
+        prompt: "json",
+        schemaName: "answer/v1",
+        parse: (value) => value,
+      }),
+    ).rejects.toMatchObject({
+      code: "model.output.invalid-json",
+      retryable: false,
+    });
+  });
+
   test("structured retries invalid JSON when requested, then succeeds", async () => {
     let calls = 0;
     const invoke = buildInvoke({

@@ -146,7 +146,7 @@ The `ctx.modelInvoke` runtime boundary has these guarantees:
 - Fails with `model.invoke.denied` when no provider is configured, the prompt is empty, the requested model is outside the effective allowlist, or the bundle's effective daily cost budget is spent.
 - Records a `capability_uses` row for each model-call attempt: `allowed` when the provider call is authorized, `denied` when the model call is rejected before provider invocation.
 - Records provider-reported run-local cost into the current RunRecord, including failed structured-output runs.
-- Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core).
+- Supports structured output through `ctx.modelInvoke.structured({ schemaName, parse })`, where `parse` is a caller-supplied schema parser (Zod parse functions fit naturally; JSON Schema validators can be adapted without adding AJV to core). The runtime accepts exact JSON and the common whole-response `json` code-fence shape, but still rejects prose-wrapped or ambiguous output as invalid JSON.
 - Retries one retryable `model.invoke.provider-failed` provider attempt inside the same invocation. `model.invoke.timeout` is not retried inside the call; the processor timeout remains the outer cap.
 - Enforces a per-call timeout bounded by `modelCallTimeoutMs` / the resolved run timeout.
 - Aborts provider calls when the processor invocation times out or is cancelled.

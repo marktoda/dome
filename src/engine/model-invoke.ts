@@ -361,7 +361,7 @@ async function invokeStructured<T>(
     const text = await invokeText(input);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      parsed = parseStructuredJsonText(text);
     } catch (e) {
       lastCode = "model.output.invalid-json";
       lastMessage = `model output for schema '${input.schemaName}' was not parseable JSON: ${shortMessage(e)}`;
@@ -377,6 +377,23 @@ async function invokeStructured<T>(
   }
 
   throw modelError(lastCode, lastMessage, false);
+}
+
+function parseStructuredJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    const fenced = singleJsonFenceBody(trimmed);
+    if (fenced === null) throw error;
+    return JSON.parse(fenced.trim());
+  }
+}
+
+function singleJsonFenceBody(text: string): string | null {
+  const match = /^```(?:json|JSON)?[ \t]*\r?\n([\s\S]*)\r?\n```$/.exec(text);
+  if (match === null) return null;
+  return match[1] ?? "";
 }
 
 function attemptsFor(retries: number | undefined): number {
