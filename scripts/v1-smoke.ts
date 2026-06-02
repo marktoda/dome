@@ -137,14 +137,13 @@ async function smokeVault(input: {
     vaultPath,
     status,
   });
-  let settledSync: "checked" | "skipped";
   if (settled.kind === "status-updated") {
     status = settled.status;
-    settledSync = "checked";
-  } else if (settled.kind === "skipped") {
-    settledSync = "skipped";
+  } else {
     notices.push(settled.notice);
   }
+  const settledSync: "checked" | "skipped" =
+    settled.kind === "status-updated" ? "checked" : "skipped";
 
   const doctor = await doctorJson(vaultPath);
   if (doctor.status !== "ok") {

@@ -455,7 +455,7 @@ async function runCommand(input: {
   const proc = Bun.spawn({
     cmd: [...input.cmd],
     cwd: input.cwd,
-    env: input.env,
+    ...(input.env !== undefined ? { env: input.env } : {}),
     stdout: "pipe",
     stderr: "pipe",
   });

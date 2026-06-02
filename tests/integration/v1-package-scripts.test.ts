@@ -11,6 +11,9 @@ describe("V1 package scripts", () => {
     ) as { scripts?: Record<string, string> };
     const scripts = pkg.scripts ?? {};
 
+    expect(scripts.typecheck).toContain("bunx tsc --noEmit");
+    expect(scripts.typecheck).toContain("tsconfig.bundles.json");
+    expect(scripts.typecheck).toContain("tsconfig.scripts.json");
     expect(scripts["v1:check"]).toContain("bun run typecheck");
     expect(scripts["v1:check"]).toContain("git diff --check");
     expect(scripts["v1:check"]).toContain("bun test");

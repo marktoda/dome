@@ -1624,3 +1624,29 @@ Qualitative read:
   makes the existing final package-script gate a better release-audit surface:
   one command can now show whether the remaining problem is implementation,
   current dogfood setup, elapsed M10 evidence, or more than one of those.
+
+## 2026-06-02 V1 Script Typecheck Gate
+
+Verification action:
+
+- Re-audited the V1 package gates after adding the release-check runner.
+- Found that `bun run typecheck` covered `src/`, `tests/`, and bundle
+  processors, but did not include `scripts/*.ts`. That left the release,
+  smoke, dogfood, preflight, report, snapshot, and LLM-smoke scripts outside
+  the strict TypeScript gate used by the SDK.
+- Added `tsconfig.scripts.json`, wired it into `bun run typecheck`, and pinned
+  the package script with `tests/integration/v1-package-scripts.test.ts`.
+- Fixed the strictness findings in the V1 scripts with explicit regex-capture
+  guards, optional spawn-env handling, and settled-sync assignment.
+
+Measured result:
+
+- `bunx tsc --noEmit -p tsconfig.scripts.json` passed.
+- `bun test tests/integration/v1-package-scripts.test.ts` passed with 1 test
+  and 8 assertions.
+
+Qualitative read:
+
+- This closes a release-tooling quality gap. The V1 final gates now check the
+  scripts that implement the smoke, dogfood, and release readiness surfaces,
+  instead of relying on runtime execution to catch basic type drift.

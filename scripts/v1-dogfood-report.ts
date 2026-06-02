@@ -380,6 +380,8 @@ function parseDaySections(markdown: string): Array<{
   for (const line of lines) {
     const match = /^##\s+(\d{4}-\d{2}-\d{2})(?:\s+(.+))?\s*$/.exec(line);
     if (match !== null) {
+      const date = match[1];
+      if (date === undefined) continue;
       if (current !== undefined) {
         sections.push({
           date: current.date,
@@ -388,7 +390,7 @@ function parseDaySections(markdown: string): Array<{
         });
       }
       current = {
-        date: match[1],
+        date,
         heading: match[2]?.trim() ?? "",
         lines: [line],
       };
@@ -472,8 +474,11 @@ function hasFilledDimension(text: string, dimension: Dimension): boolean {
     const normalized = line.trim();
     const match = /^(?:[-*]\s*)?([^:]{1,100}):\s*(.*)$/.exec(normalized);
     if (match === null) continue;
-    const label = match[1].trim();
-    const value = match[2].trim();
+    const labelRaw = match[1];
+    const valueRaw = match[2];
+    if (labelRaw === undefined || valueRaw === undefined) continue;
+    const label = labelRaw.trim();
+    const value = valueRaw.trim();
     if (!isFilledDimensionValue(value)) continue;
     for (const pattern of dimension.patterns) {
       if (pattern.test(label)) return true;
@@ -499,8 +504,11 @@ function analyzeSafety(text: string): {
     const normalized = line.trim();
     const match = /^(?:[-*]\s*)?([^:]{1,100}):\s*(.*)$/.exec(normalized);
     if (match === null) continue;
-    const label = match[1].trim();
-    const value = match[2].trim();
+    const labelRaw = match[1];
+    const valueRaw = match[2];
+    if (labelRaw === undefined || valueRaw === undefined) continue;
+    const label = labelRaw.trim();
+    const value = valueRaw.trim();
     for (const check of safetyChecks) {
       if (check.patterns.some((pattern) => pattern.test(label))) {
         const existing = answers.get(check.id) ?? [];
@@ -806,7 +814,19 @@ function daysSinceEpoch(date: string): number {
 function calendarDay(date: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (match === null) return null;
-  const [year, month, day] = date.split("-").map((part) => Number(part));
+  const yearText = match[1];
+  const monthText = match[2];
+  const dayText = match[3];
+  if (
+    yearText === undefined ||
+    monthText === undefined ||
+    dayText === undefined
+  ) {
+    return null;
+  }
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
   const utc = new Date(Date.UTC(year, month - 1, day));
   if (
     utc.getUTCFullYear() !== year ||

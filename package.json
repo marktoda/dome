@@ -21,7 +21,7 @@
   "scripts": {
     "test": "bun test",
     "test:invariants": "bun test tests/invariants",
-    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json",
+    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json && bunx tsc --noEmit -p tsconfig.scripts.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",
     "v1:llm-smoke": "bun scripts/v1-llm-smoke.ts",
     "v1:dogfood-snapshot": "bun scripts/v1-dogfood-snapshot.ts",
