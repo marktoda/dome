@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.1.12
+version: 0.1.13
 processors:
   - id: dome.daily.create-daily
     version: 0.1.4
@@ -59,7 +59,7 @@ processors:
     module: processors/ambiguous-followup-answer.ts
 
   - id: dome.daily.today
-    version: 0.1.9
+    version: 0.1.10
     phase: view
     triggers:
       - kind: command
@@ -70,7 +70,7 @@ processors:
     module: processors/today.ts
 
   - id: dome.daily.prep
-    version: 0.1.11
+    version: 0.1.12
     phase: view
     triggers:
       - kind: command
@@ -81,7 +81,7 @@ processors:
     module: processors/prep.ts
 
   - id: dome.daily.agenda-with
-    version: 0.1.6
+    version: 0.1.7
     phase: view
     triggers:
       - kind: command

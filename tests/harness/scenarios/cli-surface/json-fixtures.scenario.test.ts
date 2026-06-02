@@ -120,6 +120,7 @@ const EXPORT_ENTRY_KEYS = Object.freeze([
   "rank",
   "ranking",
   "sourceRefs",
+  "summary",
   "facts",
   "diagnostics",
   "questions",

@@ -839,7 +839,10 @@ sources: generated daily entries are skipped during fact extraction, but
 surface. When the same loop also exists as an original project, meeting,
 capture, or prior-daily fact, the view folds the rows together, counts the
 representative as `daily`, and preserves both the daily surface SourceRef and
-the backing source SourceRef.
+the backing source SourceRef. Rendered daily/prep/agenda rows use the compact
+`evidenceLabel` from that folded evidence: a generated daily row can display
+`daily.md:24; source project.md:8` instead of hiding the backing source behind a
+separate SourceRefs section.
 
 Settling a generated source-backed item is still meaningful markdown evidence.
 On the next carry-forward pass, Dome keeps `[x]` rows under
@@ -872,10 +875,10 @@ debt.
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
-`dueDate`, `priority`, `lastChangedAt`, and the folded row's complete
-`sourceRefs`. `shown` and `omitted` mirror the bounded arrays so agents do not
-need to infer truncation from array lengths. `--date` is for reviewing another
-day and for deterministic tests; omitted means local today.
+`dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, and the folded row's
+complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
+agents do not need to infer truncation from array lengths. `--date` is for
+reviewing another day and for deterministic tests; omitted means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -912,9 +915,9 @@ acted on without a separate diagnostic command when the decision is clear.
 markdown packet's SourceRefs section. `--json` emits the structured
 `dome.daily.prep/v1` payload, including `dueCounts`, `shown` / `omitted`
 counts for the bounded start list and action sections, task-derived `dueDate` /
-`priority` / `lastChangedAt` metadata, plus the markdown packet under
-`markdown`. `--date` is for prepping a chosen day and for deterministic tests;
-omitted means local today.
+`priority` / `lastChangedAt` metadata, compact `evidenceLabel` values, plus the
+markdown packet under `markdown`. `--date` is for prepping a chosen day and for
+deterministic tests; omitted means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -939,8 +942,9 @@ are rendered context matches from adopted-state search. When the context search
 has more visible matches beyond the limit, text output prints an expansion hint
 and JSON sets `hasMore.context: true`. `--json` emits the structured
 `dome.daily.agenda-with/v1` payload, including task-derived `dueDate` /
-`priority` metadata and the markdown packet under `markdown`. `--date` provides
-daily-note context; omitted means local today.
+`priority` metadata, compact `evidenceLabel` values, and the markdown packet
+under `markdown`. `--date` provides daily-note context; omitted means local
+today.
 
 ### `dome rebuild`
 

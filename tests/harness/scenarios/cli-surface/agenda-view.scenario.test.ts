@@ -77,7 +77,7 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("# Dome Agenda: Ada");
     expect(text.stdout).toContain(
-      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:16)",
+      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:16; source wiki/projects/launch.md:9)",
     );
     expect(text.stdout).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
@@ -123,6 +123,7 @@ scenario(
         readonly path: string;
         readonly dueDate: string | null;
         readonly priority: string | null;
+        readonly evidenceLabel: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly context: ReadonlyArray<{ readonly path: string }>;
@@ -148,6 +149,9 @@ scenario(
       null,
       null,
     ]);
+    expect(payload.agendaItems[1]?.evidenceLabel).toBe(
+      "wiki/dailies/2026-01-05.md:16; source wiki/projects/launch.md:9",
+    );
     const questionItem = payload.agendaItems.find((item) =>
       item.kind === "question"
     );

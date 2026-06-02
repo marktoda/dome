@@ -123,6 +123,7 @@ scenario(
         readonly dueDate: string | null;
         readonly priority: "highest" | "high" | "medium" | "low" | "lowest" | null;
         readonly lastChangedAt: string | null;
+        readonly evidenceLabel: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly followups: ReadonlyArray<{
@@ -337,7 +338,7 @@ scenario(
     expect(text.stdout).toContain("Daily note");
     expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(
-      "Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16)",
+      "Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16; source wiki/captures/2026-01-05.md:9)",
     );
     expect(text.stdout).toContain(
       `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
@@ -468,6 +469,7 @@ scenario(
         readonly followup: boolean;
         readonly dueDate: string | null;
         readonly priority: string | null;
+        readonly evidenceLabel: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly followups: ReadonlyArray<{
@@ -535,6 +537,11 @@ scenario(
       .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/beta.md"]);
     expect(payload.openTasks[2]?.sourceRefs.map((ref) => ref.path).sort())
       .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/other.md"]);
+    expect(payload.openTasks.map((task) => task.evidenceLabel)).toEqual([
+      "wiki/dailies/2026-01-05.md:12; source wiki/projects/alpha.md:3",
+      "wiki/dailies/2026-01-05.md:13; source wiki/projects/beta.md:3",
+      "wiki/dailies/2026-01-05.md:14; source wiki/projects/other.md:3",
+    ]);
     expect(payload.followups.map((task) => ({
       text: task.text,
       source: task.source,
@@ -568,6 +575,9 @@ scenario(
     );
     expect(text.stdout).toContain("backlog  0 open | 0 followups | 0 questions");
     expect(text.stdout).toContain("3 open | 1 followups | 0 questions");
+    expect(text.stdout).toContain(
+      "Ship alpha note (wiki/dailies/2026-01-05.md:12; source wiki/projects/alpha.md:3)",
+    );
     expect(text.stdout).not.toContain("Done generated task");
     expect(text.stdout).not.toContain("Dismissed generated task");
   },

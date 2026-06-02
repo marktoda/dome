@@ -83,6 +83,7 @@ export type DailyTaskItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
+  readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -104,6 +105,7 @@ export type DailyQuestionItem = {
   readonly line: number | null;
   readonly source: DailyActionSource;
   readonly lastChangedAt: string | null;
+  readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -317,16 +319,19 @@ function taskItemFromFact(input: {
   const path = factSourcePath(fact);
   const rawText = literalToString(fact.object);
   const metadata = taskMetadata(rawText);
+  const line = ref?.range?.startLine ?? null;
+  const sourceRefs = Object.freeze([...fact.sourceRefs]);
   return Object.freeze({
     text: taskDisplayText(rawText),
     path,
-    line: ref?.range?.startLine ?? null,
+    line,
     source: sourceForPath(path, input.dailyPath),
     followup: input.followup,
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
-    sourceRefs: Object.freeze([...fact.sourceRefs]),
+    evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
+    sourceRefs,
   });
 }
 
@@ -337,6 +342,13 @@ function taskItemFromDailySurface(input: {
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
 }): DailyTaskItem {
   const metadata = taskMetadata(input.item.body);
+  const sourceRefs = Object.freeze([
+    input.ctx.sourceRef(
+      input.dailyPath,
+      { startLine: input.item.line, endLine: input.item.line },
+      input.item.stableId,
+    ),
+  ]);
   return Object.freeze({
     text: taskDisplayText(input.item.body),
     path: input.dailyPath,
@@ -346,13 +358,12 @@ function taskItemFromDailySurface(input: {
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(input.dailyPath) ?? null,
-    sourceRefs: Object.freeze([
-      input.ctx.sourceRef(
-        input.dailyPath,
-        { startLine: input.item.line, endLine: input.item.line },
-        input.item.stableId,
-      ),
-    ]),
+    evidenceLabel: actionEvidenceLabel({
+      path: input.dailyPath,
+      line: input.item.line,
+      sourceRefs,
+    }),
+    sourceRefs,
   });
 }
 
@@ -368,6 +379,8 @@ function questionItemFromEffect(input: {
     : 0;
   const options = Object.freeze([...(question.options ?? [])]);
   const path = questionSourcePath(question);
+  const line = ref?.range?.startLine ?? null;
+  const sourceRefs = Object.freeze([...question.sourceRefs]);
   return Object.freeze({
     id,
     question: question.question,
@@ -376,10 +389,11 @@ function questionItemFromEffect(input: {
     metadata: question.metadata ?? null,
     automationPolicy: questionAutomationPolicy(question.metadata),
     path,
-    line: ref?.range?.startLine ?? null,
+    line,
     source: sourceForPath(path, input.dailyPath),
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
-    sourceRefs: Object.freeze([...question.sourceRefs]),
+    evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
+    sourceRefs,
   });
 }
 
@@ -532,13 +546,19 @@ function mergeDailyTaskItems(
   primary: DailyTaskItem,
   duplicate: DailyTaskItem,
 ): DailyTaskItem {
+  const sourceRefs = uniqueSourceRefs([
+    ...primary.sourceRefs,
+    ...duplicate.sourceRefs,
+  ]);
   return Object.freeze({
     ...primary,
     followup: primary.followup || duplicate.followup,
-    sourceRefs: uniqueSourceRefs([
-      ...primary.sourceRefs,
-      ...duplicate.sourceRefs,
-    ]),
+    evidenceLabel: actionEvidenceLabel({
+      path: primary.path,
+      line: primary.line,
+      sourceRefs,
+    }),
+    sourceRefs,
   });
 }
 
@@ -741,6 +761,34 @@ function comparePathLineText(
     (bLine ?? Number.MAX_SAFE_INTEGER);
   if (lineCmp !== 0) return lineCmp;
   return aText.localeCompare(bText);
+}
+
+function actionEvidenceLabel(input: {
+  readonly path: string;
+  readonly line: number | null;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+}): string {
+  const surface = locationLabel({
+    path: input.path,
+    line: input.line,
+  });
+  const source = input.sourceRefs.find((ref) => ref.path !== input.path);
+  if (source === undefined) return surface;
+  return `${surface}; source ${sourceRefLocationLabel(source)}`;
+}
+
+function sourceRefLocationLabel(ref: SourceRef): string {
+  return locationLabel({
+    path: ref.path,
+    line: ref.range?.startLine ?? null,
+  });
+}
+
+function locationLabel(input: {
+  readonly path: string;
+  readonly line: number | null;
+}): string {
+  return input.line === null ? input.path : `${input.path}:${input.line}`;
 }
 
 function stringValue(value: unknown): string | null {

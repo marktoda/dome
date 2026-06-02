@@ -81,7 +81,7 @@ scenario(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(text.stdout).toContain(
-      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16)",
+      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16; source wiki/captures/launch.md:9)",
     );
     expect(text.stdout).toContain(
       "- 2 followups already listed in Start Here",
@@ -171,6 +171,7 @@ scenario(
         readonly dueDate: string | null;
         readonly priority: string | null;
         readonly lastChangedAt: string | null;
+        readonly evidenceLabel: string;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly markdown: string;
@@ -232,6 +233,10 @@ scenario(
     expect(payload.planningItems.map((item) => item.priority)).toEqual([
       null,
       "highest",
+    ]);
+    expect(payload.planningItems.map((item) => item.evidenceLabel)).toEqual([
+      "wiki/dailies/2026-01-05.md:9",
+      "wiki/dailies/2026-01-05.md:16; source wiki/captures/launch.md:9",
     ]);
     expect(
       payload.planningItems.every((item) =>

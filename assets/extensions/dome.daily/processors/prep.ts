@@ -31,7 +31,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.11",
+  version: "0.1.12",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -123,6 +123,7 @@ type PrepPlanningItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
+  readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -169,6 +170,7 @@ function pushTaskItem(
     dueDate: task.dueDate,
     priority: task.priority,
     lastChangedAt: task.lastChangedAt,
+    evidenceLabel: task.evidenceLabel,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
 }
@@ -194,6 +196,7 @@ function pushQuestionItem(
     dueDate: null,
     priority: null,
     lastChangedAt: question.lastChangedAt,
+    evidenceLabel: question.evidenceLabel,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }
@@ -435,6 +438,10 @@ function singularLabel(label: string): string {
 function sourceLabel(item: {
   readonly path: string;
   readonly line: number | null;
+  readonly evidenceLabel?: string;
 }): string {
+  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
+    return item.evidenceLabel;
+  }
   return item.line === null ? item.path : `${item.path}:${item.line}`;
 }

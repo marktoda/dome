@@ -126,6 +126,7 @@ type TodayTask = {
   readonly line: number | null;
   readonly source: TodaySource;
   readonly followup: boolean;
+  readonly evidenceLabel: string;
 };
 
 type TodayQuestion = {
@@ -138,6 +139,7 @@ type TodayQuestion = {
   readonly path: string;
   readonly line: number | null;
   readonly source: TodaySource;
+  readonly evidenceLabel: string;
 };
 
 function formatTodayResult(data: unknown): string {
@@ -317,6 +319,7 @@ function parseTasks(raw: unknown): ReadonlyArray<TodayTask> {
         line: nullableNumber(record.line),
         source: parseSource(record.source),
         followup: record.followup === true,
+        evidenceLabel: stringOrEmpty(record.evidenceLabel),
       });
     }),
   );
@@ -342,6 +345,7 @@ function parseQuestions(raw: unknown): ReadonlyArray<TodayQuestion> {
         path: stringOrEmpty(record.path),
         line: nullableNumber(record.line),
         source: parseSource(record.source),
+        evidenceLabel: stringOrEmpty(record.evidenceLabel),
       });
     }),
   );
@@ -445,7 +449,11 @@ function parseStringArray(raw: unknown): ReadonlyArray<string> {
 function sourceLabel(item: {
   readonly path: string;
   readonly line: number | null;
+  readonly evidenceLabel?: string;
 }): string {
+  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
+    return item.evidenceLabel;
+  }
   return item.line === null ? item.path : `${item.path}:${item.line}`;
 }
 

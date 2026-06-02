@@ -30,7 +30,7 @@ const DEFAULT_LIMIT = 12;
 
 const agendaWith: Processor = defineProcessor({
   id: "dome.daily.agenda-with",
-  version: "0.1.6",
+  version: "0.1.7",
   phase: "view",
   triggers: [{ kind: "command", name: "agenda-with" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -123,6 +123,7 @@ type AgendaItem = {
   readonly resolveCommand?: string;
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
+  readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -180,6 +181,7 @@ function pushTaskItem(
     line: task.line,
     dueDate: task.dueDate,
     priority: task.priority,
+    evidenceLabel: task.evidenceLabel,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
 }
@@ -203,6 +205,7 @@ function pushQuestionItem(
     resolveCommand: question.resolveCommand,
     dueDate: null,
     priority: null,
+    evidenceLabel: question.evidenceLabel,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }
@@ -310,6 +313,10 @@ function stripFtsMarkers(snippet: string): string {
 function sourceLabel(item: {
   readonly path: string;
   readonly line: number | null;
+  readonly evidenceLabel?: string;
 }): string {
+  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
+    return item.evidenceLabel;
+  }
   return item.line === null ? item.path : `${item.path}:${item.line}`;
 }
