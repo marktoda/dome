@@ -24,6 +24,7 @@ export type MaintenanceLoopSummary = {
   readonly id: string;
   readonly goal: string;
   readonly state: MaintenanceLoopState;
+  readonly question_scope: "processors" | "all";
   readonly processor_ids: ReadonlyArray<string>;
   readonly required_processor_ids: ReadonlyArray<string>;
   readonly optional_processor_ids: ReadonlyArray<string>;
@@ -122,10 +123,13 @@ function summarizeLoop(
     }
   }
 
+  const questionScope = loop.questionScope ?? "processors";
   const processorSet = new Set(processorIds);
-  const loopQuestions = opts.unresolvedQuestions.filter((question) =>
-    processorSet.has(question.processorId)
-  );
+  const loopQuestions = questionsForLoop({
+    questions: opts.unresolvedQuestions,
+    processorSet,
+    questionScope,
+  });
   const questionPolicyCounts = countQuestionAutomationPolicies(
     loopQuestions.map((question) => question.effect.metadata),
   );
@@ -141,6 +145,7 @@ function summarizeLoop(
       questions: loopQuestions.length,
       recentProblemRuns,
     }),
+    question_scope: questionScope,
     processor_ids: processorIds,
     required_processor_ids: Object.freeze([...loop.processors]),
     optional_processor_ids: Object.freeze([...optionalProcessors]),
@@ -163,6 +168,17 @@ function summarizeLoop(
     recent_problem_runs: recentProblemRuns,
     latest_run_at: latestRunAt,
   });
+}
+
+function questionsForLoop(input: {
+  readonly questions: ReadonlyArray<QuestionRecord>;
+  readonly processorSet: ReadonlySet<string>;
+  readonly questionScope: "processors" | "all";
+}): ReadonlyArray<QuestionRecord> {
+  if (input.questionScope === "all") return input.questions;
+  return input.questions.filter((question) =>
+    input.processorSet.has(question.processorId)
+  );
 }
 
 function stateForLoop(input: {

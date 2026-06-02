@@ -62,6 +62,14 @@ export type MaintenanceLoop = {
    * not make the loop partial.
    */
   readonly optionalProcessors?: ReadonlyArray<string>;
+  /**
+   * Which unresolved QuestionEffect rows should count against this loop's
+   * status summary. Most loops use their processor set. The question
+   * continuity loop is intentionally cross-cutting and watches all open
+   * questions, including questions emitted by processors that primarily belong
+   * to another maintenance loop.
+   */
+  readonly questionScope?: "processors" | "all";
   readonly surfaces: ReadonlyArray<MaintenanceLoopSurface>;
   readonly settlement: MaintenanceLoopSettlement;
   readonly risks: ReadonlyArray<string>;
@@ -300,6 +308,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       optionalProcessors: [
         "dome.intake.low-confidence-answer",
       ],
+      questionScope: "all",
       surfaces: [
         { kind: "status", name: "status" },
         { kind: "status", name: "check" },

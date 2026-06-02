@@ -428,10 +428,15 @@ processor substrate. Loops are metadata, not runtime dispatch units: each row
 names the desired-state objective, its implementing processor ids, command/path
 surfaces, settlement rule, current state, and the unresolved
 diagnostics/questions/recent problem runs attributable to those processors.
-`processor_ids` is the complete attribution set. `required_processor_ids`
-control whether a loop is inactive or partial. `optional_processor_ids` name
-opt-in contributors; inactive optional processors remain visible under
-`inactive_optional_processors` but do not make the loop partial.
+`processor_ids` is the complete attribution set for processor runs and
+diagnostics. `required_processor_ids` control whether a loop is inactive or
+partial. `optional_processor_ids` name opt-in contributors; inactive optional
+processors remain visible under `inactive_optional_processors` but do not make
+the loop partial. `question_scope` is usually `processors`, meaning unresolved
+questions are attributed from the loop's processor set. The cross-cutting
+`dome.question.continuity` loop uses `all` so it reflects every open question,
+including questions emitted by processors that primarily belong to another
+maintenance loop.
 Question counts are split into `agent_safe_questions`,
 `model_safe_questions`, and `owner_needed_questions` using the same policy
 classification as `dome check`; missing question metadata is owner-needed.

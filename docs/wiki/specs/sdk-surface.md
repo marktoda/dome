@@ -393,9 +393,12 @@ maintain.
 Loop metadata must name a stable loop id, goal, evidence, required processor
 ids, surfaces, and a settlement rule. It may also name optional processor ids
 from opt-in bundles; inactive optional contributors are visible in status but
-do not make a loop partial. `validateMaintenanceLoops` checks that the registry
-references shipped processor ids and supported command surfaces. See
-[[wiki/specs/processors]] §"Maintenance loops" for the loop contract.
+do not make a loop partial. It may also set `questionScope: "all"` for a
+cross-cutting loop that should summarize every open question instead of only
+questions emitted by its own processor set. `validateMaintenanceLoops` checks
+that the registry references shipped processor ids and supported command
+surfaces. See [[wiki/specs/processors]] §"Maintenance loops" for the loop
+contract.
 
 ## Adding a processor
 

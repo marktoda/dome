@@ -128,6 +128,50 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.owner_needed_questions).toBe(1);
   });
 
+  test("can summarize all unresolved questions for cross-cutting loops", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.answer-handler"],
+      questionScope: "all",
+    };
+    const unrelatedQuestion: QuestionRecord = {
+      id: 1,
+      effect: questionEffect({
+        question: "Should this global uncertainty stay visible?",
+        sourceRefs: [REF],
+        idempotencyKey: "test-global-question",
+        metadata: {
+          risk: "low",
+          confidence: 0.8,
+          recommendedAnswer: "yes",
+          automationPolicy: "agent-safe",
+        },
+      }),
+      processorId: "test.question-emitter",
+      adoptedCommit: commitOid("abc123"),
+      askedAt: "2026-06-01T00:00:00.000Z",
+      answeredAt: null,
+      answer: null,
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.answer-handler"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [unrelatedQuestion],
+      runsByProcessor: () => [],
+    });
+
+    expect(summary).toEqual(expect.objectContaining({
+      state: "attention",
+      question_scope: "all",
+      questions: 1,
+      agent_safe_questions: 1,
+      model_safe_questions: 0,
+      owner_needed_questions: 0,
+    }));
+  });
+
   test("reports info-only diagnostics as drift instead of quiet attention", () => {
     const loop: MaintenanceLoop = {
       ...LOOP,

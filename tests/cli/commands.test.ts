@@ -2157,10 +2157,15 @@ describe("runCheck", () => {
     expect(maintenanceLoops.find((loop) =>
       loop["id"] === "dome.question.continuity"
     )).toEqual(expect.objectContaining({
+      question_scope: "all",
       processor_ids: expect.arrayContaining([
         "dome.intake.low-confidence-answer",
       ]),
       optional_processor_ids: ["dome.intake.low-confidence-answer"],
+      questions: 1,
+      agent_safe_questions: 0,
+      model_safe_questions: 0,
+      owner_needed_questions: 1,
     }));
     const diagnosticItems =
       record(parsed["content"])["items"] as ReadonlyArray<Record<string, unknown>>;

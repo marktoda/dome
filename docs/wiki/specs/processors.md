@@ -240,6 +240,10 @@ Required loop metadata:
 - `processors` — required processor ids that implement the loop.
 - `optionalProcessors` — optional processor ids from opt-in bundles that can
   contribute evidence or answers without making the loop partial when disabled.
+- `questionScope` — optional question attribution scope. Defaults to
+  `processors`; the cross-cutting question-continuity loop uses `all` so every
+  open question remains visible there even when it was emitted by another
+  loop's processor.
 - `surfaces` — markdown paths, CLI/view commands, projections, or status
   surfaces the loop feeds.
 - `settlement` — stable identity and no-op rule.
