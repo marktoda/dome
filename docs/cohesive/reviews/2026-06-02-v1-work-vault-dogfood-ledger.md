@@ -1065,3 +1065,27 @@ Qualitative read:
   now distinguishes pending raw source material from completed capture
   digestion, which keeps the release-soak gate aligned with the loop's desired
   state.
+
+## 2026-06-02 M10 Qualitative Placeholder Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so obvious placeholder rubric answers
+  such as `TODO`, `TBD`, `N/A`, `?`, `not filled yet`, and
+  `fill after session` do not count as filled qualitative notes.
+- Kept meaningful qualitative negatives valid: entries like "No captures
+  today" or "No owner-needed questions appeared" still count as filled
+  dimensions while staying separate from capture-evidence credit.
+- Added regression coverage with one placeholder-filled day and one meaningful
+  no-capture day.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 19 tests and
+  126 assertions.
+
+Qualitative read:
+
+- This closes another release-soak evidence gap. M10 counted workdays now need
+  actual qualitative observations, not template placeholders that merely make
+  each rubric line non-empty.

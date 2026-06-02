@@ -206,6 +206,79 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].missingSafetyConfirmations).toEqual([]);
   });
 
+  test("does not count placeholder qualitative rubric values as filled notes", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: TODO
+- Capture digestion: fill after session
+- Open-loop surfacing: TBD
+- Context packet quality: N/A
+- Question burden: ?
+- Link/concept hygiene: not filled yet
+- Friction / manual foreground-agent work Dome should own: placeholder
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+
+## 2026-06-02 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: No captures today.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: No owner-needed questions appeared.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: No new friction observed.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(1);
+    expect(report.captureEvidenceDays).toBe(0);
+    expect(report.days[0].complete).toBe(false);
+    expect(report.days[0].presentDimensions).toEqual([]);
+    expect(report.days[0].missingDimensions).toEqual([
+      "daily_note_usefulness",
+      "capture_digestion",
+      "open_loop_surfacing",
+      "context_packet_quality",
+      "question_burden",
+      "link_concept_hygiene",
+      "friction",
+    ]);
+    expect(report.days[1].complete).toBe(true);
+    expect(report.days[1].presentDimensions).toContain("capture_digestion");
+    expect(report.days[1].captureEvidence).toBe(false);
+  });
+
   test("does not count a bare operational heading as measured Dome evidence", async () => {
     const ledger = writeLedger(`
 # Test ledger

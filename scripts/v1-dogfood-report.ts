@@ -139,6 +139,12 @@ const negativeCaptureEvidencePatterns: readonly RegExp[] = Object.freeze([
   /\b(did not|didn't|not)\b.{0,80}\b(process|digest|archive|generate|create|produce|extract|convert)\b.{0,80}\b(raw captures?|captures?|processed archive|generated intake|intake pages?)\b/i,
 ]);
 
+const placeholderDimensionValuePatterns: readonly RegExp[] = Object.freeze([
+  /^(?:todo|to do|tbd|to be determined|placeholder|pending|unknown|unsure|not sure|n\/a|na|\?+)$/i,
+  /^(?:not filled|not filled yet|fill in|fill me|fill this|fill later|fill after(?: the)? session)$/i,
+  /^[._-]+$/,
+]);
+
 const contradictorySafetyQualifierPatterns: readonly RegExp[] = Object.freeze([
   /\b(but|except|other than|aside from|however|although|though)\b/i,
 ]);
@@ -339,12 +345,20 @@ function hasFilledDimension(text: string, dimension: Dimension): boolean {
     if (match === null) continue;
     const label = match[1].trim();
     const value = match[2].trim();
-    if (value.length === 0) continue;
+    if (!isFilledDimensionValue(value)) continue;
     for (const pattern of dimension.patterns) {
       if (pattern.test(label)) return true;
     }
   }
   return false;
+}
+
+function isFilledDimensionValue(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized === "") return false;
+  return !placeholderDimensionValuePatterns.some((pattern) =>
+    pattern.test(normalized)
+  );
 }
 
 function analyzeSafety(text: string): {
