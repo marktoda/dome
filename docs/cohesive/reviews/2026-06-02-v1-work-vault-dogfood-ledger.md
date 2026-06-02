@@ -1736,3 +1736,36 @@ Qualitative read:
 - This keeps M10 session setup concrete and copyable. The preflight still does
   not start `dome serve` or append snapshots itself; it now hands the operator
   exact commands to run when collecting host and work-surface evidence.
+
+## 2026-06-02 V1 Release-Check CWD Evidence
+
+Verification action:
+
+- Re-audited `v1:release-check` as the final V1 release gate after tightening
+  preflight command paths.
+- Found that the runner always executed gates from the repository root, but
+  dry-run output and JSON did not say that explicitly. That left foreground
+  agents with the commands but not the command context.
+- Added explicit per-gate `cwd` evidence to the release-check plan/result model
+  and printed the repository working directory in text dry-runs, live gate
+  output, and final summaries.
+
+Measured result:
+
+- Focused coverage now asserts the help text, dry-run text, and dry-run JSON
+  all expose repository-root execution context.
+- `bun test tests/scripts/v1-release-check.test.ts
+  tests/integration/v1-package-scripts.test.ts` passed with 4 tests and 28
+  assertions.
+- `bun run typecheck` passed.
+- `git diff --check` passed.
+- `bun test` passed with 1062 tests and 22515 assertions.
+- `bun run v1:smoke -- --sync-docs` passed for the docs and work vaults. Docs
+  reported adopted current with catch-up sync not needed; work reported adopted
+  current with 10 informational diagnostics.
+
+Qualitative read:
+
+- This is a final-gate auditability cleanup. It does not alter the release
+  standard or add another command; it makes the existing single release command
+  more exact for humans and foreground agents.

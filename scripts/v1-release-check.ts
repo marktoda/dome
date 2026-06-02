@@ -15,12 +15,14 @@ type GateId =
 type Gate = {
   readonly id: GateId;
   readonly label: string;
+  readonly cwd: string;
   readonly command: ReadonlyArray<string>;
 };
 
 type GateResult = {
   readonly id: GateId;
   readonly label: string;
+  readonly cwd: string;
   readonly command: ReadonlyArray<string>;
   readonly exitCode: number;
   readonly durationMs: number;
@@ -34,6 +36,7 @@ type ReleaseCheckReport =
       readonly gates: ReadonlyArray<{
         readonly id: GateId;
         readonly label: string;
+        readonly cwd: string;
         readonly command: ReadonlyArray<string>;
       }>;
     }
@@ -60,7 +63,9 @@ async function main(): Promise<void> {
   const results: GateResult[] = [];
   for (const gate of gates) {
     if (!opts.json) {
-      nodeWrite(`\n== ${gate.label}\n$ ${shellCommand(displayCommand(gate.command))}\n`);
+      nodeWrite(
+        `\n== ${gate.label}\ncwd: ${gate.cwd}\n$ ${shellCommand(displayCommand(gate.command))}\n`,
+      );
     }
     const result = await runGate(gate);
     results.push(result);
@@ -91,11 +96,13 @@ function releaseCheckPlan(): ReadonlyArray<Gate> {
     {
       id: "implementation" as const,
       label: "Implementation gates",
+      cwd: repoRoot,
       command: Object.freeze([process.execPath, "run", "v1:check"]),
     },
     {
       id: "collection-readiness" as const,
       label: "Current dogfood collection readiness",
+      cwd: repoRoot,
       command: Object.freeze([
         process.execPath,
         "run",
@@ -107,6 +114,7 @@ function releaseCheckPlan(): ReadonlyArray<Gate> {
     {
       id: "release-soak" as const,
       label: "M10 release-soak evidence",
+      cwd: repoRoot,
       command: Object.freeze([
         process.execPath,
         "run",
@@ -122,7 +130,7 @@ async function runGate(gate: Gate): Promise<GateResult> {
   const startedAt = Date.now();
   const proc = Bun.spawn({
     cmd: [...gate.command],
-    cwd: repoRoot,
+    cwd: gate.cwd,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -134,6 +142,7 @@ async function runGate(gate: Gate): Promise<GateResult> {
   return {
     id: gate.id,
     label: gate.label,
+    cwd: gate.cwd,
     command: displayCommand(gate.command),
     exitCode,
     durationMs: Date.now() - startedAt,
@@ -145,11 +154,13 @@ async function runGate(gate: Gate): Promise<GateResult> {
 function displayGate(gate: Gate): {
   readonly id: GateId;
   readonly label: string;
+  readonly cwd: string;
   readonly command: ReadonlyArray<string>;
 } {
   return {
     id: gate.id,
     label: gate.label,
+    cwd: gate.cwd,
     command: displayCommand(gate.command),
   };
 }
@@ -169,6 +180,7 @@ function displayCommand(command: ReadonlyArray<string>): ReadonlyArray<string> {
 function renderDryRun(gates: ReadonlyArray<Gate>): string {
   const lines = [
     "V1 release check plan:",
+    `Working directory: ${repoRoot}`,
     ...gates.map((gate) =>
       `- ${gate.label}: ${shellCommand(displayCommand(gate.command))}`
     ),
@@ -182,6 +194,7 @@ function renderReport(report: ReleaseCheckReport): string {
   const lines = [
     "",
     "V1 release check summary:",
+    `Working directory: ${repoRoot}`,
     ...report.gates.map((gate) =>
       `- ${gate.label}: ${gate.exitCode === 0 ? "pass" : `fail (${gate.exitCode})`}`
     ),
@@ -217,6 +230,7 @@ function printHelp(): void {
     "Usage: bun scripts/v1-release-check.ts [options]",
     "",
     "Runs the final V1 release gates and reports every gate before exiting.",
+    "All gates run from the repository root.",
     "",
     "Gates:",
     "  1. bun run v1:check",
