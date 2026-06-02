@@ -29,6 +29,7 @@ type DayReport = {
   readonly headings: ReadonlyArray<string>;
   readonly complete: boolean;
   readonly operationalEvidence: boolean;
+  readonly serveHostEvidence: boolean;
   readonly captureEvidence: boolean;
   readonly safetyConfirmed: boolean;
   readonly presentDimensions: ReadonlyArray<string>;
@@ -41,11 +42,13 @@ type DogfoodReport = {
   readonly ledger: string;
   readonly required: {
     readonly completeWorkdays: number;
+    readonly serveHostEvidenceDays: number;
     readonly captureEvidenceDays: number;
     readonly spanCalendarDays: number;
   };
   readonly status: "ready" | "not-ready";
   readonly completeWorkdays: number;
+  readonly serveHostEvidenceDays: number;
   readonly captureEvidenceDays: number;
   readonly spanCalendarDays: number;
   readonly releaseBlockers: ReadonlyArray<{
@@ -136,6 +139,8 @@ async function main(): Promise<void> {
 function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   const days = parseDaySections(markdown).map((day) => analyzeDay(day));
   const completeWorkdays = days.filter((day) => day.complete).length;
+  const serveHostEvidenceDays = days.filter((day) => day.serveHostEvidence)
+    .length;
   const captureEvidenceDays = days.filter((day) =>
     day.complete && day.captureEvidence
   ).length;
@@ -155,11 +160,13 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     ledger: opts.ledger,
     required: {
       completeWorkdays: opts.minDays,
+      serveHostEvidenceDays: opts.minDays,
       captureEvidenceDays: opts.minCaptureDays,
       spanCalendarDays: opts.minSpanDays,
     },
     status,
     completeWorkdays,
+    serveHostEvidenceDays,
     captureEvidenceDays,
     spanCalendarDays,
     releaseBlockers,
@@ -257,6 +264,7 @@ function analyzeDay(day: {
     .filter((dimension) => !presentDimensions.includes(dimension.id))
     .map((dimension) => dimension.id);
   const operationalEvidence = hasOperationalEvidence(day.text);
+  const serveHostEvidence = hasServeHostEvidence(day.text);
   const safety = analyzeSafety(day.text);
 
   return {
@@ -265,9 +273,11 @@ function analyzeDay(day: {
     complete:
       missingDimensions.length === 0 &&
       operationalEvidence &&
+      serveHostEvidence &&
       safety.missing.length === 0 &&
       safety.blockers.length === 0,
     operationalEvidence,
+    serveHostEvidence,
     captureEvidence:
       presentDimensions.includes("capture_digestion") &&
       hasCaptureEvidence(day.text),
@@ -342,6 +352,13 @@ function hasOperationalEvidence(text: string): boolean {
   );
 }
 
+function hasServeHostEvidence(text: string): boolean {
+  return (
+    /\bServe host:\s*running\b/i.test(text) ||
+    /\bserve_status:\s*running\b/i.test(text)
+  );
+}
+
 function hasCaptureEvidence(text: string): boolean {
   return (
     /\binbox\/raw\b/.test(text) ||
@@ -363,6 +380,10 @@ function renderReport(report: DogfoodReport): string {
   lines.push(
     `Complete workdays: ${report.completeWorkdays}/` +
       `${report.required.completeWorkdays}`,
+  );
+  lines.push(
+    `Serve-host evidence days: ${report.serveHostEvidenceDays}/` +
+      `${report.required.serveHostEvidenceDays}`,
   );
   lines.push(
     `Complete capture-evidence days: ${report.captureEvidenceDays}/` +
@@ -398,6 +419,9 @@ function renderReport(report: DogfoodReport): string {
         day.operationalEvidence
           ? "operational evidence"
           : "no operational evidence",
+        day.serveHostEvidence
+          ? "serve-host evidence"
+          : "no serve-host evidence",
         day.captureEvidence ? "capture evidence" : "no capture evidence",
         day.safetyConfirmed ? "safety confirmed" : "safety unconfirmed",
       ].join("; ");
@@ -410,8 +434,8 @@ function renderReport(report: DogfoodReport): string {
   lines.push("");
   lines.push(
     "M10 is ready only when enough real work-vault days have complete rubric " +
-      "notes, those days span two real work weeks, and enough complete days " +
-      "exercise the capture loop with no release blockers.",
+      "notes, running serve-host evidence, a two-real-work-week span, and " +
+      "enough complete days exercise the capture loop with no release blockers.",
   );
   lines.push("");
   return `${lines.join("\n")}\n`;

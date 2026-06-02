@@ -695,3 +695,23 @@ Updated assessment:
 - Future M10 work-vault sessions can now collect host-backed evidence rather
   than relying only on explicit `dome sync` catch-up sessions. V1 still should
   not be marked complete until the elapsed release-soak thresholds pass.
+
+## 2026-06-02 M10 Host-Evidence Release Gate Tightening
+
+Additional release-gate hardening:
+
+- Tightened `bun run v1:dogfood-report` so a counted complete workday requires
+  running serve-host evidence in addition to measured Dome surface output,
+  filled qualitative notes, and negative safety confirmations.
+- Added `serveHostEvidence` per day and `serveHostEvidenceDays` to the JSON and
+  Markdown report, and carried that field through
+  `bun run v1:dogfood-preflight`.
+- Added regression coverage proving an otherwise polished qualitative day with
+  `Serve host: off` does not count as a complete release-soak workday.
+
+Updated assessment:
+
+- This closes an M10 overclaim path: `bun run v1:release-check` can no longer
+  pass from manual one-shot `dome sync` evidence alone. It now requires the
+  ledger to demonstrate the background compiler host was actually running on
+  counted workdays.

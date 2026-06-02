@@ -38,6 +38,7 @@ type PreflightReport = {
   readonly release: {
     readonly status: string;
     readonly completeWorkdays: number;
+    readonly serveHostEvidenceDays: number;
     readonly captureEvidenceDays: number;
     readonly spanCalendarDays: number;
     readonly releaseBlockers: number;
@@ -103,6 +104,7 @@ function buildReport(input: {
   const release = {
     status: stringValue(input.release.status, "unknown"),
     completeWorkdays: numberValue(input.release.completeWorkdays),
+    serveHostEvidenceDays: numberValue(input.release.serveHostEvidenceDays),
     captureEvidenceDays: numberValue(input.release.captureEvidenceDays),
     spanCalendarDays: numberValue(input.release.spanCalendarDays),
     releaseBlockers: releaseBlockers.length,
@@ -281,6 +283,9 @@ function renderReport(report: PreflightReport): string {
   lines.push("Release-soak report:");
   lines.push(`- Status: ${report.release.status}`);
   lines.push(`- Complete workdays: ${report.release.completeWorkdays}`);
+  lines.push(
+    `- Serve-host evidence days: ${report.release.serveHostEvidenceDays}`,
+  );
   lines.push(
     `- Complete capture-evidence days: ${report.release.captureEvidenceDays}`,
   );

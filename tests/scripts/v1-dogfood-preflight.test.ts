@@ -54,6 +54,7 @@ describe("v1 dogfood preflight script", () => {
     expect(report.capture.modelStatus).toBe("disabled-provider-configured");
     expect(report.capture.findings).toContain("dome.intake is disabled");
     expect(report.release.status).toBe("not-ready");
+    expect(report.release.serveHostEvidenceDays).toBe(1);
     expect(report.nextActions).toContain(
       "enable dome.intake with a configured model provider before capture dogfood",
     );
@@ -82,6 +83,7 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain("- Status: off");
     expect(result.stdout).toContain("Capture readiness:");
     expect(result.stdout).toContain("Release-soak report:");
+    expect(result.stdout).toContain("- Serve-host evidence days: 1");
     expect(result.stdout).toContain("Next actions:");
     expect(result.stdout).toContain("Commands run:");
   }, { timeout: 30_000 });
@@ -112,6 +114,7 @@ function completeDay(date: string): string {
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.

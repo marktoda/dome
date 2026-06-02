@@ -817,3 +817,29 @@ Qualitative read:
 - This improves the M10 evidence posture for future work sessions. It does not
   add another counted workday by itself; the release soak still needs filled
   daily qualitative notes across the required elapsed window.
+
+## 2026-06-02 M10 Host-Evidence Report Gate Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so complete release-soak workdays now
+  require running serve-host evidence.
+- Added `serveHostEvidence` per day and `serveHostEvidenceDays` to the report
+  and preflight JSON surfaces.
+- Added regression coverage proving a day with `Serve host: off` does not count
+  as a complete workday even when the qualitative rubric and safety checks are
+  otherwise filled.
+
+Measured result:
+
+- `bun run v1:dogfood-report -- --json` now reports `serveHostEvidenceDays:
+  1`, `completeWorkdays: 1`, `captureEvidenceDays: 1`, `spanCalendarDays: 1`,
+  and `status: not-ready`.
+- `bun run v1:dogfood-preflight -- --json` reports `serve.ready: true` and the
+  same release counters.
+
+Qualitative read:
+
+- This closes an M10 overclaim path: final release readiness cannot be reached
+  from manual one-shot sync evidence alone. Counted workdays now need to show
+  the background compiler host was running.
