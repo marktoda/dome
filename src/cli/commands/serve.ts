@@ -20,7 +20,8 @@
 // long-running poll), and a one-line operator-facing summary.
 //
 // Exit codes:
-//   - 0  on graceful shutdown (SIGINT / SIGTERM / external `AbortSignal`).
+//   - 0  on graceful shutdown (SIGINT / SIGTERM / SIGHUP /
+//        external `AbortSignal`).
 //   - 1  on irrecoverable startup error (runtime open failure, detached
 //        HEAD at start, malformed flags).
 //
@@ -96,9 +97,10 @@ export type RunServeOptions = {
 export type RunServeRuntimeOptions = {
   /**
    * External cancellation source. When the signal aborts, the daemon
-   * exits its poll loop cleanly (just like SIGINT). Tests use this to
+   * exits its poll loop cleanly (just like SIGINT/SIGTERM/SIGHUP).
+   * Tests use this to
    * deterministically stop the loop after asserting on the side effects;
-   * production callers leave it unset and rely on the SIGINT/SIGTERM
+   * production callers leave it unset and rely on the process signal
    * handlers registered inside `runServe`.
    */
   readonly signal?: AbortSignal;
@@ -217,8 +219,8 @@ export async function runServe(
   });
 
   // ----- 5. Register cancellation handlers ----------------------------------
-  // A single `AbortController` unifies three cancel paths: SIGINT, SIGTERM,
-  // and the externally-supplied `opts.signal`. Anywhere we'd `await`, we
+  // A single `AbortController` unifies process signals and the
+  // externally-supplied `opts.signal`. Anywhere we'd `await`, we
   // race the await against `controller.signal` so the loop exits promptly
   // (not on the next poll-tick) when a cancel arrives.
   const controller = new AbortController();
@@ -232,8 +234,10 @@ export async function runServe(
   }
   const onSigint = (): void => controller.abort();
   const onSigterm = (): void => controller.abort();
+  const onSighup = (): void => controller.abort();
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
+  process.on("SIGHUP", onSighup);
 
   // ----- 6. Run the poll loop -----------------------------------------------
   try {
@@ -260,6 +264,7 @@ export async function runServe(
     // when many serves are chained in tests).
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
+    process.off("SIGHUP", onSighup);
     if (opts.signal !== undefined) {
       opts.signal.removeEventListener("abort", onAbort);
     }

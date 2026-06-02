@@ -1556,3 +1556,37 @@ Qualitative read:
 - This makes M10 host evidence harder to fake accidentally and keeps the final
   release gate aligned with measured Dome heartbeat output rather than
   free-form optimistic notes.
+
+## 2026-06-02 M10 Serve Hangup Cleanup
+
+Verification action:
+
+- Tried to restore the work-vault `dome serve` host from the Codex shell and
+  confirmed this execution environment can reap background child processes
+  after the launching shell exits.
+- The failed launch left a stale heartbeat, which is useful M10 evidence: host
+  cleanup needs to be robust when a foreground terminal/session hangs up.
+- Hardened `dome serve` so SIGHUP follows the same graceful shutdown path as
+  SIGINT and SIGTERM: abort the poll loop, close the runtime, and clear the
+  heartbeat file through the existing token-guarded cleanup path.
+
+Measured result:
+
+- `bun test tests/cli/bin.test.ts` passed with 4 tests and 50 assertions,
+  including process-boundary coverage for SIGTERM and SIGHUP heartbeat cleanup.
+- `bun test` passed with 1055 tests and 22467 assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` passed.
+- `bun run v1:dogfood-preflight -- --json` reports the work vault as
+  operationally clean and capture-ready, with expected `serve_status: off` and
+  M10 elapsed-evidence next actions.
+- `bun run v1:smoke -- --sync-docs` passed for docs and work. Docs settlement
+  was skipped because this slice still had uncommitted doc edits; the work
+  vault settlement check passed with 10 informational diagnostics and no
+  attention required.
+
+Qualitative read:
+
+- This does not close M10 and does not make this Codex shell a suitable
+  long-running dogfood host. It closes a host-evidence reliability gap so
+  normal terminal hangups are less likely to leave stale serve state behind.

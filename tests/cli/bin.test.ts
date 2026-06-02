@@ -2,8 +2,8 @@
 //
 // Most CLI tests call command handlers directly so they can assert on
 // internals cheaply. This file covers the outer packaging boundary: shebang
-// execution, real stdout/stderr/exit codes, and a real foreground `serve`
-// process receiving SIGTERM.
+// execution, real stdout/stderr/exit codes, and real foreground `serve`
+// processes receiving shutdown signals.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -81,62 +81,11 @@ describe("bin/dome process boundary", () => {
   });
 
   test("serve reports heartbeat and exits cleanly on SIGTERM", async () => {
-    const vaultPath = mkdtempSync(join(tmpdir(), "dome-bin-serve-"));
-    fixtures.push(vaultPath);
-    expect((await runDome(["init", vaultPath])).exitCode).toBe(0);
+    await expectServeSignalClearsHeartbeat("SIGTERM");
+  }, { timeout: 30_000 });
 
-    const serve = Bun.spawn({
-      cmd: [
-        DOME_BIN,
-        "serve",
-        "--vault",
-        vaultPath,
-        "--poll-interval-ms",
-        "50",
-        "--quiet",
-      ],
-      cwd: REPO_ROOT,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 25_000,
-      killSignal: "SIGKILL",
-    });
-
-    try {
-      await waitFor(async () => {
-        const status = await runDomeJson<{
-          readonly head: string | null;
-          readonly adopted: string | null;
-          readonly serve_status: string;
-          readonly serve_pid: number | null;
-        }>(["status", "--vault", vaultPath, "--json"]);
-        return (
-          status.serve_status === "running" &&
-          status.serve_pid === serve.pid &&
-          status.head !== null &&
-          status.adopted === status.head
-        );
-      }, 5_000);
-
-      serve.kill("SIGTERM");
-      const exitCode = await exitWithin(serve, 5_000);
-      const [stdout, stderr] = await Promise.all([
-        new Response(serve.stdout).text(),
-        new Response(serve.stderr).text(),
-      ]);
-      expect(exitCode).toBe(0);
-      expect(stdout).toBe("");
-      expect(stderr).toBe("");
-
-      const after = await runDomeJson<{
-        readonly serve_status: string;
-        readonly serve_pid: number | null;
-      }>(["status", "--vault", vaultPath, "--json"]);
-      expect(after.serve_status).toBe("off");
-      expect(after.serve_pid).toBeNull();
-    } finally {
-      if (!serve.killed) serve.kill("SIGTERM");
-    }
+  test("serve exits cleanly and clears heartbeat on SIGHUP", async () => {
+    await expectServeSignalClearsHeartbeat("SIGHUP");
   }, { timeout: 30_000 });
 });
 
@@ -168,6 +117,67 @@ async function runDomeJson<T>(args: ReadonlyArray<string>): Promise<T> {
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   return JSON.parse(result.stdout) as T;
+}
+
+async function expectServeSignalClearsHeartbeat(
+  signal: NodeJS.Signals,
+): Promise<void> {
+  const vaultPath = mkdtempSync(join(tmpdir(), "dome-bin-serve-"));
+  fixtures.push(vaultPath);
+  expect((await runDome(["init", vaultPath])).exitCode).toBe(0);
+
+  const serve = Bun.spawn({
+    cmd: [
+      DOME_BIN,
+      "serve",
+      "--vault",
+      vaultPath,
+      "--poll-interval-ms",
+      "50",
+      "--quiet",
+    ],
+    cwd: REPO_ROOT,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 25_000,
+    killSignal: "SIGKILL",
+  });
+
+  try {
+    await waitFor(async () => {
+      const status = await runDomeJson<{
+        readonly head: string | null;
+        readonly adopted: string | null;
+        readonly serve_status: string;
+        readonly serve_pid: number | null;
+      }>(["status", "--vault", vaultPath, "--json"]);
+      return (
+        status.serve_status === "running" &&
+        status.serve_pid === serve.pid &&
+        status.head !== null &&
+        status.adopted === status.head
+      );
+    }, 5_000);
+
+    serve.kill(signal);
+    const exitCode = await exitWithin(serve, 5_000);
+    const [stdout, stderr] = await Promise.all([
+      new Response(serve.stdout).text(),
+      new Response(serve.stderr).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("");
+    expect(stderr).toBe("");
+
+    const after = await runDomeJson<{
+      readonly serve_status: string;
+      readonly serve_pid: number | null;
+    }>(["status", "--vault", vaultPath, "--json"]);
+    expect(after.serve_status).toBe("off");
+    expect(after.serve_pid).toBeNull();
+  } finally {
+    if (!serve.killed) serve.kill("SIGTERM");
+  }
 }
 
 async function waitFor(
