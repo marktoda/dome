@@ -109,7 +109,13 @@ function buildReport(input: {
     spanCalendarDays: numberValue(input.release.spanCalendarDays),
     releaseBlockers: releaseBlockers.length,
   };
-  const nextActions = buildNextActions({ operational, serve, capture, release });
+  const nextActions = buildNextActions({
+    operational,
+    operationalNextActions: statusNextActionStrings(input.status),
+    serve,
+    capture,
+    release,
+  });
   const ready = operational.ready && serve.ready && capture.ready;
   return {
     vault: input.opts.vault,
@@ -237,13 +243,18 @@ function captureCheck(
 
 function buildNextActions(input: {
   readonly operational: CheckSummary;
+  readonly operationalNextActions: ReadonlyArray<string>;
   readonly serve: CheckSummary;
   readonly capture: CheckSummary;
   readonly release: PreflightReport["release"];
 }): string[] {
   const actions: string[] = [];
   if (!input.operational.ready) {
-    actions.push("clear operational findings before recording a dogfood session");
+    if (input.operationalNextActions.length === 0) {
+      actions.push("clear operational findings before recording a dogfood session");
+    } else {
+      actions.push(...input.operationalNextActions);
+    }
   }
   if (!input.capture.ready) {
     actions.push(
@@ -262,6 +273,19 @@ function buildNextActions(input: {
     actions.push("run a dogfood session and append the snapshot to the ledger");
   }
   return actions;
+}
+
+function statusNextActionStrings(status: JsonRecord): string[] {
+  return recordArray(status.next_actions)
+    .map((action) => {
+      const description = stringValue(action.description, "");
+      const command = stringValue(action.command, "");
+      if (description === "" && command === "") return "";
+      if (description === "") return command;
+      if (command === "") return description;
+      return `${description} (${command})`;
+    })
+    .filter((action) => action !== "");
 }
 
 function renderReport(report: PreflightReport): string {

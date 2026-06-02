@@ -94,6 +94,32 @@ describe("v1 dogfood preflight script", () => {
     );
   }, { timeout: 30_000 });
 
+  test("passes through status next actions for operational findings", async () => {
+    const vaultPath = await makeInitializedVault();
+    await writeFile(join(vaultPath, "draft.md"), "# Draft\n", "utf8");
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.operational.ready).toBe(false);
+    expect(report.operational.findings).toContain(
+      "working tree has 0 modified and 1 untracked file(s)",
+    );
+    expect(report.nextActions).toContain(
+      "Review draft working-tree changes; commit anything Dome should compile. (git status --short)",
+    );
+  }, { timeout: 30_000 });
+
   test("requires serve host branch to match the current vault branch", async () => {
     const vaultPath = await makeIntakeReadyVault();
     await writeServeHeartbeat({

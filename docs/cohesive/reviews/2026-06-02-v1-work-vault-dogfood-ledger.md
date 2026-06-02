@@ -986,3 +986,32 @@ Qualitative read:
 - This closes another release-soak evidence gap: M10 counted days now need
   affirmative measured command and foreground-host evidence, not negated or
   contradictory prose that happens to contain the same command/status words.
+
+## 2026-06-02 M10 Preflight Actionability Tightening
+
+Verification action:
+
+- Updated `bun run v1:dogfood-preflight` to pass through actionable
+  `dome status` next actions when operational readiness fails.
+- Added regression coverage for an untracked draft file: preflight reports the
+  dirty working-tree finding and includes `git status --short` as the next
+  action rather than only saying to clear generic operational findings.
+- Updated `docs/v1.md` to describe preflight readiness as conditional on a
+  clean work tree, since operational drift can make the collection session
+  temporarily not-ready even when serve and capture readiness are healthy.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts` passes with 6 tests and
+  74 assertions.
+- During implementation, live work-vault preflight correctly reported
+  `not-ready` while two untracked markdown files were present and surfaced
+  `git status --short` as the next action.
+- After the transient work-tree drift cleared, live work-vault preflight
+  returned to `ready` with serve readiness and capture readiness true.
+
+Qualitative read:
+
+- This makes M10 session setup more operator-useful: when dogfood collection is
+  blocked by ordinary working-tree drift, preflight now names the same concrete
+  remediation path that `dome status` already knows.
