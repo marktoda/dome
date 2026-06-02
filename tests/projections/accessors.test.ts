@@ -421,6 +421,56 @@ describe("diagnostics accessor", () => {
     expect(queryDiagnostics(db).length).toBe(1);
   });
 
+  it("queryDiagnostics shows only the latest unresolved row for duplicate live identities", () => {
+    const newerCommit = commitOid("1111110000000000000000000000000000000000");
+    const original = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "old unresolved row",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/x.md",
+          range: { startLine: 3, endLine: 3, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    const duplicate = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "new unresolved row",
+      sourceRefs: [
+        sourceRef({
+          commit: newerCommit,
+          path: "wiki/x.md",
+          range: { startLine: 3, endLine: 3, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    insertDiagnostic(db, {
+      effect: original,
+      processorId: "p1",
+      proposalId: "prop_old",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: duplicate,
+      processorId: "p1",
+      proposalId: "prop_new",
+      adoptedCommit: newerCommit,
+    });
+
+    const current = queryDiagnostics(db);
+    expect(current.length).toBe(1);
+    expect(current[0]?.message).toBe("new unresolved row");
+    expect(current[0]?.sourceRefs[0]?.commit).toBe(newerCommit);
+    expect(queryDiagnostics(db, { severity: "warning" }).length).toBe(1);
+    expect(queryDiagnostics(db, { processorId: "p1" }).length).toBe(1);
+    expect(
+      queryDiagnostics(db, { severity: "warning", processorId: "p1" }).length,
+    ).toBe(1);
+  });
+
   it("queryDiagnostics({severity: 'warning'}) filters by severity", () => {
     const w = diagnosticEffect({
       severity: "warning",
@@ -561,6 +611,58 @@ describe("diagnostics accessor", () => {
 
     expect(resolved).toBe(0);
     expect(queryDiagnostics(db).length).toBe(1);
+  });
+
+  it("resolveStaleDiagnostics prunes older live duplicates for re-emitted diagnostics", () => {
+    const newerCommit = commitOid("1111110000000000000000000000000000000000");
+    const original = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "old unresolved row",
+      sourceRefs: [
+        sourceRef({
+          commit: ADOPTED,
+          path: "wiki/x.md",
+          range: { startLine: 2, endLine: 2, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    const reEmitted = diagnosticEffect({
+      severity: "warning",
+      code: "broken-link",
+      message: "new unresolved row",
+      sourceRefs: [
+        sourceRef({
+          commit: newerCommit,
+          path: "wiki/x.md",
+          range: { startLine: 2, endLine: 2, startChar: 0, endChar: 12 },
+        }),
+      ],
+    });
+    insertDiagnostic(db, {
+      effect: original,
+      processorId: "p1",
+      proposalId: "prop_old",
+      adoptedCommit: ADOPTED,
+    });
+    insertDiagnostic(db, {
+      effect: reEmitted,
+      processorId: "p1",
+      proposalId: "prop_new",
+      adoptedCommit: newerCommit,
+    });
+
+    const resolved = resolveStaleDiagnostics(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/x.md"],
+      emittedDiagnostics: [reEmitted],
+    });
+
+    expect(resolved).toBe(1);
+    const current = queryDiagnostics(db);
+    expect(current.length).toBe(1);
+    expect(current[0]?.message).toBe("new unresolved row");
+    expect(current[0]?.sourceRefs[0]?.commit).toBe(newerCommit);
   });
 });
 

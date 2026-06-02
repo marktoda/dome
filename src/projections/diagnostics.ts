@@ -77,31 +77,64 @@ INSERT OR IGNORE INTO diagnostics (
 `.trim();
 
 const QUERY_ALL_SQL = `
-SELECT severity, code, message, source_refs
-FROM diagnostics
-WHERE resolved_at IS NULL
-ORDER BY id DESC
+SELECT d.severity, d.code, d.message, d.source_refs
+FROM diagnostics d
+WHERE d.resolved_at IS NULL AND NOT EXISTS (
+  SELECT 1
+  FROM diagnostics newer
+  WHERE newer.resolved_at IS NULL
+    AND newer.processor_id = d.processor_id
+    AND newer.code = d.code
+    AND newer.subject_hash = d.subject_hash
+    AND newer.id > d.id
+)
+ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_SQL = `
-SELECT severity, code, message, source_refs
-FROM diagnostics
-WHERE resolved_at IS NULL AND severity = ?
-ORDER BY id DESC
+SELECT d.severity, d.code, d.message, d.source_refs
+FROM diagnostics d
+WHERE d.resolved_at IS NULL AND d.severity = ? AND NOT EXISTS (
+  SELECT 1
+  FROM diagnostics newer
+  WHERE newer.resolved_at IS NULL
+    AND newer.processor_id = d.processor_id
+    AND newer.code = d.code
+    AND newer.subject_hash = d.subject_hash
+    AND newer.id > d.id
+)
+ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_PROCESSOR_SQL = `
-SELECT severity, code, message, source_refs
-FROM diagnostics
-WHERE resolved_at IS NULL AND processor_id = ?
-ORDER BY id DESC
+SELECT d.severity, d.code, d.message, d.source_refs
+FROM diagnostics d
+WHERE d.resolved_at IS NULL AND d.processor_id = ? AND NOT EXISTS (
+  SELECT 1
+  FROM diagnostics newer
+  WHERE newer.resolved_at IS NULL
+    AND newer.processor_id = d.processor_id
+    AND newer.code = d.code
+    AND newer.subject_hash = d.subject_hash
+    AND newer.id > d.id
+)
+ORDER BY d.id DESC
 `.trim();
 
 const QUERY_BY_SEVERITY_AND_PROCESSOR_SQL = `
-SELECT severity, code, message, source_refs
-FROM diagnostics
-WHERE resolved_at IS NULL AND severity = ? AND processor_id = ?
-ORDER BY id DESC
+SELECT d.severity, d.code, d.message, d.source_refs
+FROM diagnostics d
+WHERE d.resolved_at IS NULL AND d.severity = ? AND d.processor_id = ?
+  AND NOT EXISTS (
+    SELECT 1
+    FROM diagnostics newer
+    WHERE newer.resolved_at IS NULL
+      AND newer.processor_id = d.processor_id
+      AND newer.code = d.code
+      AND newer.subject_hash = d.subject_hash
+      AND newer.id > d.id
+  )
+ORDER BY d.id DESC
 `.trim();
 
 const RESOLVE_SQL = `
@@ -279,13 +312,25 @@ export function resolveStaleDiagnostics(
   const rows = db.raw
     .query<UnresolvedDiagnosticRow, [string]>(QUERY_UNRESOLVED_BY_PROCESSOR_SQL)
     .all(opts.processorId);
+  const scopedRows = rows.filter((row) =>
+    diagnosticIsInResolvedScope(row.source_refs, inspected)
+  );
+  const latestKeptIdByKey = new Map<string, number>();
+  for (const row of scopedRows) {
+    const key = diagnosticKey(row);
+    if (!keep.has(key)) continue;
+    const current = latestKeptIdByKey.get(key);
+    if (current === undefined || row.id > current) {
+      latestKeptIdByKey.set(key, row.id);
+    }
+  }
 
   let resolved = 0;
   const now = new Date().toISOString();
   const stmt = db.raw.query(RESOLVE_BY_ID_SQL);
-  for (const row of rows) {
-    if (!diagnosticIsInResolvedScope(row.source_refs, inspected)) continue;
-    if (keep.has(`${row.code}\0${row.subject_hash}`)) continue;
+  for (const row of scopedRows) {
+    const key = diagnosticKey(row);
+    if (keep.has(key) && latestKeptIdByKey.get(key) === row.id) continue;
     stmt.run(now, row.id);
     resolved += 1;
   }
@@ -316,4 +361,8 @@ function diagnosticIsInResolvedScope(
   }
   if (refs.length === 0) return true;
   return refs.some((ref) => paths.has(ref.path as string));
+}
+
+function diagnosticKey(row: UnresolvedDiagnosticRow): string {
+  return `${row.code}\0${row.subject_hash}`;
 }

@@ -158,6 +158,14 @@ The `UNIQUE` constraint therefore dedups two distinct cases under one rule:
 
 It does NOT collapse multiple distinct diagnostics from one processor invocation: `validate-wikilinks` finding many broken links across many files gets one row per finding because their `(path, range)` differ.
 
+Across proposals, the same still-broken source span may be emitted again with
+a different `proposal_id` after the user edits the file but does not fix that
+particular issue. Live diagnostic queries return only the newest unresolved
+row for a `(processor_id, code, subject_hash)` identity, and stale-resolution
+prunes older unresolved duplicates when the processor re-inspects the path.
+Historical rows remain in the table with `resolved_at` populated so `check`
+does not make a current problem look duplicated or unresponsive.
+
 Two prior shapes have been retired:
 - `UNIQUE (processor_id, code, proposal_id)` (no hash) collapsed all distinct diagnostics from one processor in one proposal into a single row, masking real defects in the user's vault.
 - `UNIQUE (..., source_refs_hash)` where `source_refs_hash` hashed the full SourceRef including `commit` over-distinguished re-emissions across loop iterations: the same finding landed twice (once per candidate commit) instead of once.

@@ -78,6 +78,91 @@ scenario(
 
 scenario(
   {
+    name: "convergence: diagnostics keep one current row when a changed file stays broken",
+    tags: [
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/ref.md":
+          "---\n" +
+          "type: note\n" +
+          "updated: 2026-05-28\n" +
+          "---\n" +
+          "# Ref\n\n" +
+          "See [[missing-target]].\n",
+      },
+      message: "add broken wikilink",
+    });
+
+    const first = await h.tick();
+    expect(first.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(1);
+
+    const firstRows = h.projection.raw
+      .query<
+        { adopted_commit: string; resolved_at: string | null },
+        []
+      >(
+        "SELECT adopted_commit, resolved_at FROM diagnostics "
+          + "WHERE code = 'dome.markdown.broken-wikilink' ORDER BY id",
+      )
+      .all();
+    expect(firstRows.length).toBe(1);
+    const firstCommit = firstRows[0]?.adopted_commit;
+    expect(typeof firstCommit).toBe("string");
+
+    await h.userCommit({
+      files: {
+        "wiki/ref.md":
+          "---\n" +
+          "type: note\n" +
+          "updated: 2026-05-29\n" +
+          "---\n" +
+          "# Ref\n\n" +
+          "Still see [[missing-target]].\n",
+      },
+      message: "edit file but leave broken wikilink",
+    });
+
+    const second = await h.tick();
+    expect(second.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(1);
+
+    const rows = h.projection.raw
+      .query<
+        { adopted_commit: string; resolved_at: string | null },
+        []
+      >(
+        "SELECT adopted_commit, resolved_at FROM diagnostics "
+          + "WHERE code = 'dome.markdown.broken-wikilink' ORDER BY id",
+      )
+      .all();
+    expect(rows.length).toBe(2);
+    expect(typeof rows[0]?.resolved_at).toBe("string");
+    expect(rows[1]?.resolved_at).toBeNull();
+    expect(rows[1]?.adopted_commit).not.toBe(firstCommit);
+  },
+);
+
+scenario(
+  {
     name: "convergence: obvious broken wikilink repairs converge without diagnostics",
     tags: [
       { kind: "group", group: "convergence" },
