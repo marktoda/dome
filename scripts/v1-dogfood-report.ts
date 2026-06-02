@@ -144,6 +144,30 @@ const contradictorySafetyQualifierPatterns: readonly RegExp[] = Object.freeze([
   /\b(but|except|other than|aside from|however|although|though)\b/i,
 ]);
 
+const operationalEvidenceLinePatterns: readonly RegExp[] = Object.freeze([
+  /`bun run v1:dogfood-snapshot(?:\s|`)/,
+  /`bin\/dome (status|check|today|query|export-context)\b/,
+  /^(?:[-*]\s*)?(?:ran\s+)?bun run v1:dogfood-snapshot\b/i,
+  /^(?:[-*]\s*)?(?:ran\s+)?bin\/dome (status|check|today|query|export-context)\b/i,
+]);
+
+const negativeOperationalEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\b(no|not|without|did not|didn't)\b.{0,80}\b(bun run v1:dogfood-snapshot|bin\/dome (status|check|today|query|export-context))\b/i,
+  /\b(bun run v1:dogfood-snapshot|bin\/dome (status|check|today|query|export-context))\b.{0,80}\b(not run|not used|missing|absent|unavailable|failed to run)\b/i,
+]);
+
+const serveHostEvidenceLinePatterns: readonly RegExp[] = Object.freeze([
+  /^(?:[-*]\s*)?Serve host:\s*running(?:[;.,\s]|$)/i,
+  /^(?:[-*]\s*)?`?["']?serve_status["']?`?:\s*["']?running["']?(?:[;,\s}]|$)/i,
+  /`Serve host:\s*running(?:[;.,\s]|`)/i,
+  /`serve_status:\s*running`/i,
+]);
+
+const contradictoryServeHostPatterns: readonly RegExp[] = Object.freeze([
+  /\b(but|except|however|although|though)\b/i,
+  /\b(off|stale|stopped|not running|wrong branch|different branch|no running host)\b/i,
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -368,17 +392,35 @@ function isNegativeConfirmation(value: string): boolean {
 }
 
 function hasOperationalEvidence(text: string): boolean {
-  return (
-    /\bbun run v1:dogfood-snapshot\b/.test(text) ||
-    /\bbin\/dome (status|check|today|query|export-context)\b/.test(text)
-  );
+  return text.split(/\r?\n/).some((line) => {
+    const normalized = line.trim();
+    if (normalized === "") return false;
+    if (
+      negativeOperationalEvidencePatterns.some((pattern) =>
+        pattern.test(normalized)
+      )
+    ) {
+      return false;
+    }
+    return operationalEvidenceLinePatterns.some((pattern) =>
+      pattern.test(normalized)
+    );
+  });
 }
 
 function hasServeHostEvidence(text: string): boolean {
-  return (
-    /\bServe host:\s*running\b/i.test(text) ||
-    /\bserve_status:\s*running\b/i.test(text)
-  );
+  return text.split(/\r?\n/).some((line) => {
+    const normalized = line.trim();
+    if (normalized === "") return false;
+    if (
+      !serveHostEvidenceLinePatterns.some((pattern) => pattern.test(normalized))
+    ) {
+      return false;
+    }
+    return !contradictoryServeHostPatterns.some((pattern) =>
+      pattern.test(normalized)
+    );
+  });
 }
 
 function hasCaptureEvidence(text: string): boolean {

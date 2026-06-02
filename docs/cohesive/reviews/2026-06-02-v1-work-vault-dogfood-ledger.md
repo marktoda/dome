@@ -959,3 +959,30 @@ Qualitative read:
 - This closes a safety overclaim path: M10 release readiness now fails closed
   when a workday note contains a caveated negative confirmation instead of a
   clean "nothing observed" safety statement.
+
+## 2026-06-02 M10 Operational/Serve Evidence Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so operational evidence is detected
+  from positive line-level command evidence instead of broad day-wide substring
+  matches.
+- Negated command references such as "Did not run `bin/dome status ...`" no
+  longer count as measured Dome surface evidence.
+- Tightened serve-host evidence to positive line-level host status. Caveated
+  lines such as "Serve host: running; but it was stale and on the wrong
+  branch" no longer count as M10 host evidence.
+- Added regression coverage for both overclaim paths, plus the actual
+  ledger-compatible verified-output shape where `dome status` reports
+  `serve_status: running`.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 16 tests and
+  102 assertions.
+
+Qualitative read:
+
+- This closes another release-soak evidence gap: M10 counted days now need
+  affirmative measured command and foreground-host evidence, not negated or
+  contradictory prose that happens to contain the same command/status words.
