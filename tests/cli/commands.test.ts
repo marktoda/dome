@@ -3047,10 +3047,11 @@ describe("runDoctor", () => {
     }
   });
 
-  test("with --repair: exits 64 (not implemented yet)", async () => {
+  test("with --repair: exits 64 as a reserved V1 surface", async () => {
     const code = await runDoctor({ repair: true });
     expect(code).toBe(64);
-    expect(captured.err.join("\n")).toContain("not implemented yet");
+    expect(captured.err.join("\n")).toContain("reserved in V1");
+    expect(captured.err.join("\n")).toContain("dome resolve");
   });
 
   test("malformed --orphan-threshold-ms returns 64 before opening runtime", async () => {

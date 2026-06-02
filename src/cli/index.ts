@@ -195,7 +195,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Age before a running row is reported as orphaned.",
       parseNonNegativeIntegerOption,
     )
-    .option("--repair", "Apply safe mitigations when implemented.")
+    .option("--repair", "Reserved in V1; recovery flows through dome resolve.")
     .action(async (options: DoctorCliOptions) => {
       setExitCode(
         await runDoctor({

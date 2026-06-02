@@ -35,9 +35,9 @@ export async function runDoctor(
 ): Promise<number> {
   if (options.repair === true) {
     console.error(
-      "dome doctor --repair: not implemented yet. Recovery mutations flow " +
-        "through health questions and `dome resolve`; this command is " +
-        "currently probe-only.",
+      "dome doctor --repair is reserved in V1. Recovery mutations flow " +
+        "through health questions and `dome resolve`; `dome doctor` is " +
+        "probe-only.",
     );
     return EX_USAGE;
   }

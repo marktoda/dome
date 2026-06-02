@@ -66,6 +66,12 @@ The CLI is the user-facing primary surface in v1. The implemented commands above
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
 - **Optional adopted-state views:** `dome query`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` are explicit read views when the user asks for recall, planning, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
 - **Advanced/debug surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, compatibility, extension development, and maintenance. They are not the normal Claude Code workflow.
+
+`dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
+future answer-mediated mitigations and exits with usage status instead of
+mutating state. Operational recovery mutations ship through `dome.health`
+questions and `dome resolve`, so recovery still goes through normal Effect
+routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` — command-triggered view-phase processors invoked through the shared view-command boundary.
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
