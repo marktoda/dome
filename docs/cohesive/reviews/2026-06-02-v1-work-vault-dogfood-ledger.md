@@ -394,3 +394,33 @@ Qualitative read:
   model invocation without making normal tests depend on external services.
 - This still does not close M10. It proves one controlled capture path, not a
   week of real work-vault capture digestion.
+
+## 2026-06-02 Optional Auto-Resolution Smoke
+
+Dogfood action:
+
+- Extended `bun run v1:llm-smoke` with `--auto-resolve`.
+- The new mode enables `engine.auto_resolve_questions` for low-risk
+  `agent-safe` questions in the temporary vault and adds one deterministic
+  ambiguous follow-up page while still processing the raw capture through the
+  real Anthropic provider.
+- The smoke verifies that the deterministic question is answered with the
+  recommended `track` answer and that the accepted follow-up lands through the
+  normal garden answer-handler path.
+
+Operational result:
+
+- First attempt exposed a fixture issue: the deterministic follow-up page was a
+  bare markdown file, so the markdown loop correctly raised
+  `dome.markdown.missing-frontmatter` diagnostics. The fixture now uses normal
+  `type: concept` frontmatter.
+- The passing run:
+  `v1-llm-smoke: ok | generated wiki/generated/intake/v1-llm-smoke-8935059556ce.md | archive inbox/processed/v1-llm-smoke-8935059556ce.md | sync_heads 21ee736 -> 21ee736 | diagnostics 0 | questions 0 | auto_resolved 1`.
+
+Qualitative read:
+
+- This strengthens M7 evidence. Low-risk `agent-safe` uncertainty can be
+  resolved without Mark manually answering every question, and the resulting
+  markdown change still goes through the existing answer-handler, garden, and
+  adoption path.
+- This remains controlled smoke evidence, not full M10 release soak.

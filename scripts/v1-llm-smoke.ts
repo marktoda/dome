@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 type SmokeOptions = {
+  readonly autoResolve: boolean;
   readonly keep: boolean;
   readonly model: string | null;
   readonly vaultPath: string | null;
@@ -37,16 +38,21 @@ type QueryPayload = {
 
 type QuestionRow = {
   readonly id: number;
+  readonly answer: string;
+  readonly question: string;
   readonly status: string;
-  readonly metadata?: {
-    readonly automationPolicy?: string;
-    readonly risk?: string;
-  };
+  readonly metadata:
+    | "-"
+    | {
+        readonly automationPolicy?: string;
+        readonly risk?: string;
+      };
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
 const domeBin = resolve(repoRoot, "bin", "dome");
 const capturePath = "inbox/raw/v1-llm-smoke.md";
+const autoResolvePath = "wiki/v1-auto-resolve.md";
 const captureBody = [
   "# V1 LLM smoke capture",
   "",
@@ -69,9 +75,30 @@ async function main(): Promise<void> {
   let shouldCleanup = opts.vaultPath === null && !opts.keep;
   try {
     await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]);
-    await enableIntake(vaultPath);
+    await configureSmokeVault(vaultPath, opts);
     await writeFile(join(vaultPath, capturePath), captureBody);
-    await git(vaultPath, ["add", ".dome/config.yaml", capturePath]);
+    if (opts.autoResolve) {
+      await writeFile(
+        join(vaultPath, autoResolvePath),
+        [
+          "---",
+          "type: concept",
+          "name: V1 auto-resolution check",
+          "---",
+          "",
+          "# V1 auto-resolution check",
+          "",
+          "We should follow up with Riley",
+          "",
+        ].join("\n"),
+      );
+    }
+    await git(vaultPath, [
+      "add",
+      ".dome/config.yaml",
+      capturePath,
+      ...(opts.autoResolve ? [autoResolvePath] : []),
+    ]);
     await git(vaultPath, ["commit", "-m", "v1 llm smoke capture"]);
 
     const syncHeads = await runUntilSettled(vaultPath, opts);
@@ -89,6 +116,9 @@ async function main(): Promise<void> {
     const status = await statusJson(vaultPath, opts);
     assertSettledStatus(status);
     await assertQuestionsAreAgentSafe({ vaultPath, status, opts });
+    const autoResolved = opts.autoResolve
+      ? await assertDeterministicAutoResolution(vaultPath, opts)
+      : 0;
 
     console.log(
       [
@@ -99,6 +129,7 @@ async function main(): Promise<void> {
         `sync_heads ${syncHeads.join(" -> ")}`,
         `diagnostics ${status.diagnostics}`,
         `questions ${status.questions}`,
+        ...(opts.autoResolve ? [`auto_resolved ${autoResolved}`] : []),
       ].join(" | "),
     );
   } catch (error) {
@@ -118,7 +149,10 @@ async function tempVaultPath(): Promise<string> {
   return resolve(parent);
 }
 
-async function enableIntake(vaultPath: string): Promise<void> {
+async function configureSmokeVault(
+  vaultPath: string,
+  opts: SmokeOptions,
+): Promise<void> {
   const configPath = join(vaultPath, ".dome", "config.yaml");
   const parsed = parseYaml(await readFile(configPath, "utf8")) as Record<
     string,
@@ -127,6 +161,15 @@ async function enableIntake(vaultPath: string): Promise<void> {
   const extensions = ensureRecord(parsed, "extensions");
   const intake = ensureRecord(extensions, "dome.intake");
   intake.enabled = true;
+  if (opts.autoResolve) {
+    const engine = ensureRecord(parsed, "engine");
+    engine.auto_resolve_questions = {
+      enabled: true,
+      policies: ["agent-safe"],
+      min_confidence: 0.6,
+      max_per_tick: 20,
+    };
+  }
   await writeFile(configPath, stringifyYaml(parsed));
 }
 
@@ -268,8 +311,8 @@ async function assertQuestionsAreAgentSafe(input: {
     );
   }
   const unsafe = openQuestions.filter((question) =>
-    question.metadata?.automationPolicy !== "agent-safe" ||
-    question.metadata.risk !== "low"
+    questionMetadata(question).automationPolicy !== "agent-safe" ||
+    questionMetadata(question).risk !== "low"
   );
   if (unsafe.length > 0) {
     throw new Error(
@@ -278,6 +321,53 @@ async function assertQuestionsAreAgentSafe(input: {
       }`,
     );
   }
+}
+
+async function assertDeterministicAutoResolution(
+  vaultPath: string,
+  opts: SmokeOptions,
+): Promise<number> {
+  const questions = await runDomeJson<ReadonlyArray<QuestionRow>>(
+    ["inspect", "questions", "--vault", vaultPath, "--json"],
+    opts,
+  );
+  const rileyQuestion = questions.find((question) =>
+    question.question.includes("Follow up with Riley") ||
+    question.question.includes("follow up with Riley")
+  );
+  if (rileyQuestion === undefined) {
+    throw new Error("auto-resolution smoke did not create the Riley question");
+  }
+  if (rileyQuestion.status !== "answered" || rileyQuestion.answer !== "track") {
+    throw new Error(
+      `expected Riley question to be answered with track, got ` +
+        `${rileyQuestion.status}/${rileyQuestion.answer}`,
+    );
+  }
+  const metadata = questionMetadata(rileyQuestion);
+  if (metadata.automationPolicy !== "agent-safe" || metadata.risk !== "low") {
+    throw new Error("Riley question was not low-risk agent-safe");
+  }
+  const adoptedSource = await runCommand({
+    cmd: [
+      "git",
+      "show",
+      `refs/dome/adopted/main:${autoResolvePath}`,
+    ],
+    cwd: vaultPath,
+  });
+  assertIncludes(
+    adoptedSource.stdout,
+    "- [ ] #followup Follow up with Riley",
+    "auto-resolved follow-up patch",
+  );
+  return questions.filter((question) => question.status === "answered").length;
+}
+
+function questionMetadata(
+  question: QuestionRow,
+): { readonly automationPolicy?: string; readonly risk?: string } {
+  return question.metadata === "-" ? {} : question.metadata;
 }
 
 function assertIncludes(
@@ -317,7 +407,12 @@ async function runDomeJson<T>(
 
 async function runDome(
   args: ReadonlyArray<string>,
-  opts: SmokeOptions = { keep: false, model: null, vaultPath: null },
+  opts: SmokeOptions = {
+    autoResolve: false,
+    keep: false,
+    model: null,
+    vaultPath: null,
+  },
 ): Promise<{ readonly stdout: string; readonly stderr: string }> {
   return await runCommand({
     cmd: [domeBin, ...args],
@@ -397,6 +492,7 @@ function relativeToVault(vaultPath: string, path: string): string {
 }
 
 function parseArgs(args: ReadonlyArray<string>): SmokeOptions {
+  let autoResolve = false;
   let keep = false;
   let model: string | null = null;
   let vaultPath: string | null = null;
@@ -405,6 +501,10 @@ function parseArgs(args: ReadonlyArray<string>): SmokeOptions {
     const arg = args[i];
     if (arg === "--keep") {
       keep = true;
+      continue;
+    }
+    if (arg === "--auto-resolve") {
+      autoResolve = true;
       continue;
     }
     if (arg === "--model") {
@@ -425,7 +525,7 @@ function parseArgs(args: ReadonlyArray<string>): SmokeOptions {
     throw new Error(`unknown argument: ${arg}`);
   }
 
-  return Object.freeze({ keep, model, vaultPath });
+  return Object.freeze({ autoResolve, keep, model, vaultPath });
 }
 
 function readValue(
@@ -449,6 +549,7 @@ function printHelp(): void {
       "temporary vault using `dome init --with-model-provider anthropic`.",
       "",
       "Options:",
+      "  --auto-resolve   Enable low-risk agent-safe question auto-resolution.",
       "  --model <id>       Override ANTHROPIC_MODEL for the scaffolded provider.",
       "  --vault <path>     Use an existing/new vault path and keep it afterward.",
       "  --keep             Keep the temporary vault after the smoke.",
