@@ -65,6 +65,12 @@ type ReleaseCriterion = {
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
+const domeBin = resolve(repoRoot, "bin", "dome");
+const dogfoodSnapshotScript = resolve(
+  repoRoot,
+  "scripts",
+  "v1-dogfood-snapshot.ts",
+);
 const defaultLedger = resolve(
   repoRoot,
   "docs/cohesive/reviews/2026-06-02-v1-work-vault-dogfood-ledger.md",
@@ -74,14 +80,14 @@ async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const commands: CommandRun[] = [];
   const status = await runJson<JsonRecord>(commands, [
-    resolve(repoRoot, "bin", "dome"),
+    domeBin,
     "status",
     "--vault",
     opts.vault,
     "--json",
   ]);
   const bundles = await runJson<JsonRecord[]>(commands, [
-    resolve(repoRoot, "bin", "dome"),
+    domeBin,
     "inspect",
     "bundles",
     "--vault",
@@ -160,7 +166,7 @@ function sessionEvidenceCommands(opts: PreflightOptions): {
   readonly appendCommand: string;
 } {
   const serveCommand = Object.freeze([
-    "bin/dome",
+    domeBin,
     "serve",
     "--vault",
     opts.vault,
@@ -169,16 +175,14 @@ function sessionEvidenceCommands(opts: PreflightOptions): {
     "1000",
   ]);
   const snapshotCommand = Object.freeze([
-    "bun",
-    "run",
-    "v1:dogfood-snapshot",
-    "--",
+    process.execPath,
+    dogfoodSnapshotScript,
     "--vault",
     opts.vault,
     "--date",
     localDateString(),
   ]);
-  const renderedSnapshotCommand = snapshotCommand.map(formatShellArg).join(" ");
+  const renderedSnapshotCommand = shellCommand(snapshotCommand);
   return Object.freeze({
     serveCommand,
     snapshotCommand,
@@ -545,7 +549,7 @@ function parseArgs(args: ReadonlyArray<string>): PreflightOptions {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--vault") {
-      vault = readValue(args, i, arg);
+      vault = resolve(readValue(args, i, arg));
       i += 1;
       continue;
     }

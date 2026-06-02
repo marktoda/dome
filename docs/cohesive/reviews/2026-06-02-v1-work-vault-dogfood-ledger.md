@@ -1477,7 +1477,7 @@ Verification action:
 Measured result:
 
 - `bun test tests/scripts/v1-dogfood-preflight.test.ts` passed with 9 tests
-  and 128 assertions.
+  and 129 assertions.
 - `bun test tests/cli/commands.test.ts --test-name-pattern
   "stale serve heartbeat|invalid serve heartbeat"` passed with 2 tests and 16
   assertions.
@@ -1710,3 +1710,29 @@ Qualitative read:
   already-adopted work vault should now read as current in the smoke summary,
   while still preserving whether the smoke command had to perform catch-up
   work.
+
+## 2026-06-02 M10 Preflight Command Path Tightening
+
+Verification action:
+
+- Re-audited `v1:dogfood-preflight` after confirming it is the first command a
+  real M10 session should run.
+- Found that the script's recorded status/inspect commands used absolute paths,
+  but `sessionEvidence.serveCommand` still emitted `bin/dome` and the snapshot
+  append command still emitted `bun run v1:dogfood-snapshot` relative to the
+  current working directory. That made the JSON less exact than the measured
+  commands it was meant to hand to foreground agents.
+- Changed the session serve and snapshot commands to use absolute
+  executable/script paths and to resolve `--vault` before rendering evidence
+  commands.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts` passed with 9 tests
+  and 128 assertions.
+
+Qualitative read:
+
+- This keeps M10 session setup concrete and copyable. The preflight still does
+  not start `dome serve` or append snapshots itself; it now hands the operator
+  exact commands to run when collecting host and work-surface evidence.

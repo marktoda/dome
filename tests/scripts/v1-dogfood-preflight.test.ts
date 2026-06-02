@@ -13,6 +13,7 @@ import {
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const DOME_BIN = join(REPO_ROOT, "bin", "dome");
 const PREFLIGHT_SCRIPT = join(REPO_ROOT, "scripts", "v1-dogfood-preflight.ts");
+const SNAPSHOT_SCRIPT = join(REPO_ROOT, "scripts", "v1-dogfood-snapshot.ts");
 
 const fixtures: string[] = [];
 
@@ -52,7 +53,7 @@ describe("v1 dogfood preflight script", () => {
     expect(report.status).toBe("not-ready");
     expect(report.ledger).toBe(ledgerPath);
     expect(report.sessionEvidence.serveCommand).toEqual([
-      "bin/dome",
+      DOME_BIN,
       "serve",
       "--vault",
       vaultPath,
@@ -61,18 +62,15 @@ describe("v1 dogfood preflight script", () => {
       "1000",
     ]);
     expect(report.sessionEvidence.snapshotCommand).toEqual([
-      "bun",
-      "run",
-      "v1:dogfood-snapshot",
-      "--",
+      process.execPath,
+      SNAPSHOT_SCRIPT,
       "--vault",
       vaultPath,
       "--date",
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     ]);
-    expect(report.sessionEvidence.appendCommand).toContain(
-      "bun run v1:dogfood-snapshot -- --vault",
-    );
+    expect(report.sessionEvidence.appendCommand).toContain(process.execPath);
+    expect(report.sessionEvidence.appendCommand).toContain(SNAPSHOT_SCRIPT);
     expect(report.sessionEvidence.appendCommand).toContain(`>> ${ledgerPath}`);
     expect(report.operational.ready).toBe(true);
     expect(report.serve.ready).toBe(false);
@@ -100,7 +98,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes("bin/dome serve --vault")
+        action.includes(`${DOME_BIN} serve --vault`)
       ),
     ).toBe(true);
     expect(report.nextActions).toContain(
@@ -131,7 +129,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes("bin/dome serve --vault")
+        action.includes(`${DOME_BIN} serve --vault`)
       ),
     ).toBe(true);
   }, { timeout: 30_000 });
@@ -177,9 +175,9 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain("Collection status: ready");
     expect(result.stdout).toContain("Session evidence:");
     expect(result.stdout).toContain("Serve command:");
-    expect(result.stdout).toContain("bin/dome serve --vault");
+    expect(result.stdout).toContain(`${DOME_BIN} serve --vault`);
     expect(result.stdout).toContain("Snapshot command:");
-    expect(result.stdout).toContain("bun run v1:dogfood-snapshot");
+    expect(result.stdout).toContain(SNAPSHOT_SCRIPT);
     expect(result.stdout).toContain(`>> ${ledgerPath}`);
     expect(result.stdout).toContain("Release-soak report:");
     expect(result.stdout).toContain("- Status: not-ready");
@@ -251,7 +249,7 @@ describe("v1 dogfood preflight script", () => {
     expect(
       report.nextActions.some((action: string) =>
         action.includes("start dome serve while dogfooding") &&
-        action.includes("bin/dome serve --vault")
+        action.includes(`${DOME_BIN} serve --vault`)
       ),
     ).toBe(true);
   }, { timeout: 30_000 });
@@ -322,7 +320,7 @@ describe("v1 dogfood preflight script", () => {
       "collect 9 more complete M10 workday(s) (1/10)",
     );
     expect(result.stdout).toContain("Serve command:");
-    expect(result.stdout).toContain("bin/dome serve --vault");
+    expect(result.stdout).toContain(`${DOME_BIN} serve --vault`);
     expect(result.stdout).toContain("Commands run:");
   }, { timeout: 30_000 });
 });
