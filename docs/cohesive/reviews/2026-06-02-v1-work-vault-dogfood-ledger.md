@@ -1348,3 +1348,51 @@ Qualitative read:
 - This makes the soak loop easier to run daily. Preflight now answers both
   "can I collect evidence?" and "what exact command should I run when the
   session is done?"
+
+## 2026-06-02 Work-Vault Carry-Forward and Stale-Diagnostic Follow-Up
+
+Verification action:
+
+- Investigated repeated `dome.daily.carry-forward` commits in the work vault.
+  The general behavior is expected to be more than once per day when the
+  source-backed open-loop set changes, but two earlier commits had incorrectly
+  inserted the current June 2 cockpit into historical notes
+  `notes/2025-10-03.md` and `notes/2026-05-28.md`.
+- Verified the historical daily-note generated blocks had already been removed
+  in work-vault commit `b6ff119` and that the latest work-vault sync produced
+  no new `dome.daily.carry-forward` patch.
+- Fixed a stale wikilink-diagnostic cleanup bug in the SDK. Processors now
+  have an explicit manifest `inspection` scope; `dome.markdown.validate-wikilinks`
+  declares `all-readable-markdown` so creating or repairing a target page can
+  clear broken-link diagnostics anchored in unchanged source files.
+- Added a convergence regression proving a broken `[[Fred Zaw]]` link resolves
+  when `wiki/entities/fred-zaw.md` is created later.
+
+Measured result:
+
+- Committed the SDK/doc fix as `4e197eb Track processor inspection scope`.
+- `bun test` passed with 1049 tests, 0 failures, and 22395 assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` passed.
+- `bun run v1:smoke -- --sync-docs` passed with docs adopted at `4e197eb` and
+  work adopted at `2a48b9e`.
+- `bin/dome sync --vault /Users/mark.toda/vaults/work --json` adopted the
+  latest work-vault commit with 0 garden sub-proposals and no closure commit.
+- `bin/dome status --vault /Users/mark.toda/vaults/work --json` reported all
+  five maintenance loops quiet and settled, 0 open questions, 0 failed runs,
+  0 attention diagnostics, and 10 remaining content diagnostics classified as
+  noise.
+- `bun run v1:dogfood-snapshot -- --date 2026-06-02 --limit 3` confirmed the
+  current work-vault snapshot has head/adopted `2a48b9e`, no sync needed, all
+  loops quiet, and link-concept coherence at 0 drift diagnostics.
+
+Qualitative read:
+
+- This is a good M10 finding: the dogfood loop caught both confusing
+  daily-surface churn and a real stale-check failure mode. The system now
+  converges better after source fixes, and the remaining work-vault check
+  output is known noise rather than mysterious failure.
+- The next M10 blocker is not this code path. It remains elapsed dogfood:
+  `dome serve` is currently off, and the release report still has only 1
+  complete counted workday, 1 serve-host evidence day, 1 capture-evidence day,
+  and a 1-day complete-workday span.
