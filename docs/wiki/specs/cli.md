@@ -830,9 +830,12 @@ The `dome.daily.carry-forward` garden processor may write small generated
 blocks into the daily note: a `## Start Here` context block derived from
 yesterday's daily note, and a `## Open Loops` block derived from source-backed
 actions. `dome.daily.task-index` treats those blocks as surfaces, not new
-sources: generated daily entries are skipped during fact extraction so `today`
-and `prep` continue to cite the original project, meeting, capture, or prior
-daily line.
+sources: generated daily entries are skipped during fact extraction, but
+`today` and `prep` still read open source-backed rows as the target day's
+surface. When the same loop also exists as an original project, meeting,
+capture, or prior-daily fact, the view folds the rows together, counts the
+representative as `daily`, and preserves both the daily surface SourceRef and
+the backing source SourceRef.
 
 Settling a generated source-backed item is still meaningful markdown evidence.
 On the next carry-forward pass, Dome keeps `[x]` rows under

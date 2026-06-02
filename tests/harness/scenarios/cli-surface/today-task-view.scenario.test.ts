@@ -153,13 +153,13 @@ scenario(
     expect(payload.counts.followups).toBe(2);
     expect(payload.counts.questions).toBe(1);
     expect(payload.sourceCounts.daily).toEqual({
-      openTasks: 2,
-      followups: 1,
+      openTasks: 4,
+      followups: 2,
       questions: 0,
     });
     expect(payload.sourceCounts.backlog).toEqual({
-      openTasks: 2,
-      followups: 1,
+      openTasks: 0,
+      followups: 0,
       questions: 1,
     });
     expect(payload.dueCounts.openTasks).toEqual({
@@ -187,20 +187,20 @@ scenario(
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
       "Send Ada launch notes",
-      "Ask Ben about hiring budget",
       "Draft project staffing note",
+      "Ask Ben about hiring budget",
     ]);
     expect(payload.openTasks.map((task) => task.dueDate)).toEqual([
       null,
       null,
-      null,
       "2026-01-06",
+      null,
     ]);
     expect(payload.openTasks.map((task) => task.priority)).toEqual([
       null,
       null,
-      "highest",
       null,
+      "highest",
     ]);
     expect(
       payload.openTasks.every((task) => typeof task.lastChangedAt === "string"),
@@ -208,8 +208,8 @@ scenario(
     expect(payload.openTasks.map((task) => task.source)).toEqual([
       "daily",
       "daily",
-      "backlog",
-      "backlog",
+      "daily",
+      "daily",
     ]);
     expect(
       payload.openTasks.every((task) =>
@@ -222,7 +222,7 @@ scenario(
     ]);
     expect(payload.followups.map((task) => task.source)).toEqual([
       "daily",
-      "backlog",
+      "daily",
     ]);
     expect(payload.questions[0]?.question).toContain(
       "We should follow up with Cy about review timing",
@@ -327,9 +327,9 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("DOME today 2026-01-05");
     expect(text.stdout).toContain(
-      "daily    wiki/dailies/2026-01-05.md | exists | 2 open | 1 followups | 0 questions",
+      "daily    wiki/dailies/2026-01-05.md | exists | 4 open | 2 followups | 0 questions",
     );
-    expect(text.stdout).toContain("backlog  2 open | 1 followups | 1 questions");
+    expect(text.stdout).toContain("backlog  0 open | 0 followups | 1 questions");
     expect(text.stdout).toContain("4 open | 2 followups | 1 questions");
     expect(text.stdout).toContain(
       "due      open 0 overdue | 0 today | 1 upcoming | 3 undated | followups 0 overdue | 0 today | 0 upcoming | 2 undated",
@@ -337,7 +337,7 @@ scenario(
     expect(text.stdout).toContain("Daily note");
     expect(text.stdout).toContain("Wider wiki backlog");
     expect(text.stdout).toContain(
-      "Ask Ben about hiring budget (wiki/captures/2026-01-05.md:9)",
+      "Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16)",
     );
     expect(text.stdout).toContain(
       `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
@@ -357,6 +357,219 @@ scenario(
     expect(limitedText.stdout).not.toContain(
       "Draft project staffing note",
     );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome today treats generated open loops as daily surface",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "## Open Loops",
+          "",
+          "<!-- dome.daily:open-loops:start -->",
+          "### Source-backed Open Loops",
+          "- [ ] Ship alpha note 📅 2026-01-05 (from [[wiki/projects/alpha]])",
+          "- [ ] #followup Ask Ada about beta 🔺 (from [[wiki/projects/beta]])",
+          "- [x] Done generated task (from [[wiki/projects/done]])",
+          "- [-] Dismissed generated task (from [[wiki/projects/dismissed]])",
+          "<!-- dome.daily:open-loops:end -->",
+          "",
+        ].join("\n"),
+        "wiki/projects/alpha.md": [
+          "# Alpha",
+          "",
+          "TODO: Ship alpha note 📅 2026-01-05",
+          "",
+        ].join("\n"),
+        "wiki/projects/beta.md": [
+          "# Beta",
+          "",
+          "TODO: #followup Ask Ada about beta 🔺",
+          "",
+        ].join("\n"),
+        "wiki/projects/other.md": [
+          "# Other",
+          "",
+          "TODO: Backlog only task",
+          "",
+        ].join("\n"),
+      },
+      message: "add generated daily open-loop surface",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+
+    const payload = JSON.parse(json.stdout) as {
+      readonly counts: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
+      readonly sourceCounts: {
+        readonly daily: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+        readonly backlog: {
+          readonly openTasks: number;
+          readonly followups: number;
+          readonly questions: number;
+        };
+      };
+      readonly dueCounts: {
+        readonly openTasks: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+        readonly followups: {
+          readonly overdue: number;
+          readonly today: number;
+          readonly upcoming: number;
+          readonly undated: number;
+        };
+      };
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly path: string;
+        readonly line: number | null;
+        readonly source: "daily" | "backlog";
+        readonly followup: boolean;
+        readonly dueDate: string | null;
+        readonly priority: string | null;
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+      readonly followups: ReadonlyArray<{
+        readonly text: string;
+        readonly source: "daily" | "backlog";
+      }>;
+    };
+
+    expect(payload.counts).toEqual({
+      openTasks: 3,
+      followups: 1,
+      questions: 0,
+    });
+    expect(payload.sourceCounts.daily).toEqual({
+      openTasks: 3,
+      followups: 1,
+      questions: 0,
+    });
+    expect(payload.sourceCounts.backlog).toEqual({
+      openTasks: 0,
+      followups: 0,
+      questions: 0,
+    });
+    expect(payload.dueCounts.openTasks).toEqual({
+      overdue: 0,
+      today: 1,
+      upcoming: 0,
+      undated: 2,
+    });
+    expect(payload.dueCounts.followups).toEqual({
+      overdue: 0,
+      today: 0,
+      upcoming: 0,
+      undated: 1,
+    });
+    expect(payload.openTasks.map((task) => task.text)).toEqual([
+      "Ship alpha note",
+      "Ask Ada about beta",
+      "Backlog only task",
+    ]);
+    expect(payload.openTasks.map((task) => task.source)).toEqual([
+      "daily",
+      "daily",
+      "daily",
+    ]);
+    expect(payload.openTasks.map((task) => task.path)).toEqual([
+      "wiki/dailies/2026-01-05.md",
+      "wiki/dailies/2026-01-05.md",
+      "wiki/dailies/2026-01-05.md",
+    ]);
+    expect(payload.openTasks.map((task) => task.line)).toEqual([12, 13, 14]);
+    expect(payload.openTasks.map((task) => task.dueDate)).toEqual([
+      "2026-01-05",
+      null,
+      null,
+    ]);
+    expect(payload.openTasks.map((task) => task.priority)).toEqual([
+      null,
+      "highest",
+      null,
+    ]);
+    expect(payload.openTasks[0]?.sourceRefs.map((ref) => ref.path).sort())
+      .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/alpha.md"]);
+    expect(payload.openTasks[1]?.sourceRefs.map((ref) => ref.path).sort())
+      .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/beta.md"]);
+    expect(payload.openTasks[2]?.sourceRefs.map((ref) => ref.path).sort())
+      .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/other.md"]);
+    expect(payload.followups.map((task) => ({
+      text: task.text,
+      source: task.source,
+    }))).toEqual([{ text: "Ask Ada about beta", source: "daily" }]);
+
+    const prep = await h.runCli([
+      "prep",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "5",
+      "--json",
+    ]);
+    expect(prep.exitCode).toBe(0);
+    expect(prep.stderr).toBe("");
+    const prepPayload = JSON.parse(prep.stdout) as {
+      readonly counts: {
+        readonly openTasks: number;
+        readonly followups: number;
+        readonly questions: number;
+      };
+      readonly sourceCounts: typeof payload.sourceCounts;
+    };
+    expect(prepPayload.counts).toEqual(payload.counts);
+    expect(prepPayload.sourceCounts).toEqual(payload.sourceCounts);
+
+    const text = await h.runCli(["today", "--date", "2026-01-05"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain(
+      "daily    wiki/dailies/2026-01-05.md | exists | 3 open | 1 followups | 0 questions",
+    );
+    expect(text.stdout).toContain("backlog  0 open | 0 followups | 0 questions");
+    expect(text.stdout).toContain("3 open | 1 followups | 0 questions");
+    expect(text.stdout).not.toContain("Done generated task");
+    expect(text.stdout).not.toContain("Dismissed generated task");
   },
 );
 
@@ -620,8 +833,8 @@ extensions:
 
     expect(payload.daily.path).toBe("notes/2026-01-05.md");
     expect(payload.daily.exists).toBe(true);
-    expect(payload.sourceCounts.daily.openTasks).toBe(1);
-    expect(payload.sourceCounts.backlog.openTasks).toBe(1);
+    expect(payload.sourceCounts.daily.openTasks).toBe(2);
+    expect(payload.sourceCounts.backlog.openTasks).toBe(0);
   },
 );
 

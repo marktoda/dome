@@ -18,9 +18,11 @@ import {
   formatDate,
   isValidDailyDate,
   localDateParts,
+  openSourceBackedOpenLoopsFromMarkdown,
   openLoopSurfaceKey,
   parseDailyPath,
   type DailyDate,
+  type DailyOpenLoopSource,
   type DailyPathSettings,
 } from "./daily-shared";
 
@@ -121,6 +123,12 @@ export async function collectDailyActionState(
   const dailyContent = await ctx.snapshot.readFile(path);
   const dailySourceRefs =
     dailyContent === null ? [] : [ctx.sourceRef(path)];
+  const dailyOpenLoopItems = dailyContent === null
+    ? []
+    : openSourceBackedOpenLoopsFromMarkdown({
+      path,
+      content: dailyContent,
+    });
 
   const openFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: OPEN_TASK_PREDICATE,
@@ -132,31 +140,42 @@ export async function collectDailyActionState(
     .questions({ resolved: false })
     .filter((question) => question.idempotencyKey.startsWith("dome.daily."));
   const sourceLastChangedAt = await sourceLastChangedAtIndex(ctx, [
+    ...(dailyContent === null ? [] : [path]),
     ...openFacts.map(factSourcePath),
     ...followupFacts.map(factSourcePath),
     ...questionEffects.map(questionSourcePath),
   ]);
   const followupKeys = new Set(followupFacts.map(factKey));
-  const openTasks = openFacts
-    .map((fact) =>
+  const dailyOpenTaskItems = dailyOpenLoopItems.map((item) =>
+    taskItemFromDailySurface({
+      ctx,
+      dailyPath: path,
+      item,
+      sourceLastChangedAt,
+    })
+  );
+  const openTasks = [
+    ...dailyOpenTaskItems,
+    ...openFacts.map((fact) =>
       taskItemFromFact({
         fact,
         followup: followupKeys.has(factKey(fact)),
         dailyPath: path,
         sourceLastChangedAt,
       })
-    )
-    .sort(compareTaskItemsForDaily(path, settings));
-  const followups = followupFacts
-    .map((fact) =>
+    ),
+  ].sort(compareTaskItemsForDaily(path, settings));
+  const followups = [
+    ...dailyOpenTaskItems.filter((item) => item.followup),
+    ...followupFacts.map((fact) =>
       taskItemFromFact({
         fact,
         followup: true,
         dailyPath: path,
         sourceLastChangedAt,
       })
-    )
-    .sort(compareTaskItemsForDaily(path, settings));
+    ),
+  ].sort(compareTaskItemsForDaily(path, settings));
   const dedupedOpenTasks = dedupeDailyTaskItems(openTasks);
   const dedupedFollowups = dedupeDailyTaskItems(followups);
   const questions = questionEffects
@@ -308,6 +327,32 @@ function taskItemFromFact(input: {
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
     sourceRefs: Object.freeze([...fact.sourceRefs]),
+  });
+}
+
+function taskItemFromDailySurface(input: {
+  readonly ctx: ProcessorContext;
+  readonly dailyPath: string;
+  readonly item: DailyOpenLoopSource;
+  readonly sourceLastChangedAt: ReadonlyMap<string, string>;
+}): DailyTaskItem {
+  const metadata = taskMetadata(input.item.body);
+  return Object.freeze({
+    text: taskDisplayText(input.item.body),
+    path: input.dailyPath,
+    line: input.item.line,
+    source: "daily",
+    followup: input.item.followup,
+    dueDate: metadata.dueDate,
+    priority: metadata.priority,
+    lastChangedAt: input.sourceLastChangedAt.get(input.dailyPath) ?? null,
+    sourceRefs: Object.freeze([
+      input.ctx.sourceRef(
+        input.dailyPath,
+        { startLine: input.item.line, endLine: input.item.line },
+        input.item.stableId,
+      ),
+    ]),
   });
 }
 

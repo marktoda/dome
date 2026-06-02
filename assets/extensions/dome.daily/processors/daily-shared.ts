@@ -446,6 +446,35 @@ export function settledSourceBackedOpenLoopsFromMarkdown(input: {
   return Object.freeze(items);
 }
 
+export function openSourceBackedOpenLoopsFromMarkdown(input: {
+  readonly path: string;
+  readonly content: string;
+}): ReadonlyArray<DailyOpenLoopSource> {
+  const items: DailyOpenLoopSource[] = [];
+  const lines = input.content.split(/\r?\n/);
+  const range = openLoopsBlockLineRange(input.content);
+  if (range === null) return Object.freeze(items);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = i + 1;
+    if (line < range.start || line > range.end) continue;
+    const item = sourceBackedCheckboxFromLine(lines[i] ?? "", i + 1);
+    if (item === null || item.status !== "open") continue;
+    items.push(
+      Object.freeze({
+        line: item.line,
+        stableId: openLoopStableId({
+          sourcePath: item.sourcePath,
+          body: item.body,
+        }),
+        body: item.body,
+        followup: item.followup,
+        sourcePath: item.sourcePath,
+      }),
+    );
+  }
+  return Object.freeze(items);
+}
+
 export function completedSourceBackedOpenLoopsFromMarkdown(input: {
   readonly path: string;
   readonly content: string;
@@ -793,6 +822,17 @@ function openLoopsBlockRange(
   return Object.freeze({
     start,
     end: endMarker + OPEN_LOOPS_END.length,
+  });
+}
+
+function openLoopsBlockLineRange(
+  content: string,
+): { readonly start: number; readonly end: number } | null {
+  const range = openLoopsBlockRange(content);
+  if (range === null) return null;
+  return Object.freeze({
+    start: lineNumberAtOffset(content, range.start),
+    end: lineNumberAtOffset(content, range.end),
   });
 }
 

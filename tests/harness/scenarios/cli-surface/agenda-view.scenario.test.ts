@@ -77,7 +77,7 @@ scenario(
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("# Dome Agenda: Ada");
     expect(text.stdout).toContain(
-      "[followup] Ask Ada about rollout risks (wiki/projects/launch.md:9)",
+      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:16)",
     );
     expect(text.stdout).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
@@ -160,6 +160,8 @@ scenario(
     expect(payload.agendaItems[0]?.sourceRefs[0]?.path).toBe(
       payload.agendaItems[0]?.path,
     );
+    expect(payload.agendaItems[1]?.sourceRefs.map((ref) => ref.path).sort())
+      .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/launch.md"]);
     expect(payload.context.map((entry) => entry.path)).toContain(
       "wiki/projects/launch.md",
     );
