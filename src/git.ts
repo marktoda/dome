@@ -84,7 +84,11 @@ export async function statusMatrix(
   path: string,
 ): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
   const { root, prefix } = await resolveGitContext(path);
-  const matrix = await git.statusMatrix({ fs, dir: root });
+  const matrix = await git.statusMatrix({
+    fs,
+    dir: root,
+    filter: (filepath) => !isDomeStatePath(filepath, prefix),
+  });
   const ignored = await ignoredUntrackedPaths(
     root,
     matrix
@@ -112,6 +116,11 @@ export async function statusMatrix(
     }
   }
   return result;
+}
+
+function isDomeStatePath(filepath: string, prefix: string): boolean {
+  const domeState = prefix === "" ? ".dome/state" : `${prefix}/.dome/state`;
+  return filepath === domeState || filepath.startsWith(`${domeState}/`);
 }
 
 async function ignoredUntrackedPaths(

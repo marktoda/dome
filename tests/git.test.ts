@@ -10,6 +10,7 @@ import {
   fileInfoAtCommit,
   initRepo,
   readTree,
+  statusMatrix,
 } from "../src/git";
 
 describe("git boundary", () => {
@@ -144,6 +145,55 @@ describe("git boundary", () => {
 
       const wikiTree = await readTree({ path: vaultPath, oid: wiki.oid });
       expect(wikiTree.tree.map((entry) => entry.path)).toEqual(["a.md"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("statusMatrix excludes transient Dome state but keeps vault config visible", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-status-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      await commit({
+        path,
+        message: "first",
+        files: ["wiki/a.md"],
+      });
+
+      await write(path, ".dome/state/locks/main.compiler-host.lock", "lock\n");
+      await write(path, ".dome/config.yaml", "extensions: {}\n");
+
+      const paths = (await statusMatrix(path)).map(([filepath]) => filepath);
+      expect(paths).toContain(".dome/config.yaml");
+      expect(paths).not.toContain(".dome/state/locks/main.compiler-host.lock");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("statusMatrix excludes nested vault Dome state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-git-nested-status-"));
+    const vaultPath = join(root, "docs");
+    try {
+      await initRepo(root);
+      await write(root, "docs/wiki/a.md", "inner\n");
+      await commit({
+        path: root,
+        message: "nested vault",
+        files: ["docs/wiki/a.md"],
+      });
+
+      await write(
+        root,
+        "docs/.dome/state/locks/main.compiler-host.lock",
+        "lock\n",
+      );
+      await write(root, "docs/.dome/config.yaml", "extensions: {}\n");
+
+      const paths = (await statusMatrix(vaultPath)).map(([filepath]) => filepath);
+      expect(paths).toContain(".dome/config.yaml");
+      expect(paths).not.toContain(".dome/state/locks/main.compiler-host.lock");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
