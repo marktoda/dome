@@ -93,10 +93,15 @@ type VaultSmokeResult = {
   readonly status: StatusPayload;
   readonly doctor: DoctorPayload;
   readonly viewSchemas: ReadonlyArray<string>;
-  readonly synced: boolean;
+  readonly catchupSyncRan: boolean;
   readonly settledSync: "checked" | "skipped";
   readonly notices: ReadonlyArray<string>;
 };
+
+export type VaultSmokeSummaryInput = Pick<
+  VaultSmokeResult,
+  "label" | "status" | "viewSchemas" | "catchupSyncRan" | "settledSync" | "notices"
+>;
 
 async function smokeVault(input: {
   readonly label: string;
@@ -111,7 +116,7 @@ async function smokeVault(input: {
   const notices: string[] = [];
   assertOperationallyHealthy(input.label, status);
 
-  let synced = false;
+  let catchupSyncRan = false;
   if (input.syncIfNeeded && status.sync_needed) {
     if (status.dirty_modified > 0 || status.dirty_untracked > 0) {
       throw new Error(
@@ -123,7 +128,7 @@ async function smokeVault(input: {
       `v1-smoke: syncing ${input.label} (${formatPending(status.pending_commits)} pending commit(s))`,
     );
     await runDomeJson(["sync", "--vault", vaultPath, "--json"]);
-    synced = true;
+    catchupSyncRan = true;
     status = await statusJson(vaultPath);
     assertOperationallyHealthy(input.label, status);
   }
@@ -184,7 +189,7 @@ async function smokeVault(input: {
     status,
     doctor,
     viewSchemas,
-    synced,
+    catchupSyncRan,
     settledSync,
     notices: Object.freeze(notices),
   });
@@ -543,17 +548,34 @@ function formatPending(count: number | null): string {
 
 function printSummary(results: ReadonlyArray<VaultSmokeResult>): void {
   for (const result of results) {
-    const status = result.status;
-    const notices =
-      result.notices.length === 0 ? "none" : result.notices.join("; ");
-    console.log(
-      `v1-smoke: ${result.label} ok | branch ${status.branch ?? "(detached)"} ` +
-        `| head ${shortOid(status.head)} | adopted ${shortOid(status.adopted)} ` +
-        `| synced ${result.synced ? "yes" : "no"} ` +
-        `| settled ${result.settledSync} ` +
-        `| views ${result.viewSchemas.length} ok | notices ${notices}`,
-    );
+    console.log(formatVaultSmokeSummary(result));
   }
+}
+
+export function formatVaultSmokeSummary(
+  result: VaultSmokeSummaryInput,
+): string {
+  const status = result.status;
+  const notices =
+    result.notices.length === 0 ? "none" : result.notices.join("; ");
+  const adoptedCurrent =
+    !status.adopted_diverged &&
+    !status.sync_needed &&
+    status.head !== null &&
+    status.adopted === status.head;
+  const catchupSyncStatus = result.catchupSyncRan
+    ? "ran"
+    : status.sync_needed
+      ? "not run"
+      : "not needed";
+  return (
+    `v1-smoke: ${result.label} ok | branch ${status.branch ?? "(detached)"} ` +
+    `| head ${shortOid(status.head)} | adopted ${shortOid(status.adopted)} ` +
+    `| adopted current ${adoptedCurrent ? "yes" : "no"} ` +
+    `| catch-up sync ${catchupSyncStatus} ` +
+    `| settled ${result.settledSync} ` +
+    `| views ${result.viewSchemas.length} ok | notices ${notices}`
+  );
 }
 
 function shortOid(oid: string | null): string {
@@ -625,8 +647,10 @@ function printHelp(): void {
   );
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`v1-smoke: ${message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`v1-smoke: ${message}`);
+    process.exit(1);
+  });
+}

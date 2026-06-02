@@ -1682,3 +1682,31 @@ Qualitative read:
   executor or new CLI command. A future dogfood entry can show not only whether
   a loop is settled, but when the loop last succeeded and whether a recent
   processor failure is still active.
+
+## 2026-06-02 M10 Smoke Summary Wording Tightening
+
+Verification action:
+
+- Re-audited the `v1:smoke` output after the work-vault run showed
+  `head == adopted`, no attention items, and all loops quiet, while the summary
+  still printed `synced no`.
+- Found that the script used one `synced` boolean to mean "the smoke script
+  actively ran catch-up sync," not "the vault is synchronized after smoke."
+  That was technically true but bad release evidence.
+- Split the summary vocabulary into final adopted-ref state and catch-up work:
+  `adopted current yes/no` and `catch-up sync ran/not run/not needed`.
+- Added a pure summary formatter and focused tests so the wording stays pinned
+  without needing to create live vault fixtures.
+
+Measured result:
+
+- `bun test tests/scripts/v1-smoke.test.ts` passed with 3 tests and 10
+  assertions.
+- `bun run typecheck` passed.
+
+Qualitative read:
+
+- This is a release-evidence cleanup, not a feature expansion. A clean
+  already-adopted work vault should now read as current in the smoke summary,
+  while still preserving whether the smoke command had to perform catch-up
+  work.
