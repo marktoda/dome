@@ -841,11 +841,14 @@ Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
 Items from the target daily note sort before the wider vault backlog and
 preserve source line order. Wider-backlog task and followup rows then sort by
-explicit action metadata before path / line / text: due dates on or before the
-target day first, priority-only rows next, future-dated rows after that, and
-undated/unprioritized rows last. Priority markers use the Obsidian Tasks emoji
-order (`highest`, `high`, `medium`, `low`, `lowest`); due dates use
-`YYYY-MM-DD` values following the `📅` marker. Text mode renders the
+explicit action metadata before recency and path / line / text: due dates on or
+before the target day first, priority-only rows next, future-dated rows after
+that, and undated/unprioritized rows last. Within the same metadata bucket,
+overdue rows closest to the target day sort before older overdue rows, future
+rows sort soonest first, and rows from more recently changed source files sort
+before older source files. Priority markers use the Obsidian Tasks emoji order
+(`highest`, `high`, `medium`, `low`, `lowest`); due dates use `YYYY-MM-DD`
+values following the `📅` marker. Text mode renders the
 daily-note and backlog groups separately so a large management vault does not
 make today's own plan indistinguishable from long-running project/entity task
 debt.
@@ -854,10 +857,10 @@ debt.
 counts, so real management vaults with large task backlogs stay readable.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
-`dueDate`, and `priority` fields. `shown` and `omitted` mirror the bounded
-arrays so agents do not need to infer truncation from array lengths. `--date`
-is for reviewing another day and for deterministic tests; omitted means local
-today.
+`dueDate`, `priority`, and `lastChangedAt` fields. `shown` and `omitted` mirror
+the bounded arrays so agents do not need to infer truncation from array lengths.
+`--date` is for reviewing another day and for deterministic tests; omitted
+means local today.
 
 ### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
@@ -883,8 +886,8 @@ The shared daily action model is the same as `dome today`: each
 task/followup/question carries a `daily` or `backlog` source scope, items from
 the target daily note appear before wider vault backlog within each bounded
 action section, wider-backlog task/followup rows use the same due-date /
-priority ordering, and the "Start Here" buckets preserve their followup /
-question / task priority on top of that source ordering.
+priority / recency ordering, and the "Start Here" buckets preserve their
+followup / question / task priority on top of that source ordering.
 
 Daily question rows in the markdown packet include the same durable row id and
 `dome resolve <id> <value>` hint as `dome check`, so a planning packet can be
@@ -894,9 +897,9 @@ acted on without a separate diagnostic command when the decision is clear.
 markdown packet's SourceRefs section. `--json` emits the structured
 `dome.daily.prep/v1` payload, including `dueCounts`, `shown` / `omitted`
 counts for the bounded start list and action sections, task-derived `dueDate` /
-`priority` metadata, plus the markdown packet under `markdown`. `--date` is
-for prepping a chosen day and for deterministic tests; omitted means local
-today.
+`priority` / `lastChangedAt` metadata, plus the markdown packet under
+`markdown`. `--date` is for prepping a chosen day and for deterministic tests;
+omitted means local today.
 
 ### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 

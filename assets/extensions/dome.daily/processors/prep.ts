@@ -31,7 +31,7 @@ const DEFAULT_LIMIT = 12;
 
 const prep: Processor = defineProcessor({
   id: "dome.daily.prep",
-  version: "0.1.9",
+  version: "0.1.10",
   phase: "view",
   triggers: [{ kind: "command", name: "prep" }],
   capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
@@ -122,6 +122,7 @@ type PrepPlanningItem = {
   readonly automationPolicy?: string;
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
+  readonly lastChangedAt: string | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -167,6 +168,7 @@ function pushTaskItem(
     line: task.line,
     dueDate: task.dueDate,
     priority: task.priority,
+    lastChangedAt: task.lastChangedAt,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
 }
@@ -191,6 +193,7 @@ function pushQuestionItem(
     automationPolicy: question.automationPolicy,
     dueDate: null,
     priority: null,
+    lastChangedAt: question.lastChangedAt,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
 }

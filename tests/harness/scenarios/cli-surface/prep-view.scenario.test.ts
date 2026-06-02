@@ -170,6 +170,7 @@ scenario(
         readonly path: string;
         readonly dueDate: string | null;
         readonly priority: string | null;
+        readonly lastChangedAt: string | null;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly markdown: string;
@@ -232,6 +233,11 @@ scenario(
       null,
       "highest",
     ]);
+    expect(
+      payload.planningItems.every((item) =>
+        typeof item.lastChangedAt === "string"
+      ),
+    ).toBe(true);
     expect(payload.planningItems[0]?.sourceRefs[0]?.path).toBe(
       payload.planningItems[0]?.path,
     );

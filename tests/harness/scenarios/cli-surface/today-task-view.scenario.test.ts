@@ -122,6 +122,7 @@ scenario(
         readonly followup: boolean;
         readonly dueDate: string | null;
         readonly priority: "highest" | "high" | "medium" | "low" | "lowest" | null;
+        readonly lastChangedAt: string | null;
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
       }>;
       readonly followups: ReadonlyArray<{
@@ -201,6 +202,9 @@ scenario(
       "highest",
       null,
     ]);
+    expect(
+      payload.openTasks.every((task) => typeof task.lastChangedAt === "string"),
+    ).toBe(true);
     expect(payload.openTasks.map((task) => task.source)).toEqual([
       "daily",
       "daily",
@@ -353,6 +357,111 @@ scenario(
     expect(limitedText.stdout).not.toContain(
       "Draft project staffing note",
     );
+  },
+);
+
+scenario(
+  {
+    name: "cli-surface: dome today ranks backlog by due proximity and recency",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const oldTimestamp =
+      Date.parse("2026-01-01T09:00:00.000Z") / 1000;
+    const newTimestamp =
+      Date.parse("2026-01-05T09:00:00.000Z") / 1000;
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/old.md": [
+          "# Old Project",
+          "",
+          "TODO: Ancient overdue task 📅 2025-10-20",
+          "TODO: Priority stale task 🔺",
+          "TODO: Old plain backlog",
+          "",
+        ].join("\n"),
+      },
+      message: "add old backlog",
+      author: {
+        name: "dome-test",
+        email: "test@local",
+        timestamp: oldTimestamp,
+      },
+    });
+    const oldSync = await h.tick();
+    expect(oldSync.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/new.md": [
+          "# New Project",
+          "",
+          "TODO: Recent overdue task 📅 2026-01-04",
+          "TODO: Fresh plain backlog",
+          "",
+        ].join("\n"),
+      },
+      message: "add fresh backlog",
+      author: {
+        name: "dome-test",
+        email: "test@local",
+        timestamp: newTimestamp,
+      },
+    });
+    const newSync = await h.tick();
+    expect(newSync.adopted).toBe(true);
+
+    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly lastChangedAt: string | null;
+      }>;
+    };
+
+    expect(payload.openTasks.map((task) => task.text)).toEqual([
+      "Recent overdue task",
+      "Ancient overdue task",
+      "Priority stale task",
+      "Fresh plain backlog",
+      "Old plain backlog",
+    ]);
+    expect(payload.openTasks.map((task) => task.lastChangedAt)).toEqual([
+      "2026-01-05T09:00:00.000Z",
+      "2026-01-01T09:00:00.000Z",
+      "2026-01-01T09:00:00.000Z",
+      "2026-01-05T09:00:00.000Z",
+      "2026-01-01T09:00:00.000Z",
+    ]);
+
+    const limited = await h.runCli([
+      "today",
+      "--date",
+      "2026-01-05",
+      "--limit",
+      "4",
+    ]);
+    expect(limited.exitCode).toBe(0);
+    expect(limited.stdout).toContain("Recent overdue task");
+    expect(limited.stdout).toContain("Ancient overdue task");
+    expect(limited.stdout).toContain("Priority stale task");
+    expect(limited.stdout).toContain("Fresh plain backlog");
+    expect(limited.stdout).not.toContain("Old plain backlog");
   },
 );
 

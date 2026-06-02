@@ -79,6 +79,7 @@ export type DailyTaskItem = {
   readonly followup: boolean;
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
+  readonly lastChangedAt: string | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -99,6 +100,7 @@ export type DailyQuestionItem = {
   readonly path: string;
   readonly line: number | null;
   readonly source: DailyActionSource;
+  readonly lastChangedAt: string | null;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -125,19 +127,43 @@ export async function collectDailyActionState(
   const followupFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: FOLLOWUP_PREDICATE,
   }));
+  const questionEffects = ctx.projection
+    .questions({ resolved: false })
+    .filter((question) => question.idempotencyKey.startsWith("dome.daily."));
+  const sourceLastChangedAt = await sourceLastChangedAtIndex(ctx, [
+    ...openFacts.map(factSourcePath),
+    ...followupFacts.map(factSourcePath),
+    ...questionEffects.map(questionSourcePath),
+  ]);
   const followupKeys = new Set(followupFacts.map(factKey));
   const openTasks = openFacts
     .map((fact) =>
-      taskItemFromFact(fact, followupKeys.has(factKey(fact)), path)
+      taskItemFromFact({
+        fact,
+        followup: followupKeys.has(factKey(fact)),
+        dailyPath: path,
+        sourceLastChangedAt,
+      })
     )
     .sort(compareTaskItemsForDaily(path, settings));
   const followups = followupFacts
-    .map((fact) => taskItemFromFact(fact, true, path))
+    .map((fact) =>
+      taskItemFromFact({
+        fact,
+        followup: true,
+        dailyPath: path,
+        sourceLastChangedAt,
+      })
+    )
     .sort(compareTaskItemsForDaily(path, settings));
-  const questions = ctx.projection
-    .questions({ resolved: false })
-    .filter((question) => question.idempotencyKey.startsWith("dome.daily."))
-    .map((question) => questionItemFromEffect(question, path))
+  const questions = questionEffects
+    .map((question) =>
+      questionItemFromEffect({
+        question,
+        dailyPath: path,
+        sourceLastChangedAt,
+      })
+    )
     .sort(compareQuestionItemsForDaily(path));
   const sourceCounts = countDailyActionSources({
     openTasks,
@@ -258,37 +284,42 @@ function parseDateString(value: string | null): DailyDate | null {
   return isValidDailyDate(parsed) ? parsed : null;
 }
 
-function taskItemFromFact(
-  fact: FactEffect,
-  followup: boolean,
-  dailyPath: string,
-): DailyTaskItem {
+function taskItemFromFact(input: {
+  readonly fact: FactEffect;
+  readonly followup: boolean;
+  readonly dailyPath: string;
+  readonly sourceLastChangedAt: ReadonlyMap<string, string>;
+}): DailyTaskItem {
+  const { fact } = input;
   const ref = fact.sourceRefs[0];
-  const path = ref?.path ?? subjectPath(fact);
+  const path = factSourcePath(fact);
   const rawText = literalToString(fact.object);
   const metadata = taskMetadata(rawText);
   return Object.freeze({
     text: taskDisplayText(rawText),
     path,
     line: ref?.range?.startLine ?? null,
-    source: sourceForPath(path, dailyPath),
-    followup,
+    source: sourceForPath(path, input.dailyPath),
+    followup: input.followup,
     dueDate: metadata.dueDate,
     priority: metadata.priority,
+    lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
     sourceRefs: Object.freeze([...fact.sourceRefs]),
   });
 }
 
-function questionItemFromEffect(
-  question: QuestionEffect & { readonly id?: number },
-  dailyPath: string,
-): DailyQuestionItem {
+function questionItemFromEffect(input: {
+  readonly question: QuestionEffect & { readonly id?: number };
+  readonly dailyPath: string;
+  readonly sourceLastChangedAt: ReadonlyMap<string, string>;
+}): DailyQuestionItem {
+  const { question } = input;
   const ref = question.sourceRefs[0];
   const id = typeof question.id === "number" && Number.isFinite(question.id)
     ? question.id
     : 0;
   const options = Object.freeze([...(question.options ?? [])]);
-  const path = ref?.path ?? "";
+  const path = questionSourcePath(question);
   return Object.freeze({
     id,
     question: question.question,
@@ -298,9 +329,28 @@ function questionItemFromEffect(
     automationPolicy: questionAutomationPolicy(question.metadata),
     path,
     line: ref?.range?.startLine ?? null,
-    source: sourceForPath(path, dailyPath),
+    source: sourceForPath(path, input.dailyPath),
+    lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   });
+}
+
+async function sourceLastChangedAtIndex(
+  ctx: ProcessorContext,
+  paths: ReadonlyArray<string>,
+): Promise<ReadonlyMap<string, string>> {
+  const uniquePaths = [...new Set(paths.filter((path) => path.length > 0))];
+  const entries = await Promise.all(
+    uniquePaths.map(async (path) => {
+      const info = await ctx.snapshot.getFileInfo(path);
+      return [path, info?.lastChangedAt ?? null] as const;
+    }),
+  );
+  return new Map(
+    entries.filter(
+      (entry): entry is readonly [string, string] => entry[1] !== null,
+    ),
+  );
 }
 
 function countDailyActionSources(input: {
@@ -380,6 +430,16 @@ function subjectPath(fact: FactEffect): string {
   return fact.subject.kind === "page" ? fact.subject.path : "";
 }
 
+function factSourcePath(fact: FactEffect): string {
+  return fact.sourceRefs[0]?.path ?? subjectPath(fact);
+}
+
+function questionSourcePath(
+  question: QuestionEffect,
+): string {
+  return question.sourceRefs[0]?.path ?? "";
+}
+
 function factKey(fact: FactEffect): string {
   const ref = fact.sourceRefs[0];
   const object = literalIdentity(fact.object);
@@ -454,7 +514,9 @@ function compareQuestionItemsForDaily(
   return (a, b) => {
     const sourceCmp = pathDailyPriority(a.path, dailyPath) -
       pathDailyPriority(b.path, dailyPath);
-    return sourceCmp === 0 ? compareQuestionItems(a, b) : sourceCmp;
+    if (sourceCmp !== 0) return sourceCmp;
+    const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
+    return changedCmp === 0 ? compareQuestionItems(a, b) : changedCmp;
   };
 }
 
@@ -467,13 +529,30 @@ function compareTaskActionPriority(
   b: DailyTaskItem,
   date: string | null,
 ): number {
-  const bucketCmp = taskActionBucket(a, date) - taskActionBucket(b, date);
+  const bucketA = taskActionBucket(a, date);
+  const bucketB = taskActionBucket(b, date);
+  const bucketCmp = bucketA - bucketB;
   if (bucketCmp !== 0) return bucketCmp;
 
-  const dueCmp = compareOptionalDate(a.dueDate, b.dueDate);
-  if (dueCmp !== 0) return dueCmp;
+  const priorityCmp = taskPriorityRank(a.priority) - taskPriorityRank(b.priority);
+  const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
 
-  return taskPriorityRank(a.priority) - taskPriorityRank(b.priority);
+  if (bucketA === 0) {
+    const dueCmp = compareOptionalDateDesc(a.dueDate, b.dueDate);
+    if (dueCmp !== 0) return dueCmp;
+    if (priorityCmp !== 0) return priorityCmp;
+    return changedCmp;
+  }
+
+  if (bucketA === 2) {
+    const dueCmp = compareOptionalDate(a.dueDate, b.dueDate);
+    if (dueCmp !== 0) return dueCmp;
+    if (priorityCmp !== 0) return priorityCmp;
+    return changedCmp;
+  }
+
+  if (priorityCmp !== 0) return priorityCmp;
+  return changedCmp;
 }
 
 function taskActionBucket(task: DailyTaskItem, date: string | null): number {
@@ -490,6 +569,13 @@ function taskActionBucket(task: DailyTaskItem, date: string | null): number {
 
 function compareOptionalDate(a: string | null, b: string | null): number {
   if (a !== null && b !== null) return a.localeCompare(b);
+  if (a !== null) return -1;
+  if (b !== null) return 1;
+  return 0;
+}
+
+function compareOptionalDateDesc(a: string | null, b: string | null): number {
+  if (a !== null && b !== null) return b.localeCompare(a);
   if (a !== null) return -1;
   if (b !== null) return 1;
   return 0;
