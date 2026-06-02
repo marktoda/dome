@@ -1,5 +1,5 @@
 id: dome.intake
-version: 0.4.6
+version: 0.4.7
 processors:
   - id: dome.intake.capture-index
     version: 0.1.2

@@ -198,7 +198,7 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 
 ```yaml
 id: dome.intake
-version: 0.4.6
+version: 0.4.7
 description: "Compile raw captures into wiki updates."
 
 processors:

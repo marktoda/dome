@@ -5,4 +5,6 @@ extensions:
       intake_items: optional
       intake_pending_items: optional
       processed_from: optional
+      processor: optional
+      extraction_schema: optional
       source_hash: optional

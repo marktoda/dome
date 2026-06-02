@@ -649,3 +649,117 @@ Qualitative read:
 - V1 still is not done. The release-soak report remains `not-ready` with 0
   complete workdays, 0 capture-evidence days, and 0 release blockers because
   elapsed real work-vault usage has not been recorded yet.
+
+## 2026-06-02 First Work-Vault Capture Dogfood Session
+
+Dogfood action:
+
+- Added a controlled raw capture at
+  `inbox/raw/2026-06-02-dome-v1-dogfood-capture.md`.
+- Committed the raw source as `3198f81 Add Dome V1 dogfood capture`.
+- Ran `bin/dome sync --vault ~/vaults/work --json`, which processed the
+  capture through the enabled `dome.intake` bundle.
+- The first digest exposed a real product issue: expected Dome behavior from
+  the capture was misclassified as two follow-ups, and those false follow-ups
+  reached the daily surface.
+- Fixed the SDK in `239435d Preserve explicit intake questions`:
+  - `dome.intake.extract-capture` now asks for `questions:item[]`.
+  - generated capture pages render explicit `## Questions`.
+  - `dome.intake.capture-index` emits `dome.intake.question` facts and
+    source-backed `QuestionEffect`s for explicit capture questions.
+  - generated and archived capture pages record `processor` and
+    `extraction_schema`.
+  - the capture page type declares the new frontmatter fields.
+- Reintroduced the same raw capture as `7388a84 Reprocess Dome V1 dogfood
+  capture` and re-ran sync through the v3 extractor.
+- Answered the resulting agent-safe question through `dome resolve`, recording
+  that this capture is valid first M10 capture evidence but not V1 release
+  completion.
+- Ran `bun run v1:dogfood-snapshot -- --date 2026-06-02 --limit 5`.
+
+Commands run:
+
+- `bin/dome status --vault /Users/mark.toda/vaults/work --json`
+- `bin/dome check --vault /Users/mark.toda/vaults/work --json`
+- `bin/dome today --vault /Users/mark.toda/vaults/work --date 2026-06-02 --json`
+- `bin/dome query --vault /Users/mark.toda/vaults/work "today open loops" --limit 5 --json`
+- `bin/dome export-context --vault /Users/mark.toda/vaults/work "today open loops" --limit 5 --json`
+
+Operational state:
+
+- Work-vault head/adopted: `5716af7` / `5716af7`; sync needed: no.
+- Dirty files: 0 modified, 0 untracked.
+- Operational runs: 0 pending, 0 failed, 0 failed outbox, 0 quarantined.
+- Attention: no; diagnostics: 46 total / 0 attention; questions: 0.
+- `dome.capture.digest`: quiet; diagnostics 0; questions 0; owner-needed 0.
+- `dome.open-loop.continuity`: quiet; diagnostics 0; questions 0.
+- `dome.link-concept.coherence`: drift from 46 known informational
+  diagnostics, all non-attention.
+- `dome.context.packet`: quiet.
+- `dome.question.continuity`: quiet.
+
+Measured daily/context surface:
+
+- Daily note: `notes/2026-06-02.md`; exists: yes.
+- Open tasks: 224 total, 12 daily and 212 backlog.
+- Follow-ups: 1.
+- Questions: 0.
+- First visible tasks after the fix:
+  - Continue the two-work-week M10 dogfood window before calling V1 complete.
+  - Alice 1:1 compensation/promo follow-up.
+  - Danny written follow-up.
+  - Charles Ma routing backfill.
+  - Hayden mandate/comp summary.
+- `export-context "today open loops"` read-first entries start with
+  `notes/2026-06-02.md`, followed by source/entity pages with open-loop
+  evidence.
+
+Capture evidence:
+
+- Raw source path:
+  `inbox/raw/2026-06-02-dome-v1-dogfood-capture.md`.
+- Processed archive:
+  `inbox/processed/2026-06-02-dome-v1-dogfood-capture-108236acd961.md`.
+- Generated intake page:
+  `wiki/generated/intake/2026-06-02-dome-v1-dogfood-capture-108236acd961.md`.
+- Generated capture now includes `extraction_schema:
+  dome.intake.extract-capture/v3`, a `## Questions` section, and no false
+  follow-ups for "produce generated page" / "archive raw material".
+- The explicit capture question was surfaced as an agent-safe question and
+  answered through the normal resolve path.
+
+Qualitative notes:
+
+- Daily note usefulness: Useful as a cockpit and source-backed; after the
+  intake fix it no longer starts with two completed system-behavior follow-ups.
+  It is still noisy at 224 open tasks, so future M10 days should keep watching
+  whether the daily queue feels like a useful work surface or backlog dump.
+- Capture digestion: Useful enough to count as first capture-evidence day. It
+  preserved the raw material, archived to `inbox/processed`, generated a
+  source-backed intake page, exposed an explicit question, and converged after
+  the false-follow-up prompt/schema fix.
+- Open-loop surfacing: The loop successfully raised capture-derived open work
+  into the daily surface. The first run over-surfaced completed system
+  behavior; the v3 reprocess reduced this to the real remaining M10 follow-up.
+- Context packet quality: `export-context "today open loops"` starts with the
+  current daily note and carries the same first visible daily work queue, so it
+  is a usable foreground-agent handoff for this session.
+- Question burden: The only capture question was agent-safe and was answered
+  by the foreground agent through `dome resolve`; Mark did not need to manually
+  answer it.
+- Link/concept hygiene: Remaining 46 diagnostics are known informational
+  backlog, not mysterious engine failure. The temporary `extraction_schema`
+  frontmatter warnings were fixed by updating the intake page type.
+- Friction / manual foreground-agent work Dome should own: The main friction
+  was a prompt/schema gap in capture digestion. Fixing it required SDK work
+  rather than a one-off vault cleanup, which is the right M10 outcome.
+- Lost or overwritten human markdown edits: No lost or overwritten human
+  markdown edits observed.
+- Manual .dome/state edits: None.
+
+Qualitative read:
+
+- This is the first counted capture-digestion dogfood day, not release
+  readiness. It proves the capture loop can run in the work vault, expose a
+  model-quality issue, receive a clean SDK fix, reprocess source-preservingly,
+  and settle with no attention.

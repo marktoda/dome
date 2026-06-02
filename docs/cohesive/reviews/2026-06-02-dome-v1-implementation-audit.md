@@ -464,8 +464,8 @@ Additional M10 audit support:
 Current output:
 
 - `bun run v1:dogfood-report` reports `Status: not-ready`,
-  `Complete workdays: 0/10`, `Capture-evidence days: 0/5`, and
-  `Complete-workday span: 0/12 calendar day(s)`.
+  `Complete workdays: 1/10`, `Capture-evidence days: 1/5`, and
+  `Complete-workday span: 1/12 calendar day(s)`.
 
 Updated assessment:
 
@@ -514,5 +514,34 @@ Updated assessment:
 
 - The work vault is now ready to collect the capture-digestion slice of M10.
 - V1 still should not be marked complete. The remaining gap is elapsed real
-  usage: the dogfood report still shows 0 complete workdays and 0
-  capture-evidence days.
+  usage: the dogfood report still needs 9 more complete workdays, 4 more
+  capture-evidence days, and an 11-day longer complete-workday span.
+
+## 2026-06-02 First Capture Dogfood Addendum
+
+Additional M10 evidence:
+
+- Added and processed
+  `inbox/raw/2026-06-02-dome-v1-dogfood-capture.md` in the work vault.
+- First pass preserved source material and generated digest/archive output, but
+  misclassified expected Dome behavior as follow-ups. Those false follow-ups
+  reached the daily surface, which was a useful M10 product failure.
+- Fixed the issue in `239435d Preserve explicit intake questions` by adding
+  explicit capture question extraction, source-backed `dome.intake.question`
+  facts, durable `QuestionEffect`s for generated capture questions, extractor
+  schema provenance on generated/archive pages, and capture page-type support
+  for the new fields.
+- Reintroduced the same raw capture and reprocessed it through the v3 extractor.
+  The work vault settled at `5716af7` with no attention, no open questions, no
+  failed or pending runs, and 46 known informational diagnostics.
+- The explicit capture question was resolved through `dome resolve` by the
+  foreground agent, without requiring Mark to answer it manually.
+
+Updated assessment:
+
+- This is the first counted capture-digestion dogfood day and a concrete
+  example of M10 doing its job: a real work-vault run exposed a model-quality
+  gap, the fix landed in the SDK rather than as a one-off cleanup, and the
+  vault converged afterward.
+- V1 still should not be marked complete. The report remains `not-ready` at
+  1/10 complete workdays and 1/5 capture-evidence days.
