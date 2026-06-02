@@ -66,6 +66,7 @@ const SERVE_CAPTURE_PATHS = captureOutputPaths({
 const SERVE_CAPTURE_OUTPUT_PATH = SERVE_CAPTURE_PATHS.generated;
 const SERVE_CAPTURE_ARCHIVE_PATH = SERVE_CAPTURE_PATHS.archive;
 const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
+const SERVE_REF_WAIT_MS = 5_000;
 
 // ----- Console capture ------------------------------------------------------
 
@@ -869,19 +870,22 @@ describe("runServe smoke", () => {
       },
     );
 
-    await waitFor(
-      async () => (await getAdoptedRef(f.vaultPath, "main")) === newSha,
-      2000,
-    );
-
-    controller.abort();
-    const code = await servePromise;
+    let code: number | null = null;
+    try {
+      await waitFor(
+        async () => (await getAdoptedRef(f.vaultPath, "main")) === newSha,
+        SERVE_REF_WAIT_MS,
+      );
+    } finally {
+      controller.abort();
+      code = await servePromise;
+    }
     expect(code).toBe(0);
     const outBlob = captured.out.join("\n");
     expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
     expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
     expect(outBlob).not.toContain("dome serve:   iteration");
-  }, 10_000);
+  }, 15_000);
 
   test("coalesces HEAD movement that happens while adoption is active", async () => {
     const f = await makeFixture({

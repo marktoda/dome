@@ -218,7 +218,9 @@ export type ScenarioSpec = {
   readonly skip?: { readonly reason: string };
   /**
    * Optional time budget. The scenario fails if `fn` exceeds this duration
-   * (catches perf regressions). Default: no budget.
+   * (catches perf regressions). Default: the harness-level integration-test
+   * budget, currently 30s. Use an explicit value for intentionally expensive
+   * or intentionally tight scenarios.
    */
   readonly timeoutMs?: number;
 };

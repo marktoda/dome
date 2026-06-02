@@ -20,6 +20,8 @@ import type {
   ScenarioSpec,
 } from "./types";
 
+const DEFAULT_SCENARIO_TIMEOUT_MS = 30_000;
+
 // Module-scoped registry for coverage-matrix verification.
 const SCENARIO_REGISTRY: ScenarioRegistryEntry[] = [];
 
@@ -42,11 +44,7 @@ export function scenario(spec: ScenarioSpec, body: ScenarioBody): void {
     }
   };
 
-  if (spec.timeoutMs !== undefined) {
-    runner(spec.name, handler, spec.timeoutMs);
-  } else {
-    runner(spec.name, handler);
-  }
+  runner(spec.name, handler, spec.timeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS);
 }
 
 /** Read-only access to the registry; consumed by the coverage-matrix meta-test. */
