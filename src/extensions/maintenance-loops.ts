@@ -195,7 +195,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "path", pattern: "notes/*.md" },
         { kind: "command", name: "today" },
         { kind: "command", name: "prep" },
-        { kind: "command", name: "agenda-with" },
+        { kind: "command", name: "agenda" },
         { kind: "command", name: "export-context" },
       ],
       settlement: {

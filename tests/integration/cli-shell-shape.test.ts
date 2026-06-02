@@ -8,21 +8,15 @@ import {
   parseManifest,
   type Manifest,
 } from "../../src/extensions/manifest-schema";
+import {
+  DEDICATED_VIEW_COMMAND_ALIASES,
+} from "../../src/cli/view-command-aliases";
 
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = dirname(dirname(dirname(THIS_FILE)));
 const EXTENSIONS_ROOT = join(REPO_ROOT, "assets", "extensions");
 const CLI_INDEX = join(REPO_ROOT, "src", "cli", "index.ts");
 const CLI_SPEC = join(REPO_ROOT, "docs", "wiki", "specs", "cli.md");
-
-const DEDICATED_COMMAND_ALIASES = new Map<string, string>([
-  ["agenda-with", "agenda"],
-  ["export-context", "export-context"],
-  ["lint", "lint"],
-  ["prep", "prep"],
-  ["query", "query"],
-  ["today", "today"],
-]);
 
 type CommandTrigger = {
   readonly bundleId: string;
@@ -42,10 +36,12 @@ describe("CLI shell shape", () => {
       "expected at least one shipped command-triggered processor",
     ).toBeGreaterThan(0);
 
-    for (const [commandName, alias] of DEDICATED_COMMAND_ALIASES.entries()) {
+    for (
+      const [commandName, alias] of DEDICATED_VIEW_COMMAND_ALIASES.entries()
+    ) {
       expect(
         triggerNames.has(commandName),
-        `DEDICATED_COMMAND_ALIASES contains stale command '${commandName}'`,
+        `DEDICATED_VIEW_COMMAND_ALIASES contains stale command '${commandName}'`,
       ).toBe(true);
       expect(
         cliCommands.has(alias),
@@ -58,7 +54,7 @@ describe("CLI shell shape", () => {
     }
 
     for (const trigger of commandTriggers) {
-      const alias = DEDICATED_COMMAND_ALIASES.get(trigger.commandName);
+      const alias = DEDICATED_VIEW_COMMAND_ALIASES.get(trigger.commandName);
       if (alias !== undefined) continue;
 
       const documentedRunPath = `dome run ${trigger.commandName}`;

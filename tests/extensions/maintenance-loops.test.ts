@@ -7,6 +7,10 @@ import {
   validateMaintenanceLoops,
 } from "../../src/extensions/maintenance-loops";
 import {
+  DEDICATED_VIEW_COMMAND_ALIASES,
+  publicViewCommandName,
+} from "../../src/cli/view-command-aliases";
+import {
   flattenBundleProcessors,
   loadBundles,
 } from "../../src/extensions/loader";
@@ -46,7 +50,7 @@ describe("first-party maintenance loops", () => {
     const commandNames = new Set(
       processors.flatMap((processor) =>
         processor.triggers.flatMap((trigger) =>
-          trigger.kind === "command" ? [trigger.name] : []
+          trigger.kind === "command" ? [publicViewCommandName(trigger.name)] : []
         )
       ),
     );
@@ -253,6 +257,22 @@ describe("first-party maintenance loops", () => {
       loopId: loop.id,
       statusName: "doctor",
     });
+  });
+
+  test("command surfaces use public CLI names instead of internal view triggers", () => {
+    const publicCommands = new Set(
+      [...DEDICATED_VIEW_COMMAND_ALIASES.keys()].map(publicViewCommandName),
+    );
+    const commandSurfaces = FIRST_PARTY_MAINTENANCE_LOOPS.flatMap((loop) =>
+      loop.surfaces.flatMap((surface) =>
+        surface.kind === "command" ? [surface.name] : []
+      )
+    );
+
+    expect(commandSurfaces).not.toContain("agenda-with");
+    for (const command of commandSurfaces) {
+      expect(publicCommands.has(command)).toBe(true);
+    }
   });
 });
 
