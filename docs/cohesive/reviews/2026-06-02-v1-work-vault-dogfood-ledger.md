@@ -509,6 +509,10 @@ Operational result:
   `99fac73`, 0 dirty files, 0 failed runs, 46 informational diagnostics, 0
   questions, the known inactive capture loop, and `notes/2026-06-02.md` as the
   daily surface and first context-packet read-first entry.
+- Follow-up hardening fixed the snapshot date semantics: `--date` now feeds the
+  `dome today --date` call instead of only changing the Markdown heading.
+- `tests/scripts/v1-dogfood-snapshot.test.ts` now covers script help and a
+  disposable-vault end-to-end snapshot through the real process boundary.
 
 Qualitative read:
 

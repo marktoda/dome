@@ -38,6 +38,8 @@ async function main(): Promise<void> {
     "today",
     "--vault",
     opts.vault,
+    "--date",
+    opts.date,
     "--json",
   ]);
   const query = await domeJson<JsonRecord>(commands, [
@@ -345,7 +347,7 @@ function formatCommandArg(value: string): string {
 function parseArgs(args: ReadonlyArray<string>): SnapshotOptions {
   let vault = resolve(homedir(), "vaults", "work");
   let topic = "today open loops";
-  let date = new Date().toISOString().slice(0, 10);
+  let date = localDateString();
   let limit = 8;
 
   for (let i = 0; i < args.length; i += 1) {
@@ -402,6 +404,13 @@ function parsePositiveInteger(value: string, name: string): number {
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function localDateString(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function printHelp(): void {

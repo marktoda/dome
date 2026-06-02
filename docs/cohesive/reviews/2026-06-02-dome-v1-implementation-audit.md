@@ -400,6 +400,10 @@ Additional M10 support:
 - The script intentionally lives under `scripts/` rather than adding another
   product CLI command, preserving the V1 "small CLI, powerful compiler"
   constraint.
+- The script now passes `--date` through to `dome today --date`, so a snapshot
+  for a specific dogfood day measures the same daily surface it labels.
+- `tests/scripts/v1-dogfood-snapshot.test.ts` covers help output and a
+  disposable-vault end-to-end run through the real process boundary.
 - A work-vault run on 2026-06-02 reported synced head/adopted `99fac73`, 0
   dirty files, 0 failed runs, 46 informational diagnostics, 0 questions, and
   the current daily surface as the top daily-intent context packet entry.
