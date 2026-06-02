@@ -414,3 +414,24 @@ Updated assessment:
 - This improves the quality and repeatability of M10 evidence collection.
 - It still does not satisfy M10 by itself. The remaining release-readiness gap
   is elapsed work-vault usefulness across real work sessions.
+
+## 2026-06-02 Networked LLM Smoke Addendum
+
+Latest optional networked evidence:
+
+- `bun run v1:llm-smoke` passed against a disposable vault using the
+  scaffolded Anthropic command provider. It produced one generated intake page,
+  one processed archive, settled with unchanged sync heads, reported 0
+  diagnostics, and preserved 1 low-risk question.
+- `bun run v1:llm-smoke -- --auto-resolve` also passed. It produced the same
+  source-preserving capture outputs, settled with unchanged sync heads,
+  reported 0 diagnostics and 0 questions, and auto-resolved 2 low-risk
+  questions through normal answer handling.
+
+Updated assessment:
+
+- This strengthens M2/M3/M7 evidence for real model invocation, capture
+  digestion, raw preservation, adopted-state recall, settlement, durable
+  uncertainty, and opt-in low-risk auto-resolution.
+- It still does not satisfy M10 because the smoke uses disposable fixtures, not
+  sustained real work-vault usage.

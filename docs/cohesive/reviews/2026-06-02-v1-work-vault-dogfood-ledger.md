@@ -521,3 +521,27 @@ Qualitative read:
   plan requires.
 - This still does not close M10. It records evidence more reliably; it does
   not create elapsed real work-vault usage.
+
+## 2026-06-02 LLM Smoke Refresh
+
+Dogfood action:
+
+- Re-ran the optional networked Anthropic smoke after the V1 gate hardening.
+- Ran both `bun run v1:llm-smoke` and
+  `bun run v1:llm-smoke -- --auto-resolve`.
+
+Operational result:
+
+- Base smoke passed:
+  `v1-llm-smoke: ok | generated wiki/generated/intake/v1-llm-smoke-8935059556ce.md | archive inbox/processed/v1-llm-smoke-8935059556ce.md | sync_heads eae2ad2 -> eae2ad2 | diagnostics 0 | questions 1`.
+- Auto-resolution smoke passed:
+  `v1-llm-smoke: ok | generated wiki/generated/intake/v1-llm-smoke-8935059556ce.md | archive inbox/processed/v1-llm-smoke-8935059556ce.md | sync_heads 60eb567 -> 60eb567 | diagnostics 0 | questions 0 | auto_resolved 2`.
+
+Qualitative read:
+
+- This refreshes the M2/M3/M7 evidence for the real scaffolded Anthropic
+  command-provider path: capture digestion, raw preservation, adopted-state
+  query recall, settlement, durable uncertainty, and opt-in low-risk
+  auto-resolution all work in a disposable vault.
+- This remains controlled networked smoke evidence. It does not replace the
+  M10 requirement for sustained work-vault dogfood with real captures.
