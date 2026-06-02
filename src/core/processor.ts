@@ -119,6 +119,22 @@ export type ExecutionPolicyRequest = {
   readonly modelCallTimeoutMs?: number;
 };
 
+// ----- InspectionScope ------------------------------------------------------
+
+/**
+ * Declares the source scope a processor actually re-inspects when it runs.
+ * Projection cleanup uses this to resolve stale diagnostics/questions/facts
+ * without requiring processors to mutate prior rows.
+ *
+ * Most processors inspect only the readable subset of the current proposal's
+ * changed paths. Whole-vault maintenance checks can opt into all readable
+ * markdown so a newly-created target page can resolve diagnostics anchored in
+ * older source files that did not themselves change.
+ */
+export type InspectionScope =
+  | { readonly kind: "changed-paths" }
+  | { readonly kind: "all-readable-markdown" };
+
 // ----- Signal ---------------------------------------------------------------
 
 /**
@@ -568,6 +584,7 @@ export type Processor<TInput = unknown> = {
   readonly triggers: ReadonlyArray<Trigger>;
   readonly capabilities: ReadonlyArray<Capability>;
   readonly execution?: ExecutionPolicyRequest;
+  readonly inspection?: InspectionScope;
   readonly run: (ctx: ProcessorContext<TInput>) => Promise<ReadonlyArray<Effect>>;
 };
 
@@ -608,6 +625,11 @@ export const ExecutionPolicyRequestSchema = z
     modelCallTimeoutMs: z.number().int().positive().optional(),
   })
   .strict();
+
+export const InspectionScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("changed-paths") }).strict(),
+  z.object({ kind: z.literal("all-readable-markdown") }).strict(),
+]);
 
 export const SignalSchema = z.enum([
   "file.created",

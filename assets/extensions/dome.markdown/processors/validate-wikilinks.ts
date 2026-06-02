@@ -1,7 +1,7 @@
 // dome.markdown.validate-wikilinks — Phase 11d adoption-phase processor.
 //
 // The first first-party adoption-phase processor with real behavior: parses
-// `[[wikilink]]` syntax in changed markdown files. Obvious curated-page typos
+// `[[wikilink]]` syntax in readable markdown files. Obvious curated-page typos
 // are repaired with source-backed PatchEffects; ambiguous close matches on
 // managed pages become source-backed agent-safe questions plus diagnostics;
 // flexible or note-owned links remain DiagnosticEffects. User-owned note drafts
@@ -12,7 +12,7 @@
 //   - Deterministic: same snapshot + input → same effects (the diagnostic
 //     code, message, closest-page hint, and sourceRef are pure functions of
 //     the file content + the candidate snapshot's markdown set).
-//   - Bounded cost: O(changed-files × wikilinks-per-file + tree-size). The
+//   - Bounded cost: O(markdown-files × wikilinks-per-file + tree-size). The
 //     markdown set is materialized once per dispatch via
 //     `ctx.snapshot.listMarkdownFiles()` and reused for every changed file.
 //   - No LLM, no network.
@@ -92,13 +92,13 @@ const validateWikilinks: Processor = defineProcessor({
     const effects: Effect[] = [];
     const stubRequests = new Map<string, StubRequest>();
 
-    // Filter changedPaths to Dome content roots. A vault may grant broad read
+    // Filter all readable markdown to Dome content roots. A vault may grant broad read
     // so links can resolve to historical/external markdown, but that does not
     // mean the validator should lint append-only projections or external
     // design residue during projection rebuilds.
-    const changedMarkdown = ctx.changedPaths.filter(isValidatableMarkdownPath);
+    const inspectedMarkdown = allMarkdownPaths.filter(isValidatableMarkdownPath);
 
-    for (const changedPath of changedMarkdown) {
+    for (const changedPath of inspectedMarkdown) {
       const content = await ctx.snapshot.readFile(changedPath);
       // `null` means the path was deleted in the candidate; skip — there's
       // nothing to parse, and the deleted file doesn't contribute wikilinks.

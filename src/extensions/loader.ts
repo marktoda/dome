@@ -883,6 +883,7 @@ function manifestMetadataKeys(exported: object): ReadonlyArray<string> {
     "triggers",
     "capabilities",
     "execution",
+    "inspection",
   ];
   return keys.filter((key) => hasOwn(exported, key));
 }
@@ -907,6 +908,9 @@ function bindProcessorDeclaration(
     triggers: Object.freeze([...decl.triggers]),
     capabilities: Object.freeze([...decl.capabilities]),
     run: implementation.run,
+    ...(decl.inspection !== undefined
+      ? { inspection: Object.freeze({ ...decl.inspection }) }
+      : {}),
   } satisfies Omit<Processor<unknown>, "execution">;
 
   if (decl.execution === undefined) {

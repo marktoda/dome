@@ -39,10 +39,12 @@ import { err, ok, type Result } from "../types";
 import {
   CapabilitySchema,
   ExecutionPolicyRequestSchema,
+  InspectionScopeSchema,
   ProcessorPhaseSchema,
   TriggerSchema,
   type Capability,
   type ExecutionPolicyRequest,
+  type InspectionScope,
   type ProcessorPhase,
   type Trigger,
 } from "../core/processor";
@@ -74,6 +76,7 @@ export type ProcessorDeclaration = {
   readonly triggers: ReadonlyArray<Trigger>;
   readonly capabilities: ReadonlyArray<Capability>;
   readonly execution?: ExecutionPolicyRequest;
+  readonly inspection?: InspectionScope;
   readonly module: string;
 };
 
@@ -136,6 +139,7 @@ export const ProcessorDeclarationSchema = z
     triggers: z.array(TriggerSchema).min(1),
     capabilities: z.array(CapabilitySchema),
     execution: ExecutionPolicyRequestSchema.optional(),
+    inspection: InspectionScopeSchema.optional(),
     module: z.string().min(1),
   })
   .strict();

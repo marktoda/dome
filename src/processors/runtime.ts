@@ -72,6 +72,7 @@ import { diagnosticEffect } from "../core/effect";
 import type {
   Capability,
   ExtensionConfig,
+  InspectionScope,
   OperationalOutboxStatus,
   OperationalRunStatus,
   OperationalQueryView,
@@ -737,6 +738,7 @@ type DispatchFrame = {
   readonly extensionId: string;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
+  readonly contextChangedPaths: ReadonlyArray<string>;
   readonly inspectedPaths: ReadonlyArray<string>;
   readonly startedAt: Date;
   readonly executionCap?: ExecutionPolicyCap;
@@ -751,7 +753,7 @@ type ExecutionContextBuildResult = {
 export async function dispatchOneProcessor<TEnvelope>(
   opts: DispatchOneProcessorOptions<TEnvelope>,
 ): Promise<RunnerResult> {
-  const frame = beginDispatch(opts);
+  const frame = await beginDispatch(opts);
   const policyResult = resolveDispatchPolicy(frame);
   if (!policyResult.ok) {
     return skipForPolicyDenial(frame, policyResult.error);
@@ -788,13 +790,23 @@ export async function dispatchOneProcessor<TEnvelope>(
 
 // ----- internals ------------------------------------------------------------
 
-function beginDispatch<TEnvelope>(
+async function beginDispatch<TEnvelope>(
   opts: DispatchOneProcessorOptions<TEnvelope>,
-): DispatchFrame {
+): Promise<DispatchFrame> {
   const declared = opts.processor.capabilities;
   const granted = opts.resolveGrants(opts.processor.id);
   const extensionId = opts.extensionIdFor(opts.processor.id);
   const startedAt = opts.now ?? new Date();
+  const contextChangedPaths = Object.freeze(
+    filterReadablePaths(opts.changedPaths, declared, granted),
+  );
+  const inspectedPaths = await resolveInspectionPaths({
+    scope: opts.processor.inspection,
+    snapshot: opts.snapshot,
+    changedPaths: contextChangedPaths,
+    declared,
+    granted,
+  });
   const runId: RunId =
     opts.ledger !== undefined
       ? newRunId(startedAt)
@@ -825,7 +837,8 @@ function beginDispatch<TEnvelope>(
     extensionId,
     declared,
     granted,
-    inspectedPaths: filterReadablePaths(opts.changedPaths, declared, granted),
+    contextChangedPaths,
+    inspectedPaths,
     startedAt,
     ...(opts.executionCap !== undefined
       ? { executionCap: opts.executionCap }
@@ -1005,7 +1018,7 @@ function buildExecutionContext<TEnvelope>(
 
       const ctxInput: ProcessorContextInput<TEnvelope> = {
         snapshot: scopeSnapshotForProcessor(opts.snapshot, frame),
-        changedPaths: frame.inspectedPaths,
+        changedPaths: frame.contextChangedPaths,
         proposal: opts.proposal,
         runId: frame.runId,
         input: scopeEnvelopeForProcessor(opts.envelope, frame),
@@ -1034,6 +1047,23 @@ function buildExecutionContext<TEnvelope>(
     },
     costUsd: () => costUsd,
   });
+}
+
+async function resolveInspectionPaths(opts: {
+  readonly scope: InspectionScope | undefined;
+  readonly snapshot: Snapshot;
+  readonly changedPaths: ReadonlyArray<string>;
+  readonly declared: ReadonlyArray<Capability>;
+  readonly granted: ReadonlyArray<Capability>;
+}): Promise<ReadonlyArray<string>> {
+  switch (opts.scope?.kind ?? "changed-paths") {
+    case "changed-paths":
+      return opts.changedPaths;
+    case "all-readable-markdown": {
+      const paths = await opts.snapshot.listMarkdownFiles();
+      return Object.freeze(filterReadablePaths(paths, opts.declared, opts.granted));
+    }
+  }
 }
 
 function operationalContextField(

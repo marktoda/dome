@@ -78,6 +78,56 @@ scenario(
 
 scenario(
   {
+    name: "convergence: wikilink diagnostics resolve when a missing target page is created",
+    tags: [
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "diagnostic" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "capability", capability: "read" },
+      { kind: "trigger", trigger: "signal" },
+    ],
+    harness: { bundles: ["dome.markdown"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "notes/Bilal.md": "# Bilal\n\nDiscuss with [[Fred Zaw]].\n",
+      },
+      message: "add note link before target exists",
+    });
+
+    const broken = await h.tick();
+    expect(broken.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(1);
+
+    await h.userCommit({
+      files: {
+        "wiki/entities/fred-zaw.md":
+          "---\n" +
+          "type: entity\n" +
+          "---\n" +
+          "# Fred Zaw\n",
+      },
+      message: "create missing target page",
+    });
+
+    const resolved = await h.tick();
+    expect(resolved.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
+  },
+);
+
+scenario(
+  {
     name: "convergence: diagnostics keep one current row when a changed file stays broken",
     tags: [
       { kind: "group", group: "convergence" },

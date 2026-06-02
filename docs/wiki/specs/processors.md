@@ -22,10 +22,15 @@ interface Processor<TInput = unknown> {
   readonly phase: ProcessorPhase;   // "adoption" | "garden" | "view"
   readonly triggers: Trigger[];     // signal / path / schedule / answer / command
   readonly capabilities: Capability[];  // declared in manifest; enforced at effect-emission time
+  readonly inspection?: InspectionScope; // optional stale-projection cleanup scope
   run(ctx: ProcessorContext<TInput>): Promise<Effect[]>;
 }
 
 type ProcessorPhase = "adoption" | "garden" | "view";
+
+type InspectionScope =
+  | { kind: "changed-paths" }
+  | { kind: "all-readable-markdown" };
 
 interface ProcessorContext<TInput = unknown> {
   readonly snapshot: Snapshot;            // immutable tree at the candidate commit
@@ -191,7 +196,7 @@ Every invocation is wrapped by the runtime contract in [[wiki/specs/processor-ex
 
 ## Registration
 
-Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A bundle's `manifest.yaml` owns static metadata: id, version, phase, triggers, capabilities, execution policy, and module path. A bundle's `processors/` directory contains TypeScript files exporting implementation objects with a `run(ctx)` function. The loader binds manifest metadata onto each implementation at `openVault` time.
+Processors register via the extension-bundle mechanism (per [[wiki/specs/sdk-surface]] §"Extension bundles"). A bundle's `manifest.yaml` owns static metadata: id, version, phase, triggers, capabilities, execution policy, inspection scope, and module path. A bundle's `processors/` directory contains TypeScript files exporting implementation objects with a `run(ctx)` function. The loader binds manifest metadata onto each implementation at `openVault` time.
 
 ```ts
 // assets/extensions/dome.intake/processors/extract-capture.ts
@@ -223,6 +228,18 @@ The runtime still dispatches processors by phase and trigger. A loop groups one
 or more processors under a goal, evidence set, surfaces, settlement rule, and
 known risks so status surfaces can explain what background maintenance is
 trying to keep true.
+
+Processors default to `inspection: { kind: "changed-paths" }`: projection
+cleanup resolves stale diagnostics, questions, and page facts only for the
+readable changed paths the processor was asked to inspect. A processor that
+actually walks the whole readable markdown set may declare
+`inspection: { kind: "all-readable-markdown" }` in its manifest. The runtime
+then leaves `ctx.changedPaths` as the real readable delta, but reports every
+readable markdown path as `RunnerResult.inspectedPaths` so stale projection
+rows anchored in unchanged source files can resolve. This is required for
+whole-vault validators such as `dome.markdown.validate-wikilinks`: creating a
+new target page can make an old broken link resolve even though the source note
+did not change.
 
 The V1 first-party loop registry lives in
 `src/extensions/maintenance-loops.ts`. It intentionally does not call
@@ -273,7 +290,7 @@ Every behavior Dome ships out of the box is a first-party extension bundle under
 
 | Bundle | Phase × processors | What it does |
 |---|---|---|
-| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates, raw-immutable; garden: ambiguous-wikilink-answer, repair-wikilinks, simplify-indexes, duplicate-detection-answer, refresh-updated; view: orphan-pages | Keeps markdown pages well-formed; normalizes frontmatter and refreshes managed `updated:` dates during adoption; schedules source-preserving refreshes for stale adopted-state `updated:` drift; emits DiagnosticEffect on ambiguous broken curated-page wikilinks, informational broken note-draft and imported-source body wikilinks, missing local image embeds, informational optional-root unknown page types, informational remaining stale adopted `updated:` dates, frontmatter issues, and raw-file mutations; handles common Obsidian link forms such as heading fragments, self-heading links, unique title-to-slug matches, pathful aliases that uniquely resolve by basename, high-confidence typo repairs during adoption, scheduled high-confidence repairs and canonical target rewrites for historical broken or aliased links, source-backed stub creation for explicit missing `wiki/concepts/...` / `wiki/entities/...` links with no plausible existing target, and small generated child-page blocks in existing wiki indexes; asks agent-safe questions when a broken managed wikilink has multiple plausible existing repair targets and patches the chosen target when that question is answered; asks about high-confidence duplicate canonical content pages and records answered merge decisions as source-preserving duplicate review syntheses; provides the orphan-pages view. |
+| `dome.markdown` | adoption: validate-wikilinks, normalize-frontmatter, lint-frontmatter, broken-images, duplicate-detection, stale-dates, raw-immutable; garden: ambiguous-wikilink-answer, repair-wikilinks, simplify-indexes, duplicate-detection-answer, refresh-updated; view: orphan-pages | Keeps markdown pages well-formed; normalizes frontmatter and refreshes managed `updated:` dates during adoption; schedules source-preserving refreshes for stale adopted-state `updated:` drift; emits DiagnosticEffect on ambiguous broken curated-page wikilinks, informational broken note-draft and imported-source body wikilinks, missing local image embeds, informational optional-root unknown page types, informational remaining stale adopted `updated:` dates, frontmatter issues, and raw-file mutations; handles common Obsidian link forms such as heading fragments, self-heading links, unique title-to-slug matches, pathful aliases that uniquely resolve by basename, high-confidence typo repairs during adoption, scheduled high-confidence repairs and canonical target rewrites for historical broken or aliased links, source-backed stub creation for explicit missing `wiki/concepts/...` / `wiki/entities/...` links with no plausible existing target, and small generated child-page blocks in existing wiki indexes; treats wikilink validation as a full-readable-markdown inspection so new target pages can resolve stale broken-link diagnostics in unchanged source notes; asks agent-safe questions when a broken managed wikilink has multiple plausible existing repair targets and patches the chosen target when that question is answered; asks about high-confidence duplicate canonical content pages and records answered merge decisions as source-preserving duplicate review syntheses; provides the orphan-pages view. |
 | `dome.graph` | adoption: links, tag-index | Emits page facts for wikilinks and tags under the `dome.graph` namespace. |
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantines, and orphaned runs through metadata-annotated QuestionEffect answers. |
 | `dome.daily` | adoption: task-index; garden: create-daily, carry-forward; view: hidden compatibility daily views | Creates daily notes in the V1 work-surface shape, seeds and refreshes a small source-backed `## Start Here` context block from yesterday's daily note, seeds and refreshes a filtered `## Open Loops` block from source-backed loops, targets scheduled/current daily surfaces rather than changed historical daily notes, ranks daily-note source loops by the configured daily date instead of the file's maintenance commit timestamp, folds repeated and near-duplicate open-loop rows in rendered daily surfaces while retaining representative source refs, renders compact evidence labels that show both daily surface rows and backing source locations, preserves settled generated rows as `### Resolved Today` (`[x]`) or `### Dismissed Today` (`[-]`) evidence so completed or dismissed source-backed loops stop resurfacing, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, frontmatter metadata, and blockquoted evidence, treats open generated source-backed rows as the target day's daily surface in compatibility daily views while deduping them against backing facts, gives each extracted open loop a stable semantic SourceRef id so line moves do not create a new open-loop identity, asks agent-safe ambiguous-followup questions, and keeps deterministic daily action/planning views available for tests/debugging while `query` / `export-context` remain the recommended foreground-agent surfaces. The daily surface defaults to `wiki/dailies/{date}.md` and can be moved with `extensions.dome.daily.config.daily_path` such as `notes/{date}.md`. |

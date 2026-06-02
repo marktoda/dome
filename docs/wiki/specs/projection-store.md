@@ -107,6 +107,12 @@ replace page facts on modified/deleted files without giving processors a
 direct delete API. Task and entity fact invalidation is intentionally not
 automatic until those subjects have a stable lifecycle policy.
 
+The re-inspected path set comes from the processor's manifest `inspection`
+scope. The default scope is changed paths. Processors that actually walk the
+whole readable markdown set may declare `all-readable-markdown`, letting
+diagnostic and fact cleanup resolve stale rows anchored in unchanged files when
+another file changes their interpretation.
+
 ### `fts_documents` (FTS5)
 
 Full-text search over markdown bodies, maintained by `dome.search`'s `index-text` adoption-phase processor.
