@@ -22,6 +22,7 @@ import {
   dailyPath,
   dailyStartContextSection,
   localDateParts,
+  openLoopFreshnessKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   previousLocalDate,
@@ -133,7 +134,11 @@ async function collectOpenLoopSourcesForNewDaily(input: {
     ) {
       candidates.push({
         ...item,
-        lastChangedAt: info?.lastChangedAt ?? "",
+        lastChangedAt: openLoopFreshnessKey({
+          path,
+          settings: input.settings,
+          lastChangedAt: info?.lastChangedAt,
+        }),
       });
     }
   }

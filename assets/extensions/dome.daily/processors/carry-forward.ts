@@ -24,6 +24,7 @@ import {
   dailyStartContextSection,
   localDateParts,
   openLoopIdentity,
+  openLoopFreshnessKey,
   openLoopSurfaceKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
@@ -44,7 +45,7 @@ const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.6",
+  version: "0.2.7",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -198,7 +199,11 @@ async function collectOpenLoopSources(input: {
       }
       items.push({
         ...item,
-        lastChangedAt: info?.lastChangedAt ?? "",
+        lastChangedAt: openLoopFreshnessKey({
+          path,
+          settings,
+          lastChangedAt: info?.lastChangedAt,
+        }),
       });
     }
   }

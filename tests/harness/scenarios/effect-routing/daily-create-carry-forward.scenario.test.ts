@@ -441,6 +441,102 @@ extensions:
 
 scenario(
   {
+    name: "effect-routing: dome.daily old daily maintenance touch does not refresh old loops",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      clock: new TestClock("2026-06-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    config:
+      daily_path: notes/{date}.md
+    grant:
+      read: ["notes/*.md"]
+      patch.auto: ["notes/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "notes/2026-06-02.md": [
+          "# 2026-06-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+        "notes/2026-06-01.md": [
+          "# 2026-06-01",
+          "",
+          "## Notes",
+          "",
+          ...Array.from(
+            { length: 12 },
+            (_, index) => `TODO: Current loop ${String(index + 1).padStart(2, "0")}`,
+          ),
+          "",
+        ].join("\n"),
+        "notes/2026-05-28.md": [
+          "# 2026-05-28",
+          "",
+          "## Notes",
+          "",
+          "TODO: Old maintenance loop should not jump the queue",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h
+      .expectFile("notes/2026-06-02.md")
+      .toContain("Current loop 12");
+    await h
+      .expectFile("notes/2026-06-02.md")
+      .toNotContain("Old maintenance loop should not jump the queue");
+
+    await h.userCommit({
+      files: {
+        "notes/2026-05-28.md": [
+          "# 2026-05-28",
+          "",
+          "## Notes",
+          "",
+          "TODO: Old maintenance loop should not jump the queue",
+          "",
+          "Historical prose edited during maintenance.",
+          "",
+        ].join("\n"),
+      },
+      message: "touch old daily note",
+    });
+
+    const afterTouch = await h.tick();
+    expect(afterTouch.adopted).toBe(true);
+    await h
+      .expectFile("notes/2026-06-02.md")
+      .toContain("Current loop 12");
+    await h
+      .expectFile("notes/2026-06-02.md")
+      .toNotContain("Old maintenance loop should not jump the queue");
+  },
+);
+
+scenario(
+  {
     name: "effect-routing: dome.daily checked source-backed open loops stay resolved",
     tags: [
       { kind: "group", group: "effect-kinds" },

@@ -9,6 +9,7 @@ import {
   dailyPathSettings,
   dailyPath,
   openLoopIdentity,
+  openLoopFreshnessKey,
   openLoopStableId,
   openLoopSurfaceSection,
   openLoopSurfaceKey,
@@ -429,6 +430,26 @@ describe("dome.daily shared date helpers", () => {
       "Confirm Q3 plan",
     ]);
     expect(ranked[0]?.sourcePath).toBe("wiki/projects/new.md");
+  });
+
+  test("openLoopFreshnessKey ranks daily notes by daily date", () => {
+    const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
+
+    expect(
+      openLoopFreshnessKey({
+        path: "notes/2026-05-28.md",
+        settings,
+        lastChangedAt: "2026-06-02T16:56:19.000Z",
+      }),
+    ).toBe("2026-05-28T00:00:00.000Z");
+
+    expect(
+      openLoopFreshnessKey({
+        path: "wiki/projects/alpha.md",
+        settings,
+        lastChangedAt: "2026-06-02T16:56:19.000Z",
+      }),
+    ).toBe("2026-06-02T16:56:19.000Z");
   });
 
   test("openLoopSurfaceSources filters unmarked non-daily checklists", () => {

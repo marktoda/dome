@@ -534,6 +534,19 @@ export function rankDailyOpenLoopSurfaceItems(
   return Object.freeze(out);
 }
 
+export function openLoopFreshnessKey(input: {
+  readonly path: string;
+  readonly lastChangedAt: string | null | undefined;
+  readonly settings?: DailyPathSettings;
+}): string {
+  const dailyDate = parseDailyPath(
+    input.path,
+    input.settings ?? DEFAULT_DAILY_PATH_SETTINGS,
+  );
+  if (dailyDate !== null) return `${formatDate(dailyDate)}T00:00:00.000Z`;
+  return input.lastChangedAt ?? "";
+}
+
 export function replaceOpenLoopSurfaceSection(input: {
   readonly content: string;
   readonly section: string | null;

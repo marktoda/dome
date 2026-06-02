@@ -92,7 +92,7 @@ processors:
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.2.6
+    version: 0.2.7
     phase: garden
     triggers:
       - kind: schedule
