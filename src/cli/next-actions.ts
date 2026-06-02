@@ -32,6 +32,7 @@ const CHECK_REASONS = Object.freeze([
   "outbox_failed",
   "quarantined",
 ]);
+const CAPTURE_REASONS = Object.freeze(["capture_loop_inactive"]);
 
 const SYNC_RETRY_REASONS = Object.freeze([
   "compiler_host_busy",
@@ -62,6 +63,13 @@ export function nextActionsForStatus(
     command: "git status --short",
     description:
       "Review draft working-tree changes; commit anything Dome should compile.",
+  });
+  pushAction(out, attention, CAPTURE_REASONS, {
+    command: "dome inspect bundles --json",
+    description:
+      "Raw captures are waiting but the capture digestion loop is inactive " +
+      "or not model-ready; inspect dome.intake, enable it in " +
+      ".dome/config.yaml when ready, commit, then run dome sync --json.",
   });
   const syncReasons = SYNC_REASONS.filter((reason) =>
     attention.includes(reason),

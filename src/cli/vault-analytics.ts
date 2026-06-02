@@ -17,6 +17,7 @@ export type VaultAnalytics = {
   readonly wiki_pages: number;
   readonly notes_pages: number;
   readonly inbox_pages: number;
+  readonly inbox_raw_pages: number;
   readonly wikilinks: number;
   readonly raw_files: number;
   readonly raw_bytes: number;
@@ -35,11 +36,14 @@ type FileTreeStats = {
 export async function collectVaultAnalytics(
   vaultPath: string,
 ): Promise<VaultAnalytics> {
-  const [dirty, wiki, notes, inbox, raw] = await Promise.all([
+  const [dirty, wiki, notes, inbox, inboxRaw, raw] = await Promise.all([
     collectDirtyStats(vaultPath),
     collectMarkdownTreeStats(join(vaultPath, "wiki")),
     collectMarkdownTreeStats(join(vaultPath, "notes")),
     collectMarkdownTreeStats(join(vaultPath, "inbox")),
+    collectMarkdownTreeStats(join(vaultPath, "inbox", "raw"), {
+      recursive: false,
+    }),
     collectFileTreeStats(join(vaultPath, "raw")),
   ]);
 
@@ -50,6 +54,7 @@ export async function collectVaultAnalytics(
     wiki_pages: wiki.files,
     notes_pages: notes.files,
     inbox_pages: inbox.files,
+    inbox_raw_pages: inboxRaw.files,
     wikilinks: wiki.wikilinks + notes.wikilinks + inbox.wikilinks,
     raw_files: raw.files,
     raw_bytes: raw.bytes,
@@ -79,16 +84,18 @@ async function collectDirtyStats(
 
 async function collectMarkdownTreeStats(
   dir: string,
+  opts: { readonly recursive?: boolean } = {},
 ): Promise<MarkdownTreeStats> {
   const entries = await readDirIfPresent(dir);
   if (entries === null) return { files: 0, wikilinks: 0 };
+  const recursive = opts.recursive !== false;
 
   let files = 0;
   let wikilinks = 0;
   for (const entry of entries) {
     const child = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const nested = await collectMarkdownTreeStats(child);
+    if (entry.isDirectory() && recursive) {
+      const nested = await collectMarkdownTreeStats(child, opts);
       files += nested.files;
       wikilinks += nested.wikilinks;
     } else if (entry.isFile() && entry.name.endsWith(".md")) {

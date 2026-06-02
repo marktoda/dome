@@ -27,6 +27,7 @@ const STATUS_KEYS = Object.freeze([
   "wiki_pages",
   "notes_pages",
   "inbox_pages",
+  "inbox_raw_pages",
   "wikilinks",
   "raw_files",
   "raw_bytes",

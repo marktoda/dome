@@ -275,7 +275,7 @@ DOME status
 vault     /Users/mark/vaults/work
 git       branch main | head 41a98c2 | adopted 41a98c2 | sync ok | pending 0
 draft     0 modified | 0 untracked
-content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 | links 8,143 | raw 412 files (2.4 MB)
+content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 (2 raw) | links 8,143 | raw 412 files (2.4 MB)
 engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
 health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
 loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
@@ -292,6 +292,8 @@ loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
   "sync_needed": false,
   "attention_required": true,
   "attention": ["diagnostics"],
+  "inbox_pages": 14,
+  "inbox_raw_pages": 2,
   "next_actions": [
     {
       "reasons": ["diagnostics"],
@@ -449,7 +451,13 @@ reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
-`outbox_pending`, `outbox_failed`, and `quarantined`. The `pending_runs` count
+`outbox_pending`, `outbox_failed`, `quarantined`, and
+`capture_loop_inactive`. `capture_loop_inactive` fires only when top-level
+`inbox/raw/*.md` captures are present and the `dome.capture.digest` loop is
+inactive, partial, or enabled without a configured model provider; its next
+action routes through `dome inspect bundles --json` so a vault-aware agent can
+inspect `dome.intake`, enable it in `.dome/config.yaml` when appropriate,
+commit the config, and run `dome sync --json`. The `pending_runs` count
 is the live queued/running ledger count, while `orphan_runs` is the subset of
 running rows old enough for recovery; transient in-flight view or compiler
 runs remain visible but only `orphan_runs > 0` contributes the `pending_runs`

@@ -25,6 +25,7 @@
 //   - wiki_pages:       markdown pages under wiki/.
 //   - notes_pages:      markdown pages under notes/.
 //   - inbox_pages:      markdown pages under inbox/.
+//   - inbox_raw_pages:  top-level markdown captures under inbox/raw/.
 //   - wikilinks:        total wikilink occurrences in content markdown.
 //   - raw_files:        file count under raw/.
 //   - raw_bytes:        byte count under raw/.
@@ -86,7 +87,10 @@ import {
   type ServeHeartbeatStatus,
 } from "../../engine/compiler-host-heartbeat";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+import {
+  openVaultRuntime,
+  type VaultRuntime,
+} from "../../engine/vault-runtime";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import type { LedgerDb } from "../../ledger/db";
 import {
@@ -177,6 +181,7 @@ type StatusSnapshot = {
   readonly wiki_pages: number;
   readonly notes_pages: number;
   readonly inbox_pages: number;
+  readonly inbox_raw_pages: number;
   readonly wikilinks: number;
   readonly raw_files: number;
   readonly raw_bytes: number;
@@ -338,22 +343,6 @@ export async function runStatus(
     }).length;
     const quarantined =
       runtime.processorRuntime.executionState.quarantines().length;
-
-    const attention = statusAttention({
-      syncNeeded,
-      adoptedDiverged,
-      projectionStale: projection_stale,
-      dirtyModified: analytics.dirty_modified,
-      dirtyUntracked: analytics.dirty_untracked,
-      orphanRuns: orphan_runs,
-      failedRuns: failed_runs,
-      serveStatus: serve.status,
-      diagnostics: attentionDiagnostics,
-      questions,
-      outboxPending: outbox_pending,
-      outboxFailed: outbox_failed,
-      quarantined,
-    });
     const activeProcessorIds = new Set(
       runtime.registry.all().map((processor) => processor.id),
     );
@@ -368,6 +357,27 @@ export async function runStatus(
           processorId,
           limit: LOOP_RECENT_RUN_LIMIT,
         }),
+    });
+    const captureLoopInactive = captureLoopNeedsAttention({
+      inboxRawPages: analytics.inbox_raw_pages,
+      maintenanceLoops: maintenance_loops,
+      intakeModelProviderMissing: intakeModelProviderMissing(runtime),
+    });
+    const attention = statusAttention({
+      syncNeeded,
+      adoptedDiverged,
+      projectionStale: projection_stale,
+      dirtyModified: analytics.dirty_modified,
+      dirtyUntracked: analytics.dirty_untracked,
+      orphanRuns: orphan_runs,
+      failedRuns: failed_runs,
+      serveStatus: serve.status,
+      diagnostics: attentionDiagnostics,
+      questions,
+      outboxPending: outbox_pending,
+      outboxFailed: outbox_failed,
+      quarantined,
+      captureLoopInactive,
     });
 
     const snapshot: StatusSnapshot = {
@@ -389,6 +399,7 @@ export async function runStatus(
       wiki_pages: analytics.wiki_pages,
       notes_pages: analytics.notes_pages,
       inbox_pages: analytics.inbox_pages,
+      inbox_raw_pages: analytics.inbox_raw_pages,
       wikilinks: analytics.wikilinks,
       raw_files: analytics.raw_files,
       raw_bytes: analytics.raw_bytes,
@@ -449,7 +460,7 @@ function printStatusText(s: StatusSnapshot): void {
     `draft     ${s.dirty_modified} modified | ${s.dirty_untracked} untracked`,
   );
   console.log(
-    `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${s.inbox_pages} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
+    `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${formatInboxPages(s)} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
   );
   console.log(
     `engine    last sync ${s.last_sync ?? "(never)"} | pending ${formatPendingRuns(s)} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
@@ -509,6 +520,11 @@ function formatDiagnosticCount(s: StatusSnapshot): string {
   return `${s.diagnostics} (${attention}${unlocated})`;
 }
 
+function formatInboxPages(s: StatusSnapshot): string {
+  if (s.inbox_raw_pages === 0) return String(s.inbox_pages);
+  return `${s.inbox_pages} (${s.inbox_raw_pages} raw)`;
+}
+
 function statusAttention(input: {
   readonly syncNeeded: boolean;
   readonly adoptedDiverged: boolean;
@@ -523,6 +539,7 @@ function statusAttention(input: {
   readonly outboxPending: number;
   readonly outboxFailed: number;
   readonly quarantined: number;
+  readonly captureLoopInactive: boolean;
 }): ReadonlyArray<string> {
   const out: string[] = [];
   if (input.adoptedDiverged) out.push("adopted_ref_diverged");
@@ -538,7 +555,38 @@ function statusAttention(input: {
   if (input.outboxPending > 0) out.push("outbox_pending");
   if (input.outboxFailed > 0) out.push("outbox_failed");
   if (input.quarantined > 0) out.push("quarantined");
+  if (input.captureLoopInactive) out.push("capture_loop_inactive");
   return Object.freeze(out);
+}
+
+function captureLoopNeedsAttention(input: {
+  readonly inboxRawPages: number;
+  readonly maintenanceLoops: ReadonlyArray<MaintenanceLoopSummary>;
+  readonly intakeModelProviderMissing: boolean;
+}): boolean {
+  if (input.inboxRawPages === 0) return false;
+  const captureLoop = input.maintenanceLoops.find((loop) =>
+    loop.id === "dome.capture.digest"
+  );
+  if (captureLoop === undefined) return false;
+  return (
+    captureLoop.state === "inactive" ||
+    captureLoop.state === "partial" ||
+    input.intakeModelProviderMissing
+  );
+}
+
+function intakeModelProviderMissing(runtime: VaultRuntime): boolean {
+  if (runtime.modelProvider !== undefined) return false;
+  return runtime.registry.all().some((processor) =>
+    processor.id.startsWith("dome.intake.") &&
+    processor.capabilities.some((capability) =>
+      capability.kind === "model.invoke"
+    ) &&
+    runtime.resolveGrants(processor.id).some((capability) =>
+      capability.kind === "model.invoke"
+    )
+  );
 }
 
 function formatDiagnosticTopLine(summary: DiagnosticSummary): string {

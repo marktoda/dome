@@ -100,6 +100,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "wiki_pages",
   "notes_pages",
   "inbox_pages",
+  "inbox_raw_pages",
   "wikilinks",
   "raw_files",
   "raw_bytes",
@@ -3075,6 +3076,7 @@ describe("runStatus", () => {
     expect(parsed["wiki_pages"]).toBe(2);
     expect(parsed["notes_pages"]).toBe(0);
     expect(parsed["inbox_pages"]).toBe(0);
+    expect(parsed["inbox_raw_pages"]).toBe(0);
     expect(parsed["wikilinks"]).toBe(0);
     expect(parsed["raw_files"]).toBe(0);
     expect(parsed["raw_bytes"]).toBe(0);
@@ -3120,6 +3122,174 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+  });
+
+  test("--json routes waiting raw captures when intake loop is inactive", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    await mkdir(join(f.vaultPath, "inbox", "raw"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  dome.intake:",
+        "    enabled: false",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      join(f.vaultPath, "inbox", "raw", "day.md"),
+      [
+        "---",
+        "type: source",
+        "---",
+        "",
+        "# Raw day",
+        "",
+        "Captured management note.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "add raw capture with disabled intake",
+      files: [".dome/config.yaml", "inbox/raw/day.md"],
+    });
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+    captured.out = [];
+    captured.err = [];
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["sync_needed"]).toBe(false);
+    expect(parsed["inbox_pages"]).toBe(1);
+    expect(parsed["inbox_raw_pages"]).toBe(1);
+    expect(parsed["attention_required"]).toBe(true);
+    expect(parsed["attention"]).toEqual(["capture_loop_inactive"]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["capture_loop_inactive"],
+        command: "dome inspect bundles --json",
+        description:
+          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.intake, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
+      },
+    ]);
+    const maintenanceLoops =
+      parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
+    expect(maintenanceLoops.find((loop) =>
+      loop["id"] === "dome.capture.digest"
+    )).toEqual(expect.objectContaining({
+      state: "inactive",
+      missing_processors: expect.arrayContaining([
+        "dome.intake.extract-capture",
+      ]),
+    }));
+
+    captured.out = [];
+    captured.err = [];
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    const text = captured.out.join("\n");
+    expect(text).toContain("inbox 1 (1 raw)");
+    expect(text).toContain("dome inspect bundles --json");
+  });
+
+  test("--json routes waiting raw captures before sync when intake lacks a model provider", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    await mkdir(join(f.vaultPath, "inbox", "raw"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  dome.intake:",
+        "    enabled: true",
+        "    grant:",
+        "      read:",
+        "        - \"inbox/**/*.md\"",
+        "        - \"wiki/generated/intake/*.md\"",
+        "        - \"wiki/syntheses/intake-*.md\"",
+        "      patch.auto:",
+        "        - \"wiki/generated/intake/*.md\"",
+        "        - \"wiki/syntheses/intake-*.md\"",
+        "        - \"inbox/processed/*.md\"",
+        "        - \"inbox/raw/*.md\"",
+        "      graph.write: [\"dome.intake.*\"]",
+        "      model.invoke:",
+        "        maxDailyCostUsd: 5",
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      join(f.vaultPath, "inbox", "raw", "day.md"),
+      [
+        "---",
+        "type: source",
+        "---",
+        "",
+        "# Raw day",
+        "",
+        "Captured management note.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "add raw capture without provider",
+      files: [".dome/config.yaml", "inbox/raw/day.md"],
+    });
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["sync_needed"]).toBe(true);
+    expect(parsed["inbox_raw_pages"]).toBe(1);
+    expect(parsed["attention"]).toEqual([
+      "sync_needed",
+      "capture_loop_inactive",
+    ]);
+    expect(parsed["next_actions"]).toEqual([
+      {
+        reasons: ["capture_loop_inactive"],
+        command: "dome inspect bundles --json",
+        description:
+          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.intake, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
+      },
+      {
+        reasons: ["sync_needed"],
+        command: "dome sync --json",
+        description:
+          "Run one compiler tick to adopt pending commits or drain due operational work.",
+      },
+    ]);
+    const maintenanceLoops =
+      parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
+    expect(maintenanceLoops.find((loop) =>
+      loop["id"] === "dome.capture.digest"
+    )).toEqual(expect.objectContaining({
+      state: "quiet",
+      active_processors: expect.arrayContaining([
+        "dome.intake.extract-capture",
+      ]),
+    }));
   });
 
   test("--json keeps transient pending runs observable without routing attention", async () => {
