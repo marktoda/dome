@@ -654,3 +654,22 @@ Updated assessment:
 
 - This does not change engine behavior or add a product command. It strengthens
   the evidence collected by the existing internal snapshot helper.
+
+## 2026-06-02 M10 Preflight Host-Evidence Hardening
+
+Additional M10 preflight hardening:
+
+- Updated `bun run v1:dogfood-preflight` to include a serve-host evidence
+  section in both JSON and Markdown output.
+- The preflight now reports `serve.status`, `serve.pid`, `serve.branch`,
+  `serve.updatedAt`, and host findings. `off`, `stale`, or unknown host states
+  add a next action to start or restart `dome serve` for dogfood sessions.
+- The collection status still depends on operational cleanliness and capture
+  readiness. This preserves explicit `dome sync` catch-up sessions as valid
+  supporting evidence while preventing the M10 "near-continuous" criterion from
+  being hidden.
+
+Updated assessment:
+
+- This makes the next M10 operational action concrete when the vault is
+  otherwise ready but no foreground compiler host is running.

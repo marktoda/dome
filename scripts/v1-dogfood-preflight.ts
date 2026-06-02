@@ -24,6 +24,12 @@ type PreflightReport = {
   readonly vault: string;
   readonly status: "ready" | "not-ready";
   readonly operational: CheckSummary;
+  readonly serve: CheckSummary & {
+    readonly status: string;
+    readonly pid: number | null;
+    readonly branch: string | null;
+    readonly updatedAt: string | null;
+  };
   readonly capture: CheckSummary & {
     readonly intakeStatus: string;
     readonly intakeLoaded: boolean;
@@ -91,6 +97,7 @@ function buildReport(input: {
   readonly release: JsonRecord;
 }): PreflightReport {
   const operational = operationalCheck(input.status);
+  const serve = serveCheck(input.status);
   const capture = captureCheck(input.bundles);
   const releaseBlockers = recordArray(input.release.releaseBlockers);
   const release = {
@@ -100,16 +107,45 @@ function buildReport(input: {
     spanCalendarDays: numberValue(input.release.spanCalendarDays),
     releaseBlockers: releaseBlockers.length,
   };
-  const nextActions = buildNextActions({ operational, capture, release });
+  const nextActions = buildNextActions({ operational, serve, capture, release });
   const ready = operational.ready && capture.ready;
   return {
     vault: input.opts.vault,
     status: ready ? "ready" : "not-ready",
     operational,
+    serve,
     capture,
     release,
     nextActions,
     commands: input.commands.map((command) => command.command),
+  };
+}
+
+function serveCheck(status: JsonRecord): CheckSummary & {
+  readonly status: string;
+  readonly pid: number | null;
+  readonly branch: string | null;
+  readonly updatedAt: string | null;
+} {
+  const serveStatus = stringValue(status.serve_status, "unknown");
+  const findings: string[] = [];
+  if (serveStatus === "off") {
+    findings.push(
+      "dome serve is off; start it during real work sessions for M10 host evidence",
+    );
+  } else if (serveStatus === "stale") {
+    findings.push("dome serve heartbeat is stale; restart the foreground host");
+  } else if (serveStatus !== "running") {
+    findings.push(`dome serve status is ${serveStatus}`);
+  }
+
+  return {
+    ready: findings.length === 0,
+    findings,
+    status: serveStatus,
+    pid: nullableNumber(status.serve_pid),
+    branch: nullableString(status.serve_branch),
+    updatedAt: nullableString(status.serve_updated_at),
   };
 }
 
@@ -189,6 +225,7 @@ function captureCheck(
 
 function buildNextActions(input: {
   readonly operational: CheckSummary;
+  readonly serve: CheckSummary;
   readonly capture: CheckSummary;
   readonly release: PreflightReport["release"];
 }): string[] {
@@ -200,6 +237,9 @@ function buildNextActions(input: {
     actions.push(
       "enable dome.intake with a configured model provider before capture dogfood",
     );
+  }
+  if (!input.serve.ready) {
+    actions.push("start dome serve while dogfooding to collect host evidence");
   }
   if (input.release.status !== "ready") {
     actions.push(
@@ -222,6 +262,14 @@ function renderReport(report: PreflightReport): string {
   lines.push("Operational readiness:");
   lines.push(`- Ready: ${yesNo(report.operational.ready)}`);
   renderFindings(lines, report.operational.findings);
+  lines.push("");
+  lines.push("Serve-host evidence:");
+  lines.push(`- Ready: ${yesNo(report.serve.ready)}`);
+  lines.push(`- Status: ${report.serve.status}`);
+  lines.push(`- Branch: ${report.serve.branch ?? "(none)"}`);
+  lines.push(`- PID: ${report.serve.pid ?? "(none)"}`);
+  lines.push(`- Updated at: ${report.serve.updatedAt ?? "(none)"}`);
+  renderFindings(lines, report.serve.findings);
   lines.push("");
   lines.push("Capture readiness:");
   lines.push(`- Ready: ${yesNo(report.capture.ready)}`);
@@ -350,6 +398,14 @@ function stringValue(value: unknown, fallback: string): string {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 function yesNo(value: boolean): string {

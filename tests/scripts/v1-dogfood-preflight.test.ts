@@ -44,6 +44,11 @@ describe("v1 dogfood preflight script", () => {
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.operational.ready).toBe(true);
+    expect(report.serve.ready).toBe(false);
+    expect(report.serve.status).toBe("off");
+    expect(report.serve.findings).toContain(
+      "dome serve is off; start it during real work sessions for M10 host evidence",
+    );
     expect(report.capture.ready).toBe(false);
     expect(report.capture.intakeStatus).toBe("disabled");
     expect(report.capture.modelStatus).toBe("disabled-provider-configured");
@@ -51,6 +56,9 @@ describe("v1 dogfood preflight script", () => {
     expect(report.release.status).toBe("not-ready");
     expect(report.nextActions).toContain(
       "enable dome.intake with a configured model provider before capture dogfood",
+    );
+    expect(report.nextActions).toContain(
+      "start dome serve while dogfooding to collect host evidence",
     );
   }, { timeout: 30_000 });
 
@@ -70,6 +78,8 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain("# V1 M10 Dogfood Preflight");
     expect(result.stdout).toContain("Collection status: not-ready");
     expect(result.stdout).toContain("Operational readiness:");
+    expect(result.stdout).toContain("Serve-host evidence:");
+    expect(result.stdout).toContain("- Status: off");
     expect(result.stdout).toContain("Capture readiness:");
     expect(result.stdout).toContain("Release-soak report:");
     expect(result.stdout).toContain("Next actions:");
