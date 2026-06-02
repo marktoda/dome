@@ -134,6 +134,7 @@ describe("runCli", () => {
         "bundles",
         "processors",
         "runs",
+        "patches",
         "facts",
         "diagnostics",
         "questions",

@@ -8,6 +8,7 @@
 // v1.0 ships subjects backed by existing runtime/query surfaces:
 //
 //   - `runs`        → `queryRuns(ledger, { limit })`
+//   - `patches`     → `queryPatchRecords(ledger, { limit })`
 //   - `facts`       → `queryFactRecords(projection)`
 //   - `diagnostics` → `queryDiagnostics(projection)`
 //   - `questions`   → `queryQuestionRecords(projection)`
@@ -33,6 +34,8 @@
 //   - `--model` filters the bounded bundle/processor metadata surfaces to
 //     model-capable entries, so a vault can answer "which automations can use
 //     an LLM?" without scanning the full table by hand.
+//   - `--processor` filters diagnostics and patch provenance because those
+//     subjects are processor-attributed operational rows.
 //
 // Renamed from the pre-recut `dome doctor --show <subject>` in the v1.0
 // CLI surface recut (per cli.md §"dome inspect"). The previous
@@ -57,6 +60,7 @@ import {
   type BundleManifestSummary,
   type LoadBundlesError,
 } from "../../extensions/loader";
+import { queryPatchRecords } from "../../ledger/capability-uses";
 import { queryRuns } from "../../ledger/runs";
 import {
   queryDiagnostics,
@@ -87,6 +91,7 @@ const VALID_SUBJECTS = new Set<string>([
   "bundles",
   "processors",
   "runs",
+  "patches",
   "facts",
   "diagnostics",
   "questions",
@@ -131,13 +136,13 @@ export async function runInspect(
   const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome inspect: subject is required. Subjects: bundles, processors, runs, facts, diagnostics, questions, outbox, quarantine.",
+      "dome inspect: subject is required. Subjects: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, facts, diagnostics, questions, outbox, quarantine.`,
+      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine.`,
     );
     return 64;
   }
@@ -211,6 +216,7 @@ export async function runInspect(
         modelOnly: options.model === true,
         diagnosticOptions: diagnosticOptions.value,
         factOptions: factOptions.value,
+        processorFilter: options.processor,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -277,6 +283,7 @@ function collectInspectResult(opts: {
   readonly modelOnly: boolean;
   readonly diagnosticOptions: ParsedDiagnosticOptions | null;
   readonly factOptions: FactRecordFilter | null;
+  readonly processorFilter: string | undefined;
 }): InspectResult {
   if (
     opts.subject === "diagnostics" &&
@@ -301,6 +308,7 @@ function collectInspectResult(opts: {
       opts.modelOnly,
       opts.diagnosticOptions,
       opts.factOptions,
+      opts.processorFilter,
     ),
   };
 }
@@ -313,6 +321,7 @@ function collectRows(
   modelOnly: boolean,
   diagnosticOptions: ParsedDiagnosticOptions | null,
   factOptions: FactRecordFilter | null,
+  processorFilter: string | undefined,
 ): ReadonlyArray<Row> {
   switch (subject) {
     case "bundles": {
@@ -356,6 +365,30 @@ function collectRows(
         started_at: r.startedAt,
         duration_ms: r.durationMs,
         proposal: r.proposalId,
+      }));
+    }
+    case "patches": {
+      const patches = queryPatchRecords(runtime.ledgerDb, {
+        limit,
+        ...(processorFilter !== undefined
+          ? { processorId: processorFilter }
+          : {}),
+      });
+      return patches.map((patch) => ({
+        id: patch.id,
+        run: patch.runId,
+        processor: patch.processorId,
+        phase: patch.phase,
+        status: patch.status,
+        capability: patch.capability,
+        outcome: patch.outcome,
+        paths: patch.resource ?? "-",
+        input: shortOid(patch.inputCommit),
+        output: patch.outputCommit === null ? "-" : shortOid(patch.outputCommit),
+        effect_hashes: patch.effectHashes.length,
+        started_at: patch.startedAt,
+        finished_at: patch.finishedAt ?? "-",
+        recorded_at: patch.recordedAt,
       }));
     }
     case "facts": {
@@ -488,20 +521,35 @@ function parseDiagnosticOptions(opts: {
   readonly code?: string;
   readonly processor?: string;
 }): ParseDiagnosticOptionsResult {
-  const hasDiagnosticOption =
+  const hasDiagnosticOnlyOption =
     opts.summary === true ||
     opts.severity !== undefined ||
-    opts.code !== undefined ||
-    opts.processor !== undefined;
+    opts.code !== undefined;
+  const hasDiagnosticOption =
+    hasDiagnosticOnlyOption || opts.processor !== undefined;
   if (!hasDiagnosticOption) {
     return { ok: true, value: null };
   }
-  if (opts.subject !== "diagnostics") {
+  if (hasDiagnosticOnlyOption && opts.subject !== "diagnostics") {
     return {
       ok: false,
       message:
-        "dome inspect: --summary, --severity, --code, and --processor are only valid for the diagnostics subject.",
+        "dome inspect: --summary, --severity, and --code are only valid for the diagnostics subject.",
     };
+  }
+  if (
+    opts.processor !== undefined &&
+    opts.subject !== "diagnostics" &&
+    opts.subject !== "patches"
+  ) {
+    return {
+      ok: false,
+      message:
+        "dome inspect: --processor is only valid for the diagnostics and patches subjects.",
+    };
+  }
+  if (opts.subject !== "diagnostics") {
+    return { ok: true, value: null };
   }
 
   let severity: DiagnosticSeverity | undefined;
@@ -609,6 +657,10 @@ function formatFactObject(object: FactEffect["object"]): string {
   if (object.kind === "number") return String(object.value);
   if (object.kind === "date") return object.value;
   return formatNodeRef(object);
+}
+
+function shortOid(oid: string): string {
+  return oid.slice(0, 12);
 }
 
 async function collectBundleManifestInventory(

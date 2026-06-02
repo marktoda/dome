@@ -71,6 +71,29 @@ export type CapabilityUseRow = {
   readonly recordedAt: string;
 };
 
+export type PatchRecordFilter = {
+  readonly processorId?: string;
+  readonly limit?: number;
+};
+
+export type PatchRecord = {
+  readonly id: number;
+  readonly runId: RunId;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly phase: string;
+  readonly status: string;
+  readonly capability: string;
+  readonly resource: string | null;
+  readonly outcome: CapabilityOutcome;
+  readonly inputCommit: string;
+  readonly outputCommit: string | null;
+  readonly effectHashes: ReadonlyArray<string>;
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
+  readonly recordedAt: string;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_CAPABILITY_USE_SQL = `
@@ -86,6 +109,28 @@ WHERE run_id = ?
 ORDER BY id
 `.trim();
 
+const SELECT_PATCH_RECORDS_BASE_SQL = `
+SELECT
+  capability_uses.id,
+  capability_uses.run_id,
+  capability_uses.capability,
+  capability_uses.resource,
+  capability_uses.outcome,
+  capability_uses.recorded_at,
+  runs.processor_id,
+  runs.processor_version,
+  runs.phase,
+  runs.status,
+  runs.input_commit,
+  runs.output_commit,
+  runs.effect_hashes_json,
+  runs.started_at,
+  runs.finished_at
+FROM capability_uses
+JOIN runs ON runs.id = capability_uses.run_id
+WHERE capability_uses.capability IN ('patch.auto', 'patch.propose')
+`.trim();
+
 // ----- Raw row shape --------------------------------------------------------
 
 type CapabilityUseRawRow = {
@@ -95,6 +140,18 @@ type CapabilityUseRawRow = {
   readonly resource: string | null;
   readonly outcome: string;
   readonly recorded_at: string;
+};
+
+type PatchRecordRawRow = CapabilityUseRawRow & {
+  readonly processor_id: string;
+  readonly processor_version: string;
+  readonly phase: string;
+  readonly status: string;
+  readonly input_commit: string;
+  readonly output_commit: string | null;
+  readonly effect_hashes_json: string;
+  readonly started_at: string;
+  readonly finished_at: string | null;
 };
 
 // ----- Public functions -----------------------------------------------------
@@ -138,6 +195,31 @@ export function capabilityUsesByRun(
   return Object.freeze(rows.map(rowToCapabilityUseRow));
 }
 
+/**
+ * Read patch-attempt provenance by joining capability-use audit rows back to
+ * their processor runs. This is intentionally a derived inspection surface:
+ * the source of truth remains the run ledger plus git engine trailers.
+ */
+export function queryPatchRecords(
+  db: LedgerDb,
+  filter?: PatchRecordFilter,
+): ReadonlyArray<PatchRecord> {
+  const clauses: string[] = [];
+  const params: string[] = [];
+
+  if (filter?.processorId !== undefined) {
+    clauses.push("runs.processor_id = ?");
+    params.push(filter.processorId);
+  }
+
+  const where = clauses.length === 0 ? "" : ` AND ${clauses.join(" AND ")}`;
+  const limitClause =
+    filter?.limit !== undefined ? ` LIMIT ${Math.floor(filter.limit)}` : "";
+  const sql = `${SELECT_PATCH_RECORDS_BASE_SQL}${where} ORDER BY capability_uses.recorded_at DESC, capability_uses.id DESC${limitClause}`;
+  const rows = db.raw.query<PatchRecordRawRow, string[]>(sql).all(...params);
+  return Object.freeze(rows.map(rowToPatchRecord));
+}
+
 // ----- internals ------------------------------------------------------------
 
 function rowToCapabilityUseRow(row: CapabilityUseRawRow): CapabilityUseRow {
@@ -147,6 +229,28 @@ function rowToCapabilityUseRow(row: CapabilityUseRawRow): CapabilityUseRow {
     capability: row.capability,
     resource: row.resource,
     outcome: narrowOutcome(row.outcome),
+    recordedAt: row.recorded_at,
+  });
+}
+
+function rowToPatchRecord(row: PatchRecordRawRow): PatchRecord {
+  return Object.freeze({
+    id: row.id,
+    runId: row.run_id as RunId,
+    processorId: row.processor_id,
+    processorVersion: row.processor_version,
+    phase: row.phase,
+    status: row.status,
+    capability: row.capability,
+    resource: row.resource,
+    outcome: narrowOutcome(row.outcome),
+    inputCommit: row.input_commit,
+    outputCommit: row.output_commit,
+    effectHashes: Object.freeze(
+      JSON.parse(row.effect_hashes_json) as ReadonlyArray<string>,
+    ),
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
     recordedAt: row.recorded_at,
   });
 }

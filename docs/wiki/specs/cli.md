@@ -48,8 +48,8 @@ dome inspect <subject> [--limit <n>] [--json]
              [--predicate <predicate>] [--subject-kind <kind>] [--subject-id <id>]
                                 Read-only view over the operational substrate.
                                 Subjects: bundles, processors, runs,
-                                facts, diagnostics, questions, outbox,
-                                quarantine.
+                                patches, facts, diagnostics, questions,
+                                outbox, quarantine.
 dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
                                 Advanced engine-substrate health checks;
                                 --repair is reserved for answer-mediated mitigations.
@@ -894,6 +894,12 @@ Subjects (v1.0):
   and model status (`none`, `declared-ungranted`, `granted-no-provider`, or
   `ready`).
 - `runs` — recent processor runs from `runs.db`.
+- `patches` — patch capability-use rows joined to their processor run,
+  including run id, processor id, phase/status, patch capability, outcome,
+  touched path resources, input/output commits, effect-hash count, and
+  timestamps. This is the direct provenance path for generated markdown
+  changes: git trailers remain the durable commit surface, and the ledger
+  gives the processor/run/capability side of the audit.
 - `facts` — current fact rows from `projection.db.facts`, including subject,
   predicate, object, assertion/confidence, emitting processor id, adopted commit,
   written timestamp, and compact SourceRef locations. This is the direct
@@ -922,8 +928,11 @@ For noisy real vaults, `dome inspect diagnostics` also accepts
 `--processor <id>`. `--summary` groups unresolved diagnostics by
 severity/code and includes the first message and SourceRef example for each
 group; `--limit` caps groups in summary mode. The filter flags apply to both
-row and summary output. They are diagnostic-only flags so `dome inspect runs
---summary` is a usage error rather than a silently ignored option.
+row and summary output. `--summary`, `--severity`, and `--code` are
+diagnostic-only flags so `dome inspect runs --summary` is a usage error rather
+than a silently ignored option. `--processor <id>` is also valid for
+`dome inspect patches`, where it filters generated patch provenance by emitting
+processor.
 `dome inspect facts` accepts `--predicate <predicate>` plus
 `--subject-kind <page|task|entity>` and `--subject-id <id>` when a caller wants
 to inspect facts for a specific page, task, or entity. `--subject-kind` and

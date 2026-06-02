@@ -1159,6 +1159,79 @@ describe("runInspect", () => {
     expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
   });
 
+  test("subject 'patches' exposes generated markdown change provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    await writeFile(
+      join(f.vaultPath, "wiki/messy.md"),
+      "---\nid: messy\ntype: page\n---\n# Messy\n",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "add messy frontmatter\n",
+      files: ["wiki/messy.md"],
+    });
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "patches",
+        vault: f.vaultPath,
+        processor: "dome.markdown.normalize-frontmatter",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly run: string;
+      readonly processor: string;
+      readonly phase: string;
+      readonly status: string;
+      readonly capability: string;
+      readonly outcome: string;
+      readonly paths: string;
+      readonly input: string;
+      readonly output: string;
+      readonly effect_hashes: number;
+    }>;
+    const messyPatch = rows.find((row) => row.paths === "wiki/messy.md");
+    expect(messyPatch).toBeDefined();
+    expect(messyPatch).toEqual(
+      expect.objectContaining({
+        processor: "dome.markdown.normalize-frontmatter",
+        phase: "adoption",
+        status: "succeeded",
+        capability: "patch.auto",
+        outcome: "allowed",
+        paths: "wiki/messy.md",
+        effect_hashes: 1,
+      }),
+    );
+    expect(messyPatch?.id).toBeGreaterThan(0);
+    expect(messyPatch?.run).toMatch(/^run_/);
+    expect(messyPatch?.input).toMatch(/^[0-9a-f]{12}$/);
+    expect(messyPatch?.output).toMatch(/^[0-9a-f]{12}$/);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "patches",
+        vault: f.vaultPath,
+        processor: "dome.nope",
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+  });
+
   test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
     const f = await makeFixture();
     fixtures.push(f);
@@ -1652,6 +1725,18 @@ describe("runInspect", () => {
     ).toBe(64);
     expect(captured.err.join("\n")).toContain(
       "only valid for the diagnostics subject",
+    );
+
+    captured.err = [];
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        processor: "dome.markdown.normalize-frontmatter",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--processor is only valid for the diagnostics and patches subjects",
     );
   });
 

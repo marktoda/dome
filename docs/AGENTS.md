@@ -49,8 +49,8 @@ Advanced/debug commands:
   `dome run`, and `dome rebuild` remain available for debugging,
   compatibility, and extension development, but they are not the normal Claude
   Code workflow.
-- Useful inspect subjects are `bundles`, `processors`, `runs`, `facts`,
-  `diagnostics`, `questions`, `outbox`, and `quarantine`.
+- Useful inspect subjects are `bundles`, `processors`, `runs`, `patches`,
+  `facts`, `diagnostics`, `questions`, `outbox`, and `quarantine`.
 
 Do not call Dome after every edit. Dome works at the git commit boundary.
 

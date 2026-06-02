@@ -150,13 +150,13 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Read operational substrate rows.")
     .argument(
       "<subject>",
-      "bundles, processors, runs, facts, diagnostics, questions, outbox, or quarantine.",
+      "bundles, processors, runs, patches, facts, diagnostics, questions, outbox, or quarantine.",
     )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
     .option("--summary", "Group diagnostics by severity and code.")
     .option("--severity <level>", "Filter diagnostics by severity.")
     .option("--code <code>", "Filter diagnostics by code.")
-    .option("--processor <id>", "Filter diagnostics by processor id.")
+    .option("--processor <id>", "Filter diagnostics or patches by processor id.")
     .option("--predicate <predicate>", "Filter facts by predicate.")
     .option("--subject-kind <kind>", "Filter facts by subject kind.")
     .option("--subject-id <id>", "Filter facts by subject id.")
