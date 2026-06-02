@@ -36,7 +36,7 @@ describe("v1 dogfood report script", () => {
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the prepared daily note and picked the next task.
@@ -107,7 +107,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -194,7 +194,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -240,7 +240,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -287,7 +287,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - Did not run \`bin/dome status --vault ~/vaults/work --json\`; ran \`bin/dome query --vault ~/vaults/work "today open loops" --json\`.
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -375,7 +375,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: TODO
@@ -393,7 +393,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -450,7 +450,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -540,7 +540,7 @@ Qualitative notes to fill after the work session:
 
 Operational state:
 - Did not run \`bin/dome query --vault ~/vaults/work "today open loops" --json\` today.
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -621,7 +621,7 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].serveHostEvidence).toBe(false);
   });
 
-  test("requires measured branch and pid details for serve-host evidence", async () => {
+  test("requires measured updated heartbeat details for serve-host evidence", async () => {
     const ledger = writeLedger(`
 # Test ledger
 
@@ -630,7 +630,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running
+- Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -673,7 +673,7 @@ Qualitative notes to fill after the work session:
 ## 2026-06-01 Work Session
 
 Operational state:
-- Verified \`bin/dome status --vault ~/vaults/work --json\` reported \`serve_status: running\`, \`serve_pid: 123\`, and \`serve_branch: main\`.
+- Verified \`bin/dome status --vault ~/vaults/work --json\` reported \`serve_status: running\`, \`serve_pid: 123\`, \`serve_branch: main\`, and \`serve_updated_at: 2026-06-01T12:00:00.000Z\`.
 - Ran \`bin/dome query --vault ~/vaults/work "today open loops" --json\`.
 
 Qualitative notes to fill after the work session:
@@ -898,7 +898,7 @@ ${completeDay("2026-02-31")}
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -949,7 +949,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -996,7 +996,7 @@ Qualitative notes to fill after the work session:
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.
@@ -1104,7 +1104,7 @@ function completeDay(
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
 - \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
-- Serve host: running; branch main; pid 123
+- Serve host: running; branch main; pid 123; updated 2026-06-01T12:00:00.000Z
 
 Qualitative notes to fill after the work session:
 - Daily note usefulness: Started from the daily surface.

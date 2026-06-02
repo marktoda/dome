@@ -200,6 +200,11 @@ const serveHostPidEvidencePatterns: readonly RegExp[] = Object.freeze([
   /`?["']?serve_pid["']?`?\s*:\s*["']?\d+["']?/i,
 ]);
 
+const serveHostUpdatedEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\b(?:heartbeat\s+)?updated\b/i,
+  /`?["']?serve_updated_at["']?`?\s*:\s*["']?[^"',;\s}]+["']?/i,
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -580,7 +585,8 @@ function hasServeHostEvidence(text: string): boolean {
 function hasMeasuredServeHostDetails(line: string): boolean {
   return (
     serveHostBranchEvidencePatterns.some((pattern) => pattern.test(line)) &&
-    serveHostPidEvidencePatterns.some((pattern) => pattern.test(line))
+    serveHostPidEvidencePatterns.some((pattern) => pattern.test(line)) &&
+    serveHostUpdatedEvidencePatterns.some((pattern) => pattern.test(line))
   );
 }
 

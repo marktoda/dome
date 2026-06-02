@@ -1529,18 +1529,22 @@ Verification action:
 
 - Re-audited the M10 report host-evidence parser after confirming the real
   dogfood snapshot emits measured heartbeat details.
-- Found one remaining overclaim path: a hand-written bare `Serve host: running`
-  line counted as serve-host evidence even without branch or PID details.
+- Found remaining overclaim paths: a hand-written bare `Serve host: running`
+  line counted as serve-host evidence, and branch/PID-only host notes still did
+  not prove the heartbeat had been refreshed during the session.
 - Tightened `bun run v1:dogfood-report` so host evidence requires both a
-  running host signal and measured branch/PID details on the evidence line.
+  running host signal and measured branch, PID, and heartbeat-updated details
+  on the evidence line.
   This matches the `v1:dogfood-snapshot` output and `dome status --json`
   fields while still accepting verified backticked status snippets such as
-  `serve_status: running`, `serve_pid: 123`, and `serve_branch: main`.
+  `serve_status: running`, `serve_pid: 123`, `serve_branch: main`, and
+  `serve_updated_at: 2026-06-01T12:00:00.000Z`.
 
 Measured result:
 
-- Added a regression where an otherwise complete day with only
-  `Serve host: running` remains partial with 0 serve-host evidence days.
+- Added a regression where an otherwise complete day with running/branch/PID
+  host details but no heartbeat-updated evidence remains partial with 0
+  serve-host evidence days.
 - `bun test tests/scripts/v1-dogfood-report.test.ts` passed with 25 tests and
   183 assertions.
 - `bun run v1:dogfood-report -- --json` still reports the current work-vault
