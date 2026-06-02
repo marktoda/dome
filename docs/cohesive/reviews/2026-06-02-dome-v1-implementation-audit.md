@@ -274,12 +274,14 @@ Evidence:
 
 - The code has been smoked against `docs/` and `~/vaults/work`.
 - The harness suite covers the core behavior expected from the soak.
+- `docs/cohesive/reviews/2026-06-02-v1-work-vault-dogfood-ledger.md` starts
+  the durable work-vault dogfood record with a 2026-06-02 baseline.
 
 Missing:
 
 - Two real work weeks of continuous or near-continuous work-vault use.
-- Durable notes on daily note usefulness, capture quality, open-loop surfacing,
-  context packet quality, question burden, and high-friction fixes.
+- Continued daily notes on daily note usefulness, capture quality, open-loop
+  surfacing, context packet quality, question burden, and high-friction fixes.
 - Concrete examples where foreground agents used Dome context packets or query
   surfaces successfully in real work.
 
@@ -298,7 +300,7 @@ Recommended next steps:
    and `git diff --check`.
 2. Smoke `~/vaults/work` with `sync`, `status`, `check`, `today`, `query`, and
    `export-context`.
-3. Start a small dogfood ledger for M10 with one entry per workday covering:
+3. Continue the M10 dogfood ledger with one entry per workday covering:
    daily note usefulness, capture digestion, surfaced open loops, packet/query
    quality, question burden, and any manual Claude Code maintenance Dome should
    have handled.
