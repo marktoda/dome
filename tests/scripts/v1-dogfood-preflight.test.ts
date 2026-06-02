@@ -51,6 +51,15 @@ describe("v1 dogfood preflight script", () => {
     const report = JSON.parse(result.stdout);
     expect(report.status).toBe("not-ready");
     expect(report.ledger).toBe(ledgerPath);
+    expect(report.sessionEvidence.serveCommand).toEqual([
+      "bin/dome",
+      "serve",
+      "--vault",
+      vaultPath,
+      "--quiet",
+      "--poll-interval-ms",
+      "1000",
+    ]);
     expect(report.sessionEvidence.snapshotCommand).toEqual([
       "bun",
       "run",
@@ -88,9 +97,12 @@ describe("v1 dogfood preflight script", () => {
     expect(report.nextActions).toContain(
       "enable dome.intake with a configured model provider before capture dogfood",
     );
-    expect(report.nextActions).toContain(
-      "start dome serve while dogfooding to collect host evidence",
-    );
+    expect(
+      report.nextActions.some((action: string) =>
+        action.includes("start dome serve while dogfooding") &&
+        action.includes("bin/dome serve --vault")
+      ),
+    ).toBe(true);
     expect(report.nextActions).toContain(
       "collect 9 more complete M10 workday(s) (1/10)",
     );
@@ -116,9 +128,12 @@ describe("v1 dogfood preflight script", () => {
     expect(report.capture.ready).toBe(true);
     expect(report.serve.ready).toBe(false);
     expect(report.serve.status).toBe("off");
-    expect(report.nextActions).toContain(
-      "start dome serve while dogfooding to collect host evidence",
-    );
+    expect(
+      report.nextActions.some((action: string) =>
+        action.includes("start dome serve while dogfooding") &&
+        action.includes("bin/dome serve --vault")
+      ),
+    ).toBe(true);
   }, { timeout: 30_000 });
 
   test("--require-ready exits nonzero when collection readiness fails", async () => {
@@ -161,6 +176,8 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Collection status: ready");
     expect(result.stdout).toContain("Session evidence:");
+    expect(result.stdout).toContain("Serve command:");
+    expect(result.stdout).toContain("bin/dome serve --vault");
     expect(result.stdout).toContain("Snapshot command:");
     expect(result.stdout).toContain("bun run v1:dogfood-snapshot");
     expect(result.stdout).toContain(`>> ${ledgerPath}`);
@@ -259,6 +276,8 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain(
       "collect 9 more complete M10 workday(s) (1/10)",
     );
+    expect(result.stdout).toContain("Serve command:");
+    expect(result.stdout).toContain("bin/dome serve --vault");
     expect(result.stdout).toContain("Commands run:");
   }, { timeout: 30_000 });
 });

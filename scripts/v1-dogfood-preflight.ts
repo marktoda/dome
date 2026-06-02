@@ -26,6 +26,7 @@ type PreflightReport = {
   readonly ledger: string;
   readonly status: "ready" | "not-ready";
   readonly sessionEvidence: {
+    readonly serveCommand: ReadonlyArray<string>;
     readonly snapshotCommand: ReadonlyArray<string>;
     readonly appendCommand: string;
   };
@@ -129,15 +130,16 @@ function buildReport(input: {
     releaseBlockers: releaseBlockers.length,
     readiness: releaseCriteria(input.release),
   };
+  const sessionEvidence = sessionEvidenceCommands(input.opts);
   const nextActions = buildNextActions({
     operational,
     operationalNextActions: statusNextActionStrings(input.status),
     serve,
+    serveCommand: shellCommand(sessionEvidence.serveCommand),
     capture,
     release,
   });
   const ready = operational.ready && serve.ready && capture.ready;
-  const sessionEvidence = sessionEvidenceCommands(input.opts);
   return {
     vault: input.opts.vault,
     ledger: input.opts.ledger,
@@ -153,9 +155,19 @@ function buildReport(input: {
 }
 
 function sessionEvidenceCommands(opts: PreflightOptions): {
+  readonly serveCommand: ReadonlyArray<string>;
   readonly snapshotCommand: ReadonlyArray<string>;
   readonly appendCommand: string;
 } {
+  const serveCommand = Object.freeze([
+    "bin/dome",
+    "serve",
+    "--vault",
+    opts.vault,
+    "--quiet",
+    "--poll-interval-ms",
+    "1000",
+  ]);
   const snapshotCommand = Object.freeze([
     "bun",
     "run",
@@ -168,6 +180,7 @@ function sessionEvidenceCommands(opts: PreflightOptions): {
   ]);
   const renderedSnapshotCommand = snapshotCommand.map(formatShellArg).join(" ");
   return Object.freeze({
+    serveCommand,
     snapshotCommand,
     appendCommand:
       `${renderedSnapshotCommand} >> ${formatShellArg(opts.ledger)}`,
@@ -290,6 +303,7 @@ function buildNextActions(input: {
   readonly operational: CheckSummary;
   readonly operationalNextActions: ReadonlyArray<string>;
   readonly serve: CheckSummary;
+  readonly serveCommand: string;
   readonly capture: CheckSummary;
   readonly release: PreflightReport["release"];
 }): string[] {
@@ -307,7 +321,10 @@ function buildNextActions(input: {
     );
   }
   if (!input.serve.ready) {
-    actions.push("start dome serve while dogfooding to collect host evidence");
+    actions.push(
+      `start dome serve while dogfooding to collect host evidence ` +
+        `(${input.serveCommand})`,
+    );
   }
   if (input.release.status !== "ready") {
     const releaseActions = releaseNextActions(input.release.readiness);
@@ -429,6 +446,9 @@ function renderReport(report: PreflightReport): string {
   }
   lines.push("");
   lines.push("Session evidence:");
+  lines.push(
+    `- Serve command: \`${shellCommand(report.sessionEvidence.serveCommand)}\``,
+  );
   lines.push(`- Snapshot command: \`${report.sessionEvidence.appendCommand}\``);
   lines.push(
     "- Fill the qualitative prompts after the work session before counting the day.",
@@ -604,6 +624,10 @@ function formatCommandArg(value: string): string {
   return /^[A-Za-z0-9_@%+=:,./~-]+$/.test(value)
     ? value
     : JSON.stringify(value);
+}
+
+function shellCommand(command: ReadonlyArray<string>): string {
+  return command.map(formatShellArg).join(" ");
 }
 
 function formatShellArg(value: string): string {
