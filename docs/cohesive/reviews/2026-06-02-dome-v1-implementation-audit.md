@@ -619,3 +619,21 @@ Updated assessment:
 
 - This does not reduce the elapsed M10 requirement, but it strengthens the
   evidence collected on each future dogfood day.
+
+## 2026-06-02 Final Release Gate Consolidation
+
+Additional release-readiness hardening:
+
+- Added `bun run v1:release-check` as the single final V1 release gate.
+- The script composes `bun run v1:check` with
+  `bun run v1:dogfood-report -- --require-ready`, so it requires typecheck,
+  whitespace diff checking, the full test suite, V1 smoke, and the M10 ledger
+  readiness report.
+- Added a package-script structural test so future changes cannot accidentally
+  drop the M10 readiness check from the final V1 gate.
+
+Updated assessment:
+
+- Normal development can continue using `bun run v1:check`.
+- Final release readiness now has one command and should remain nonzero until
+  the elapsed M10 dogfood thresholds are actually met.
