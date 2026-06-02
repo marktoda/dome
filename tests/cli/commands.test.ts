@@ -1102,7 +1102,7 @@ describe("runInspect", () => {
     expect(extract).toEqual(
       expect.objectContaining({
         bundle: "dome.intake",
-        version: "0.3.5",
+        version: "0.3.6",
         phase: "garden",
         triggers: "schedule,signal",
         execution: "llm",
@@ -1350,7 +1350,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.5",
+        version: "0.4.7",
         processors: 6,
         garden: 5,
         model_processors: 3,
