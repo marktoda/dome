@@ -125,7 +125,6 @@ const safetyChecks: readonly SafetyCheck[] = Object.freeze([
 ]);
 
 const captureEvidencePathPatterns: readonly RegExp[] = Object.freeze([
-  /\binbox\/raw\/[^\s`),]+/,
   /\binbox\/processed\/[^\s`),]+/,
   /\bwiki\/generated\/intake\/[^\s`),]+/,
 ]);
@@ -435,11 +434,11 @@ function hasCaptureEvidenceLine(line: string): boolean {
   const normalized = line.trim();
   if (normalized === "") return false;
 
+  if (isNegativeCaptureEvidenceLine(normalized)) return false;
+
   if (captureEvidencePathPatterns.some((pattern) => pattern.test(normalized))) {
     return true;
   }
-
-  if (isNegativeCaptureEvidenceLine(normalized)) return false;
 
   return positiveCaptureEvidencePatterns.some((pattern) =>
     pattern.test(normalized)

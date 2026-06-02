@@ -444,6 +444,41 @@ ${completeDay("2026-06-03", "Processed one raw capture into \`wiki/generated/int
     ).toEqual([false, false, true]);
   });
 
+  test("does not count bare or negated raw capture paths as capture evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+${completeDay("2026-06-01", "Raw capture is still pending in \`inbox/raw/pending.md\`.")}
+${completeDay("2026-06-02", "No raw captures processed from \`inbox/raw/skipped.md\`.")}
+${completeDay("2026-06-03", "Processed raw capture from \`inbox/raw/source.md\` into a generated intake page.")}
+${completeDay("2026-06-04", "Generated intake page at \`wiki/generated/intake/generated.md\`.")}
+${completeDay("2026-06-05", "Archived processed capture at \`inbox/processed/archive.md\`.")}
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "5",
+      "--min-capture-days",
+      "3",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("ready");
+    expect(report.captureEvidenceDays).toBe(3);
+    expect(
+      report.days.map((day: { captureEvidence: boolean }) =>
+        day.captureEvidence
+      ),
+    ).toEqual([false, false, true, true, true]);
+  });
+
   test("requires complete workdays to span the release-soak window", async () => {
     const ledger = writeLedger([
       completeDay("2026-06-01"),

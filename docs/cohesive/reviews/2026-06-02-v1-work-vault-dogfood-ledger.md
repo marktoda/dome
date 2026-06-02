@@ -1039,3 +1039,29 @@ Qualitative read:
 - This closes a same-day ledger merge overclaim path. M10 release readiness now
   preserves any observed safety issue for that workday instead of allowing a
   later clean note to erase it.
+
+## 2026-06-02 M10 Raw Capture Evidence Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so bare or negated `inbox/raw/...`
+  paths do not count as capture-digestion evidence by themselves.
+- Processed archive paths, generated intake paths, and explicit positive
+  processing/generation prose still count. Positive prose can mention the raw
+  capture path when it clearly says Dome processed, digested, generated,
+  archived, or extracted the capture.
+- Added regression coverage with five complete workdays: a bare raw path, a
+  negated raw-path note, positive processing prose with a raw path, a generated
+  intake path, and a processed archive path.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 18 tests and
+  115 assertions.
+
+Qualitative read:
+
+- This closes another capture-evidence overclaim path. M10 release readiness
+  now distinguishes pending raw source material from completed capture
+  digestion, which keeps the release-soak gate aligned with the loop's desired
+  state.
