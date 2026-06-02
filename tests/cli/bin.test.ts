@@ -72,6 +72,8 @@ describe("bin/dome process boundary", () => {
       cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 25_000,
+      killSignal: "SIGKILL",
     });
 
     try {
@@ -109,7 +111,7 @@ describe("bin/dome process boundary", () => {
     } finally {
       if (!serve.killed) serve.kill("SIGTERM");
     }
-  });
+  }, { timeout: 30_000 });
 });
 
 type DomeProcessResult = {
@@ -124,6 +126,8 @@ async function runDome(args: ReadonlyArray<string>): Promise<DomeProcessResult> 
     cwd: REPO_ROOT,
     stdout: "pipe",
     stderr: "pipe",
+    timeout: 10_000,
+    killSignal: "SIGKILL",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),

@@ -29,13 +29,16 @@ resolution improve Mark's day-to-day workflow without creating chore work.
 
 Recent local verification:
 
-- `bin/dome sync --vault docs --json` adopted current `main` with no
-  diagnostics, questions, rejected patches, or pending operational work.
-- `bin/dome status --vault docs --json` reported `sync_needed: false`,
-  `attention_required: false`, and zero diagnostics/questions.
-- The most recent full suite before the latest small doc/status slices passed
-  with `982 pass`, `0 fail`; later targeted tests and `bun run typecheck`
-  passed for the modified slices.
+- `bun run v1:check` passed end-to-end after the latest hardening pass:
+  `bun run typecheck`, `git diff --check`, `bun test`, and `bun run v1:smoke`.
+- The full Bun suite passed with `996 pass`, `0 fail`, and `21364`
+  assertions.
+- `v1-smoke` checked both the docs vault and work vault. Docs was clean at
+  head/adopted `1f54e57`; work was clean at head/adopted `99fac73`.
+- The smoke confirmed settled sync behavior on both vaults: clean already
+  adopted vaults return `status: in-sync`, `iterations: 0`,
+  `closureCommit: null`, and no garden sub-Proposals, rejected patches, or
+  operational diagnostics.
 
 Current top-level acceptance coverage:
 
@@ -237,6 +240,9 @@ Evidence:
 - Projection-signal recall is shared by query/context packet paths.
 - `dome inspect facts` and `dome inspect patches` are implemented in
   `src/cli/commands/inspect.ts` and tested in `tests/cli/commands.test.ts`.
+- `scripts/v1-smoke.ts` now verifies that work-vault query and context packet
+  results include source refs, rank the current daily surface first for daily
+  intent, and emit non-empty summaries.
 - `docs/v1.md` decision ledger explicitly defers embeddings to V1.1 unless
   concrete work-vault failures prove they are needed.
 
@@ -254,6 +260,9 @@ Evidence:
 - Bundle loading and manifest validation are covered by
   `tests/extensions/loader.test.ts`, `tests/integration/default-vault-config.test.ts`,
   and `tests/integration/bundle-matrix-lockstep.test.ts`.
+- Active bundle ids now fail loudly when the configured bundle is absent from
+  the selected roots. This prevents enabled processors from being silently
+  skipped in exact bundle-root mode.
 - Loop metadata validation is covered by
   `tests/extensions/maintenance-loops.test.ts`.
 - Public view command aliases are centralized in `src/cli/view-command-aliases.ts`
@@ -276,6 +285,8 @@ Evidence:
 - The harness suite covers the core behavior expected from the soak.
 - `docs/cohesive/reviews/2026-06-02-v1-work-vault-dogfood-ledger.md` starts
   the durable work-vault dogfood record with a 2026-06-02 baseline.
+- `scripts/v1-smoke.ts` now includes a settled-sync assertion for clean,
+  already-adopted docs/work vaults.
 
 Missing:
 
@@ -357,3 +368,24 @@ Updated assessment:
   elapsed work-vault dogfood showing that daily notes, capture digestion,
   context packets, and low-risk question handling improve day-to-day work over
   plain markdown plus ad hoc foreground-agent maintenance.
+
+## 2026-06-02 Gate Hardening Addendum
+
+Latest verification:
+
+- `bun test tests/harness/scenarios/effect-kinds/intake-extract-capture.scenario.test.ts`
+  passed with `14 pass`, `0 fail`.
+- `bun test tests/cli/bin.test.ts` passed with `2 pass`, `0 fail`.
+- `bun run v1:check` passed end-to-end with `996 pass`, `0 fail` in the Bun
+  suite, followed by successful docs/work V1 smoke.
+
+Additional fixes from the latest gate:
+
+- Several intake harness scenarios used `BASE_CONFIG`, which enables
+  `dome.intake`, `dome.daily`, and `dome.markdown`, but only installed
+  `dome.intake` in the fixture root. The stricter missing-bundle validation
+  correctly exposed that mismatch. The scenarios now install the same bundles
+  their config enables.
+- The `bin/dome` process-boundary test for `serve` now has explicit process
+  and test timeouts, so full-suite load cannot leave a child process hanging
+  inside the readiness predicate.

@@ -524,7 +524,7 @@ scenario(
       { kind: "route", route: "garden-signal" },
     ],
     harness: {
-      bundles: ["dome.intake"],
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
       },
@@ -613,7 +613,7 @@ scenario(
       { kind: "route", route: "garden-signal" },
     ],
     harness: {
-      bundles: ["dome.intake"],
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
         [NOOP_SYNTHESIS_PATH]: [
@@ -702,7 +702,7 @@ scenario(
       { kind: "route", route: "garden-signal" },
     ],
     harness: {
-      bundles: ["dome.intake"],
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
       },
@@ -1301,7 +1301,7 @@ scenario(
       { kind: "trigger", trigger: "signal" },
     ],
     harness: {
-      bundles: ["dome.intake"],
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
       initialFiles: {
         ".dome/config.yaml": BASE_CONFIG,
       },
