@@ -127,3 +127,47 @@ Qualitative read:
 - The next dogfood question is whether agents actually follow the read-first
   guidance and whether the returned context packets are good enough to reduce
   manual vault spelunking.
+
+## 2026-06-02 Context Packet Payload Bound
+
+Dogfood action:
+
+- Ran `bin/dome export-context --vault ~/vaults/work "Dome v1 work vault dogfood" --json`.
+- Ran `bin/dome query --vault ~/vaults/work "Dome v1 work vault dogfood" --json`.
+
+Observed issue:
+
+- The packet correctly found `log.md` and `AGENTS.md`, but `log.md` is a
+  highly connected work-vault file.
+- Structured JSON included the full related fact array for `log.md`, producing
+  a very large packet that was not a good foreground-agent handoff.
+- Ranking reasons also surfaced raw high-cardinality graph counts like
+  `1000 graph signals`, which was technically explainable but not useful.
+
+Fix shipped in the SDK:
+
+- `dome query --json` now bounds per-match related facts, diagnostics, and
+  questions to topic-prioritized rows.
+- `dome export-context --json` now serializes bounded related rows while the
+  markdown packet still includes omitted-row hints such as `more facts`.
+- High-cardinality graph ranking reasons now render as `many graph signals`
+  instead of noisy raw counts.
+- The CLI spec now states that `query` and `export-context` are concise
+  handoff/read-first surfaces; exhaustive evidence belongs in `dome inspect
+  facts`, `dome inspect diagnostics`, and `dome inspect questions`.
+
+Work-vault result:
+
+- The same `export-context` smoke now returns 2 entries.
+- `log.md` exposes 8 related facts, 0 diagnostics, and 0 questions.
+- `AGENTS.md` exposes 1 related fact, 0 diagnostics, and 0 questions.
+- The structured export packet is about 10 KB for this query, and the markdown
+  packet is about 1.8 KB.
+
+Qualitative read:
+
+- This closes a concrete M6/M10 friction item: foreground agents can use JSON
+  context packets without being flooded by exhaustive projection rows from
+  high-degree pages.
+- The next context-packet dogfood question is quality, not payload size: did
+  the packet select the right read-first files for a real task?

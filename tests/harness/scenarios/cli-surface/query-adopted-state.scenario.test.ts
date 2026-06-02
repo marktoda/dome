@@ -227,6 +227,84 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome query bounds related facts for highly connected pages",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.graph", "dome.search"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/noisy-alpha-log.md":
+          "---\n" +
+          "type: project\n" +
+          "tags:\n" +
+          "  - alpha\n" +
+          "  - launch\n" +
+          Array.from({ length: 24 }, (_, i) => `  - noisy-${i}\n`).join("") +
+          "---\n" +
+          "# Noisy Alpha Log\n\n" +
+          "Alpha launch working notes with many extracted graph facts.\n",
+      },
+      message: "add highly connected query page",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const cli = await h.runCli([
+      "query",
+      "alpha launch",
+      "--json",
+      "--limit",
+      "1",
+    ]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+    const payload = JSON.parse(cli.stdout) as {
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly ranking: { readonly reasons: ReadonlyArray<string> };
+        readonly facts: ReadonlyArray<{
+          readonly predicate: string;
+          readonly object: { readonly value?: string };
+        }>;
+      }>;
+    };
+    const match = payload.matches.find((row) =>
+      row.path === "wiki/noisy-alpha-log.md"
+    );
+    expect(match).toBeDefined();
+    expect(match?.facts.length).toBeLessThanOrEqual(8);
+    expect(match?.ranking.reasons).toContain("many graph signals");
+    expect(match?.facts).toContainEqual(
+      expect.objectContaining({
+        predicate: "dome.graph.tagged",
+        object: expect.objectContaining({ value: "alpha" }),
+      }),
+    );
+    expect(match?.facts).toContainEqual(
+      expect.objectContaining({
+        predicate: "dome.graph.tagged",
+        object: expect.objectContaining({ value: "launch" }),
+      }),
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome query recalls pages through projection signals",
     tags: [
       { kind: "group", group: "cli-surface" },

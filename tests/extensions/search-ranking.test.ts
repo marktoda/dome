@@ -50,6 +50,24 @@ describe("dome.search ranking", () => {
     ]);
   });
 
+  test("summarizes high-cardinality graph signals without noisy counts", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/log.md", rank: 4, type: null }),
+      facts: Array.from({ length: 20 }, () => fact("dome.graph.links_to")),
+      diagnostics: [],
+      questions: [],
+    });
+
+    expect(ranking.score).toBe(3);
+    expect(ranking.reasons).toEqual(["many graph signals"]);
+    expect(ranking.signals).toContainEqual(
+      expect.objectContaining({
+        kind: "graph",
+        count: 20,
+      }),
+    );
+  });
+
   test("scores projection recall signals ahead of weak FTS-only matches", () => {
     const ranking = rankSearchCandidate({
       match: match({ path: "wiki/signal-only.md", rank: 1_000_000_000, type: "concept" }),

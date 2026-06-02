@@ -212,5 +212,8 @@ function isSearchGraphFact(
 
 function renderSignalReason(signal: SearchRankingSignal): string {
   if (signal.count === undefined || signal.count <= 1) return signal.label;
+  if (signal.kind === "graph" && signal.count > 8) {
+    return "many graph signals";
+  }
   return `${signal.count} ${signal.label}s`;
 }

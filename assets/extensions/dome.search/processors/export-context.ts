@@ -39,46 +39,16 @@ import {
   rankSearchCandidate,
   type SearchRanking,
 } from "./ranking";
+import {
+  compareTopicRelevance,
+  topicRelevantItems,
+} from "./topic-relevance";
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
-const TOPIC_STOPWORDS: ReadonlySet<string> = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "at",
-  "about",
-  "do",
-  "does",
-  "did",
-  "for",
-  "from",
-  "how",
-  "i",
-  "in",
-  "is",
-  "me",
-  "my",
-  "of",
-  "on",
-  "or",
-  "that",
-  "the",
-  "this",
-  "to",
-  "was",
-  "were",
-  "what",
-  "when",
-  "where",
-  "who",
-  "why",
-  "with",
-]);
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
@@ -191,7 +161,7 @@ const exportContext: Processor = defineProcessor({
       }),
       overview,
       markdown: renderMarkdown(input.topic, overview, entries, hasMoreEntries),
-      entries: Object.freeze(entries),
+      entries: Object.freeze(entries.map(publicContextEntry)),
     });
 
     const effect: ViewEffect = viewEffect({
@@ -225,9 +195,25 @@ type ContextEntry = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly summary: ReadonlyArray<ContextSummary>;
   readonly facts: ReadonlyArray<ContextFact>;
+  readonly allFacts: ReadonlyArray<ContextFact>;
+  readonly factCount: number;
   readonly diagnostics: ReadonlyArray<ContextDiagnostic>;
+  readonly allDiagnostics: ReadonlyArray<ContextDiagnostic>;
+  readonly diagnosticCount: number;
   readonly questions: ReadonlyArray<ContextQuestion>;
+  readonly allQuestions: ReadonlyArray<ContextQuestion>;
+  readonly questionCount: number;
 };
+
+type PublicContextEntry = Omit<
+  ContextEntry,
+  | "allFacts"
+  | "factCount"
+  | "allDiagnostics"
+  | "diagnosticCount"
+  | "allQuestions"
+  | "questionCount"
+>;
 
 type ContextOverview = {
   readonly readFirst: ReadonlyArray<ContextReadFirst>;
@@ -318,7 +304,7 @@ function contextEntryFromMatch(
   ranking: SearchRanking,
 ): ContextEntry {
   const snippet = stripFtsMarkers(match.snippet);
-  const contextFacts = Object.freeze(
+  const allContextFacts = Object.freeze(
     facts
       .map((fact) =>
         Object.freeze({
@@ -330,7 +316,7 @@ function contextEntryFromMatch(
       )
       .sort(compareFactsForTopic(topic)),
   );
-  const contextDiagnostics = Object.freeze(
+  const allContextDiagnostics = Object.freeze(
     diagnostics
       .map((diagnostic) =>
         Object.freeze({
@@ -342,7 +328,7 @@ function contextEntryFromMatch(
       )
       .sort(compareDiagnosticsForTopic(topic)),
   );
-  const contextQuestions = Object.freeze(
+  const allContextQuestions = Object.freeze(
     questions
       .map((question) =>
         Object.freeze({
@@ -358,6 +344,9 @@ function contextEntryFromMatch(
       )
       .sort(compareQuestionsForTopic(topic)),
   );
+  const contextFacts = allContextFacts.slice(0, MAX_RELATED_ROWS);
+  const contextDiagnostics = allContextDiagnostics.slice(0, MAX_RELATED_ROWS);
+  const contextQuestions = allContextQuestions.slice(0, MAX_RELATED_ROWS);
   return Object.freeze({
     path: match.path,
     title: match.title,
@@ -370,14 +359,37 @@ function contextEntryFromMatch(
     summary: sourceBackedSummary({
       snippet,
       sourceRefs: match.sourceRefs,
-      facts: contextFacts,
-      diagnostics: contextDiagnostics,
-      questions: contextQuestions,
+      facts: allContextFacts,
+      diagnostics: allContextDiagnostics,
+      questions: allContextQuestions,
       topic,
     }),
     facts: contextFacts,
+    allFacts: allContextFacts,
+    factCount: allContextFacts.length,
     diagnostics: contextDiagnostics,
+    allDiagnostics: allContextDiagnostics,
+    diagnosticCount: allContextDiagnostics.length,
     questions: contextQuestions,
+    allQuestions: allContextQuestions,
+    questionCount: allContextQuestions.length,
+  });
+}
+
+function publicContextEntry(entry: ContextEntry): PublicContextEntry {
+  return Object.freeze({
+    path: entry.path,
+    title: entry.title,
+    category: entry.category,
+    type: entry.type,
+    snippet: entry.snippet,
+    rank: entry.rank,
+    ranking: entry.ranking,
+    sourceRefs: entry.sourceRefs,
+    summary: entry.summary,
+    facts: entry.facts,
+    diagnostics: entry.diagnostics,
+    questions: entry.questions,
   });
 }
 
@@ -514,7 +526,7 @@ function uniqueOpenLoops(
   const seen = new Set<string>();
   const out: ContextOpenLoop[] = [];
   for (const entry of entries) {
-    for (const fact of entry.facts) {
+    for (const fact of entry.allFacts) {
       if (!isSearchOpenLoopFact(fact)) continue;
       const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
@@ -537,7 +549,7 @@ function uniqueDecisions(
   const seen = new Set<string>();
   const out: ContextDecision[] = [];
   for (const entry of entries) {
-    for (const fact of entry.facts) {
+    for (const fact of entry.allFacts) {
       if (!isSearchDecisionFact(fact)) continue;
       const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
@@ -560,7 +572,7 @@ function uniqueQuestions(
   const seen = new Set<number>();
   const out: ContextQuestionSummary[] = [];
   for (const entry of entries) {
-    for (const question of entry.questions) {
+    for (const question of entry.allQuestions) {
       if (seen.has(question.id)) continue;
       seen.add(question.id);
       out.push(Object.freeze({
@@ -579,7 +591,7 @@ function uniqueDiagnostics(
   const seen = new Set<string>();
   const out: ContextDiagnosticSummary[] = [];
   for (const entry of entries) {
-    for (const diagnostic of entry.diagnostics) {
+    for (const diagnostic of entry.allDiagnostics) {
       const key = [
         entry.path,
         diagnostic.severity,
@@ -681,7 +693,7 @@ function renderMarkdown(
         const refs = fact.sourceRefs.map(formatSourceRef).join(", ");
         lines.push(`- \`${fact.predicate}\`: ${fact.object} (${refs})`);
       }
-      appendMoreLine(lines, entry.facts.length, facts.length, "facts");
+      appendMoreLine(lines, entry.factCount, facts.length, "facts");
     }
     if (entry.diagnostics.length > 0) {
       lines.push("");
@@ -695,7 +707,7 @@ function renderMarkdown(
       }
       appendMoreLine(
         lines,
-        entry.diagnostics.length,
+        entry.diagnosticCount,
         diagnostics.length,
         "diagnostics",
       );
@@ -712,7 +724,7 @@ function renderMarkdown(
       }
       appendMoreLine(
         lines,
-        entry.questions.length,
+        entry.questionCount,
         questions.length,
         "questions",
       );
@@ -889,69 +901,6 @@ function questionSearchText(question: ContextQuestion): string {
     question.metadata?.recommendedAnswer ?? "",
     question.metadata?.ownerNeededReason ?? "",
   ].join(" ");
-}
-
-function topicRelevantItems<T>(
-  items: ReadonlyArray<T>,
-  topic: string,
-  textFor: (item: T) => string,
-): ReadonlyArray<T> {
-  const tokens = significantTopicTokens(topic);
-  if (tokens.length === 0 || items.length <= 1) return items;
-
-  const scored = items.map((item, index) =>
-    Object.freeze({
-      item,
-      index,
-      score: topicRelevanceScore(tokens, textFor(item)),
-    })
-  );
-  const relevant = scored.filter((entry) => entry.score > 0);
-  if (relevant.length === 0) return items;
-  return Object.freeze(
-    relevant
-      .sort((a, b) => (b.score - a.score) || (a.index - b.index))
-      .map((entry) => entry.item),
-  );
-}
-
-function compareTopicRelevance(
-  topic: string,
-  aText: string,
-  bText: string,
-): number {
-  const tokens = significantTopicTokens(topic);
-  if (tokens.length === 0) return 0;
-  return topicRelevanceScore(tokens, bText) - topicRelevanceScore(tokens, aText);
-}
-
-function topicRelevanceScore(
-  topicTokens: ReadonlyArray<string>,
-  value: string,
-): number {
-  if (topicTokens.length === 0) return 0;
-  const tokens = new Set(normalizedTokens(value));
-  let score = 0;
-  for (const token of topicTokens) {
-    if (tokens.has(token)) score += 1;
-  }
-  return score;
-}
-
-function significantTopicTokens(topic: string): ReadonlyArray<string> {
-  return Object.freeze(
-    normalizedTokens(topic).filter((token) => !TOPIC_STOPWORDS.has(token)),
-  );
-}
-
-function normalizedTokens(value: string): ReadonlyArray<string> {
-  return Object.freeze(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/g)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
-  );
 }
 
 function formatSourceRef(ref: SourceRef): string {

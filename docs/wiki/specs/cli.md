@@ -722,8 +722,11 @@ an immediate `inspect` detour. The top-level `limit`, `shown.matches`, and
 `hasMore.matches` fields describe bounded result rendering; when more visible
 matches are detected, text mode prints the expansion hint above.
 Text mode summarizes repeated fact predicates and diagnostic codes with counts
-(`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
-underlying structured fact and diagnostic rows unchanged.
+(`xN`) so multi-link or multi-task pages remain scan-friendly. JSON keeps the
+underlying row shape but bounds per-match related facts, diagnostics, and
+questions to the top topic-relevant rows; exhaustive provenance remains
+available through `dome inspect facts`, `dome inspect diagnostics`, and
+`dome inspect questions`.
 
 ### `dome lint [--fail-on <severity>] [--limit <n>] [--json]`
 
@@ -775,12 +778,15 @@ items whose text overlaps the requested topic, falling back to generic related
 items only when a matched page has no topic-overlapping related memory.
 Per-match related fact, diagnostic, and question sections are bounded in the
 rendered packet and include omitted-row hints when more related rows remain;
-the structured JSON entries retain the full related row arrays for consumers
-that want all evidence. Daily task facts use the same display convention as
-`dome today`: parsed `📅` due-date and priority glyph markers are rendered as
-bracketed `due` / `priority` metadata instead of duplicated inside the task
-text. Search-match entries use the same expanded candidate ranking as
-`dome query`. The packet can also recall exact-path
+structured JSON entries use the same bounded, topic-prioritized related arrays
+so `--json` stays useful as a foreground-agent handoff packet instead of an
+exhaustive fact dump. Consumers that need all evidence should use
+`dome inspect facts`, `dome inspect diagnostics`, or `dome inspect questions`.
+Daily task facts use the same display convention as `dome today`: parsed `📅`
+due-date and priority glyph markers are rendered as bracketed `due` /
+`priority` metadata instead of duplicated inside the task text. Search-match
+entries use the same expanded candidate ranking as `dome query`. The packet can
+also recall exact-path
 documents when projection memory has a topic-matched open loop, decision,
 unresolved question, or active diagnostic for that page, even if the page body
 itself did not match the FTS query. Read-first reasons, per-entry `Ranking`

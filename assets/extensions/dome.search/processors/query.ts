@@ -19,7 +19,9 @@ import {
   groupByMatchingPath,
   questionItemFromProjection,
   uniqueSourceRefs,
+  type SearchQuestionItem,
 } from "./related";
+import { searchFactObjectLabel } from "./labels";
 import {
   prioritizedRecallPaths,
   recallSignalsForTopic,
@@ -28,11 +30,15 @@ import {
   compareRankedSearchEntries,
   expandedSearchLimit,
   rankSearchCandidate,
+  isSearchDecisionFact,
+  isSearchOpenLoopFact,
 } from "./ranking";
+import { boundedTopicRows } from "./topic-relevance";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const MAX_QUERY_RECALL_PATHS = 24;
+const MAX_RELATED_ROWS = 8;
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
@@ -99,6 +105,19 @@ const searchQuery: Processor = defineProcessor({
         .sort(compareRankedSearchEntries),
     );
     const matches = Object.freeze(rankedMatches.slice(0, input.limit));
+    const outputFactsByPath = boundedFactsByPath(input.text, matches, factsByPath);
+    const outputDiagnosticsByPath = boundedRowsByPath({
+      paths: matches.map((match) => match.path),
+      rowsByPath: diagnosticsByPath,
+      textFor: (diagnostic) => `${diagnostic.code} ${diagnostic.message}`,
+      topic: input.text,
+    });
+    const outputQuestionsByPath = boundedRowsByPath({
+      paths: matches.map((match) => match.path),
+      rowsByPath: questionsByPath,
+      textFor: questionSearchText,
+      topic: input.text,
+    });
     const hasMoreMatches = rankedMatches.length > matches.length;
     const data = Object.freeze({
       schema: "dome.search.query/v1",
@@ -125,9 +144,11 @@ const searchQuery: Processor = defineProcessor({
             rank: match.rank,
             ranking: match.ranking,
             sourceRefs: match.sourceRefs,
-            facts: factsByPath.get(match.path) ?? Object.freeze([]),
-            diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),
-            questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+            facts: outputFactsByPath.get(match.path) ?? Object.freeze([]),
+            diagnostics: outputDiagnosticsByPath.get(match.path) ??
+              Object.freeze([]),
+            questions: outputQuestionsByPath.get(match.path) ??
+              Object.freeze([]),
           }),
         ),
       ),
@@ -143,17 +164,17 @@ const searchQuery: Processor = defineProcessor({
       scope: uniqueSourceRefs([
         ...matches.flatMap((match) => [...match.sourceRefs]),
         ...matches.flatMap((match) =>
-          factsByPath
+          outputFactsByPath
             .get(match.path)
             ?.flatMap((fact) => [...fact.sourceRefs]) ?? []
         ),
         ...matches.flatMap((match) =>
-          diagnosticsByPath
+          outputDiagnosticsByPath
             .get(match.path)
             ?.flatMap((diagnostic) => [...diagnostic.sourceRefs]) ?? []
         ),
         ...matches.flatMap((match) =>
-          questionsByPath
+          outputQuestionsByPath
             .get(match.path)
             ?.flatMap((question) => [...question.sourceRefs]) ?? []
         ),
@@ -212,6 +233,92 @@ function factsForMatches(
     );
   }
   return out;
+}
+
+function boundedFactsByPath(
+  topic: string,
+  matches: ReadonlyArray<SearchDocumentResult>,
+  factsByPath: ReadonlyMap<string, ReadonlyArray<FactEffect>>,
+): ReadonlyMap<string, ReadonlyArray<FactEffect>> {
+  const out = new Map<string, ReadonlyArray<FactEffect>>();
+  for (const match of matches) {
+    out.set(
+      match.path,
+      boundedRelatedRows({
+        rows: factsByPath.get(match.path) ?? Object.freeze([]),
+        textFor: factSearchText,
+        compare: compareFacts,
+        topic,
+      }),
+    );
+  }
+  return Object.freeze(out);
+}
+
+function boundedRowsByPath<T>(input: {
+  readonly paths: ReadonlyArray<string>;
+  readonly rowsByPath: ReadonlyMap<string, ReadonlyArray<T>>;
+  readonly textFor: (row: T) => string;
+  readonly topic: string;
+}): ReadonlyMap<string, ReadonlyArray<T>> {
+  const out = new Map<string, ReadonlyArray<T>>();
+  for (const path of input.paths) {
+    out.set(
+      path,
+      boundedRelatedRows({
+        rows: input.rowsByPath.get(path) ?? Object.freeze([]),
+        textFor: input.textFor,
+        topic: input.topic,
+      }),
+    );
+  }
+  return Object.freeze(out);
+}
+
+function boundedRelatedRows<T>(input: {
+  readonly rows: ReadonlyArray<T>;
+  readonly textFor: (row: T) => string;
+  readonly topic: string;
+  readonly compare?: (a: T, b: T) => number;
+}): ReadonlyArray<T> {
+  return boundedTopicRows({
+    rows: input.rows,
+    textFor: input.textFor,
+    topic: input.topic,
+    limit: MAX_RELATED_ROWS,
+    ...(input.compare !== undefined ? { compare: input.compare } : {}),
+  });
+}
+
+function factSearchText(fact: FactEffect): string {
+  return `${fact.predicate} ${searchFactObjectLabel(fact)}`;
+}
+
+function compareFacts(a: FactEffect, b: FactEffect): number {
+  return factPriority(a) - factPriority(b) ||
+    a.predicate.localeCompare(b.predicate) ||
+    searchFactObjectLabel(a).localeCompare(searchFactObjectLabel(b));
+}
+
+function factPriority(fact: FactEffect): number {
+  if (isSearchOpenLoopFact(fact)) return 0;
+  if (isSearchDecisionFact(fact)) return 1;
+  if (isGraphFact(fact)) return 3;
+  return 2;
+}
+
+function isGraphFact(fact: FactEffect): boolean {
+  return fact.predicate === "dome.graph.links_to" ||
+    fact.predicate === "dome.graph.tagged";
+}
+
+function questionSearchText(question: SearchQuestionItem): string {
+  return [
+    question.question,
+    ...question.options,
+    question.metadata?.recommendedAnswer ?? "",
+    question.metadata?.ownerNeededReason ?? "",
+  ].join(" ");
 }
 
 function matchSatisfiesFilters(
