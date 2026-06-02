@@ -94,6 +94,10 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
   autoResolvedQuestions: 0,
   diagnosticCount: 0,
 });
+const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
+  ...EMPTY_OPERATIONAL_SUMMARY,
+  scheduledCount: 1,
+});
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
   orphanRuns: 0,
@@ -310,7 +314,7 @@ describe("runSync empty-diff init", () => {
     expect(parsed["iterations"]).toBe(1);
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
-    expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
+    expect(parsed["operational"]).toEqual(FIRST_SYNC_OPERATIONAL_SUMMARY);
     expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);

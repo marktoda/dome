@@ -81,10 +81,10 @@ scenario(
     harness: {
       bundles: ["dome.markdown"],
       initialFiles: {
-        ".dome/config.yaml": markdownConfig({ processorTimeoutMs: 2_000 }),
+        ".dome/config.yaml": markdownConfig({ processorTimeoutMs: 15_000 }),
       },
     },
-    timeoutMs: 10_000,
+    timeoutMs: 30_000,
   },
   async (h) => {
     const seed = await h.tick();

@@ -179,6 +179,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.broken-images",
         "dome.markdown.duplicate-detection",
         "dome.markdown.stale-dates",
+        "dome.markdown.refresh-updated",
         "dome.markdown.raw-immutable",
         "dome.markdown.orphan-pages",
         "dome.graph.links",
@@ -190,9 +191,9 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "status", name: "check" },
       ],
       settlement: {
-        key: "link occurrence or duplicate page-pair plus content hash",
+        key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
-          "the link resolves, is intentionally unresolved, or has exactly one open question",
+          "the link resolves, is intentionally unresolved, has exactly one open question, or the managed metadata already matches git history",
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",

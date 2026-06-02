@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.3
+version: 0.4.4
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.3.0
@@ -112,6 +112,19 @@ processors:
       - kind: read
         paths: ["**/*.md"]
     module: processors/stale-dates.ts
+
+  - id: dome.markdown.refresh-updated
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 5 * * *"
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: patch.auto
+        paths: ["**/*.md"]
+    module: processors/refresh-updated.ts
 
   - id: dome.markdown.raw-immutable
     version: 0.1.0

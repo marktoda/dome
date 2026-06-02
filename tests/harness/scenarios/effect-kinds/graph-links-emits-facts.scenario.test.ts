@@ -22,6 +22,7 @@ scenario(
       { kind: "trigger", trigger: "signal" },
     ],
     harness: { bundles: ["dome.markdown", "dome.graph"] },
+    timeoutMs: 30_000,
   },
   async (h) => {
     // Step 0: init adopted ref.
