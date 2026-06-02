@@ -673,3 +673,25 @@ Updated assessment:
 
 - This makes the next M10 operational action concrete when the vault is
   otherwise ready but no foreground compiler host is running.
+
+## 2026-06-02 Work-Vault Serve Host Started
+
+Operational M10 step:
+
+- Started the work-vault compiler host in a detached local `screen` session:
+  `dome-work-serve`.
+- Verified `dome status --vault /Users/mark.toda/vaults/work --json` reported
+  `serve_status: running`, `serve_pid: 6406`, `serve_branch: main`,
+  `sync_needed: false`, `attention_required: false`, and no pending/failed
+  operational work.
+- Verified `bun run v1:dogfood-preflight -- --json` now reports serve
+  readiness `true`; the only remaining preflight next action is to continue
+  measured M10 snapshots and filled ledger notes.
+- Verified `bun run v1:dogfood-snapshot -- --date 2026-06-02 --limit 1`
+  renders the running host heartbeat in the operational state section.
+
+Updated assessment:
+
+- Future M10 work-vault sessions can now collect host-backed evidence rather
+  than relying only on explicit `dome sync` catch-up sessions. V1 still should
+  not be marked complete until the elapsed release-soak thresholds pass.

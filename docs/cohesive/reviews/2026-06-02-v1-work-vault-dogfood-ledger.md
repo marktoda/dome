@@ -795,3 +795,25 @@ Qualitative read:
   path and opt-in low-risk auto-resolution. It is intentionally not counted as
   M10 release-soak credit because it ran in a temporary vault rather than
   during sustained work-vault usage.
+
+## 2026-06-02 Work-Vault Serve Host Started
+
+Operational action:
+
+- Started `dome serve --vault /Users/mark.toda/vaults/work --quiet
+  --poll-interval-ms 1000` in a detached local `screen` session named
+  `dome-work-serve`.
+- Verified `dome status --vault /Users/mark.toda/vaults/work --json` reported
+  `serve_status: running`, `serve_pid: 6406`, `serve_branch: main`, no pending
+  runs, no failed runs, no failed outbox rows, and no quarantined processors.
+- Verified `bun run v1:dogfood-preflight -- --json` reported collection status
+  `ready`, serve readiness `true`, capture readiness `true`, and release
+  status `not-ready`.
+- Verified `bun run v1:dogfood-snapshot -- --date 2026-06-02 --limit 1`
+  rendered `Serve host: running; branch main; pid 6406`.
+
+Qualitative read:
+
+- This improves the M10 evidence posture for future work sessions. It does not
+  add another counted workday by itself; the release soak still needs filled
+  daily qualitative notes across the required elapsed window.
