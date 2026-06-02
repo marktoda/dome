@@ -110,7 +110,7 @@ function buildReport(input: {
     releaseBlockers: releaseBlockers.length,
   };
   const nextActions = buildNextActions({ operational, serve, capture, release });
-  const ready = operational.ready && capture.ready;
+  const ready = operational.ready && serve.ready && capture.ready;
   return {
     vault: input.opts.vault,
     status: ready ? "ready" : "not-ready",

@@ -866,3 +866,25 @@ Qualitative read:
 
 - This closes another M10 overclaim path: release readiness now requires actual
   measured Dome surface evidence, not just the presence of a template heading.
+
+## 2026-06-02 M10 Preflight Serve-Readiness Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-preflight` so top-level collection status now
+  requires operational readiness, capture readiness, and running `dome serve`
+  host evidence.
+- Added regression coverage for an otherwise clean, intake-ready vault with
+  `dome serve` off. The preflight now reports `status: not-ready`,
+  `operational.ready: true`, `capture.ready: true`, and `serve.ready: false`.
+
+Measured result:
+
+- `bun run v1:dogfood-preflight -- --json` against the work vault still reports
+  collection status `ready` because the work-vault serve host is running.
+
+Qualitative read:
+
+- This aligns the preflight with the release report: one-shot `dome sync`
+  evidence can be useful supporting context, but an M10 collection session is
+  not ready unless the background compiler host is actually running.

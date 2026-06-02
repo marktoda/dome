@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import { commit } from "../../src/git";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const DOME_BIN = join(REPO_ROOT, "bin", "dome");
@@ -63,6 +65,31 @@ describe("v1 dogfood preflight script", () => {
     );
   }, { timeout: 30_000 });
 
+  test("requires serve host readiness for collection status", async () => {
+    const vaultPath = await makeIntakeReadyVault();
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.operational.ready).toBe(true);
+    expect(report.capture.ready).toBe(true);
+    expect(report.serve.ready).toBe(false);
+    expect(report.serve.status).toBe("off");
+    expect(report.nextActions).toContain(
+      "start dome serve while dogfooding to collect host evidence",
+    );
+  }, { timeout: 30_000 });
+
   test("renders a Markdown preflight with commands and next actions", async () => {
     const vaultPath = await makeInitializedVault();
     const ledgerPath = writeLedger(completeDay("2026-06-01"));
@@ -94,6 +121,27 @@ async function makeInitializedVault(): Promise<string> {
   fixtures.push(vaultPath);
   const init = await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]);
   expect(init.exitCode).toBe(0);
+  const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
+  expect(sync.exitCode).toBe(0);
+  expect(sync.stderr).toBe("");
+  return vaultPath;
+}
+
+async function makeIntakeReadyVault(): Promise<string> {
+  const vaultPath = await makeInitializedVault();
+  const configPath = join(vaultPath, ".dome", "config.yaml");
+  const configBody = readFileSync(configPath, "utf8");
+  const updated = configBody.replace(
+    /(^\s+dome\.intake:\s*\n\s+enabled:\s*)false/m,
+    "$1true",
+  );
+  expect(updated).not.toBe(configBody);
+  await writeFile(configPath, updated, "utf8");
+  await commit({
+    path: vaultPath,
+    message: "enable intake for preflight\n",
+    files: [".dome/config.yaml"],
+  });
   const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
   expect(sync.exitCode).toBe(0);
   expect(sync.stderr).toBe("");
