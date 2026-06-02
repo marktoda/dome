@@ -114,7 +114,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("check")
     .description("Explain compiler attention.")
     .option("--engine", "Show engine health findings.")
-    .option("--content", "Show adopted-state diagnostics.")
+    .option("--content", "Show full adopted-state diagnostics.")
     .option("--decisions", "Show open Dome questions.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
     .option(

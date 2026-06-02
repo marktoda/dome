@@ -1769,3 +1769,39 @@ Qualitative read:
 - This is a final-gate auditability cleanup. It does not alter the release
   standard or add another command; it makes the existing single release command
   more exact for humans and foreground agents.
+
+## 2026-06-02 Check Noise Surface Tightening
+
+Verification action:
+
+- Re-audited the work-vault `dome check` text surface after confirming the
+  remaining 10 diagnostics were all info-level `noise`: historical optional
+  daily navigation links and optional-root local type labels.
+- Found that the default text report said `status ok` and `0 attention`, but
+  still expanded noise dispositions, repair paths, groups, and every individual
+  row. That made a settled vault feel broken even though no loop or next action
+  needed attention.
+- Changed plain text `dome check` to preserve diagnostic totals while expanding
+  only warning/error/block content details by default. Explicit
+  `dome check --content` remains the full text content audit, and JSON remains
+  complete unless `--attention` is requested.
+
+Measured result:
+
+- `bun test tests/cli/commands.test.ts tests/cli/index.test.ts` passed with 90
+  tests and 810 assertions.
+- `bun test` passed with 1062 tests and 22526 assertions.
+- `bun run v1:smoke -- --sync-docs` passed for docs and work. Docs was already
+  adopted at `68c0e1c`; work was already adopted at `7e2cd1e`; both smoke views
+  passed. Work still has 10 informational diagnostics, all below attention.
+- `bin/dome check --vault /Users/mark.toda/vaults/work` now prints:
+  `content   10 diagnostic(s) | 0 attention | 0 attention shown` and does not
+  expand content sections.
+- `bin/dome check --vault /Users/mark.toda/vaults/work --content` still expands
+  the full noise audit for explicit content-review sessions.
+
+Qualitative read:
+
+- This keeps Dome aligned with the V1 attention model: flexible Markdown noise
+  remains visible and queryable, but the default operator surface no longer
+  makes non-actionable historical/optional findings look like active failure.

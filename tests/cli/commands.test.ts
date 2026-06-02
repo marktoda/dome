@@ -2291,6 +2291,16 @@ describe("runCheck", () => {
     expect(record(parsed["content"])["unlocated_diagnostics"]).toBe(0);
     expect(record(parsed["content"])["attention_diagnostics"]).toBe(0);
     expect(parsed["next_actions"]).toEqual([]);
+
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const text = captured.out.join("\n");
+    expect(text).toContain("status    ok");
+    expect(text).toContain(
+      "content   1 diagnostic(s) | 0 attention | 0 attention shown",
+    );
+    expect(text).not.toContain("\nContent\n");
+    expect(text).not.toContain("informational diagnostic");
   });
 
   test("--json keeps source-less runtime diagnostics out of content repair", async () => {
@@ -2887,6 +2897,20 @@ describe("runCheck", () => {
     expect(groups.every((group) => group["attention_count"] === 0)).toBe(true);
     const items = content["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(items.every((item) => item["disposition"] === "noise")).toBe(true);
+
+    captured.out = [];
+    expect(
+      await runCheck({
+        vault: f.vaultPath,
+        content: true,
+      }),
+    ).toBe(0);
+    const text = captured.out.join("\n");
+    expect(text).toContain("Content dispositions");
+    expect(text).toContain("noise x1");
+    expect(text).toContain("Content");
+    expect(text).toContain("dome.markdown.broken-wikilink");
+    expect(text).toContain("dome.markdown.type-unknown");
   });
 
   test("text output reports omitted bounded rows", async () => {

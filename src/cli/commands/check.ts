@@ -229,7 +229,7 @@ export async function runCheck(
     const content = scopes.content
       ? collectContentReport({
           diagnostics: diagnosticRows,
-          attentionOnly: options.attention === true,
+          attentionOnly: contentAttentionOnlyForRender(options),
           limit,
         })
       : null;
@@ -281,6 +281,12 @@ function resolveScopes(options: RunCheckOptions): CheckScopes {
     content: explicit ? options.content === true : true,
     decisions: explicit ? options.decisions === true : true,
   });
+}
+
+function contentAttentionOnlyForRender(options: RunCheckOptions): boolean {
+  if (options.attention === true) return true;
+  if (options.json === true) return false;
+  return options.content !== true;
 }
 
 function collectContentReport(opts: {

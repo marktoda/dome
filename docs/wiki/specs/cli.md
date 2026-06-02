@@ -591,12 +591,16 @@ Default scope includes:
   metadata that separates agent/model-safe work from owner-needed decisions.
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
-or more scopes. `--loops` expands text mode with the same maintenance-loop
+or more scopes. Plain text mode is attention-focused by default: it preserves
+content diagnostic totals but expands only warning/error/block content details
+unless `--content` is explicitly requested. `--content` is the full text
+content-audit surface. `--loops` expands text mode with the same maintenance-loop
 detail rows as `dome status --loops`; JSON output always includes
-`maintenance_loops` when the runtime opens. `--attention` narrows content
-diagnostic rows and grouping to source-backed warning/error/block diagnostics
-while preserving total, source-backed, unlocated, and attention-diagnostic
-counters. `--limit` bounds
+`maintenance_loops` when the runtime opens and preserves the complete content
+diagnostic payload unless `--attention` is requested. `--attention` narrows
+content diagnostic rows and grouping to source-backed warning/error/block
+diagnostics while preserving total, source-backed, unlocated, and
+attention-diagnostic counters. `--limit` bounds
 rows per section; when attention
 rows are bounded, text mode renders `showing <n> of <total> attention` in the
 content summary and prints an omitted-row hint such as
