@@ -1218,3 +1218,39 @@ Qualitative read:
   foreground agents. The gate still fails closed until elapsed work-vault usage
   reaches the required thresholds, but the missing criteria are now explicit in
   both report and preflight surfaces.
+
+## 2026-06-02 M10 Release-Check Preflight Gate
+
+Verification action:
+
+- Added `--require-ready` to `bun run v1:dogfood-preflight` so it exits
+  nonzero unless the current work vault is operationally ready for M10
+  collection: clean operational state, same-branch running `dome serve`, and
+  ready `dome.intake`/model configuration.
+- Updated `bun run v1:release-check` to run current collection preflight before
+  the historical dogfood-report readiness check:
+  `bun run v1:check && bun run v1:dogfood-preflight -- --require-ready &&
+  bun run v1:dogfood-report -- --require-ready`.
+- Kept release-soak readiness separate. Preflight `--require-ready` proves the
+  current vault can collect evidence; dogfood-report `--require-ready` proves
+  the required elapsed M10 evidence exists.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts
+  tests/integration/v1-package-scripts.test.ts` passes with 9 tests and 103
+  assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` pass.
+- `bun run v1:dogfood-preflight -- --require-ready --json` exits 0 against the
+  work vault and reports collection `status: ready`, while the release
+  substatus remains `not-ready`.
+- `bun run v1:dogfood-report -- --require-ready` exits 1 as expected with
+  current M10 evidence, listing the missing complete workdays, serve-host days,
+  capture-evidence days, and calendar span.
+
+Qualitative read:
+
+- This closes a final-gate blind spot. A future complete M10 ledger will no
+  longer be sufficient by itself; the current work vault also has to be ready
+  to collect and continue dogfood without manual cleanup.

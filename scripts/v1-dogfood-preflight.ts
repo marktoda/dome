@@ -9,6 +9,7 @@ type PreflightOptions = {
   readonly vault: string;
   readonly ledger: string;
   readonly json: boolean;
+  readonly requireReady: boolean;
 };
 
 type CommandRun = {
@@ -98,6 +99,9 @@ async function main(): Promise<void> {
     release,
   });
   nodeWrite(opts.json ? `${JSON.stringify(report, null, 2)}\n` : renderReport(report));
+  if (opts.requireReady && report.status !== "ready") {
+    process.exit(1);
+  }
 }
 
 function buildReport(input: {
@@ -468,6 +472,7 @@ function parseArgs(args: ReadonlyArray<string>): PreflightOptions {
   let vault = resolve(homedir(), "vaults", "work");
   let ledger = defaultLedger;
   let json = false;
+  let requireReady = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -485,13 +490,17 @@ function parseArgs(args: ReadonlyArray<string>): PreflightOptions {
       json = true;
       continue;
     }
+    if (arg === "--require-ready") {
+      requireReady = true;
+      continue;
+    }
     if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
     }
     throw new Error(`unknown argument: ${arg}`);
   }
-  return Object.freeze({ vault, ledger, json });
+  return Object.freeze({ vault, ledger, json, requireReady });
 }
 
 function readValue(
@@ -570,6 +579,7 @@ function printHelp(): void {
     "  --vault <path>       Vault path (default: ~/vaults/work).",
     "  --ledger <path>      Dogfood ledger path.",
     "  --json               Emit machine-readable JSON.",
+    "  --require-ready      Exit nonzero unless collection readiness passes.",
     "  -h, --help           Show this help.",
     "",
   ].join("\n"));

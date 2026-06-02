@@ -31,6 +31,7 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain(
       "Checks whether a vault is ready to collect the next M10 dogfood session.",
     );
+    expect(result.stdout).toContain("--require-ready");
   });
 
   test("reports disabled intake as not ready while preserving release status", async () => {
@@ -103,6 +104,49 @@ describe("v1 dogfood preflight script", () => {
     expect(report.nextActions).toContain(
       "start dome serve while dogfooding to collect host evidence",
     );
+  }, { timeout: 30_000 });
+
+  test("--require-ready exits nonzero when collection readiness fails", async () => {
+    const vaultPath = await makeInitializedVault();
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--require-ready",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Collection status: not-ready");
+  }, { timeout: 30_000 });
+
+  test("--require-ready exits zero when collection readiness passes", async () => {
+    const vaultPath = await makeIntakeReadyVault();
+    await writeServeHeartbeat({
+      vaultPath,
+      handle: createServeHeartbeatHandle(),
+      branch: "main",
+      pollIntervalMs: 10_000,
+      operationalIntervalMs: 10_000,
+    });
+    const ledgerPath = writeLedger(completeDay("2026-06-01"));
+
+    const result = await runPreflight([
+      "--vault",
+      vaultPath,
+      "--ledger",
+      ledgerPath,
+      "--require-ready",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Collection status: ready");
+    expect(result.stdout).toContain("Release-soak report:");
+    expect(result.stdout).toContain("- Status: not-ready");
   }, { timeout: 30_000 });
 
   test("passes through status next actions for operational findings", async () => {
