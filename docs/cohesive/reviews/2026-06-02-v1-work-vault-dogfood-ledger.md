@@ -453,3 +453,37 @@ Qualitative read:
   question, diagnostic, and projection-recall signals.
 - This still does not close M10. It improves repeatable evidence for recall
   quality, but release readiness still needs elapsed work-vault usage.
+
+## 2026-06-02 M10 Convergence Smoke Tightening
+
+Dogfood action:
+
+- Tightened `bun scripts/v1-smoke.ts --sync-docs` so a clean, already-adopted
+  vault must pass an explicit no-source-change `dome sync --json`.
+- The smoke now requires `status: in-sync`, `iterations: 0`, no closure commit,
+  and zero garden sub-proposals/rejected patches/diagnostics.
+- If a vault has dirty drafts or pending commits, the settlement check is
+  skipped and reported as a notice instead of forcing adoption.
+
+Operational result:
+
+- Docs and work vaults both passed the new settlement assertion before this
+  ledger entry was added. The then-current smoke summary did not yet print the
+  `settled` field, but the assertion was active and the run completed with no
+  notices for docs and only the known informational diagnostics for work.
+- After the summary was updated to print settlement state, the work vault
+  result was:
+  `v1-smoke: work ok | branch main | head 99fac73 | adopted 99fac73 | synced no | settled checked | views 5 ok | notices 46 informational diagnostic(s)`
+- The docs vault skipped settlement in that later run because this ledger and
+  `docs/v1.md` were draft-modified at the time, which is the intended
+  conservative behavior.
+- Manual `dome sync --json` probes immediately before the code change showed
+  both vaults returning `status: in-sync`, `iterations: 0`, and
+  `closureCommit: null`.
+
+Qualitative read:
+
+- This gives repeatable evidence for the M10 convergence slice: repeated
+  no-source-change compiler runs settle for the current docs and work vaults.
+- This still does not close M10. It is a convergence gate, not elapsed
+  day-to-day usefulness evidence across two real work weeks.

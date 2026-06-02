@@ -32,6 +32,17 @@ type DoctorPayload = {
   };
 };
 
+type SyncPayload = {
+  readonly status: string;
+  readonly iterations?: number;
+  readonly closureCommit?: string | null;
+  readonly garden?: {
+    readonly subProposalCount?: number;
+    readonly rejectedPatchCount?: number;
+    readonly diagnosticCount?: number;
+  };
+};
+
 type ViewCheck = {
   readonly name: string;
   readonly args: ReadonlyArray<string>;
@@ -83,6 +94,7 @@ type VaultSmokeResult = {
   readonly doctor: DoctorPayload;
   readonly viewSchemas: ReadonlyArray<string>;
   readonly synced: boolean;
+  readonly settledSync: "checked" | "skipped";
   readonly notices: ReadonlyArray<string>;
 };
 
@@ -118,6 +130,20 @@ async function smokeVault(input: {
 
   if (input.requireCleanAdopted && status.sync_needed) {
     throw new Error(`${input.label}: expected adopted state to catch up`);
+  }
+
+  const settled = await verifySettledSyncIfClean({
+    label: input.label,
+    vaultPath,
+    status,
+  });
+  let settledSync: "checked" | "skipped";
+  if (settled.kind === "status-updated") {
+    status = settled.status;
+    settledSync = "checked";
+  } else if (settled.kind === "skipped") {
+    settledSync = "skipped";
+    notices.push(settled.notice);
   }
 
   const doctor = await doctorJson(vaultPath);
@@ -160,6 +186,7 @@ async function smokeVault(input: {
     doctor,
     viewSchemas,
     synced,
+    settledSync,
     notices: Object.freeze(notices),
   });
 }
@@ -198,6 +225,80 @@ async function doctorJson(vaultPath: string): Promise<DoctorPayload> {
     vaultPath,
     "--json",
   ]);
+}
+
+type SettledSyncResult =
+  | {
+      readonly kind: "status-updated";
+      readonly status: StatusPayload;
+    }
+  | {
+      readonly kind: "skipped";
+      readonly notice: string;
+    };
+
+async function verifySettledSyncIfClean(input: {
+  readonly label: string;
+  readonly vaultPath: string;
+  readonly status: StatusPayload;
+}): Promise<SettledSyncResult> {
+  if (
+    input.status.dirty_modified > 0 ||
+    input.status.dirty_untracked > 0 ||
+    input.status.sync_needed
+  ) {
+    return {
+      kind: "skipped",
+      notice: "settled sync skipped",
+    };
+  }
+
+  const sync = await runDomeJson<SyncPayload>([
+    "sync",
+    "--vault",
+    input.vaultPath,
+    "--json",
+  ]);
+  assertSettledSync(input.label, sync);
+  const status = await statusJson(input.vaultPath);
+  assertOperationallyHealthy(input.label, status);
+  if (status.sync_needed) {
+    throw new Error(`${input.label}: settled sync left adopted state behind`);
+  }
+  return { kind: "status-updated", status };
+}
+
+function assertSettledSync(label: string, sync: SyncPayload): void {
+  if (sync.status !== "in-sync") {
+    throw new Error(
+      `${label}: expected settled sync status in-sync, got ${sync.status}`,
+    );
+  }
+  if (sync.iterations !== 0) {
+    throw new Error(
+      `${label}: settled sync ran ${String(sync.iterations)} iteration(s)`,
+    );
+  }
+  if (sync.closureCommit !== null) {
+    throw new Error(
+      `${label}: settled sync created closure commit ${sync.closureCommit}`,
+    );
+  }
+  const garden = sync.garden;
+  if (garden === undefined) {
+    throw new Error(`${label}: settled sync omitted garden summary`);
+  }
+  const gardenFailures = [
+    ["subProposalCount", garden.subProposalCount],
+    ["rejectedPatchCount", garden.rejectedPatchCount],
+    ["diagnosticCount", garden.diagnosticCount],
+  ].filter(([, value]) => value !== 0);
+  if (gardenFailures.length > 0) {
+    const details = gardenFailures
+      .map(([name, value]) => `${name}=${String(value)}`)
+      .join(", ");
+    throw new Error(`${label}: settled sync emitted garden work (${details})`);
+  }
 }
 
 async function smokeUserValueViews(input: {
@@ -465,6 +566,7 @@ function printSummary(results: ReadonlyArray<VaultSmokeResult>): void {
       `v1-smoke: ${result.label} ok | branch ${status.branch ?? "(detached)"} ` +
         `| head ${shortOid(status.head)} | adopted ${shortOid(status.adopted)} ` +
         `| synced ${result.synced ? "yes" : "no"} ` +
+        `| settled ${result.settledSync} ` +
         `| views ${result.viewSchemas.length} ok | notices ${notices}`,
     );
   }
