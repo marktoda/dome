@@ -1294,3 +1294,32 @@ Qualitative read:
   processors. The daily loop still prepares the markdown work cockpit; agents
   should ask natural-language `query` / `export-context` questions instead of
   using narrow deterministic planning commands.
+
+## 2026-06-02 M10 Loop Evidence Snapshot Hardening
+
+Verification action:
+
+- Strengthened `bun run v1:dogfood-snapshot` so the maintenance-loop section
+  records per-loop diagnostic/question/problem-run counts, processor activation,
+  inactive contributors, command/path surfaces, and the loop settlement no-op
+  rule.
+- Kept the snapshot read-only and on the consolidated surface set:
+  `status`, `check`, `query`, and `export-context`.
+- Updated the V1 plan evidence to name the stronger loop-state capture as part
+  of the M10 dogfood record.
+
+Measured result:
+
+- `bun run v1:dogfood-snapshot -- --vault docs --topic "today open loops"
+  --limit 3` renders loop state, processors, surfaces, and no-op rules from
+  existing `maintenance_loops` JSON.
+- Focused script coverage now asserts the snapshot contains loop diagnostics,
+  agent-safe question counts, problem-run counts, processors, surfaces, and
+  no-op evidence.
+
+Qualitative read:
+
+- This makes future counted workday entries more useful for release review.
+  Instead of just saying a loop was quiet or inactive, the snapshot now leaves
+  enough evidence to see which desired-state objective was involved and why it
+  should have settled.

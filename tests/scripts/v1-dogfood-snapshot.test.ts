@@ -67,6 +67,12 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stdout).toContain("Operational state:");
     expect(result.stdout).toContain("- Serve host: off");
     expect(result.stdout).toContain("Maintenance loops:");
+    expect(result.stdout).toContain("diagnostics ");
+    expect(result.stdout).toContain("agent-safe");
+    expect(result.stdout).toContain("problem runs");
+    expect(result.stdout).toContain("  - processors:");
+    expect(result.stdout).toContain("  - surfaces:");
+    expect(result.stdout).toContain("  - no-op:");
     expect(result.stdout).toContain("Content hygiene:");
     expect(result.stdout).toContain("- Example findings:");
     expect(result.stdout).toContain("Wikilink [[missing thing]]");

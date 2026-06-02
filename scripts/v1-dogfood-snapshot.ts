@@ -121,19 +121,27 @@ function renderSnapshot(input: {
     lines.push("");
     lines.push("Maintenance loops:");
     for (const loop of loops) {
-      const id = stringValue(loop.id, "(unknown)");
-      const state = stringValue(loop.state, "(unknown)");
-      const diag = numberValue(loop.diagnostics);
-      const questions = numberValue(loop.questions);
-      const owner = numberValue(loop.owner_needed_questions);
+      lines.push(formatLoopSummary(loop));
+      lines.push(`  - processors: ${formatLoopProcessors(loop)}`);
       const missing = stringArray(loop.missing_processors);
-      const suffix = missing.length === 0
-        ? ""
-        : `; missing processors: ${missing.join(", ")}`;
-      lines.push(
-        `- \`${id}\`: ${state}; diagnostics ${diag}; questions ` +
-          `${questions}; owner-needed ${owner}${suffix}`,
-      );
+      if (missing.length > 0) {
+        lines.push(`  - missing: ${formatBoundedList(missing)}`);
+      }
+      const inactiveOptional = stringArray(loop.inactive_optional_processors);
+      if (inactiveOptional.length > 0) {
+        lines.push(
+          `  - inactive optional: ${formatBoundedList(inactiveOptional)}`,
+        );
+      }
+      const surfaces = stringArray(loop.surfaces);
+      if (surfaces.length > 0) {
+        lines.push(`  - surfaces: ${surfaces.join(", ")}`);
+      }
+      const settlement = record(loop.settlement);
+      const noOp = stringValue(settlement.no_op_when, "");
+      if (noOp !== "") {
+        lines.push(`  - no-op: ${trimOneLine(noOp)}`);
+      }
     }
   }
 
@@ -331,6 +339,48 @@ function formatServeStatus(status: JsonRecord): string {
   const updatedAt = stringValue(status.serve_updated_at, "");
   if (updatedAt !== "") parts.push(`updated ${updatedAt}`);
   return parts.join("; ");
+}
+
+function formatLoopSummary(loop: JsonRecord): string {
+  const id = stringValue(loop.id, "(unknown)");
+  const state = stringValue(loop.state, "(unknown)");
+  const attentionDiagnostics = numberValue(loop.attention_diagnostics);
+  const driftDiagnostics = numberValue(loop.drift_diagnostics);
+  const questions = numberValue(loop.questions);
+  const agentSafe = numberValue(loop.agent_safe_questions);
+  const modelSafe = numberValue(loop.model_safe_questions);
+  const ownerNeeded = numberValue(loop.owner_needed_questions);
+  const problemRuns = numberValue(loop.recent_problem_runs);
+  const latestRun = stringValue(loop.latest_run_at, "(none)");
+  const questionCounts =
+    `${agentSafe} agent-safe, ${modelSafe} model-safe, ${ownerNeeded} owner-needed`;
+  return [
+    `- \`${id}\`: ${state}`,
+    `diagnostics ${attentionDiagnostics} attention / ${driftDiagnostics} drift`,
+    `questions ${questions} (${questionCounts})`,
+    `problem runs ${problemRuns}`,
+    `latest run ${latestRun}`,
+  ].join("; ");
+}
+
+function formatLoopProcessors(loop: JsonRecord): string {
+  const active = stringArray(loop.active_processors).length;
+  const total = stringArray(loop.processor_ids).length;
+  const required = stringArray(loop.required_processor_ids).length;
+  const missing = stringArray(loop.missing_processors).length;
+  const inactiveOptional = stringArray(loop.inactive_optional_processors).length;
+  const parts = [`${active}/${total} active`, `${required} required`];
+  if (missing > 0) parts.push(`${missing} missing`);
+  if (inactiveOptional > 0) parts.push(`${inactiveOptional} inactive optional`);
+  return parts.join(", ");
+}
+
+function formatBoundedList(values: ReadonlyArray<string>): string {
+  const maxShown = 3;
+  const shown = values.slice(0, maxShown);
+  const remaining = values.length - shown.length;
+  if (remaining <= 0) return shown.join(", ");
+  return `${shown.join(", ")}, +${remaining} more`;
 }
 
 function formatStderr(stderr: string): string {
