@@ -283,6 +283,39 @@ Qualitative notes to fill after the work session:
     expect(report.days[1].captureEvidence).toBe(true);
   });
 
+  test("does not treat negative capture wording as capture evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+${completeDay("2026-06-01", "No raw captures processed today.")}
+${completeDay("2026-06-02", "Did not generate an intake page; no captures arrived.")}
+${completeDay("2026-06-03", "Processed one raw capture into \`wiki/generated/intake/example.md\`.")}
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "3",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.completeWorkdays).toBe(3);
+    expect(report.captureEvidenceDays).toBe(1);
+    expect(
+      report.days.map((day: { captureEvidence: boolean }) =>
+        day.captureEvidence
+      ),
+    ).toEqual([false, false, true]);
+  });
+
   test("requires complete workdays to span the release-soak window", async () => {
     const ledger = writeLedger([
       completeDay("2026-06-01"),

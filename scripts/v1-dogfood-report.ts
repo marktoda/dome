@@ -124,6 +124,22 @@ const safetyChecks: readonly SafetyCheck[] = Object.freeze([
   },
 ]);
 
+const captureEvidencePathPatterns: readonly RegExp[] = Object.freeze([
+  /\binbox\/raw\/[^\s`),]+/,
+  /\binbox\/processed\/[^\s`),]+/,
+  /\bwiki\/generated\/intake\/[^\s`),]+/,
+]);
+
+const positiveCaptureEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\b(processed|digested|archived|generated|created|produced|extracted|converted)\b.{0,80}\b(raw capture|capture|captures|processed archive|generated intake|intake page)\b/i,
+  /\b(raw capture|capture|captures|processed archive|generated intake|intake page)\b.{0,80}\b(processed|digested|archived|generated|created|produced|extracted|converted)\b/i,
+]);
+
+const negativeCaptureEvidencePatterns: readonly RegExp[] = Object.freeze([
+  /\b(no|none|zero|without)\b.{0,80}\b(raw captures?|captures?|capture digestion|processed captures?|processed archive|generated intake|intake pages?)\b/i,
+  /\b(did not|didn't|not)\b.{0,80}\b(process|digest|archive|generate|create|produce|extract|convert)\b.{0,80}\b(raw captures?|captures?|processed archive|generated intake|intake pages?)\b/i,
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -359,15 +375,26 @@ function hasServeHostEvidence(text: string): boolean {
 }
 
 function hasCaptureEvidence(text: string): boolean {
-  return (
-    /\binbox\/raw\b/.test(text) ||
-    /\binbox\/processed\b/.test(text) ||
-    /\bwiki\/generated\/intake\b/.test(text) ||
-    /\braw capture\b/i.test(text) ||
-    /\bprocessed capture\b/i.test(text) ||
-    /\bprocessed archive\b/i.test(text) ||
-    /\bgenerated intake\b/i.test(text)
+  return text.split(/\r?\n/).some((line) => hasCaptureEvidenceLine(line));
+}
+
+function hasCaptureEvidenceLine(line: string): boolean {
+  const normalized = line.trim();
+  if (normalized === "") return false;
+
+  if (captureEvidencePathPatterns.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+
+  if (isNegativeCaptureEvidenceLine(normalized)) return false;
+
+  return positiveCaptureEvidencePatterns.some((pattern) =>
+    pattern.test(normalized)
   );
+}
+
+function isNegativeCaptureEvidenceLine(line: string): boolean {
+  return negativeCaptureEvidencePatterns.some((pattern) => pattern.test(line));
 }
 
 function renderReport(report: DogfoodReport): string {

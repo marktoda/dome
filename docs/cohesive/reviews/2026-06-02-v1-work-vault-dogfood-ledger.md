@@ -909,3 +909,29 @@ Qualitative read:
 
 - This prevents an M10 session from accidentally collecting host evidence from
   a stale or wrong-branch foreground host.
+
+## 2026-06-02 M10 Capture-Evidence Gate Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so negative capture wording like
+  "no raw captures processed today" does not count toward the M10
+  capture-evidence threshold.
+- The report now counts capture evidence from concrete generated/processed
+  capture paths or positive processing/generation language, while still
+  allowing "no captures today" as a normal qualitative note for a complete
+  workday.
+- Added regression coverage proving two complete days with negative capture
+  wording do not inflate `captureEvidenceDays`, while a day with a generated
+  intake path still counts.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 12 tests and
+  78 assertions.
+
+Qualitative read:
+
+- This closes another M10 overclaim path: release readiness now needs real
+  capture-digestion evidence, not merely a completed capture-digestion rubric
+  line that says no capture work happened.
