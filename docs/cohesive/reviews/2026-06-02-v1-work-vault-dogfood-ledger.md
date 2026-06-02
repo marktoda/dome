@@ -1396,3 +1396,39 @@ Qualitative read:
   `dome serve` is currently off, and the release report still has only 1
   complete counted workday, 1 serve-host evidence day, 1 capture-evidence day,
   and a 1-day complete-workday span.
+
+## 2026-06-02 M10 Safety Placeholder Gate Tightening
+
+Verification action:
+
+- Audited the M10 release-soak parser for ways it could mark V1 ready too
+  early.
+- Found that `N/A` / `NA` safety answers counted as clean confirmations for
+  "Lost or overwritten human markdown edits" and "Manual .dome/state edits".
+  That contradicted the V1 completion gate: counted workdays must explicitly
+  confirm there were no lost edits and no manual `.dome/state` edits.
+- Tightened `bun run v1:dogfood-report` so placeholder safety answers are
+  treated as missing safety evidence. Only explicit negative confirmations such
+  as `no`, `none`, `not observed`, or `not seen` count as clean safety
+  confirmations; contradictory answers remain release blockers.
+
+Measured result:
+
+- Added a regression where an otherwise complete workday with `N/A` / `NA`
+  safety answers remains `not-ready`, has 0 complete workdays, and reports the
+  two safety confirmations as missing rather than clean.
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passed with 23 tests and
+  165 assertions.
+- `bun test tests/scripts/v1-dogfood-report.test.ts
+  tests/scripts/v1-dogfood-preflight.test.ts
+  tests/scripts/v1-dogfood-snapshot.test.ts
+  tests/integration/v1-package-scripts.test.ts` passed with 34 tests and
+  313 assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` passed.
+
+Qualitative read:
+
+- This closes a concrete overclaim path in the final release gate. M10 can no
+  longer pass on placeholder safety answers; each counted day must explicitly
+  confirm the two source-preservation safety checks.

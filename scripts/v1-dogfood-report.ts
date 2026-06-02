@@ -498,23 +498,31 @@ function analyzeSafety(text: string): {
   const missing: string[] = [];
   const blockers: string[] = [];
   for (const check of safetyChecks) {
-    const nonEmptyAnswers = (answers.get(check.id) ?? []).filter((answer) =>
-      answer !== ""
+    const filledAnswers = (answers.get(check.id) ?? []).filter((answer) =>
+      isFilledSafetyConfirmationValue(answer)
     );
-    if (nonEmptyAnswers.length === 0) {
+    if (filledAnswers.length === 0) {
       missing.push(check.id);
       continue;
     }
-    if (nonEmptyAnswers.some((answer) => !isNegativeConfirmation(answer))) {
+    if (filledAnswers.some((answer) => !isNegativeConfirmation(answer))) {
       blockers.push(check.id);
     }
   }
   return { missing, blockers };
 }
 
+function isFilledSafetyConfirmationValue(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (normalized === "") return false;
+  return !placeholderDimensionValuePatterns.some((pattern) =>
+    pattern.test(normalized)
+  );
+}
+
 function isNegativeConfirmation(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  if (!/^(no|none|not observed|not seen|n\/a|na)([.;,\s]|$)/.test(normalized)) {
+  if (!/^(no|none|not observed|not seen)([.;,\s]|$)/.test(normalized)) {
     return false;
   }
   return !contradictorySafetyQualifierPatterns.some((pattern) =>

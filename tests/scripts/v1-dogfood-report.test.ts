@@ -392,6 +392,56 @@ Qualitative notes to fill after the work session:
     expect(report.days[1].captureEvidence).toBe(false);
   });
 
+  test("treats placeholder safety confirmations as missing evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: No new friction observed.
+- Lost or overwritten human markdown edits: N/A
+- Manual .dome/state edits: NA
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.releaseBlockers).toEqual([]);
+    expect(report.days[0].complete).toBe(false);
+    expect(report.days[0].safetyConfirmed).toBe(false);
+    expect(report.days[0].missingSafetyConfirmations).toEqual([
+      "lost_or_overwritten_edits",
+      "manual_dome_state_edits",
+    ]);
+    expect(report.days[0].releaseBlockers).toEqual([]);
+  });
+
   test("does not count a bare operational heading as measured Dome evidence", async () => {
     const ledger = writeLedger(`
 # Test ledger
