@@ -204,12 +204,13 @@ function analyzeDay(day: {
   const missingDimensions = dimensions
     .filter((dimension) => !presentDimensions.includes(dimension.id))
     .map((dimension) => dimension.id);
+  const operationalEvidence = hasOperationalEvidence(day.text);
 
   return {
     date: day.date,
     headings: day.headings,
-    complete: missingDimensions.length === 0,
-    operationalEvidence: hasOperationalEvidence(day.text),
+    complete: missingDimensions.length === 0 && operationalEvidence,
+    operationalEvidence,
     captureEvidence:
       presentDimensions.includes("capture_digestion") &&
       hasCaptureEvidence(day.text),

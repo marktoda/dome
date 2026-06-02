@@ -443,12 +443,12 @@ Additional M10 audit support:
 - Added `bun run v1:dogfood-report`, an internal script that audits the
   work-vault dogfood ledger against the release-soak rubric without adding a
   new product CLI command.
-- The report groups dated ledger sections, counts only workdays with filled
-  qualitative notes for every M10 dimension, and separately tracks
-  capture-evidence days.
+- The report groups dated ledger sections, counts only workdays with both
+  measured Dome surface output and filled qualitative notes for every M10
+  dimension, and separately tracks capture-evidence days.
 - The parser is intentionally strict: generated snapshot prompts, controlled
-  smoke prose, and partial qualitative notes do not count as release-soak
-  completion.
+  smoke prose, qualitative-only notes, and partial qualitative notes do not
+  count as release-soak completion.
 - `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
   partial workday detection, JSON output, default threshold behavior, and
   capture-evidence separation.

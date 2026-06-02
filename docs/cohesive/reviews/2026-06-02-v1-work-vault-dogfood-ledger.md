@@ -561,6 +561,8 @@ Operational result:
   evidence but no complete rubric-covered workday.
 - Controlled smoke capture paths and unfilled snapshot prompts do not count as
   real capture-evidence days.
+- Qualitative-only notes also do not count as complete workdays; a counted M10
+  day needs measured Dome surface output plus filled post-session notes.
 
 Qualitative read:
 

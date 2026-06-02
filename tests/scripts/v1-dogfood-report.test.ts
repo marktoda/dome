@@ -105,6 +105,43 @@ Qualitative notes to fill after the work session:
     expect(result.stdout).toContain("Complete workdays: 1/10");
     expect(result.stdout).toContain("Capture-evidence days: 0/5");
   });
+
+  test("does not count qualitative notes without measured Dome surface evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.captureEvidenceDays).toBe(1);
+    expect(report.days[0].complete).toBe(false);
+    expect(report.days[0].operationalEvidence).toBe(false);
+    expect(report.days[0].missingDimensions).toEqual([]);
+  });
 });
 
 function writeLedger(markdown: string): string {
