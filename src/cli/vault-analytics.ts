@@ -13,6 +13,8 @@ import { statusMatrix } from "../git";
 export type VaultAnalytics = {
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
+  readonly dirty_modified_paths: ReadonlyArray<string>;
+  readonly dirty_untracked_paths: ReadonlyArray<string>;
   readonly content_pages: number;
   readonly wiki_pages: number;
   readonly notes_pages: number;
@@ -22,6 +24,8 @@ export type VaultAnalytics = {
   readonly raw_files: number;
   readonly raw_bytes: number;
 };
+
+const DIRTY_PATH_SAMPLE_LIMIT = 20;
 
 type MarkdownTreeStats = {
   readonly files: number;
@@ -50,6 +54,8 @@ export async function collectVaultAnalytics(
   return {
     dirty_modified: dirty.dirty_modified,
     dirty_untracked: dirty.dirty_untracked,
+    dirty_modified_paths: dirty.dirty_modified_paths,
+    dirty_untracked_paths: dirty.dirty_untracked_paths,
     content_pages: wiki.files + notes.files + inbox.files,
     wiki_pages: wiki.files,
     notes_pages: notes.files,
@@ -63,10 +69,18 @@ export async function collectVaultAnalytics(
 
 async function collectDirtyStats(
   vaultPath: string,
-): Promise<Pick<VaultAnalytics, "dirty_modified" | "dirty_untracked">> {
+): Promise<Pick<
+  VaultAnalytics,
+  | "dirty_modified"
+  | "dirty_untracked"
+  | "dirty_modified_paths"
+  | "dirty_untracked_paths"
+>> {
   const matrix = await statusMatrix(vaultPath);
   let dirty_modified = 0;
   let dirty_untracked = 0;
+  const modifiedPaths: string[] = [];
+  const untrackedPaths: string[] = [];
 
   for (const [filepath, head, workdir, stage] of matrix) {
     if (filepath === ".dome/state" || filepath.startsWith(".dome/state/")) {
@@ -74,12 +88,23 @@ async function collectDirtyStats(
     }
     if (head === 0 && (workdir !== 0 || stage !== 0)) {
       dirty_untracked++;
+      untrackedPaths.push(filepath);
     } else if (head !== workdir || head !== stage) {
       dirty_modified++;
+      modifiedPaths.push(filepath);
     }
   }
 
-  return { dirty_modified, dirty_untracked };
+  return {
+    dirty_modified,
+    dirty_untracked,
+    dirty_modified_paths: sampleDirtyPaths(modifiedPaths),
+    dirty_untracked_paths: sampleDirtyPaths(untrackedPaths),
+  };
+}
+
+function sampleDirtyPaths(paths: string[]): ReadonlyArray<string> {
+  return Object.freeze(paths.sort().slice(0, DIRTY_PATH_SAMPLE_LIMIT));
 }
 
 async function collectMarkdownTreeStats(

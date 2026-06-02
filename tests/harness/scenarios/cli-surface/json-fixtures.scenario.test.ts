@@ -23,6 +23,8 @@ const STATUS_KEYS = Object.freeze([
   "next_actions",
   "dirty_modified",
   "dirty_untracked",
+  "dirty_modified_paths",
+  "dirty_untracked_paths",
   "content_pages",
   "wiki_pages",
   "notes_pages",
@@ -174,12 +176,16 @@ scenario(
     expect(status["projection_cache_drift"]).toBe(false);
     expect(status["attention_required"]).toBe(true);
     expect(status["attention"]).toEqual(["dirty_untracked"]);
+    const dirtyUntrackedPaths = status["dirty_untracked_paths"] as
+      ReadonlyArray<string>;
+    expect(dirtyUntrackedPaths.length).toBeGreaterThan(0);
     expect(status["next_actions"]).toEqual([
       {
         reasons: ["dirty_untracked"],
         command: "git status --short",
-        description:
-          "Review draft working-tree changes; commit anything Dome should compile.",
+        description: expect.stringContaining(
+          `untracked: ${dirtyUntrackedPaths[0]}`,
+        ),
       },
     ]);
     expect(status["dirty_untracked"]).toBeGreaterThan(0);

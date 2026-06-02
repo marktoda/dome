@@ -1851,3 +1851,37 @@ Qualitative read:
   `serve` is still the host, the heartbeat is still the evidence surface, and
   shell-specific background-process handling is no longer required for normal
   dogfood sessions.
+
+## 2026-06-02 Dirty Path Attention Surface
+
+Verification action:
+
+- Re-ran preflight with the work-vault daemon healthy and found collection
+  readiness was still blocked by dirty working-tree state.
+- The existing next action only said to run `git status --short`, which was
+  technically correct but forced the operator or foreground agent to issue a
+  second command before knowing which draft file was blocking clean M10 session
+  collection.
+- Added bounded dirty path samples to `dome status --json` as
+  `dirty_modified_paths` and `dirty_untracked_paths`, keeping the existing
+  count fields authoritative.
+- Updated the dirty working-tree next-action description to include those path
+  samples and let preflight pass the improved action through unchanged.
+
+Measured result:
+
+- `bun run typecheck` passed.
+- `bun test tests/cli/commands.test.ts tests/scripts/v1-dogfood-preflight.test.ts
+  tests/harness/scenarios/cli-surface/json-fixtures.scenario.test.ts` passed
+  with 82 tests and 1033 assertions.
+- `git diff --check` passed.
+- `bun test` passed with 1063 tests and 22546 assertions.
+- Live work-vault preflight now reports:
+  `Review draft working-tree changes (modified: notes/2026-06-02.md); commit
+  anything Dome should compile. (git status --short)`.
+
+Qualitative read:
+
+- This is a small attention-surface cleanup in the direction V1 needs: agents
+  can route the next step from one structured status/preflight payload, without
+  preflight growing its own git-status parser or another command surface.

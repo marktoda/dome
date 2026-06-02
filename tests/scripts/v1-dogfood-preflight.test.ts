@@ -206,7 +206,7 @@ describe("v1 dogfood preflight script", () => {
       "working tree has 0 modified and 1 untracked file(s)",
     );
     expect(report.nextActions).toContain(
-      "Review draft working-tree changes; commit anything Dome should compile. (git status --short)",
+      "Review draft working-tree changes (untracked: draft.md); commit anything Dome should compile. (git status --short)",
     );
   }, { timeout: 30_000 });
 

@@ -96,6 +96,8 @@ const STATUS_JSON_KEYS = Object.freeze([
   "next_actions",
   "dirty_modified",
   "dirty_untracked",
+  "dirty_modified_paths",
+  "dirty_untracked_paths",
   "content_pages",
   "wiki_pages",
   "notes_pages",
@@ -3351,6 +3353,8 @@ describe("runStatus", () => {
     ]);
     expect(parsed["dirty_modified"]).toBe(0);
     expect(parsed["dirty_untracked"]).toBe(0);
+    expect(parsed["dirty_modified_paths"]).toEqual([]);
+    expect(parsed["dirty_untracked_paths"]).toEqual([]);
     expect(parsed["content_pages"]).toBe(2);
     expect(parsed["wiki_pages"]).toBe(2);
     expect(parsed["notes_pages"]).toBe(0);
@@ -4317,6 +4321,12 @@ describe("runStatus", () => {
     expect(parsed["raw_files"]).toBe(1);
     expect(parsed["raw_bytes"]).toBe(3);
     expect(parsed["dirty_untracked"]).toBe(4);
+    expect(parsed["dirty_untracked_paths"]).toEqual([
+      "inbox/todo.md",
+      "notes/day.md",
+      "raw/capture.txt",
+      "wiki/links.md",
+    ]);
   });
 
   test("--json mode ignores excluded untracked files in dirty counts", async () => {
@@ -4344,6 +4354,7 @@ describe("runStatus", () => {
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
     expect(parsed["dirty_untracked"]).toBe(0);
+    expect(parsed["dirty_untracked_paths"]).toEqual([]);
     expect(parsed["attention"]).not.toContain("dirty_untracked");
   });
 

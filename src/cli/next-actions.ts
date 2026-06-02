@@ -54,14 +54,28 @@ const SYNC_CHECK_REASONS = Object.freeze([
 export function nextActionsForStatus(
   input: {
     readonly attention: ReadonlyArray<string>;
+    readonly dirtyModified?: number;
+    readonly dirtyUntracked?: number;
+    readonly dirtyModifiedPaths?: ReadonlyArray<string>;
+    readonly dirtyUntrackedPaths?: ReadonlyArray<string>;
   },
 ): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
-  const { attention } = input;
+  const {
+    attention,
+    dirtyModified = 0,
+    dirtyUntracked = 0,
+    dirtyModifiedPaths = [],
+    dirtyUntrackedPaths = [],
+  } = input;
   pushAction(out, attention, DIRTY_REASONS, {
     command: "git status --short",
-    description:
-      "Review draft working-tree changes; commit anything Dome should compile.",
+    description: dirtyStatusDescription({
+      dirtyModified,
+      dirtyUntracked,
+      dirtyModifiedPaths,
+      dirtyUntrackedPaths,
+    }),
   });
   pushAction(out, attention, CAPTURE_REASONS, {
     command: "dome inspect bundles --json",
@@ -108,6 +122,54 @@ export function nextActionsForStatus(
     }));
   }
   return Object.freeze(out);
+}
+
+function dirtyStatusDescription(input: {
+  readonly dirtyModified: number;
+  readonly dirtyUntracked: number;
+  readonly dirtyModifiedPaths: ReadonlyArray<string>;
+  readonly dirtyUntrackedPaths: ReadonlyArray<string>;
+}): string {
+  const detail = dirtyPathDetail(input);
+  return detail === ""
+    ? "Review draft working-tree changes; commit anything Dome should compile."
+    : `Review draft working-tree changes (${detail}); commit anything Dome should compile.`;
+}
+
+function dirtyPathDetail(input: {
+  readonly dirtyModified: number;
+  readonly dirtyUntracked: number;
+  readonly dirtyModifiedPaths: ReadonlyArray<string>;
+  readonly dirtyUntrackedPaths: ReadonlyArray<string>;
+}): string {
+  const parts: string[] = [];
+  const modified = formatDirtyPathGroup({
+    label: "modified",
+    total: input.dirtyModified,
+    paths: input.dirtyModifiedPaths,
+  });
+  if (modified !== "") parts.push(modified);
+  const untracked = formatDirtyPathGroup({
+    label: "untracked",
+    total: input.dirtyUntracked,
+    paths: input.dirtyUntrackedPaths,
+  });
+  if (untracked !== "") parts.push(untracked);
+  return parts.join("; ");
+}
+
+function formatDirtyPathGroup(input: {
+  readonly label: string;
+  readonly total: number;
+  readonly paths: ReadonlyArray<string>;
+}): string {
+  if (input.total === 0) return "";
+  if (input.paths.length === 0) {
+    return `${input.label}: ${input.total}`;
+  }
+  const omitted = input.total - input.paths.length;
+  const suffix = omitted > 0 ? `, +${omitted} more` : "";
+  return `${input.label}: ${input.paths.join(", ")}${suffix}`;
 }
 
 function syncStatusDescription(reasons: ReadonlyArray<string>): string {

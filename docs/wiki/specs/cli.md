@@ -498,7 +498,12 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. `capture_loop_inactive` fires only when top-level
+`capture_loop_inactive`. Dirty reasons include bounded path samples in
+`dirty_modified_paths` and `dirty_untracked_paths`, and the dirty-state
+next-action description names those paths so a foreground agent can see the
+immediate draft files without issuing another status command. The counts remain
+authoritative; the path arrays are samples and may omit additional dirty paths
+when a vault has a large draft set. `capture_loop_inactive` fires only when top-level
 `inbox/raw/*.md` captures are present and the `dome.capture.digest` loop is
 inactive, partial, or enabled without a configured model provider; its next
 action routes through `dome inspect bundles --json` so a vault-aware agent can
@@ -556,7 +561,7 @@ markdown pages under `wiki/`, `notes/`, and `inbox/`; wikilink
 occurrences in those markdown files; raw file count and bytes under
 `raw/`; sync drift, adopted-ref divergence, and pending commit count for
 adopted..HEAD when the adopted ref is initialized and ancestral to HEAD; and
-dirty working-tree counts excluding rebuildable
+dirty working-tree counts and path samples excluding rebuildable
 `.dome/state/` files. The operational counts are pointers, not full
 reports. `serve_status` is read from the foreground host heartbeat file and is
 `running`, `stale`, or `off`; stale means the host did not exit cleanly or has

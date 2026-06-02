@@ -19,8 +19,10 @@
 //                       true when any status field needs user/agent action.
 //   - attention:        stable reason codes explaining attention_required.
 //   - next_actions:     stable command suggestions for agent routing.
-//   - dirty_modified:   working-tree paths modified/deleted/staged.
-//   - dirty_untracked:  working-tree paths not present at HEAD.
+//   - dirty_modified:   count of working-tree paths modified/deleted/staged.
+//   - dirty_untracked:  count of working-tree paths not present at HEAD.
+//   - dirty_modified_paths / dirty_untracked_paths:
+//                       bounded path samples for the dirty counters.
 //   - content_pages:    markdown pages under wiki/, notes/, and inbox/.
 //   - wiki_pages:       markdown pages under wiki/.
 //   - notes_pages:      markdown pages under notes/.
@@ -189,6 +191,8 @@ type StatusSnapshot = {
   readonly next_actions: ReadonlyArray<CliNextAction>;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
+  readonly dirty_modified_paths: ReadonlyArray<string>;
+  readonly dirty_untracked_paths: ReadonlyArray<string>;
   readonly content_pages: number;
   readonly wiki_pages: number;
   readonly notes_pages: number;
@@ -418,9 +422,17 @@ export async function runStatus(
       projection_cache_drift,
       attention_required: attention.length > 0,
       attention,
-      next_actions: nextActionsForStatus({ attention }),
+      next_actions: nextActionsForStatus({
+        attention,
+        dirtyModified: analytics.dirty_modified,
+        dirtyUntracked: analytics.dirty_untracked,
+        dirtyModifiedPaths: analytics.dirty_modified_paths,
+        dirtyUntrackedPaths: analytics.dirty_untracked_paths,
+      }),
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
+      dirty_modified_paths: analytics.dirty_modified_paths,
+      dirty_untracked_paths: analytics.dirty_untracked_paths,
       content_pages: analytics.content_pages,
       wiki_pages: analytics.wiki_pages,
       notes_pages: analytics.notes_pages,
