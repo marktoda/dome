@@ -611,3 +611,41 @@ Qualitative read:
   `dome.intake` is intentionally enabled for the work vault.
 - This preflight is deliberately read-only; it records the setup gap without
   changing Mark's vault configuration.
+
+## 2026-06-02 Intake Dogfood Enabled
+
+Dogfood action:
+
+- Enabled `dome.intake` in `~/vaults/work/.dome/config.yaml`.
+- Committed the work-vault setup change as `183fc6a Enable Dome intake dogfood`.
+- Ran `bin/dome sync --vault ~/vaults/work --json`.
+- Ran `bun run v1:dogfood-preflight -- --json`.
+- Ran `bun scripts/v1-smoke.ts`.
+
+Operational result:
+
+- `find inbox/raw -maxdepth 2 -type f` returned no files before enablement, so
+  the change made capture dogfood ready without immediately processing a raw
+  capture.
+- Dome adopted the work-vault setup commit at
+  `183fc6acb7bbb2b3511f0a6d63219eef235e1b68`.
+- Sync result: `status: adopted`, `iterations: 1`, `closureCommit: null`, 0
+  garden sub-proposals, 0 rejected patches, 0 operational jobs, and no
+  attention required.
+- `dome inspect bundles --vault ~/vaults/work --model --json` now reports
+  `dome.intake` as `enabled`, `loaded: true`, 6 processors, 3 model
+  processors, and model status `ready`.
+- `bun run v1:dogfood-preflight -- --json` now reports overall session
+  collection status `ready`, operational readiness `true`, and capture
+  readiness `true`.
+- `bun scripts/v1-smoke.ts` passed with the work vault at head/adopted
+  `183fc6a`, settled checked, 5 views ok, and the known 46 informational
+  diagnostics.
+
+Qualitative read:
+
+- This removes the last setup blocker for collecting real capture-digestion
+  evidence in the work vault.
+- V1 still is not done. The release-soak report remains `not-ready` with 0
+  complete workdays, 0 capture-evidence days, and 0 release blockers because
+  elapsed real work-vault usage has not been recorded yet.

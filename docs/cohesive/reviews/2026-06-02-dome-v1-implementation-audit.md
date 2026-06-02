@@ -492,3 +492,27 @@ Updated assessment:
 - This makes the next M10 action concrete without mutating Mark's work vault:
   enable `dome.intake` intentionally before trying to collect capture-digestion
   evidence.
+
+## 2026-06-02 Work-Vault Intake Enablement Addendum
+
+Additional M10 setup evidence:
+
+- Enabled `dome.intake` in `~/vaults/work/.dome/config.yaml` and committed the
+  work-vault change as `183fc6a Enable Dome intake dogfood`.
+- `bin/dome sync --vault ~/vaults/work --json` adopted that commit with
+  `iterations: 1`, no closure commit, 0 garden sub-proposals, 0 rejected
+  patches, 0 operational jobs, and no attention required.
+- `dome inspect bundles --vault ~/vaults/work --model --json` now reports
+  `dome.intake` as enabled and loaded with model status `ready`.
+- `bun run v1:dogfood-preflight -- --json` now reports session collection
+  status `ready`, operational readiness `true`, and capture readiness `true`.
+- `bun scripts/v1-smoke.ts` passed after the change with the work vault at
+  head/adopted `183fc6a`, settled checked, 5 views ok, and the known 46
+  informational diagnostics.
+
+Updated assessment:
+
+- The work vault is now ready to collect the capture-digestion slice of M10.
+- V1 still should not be marked complete. The remaining gap is elapsed real
+  usage: the dogfood report still shows 0 complete workdays and 0
+  capture-evidence days.
