@@ -5,6 +5,7 @@ import {
   ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
   completedSourceBackedOpenLoopsFromMarkdown,
+  dailyStartContextSection,
   dailyPathSettings,
   dailyPath,
   openLoopIdentity,
@@ -13,7 +14,9 @@ import {
   openLoopSurfaceSources,
   openTasksFromMarkdown,
   parseDailyPath,
+  previousDailyStartContext,
   renderDailySkeleton,
+  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
@@ -82,6 +85,73 @@ describe("dome.daily shared date helpers", () => {
         "",
         "## Story of the Day",
       ].join("\n"),
+    );
+  });
+
+  test("daily start context summarizes yesterday with stable markers", () => {
+    const context = previousDailyStartContext({
+      previousPath: "wiki/dailies/2026-02-27.md",
+      previousContent: [
+        "# 2026-02-27",
+        "",
+        "## Start Here",
+        "",
+        "<!-- dome.daily:start-context:start -->",
+        "### Since Yesterday",
+        "- [ ] Generated checkbox should not become source",
+        "<!-- dome.daily:start-context:end -->",
+        "",
+        "## Decisions",
+        "",
+        "- Keep alpha review in the weekly plan.",
+        "- [x] Use the lighter staffing packet.",
+        "",
+        "## Done",
+        "",
+        "- Sent Ada the staffing note.",
+        "- [x] Closed the hiring-budget follow-up.",
+        "",
+        "## Story of the Day",
+        "",
+        "Alpha review moved forward after the staffing packet landed.",
+        "The hiring-budget thread is still open.",
+        "",
+      ].join("\n"),
+    });
+
+    const section = dailyStartContextSection(context);
+    expect(section).toBe(
+      [
+        "<!-- dome.daily:start-context:start -->",
+        "### Since Yesterday",
+        "- Previous daily: [[wiki/dailies/2026-02-27]]",
+        "- Done yesterday: Sent Ada the staffing note.; Closed the hiring-budget follow-up.",
+        "- Decisions yesterday: Keep alpha review in the weekly plan.; Use the lighter staffing packet.",
+        "- Story: Alpha review moved forward after the staffing packet landed. The hiring-budget thread is still open.",
+        "<!-- dome.daily:start-context:end -->",
+      ].join("\n"),
+    );
+
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Start Here",
+      "",
+      "Human note stays here.",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const next = replaceDailyStartContextSection({
+      content: daily,
+      section,
+    });
+    expect(next).toContain(
+      "## Start Here\n\n<!-- dome.daily:start-context:start -->",
+    );
+    expect(next).toContain("Human note stays here.");
+    expect(replaceDailyStartContextSection({ content: next, section })).toBe(
+      next,
     );
   });
 
@@ -196,6 +266,10 @@ describe("dome.daily shared date helpers", () => {
       actionItemsFromMarkdown(
         [
           "TODO: Keep source item",
+          "<!-- dome.daily:start-context:start -->",
+          "### Since Yesterday",
+          "- [ ] Generated checkbox should not become source",
+          "<!-- dome.daily:start-context:end -->",
           "<!-- dome.daily:open-loops:start -->",
           "### Source-backed Open Loops",
           "- [ ] Generated copy should not become source",

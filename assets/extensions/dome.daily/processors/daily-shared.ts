@@ -8,6 +8,10 @@ export const CARRIED_FORWARD_START =
   "<!-- dome.daily:carried-forward:start -->";
 export const CARRIED_FORWARD_END =
   "<!-- dome.daily:carried-forward:end -->";
+export const START_CONTEXT_START =
+  "<!-- dome.daily:start-context:start -->";
+export const START_CONTEXT_END =
+  "<!-- dome.daily:start-context:end -->";
 export const OPEN_LOOPS_START = "<!-- dome.daily:open-loops:start -->";
 export const OPEN_LOOPS_END = "<!-- dome.daily:open-loops:end -->";
 
@@ -61,6 +65,13 @@ export type DailyResolvedOpenLoopSource = {
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
+};
+
+export type DailyStartContext = {
+  readonly previousPath: string;
+  readonly done: ReadonlyArray<string>;
+  readonly decisions: ReadonlyArray<string>;
+  readonly story: string | null;
 };
 
 const DEFAULT_DAILY_PATH_SETTINGS: DailyPathSettings = Object.freeze({
@@ -285,6 +296,56 @@ export function carriedForwardSection(input: {
     }),
     CARRIED_FORWARD_END,
   ].join("\n");
+}
+
+export function previousDailyStartContext(input: {
+  readonly previousPath: string;
+  readonly previousContent: string;
+}): DailyStartContext {
+  return Object.freeze({
+    previousPath: input.previousPath,
+    done: extractSectionItems(input.previousContent, "Done"),
+    decisions: extractSectionItems(input.previousContent, "Decisions"),
+    story: extractStorySummary(input.previousContent),
+  });
+}
+
+export function dailyStartContextSection(
+  context: DailyStartContext | null,
+): string | null {
+  if (context === null) return null;
+  const lines = [
+    START_CONTEXT_START,
+    "### Since Yesterday",
+    `- Previous daily: [[${context.previousPath.replace(/\.md$/, "")}]]`,
+  ];
+  if (context.done.length > 0) {
+    lines.push(`- Done yesterday: ${renderCompactList(context.done)}`);
+  }
+  if (context.decisions.length > 0) {
+    lines.push(`- Decisions yesterday: ${renderCompactList(context.decisions)}`);
+  }
+  if (context.story !== null) {
+    lines.push(`- Story: ${context.story}`);
+  }
+  lines.push(START_CONTEXT_END);
+  return lines.join("\n");
+}
+
+export function replaceDailyStartContextSection(input: {
+  readonly content: string;
+  readonly section: string | null;
+}): string {
+  const existing = startContextBlockRange(input.content);
+  if (existing !== null) {
+    const replacement = input.section === null ? "" : input.section;
+    return `${input.content.slice(0, existing.start)}${replacement}${input.content.slice(existing.end)}`;
+  }
+  if (input.section === null) return input.content;
+  return insertDailyStartContextSection({
+    content: input.content,
+    section: input.section,
+  });
 }
 
 export function openLoopSurfaceSources(input: {
@@ -787,6 +848,7 @@ function dailyGeneratedBlockLineRanges(
   const ranges: { start: number; end: number }[] = [];
   for (
     const marker of [
+      [START_CONTEXT_START, START_CONTEXT_END],
       [OPEN_LOOPS_START, OPEN_LOOPS_END],
       [CARRIED_FORWARD_START, CARRIED_FORWARD_END],
     ] as const
@@ -816,4 +878,121 @@ function lineNumberAtOffset(content: string, offset: number): number {
     if (content.charCodeAt(i) === 10) line += 1;
   }
   return line;
+}
+
+function insertDailyStartContextSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const startHere = /^## Start Here[ \t]*$/m.exec(input.content);
+  if (startHere !== null && startHere.index !== undefined) {
+    const insertAt = startHere.index + startHere[0].length;
+    const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
+    return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+
+  const meetings = /^## Meetings[ \t]*$/m.exec(input.content);
+  if (meetings !== null && meetings.index !== undefined) {
+    return (
+      `${input.content.slice(0, meetings.index)}` +
+      `## Start Here\n\n${input.section}\n\n` +
+      input.content.slice(meetings.index)
+    );
+  }
+
+  const openLoops = /^## Open Loops[ \t]*$/m.exec(input.content);
+  if (openLoops !== null && openLoops.index !== undefined) {
+    return (
+      `${input.content.slice(0, openLoops.index)}` +
+      `## Start Here\n\n${input.section}\n\n` +
+      input.content.slice(openLoops.index)
+    );
+  }
+
+  const suffix = input.content.endsWith("\n") ? "" : "\n";
+  return `${input.content}${suffix}\n## Start Here\n\n${input.section}\n`;
+}
+
+function startContextBlockRange(
+  content: string,
+): { readonly start: number; readonly end: number } | null {
+  const start = content.indexOf(START_CONTEXT_START);
+  if (start < 0) return null;
+  const endMarker = content.indexOf(START_CONTEXT_END, start);
+  if (endMarker < 0) return null;
+  return Object.freeze({
+    start,
+    end: endMarker + START_CONTEXT_END.length,
+  });
+}
+
+function extractSectionItems(
+  content: string,
+  heading: string,
+): ReadonlyArray<string> {
+  const body = headingSectionBody(content, heading);
+  if (body === null) return Object.freeze([]);
+  const items: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const item = cleanContextLine(line);
+    if (item === null) continue;
+    items.push(item);
+  }
+  return Object.freeze(items);
+}
+
+function extractStorySummary(content: string): string | null {
+  const body = headingSectionBody(content, "Story of the Day");
+  if (body === null) return null;
+  const paragraphs = body
+    .split(/\r?\n\s*\r?\n/)
+    .map((paragraph) =>
+      paragraph
+        .split(/\r?\n/)
+        .map(cleanContextLine)
+        .filter((line): line is string => line !== null)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((paragraph) => paragraph.length > 0);
+  const first = paragraphs[0];
+  return first === undefined ? null : truncateContextText(first, 220);
+}
+
+function headingSectionBody(
+  content: string,
+  heading: string,
+): string | null {
+  const match = new RegExp(`^## ${escapeRegExp(heading)}[ \\t]*$`, "m")
+    .exec(content);
+  if (match === null || match.index === undefined) return null;
+  const bodyStart = match.index + (match[0]?.length ?? 0);
+  return content.slice(bodyStart, endOfHeadingSection(content, match));
+}
+
+function cleanContextLine(line: string): string | null {
+  const stripped = line
+    .trim()
+    .replace(/^\s*[-*]\s+\[[ xX]\]\s+/, "")
+    .replace(/^\s*[-*]\s+/, "")
+    .replace(/^\s*\d+\.\s+/, "")
+    .trim();
+  if (stripped.length === 0) return null;
+  if (stripped.startsWith("<!--")) return null;
+  if (/^#{1,6}\s+/.test(stripped)) return null;
+  return truncateContextText(stripped, 160);
+}
+
+function renderCompactList(items: ReadonlyArray<string>): string {
+  const shown = items.slice(0, 3);
+  const suffix = items.length > shown.length
+    ? ` (+${items.length - shown.length} more)`
+    : "";
+  return `${shown.join("; ")}${suffix}`;
+}
+
+function truncateContextText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }

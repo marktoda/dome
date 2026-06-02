@@ -53,6 +53,18 @@ recurrence: 2026-01-01
 - [x] Completed task should stay behind
 * [ ] Review launch plan
 - [ ] Already carried once (from [[wiki/dailies/2025-12-31]])
+
+## Decisions
+
+- Keep the manager packet in the weekly plan.
+
+## Done
+
+- Sent Ada the staffing note.
+
+## Story of the Day
+
+The staffing packet landed and hiring budget follow-up remains open.
 `,
       },
     },
@@ -74,6 +86,21 @@ recurrence: 2026-01-01
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("## Start Here");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("<!-- dome.daily:start-context:start -->");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- Previous daily: [[wiki/dailies/2026-01-01]]");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- Done yesterday: Sent Ada the staffing note.");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- Decisions yesterday: Keep the manager packet in the weekly plan.");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toContain("- Story: The staffing packet landed and hiring budget follow-up remains open.");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("## Open Loops");
@@ -195,6 +222,9 @@ extensions:
     await h
       .expectFile("notes/2026-01-02.md")
       .toContain('prev: "[[notes/2026-01-01]]"');
+    await h
+      .expectFile("notes/2026-01-02.md")
+      .toContain("- Previous daily: [[notes/2026-01-01]]");
     await h
       .expectFile("notes/2026-01-02.md")
       .toContain("- [ ] Carry configured task (from [[notes/2026-01-01]])");

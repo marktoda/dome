@@ -20,12 +20,15 @@ import {
 import {
   dailyPathSettings,
   dailyPath,
+  dailyStartContextSection,
   localDateParts,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   previousLocalDate,
+  previousDailyStartContext,
   rankDailyOpenLoopSurfaceItems,
   renderDailySkeleton,
+  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
   type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
@@ -42,7 +45,7 @@ type ScheduleInput = {
 
 const createDaily: Processor = defineProcessor({
   id: "dome.daily.create-daily",
-  version: "0.1.2",
+  version: "0.1.3",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: DAILY_CRON }],
   capabilities: [
@@ -60,7 +63,8 @@ const createDaily: Processor = defineProcessor({
     if ((await ctx.snapshot.readFile(todayPath)) !== null) return [];
 
     const yesterdayPath = dailyPath(yesterday, settings);
-    const yesterdayExists = (await ctx.snapshot.readFile(yesterdayPath)) !== null;
+    const yesterdayContent = await ctx.snapshot.readFile(yesterdayPath);
+    const yesterdayExists = yesterdayContent !== null;
     const openLoopItems = await collectOpenLoopSourcesForNewDaily({
       ctx,
       targetPath: todayPath,
@@ -71,11 +75,22 @@ const createDaily: Processor = defineProcessor({
       yesterday: yesterdayExists ? yesterday : null,
       settings,
     });
+    const startContextSection = dailyStartContextSection(
+      yesterdayContent === null
+        ? null
+        : previousDailyStartContext({
+            previousPath: yesterdayPath,
+            previousContent: yesterdayContent,
+          }),
+    );
     const change: FileChangeInput = {
       kind: "write",
       path: todayPath,
       content: replaceOpenLoopSurfaceSection({
-        content: skeleton,
+        content: replaceDailyStartContextSection({
+          content: skeleton,
+          section: startContextSection,
+        }),
         section: openLoopSurfaceSection({ items: openLoopItems }),
       }),
     };

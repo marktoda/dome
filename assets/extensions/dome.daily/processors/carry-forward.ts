@@ -21,6 +21,7 @@ import type { SourceRef } from "../../../../src/core/source-ref";
 import {
   dailyPathSettings,
   dailyPath,
+  dailyStartContextSection,
   formatDate,
   localDateParts,
   completedSourceBackedOpenLoopsFromMarkdown,
@@ -28,7 +29,10 @@ import {
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   parseDailyPath,
+  previousDailyStartContext,
+  previousLocalDate,
   rankDailyOpenLoopSurfaceItems,
+  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
   type DailyDate,
   type DailyOpenLoopCandidate,
@@ -41,7 +45,7 @@ const DAILY_CRON = "0 6 * * *";
 
 const carryForward: Processor = defineProcessor({
   id: "dome.daily.carry-forward",
-  version: "0.2.2",
+  version: "0.2.3",
   phase: "garden",
   triggers: [
     { kind: "schedule", cron: DAILY_CRON },
@@ -86,6 +90,11 @@ const carryForward: Processor = defineProcessor({
     const targetPath = dailyPath(targetDate, settings);
     const content = await ctx.snapshot.readFile(targetPath);
     if (content === null) return [];
+    const startContext = await collectStartContext({
+      ctx,
+      targetDate,
+      settings,
+    });
 
     const targetResolvedItems = uniqueResolvedOpenLoops(
       completedSourceBackedOpenLoopsFromMarkdown({
@@ -106,7 +115,10 @@ const carryForward: Processor = defineProcessor({
       resolvedIdentities,
     });
     const nextContent = replaceOpenLoopSurfaceSection({
-      content,
+      content: replaceDailyStartContextSection({
+        content,
+        section: startContext.section,
+      }),
       section: openLoopSurfaceSection({
         items,
         resolvedItems: targetResolvedItems,
@@ -125,7 +137,12 @@ const carryForward: Processor = defineProcessor({
         mode: "auto",
         changes: [change],
         reason: `dome.daily: raise source-backed open loops into ${targetPath}`,
-        sourceRefs: patchSourceRefs(ctx, items, targetResolvedItems),
+        sourceRefs: patchSourceRefs(
+          ctx,
+          items,
+          targetResolvedItems,
+          startContext.sourcePath,
+        ),
       }),
     ];
   },
@@ -175,6 +192,31 @@ async function collectOpenLoopSources(input: {
   return rankDailyOpenLoopSurfaceItems(items);
 }
 
+async function collectStartContext(input: {
+  readonly ctx: ProcessorContext;
+  readonly targetDate: DailyDate;
+  readonly settings: DailyPathSettings;
+}): Promise<{
+  readonly section: string | null;
+  readonly sourcePath: string | null;
+}> {
+  const previous = previousLocalDate(input.targetDate);
+  const previousPath = dailyPath(previous, input.settings);
+  const previousContent = await input.ctx.snapshot.readFile(previousPath);
+  if (previousContent === null) {
+    return Object.freeze({ section: null, sourcePath: null });
+  }
+  return Object.freeze({
+    section: dailyStartContextSection(
+      previousDailyStartContext({
+        previousPath,
+        previousContent,
+      }),
+    ),
+    sourcePath: previousPath,
+  });
+}
+
 async function collectResolvedOpenLoopIdentities(input: {
   readonly ctx: ProcessorContext;
   readonly targetPath: string;
@@ -204,8 +246,12 @@ function patchSourceRefs(
   ctx: ProcessorContext,
   items: ReadonlyArray<DailyOpenLoopSource>,
   resolvedItems: ReadonlyArray<DailyResolvedOpenLoopSource>,
+  startContextSourcePath: string | null,
 ): ReadonlyArray<SourceRef> {
   return [
+    ...(startContextSourcePath === null
+      ? []
+      : [ctx.sourceRef(startContextSourcePath)]),
     ...items.map((item) =>
       ctx.sourceRef(
         item.sourcePath,
