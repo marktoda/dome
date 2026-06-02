@@ -556,13 +556,16 @@ Dogfood action:
 Operational result:
 
 - Current report:
-  `Status: not-ready`; `Complete workdays: 0/10`; `Capture-evidence days: 0/5`.
+  `Status: not-ready`; `Complete workdays: 0/10`; `Capture-evidence days: 0/5`;
+  `Complete-workday span: 0/12 calendar day(s)`.
 - The report detected the dated 2026-06-02 evidence as partial with operational
   evidence but no complete rubric-covered workday.
 - Controlled smoke capture paths and unfilled snapshot prompts do not count as
   real capture-evidence days.
 - Qualitative-only notes also do not count as complete workdays; a counted M10
   day needs measured Dome surface output plus filled post-session notes.
+- Short backfilled ledgers do not satisfy the release soak either; counted
+  complete workdays need to span a two-work-week calendar window.
 
 Qualitative read:
 

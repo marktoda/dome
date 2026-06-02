@@ -7,6 +7,7 @@ type ReportOptions = {
   readonly ledger: string;
   readonly minDays: number;
   readonly minCaptureDays: number;
+  readonly minSpanDays: number;
   readonly json: boolean;
 };
 
@@ -31,10 +32,12 @@ type DogfoodReport = {
   readonly required: {
     readonly completeWorkdays: number;
     readonly captureEvidenceDays: number;
+    readonly spanCalendarDays: number;
   };
   readonly status: "ready" | "not-ready";
   readonly completeWorkdays: number;
   readonly captureEvidenceDays: number;
+  readonly spanCalendarDays: number;
   readonly dimensions: ReadonlyArray<{
     readonly id: string;
     readonly label: string;
@@ -104,9 +107,11 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   const days = parseDaySections(markdown).map((day) => analyzeDay(day));
   const completeWorkdays = days.filter((day) => day.complete).length;
   const captureEvidenceDays = days.filter((day) => day.captureEvidence).length;
+  const spanCalendarDays = completeWorkdaySpanDays(days);
   const status =
     completeWorkdays >= opts.minDays &&
-    captureEvidenceDays >= opts.minCaptureDays
+    captureEvidenceDays >= opts.minCaptureDays &&
+    spanCalendarDays >= opts.minSpanDays
       ? "ready"
       : "not-ready";
 
@@ -115,10 +120,12 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     required: {
       completeWorkdays: opts.minDays,
       captureEvidenceDays: opts.minCaptureDays,
+      spanCalendarDays: opts.minSpanDays,
     },
     status,
     completeWorkdays,
     captureEvidenceDays,
+    spanCalendarDays,
     dimensions: dimensions.map((dimension) => ({
       id: dimension.id,
       label: dimension.label,
@@ -127,6 +134,14 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     })),
     days,
   };
+}
+
+function completeWorkdaySpanDays(days: ReadonlyArray<DayReport>): number {
+  const completeDates = days
+    .filter((day) => day.complete)
+    .map((day) => daysSinceEpoch(day.date));
+  if (completeDates.length === 0) return 0;
+  return Math.max(...completeDates) - Math.min(...completeDates) + 1;
 }
 
 function parseDaySections(markdown: string): Array<{
@@ -268,6 +283,10 @@ function renderReport(report: DogfoodReport): string {
     `Capture-evidence days: ${report.captureEvidenceDays}/` +
       `${report.required.captureEvidenceDays}`,
   );
+  lines.push(
+    `Complete-workday span: ${report.spanCalendarDays}/` +
+      `${report.required.spanCalendarDays} calendar day(s)`,
+  );
   lines.push("");
   lines.push("Rubric coverage:");
   for (const dimension of report.dimensions) {
@@ -295,7 +314,8 @@ function renderReport(report: DogfoodReport): string {
   lines.push("");
   lines.push(
     "M10 is ready only when enough real work-vault days have complete rubric " +
-      "notes and the capture loop has been exercised across a real work week.",
+      "notes, those days span two real work weeks, and the capture loop has " +
+      "been exercised across a real work week.",
   );
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -305,6 +325,7 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
   let ledger = defaultLedger;
   let minDays = 10;
   let minCaptureDays = 5;
+  let minSpanDays = 12;
   let json = false;
 
   for (let i = 0; i < args.length; i += 1) {
@@ -324,6 +345,11 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
       i += 1;
       continue;
     }
+    if (arg === "--min-span-days") {
+      minSpanDays = parsePositiveInteger(readValue(args, i, arg), arg);
+      i += 1;
+      continue;
+    }
     if (arg === "--json") {
       json = true;
       continue;
@@ -335,7 +361,7 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
     throw new Error(`unknown argument: ${arg}`);
   }
 
-  return Object.freeze({ ledger, minDays, minCaptureDays, json });
+  return Object.freeze({ ledger, minDays, minCaptureDays, minSpanDays, json });
 }
 
 function readValue(
@@ -358,6 +384,11 @@ function parsePositiveInteger(value: string, name: string): number {
   return parsed;
 }
 
+function daysSinceEpoch(date: string): number {
+  const [year, month, day] = date.split("-").map((part) => Number(part));
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
 function printHelp(): void {
   nodeWrite([
     "Usage: bun scripts/v1-dogfood-report.ts [options]",
@@ -368,6 +399,7 @@ function printHelp(): void {
     "  --ledger <path>            Ledger Markdown path.",
     "  --min-days <n>             Complete workday threshold (default: 10).",
     "  --min-capture-days <n>     Capture-evidence threshold (default: 5).",
+    "  --min-span-days <n>        Complete-workday calendar span (default: 12).",
     "  --json                     Emit machine-readable JSON.",
     "  -h, --help                 Show this help.",
     "",

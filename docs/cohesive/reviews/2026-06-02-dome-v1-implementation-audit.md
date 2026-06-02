@@ -445,10 +445,11 @@ Additional M10 audit support:
   new product CLI command.
 - The report groups dated ledger sections, counts only workdays with both
   measured Dome surface output and filled qualitative notes for every M10
-  dimension, and separately tracks capture-evidence days.
+  dimension, separately tracks capture-evidence days, and requires complete
+  workdays to span the two-work-week release-soak window.
 - The parser is intentionally strict: generated snapshot prompts, controlled
-  smoke prose, qualitative-only notes, and partial qualitative notes do not
-  count as release-soak completion.
+  smoke prose, qualitative-only notes, partial qualitative notes, and short
+  backfilled ledgers do not count as release-soak completion.
 - `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
   partial workday detection, JSON output, default threshold behavior, and
   capture-evidence separation.
@@ -456,7 +457,8 @@ Additional M10 audit support:
 Current output:
 
 - `bun run v1:dogfood-report` reports `Status: not-ready`,
-  `Complete workdays: 0/10`, and `Capture-evidence days: 0/5`.
+  `Complete workdays: 0/10`, `Capture-evidence days: 0/5`, and
+  `Complete-workday span: 0/12 calendar day(s)`.
 
 Updated assessment:
 

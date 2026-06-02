@@ -62,6 +62,8 @@ Qualitative notes to fill after the work session:
       "1",
       "--min-capture-days",
       "1",
+      "--min-span-days",
+      "1",
       "--json",
     ]);
 
@@ -71,6 +73,7 @@ Qualitative notes to fill after the work session:
     expect(report.status).toBe("ready");
     expect(report.completeWorkdays).toBe(1);
     expect(report.captureEvidenceDays).toBe(1);
+    expect(report.spanCalendarDays).toBe(1);
     expect(report.days).toHaveLength(2);
     expect(report.days[0].complete).toBe(true);
     expect(report.days[1].complete).toBe(false);
@@ -104,6 +107,7 @@ Qualitative notes to fill after the work session:
     expect(result.stdout).toContain("Status: not-ready");
     expect(result.stdout).toContain("Complete workdays: 1/10");
     expect(result.stdout).toContain("Capture-evidence days: 0/5");
+    expect(result.stdout).toContain("Complete-workday span: 1/12");
   });
 
   test("does not count qualitative notes without measured Dome surface evidence", async () => {
@@ -129,6 +133,8 @@ Qualitative notes to fill after the work session:
       "1",
       "--min-capture-days",
       "1",
+      "--min-span-days",
+      "1",
       "--json",
     ]);
 
@@ -142,6 +148,37 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].operationalEvidence).toBe(false);
     expect(report.days[0].missingDimensions).toEqual([]);
   });
+
+  test("requires complete workdays to span the release-soak window", async () => {
+    const ledger = writeLedger([
+      completeDay("2026-06-01"),
+      completeDay("2026-06-02"),
+      completeDay("2026-06-03"),
+      completeDay("2026-06-04"),
+      completeDay("2026-06-05"),
+    ].join("\n\n"));
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "5",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "12",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(5);
+    expect(report.captureEvidenceDays).toBe(5);
+    expect(report.spanCalendarDays).toBe(5);
+    expect(report.required.spanCalendarDays).toBe(12);
+  });
 });
 
 function writeLedger(markdown: string): string {
@@ -150,6 +187,24 @@ function writeLedger(markdown: string): string {
   const path = join(dir, "ledger.md");
   writeFileSync(path, markdown.trimStart());
   return path;
+}
+
+function completeDay(date: string): string {
+  return `
+## ${date} Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/${date}.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+`.trim();
 }
 
 type ProcessResult = {
