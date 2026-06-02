@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.1
+version: 0.4.2
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.3.0
@@ -16,6 +16,20 @@ processors:
         paths: ["**/*.md"]
       - kind: question.ask
     module: processors/validate-wikilinks.ts
+
+  - id: dome.markdown.ambiguous-wikilink-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.markdown.validate-wikilinks
+        idempotencyKeyPrefix: "dome.markdown.ambiguous-wikilink:"
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: patch.auto
+        paths: ["**/*.md"]
+    module: processors/ambiguous-wikilink-answer.ts
 
   - id: dome.markdown.normalize-frontmatter
     version: 0.2.1

@@ -163,6 +163,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
       processors: [
         "dome.markdown.validate-wikilinks",
+        "dome.markdown.ambiguous-wikilink-answer",
         "dome.markdown.normalize-frontmatter",
         "dome.markdown.lint-frontmatter",
         "dome.markdown.broken-images",
@@ -233,6 +234,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.health.quarantine-recovery-answer",
         "dome.health.orphan-run-recovery-questions",
         "dome.health.orphan-run-recovery-answer",
+        "dome.markdown.ambiguous-wikilink-answer",
         "dome.daily.ambiguous-followup-answer",
         "dome.intake.low-confidence-answer",
       ],

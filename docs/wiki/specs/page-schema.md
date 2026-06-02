@@ -46,7 +46,7 @@ Type validation against the declared page types is the `dome.markdown.type-unkno
 
 ### Sources
 
-`sources:` is optional but recommended. Carries a list of wikilinks pointing to evidence — typically raw captures (`[[raw/voice/2026-05-27-danny.md]]`) or other wiki pages. `dome.markdown.validate-wikilinks` emits warning diagnostics for unresolvable managed-page wikilinks, including broken `sources:` entries. When a broken managed-page link has multiple plausible existing targets, it also asks an agent-safe source-backed question rather than guessing or creating a duplicate stub. Unresolved wikilinks authored under user-owned `notes/` or in imported `wiki/sources/` page bodies stay visible as informational diagnostics instead of release-gate attention.
+`sources:` is optional but recommended. Carries a list of wikilinks pointing to evidence — typically raw captures (`[[raw/voice/2026-05-27-danny.md]]`) or other wiki pages. `dome.markdown.validate-wikilinks` emits warning diagnostics for unresolvable managed-page wikilinks, including broken `sources:` entries. When a broken managed-page link has multiple plausible existing targets, it also asks an agent-safe source-backed question rather than guessing or creating a duplicate stub; answering that question with a candidate target patches only the original source span. Unresolved wikilinks authored under user-owned `notes/` or in imported `wiki/sources/` page bodies stay visible as informational diagnostics instead of release-gate attention.
 
 ### Tags
 

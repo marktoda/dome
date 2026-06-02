@@ -50,6 +50,8 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+import { AMBIGUOUS_WIKILINK_QUESTION_PREFIX } from "./ambiguous-wikilink-shared";
+
 // ----- Wikilink regex -------------------------------------------------------
 //
 // Matches `[[target]]` and `[[target|display]]`. The target is captured in
@@ -753,7 +755,7 @@ function ambiguousWikilinkQuestion(opts: {
     options,
     sourceRefs: [opts.sourceRef],
     idempotencyKey:
-      `dome.markdown.ambiguous-wikilink:${sha256([
+      `${AMBIGUOUS_WIKILINK_QUESTION_PREFIX}${sha256([
         opts.changedPath,
         String(opts.line),
         String(opts.startChar),

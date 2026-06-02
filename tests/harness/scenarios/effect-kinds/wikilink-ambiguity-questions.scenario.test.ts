@@ -14,11 +14,16 @@ scenario(
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "effect", effect: "diagnostic" },
+      { kind: "effect", effect: "patch" },
       { kind: "effect", effect: "question" },
       { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "garden" },
       { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
       { kind: "capability", capability: "question.ask" },
       { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "answer" },
+      { kind: "route", route: "garden-answer" },
     ],
     harness: { bundles: ["dome.markdown"] },
   },
@@ -28,7 +33,8 @@ scenario(
 
     await h.userCommit({
       files: {
-        "wiki/page.md": "# Page\n\nWorking with [[wiki/entities/grae-danco]].\n",
+        "wiki/page.md":
+          "# Page\n\nWorking with [[wiki/entities/grae-danco#Notes|Grace]].\n",
         "wiki/entities/grace-danco.md": "# Grace Danco\n",
         "wiki/entities/grade-danco.md": "# Grade Danco\n",
       },
@@ -47,6 +53,8 @@ scenario(
     const inspect = await h.runCli(["inspect", "questions", "--json"]);
     expect(inspect.exitCode).toBe(0);
     const rows = JSON.parse(inspect.stdout) as ReadonlyArray<{
+      readonly id: number;
+      readonly status: string;
       readonly question: string;
       readonly options: ReadonlyArray<string>;
       readonly metadata: {
@@ -56,10 +64,11 @@ scenario(
       readonly idempotency_key: string;
     }>;
     const row = rows[0];
-    expect(row?.question).toContain("[[wiki/entities/grae-danco]]");
+    expect(row?.status).toBe("open");
+    expect(row?.question).toContain("[[wiki/entities/grae-danco#Notes]]");
     expect(row?.options).toEqual([
-      "wiki/entities/grace-danco",
-      "wiki/entities/grade-danco",
+      "wiki/entities/grace-danco#Notes",
+      "wiki/entities/grade-danco#Notes",
       "keep unresolved",
     ]);
     expect(row?.metadata).toEqual(
@@ -71,5 +80,64 @@ scenario(
     expect(row?.idempotency_key).toMatch(
       /^dome\.markdown\.ambiguous-wikilink:/,
     );
+    expect(row?.id).toBeDefined();
+    if (row === undefined) return;
+
+    const resolve = await h.runCli([
+      "resolve",
+      String(row.id),
+      "wiki/entities/grace-danco#Notes",
+      "--json",
+    ]);
+    expect(resolve.exitCode).toBe(0);
+    const resolved = JSON.parse(resolve.stdout) as {
+      readonly status: string;
+      readonly question: {
+        readonly status: string;
+        readonly answer: string;
+      };
+      readonly handlers: {
+        readonly status: string;
+        readonly sub_proposals: number;
+        readonly runs: ReadonlyArray<{
+          readonly processor_id: string;
+          readonly execution_status: string;
+          readonly authorized_patch_count: number;
+        }>;
+      };
+    };
+    expect(resolved.status).toBe("answered");
+    expect(resolved.question).toEqual(
+      expect.objectContaining({
+        status: "answered",
+        answer: "wiki/entities/grace-danco#Notes",
+      }),
+    );
+    expect(resolved.handlers.status).toBe("handled");
+    expect(resolved.handlers.sub_proposals).toBe(1);
+    expect(resolved.handlers.runs).toContainEqual(
+      expect.objectContaining({
+        processor_id: "dome.markdown.ambiguous-wikilink-answer",
+        execution_status: "succeeded",
+        authorized_patch_count: 1,
+      }),
+    );
+
+    await h
+      .expectFile("wiki/page.md")
+      .toContain("[[wiki/entities/grace-danco#Notes|Grace]]");
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
+
+    await h.expectProjection().questions().toHaveCount(0);
+
+    const settled = await h.tick();
+    expect(settled.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-wikilink" })
+      .toHaveCount(0);
   },
 );

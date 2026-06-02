@@ -187,16 +187,25 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(3);
+    expect(report.summary.capabilityGrantGaps).toBe(4);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
     );
     expect(grantGaps.map((finding) => finding.id).sort()).toEqual([
+      "dome.markdown.ambiguous-wikilink-answer",
       "dome.markdown.duplicate-detection",
       "dome.markdown.normalize-frontmatter",
       "dome.markdown.validate-wikilinks",
     ]);
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.ambiguous-wikilink-answer",
+          missingKinds: ["patch.auto"],
+        },
+      }),
+    );
     expect(grantGaps).toContainEqual(
       expect.objectContaining({
         capability: {
