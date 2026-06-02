@@ -432,8 +432,13 @@ classification as `dome check`; missing question metadata is owner-needed.
 Because loops can intentionally overlap, those per-loop question counts are
 attribution counts rather than a globally deduplicated question total; use the
 top-level `questions` field for the unique open-question count.
+For loop settlement, `recent_problem_runs` counts processors whose latest row
+inside the bounded recent-run window is still an active problem state
+(`failed`, `timed_out`, or `cancelled`, excluding health-recovered orphan
+runs). Older failed rows remain visible in `recent_processor_runs` and
+`inspect runs`, but a later successful run clears loop attention.
 `state: "quiet"` means the loop is active and has no visible drift or attention;
-`"attention"` means attention diagnostics, questions, or recent problem runs are present;
+`"attention"` means attention diagnostics, questions, or latest active problem runs are present;
 `"drift"` means non-attention diagnostics are visible but do not route immediate attention;
 `"partial"` means at least one required processor is not active while another
 required processor is active; and `"inactive"` means none of the loop's

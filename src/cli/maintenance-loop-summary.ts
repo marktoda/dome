@@ -165,7 +165,7 @@ function summarizeLoop(
 
     const runs = opts.runsByProcessor(processorId);
     recentRuns += runs.length;
-    recentProblemRuns += runs.filter(isActiveProblemRun).length;
+    recentProblemRuns += latestProblemRunCount(runs);
     for (const run of runs) {
       if (latestRunAt === null || run.startedAt > latestRunAt) {
         latestRunAt = run.startedAt;
@@ -340,6 +340,16 @@ function stateForLoop(input: {
   if (input.missingProcessors > 0) return "partial";
   if (input.diagnostics > 0) return "drift";
   return "quiet";
+}
+
+function latestProblemRunCount(runs: ReadonlyArray<RunRow>): 0 | 1 {
+  let latest: RunRow | null = null;
+  for (const run of runs) {
+    if (latest === null || run.startedAt > latest.startedAt) {
+      latest = run;
+    }
+  }
+  return latest !== null && isActiveProblemRun(latest) ? 1 : 0;
 }
 
 function formatSurface(surface: MaintenanceLoop["surfaces"][number]): string {

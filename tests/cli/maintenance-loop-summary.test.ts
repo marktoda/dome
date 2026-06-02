@@ -4,6 +4,7 @@ import { collectMaintenanceLoopSummaries } from "../../src/cli/maintenance-loop-
 import { diagnosticEffect, questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { MaintenanceLoop } from "../../src/extensions/maintenance-loops";
+import { newRunId, type RunRow, type RunStatus } from "../../src/ledger/runs";
 import type { QuestionRecord } from "../../src/projections/questions";
 
 const REF = sourceRef({
@@ -253,4 +254,104 @@ describe("collectMaintenanceLoopSummaries", () => {
       "no-drift-diagnostics",
     ]);
   });
+
+  test("recovered processor runs do not keep a loop in attention", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: (processorId) =>
+        processorId === "test.active-processor"
+          ? [
+              runRow({
+                processorId,
+                status: "succeeded",
+                startedAt: "2026-06-02T12:01:00.000Z",
+              }),
+              runRow({
+                processorId,
+                status: "timed_out",
+                startedAt: "2026-06-02T12:00:00.000Z",
+              }),
+            ]
+          : [],
+    });
+
+    expect(summary?.state).toBe("quiet");
+    expect(summary?.recent_runs).toBe(2);
+    expect(summary?.recent_problem_runs).toBe(0);
+    expect(summary?.settlement.settled).toBe(true);
+    expect(summary?.settlement.failed_checks).toEqual([]);
+  });
+
+  test("latest active problem runs keep a loop in attention", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: (processorId) =>
+        processorId === "test.active-processor"
+          ? [
+              runRow({
+                processorId,
+                status: "timed_out",
+                startedAt: "2026-06-02T12:02:00.000Z",
+              }),
+              runRow({
+                processorId,
+                status: "succeeded",
+                startedAt: "2026-06-02T12:01:00.000Z",
+              }),
+            ]
+          : [],
+    });
+
+    expect(summary?.state).toBe("attention");
+    expect(summary?.recent_runs).toBe(2);
+    expect(summary?.recent_problem_runs).toBe(1);
+    expect(summary?.settlement.settled).toBe(false);
+    expect(summary?.settlement.failed_checks).toEqual([
+      "no-recent-problem-runs",
+    ]);
+  });
 });
+
+function runRow(input: {
+  readonly processorId: string;
+  readonly status: RunStatus;
+  readonly startedAt: string;
+}): RunRow {
+  const startedAt = new Date(input.startedAt);
+  return Object.freeze({
+    id: newRunId(startedAt, () =>
+      input.status === "succeeded" ? "00cede" : "badbad"
+    ),
+    proposalId: null,
+    processorId: input.processorId,
+    processorVersion: "0.0.1",
+    phase: "view",
+    inputCommit: commitOid("abc123"),
+    outputCommit: null,
+    status: input.status,
+    effectHashes: Object.freeze([]),
+    costUsd: null,
+    durationMs: 1,
+    error: input.status === "succeeded" ? null : "processor timed out",
+    triggerKind: "command",
+    triggerPayload: Object.freeze({}),
+    startedAt: input.startedAt,
+    finishedAt: new Date(startedAt.getTime() + 1).toISOString(),
+  });
+}
