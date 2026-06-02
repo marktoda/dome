@@ -888,6 +888,108 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome today folds near-duplicate backlog loops into daily rows",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/hayden.md": [
+          "# Hayden Project",
+          "",
+          "TODO: Hayden conversation — pull up prep card 30 min before; walk-in order mandate then comp 📅 2026-01-04 🔺",
+          "TODO: Book hotel for Seattle",
+          "",
+        ].join("\n"),
+      },
+      message: "add older similar backlog items",
+    });
+    const oldSync = await h.tick();
+    expect(oldSync.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "# 2026-01-05",
+          "",
+          "## Notes",
+          "",
+          "TODO: Hayden conversation — pull up prep card 30 min before; walk-in order is mandate first, then compensation 📅 2026-01-05 🔺",
+          "TODO: Draft launch staffing note",
+          "",
+        ].join("\n"),
+      },
+      message: "add current daily with similar item",
+    });
+    const dailySync = await h.tick();
+    expect(dailySync.adopted).toBe(true);
+
+    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      readonly counts: { readonly openTasks: number };
+      readonly sourceCounts: {
+        readonly daily: { readonly openTasks: number };
+        readonly backlog: { readonly openTasks: number };
+      };
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly path: string;
+        readonly source: string;
+        readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+      }>;
+    };
+
+    expect(payload.counts.openTasks).toBe(3);
+    expect(
+      payload.sourceCounts.daily.openTasks +
+        payload.sourceCounts.backlog.openTasks,
+    ).toBe(3);
+    expect(payload.sourceCounts.daily.openTasks).toBeGreaterThanOrEqual(2);
+    expect(payload.openTasks.map((task) => task.text)).toContain(
+      "Hayden conversation — pull up prep card 30 min before; walk-in order is mandate first, then compensation",
+    );
+    expect(payload.openTasks.map((task) => task.text)).toContain(
+      "Draft launch staffing note",
+    );
+    expect(payload.openTasks.map((task) => task.text)).toContain(
+      "Book hotel for Seattle",
+    );
+    expect(payload.openTasks.map((task) => task.text)).not.toContain(
+      "Hayden conversation — pull up prep card 30 min before; walk-in order mandate then comp",
+    );
+    const hayden = payload.openTasks.find((task) =>
+      task.text.startsWith("Hayden conversation")
+    );
+    expect(hayden?.path).toBe("wiki/dailies/2026-01-05.md");
+    expect(hayden?.source).toBe("daily");
+    expect(hayden?.sourceRefs.map((ref) => ref.path).sort()).toEqual([
+      "wiki/dailies/2026-01-05.md",
+      "wiki/projects/hayden.md",
+    ]);
+
+    const text = await h.runCli(["today", "--date", "2026-01-05"]);
+    expect(text.exitCode).toBe(0);
+    expect(occurrences(text.stdout, "Hayden conversation")).toBe(1);
+    expect(text.stdout).toContain("Book hotel for Seattle");
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome today respects configured daily note path",
     tags: [
       { kind: "group", group: "cli-surface" },

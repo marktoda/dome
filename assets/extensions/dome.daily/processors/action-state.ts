@@ -357,12 +357,16 @@ function taskItemFromDailySurface(input: {
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
 }): DailyTaskItem {
   const metadata = taskMetadata(input.item.body);
-  const sourceRefs = Object.freeze([
-    input.ctx.sourceRef(
-      input.dailyPath,
-      { startLine: input.item.line, endLine: input.item.line },
-      input.item.stableId,
-    ),
+  const surfaceRef = input.ctx.sourceRef(
+    input.dailyPath,
+    { startLine: input.item.line, endLine: input.item.line },
+    input.item.stableId,
+  );
+  const sourceRefs = uniqueSourceRefs([
+    surfaceRef,
+    ...(input.item.sourcePath === input.dailyPath ? [] : [
+      input.ctx.sourceRef(input.item.sourcePath, undefined, input.item.stableId),
+    ]),
   ]);
   return Object.freeze({
     text: taskDisplayText(input.item.body),
@@ -544,24 +548,37 @@ function uniqueFactsByKey(
 function dedupeDailyTaskItems(
   items: ReadonlyArray<DailyTaskItem>,
 ): ReadonlyArray<DailyTaskItem> {
-  const bySurfaceKey = new Map<string, DailyTaskItem>();
+  const out: DailyTaskItem[] = [];
+  const bySurfaceKey = new Map<string, number>();
   for (const item of items) {
     const key = taskSurfaceKey(item);
-    const existing = bySurfaceKey.get(key);
-    if (existing === undefined) {
-      bySurfaceKey.set(key, item);
+    const exactIndex = bySurfaceKey.get(key);
+    if (exactIndex !== undefined) {
+      out[exactIndex] = mergeDailyTaskItems(out[exactIndex]!, item);
       continue;
     }
-    bySurfaceKey.set(key, mergeDailyTaskItems(existing, item));
+
+    const nearIndex = out.findIndex((existing) =>
+      taskItemsAreNearDuplicates(existing, item)
+    );
+    if (nearIndex === -1) {
+      bySurfaceKey.set(key, out.length);
+      out.push(item);
+      continue;
+    }
+    out[nearIndex] = mergeDailyTaskItems(out[nearIndex]!, item);
+    bySurfaceKey.set(key, nearIndex);
   }
-  return Object.freeze([...bySurfaceKey.values()]);
+  return Object.freeze(out);
 }
 
 function mergeDailyTaskItems(
-  primary: DailyTaskItem,
-  duplicate: DailyTaskItem,
+  first: DailyTaskItem,
+  second: DailyTaskItem,
 ): DailyTaskItem {
-  const sourceRefs = uniqueSourceRefs([
+  const primary = preferredTaskDisplayItem(first, second);
+  const duplicate = primary === first ? second : first;
+  const sourceRefs = compactSourceRefsByPath([
     ...primary.sourceRefs,
     ...duplicate.sourceRefs,
   ]);
@@ -577,12 +594,114 @@ function mergeDailyTaskItems(
   });
 }
 
+function preferredTaskDisplayItem(
+  a: DailyTaskItem,
+  b: DailyTaskItem,
+): DailyTaskItem {
+  const sourceCmp = taskSourceRank(a) - taskSourceRank(b);
+  if (sourceCmp !== 0) return sourceCmp < 0 ? a : b;
+
+  const directCmp = taskDirectnessRank(a) - taskDirectnessRank(b);
+  if (directCmp !== 0) return directCmp < 0 ? a : b;
+
+  const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
+  if (changedCmp !== 0) return changedCmp < 0 ? a : b;
+
+  return a;
+}
+
+function taskSourceRank(item: DailyTaskItem): number {
+  return item.source === "daily" ? 0 : 1;
+}
+
+function taskDirectnessRank(item: DailyTaskItem): number {
+  return item.sourceRefs.some((ref) => ref.path !== item.path) ? 1 : 0;
+}
+
+function compactSourceRefsByPath(
+  refs: ReadonlyArray<SourceRef>,
+): ReadonlyArray<SourceRef> {
+  const byPath = new Map<string, SourceRef>();
+  for (const ref of uniqueSourceRefs(refs)) {
+    const key = ref.path;
+    const existing = byPath.get(key);
+    if (
+      existing === undefined ||
+      sourceRefSpecificity(ref) > sourceRefSpecificity(existing)
+    ) {
+      byPath.set(key, ref);
+    }
+  }
+  return Object.freeze([...byPath.values()]);
+}
+
+function sourceRefSpecificity(ref: SourceRef): number {
+  return (ref.range === undefined ? 0 : 2) +
+    (ref.stableId === undefined ? 0 : 1);
+}
+
 function taskSurfaceKey(item: DailyTaskItem): string {
   return [
     openLoopSurfaceKey({ body: item.text }),
     item.dueDate ?? "",
     item.priority ?? "",
   ].join("\u0000");
+}
+
+function taskItemsAreNearDuplicates(
+  a: DailyTaskItem,
+  b: DailyTaskItem,
+): boolean {
+  const aTokens = significantTaskTokens(a.text);
+  const bTokens = significantTaskTokens(b.text);
+  if (aTokens.size < 4 || bTokens.size < 4) return false;
+
+  let intersection = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection += 1;
+  }
+  if (intersection < 4) return false;
+
+  const smaller = Math.min(aTokens.size, bTokens.size);
+  const union = aTokens.size + bTokens.size - intersection;
+  return intersection / smaller >= 0.65 && intersection / union >= 0.4;
+}
+
+const TASK_TOKEN_STOPWORDS: ReadonlySet<string> = new Set([
+  "about",
+  "after",
+  "and",
+  "before",
+  "from",
+  "into",
+  "note",
+  "notes",
+  "the",
+  "this",
+  "that",
+  "with",
+  "wiki",
+]);
+
+function significantTaskTokens(text: string): ReadonlySet<string> {
+  const visibleText = text
+    .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/g, " $1 ")
+    .replace(/\[\[([^\]]+)\]\]/g, (_match, target: string) =>
+      ` ${target.split(/[\/#]/).at(-1) ?? target} `
+    )
+    .replace(
+      /(?:^|\s)(?:📅\s*\d{4}-\d{2}-\d{2}|🔺|⏫|🔼|🔽|⏬)(?=\s|$)/gu,
+      " ",
+    );
+  return new Set(
+    visibleText
+      .toLowerCase()
+      .split(/[^a-z0-9]+/g)
+      .map((token) => token.trim())
+      .filter((token) =>
+        token.length >= 3 && !TASK_TOKEN_STOPWORDS.has(token)
+      ),
+  );
 }
 
 function literalIdentity(value: FactEffect["object"]): string {

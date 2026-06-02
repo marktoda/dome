@@ -866,8 +866,8 @@ sources: generated daily entries are skipped during fact extraction, but
 `today` and `prep` still read open source-backed rows as the target day's
 surface. When the same loop also exists as an original project, meeting,
 capture, or prior-daily fact, the view folds the rows together, counts the
-representative as `daily`, and preserves both the daily surface SourceRef and
-the backing source SourceRef. Rendered daily/prep/agenda rows use the compact
+representative as `daily`, and keeps representative source refs for the daily
+surface plus the backing source. Rendered daily/prep/agenda rows use the compact
 `evidenceLabel` from that folded evidence: a generated daily row can display
 `daily.md:24; source project.md:8` instead of hiding the backing source behind a
 separate SourceRefs section.
@@ -882,9 +882,11 @@ storing hidden dismissal state in `.dome/state`.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
-Repeated task/followup facts with the same semantic surface key fold into one
-display row before counts and limits are computed; the representative keeps all
-backing SourceRefs so agents can still inspect every source mention. Items from
+Repeated task/followup facts with the same semantic surface key, plus
+conservative near-duplicate open-loop rows, fold into one display row before
+counts and limits are computed; the representative keeps the best source ref
+per source path so agents can inspect the display row and backing source without
+duplicated page-level refs. Items from
 the target daily note sort before the wider vault backlog and preserve source
 line order. Wider-backlog task and followup rows then sort by explicit action
 metadata before recency and path / line / text: due dates on or before the

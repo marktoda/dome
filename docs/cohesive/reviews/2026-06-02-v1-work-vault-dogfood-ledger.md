@@ -216,3 +216,59 @@ Qualitative read:
 - This closes a second concrete M6/M10 friction item: foreground agents asking
   natural daily-work questions now start from the same daily surface Mark uses,
   instead of treating the work vault like a generic FTS corpus.
+
+## 2026-06-02 Daily Surface Near-Duplicate Folding
+
+Dogfood action:
+
+- Ran `bin/dome today --vault ~/vaults/work --json` after the daily-intent
+  recall fix.
+- Inspected the current daily rows and the sampled backlog rows for duplicate
+  work-surface noise.
+
+Observed issue:
+
+- The daily surface was source-backed and useful, but the visible queue still
+  repeated near-identical open loops across today's note, previous daily notes,
+  and project/synthesis pages.
+- Exact open-loop keys already folded repeated rows, but small wording changes
+  such as a current daily wording versus an older backlog wording could still
+  show as separate action rows.
+- This made `dome today` feel more like a raw projection dump than a cockpit
+  when the same piece of work had accumulated multiple source mentions.
+
+Fix shipped in the SDK:
+
+- `dome.daily` now folds near-duplicate daily task rows at the view layer using
+  conservative token overlap.
+- The fold is source-preserving: it does not edit or delete markdown source
+  tasks. It chooses one representative display row and retains source refs.
+- Source-backed generated daily rows now carry both the daily surface line and
+  the backing source path, so the rendered row can explain where the work came
+  from.
+- Merged row source refs are compacted to the best ref per file path for the
+  view payload, preferring line-specific evidence over page-level refs.
+- Representative selection prefers daily-surface rows, direct user-authored
+  rows over generated carry-forward rows when both are daily rows, and newer
+  source changes when other signals tie.
+
+Work-vault result:
+
+- `dome today --vault ~/vaults/work --json` dropped from 246 open tasks before
+  the fix to 221 open tasks after the fix, without modifying the work vault.
+- Generated daily rows now render evidence labels such as
+  `notes/2026-06-02.md:25; source notes/2026-06-01.md:34`.
+- Some visible semantic duplicates remain. For example, Danny written follow-up
+  rows with materially different wording are still present. That is the right
+  boundary for this deterministic slice; broader consolidation belongs to the
+  open-loop continuity loop with model or agent judgment.
+
+Qualitative read:
+
+- This closes one concrete daily-surface friction item without adding a new
+  command, hidden state, or source-rewriting policy.
+- The daily work surface is less noisy while staying inspectable and
+  convergent.
+- The next dogfood question is whether the remaining semantic duplicates should
+  become source-preserving consolidation proposals or be left as separate
+  evidence until a model-backed loop can decide.
