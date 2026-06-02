@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.6
+version: 0.4.7
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.4.0
@@ -43,6 +43,21 @@ processors:
       - kind: patch.auto
         paths: ["**/*.md"]
     module: processors/repair-wikilinks.ts
+
+  - id: dome.markdown.simplify-indexes
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "10 5 * * *"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md"]
+      - kind: patch.auto
+        paths:
+          - "wiki/index.md"
+          - "wiki/**/index.md"
+    module: processors/simplify-indexes.ts
 
   - id: dome.markdown.normalize-frontmatter
     version: 0.2.1
