@@ -12,6 +12,34 @@ const REF = sourceRef({
   range: { startLine: 1, endLine: 1 },
 });
 
+const SETTLEMENT_CHECKS: MaintenanceLoop["settlement"]["checks"] = [
+  {
+    kind: "required-processors-active",
+    name: "required-processors-active",
+    description: "Required processors are active.",
+  },
+  {
+    kind: "no-attention-diagnostics",
+    name: "no-attention-diagnostics",
+    description: "No attention diagnostics remain.",
+  },
+  {
+    kind: "no-drift-diagnostics",
+    name: "no-drift-diagnostics",
+    description: "No drift diagnostics remain.",
+  },
+  {
+    kind: "no-open-questions",
+    name: "no-open-questions",
+    description: "No open questions remain.",
+  },
+  {
+    kind: "no-recent-problem-runs",
+    name: "no-recent-problem-runs",
+    description: "No recent problem runs remain.",
+  },
+];
+
 const LOOP: MaintenanceLoop = {
   id: "test.loop",
   goal: "Keep test work visible.",
@@ -21,6 +49,7 @@ const LOOP: MaintenanceLoop = {
   settlement: {
     key: "test key",
     noOpWhen: "test work is represented",
+    checks: SETTLEMENT_CHECKS,
   },
   risks: [],
 };
@@ -49,6 +78,10 @@ describe("collectMaintenanceLoopSummaries", () => {
       active_processors: ["test.required"],
       missing_processors: [],
       inactive_optional_processors: ["test.optional"],
+    }));
+    expect(summary?.settlement).toEqual(expect.objectContaining({
+      settled: true,
+      failed_checks: [],
     }));
   });
 
@@ -126,6 +159,19 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.agent_safe_questions).toBe(1);
     expect(summary?.model_safe_questions).toBe(1);
     expect(summary?.owner_needed_questions).toBe(1);
+    expect(summary?.settlement.settled).toBe(false);
+    expect(summary?.settlement.failed_checks).toEqual([
+      "required-processors-active",
+      "no-attention-diagnostics",
+      "no-open-questions",
+    ]);
+    expect(summary?.settlement.checks.find((check) =>
+      check.name === "no-open-questions"
+    )).toEqual(expect.objectContaining({
+      status: "fail",
+      observed: 3,
+      expected: "0 open question(s)",
+    }));
   });
 
   test("can summarize all unresolved questions for cross-cutting loops", () => {
@@ -170,6 +216,8 @@ describe("collectMaintenanceLoopSummaries", () => {
       model_safe_questions: 0,
       owner_needed_questions: 0,
     }));
+    expect(summary?.settlement.settled).toBe(false);
+    expect(summary?.settlement.failed_checks).toEqual(["no-open-questions"]);
   });
 
   test("reports info-only diagnostics as drift instead of quiet attention", () => {
@@ -200,5 +248,9 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.diagnostics).toBe(1);
     expect(summary?.attention_diagnostics).toBe(0);
     expect(summary?.drift_diagnostics).toBe(1);
+    expect(summary?.settlement.settled).toBe(false);
+    expect(summary?.settlement.failed_checks).toEqual([
+      "no-drift-diagnostics",
+    ]);
   });
 });

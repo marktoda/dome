@@ -52,6 +52,26 @@ const repairWikilinks = defineProcessorImplementation({
       const frontmatterEnd = frontmatterEndLine(content);
 
       for (const match of findWikilinks(content)) {
+        const sourceRef = ctx.sourceRef(path, {
+          startLine: match.line,
+          endLine: match.line,
+          startChar: match.startChar,
+          endChar: match.endChar,
+        });
+        const canonicalReplacement = resolver.canonicalReplacementTarget(
+          match.target,
+          path,
+        );
+        if (canonicalReplacement !== null) {
+          replacements.push({
+            startOffset: match.startOffset,
+            endOffset: match.endOffset,
+            text: wikilinkReplacementText(match, canonicalReplacement),
+          });
+          replacementSourceRefs.push(sourceRef);
+          continue;
+        }
+
         if (resolver.resolve(match.target, path) !== null) continue;
         if (
           brokenWikilinkSeverity(path, match.line, frontmatterEnd) !== "warning"
@@ -64,12 +84,6 @@ const repairWikilinks = defineProcessorImplementation({
           if (suggestion.kind === "none") {
             const candidate = stubCandidateForWikilinkTarget(match.target);
             if (candidate !== null) {
-              const sourceRef = ctx.sourceRef(path, {
-                startLine: match.line,
-                endLine: match.line,
-                startChar: match.startChar,
-                endChar: match.endChar,
-              });
               addWikilinkStubRequest(stubRequests, {
                 candidate,
                 sourcePath: path,
@@ -85,14 +99,7 @@ const repairWikilinks = defineProcessorImplementation({
           endOffset: match.endOffset,
           text: wikilinkReplacementText(match, suggestion.target),
         });
-        replacementSourceRefs.push(
-          ctx.sourceRef(path, {
-            startLine: match.line,
-            endLine: match.line,
-            startChar: match.startChar,
-            endChar: match.endChar,
-          }),
-        );
+        replacementSourceRefs.push(sourceRef);
       }
 
       if (replacements.length === 0) continue;

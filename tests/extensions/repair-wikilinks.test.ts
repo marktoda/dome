@@ -46,6 +46,25 @@ describe("dome.markdown.repair-wikilinks", () => {
     expect(effects).toHaveLength(0);
   });
 
+  test("canonicalizes pathful aliases that uniquely resolve by basename", async () => {
+    const effects = await runRepairWikilinks({
+      "notes/2025-10-01.md":
+        "prev: [[dailies/2025-09-30|Yesterday]]\n",
+      "notes/2025-09-30.md": "# 2025-09-30\n",
+    });
+
+    expect(effects).toHaveLength(1);
+    const patch = expectPatch(effects, 0);
+    expect(patch.mode).toBe("auto");
+    expect(patch.changes).toHaveLength(1);
+    const change = expectWriteChange(patch, 0);
+    expect(String(change.path)).toBe("notes/2025-10-01.md");
+    expect(change.content).toBe(
+      "prev: [[notes/2025-09-30|Yesterday]]\n",
+    );
+    expect(String(patch.sourceRefs[0]?.path)).toBe("notes/2025-10-01.md");
+  });
+
   test("creates source-backed stubs for explicit managed concept links", async () => {
     const first = await runRepairWikilinks({
       "wiki/page.md":

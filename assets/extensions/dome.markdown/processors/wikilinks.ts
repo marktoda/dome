@@ -60,7 +60,29 @@ export type WikilinkStubRequest<TSourceRef> = {
 
 export type WikilinkResolver = {
   readonly resolve: (rawTarget: string, currentPath: string) => string | null;
+  readonly resolveDetailed: (
+    rawTarget: string,
+    currentPath: string,
+  ) => WikilinkResolution | null;
+  readonly canonicalReplacementTarget: (
+    rawTarget: string,
+    currentPath: string,
+  ) => string | null;
   readonly suggest: (rawTarget: string) => WikilinkSuggestionResult;
+};
+
+export type WikilinkResolution = {
+  readonly path: string;
+  readonly linkTarget: string;
+  readonly kind:
+    | "exact-path"
+    | "path-suffix"
+    | "normalized-path"
+    | "path-basename"
+    | "normalized-path-basename"
+    | "common-root"
+    | "basename"
+    | "normalized-basename";
 };
 
 export function buildWikilinkResolver(
@@ -73,13 +95,33 @@ export function buildWikilinkResolver(
 
   return Object.freeze({
     resolve: (rawTarget: string, currentPath: string) =>
-      resolveWikilinkTarget(
+      resolveWikilinkTargetDetailed(
+        rawTarget,
+        currentPath,
+        pathSet,
+        basenameIndex,
+        normalizedIndex,
+      )?.path ?? null,
+    resolveDetailed: (rawTarget: string, currentPath: string) =>
+      resolveWikilinkTargetDetailed(
         rawTarget,
         currentPath,
         pathSet,
         basenameIndex,
         normalizedIndex,
       ),
+    canonicalReplacementTarget: (rawTarget: string, currentPath: string) => {
+      const resolution = resolveWikilinkTargetDetailed(
+        rawTarget,
+        currentPath,
+        pathSet,
+        basenameIndex,
+        normalizedIndex,
+      );
+      return resolution === null
+        ? null
+        : canonicalReplacementTargetForResolution(rawTarget, resolution);
+    },
     suggest: (rawTarget: string) =>
       suggestWikilinkTargets(rawTarget, suggestionIndex),
   });
@@ -496,34 +538,58 @@ function decodeWikilinkComponent(value: string): string {
   }
 }
 
-function resolveWikilinkTarget(
+function resolveWikilinkTargetDetailed(
   rawTarget: string,
   currentPath: string,
   pathSet: ReadonlySet<string>,
   basenameIndex: ReadonlyMap<string, ReadonlyArray<string>>,
   normalizedIndex: NormalizedResolutionIndex,
-): string | null {
-  if (isSkippedWikilinkTarget(rawTarget)) return currentPath;
+): WikilinkResolution | null {
+  if (isSkippedWikilinkTarget(rawTarget)) {
+    return resolution(currentPath, "exact-path");
+  }
 
   const target = stripWikilinkFragment(rawTarget);
-  if (target.length === 0) return currentPath;
+  if (target.length === 0) return resolution(currentPath, "exact-path");
 
   if (target.includes("/")) {
     const withMd = target.endsWith(".md") ? target : `${target}.md`;
-    if (pathSet.has(withMd)) return withMd;
-    if (pathSet.has(target)) return target;
+    if (pathSet.has(withMd)) return resolution(withMd, "exact-path");
+    if (pathSet.has(target)) return resolution(target, "exact-path");
 
     const basename = withMd.slice(withMd.lastIndexOf("/") + 1);
     const candidates = basenameIndex.get(basename);
     if (candidates !== undefined) {
       const needle = `/${withMd}`;
       for (const candidate of candidates) {
-        if (candidate.endsWith(needle)) return candidate;
+        if (candidate.endsWith(needle)) {
+          return resolution(candidate, "path-suffix");
+        }
       }
     }
 
     const normalized = normalizedIndex.paths.get(normalizeWikilinkKey(withMd));
-    if (normalized !== undefined) return normalized;
+    if (normalized !== undefined) {
+      return normalized === null
+        ? null
+        : resolution(normalized, "normalized-path");
+    }
+
+    if (candidates !== undefined && candidates.length === 1) {
+      const candidate = candidates[0];
+      if (candidate !== undefined) {
+        return resolution(candidate, "path-basename");
+      }
+    }
+
+    const normalizedBasename = normalizedIndex.basenames.get(
+      normalizeWikilinkKey(basename),
+    );
+    if (normalizedBasename !== undefined) {
+      return normalizedBasename === null
+        ? null
+        : resolution(normalizedBasename, "normalized-path-basename");
+    }
 
     return null;
   }
@@ -532,20 +598,49 @@ function resolveWikilinkTarget(
 
   for (const root of COMMON_ROOTS) {
     const candidate = `${root}${filename}`;
-    if (pathSet.has(candidate)) return candidate;
+    if (pathSet.has(candidate)) return resolution(candidate, "common-root");
   }
 
   const basenameMatches = basenameIndex.get(filename);
   if (basenameMatches !== undefined && basenameMatches.length > 0) {
-    return basenameMatches[0] ?? null;
+    const candidate = basenameMatches[0];
+    return candidate === undefined ? null : resolution(candidate, "basename");
   }
 
   const normalized = normalizedIndex.basenames.get(
     normalizeWikilinkKey(filename),
   );
-  if (normalized !== undefined) return normalized;
+  if (normalized !== undefined) {
+    return normalized === null
+      ? null
+      : resolution(normalized, "normalized-basename");
+  }
 
   return null;
+}
+
+function resolution(
+  path: string,
+  kind: WikilinkResolution["kind"],
+): WikilinkResolution {
+  return Object.freeze({
+    path,
+    linkTarget: path.replace(/\.md$/i, ""),
+    kind,
+  });
+}
+
+function canonicalReplacementTargetForResolution(
+  rawTarget: string,
+  resolution: WikilinkResolution,
+): string | null {
+  const target = stripWikilinkFragment(rawTarget);
+  if (!target.includes("/")) return null;
+  if (resolution.kind === "exact-path") return null;
+
+  const rawWithoutMd = target.replace(/\.md$/i, "");
+  if (rawWithoutMd === resolution.linkTarget) return null;
+  return resolution.linkTarget;
 }
 
 function suggestWikilinkTargets(

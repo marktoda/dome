@@ -35,6 +35,9 @@ export type MaintenanceLoopSummary = {
   readonly settlement: {
     readonly key: string;
     readonly no_op_when: string;
+    readonly settled: boolean;
+    readonly checks: ReadonlyArray<MaintenanceLoopSettlementCheckSummary>;
+    readonly failed_checks: ReadonlyArray<string>;
   };
   readonly diagnostics: number;
   readonly attention_diagnostics: number;
@@ -46,6 +49,15 @@ export type MaintenanceLoopSummary = {
   readonly recent_runs: number;
   readonly recent_problem_runs: number;
   readonly latest_run_at: string | null;
+};
+
+export type MaintenanceLoopSettlementCheckSummary = {
+  readonly name: string;
+  readonly kind: MaintenanceLoop["settlement"]["checks"][number]["kind"];
+  readonly status: "pass" | "fail";
+  readonly observed: number;
+  readonly expected: string;
+  readonly description: string;
 };
 
 export function collectMaintenanceLoopSummaries(opts: {
@@ -98,6 +110,14 @@ export function formatMaintenanceLoopDetailLines(
       );
     }
     lines.push(`    surfaces: ${loop.surfaces.join(", ")}`);
+    lines.push(
+      `    settlement: ${loop.settlement.settled ? "settled" : "unsettled"} (${countPassedSettlementChecks(loop.settlement.checks)}/${loop.settlement.checks.length} checks)`,
+    );
+    if (loop.settlement.failed_checks.length > 0) {
+      lines.push(
+        `    failed checks: ${formatBoundedList(loop.settlement.failed_checks)}`,
+      );
+    }
     lines.push(`    no-op: ${loop.settlement.no_op_when}`);
     lines.push(`    latest run: ${loop.latest_run_at ?? "(none)"}`);
   }
@@ -163,6 +183,20 @@ function summarizeLoop(
   const questionPolicyCounts = countQuestionAutomationPolicies(
     loopQuestions.map((question) => question.effect.metadata),
   );
+  const driftDiagnostics = Math.max(0, diagnostics - attentionDiagnostics);
+  const settlementChecks = evaluateSettlementChecks({
+    checks: loop.settlement.checks,
+    requiredProcessorCount: loop.processors.length,
+    activeRequiredProcessors: activeRequiredProcessors.length,
+    missingProcessors: missingProcessors.length,
+    attentionDiagnostics,
+    driftDiagnostics,
+    questions: loopQuestions.length,
+    recentProblemRuns,
+  });
+  const failedSettlementChecks = settlementChecks
+    .filter((check) => check.status === "fail")
+    .map((check) => check.name);
 
   return Object.freeze({
     id: loop.id,
@@ -186,11 +220,14 @@ function summarizeLoop(
     settlement: Object.freeze({
       key: loop.settlement.key,
       no_op_when: loop.settlement.noOpWhen,
+      settled: failedSettlementChecks.length === 0,
+      checks: Object.freeze(settlementChecks),
+      failed_checks: Object.freeze(failedSettlementChecks),
     }),
     diagnostics,
     attention_diagnostics: attentionDiagnostics,
     questions: loopQuestions.length,
-    drift_diagnostics: Math.max(0, diagnostics - attentionDiagnostics),
+    drift_diagnostics: driftDiagnostics,
     agent_safe_questions: questionPolicyCounts.agentSafe,
     model_safe_questions: questionPolicyCounts.modelSafe,
     owner_needed_questions: questionPolicyCounts.ownerNeeded,
@@ -198,6 +235,79 @@ function summarizeLoop(
     recent_problem_runs: recentProblemRuns,
     latest_run_at: latestRunAt,
   });
+}
+
+function evaluateSettlementChecks(input: {
+  readonly checks: MaintenanceLoop["settlement"]["checks"];
+  readonly requiredProcessorCount: number;
+  readonly activeRequiredProcessors: number;
+  readonly missingProcessors: number;
+  readonly attentionDiagnostics: number;
+  readonly driftDiagnostics: number;
+  readonly questions: number;
+  readonly recentProblemRuns: number;
+}): ReadonlyArray<MaintenanceLoopSettlementCheckSummary> {
+  return Object.freeze(
+    input.checks.map((check) => {
+      switch (check.kind) {
+        case "required-processors-active":
+          return settlementCheckSummary(check, {
+            status: input.missingProcessors === 0 ? "pass" : "fail",
+            observed: input.activeRequiredProcessors,
+            expected: `${input.requiredProcessorCount} active required processor(s)`,
+          });
+        case "no-attention-diagnostics":
+          return settlementCheckSummary(check, {
+            status: input.attentionDiagnostics === 0 ? "pass" : "fail",
+            observed: input.attentionDiagnostics,
+            expected: "0 attention diagnostic(s)",
+          });
+        case "no-drift-diagnostics":
+          return settlementCheckSummary(check, {
+            status: input.driftDiagnostics === 0 ? "pass" : "fail",
+            observed: input.driftDiagnostics,
+            expected: "0 drift diagnostic(s)",
+          });
+        case "no-open-questions":
+          return settlementCheckSummary(check, {
+            status: input.questions === 0 ? "pass" : "fail",
+            observed: input.questions,
+            expected: "0 open question(s)",
+          });
+        case "no-recent-problem-runs":
+          return settlementCheckSummary(check, {
+            status: input.recentProblemRuns === 0 ? "pass" : "fail",
+            observed: input.recentProblemRuns,
+            expected: "0 recent problem run(s)",
+          });
+      }
+      const _exhaustive: never = check.kind;
+      return _exhaustive;
+    }),
+  );
+}
+
+function settlementCheckSummary(
+  check: MaintenanceLoop["settlement"]["checks"][number],
+  result: Pick<
+    MaintenanceLoopSettlementCheckSummary,
+    "status" | "observed" | "expected"
+  >,
+): MaintenanceLoopSettlementCheckSummary {
+  return Object.freeze({
+    name: check.name,
+    kind: check.kind,
+    status: result.status,
+    observed: result.observed,
+    expected: result.expected,
+    description: check.description,
+  });
+}
+
+function countPassedSettlementChecks(
+  checks: ReadonlyArray<MaintenanceLoopSettlementCheckSummary>,
+): number {
+  return checks.filter((check) => check.status === "pass").length;
 }
 
 function questionsForLoop(input: {

@@ -405,6 +405,33 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(diag.sourceRefs[0]?.path as string).toBe("notes/scratch.md");
   });
 
+  test("treats pathful note aliases as resolved when the basename is unique", async () => {
+    const f = await makeVaultWithFiles([
+      {
+        path: "notes/2025-10-01.md",
+        content: "prev: [[dailies/2025-09-30|Yesterday]]\n",
+      },
+      {
+        path: "notes/2025-09-30.md",
+        content: "# 2025-09-30\n",
+      },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["notes/2025-10-01.md"],
+      proposal: null,
+      runId: "run-test-note-path-alias",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    expect(effects).toEqual([]);
+  });
+
   test("keeps source frontmatter links warning while source body links are info", async () => {
     const f = await makeVaultWithFiles([
       {

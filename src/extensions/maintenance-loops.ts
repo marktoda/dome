@@ -45,6 +45,18 @@ export type MaintenanceLoopSurface =
 export type MaintenanceLoopSettlement = {
   readonly key: string;
   readonly noOpWhen: string;
+  readonly checks: ReadonlyArray<MaintenanceLoopSettlementCheck>;
+};
+
+export type MaintenanceLoopSettlementCheck = {
+  readonly kind:
+    | "required-processors-active"
+    | "no-attention-diagnostics"
+    | "no-drift-diagnostics"
+    | "no-open-questions"
+    | "no-recent-problem-runs";
+  readonly name: string;
+  readonly description: string;
 };
 
 export type MaintenanceLoop = {
@@ -94,7 +106,20 @@ export type MaintenanceLoopValidationError =
         | "surfaces"
         | "settlement.key"
         | "settlement.noOpWhen"
+        | "settlement.checks"
+        | "settlement.check.name"
+        | "settlement.check.description"
         | "risks";
+    }
+  | {
+      readonly kind: "duplicate-settlement-check";
+      readonly loopId: string;
+      readonly checkName: string;
+    }
+  | {
+      readonly kind: "invalid-settlement-check";
+      readonly loopId: string;
+      readonly checkKind: string;
     }
   | {
       readonly kind: "duplicate-processor";
@@ -141,6 +166,48 @@ const FACT_NAMESPACE_PROJECTION_RE = /^facts:[a-z0-9]+(?:[.-][a-z0-9]+)*\.\*$/;
 
 const SUPPORTED_STATUS_SURFACES = new Set(["status", "check"]);
 
+const SUPPORTED_SETTLEMENT_CHECKS = new Set<
+  MaintenanceLoopSettlementCheck["kind"]
+>([
+  "required-processors-active",
+  "no-attention-diagnostics",
+  "no-drift-diagnostics",
+  "no-open-questions",
+  "no-recent-problem-runs",
+]);
+
+const STANDARD_SETTLEMENT_CHECKS = Object.freeze([
+  freezeSettlementCheck({
+    kind: "required-processors-active",
+    name: "required-processors-active",
+    description: "Every required processor for this loop is active.",
+  }),
+  freezeSettlementCheck({
+    kind: "no-attention-diagnostics",
+    name: "no-attention-diagnostics",
+    description:
+      "No source-backed warning/error/block diagnostics are attributed to this loop.",
+  }),
+  freezeSettlementCheck({
+    kind: "no-drift-diagnostics",
+    name: "no-drift-diagnostics",
+    description:
+      "No remaining info-level content drift diagnostics are attributed to this loop.",
+  }),
+  freezeSettlementCheck({
+    kind: "no-open-questions",
+    name: "no-open-questions",
+    description:
+      "No unresolved questions in this loop's question scope need an answer.",
+  }),
+  freezeSettlementCheck({
+    kind: "no-recent-problem-runs",
+    name: "no-recent-problem-runs",
+    description:
+      "No recent required or optional processor runs are in a terminal problem state.",
+  }),
+] satisfies ReadonlyArray<MaintenanceLoopSettlementCheck>);
+
 export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
   Object.freeze([
     freezeLoop({
@@ -171,8 +238,9 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
       settlement: {
         key: "raw path + raw content hash + processor version",
-      noOpWhen:
-        "the current raw capture hash has a matching generated digest, processed archive, disposition, extractor schema, and rebuildable pending-question state",
+        noOpWhen:
+          "the current raw capture hash has a matching generated digest, processed archive, disposition, extractor schema, and rebuildable pending-question state",
+        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "LLM extraction can still produce noisy summaries even when source-hash identity is stable.",
@@ -208,6 +276,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "source ref + normalized open-loop text + optional project/entity",
         noOpWhen:
           "the open loop is represented once from its source and the generated daily surface block matches the current source set",
+        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Repeated daily surfacing can duplicate tasks if generated daily blocks are treated as source facts.",
@@ -249,6 +318,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
           "the link resolves, is intentionally unresolved, has exactly one open question, or the managed metadata already matches git history",
+        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
@@ -278,6 +348,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "packet target + adopted source set + processor version",
         noOpWhen:
           "the packet or query result was produced from the same relevant source set",
+        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Packets that over-read become noisy and reduce foreground-agent precision.",
@@ -317,6 +388,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "question idempotency key + source refs",
         noOpWhen:
           "each uncertainty is answered, obsoleted, or represented exactly once as unresolved",
+        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Open questions can become user chores if safe agent-resolution metadata is missing.",
@@ -369,6 +441,45 @@ export function validateMaintenanceLoops(opts: {
         loopId: loop.id,
         field: "settlement.noOpWhen",
       });
+    }
+    if (loop.settlement.checks.length === 0) {
+      errors.push({
+        kind: "empty-field",
+        loopId: loop.id,
+        field: "settlement.checks",
+      });
+    }
+    const seenSettlementChecks = new Set<string>();
+    for (const check of loop.settlement.checks) {
+      if (!SUPPORTED_SETTLEMENT_CHECKS.has(check.kind)) {
+        errors.push({
+          kind: "invalid-settlement-check",
+          loopId: loop.id,
+          checkKind: check.kind,
+        });
+      }
+      if (check.name.trim().length === 0) {
+        errors.push({
+          kind: "empty-field",
+          loopId: loop.id,
+          field: "settlement.check.name",
+        });
+      }
+      if (check.description.trim().length === 0) {
+        errors.push({
+          kind: "empty-field",
+          loopId: loop.id,
+          field: "settlement.check.description",
+        });
+      }
+      if (seenSettlementChecks.has(check.name)) {
+        errors.push({
+          kind: "duplicate-settlement-check",
+          loopId: loop.id,
+          checkName: check.name,
+        });
+      }
+      seenSettlementChecks.add(check.name);
     }
     if (loop.risks.length === 0) {
       errors.push({ kind: "empty-field", loopId: loop.id, field: "risks" });
@@ -465,9 +576,20 @@ function freezeLoop(loop: MaintenanceLoop): MaintenanceLoop {
       ? { optionalProcessors: Object.freeze([...loop.optionalProcessors]) }
       : {}),
     surfaces: Object.freeze(loop.surfaces.map((item) => Object.freeze(item))),
-    settlement: Object.freeze({ ...loop.settlement }),
+    settlement: Object.freeze({
+      ...loop.settlement,
+      checks: Object.freeze(
+        loop.settlement.checks.map((check) => freezeSettlementCheck(check)),
+      ),
+    }),
     risks: Object.freeze([...loop.risks]),
   });
+}
+
+function freezeSettlementCheck(
+  check: MaintenanceLoopSettlementCheck,
+): MaintenanceLoopSettlementCheck {
+  return Object.freeze({ ...check });
 }
 
 function isValidVaultPattern(pattern: string): boolean {
