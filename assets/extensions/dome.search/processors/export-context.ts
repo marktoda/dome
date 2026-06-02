@@ -45,10 +45,44 @@ const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
+const TOPIC_STOPWORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "at",
+  "about",
+  "do",
+  "does",
+  "did",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "is",
+  "me",
+  "my",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "were",
+  "what",
+  "when",
+  "where",
+  "who",
+  "why",
+  "with",
+]);
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.9",
+  version: "0.1.10",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -128,6 +162,7 @@ const exportContext: Processor = defineProcessor({
     const hasMoreEntries = rankedMatches.length > matches.length;
     const entries = matches.map((match) =>
       contextEntryFromMatch(
+        input.topic,
         match,
         match.facts,
         match.diagnostics,
@@ -275,6 +310,7 @@ type ContextQuestionSummary = ContextQuestion & {
 };
 
 function contextEntryFromMatch(
+  topic: string,
   match: SearchDocumentResult,
   facts: ReadonlyArray<FactEffect>,
   diagnostics: ReadonlyArray<DiagnosticEffect>,
@@ -292,7 +328,7 @@ function contextEntryFromMatch(
           sourceRefs: Object.freeze([...fact.sourceRefs]),
         })
       )
-      .sort(compareFacts),
+      .sort(compareFactsForTopic(topic)),
   );
   const contextDiagnostics = Object.freeze(
     diagnostics
@@ -304,7 +340,7 @@ function contextEntryFromMatch(
           sourceRefs: Object.freeze([...diagnostic.sourceRefs]),
         })
       )
-      .sort(compareDiagnostics),
+      .sort(compareDiagnosticsForTopic(topic)),
   );
   const contextQuestions = Object.freeze(
     questions
@@ -320,7 +356,7 @@ function contextEntryFromMatch(
           sourceRefs: Object.freeze([...question.sourceRefs]),
         })
       )
-      .sort(compareQuestions),
+      .sort(compareQuestionsForTopic(topic)),
   );
   return Object.freeze({
     path: match.path,
@@ -337,6 +373,7 @@ function contextEntryFromMatch(
       facts: contextFacts,
       diagnostics: contextDiagnostics,
       questions: contextQuestions,
+      topic,
     }),
     facts: contextFacts,
     diagnostics: contextDiagnostics,
@@ -345,6 +382,7 @@ function contextEntryFromMatch(
 }
 
 function sourceBackedSummary(input: {
+  readonly topic: string;
   readonly snippet: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly facts: ReadonlyArray<ContextFact>;
@@ -359,9 +397,31 @@ function sourceBackedSummary(input: {
       sourceRefs: Object.freeze([...input.sourceRefs]),
     }));
   }
-  appendFactSummaries(rows, "decision", input.facts.filter(isSearchDecisionFact));
-  appendFactSummaries(rows, "open-loop", input.facts.filter(isSearchOpenLoopFact));
-  for (const question of input.questions) {
+  appendFactSummaries(
+    rows,
+    "decision",
+    topicRelevantItems(
+      input.facts.filter(isSearchDecisionFact),
+      input.topic,
+      factSearchText,
+    ),
+  );
+  appendFactSummaries(
+    rows,
+    "open-loop",
+    topicRelevantItems(
+      input.facts.filter(isSearchOpenLoopFact),
+      input.topic,
+      factSearchText,
+    ),
+  );
+  for (
+    const question of topicRelevantItems(
+      input.questions,
+      input.topic,
+      questionSearchText,
+    )
+  ) {
     rows.push(Object.freeze({
       kind: "question",
       text: question.question,
@@ -370,7 +430,13 @@ function sourceBackedSummary(input: {
     if (rows.length >= MAX_ENTRY_SUMMARY_ROWS) break;
   }
   if (rows.length < MAX_ENTRY_SUMMARY_ROWS) {
-    for (const diagnostic of input.diagnostics) {
+    for (
+      const diagnostic of topicRelevantItems(
+        input.diagnostics,
+        input.topic,
+        diagnosticSearchText,
+      )
+    ) {
       rows.push(Object.freeze({
         kind: "diagnostic",
         text: `${diagnostic.code}: ${diagnostic.message}`,
@@ -416,16 +482,16 @@ function buildOverview(
       ),
     ),
     openLoops: Object.freeze(
-      uniqueOpenLoops(entries).slice(0, MAX_RELATED_ROWS),
+      uniqueOpenLoops(entries, topic).slice(0, MAX_RELATED_ROWS),
     ),
     decisions: Object.freeze(
-      uniqueDecisions(entries).slice(0, MAX_RELATED_ROWS),
+      uniqueDecisions(entries, topic).slice(0, MAX_RELATED_ROWS),
     ),
     unresolvedQuestions: Object.freeze(
-      uniqueQuestions(entries).slice(0, MAX_RELATED_ROWS),
+      uniqueQuestions(entries, topic).slice(0, MAX_RELATED_ROWS),
     ),
     diagnostics: Object.freeze(
-      uniqueDiagnostics(entries).slice(0, MAX_RELATED_ROWS),
+      uniqueDiagnostics(entries, topic).slice(0, MAX_RELATED_ROWS),
     ),
     recallSignals: Object.freeze(
       uniqueRecallSignals(entries, recallSignalsByPath).slice(0, MAX_RELATED_ROWS),
@@ -443,6 +509,7 @@ function readFirstReason(topic: string, entry: ContextEntry): string {
 
 function uniqueOpenLoops(
   entries: ReadonlyArray<ContextEntry>,
+  topic: string,
 ): ReadonlyArray<ContextOpenLoop> {
   const seen = new Set<string>();
   const out: ContextOpenLoop[] = [];
@@ -460,11 +527,12 @@ function uniqueOpenLoops(
       }));
     }
   }
-  return Object.freeze(out);
+  return Object.freeze(topicRelevantItems(out, topic, (item) => item.text));
 }
 
 function uniqueDecisions(
   entries: ReadonlyArray<ContextEntry>,
+  topic: string,
 ): ReadonlyArray<ContextDecision> {
   const seen = new Set<string>();
   const out: ContextDecision[] = [];
@@ -482,11 +550,12 @@ function uniqueDecisions(
       }));
     }
   }
-  return Object.freeze(out);
+  return Object.freeze(topicRelevantItems(out, topic, (item) => item.text));
 }
 
 function uniqueQuestions(
   entries: ReadonlyArray<ContextEntry>,
+  topic: string,
 ): ReadonlyArray<ContextQuestionSummary> {
   const seen = new Set<number>();
   const out: ContextQuestionSummary[] = [];
@@ -500,11 +569,12 @@ function uniqueQuestions(
       }));
     }
   }
-  return Object.freeze(out);
+  return Object.freeze(topicRelevantItems(out, topic, questionSearchText));
 }
 
 function uniqueDiagnostics(
   entries: ReadonlyArray<ContextEntry>,
+  topic: string,
 ): ReadonlyArray<ContextDiagnosticSummary> {
   const seen = new Set<string>();
   const out: ContextDiagnosticSummary[] = [];
@@ -524,7 +594,7 @@ function uniqueDiagnostics(
       }));
     }
   }
-  return Object.freeze(out);
+  return Object.freeze(topicRelevantItems(out, topic, diagnosticSearchText));
 }
 
 function uniqueRecallSignals(
@@ -775,6 +845,113 @@ function compareQuestions(
   b: ContextQuestion,
 ): number {
   return a.id - b.id;
+}
+
+function compareFactsForTopic(
+  topic: string,
+): (a: ContextFact, b: ContextFact) => number {
+  return (a, b) =>
+    compareTopicRelevance(topic, factSearchText(a), factSearchText(b)) ||
+    compareFacts(a, b);
+}
+
+function compareDiagnosticsForTopic(
+  topic: string,
+): (a: ContextDiagnostic, b: ContextDiagnostic) => number {
+  return (a, b) =>
+    compareTopicRelevance(
+      topic,
+      diagnosticSearchText(a),
+      diagnosticSearchText(b),
+    ) || compareDiagnostics(a, b);
+}
+
+function compareQuestionsForTopic(
+  topic: string,
+): (a: ContextQuestion, b: ContextQuestion) => number {
+  return (a, b) =>
+    compareTopicRelevance(topic, questionSearchText(a), questionSearchText(b)) ||
+    compareQuestions(a, b);
+}
+
+function factSearchText(fact: ContextFact): string {
+  return `${fact.predicate} ${fact.object}`;
+}
+
+function diagnosticSearchText(diagnostic: ContextDiagnostic): string {
+  return `${diagnostic.code} ${diagnostic.message}`;
+}
+
+function questionSearchText(question: ContextQuestion): string {
+  return [
+    question.question,
+    ...question.options,
+    question.metadata?.recommendedAnswer ?? "",
+    question.metadata?.ownerNeededReason ?? "",
+  ].join(" ");
+}
+
+function topicRelevantItems<T>(
+  items: ReadonlyArray<T>,
+  topic: string,
+  textFor: (item: T) => string,
+): ReadonlyArray<T> {
+  const tokens = significantTopicTokens(topic);
+  if (tokens.length === 0 || items.length <= 1) return items;
+
+  const scored = items.map((item, index) =>
+    Object.freeze({
+      item,
+      index,
+      score: topicRelevanceScore(tokens, textFor(item)),
+    })
+  );
+  const relevant = scored.filter((entry) => entry.score > 0);
+  if (relevant.length === 0) return items;
+  return Object.freeze(
+    relevant
+      .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+      .map((entry) => entry.item),
+  );
+}
+
+function compareTopicRelevance(
+  topic: string,
+  aText: string,
+  bText: string,
+): number {
+  const tokens = significantTopicTokens(topic);
+  if (tokens.length === 0) return 0;
+  return topicRelevanceScore(tokens, bText) - topicRelevanceScore(tokens, aText);
+}
+
+function topicRelevanceScore(
+  topicTokens: ReadonlyArray<string>,
+  value: string,
+): number {
+  if (topicTokens.length === 0) return 0;
+  const tokens = new Set(normalizedTokens(value));
+  let score = 0;
+  for (const token of topicTokens) {
+    if (tokens.has(token)) score += 1;
+  }
+  return score;
+}
+
+function significantTopicTokens(topic: string): ReadonlyArray<string> {
+  return Object.freeze(
+    normalizedTokens(topic).filter((token) => !TOPIC_STOPWORDS.has(token)),
+  );
+}
+
+function normalizedTokens(value: string): ReadonlyArray<string> {
+  return Object.freeze(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0),
+  );
 }
 
 function formatSourceRef(ref: SourceRef): string {

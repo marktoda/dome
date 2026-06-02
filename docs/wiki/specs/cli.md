@@ -758,22 +758,26 @@ the same adopted-state retrieval substrate as `dome query`, then renders a
 portable markdown packet for another Claude session, review, or handoff.
 
 Default text output is the markdown packet itself. It starts with an overview:
-read-first paths, source-backed open loops, source-backed decisions,
-unresolved questions with automation policy metadata and `dome resolve` hints,
-active diagnostics, and recall signals that explain projection-memory matches.
+read-first paths, topic-relevant source-backed open loops, source-backed
+decisions, unresolved questions with automation policy metadata and
+`dome resolve` hints, active diagnostics, and recall signals that explain
+projection-memory matches.
 It then includes matching paths,
 source-backed summaries, snippets, related facts, related diagnostics, related
 open questions, and SourceRefs per match. Each summary row is derived only from
 the match snippet or source-backed facts/questions/diagnostics and carries its
 own SourceRefs, giving foreground agents a compact read-first reason without
-introducing an LLM-generated claim. Per-match related fact, diagnostic, and
-question sections are bounded in the rendered packet and include omitted-row
-hints when more related rows remain; the structured JSON entries retain the full
-related row arrays for consumers that want all evidence. Daily task facts use the same
-display convention as `dome today`: parsed `📅` due-date and priority glyph
-markers are rendered as bracketed `due` / `priority` metadata instead of
-duplicated inside the task text. Search-match entries use the same expanded
-candidate ranking as `dome query`. The packet can also recall exact-path
+introducing an LLM-generated claim. Overview and summary rows prefer related
+items whose text overlaps the requested topic, falling back to generic related
+items only when a matched page has no topic-overlapping related memory.
+Per-match related fact, diagnostic, and question sections are bounded in the
+rendered packet and include omitted-row hints when more related rows remain;
+the structured JSON entries retain the full related row arrays for consumers
+that want all evidence. Daily task facts use the same display convention as
+`dome today`: parsed `📅` due-date and priority glyph markers are rendered as
+bracketed `due` / `priority` metadata instead of duplicated inside the task
+text. Search-match entries use the same expanded candidate ranking as
+`dome query`. The packet can also recall exact-path
 documents when projection memory has a topic-matched open loop, decision,
 unresolved question, or active diagnostic for that page, even if the page body
 itself did not match the FTS query. Read-first reasons, per-entry `Ranking`

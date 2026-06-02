@@ -58,6 +58,7 @@ scenario(
           "---\n" +
           "# Project Alpha\n\n" +
           "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "- [ ] Book hotel for beta retreat\n" +
           "- [ ] Ask Danny about alpha launch handoff 🔺 📅 2026-01-07\n" +
           "\n" +
           "See [[missing-alpha-owner]].\n",
@@ -67,6 +68,7 @@ scenario(
           "---\n" +
           "# Project Alpha\n\n" +
           "The alpha launch ownership model assigns platform runtime to Danny.\n" +
+          "- [ ] Book hotel for beta retreat\n" +
           "- [ ] Ask Danny about alpha launch handoff 🔺 📅 2026-01-07\n" +
           "\n" +
           "See [[missing-alpha-owner]].\n",
@@ -201,6 +203,9 @@ scenario(
       item.text ===
         "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]"
     )).toBe(true);
+    expect(payload.overview.openLoops.some((item) =>
+      item.text === "Book hotel for beta retreat"
+    )).toBe(false);
     expect(payload.overview.unresolvedQuestions.some((item) =>
       item.resolveCommand.includes("dome resolve")
     )).toBe(true);
@@ -212,7 +217,8 @@ scenario(
     );
     expect(alpha?.title).toBe("Project Alpha");
     expect(alpha?.ranking.score).toBeGreaterThan(0);
-    expect(alpha?.ranking.reasons).toContain("open loop");
+    expect(alpha?.ranking.reasons.some((reason) => reason.includes("open loop")))
+      .toBe(true);
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
     expect(alpha?.summary).toContainEqual(
       expect.objectContaining({
@@ -224,6 +230,9 @@ scenario(
         ]),
       }),
     );
+    expect(alpha?.summary.some((item) =>
+      item.kind === "open-loop" && item.text === "Book hotel for beta retreat"
+    )).toBe(false);
     expect(alpha?.summary.every((item) => item.sourceRefs.length > 0)).toBe(true);
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
