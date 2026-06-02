@@ -763,3 +763,35 @@ Qualitative read:
   readiness. It proves the capture loop can run in the work vault, expose a
   model-quality issue, receive a clean SDK fix, reprocess source-preservingly,
   and settle with no attention.
+
+## 2026-06-02 Networked V1 LLM Smoke
+
+Verification action:
+
+- Ran `bun run v1:llm-smoke -- --auto-resolve` with the local Anthropic API key
+  against a temporary vault.
+- The smoke used `dome init --with-model-provider anthropic`, enabled
+  `dome.intake`, committed a raw capture, and ran `dome sync` until settled.
+- It then verified generated capture output, processed archive output,
+  adopted-state query recall, no-source-change settlement, and opt-in
+  low-risk `agent-safe` question auto-resolution.
+
+Measured result:
+
+- Result: `v1-llm-smoke: ok`.
+- Generated intake page:
+  `wiki/generated/intake/v1-llm-smoke-8935059556ce.md`.
+- Processed archive:
+  `inbox/processed/v1-llm-smoke-8935059556ce.md`.
+- Sync heads: `5195753 -> 5195753`, showing the final pass settled without
+  another head change.
+- Diagnostics: 0.
+- Open questions: 0.
+- Auto-resolved questions: 2.
+
+Qualitative read:
+
+- This closes supporting evidence for the scaffolded command-model provider
+  path and opt-in low-risk auto-resolution. It is intentionally not counted as
+  M10 release-soak credit because it ran in a temporary vault rather than
+  during sustained work-vault usage.
