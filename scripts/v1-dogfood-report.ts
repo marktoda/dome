@@ -17,14 +17,23 @@ type Dimension = {
   readonly patterns: ReadonlyArray<RegExp>;
 };
 
+type SafetyCheck = {
+  readonly id: string;
+  readonly label: string;
+  readonly patterns: ReadonlyArray<RegExp>;
+};
+
 type DayReport = {
   readonly date: string;
   readonly headings: ReadonlyArray<string>;
   readonly complete: boolean;
   readonly operationalEvidence: boolean;
   readonly captureEvidence: boolean;
+  readonly safetyConfirmed: boolean;
   readonly presentDimensions: ReadonlyArray<string>;
   readonly missingDimensions: ReadonlyArray<string>;
+  readonly missingSafetyConfirmations: ReadonlyArray<string>;
+  readonly releaseBlockers: ReadonlyArray<string>;
 };
 
 type DogfoodReport = {
@@ -38,6 +47,10 @@ type DogfoodReport = {
   readonly completeWorkdays: number;
   readonly captureEvidenceDays: number;
   readonly spanCalendarDays: number;
+  readonly releaseBlockers: ReadonlyArray<{
+    readonly date: string;
+    readonly blockers: ReadonlyArray<string>;
+  }>;
   readonly dimensions: ReadonlyArray<{
     readonly id: string;
     readonly label: string;
@@ -94,6 +107,19 @@ const dimensions: readonly Dimension[] = Object.freeze([
   },
 ]);
 
+const safetyChecks: readonly SafetyCheck[] = Object.freeze([
+  {
+    id: "lost_or_overwritten_edits",
+    label: "Lost or overwritten human markdown edits",
+    patterns: [/^lost or overwritten human markdown edits$/i],
+  },
+  {
+    id: "manual_dome_state_edits",
+    label: "Manual .dome/state edits",
+    patterns: [/^manual \.dome\/state edits$/i],
+  },
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -108,10 +134,14 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   const completeWorkdays = days.filter((day) => day.complete).length;
   const captureEvidenceDays = days.filter((day) => day.captureEvidence).length;
   const spanCalendarDays = completeWorkdaySpanDays(days);
+  const releaseBlockers = days
+    .filter((day) => day.releaseBlockers.length > 0)
+    .map((day) => ({ date: day.date, blockers: day.releaseBlockers }));
   const status =
     completeWorkdays >= opts.minDays &&
     captureEvidenceDays >= opts.minCaptureDays &&
-    spanCalendarDays >= opts.minSpanDays
+    spanCalendarDays >= opts.minSpanDays &&
+    releaseBlockers.length === 0
       ? "ready"
       : "not-ready";
 
@@ -126,6 +156,7 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     completeWorkdays,
     captureEvidenceDays,
     spanCalendarDays,
+    releaseBlockers,
     dimensions: dimensions.map((dimension) => ({
       id: dimension.id,
       label: dimension.label,
@@ -220,17 +251,25 @@ function analyzeDay(day: {
     .filter((dimension) => !presentDimensions.includes(dimension.id))
     .map((dimension) => dimension.id);
   const operationalEvidence = hasOperationalEvidence(day.text);
+  const safety = analyzeSafety(day.text);
 
   return {
     date: day.date,
     headings: day.headings,
-    complete: missingDimensions.length === 0 && operationalEvidence,
+    complete:
+      missingDimensions.length === 0 &&
+      operationalEvidence &&
+      safety.missing.length === 0 &&
+      safety.blockers.length === 0,
     operationalEvidence,
     captureEvidence:
       presentDimensions.includes("capture_digestion") &&
       hasCaptureEvidence(day.text),
+    safetyConfirmed: safety.missing.length === 0 && safety.blockers.length === 0,
     presentDimensions,
     missingDimensions,
+    missingSafetyConfirmations: safety.missing,
+    releaseBlockers: safety.blockers,
   };
 }
 
@@ -247,6 +286,46 @@ function hasFilledDimension(text: string, dimension: Dimension): boolean {
     }
   }
   return false;
+}
+
+function analyzeSafety(text: string): {
+  readonly missing: ReadonlyArray<string>;
+  readonly blockers: ReadonlyArray<string>;
+} {
+  const answers = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const normalized = line.trim();
+    const match = /^(?:[-*]\s*)?([^:]{1,100}):\s*(.*)$/.exec(normalized);
+    if (match === null) continue;
+    const label = match[1].trim();
+    const value = match[2].trim();
+    for (const check of safetyChecks) {
+      if (check.patterns.some((pattern) => pattern.test(label))) {
+        answers.set(check.id, value);
+      }
+    }
+  }
+
+  const missing: string[] = [];
+  const blockers: string[] = [];
+  for (const check of safetyChecks) {
+    const answer = answers.get(check.id);
+    if (answer === undefined || answer === "") {
+      missing.push(check.id);
+      continue;
+    }
+    if (!isNegativeConfirmation(answer)) {
+      blockers.push(check.id);
+    }
+  }
+  return { missing, blockers };
+}
+
+function isNegativeConfirmation(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return /^(no|none|not observed|not seen|n\/a|na)([.;,\s]|$)/.test(
+    normalized,
+  );
 }
 
 function hasOperationalEvidence(text: string): boolean {
@@ -287,6 +366,7 @@ function renderReport(report: DogfoodReport): string {
     `Complete-workday span: ${report.spanCalendarDays}/` +
       `${report.required.spanCalendarDays} calendar day(s)`,
   );
+  lines.push(`Release blockers: ${report.releaseBlockers.length}`);
   lines.push("");
   lines.push("Rubric coverage:");
   for (const dimension of report.dimensions) {
@@ -302,20 +382,30 @@ function renderReport(report: DogfoodReport): string {
       const missing = day.missingDimensions.length === 0
         ? ""
         : `; missing ${day.missingDimensions.join(", ")}`;
+      const missingSafety = day.missingSafetyConfirmations.length === 0
+        ? ""
+        : `; missing safety ${day.missingSafetyConfirmations.join(", ")}`;
+      const blockers = day.releaseBlockers.length === 0
+        ? ""
+        : `; blockers ${day.releaseBlockers.join(", ")}`;
       const evidence = [
         day.operationalEvidence
           ? "operational evidence"
           : "no operational evidence",
         day.captureEvidence ? "capture evidence" : "no capture evidence",
+        day.safetyConfirmed ? "safety confirmed" : "safety unconfirmed",
       ].join("; ");
-      lines.push(`- ${day.date}: ${state}; ${evidence}${missing}`);
+      lines.push(
+        `- ${day.date}: ${state}; ${evidence}${missing}` +
+          `${missingSafety}${blockers}`,
+      );
     }
   }
   lines.push("");
   lines.push(
     "M10 is ready only when enough real work-vault days have complete rubric " +
       "notes, those days span two real work weeks, and the capture loop has " +
-      "been exercised across a real work week.",
+      "been exercised across a real work week with no release blockers.",
   );
   lines.push("");
   return `${lines.join("\n")}\n`;

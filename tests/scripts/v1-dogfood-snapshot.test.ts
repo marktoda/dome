@@ -60,6 +60,10 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stdout).toContain("Context packet: `today open loops`");
     expect(result.stdout).toContain("Qualitative notes to fill after the work session:");
     expect(result.stdout).toContain(
+      "- Lost or overwritten human markdown edits:",
+    );
+    expect(result.stdout).toContain("- Manual .dome/state edits:");
+    expect(result.stdout).toContain(
       "M10 status: this snapshot is supporting evidence only",
     );
   }, { timeout: 30_000 });

@@ -557,15 +557,19 @@ Operational result:
 
 - Current report:
   `Status: not-ready`; `Complete workdays: 0/10`; `Capture-evidence days: 0/5`;
-  `Complete-workday span: 0/12 calendar day(s)`.
+  `Complete-workday span: 0/12 calendar day(s)`; `Release blockers: 0`.
 - The report detected the dated 2026-06-02 evidence as partial with operational
-  evidence but no complete rubric-covered workday.
+  evidence but no complete rubric-covered workday and no filled safety
+  confirmations.
 - Controlled smoke capture paths and unfilled snapshot prompts do not count as
   real capture-evidence days.
 - Qualitative-only notes also do not count as complete workdays; a counted M10
   day needs measured Dome surface output plus filled post-session notes.
 - Short backfilled ledgers do not satisfy the release soak either; counted
   complete workdays need to span a two-work-week calendar window.
+- Counted M10 days now also require explicit negative safety confirmations for
+  lost/overwritten human markdown edits and manual `.dome/state` edits. Any
+  observed safety issue keeps the release-soak report `not-ready`.
 
 Qualitative read:
 

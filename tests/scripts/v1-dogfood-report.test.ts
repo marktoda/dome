@@ -43,6 +43,8 @@ Qualitative notes to fill after the work session:
 - Question burden: No owner-needed questions appeared.
 - Link/concept hygiene: Remaining diagnostics were known backlog.
 - Friction / manual foreground-agent work Dome should own: Still had to ask for one duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
 
 ## 2026-06-02 Work Session
 
@@ -98,6 +100,8 @@ Qualitative notes to fill after the work session:
 - Question burden: Low.
 - Link/concept hygiene: Known backlog.
 - Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
 `);
 
     const result = await runReport(["--ledger", ledger]);
@@ -124,6 +128,8 @@ Qualitative notes to fill after the work session:
 - Question burden: Low.
 - Link/concept hygiene: Known backlog.
 - Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
 `);
 
     const result = await runReport([
@@ -147,6 +153,7 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].complete).toBe(false);
     expect(report.days[0].operationalEvidence).toBe(false);
     expect(report.days[0].missingDimensions).toEqual([]);
+    expect(report.days[0].missingSafetyConfirmations).toEqual([]);
   });
 
   test("requires complete workdays to span the release-soak window", async () => {
@@ -179,6 +186,53 @@ Qualitative notes to fill after the work session:
     expect(report.spanCalendarDays).toBe(5);
     expect(report.required.spanCalendarDays).toBe(12);
   });
+
+  test("treats observed safety problems as release blockers", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Work Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: yes, one generated patch overwrote a draft
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.releaseBlockers).toEqual([{
+      date: "2026-06-01",
+      blockers: ["lost_or_overwritten_edits"],
+    }]);
+    expect(report.days[0].releaseBlockers).toEqual([
+      "lost_or_overwritten_edits",
+    ]);
+  });
 });
 
 function writeLedger(markdown: string): string {
@@ -204,6 +258,8 @@ Qualitative notes to fill after the work session:
 - Question burden: Low.
 - Link/concept hygiene: Known backlog.
 - Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
 `.trim();
 }
 

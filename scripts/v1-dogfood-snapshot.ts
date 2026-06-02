@@ -246,6 +246,8 @@ function renderSnapshot(input: {
   lines.push("- Question burden:");
   lines.push("- Link/concept hygiene:");
   lines.push("- Friction / manual foreground-agent work Dome should own:");
+  lines.push("- Lost or overwritten human markdown edits:");
+  lines.push("- Manual .dome/state edits:");
   lines.push("");
   lines.push(
     "M10 status: this snapshot is supporting evidence only; elapsed real " +

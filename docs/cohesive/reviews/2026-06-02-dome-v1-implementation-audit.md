@@ -450,6 +450,10 @@ Additional M10 audit support:
 - The parser is intentionally strict: generated snapshot prompts, controlled
   smoke prose, qualitative-only notes, partial qualitative notes, and short
   backfilled ledgers do not count as release-soak completion.
+- Counted workdays now require explicit negative confirmations for lost or
+  overwritten human markdown edits and manual `.dome/state` edits. Any
+  non-negative answer is surfaced as a release blocker and keeps the report
+  `not-ready`.
 - `tests/scripts/v1-dogfood-report.test.ts` covers help output, complete versus
   partial workday detection, JSON output, default threshold behavior, and
   capture-evidence separation.
