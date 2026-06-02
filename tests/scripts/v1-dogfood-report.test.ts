@@ -24,6 +24,7 @@ describe("v1 dogfood report script", () => {
     expect(result.stdout).toContain(
       "Audits the M10 work-vault dogfood ledger against the V1 release-soak rubric.",
     );
+    expect(result.stdout).toContain("--today <YYYY-MM-DD>");
   });
 
   test("counts complete workdays and complete capture-evidence days", async () => {
@@ -583,6 +584,52 @@ ${completeDay("2026-06-05", "Archived processed capture at \`inbox/processed/arc
     expect(report.required.spanCalendarDays).toBe(12);
   });
 
+  test("does not count future or invalid dated entries as elapsed evidence", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+${completeDay("2026-06-01")}
+${completeDay("2026-06-10")}
+${completeDay("2026-02-31")}
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--today",
+      "2026-06-02",
+      "--min-days",
+      "2",
+      "--min-capture-days",
+      "2",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(1);
+    expect(report.serveHostEvidenceDays).toBe(1);
+    expect(report.captureEvidenceDays).toBe(1);
+    expect(report.spanCalendarDays).toBe(1);
+    expect(
+      report.days.map((day: { date: string; dateStatus: string }) => ({
+        date: day.date,
+        dateStatus: day.dateStatus,
+      })),
+    ).toEqual([
+      { date: "2026-02-31", dateStatus: "invalid" },
+      { date: "2026-06-01", dateStatus: "valid" },
+      { date: "2026-06-10", dateStatus: "future" },
+    ]);
+    expect(
+      report.days.map((day: { complete: boolean }) => day.complete),
+    ).toEqual([false, true, false]);
+  });
+
   test("treats observed safety problems as release blockers", async () => {
     const ledger = writeLedger(`
 # Test ledger
@@ -815,8 +862,13 @@ type ProcessResult = {
 };
 
 async function runReport(args: ReadonlyArray<string>): Promise<ProcessResult> {
+  const hasExplicitToday = args.includes("--today");
+  const wantsHelp = args.includes("--help") || args.includes("-h");
+  const commandArgs = hasExplicitToday || wantsHelp
+    ? [...args]
+    : ["--today", "2026-06-30", ...args];
   const proc = Bun.spawn({
-    cmd: [process.execPath, REPORT_SCRIPT, ...args],
+    cmd: [process.execPath, REPORT_SCRIPT, ...commandArgs],
     cwd: REPO_ROOT,
     stdout: "pipe",
     stderr: "pipe",

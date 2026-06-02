@@ -1089,3 +1089,26 @@ Qualitative read:
 - This closes another release-soak evidence gap. M10 counted workdays now need
   actual qualitative observations, not template placeholders that merely make
   each rubric line non-empty.
+
+## 2026-06-02 M10 Elapsed-Date Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so future-dated and
+  calendar-impossible ledger sections remain visible but do not count as
+  elapsed M10 evidence.
+- Added `dateStatus` to per-day JSON rows with `valid`, `future`, or `invalid`
+  values.
+- Added `--today <YYYY-MM-DD>` so tests and audits can pin the last date
+  eligible to count, while normal report runs default to the local current date.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 20 tests and
+  136 assertions.
+
+Qualitative read:
+
+- This closes another release-soak overclaim path. M10 readiness can no longer
+  be inflated by prefilled future sections or typoed calendar dates, which
+  keeps the gate tied to real elapsed work-vault use.

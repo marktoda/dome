@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 type ReportOptions = {
   readonly ledger: string;
+  readonly today: string;
   readonly minDays: number;
   readonly minCaptureDays: number;
   readonly minSpanDays: number;
@@ -26,6 +27,7 @@ type SafetyCheck = {
 
 type DayReport = {
   readonly date: string;
+  readonly dateStatus: "valid" | "future" | "invalid";
   readonly headings: ReadonlyArray<string>;
   readonly complete: boolean;
   readonly operationalEvidence: boolean;
@@ -186,10 +188,17 @@ async function main(): Promise<void> {
 }
 
 function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
-  const days = parseDaySections(markdown).map((day) => analyzeDay(day));
+  const todayDay = calendarDay(opts.today);
+  if (todayDay === null) {
+    throw new Error(`--today must be a valid YYYY-MM-DD date`);
+  }
+  const days = parseDaySections(markdown).map((day) =>
+    analyzeDay(day, todayDay)
+  );
   const completeWorkdays = days.filter((day) => day.complete).length;
-  const serveHostEvidenceDays = days.filter((day) => day.serveHostEvidence)
-    .length;
+  const serveHostEvidenceDays = days.filter((day) =>
+    day.dateStatus === "valid" && day.serveHostEvidence
+  ).length;
   const captureEvidenceDays = days.filter((day) =>
     day.complete && day.captureEvidence
   ).length;
@@ -222,8 +231,10 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     dimensions: dimensions.map((dimension) => ({
       id: dimension.id,
       label: dimension.label,
-      days: days.filter((day) => day.presentDimensions.includes(dimension.id))
-        .length,
+      days: days.filter((day) =>
+        day.dateStatus === "valid" &&
+        day.presentDimensions.includes(dimension.id)
+      ).length,
     })),
     days,
   };
@@ -305,7 +316,13 @@ function analyzeDay(day: {
   readonly date: string;
   readonly headings: ReadonlyArray<string>;
   readonly text: string;
-}): DayReport {
+}, todayDay: number): DayReport {
+  const dayNumber = calendarDay(day.date);
+  const dateStatus = dayNumber === null
+    ? "invalid"
+    : dayNumber > todayDay
+    ? "future"
+    : "valid";
   const presentDimensions = dimensions
     .filter((dimension) => hasFilledDimension(day.text, dimension))
     .map((dimension) => dimension.id);
@@ -318,8 +335,10 @@ function analyzeDay(day: {
 
   return {
     date: day.date,
+    dateStatus,
     headings: day.headings,
     complete:
+      dateStatus === "valid" &&
       missingDimensions.length === 0 &&
       operationalEvidence &&
       serveHostEvidence &&
@@ -508,6 +527,7 @@ function renderReport(report: DogfoodReport): string {
         ? ""
         : `; blockers ${day.releaseBlockers.join(", ")}`;
       const evidence = [
+        ...(day.dateStatus === "valid" ? [] : [`${day.dateStatus} date`]),
         day.operationalEvidence
           ? "operational evidence"
           : "no operational evidence",
@@ -535,6 +555,7 @@ function renderReport(report: DogfoodReport): string {
 
 function parseArgs(args: ReadonlyArray<string>): ReportOptions {
   let ledger = defaultLedger;
+  let today = localDateString();
   let minDays = 10;
   let minCaptureDays = 5;
   let minSpanDays = 12;
@@ -545,6 +566,14 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
     const arg = args[i];
     if (arg === "--ledger") {
       ledger = resolve(readValue(args, i, arg));
+      i += 1;
+      continue;
+    }
+    if (arg === "--today") {
+      today = readValue(args, i, arg);
+      if (calendarDay(today) === null) {
+        throw new Error("--today must be a valid YYYY-MM-DD date");
+      }
       i += 1;
       continue;
     }
@@ -580,6 +609,7 @@ function parseArgs(args: ReadonlyArray<string>): ReportOptions {
 
   return Object.freeze({
     ledger,
+    today,
     minDays,
     minCaptureDays,
     minSpanDays,
@@ -609,8 +639,33 @@ function parsePositiveInteger(value: string, name: string): number {
 }
 
 function daysSinceEpoch(date: string): number {
+  const day = calendarDay(date);
+  if (day === null) {
+    throw new Error(`invalid calendar date: ${date}`);
+  }
+  return day;
+}
+
+function calendarDay(date: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (match === null) return null;
   const [year, month, day] = date.split("-").map((part) => Number(part));
-  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return Math.floor(utc.getTime() / 86_400_000);
+}
+
+function localDateString(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function printHelp(): void {
@@ -621,6 +676,7 @@ function printHelp(): void {
     "",
     "Options:",
     "  --ledger <path>            Ledger Markdown path.",
+    "  --today <YYYY-MM-DD>       Last date eligible to count (default: today).",
     "  --min-days <n>             Complete workday threshold (default: 10).",
     "  --min-capture-days <n>     Capture-evidence threshold (default: 5).",
     "  --min-span-days <n>        Complete-workday calendar span (default: 12).",
