@@ -201,9 +201,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       surfaces: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "notes/*.md" },
-        { kind: "command", name: "today" },
-        { kind: "command", name: "prep" },
-        { kind: "command", name: "agenda" },
+        { kind: "command", name: "query" },
         { kind: "command", name: "export-context" },
       ],
       settlement: {
@@ -312,8 +310,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       surfaces: [
         { kind: "status", name: "status" },
         { kind: "status", name: "check" },
-        { kind: "command", name: "today" },
-        { kind: "command", name: "prep" },
+        { kind: "command", name: "query" },
+        { kind: "command", name: "export-context" },
       ],
       settlement: {
         key: "question idempotency key + source refs",

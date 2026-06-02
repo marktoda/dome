@@ -290,7 +290,7 @@ function completeDay(date: string): string {
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
-- \`bin/dome today --vault ~/vaults/work --json\`
+- \`bin/dome query --vault ~/vaults/work "today open loops" --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:

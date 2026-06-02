@@ -28,33 +28,10 @@ dome check [--engine] [--content] [--decisions] [--attention] [--limit <n>] [--j
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
-dome today [--date <YYYY-MM-DD>] [--limit <n>] [--json]
-                                Source-backed daily task/followup surface.
-dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]
-                                Source-backed daily planning packet.
-dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]
-                                Source-backed agenda for a person or topic.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
-dome lint [--fail-on <severity>] [--limit <n>] [--json]
-                                Adopted-state hygiene report.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
-dome run <name> [--json] [-- <processor flags>]
-                                Invoke a command-triggered view processor.
-dome rebuild                    Wipe and rebuild projection store from adopted commit.
-dome inspect <subject> [--limit <n>] [--json]
-             [--summary] [--severity <level>] [--code <code>] [--processor <id>]
-             [--predicate <predicate>] [--subject-kind <kind>] [--subject-id <id>]
-                                Read-only view over the operational substrate.
-                                Subjects: bundles, processors, runs,
-                                patches, facts, diagnostics, questions,
-                                outbox, quarantine.
-dome doctor [--json] [--repair] [--orphan-threshold-ms <n>]
-                                Advanced engine-substrate health checks;
-                                --repair is reserved for answer-mediated mitigations.
-dome answer <question-id> [<value>]
-                                Low-level compatibility alias for `resolve`.
 dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
@@ -64,15 +41,15 @@ dome serve [--vault <path>] [--poll-interval-ms <n>] [-v|--verbose]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
-- **Optional adopted-state views:** `dome query`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` are explicit read views when the user asks for recall, planning, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
-- **Advanced/debug surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, compatibility, extension development, and maintenance. They are not the normal Claude Code workflow.
+- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
+- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and hidden daily view wrappers remain available for detailed state inspection, compatibility, extension development, and maintenance. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
 future answer-mediated mitigations and exits with usage status instead of
 mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, and `dome agenda` — command-triggered view-phase processors invoked through the shared view-command boundary.
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily view wrappers are retained as hidden compatibility commands over the same boundary.
 - **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -99,7 +76,7 @@ those opaque flags through to `ctx.input.commandArgs.flags`; all shipped
 first-party commands should prefer explicit Commander options.
 
 Dedicated wrappers over shipped view processors (`dome query`, `dome lint`,
-`dome export-context`, `dome today`, `dome prep`, and `dome agenda`) also validate the
+`dome export-context`, and hidden compatibility daily views) also validate the
 returned `ViewEffect` boundary. Each wrapper expects exactly one view with
 the canonical effect `name` and structured `schema` for that command before
 rendering. `dome run` remains the generic extension escape hatch and renders
@@ -456,10 +433,10 @@ top-level `questions` field for the unique open-question count.
 required processor is active; and `"inactive"` means none of the loop's
 required processors are active.
 `last_sync` is the started-at timestamp of the newest successful adoption- or
-garden-phase run. Read-only view commands such as `dome lint`, `dome query`,
-`dome today`, `dome prep`, and `dome agenda` remain visible in
-`recent_processor_runs`, but they do not move `last_sync` because they do not
-adopt or drain compiler work.
+garden-phase run. Read-only view commands such as `dome query`,
+`dome export-context`, `dome lint`, and hidden compatibility daily views remain
+visible in `recent_processor_runs`, but they do not move `last_sync` because
+they do not adopt or drain compiler work.
 `attention_required` and `attention` summarize the status counters into stable
 reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
@@ -835,11 +812,14 @@ their own option shapes without changing the core CLI parser.
 Exit codes: 0 on success; 64 when no matching view processor exists or the
 vault has no usable adopted ref; 1 on runtime or dispatch failure.
 
-### `dome today [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
+### Hidden compatibility: `dome today [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
-Dedicated wrapper for the `dome.daily.today` view processor. The shared
-view-command boundary validates the adopted ref, refreshes stale projections,
-then invokes the extension-owned command trigger `today`.
+Hidden dedicated wrapper for the `dome.daily.today` view processor. It remains
+available for compatibility and deterministic processor-level tests, but the
+primary V1 foreground-agent workflow should use the prepared daily markdown
+surface plus `dome query` / `dome export-context`. The shared view-command
+boundary validates the adopted ref, refreshes stale projections, then invokes
+the extension-owned command trigger `today`.
 
 The target daily-note path comes from `dome.daily` extension config. Default is
 `wiki/dailies/{date}.md`; vaults that keep Obsidian daily notes at the root of
@@ -931,11 +911,13 @@ complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 
-### `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
+### Hidden compatibility: `dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
-Dedicated wrapper for the `dome.daily.prep` view processor. It uses the same
-source-backed daily action state as `dome today`, then renders a portable
-planning packet for the target day.
+Hidden dedicated wrapper for the `dome.daily.prep` view processor. It uses the
+same source-backed daily action state as `dome today`, then renders a portable
+planning packet for the target day. V1 keeps it as a compatibility/debug view;
+normal planning and meeting-prep context should come from prepared daily
+markdown plus `query` / `export-context`.
 
 Default text output is markdown:
 
@@ -975,13 +957,16 @@ compact `evidenceLabel` values, plus the markdown packet under `markdown`.
 `--date` is for prepping a chosen day and for deterministic tests; omitted
 means local today.
 
-### `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
+### Hidden compatibility: `dome agenda <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>] [--json]`
 
-Dedicated wrapper for the `dome.daily.agenda-with` view processor. It reuses
-the same source-backed daily action state as `dome today` / `dome prep`, filters
-open tasks, followups, and unresolved daily questions by the supplied person or
-topic, and joins adopted-state search matches when `dome.search` has populated
-the projection.
+Hidden dedicated wrapper for the `dome.daily.agenda-with` view processor. It
+reuses the same source-backed daily action state as `dome today` / `dome prep`,
+filters open tasks, followups, and unresolved daily questions by the supplied
+person or topic, and joins adopted-state search matches when `dome.search` has
+populated the projection. For V1 user/agent workflow, a natural-language
+`export-context` or `query` request is preferred because the foreground agent
+can interpret the returned context instead of relying on a deterministic agenda
+filter.
 
 Default text output is markdown:
 

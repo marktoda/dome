@@ -1254,3 +1254,43 @@ Qualitative read:
 - This closes a final-gate blind spot. A future complete M10 ledger will no
   longer be sufficient by itself; the current work vault also has to be ready
   to collect and continue dogfood without manual cleanup.
+
+## 2026-06-02 CLI Surface Consolidation
+
+Verification action:
+
+- Consolidated the primary V1 CLI surface around compiler control,
+  attention/decision handling, and adopted-state recall:
+  `init`, `serve`, `sync`, `status`, `check`, `resolve`, `query`, and
+  `export-context`.
+- Hid `today`, `prep`, `agenda`, `inspect`, `doctor`, `lint`, `answer`, `run`,
+  and `rebuild` from top-level help while keeping them callable for
+  compatibility, debugging, and processor-level tests.
+- Stopped using `dome today` as M10 measured work-surface evidence. The
+  dogfood snapshot now uses `status`, `check`, `query`, and `export-context`;
+  the report counts explicit `check`, `query`, `export-context`, or full
+  dogfood snapshots.
+- Updated V1, CLI, harness, MCP, processor, matrix, vision, generated AGENTS,
+  and dogfood docs to frame daily notes as prepared markdown surfaces and
+  `query` / `export-context` as the foreground-agent recall path.
+
+Measured result:
+
+- Focused CLI/orientation/loop/dogfood tests pass with 130 tests and 1174
+  assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` pass.
+- `bun run v1:smoke` passes against docs and work vaults with `views 2 ok`,
+  proving the smoke gate now checks only `query` and `export-context` as
+  user-value view surfaces.
+- `bun run v1:dogfood-preflight -- --require-ready --json` still reports live
+  work-vault collection `status: ready`; `bun run v1:dogfood-report -- --json`
+  still reports the release soak as `not-ready` with 1 complete workday, 1
+  serve-host evidence day, 1 capture-evidence day, and a 1-day span.
+
+Qualitative read:
+
+- This removes command-surface pressure without deleting useful internal
+  processors. The daily loop still prepares the markdown work cockpit; agents
+  should ask natural-language `query` / `export-context` questions instead of
+  using narrow deterministic planning commands.

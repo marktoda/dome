@@ -201,10 +201,10 @@ refreshes its wording and SourceRefs so stable questions can survive line
 moves without stale provenance. Answered rows are not overwritten.
 
 `metadata` is advisory but source-controlled through the effect row. It lets
-`dome check`, `dome today`, `dome prep`, `dome query`, and
-`dome export-context` separate agent/model-safe resolution work from
-owner-needed decisions. Missing metadata is treated as `owner-needed` by
-surfaces so older questions stay conservative.
+`dome check`, `dome query`, `dome export-context`, and hidden compatibility
+daily views separate agent/model-safe resolution work from owner-needed
+decisions. Missing metadata is treated as `owner-needed` by surfaces so older
+questions stay conservative.
 
 Automation policy means:
 

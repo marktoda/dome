@@ -60,8 +60,9 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("## 2026-06-02 Dogfood Snapshot");
     expect(result.stdout).toContain("Commands run:");
+    expect(result.stdout).not.toContain("bin/dome today");
     expect(result.stdout).toContain(
-      `bin/dome today --vault ${vaultPath} --date 2026-06-02 --json`,
+      `bin/dome query --vault ${vaultPath} "today open loops" --limit 3 --json`,
     );
     expect(result.stdout).toContain("Operational state:");
     expect(result.stdout).toContain("- Serve host: off");
@@ -69,7 +70,7 @@ describe("v1 dogfood snapshot script", () => {
     expect(result.stdout).toContain("Content hygiene:");
     expect(result.stdout).toContain("- Example findings:");
     expect(result.stdout).toContain("Wikilink [[missing thing]]");
-    expect(result.stdout).toContain("Daily surface:");
+    expect(result.stdout).toContain("Work surface:");
     expect(result.stdout).toContain("Context packet: `today open loops`");
     expect(result.stdout).toContain("Qualitative notes to fill after the work session:");
     expect(result.stdout).toContain(

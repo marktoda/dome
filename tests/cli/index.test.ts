@@ -33,8 +33,37 @@ afterEach(() => {
 describe("runCli", () => {
   test("top-level --help exits 0 and prints command usage", async () => {
     expect(await runCli(["--help"])).toBe(0);
-    expect(captured.out.join("\n")).toContain("Usage: dome");
-    expect(captured.out.join("\n")).toContain("status");
+    const out = captured.out.join("\n");
+    expect(out).toContain("Usage: dome");
+    for (
+      const command of [
+        "init",
+        "sync",
+        "status",
+        "check",
+        "resolve",
+        "query",
+        "export-context",
+        "serve",
+      ]
+    ) {
+      expect(out).toContain(command);
+    }
+    for (
+      const hiddenCommand of [
+        "today",
+        "prep",
+        "agenda",
+        "inspect",
+        "doctor",
+        "lint",
+        "answer",
+        "run",
+        "rebuild",
+      ]
+    ) {
+      expect(out).not.toContain(hiddenCommand);
+    }
   });
 
   test("subcommand -h exits 0 and does not run the command action", async () => {
@@ -68,7 +97,7 @@ describe("runCli", () => {
     expect(out).toContain("Suppress non-error text output");
   });
 
-  test("today help exposes date and json options", async () => {
+  test("hidden today compatibility help exposes date and json options", async () => {
     expect(await runCli(["today", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome today");
@@ -81,7 +110,7 @@ describe("runCli", () => {
     expect(captured.err.join("\n")).toContain("invalid --date");
   });
 
-  test("prep help exposes date, limit, and json options", async () => {
+  test("hidden prep compatibility help exposes date, limit, and json options", async () => {
     expect(await runCli(["prep", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome prep");
@@ -90,7 +119,7 @@ describe("runCli", () => {
     expect(out).toContain("--json");
   });
 
-  test("agenda help exposes topic, date, limit, and json options", async () => {
+  test("hidden agenda compatibility help exposes topic, date, limit, and json options", async () => {
     expect(await runCli(["agenda", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome agenda");

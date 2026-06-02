@@ -603,8 +603,6 @@ Optional adopted-state views:
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
-- \`dome today\`, \`dome prep\`, and \`dome agenda <person-or-topic>\` -
-  deterministic daily/planning views when explicitly useful.
 
 ## Read-first context
 
@@ -615,9 +613,10 @@ file hunting:
   review, planning pass, or multi-file edit.
 - Use \`dome query <text> --json\` for focused recall or when the context packet
   looks too broad.
-- Use \`dome today --json\`, \`dome prep --json\`, or
-  \`dome agenda <person-or-topic> --json\` when the task is daily planning,
-  meeting prep, or person/topic follow-up.
+- For daily planning, meeting prep, or person/topic follow-up, prefer a
+  natural-language \`dome export-context <topic> --json\` or
+  \`dome query <text> --json\` request. The daily note should already be
+  prepared in markdown by Dome's background loop.
 
 Treat these as read-first surfaces, not mandatory ceremony. If a packet misses
 obvious context or returns noisy results, note the miss in the relevant markdown
@@ -626,9 +625,9 @@ or tell the user; that feedback is V1 dogfood evidence.
 Advanced/debug commands:
 
 - \`dome inspect <subject>\`, \`dome doctor\`, \`dome lint\`, \`dome answer\`,
-  \`dome run\`, and \`dome rebuild\` remain available for debugging,
-  compatibility, and extension development, but they are not the normal Claude
-  Code workflow.
+  \`dome run\`, \`dome rebuild\`, and hidden compatibility daily views remain
+  available for debugging, compatibility, and extension development, but they
+  are not the normal Claude Code workflow.
 - Useful inspect subjects are \`bundles\`, \`processors\`, \`runs\`, \`patches\`,
   \`facts\`, \`diagnostics\`, \`questions\`, \`outbox\`, and \`quarantine\`.
 

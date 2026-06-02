@@ -33,7 +33,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Update the index" | planned | `dome.index.update-index` | adoption | none | PatchEffect (rewrite index.md) |
 | "Append run records to log.md" | planned | `dome.log.append-log` | adoption | none | PatchEffect (append log.md row) |
 | "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index`, `dome.daily.ambiguous-followup-answer` | adoption + garden answer | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups, answer-triggered PatchEffect to write accepted prose follow-ups back into markdown |
-| "Show today's action surface" | shipped | `dome.daily.today` | view (command via `dome today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
+| "Show today's action surface" | hidden compatibility | `dome.daily.today` | view (hidden command wrapper / `dome run today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
 | "Lint the wiki for issues" | shipped | `dome.lint.report` | view (command via `dome lint`) | none (projection diagnostics + deterministic adopted-state checks) | ViewEffect (structured lint report) |
 | "Apply a lint finding" | planned | `dome.lint.apply-finding` | view (command) | `assets/extensions/dome.lint/processors/apply-finding.prompt.md` | PatchEffect (the proposed fix) |
 
@@ -42,8 +42,8 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
 | "What did I decide about X" | shipped | `dome.search.query` | view (command via `dome query`) | none (FTS + projection-signal recall; narrative rendering remains planned) | ViewEffect (structured adopted-state matches) |
-| "What's on the agenda with [person]" | shipped deterministic | `dome.daily.agenda-with` | view (command via `dome agenda`) | none | ViewEffect (source-backed agenda markdown + structured payload) |
-| "Prep for tomorrow" | shipped deterministic | `dome.daily.prep` | view (command via `dome prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
+| "What's on the agenda with [person]" | hidden compatibility; prefer `dome export-context` | `dome.daily.agenda-with` | view (hidden command wrapper / `dome run agenda-with`) | none | ViewEffect (source-backed agenda markdown + structured payload) |
+| "Prep for tomorrow" | hidden compatibility; prefer `dome export-context` | `dome.daily.prep` | view (hidden command wrapper / `dome run prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
 | "Week in review" | planned | `dome.daily.week-review`, future `dome.daily.create-week-review` | view command + garden schedule | `assets/extensions/dome.daily/processors/week-review.prompt.md` | ViewEffect (interactive review markdown); scheduled garden PatchEffect can write a review to `wiki/syntheses/` |
 | "Export context for cross-AI handoff" | shipped | `dome.search.export-context` | view (command via `dome export-context <topic>`) | none (FTS + projection-signal recall; narrative rendering remains planned) | ViewEffect (portable context packet) |
 

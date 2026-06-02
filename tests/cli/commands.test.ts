@@ -353,8 +353,9 @@ describe("runInit", () => {
       expect(agentsBody).toContain("## Read-first context");
       expect(agentsBody).toContain("dome export-context <topic> --json");
       expect(agentsBody).toContain("dome query <text> --json");
-      expect(agentsBody).toContain("dome today");
-      expect(agentsBody).toContain("dome prep");
+      expect(agentsBody).toContain("The daily note should already be");
+      expect(agentsBody).not.toContain("dome today");
+      expect(agentsBody).not.toContain("dome prep");
       expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("Advanced/debug commands");
       expect(agentsBody).toContain("dome inspect <subject>");

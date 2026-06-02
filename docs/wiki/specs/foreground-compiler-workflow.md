@@ -77,10 +77,9 @@ boundary. The useful moments to call Dome explicitly are:
 - `dome resolve <id> <value>` when a Dome question has a source-grounded
   answer.
 - `dome query <text>` for adopted-state recall with SourceRefs.
-- `dome today` / `dome prep` / `dome agenda <person-or-topic>` for daily
-  management surfaces.
 - `dome export-context <topic>` for a portable context packet.
-- `dome lint` for deterministic vault hygiene.
+- Hidden compatibility/debug commands such as `dome lint` when explicitly
+  debugging the substrate.
 
 ## Read-first context
 
@@ -91,9 +90,9 @@ views before broad manual file hunting:
   planning passes, and multi-file edits;
 - use `dome query <text> --json` for focused recall or when a packet is too
   broad;
-- use `dome today --json`, `dome prep --json`, or
-  `dome agenda <person-or-topic> --json` for daily planning, meeting prep, and
-  person/topic follow-up.
+- for daily planning, meeting prep, or person/topic follow-up, use a natural
+  language `export-context`/`query` topic and inspect the prepared daily note
+  rather than a separate deterministic daily CLI view.
 
 This is a read-first habit, not per-edit ceremony. Agents should still use
 normal file search when needed, but a useful V1 should make the first read set
@@ -200,9 +199,8 @@ state file to patch.
 - Draft counts are expected only while the user has uncommitted work.
 - Diagnostics/questions/outbox/quarantine are zero or intentionally being
   resolved.
-- `dome query`, `dome today`, `dome prep`, `dome agenda`, and
-  `dome export-context` read from adopted state and include source-backed
-  evidence.
+- `dome query` and `dome export-context` read from adopted state and include
+  source-backed evidence.
 - For nontrivial vault tasks, Claude can start from `dome export-context` or
   `dome query` instead of manually rediscovering the same files.
 - Claude can continue normal markdown work without knowing SQLite, internal

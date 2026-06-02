@@ -67,7 +67,8 @@ scenario(
       expect(agents).toContain("## Read-first context");
       expect(agents).toContain("dome export-context <topic> --json");
       expect(agents).toContain("dome query <text> --json");
-      expect(agents).toContain("dome today");
+      expect(agents).toContain("The daily note should already be");
+      expect(agents).not.toContain("dome today");
       expect(agents).toContain("dome export-context <topic>");
       expect(agents).toContain("Advanced/debug commands");
       expect(agents).toContain("dome inspect <subject>");

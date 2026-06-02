@@ -307,21 +307,6 @@ async function smokeUserValueViews(input: {
 }): Promise<ReadonlyArray<string>> {
   const checks: ReadonlyArray<ViewCheck> = [
     {
-      name: "today",
-      args: ["today", "--vault", input.vaultPath, "--json"],
-      schema: "dome.daily.today/v1",
-    },
-    {
-      name: "prep",
-      args: ["prep", "--vault", input.vaultPath, "--json"],
-      schema: "dome.daily.prep/v1",
-    },
-    {
-      name: "agenda",
-      args: ["agenda", "--vault", input.vaultPath, "management", "--json"],
-      schema: "dome.daily.agenda-with/v1",
-    },
-    {
       name: "query",
       args: ["query", "--vault", input.vaultPath, "management", "--json"],
       schema: "dome.search.query/v1",

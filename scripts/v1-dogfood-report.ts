@@ -168,14 +168,14 @@ const contradictorySafetyQualifierPatterns: readonly RegExp[] = Object.freeze([
 
 const operationalEvidenceLinePatterns: readonly RegExp[] = Object.freeze([
   /`bun run v1:dogfood-snapshot(?:\s|`)/,
-  /`bin\/dome (check|today|query|export-context)\b/,
+  /`bin\/dome (check|query|export-context)\b/,
   /^(?:[-*]\s*)?(?:ran\s+)?bun run v1:dogfood-snapshot\b/i,
-  /^(?:[-*]\s*)?(?:ran\s+)?bin\/dome (check|today|query|export-context)\b/i,
+  /^(?:[-*]\s*)?(?:ran\s+)?bin\/dome (check|query|export-context)\b/i,
 ]);
 
 const negativeOperationalEvidencePatterns: readonly RegExp[] = Object.freeze([
-  /\b(no|not|without|did not|didn't)\b.{0,80}\b(bun run v1:dogfood-snapshot|bin\/dome (check|today|query|export-context))\b/i,
-  /\b(bun run v1:dogfood-snapshot|bin\/dome (check|today|query|export-context))\b.{0,80}\b(not run|not used|missing|absent|unavailable|failed to run)\b/i,
+  /\b(no|not|without|did not|didn't)\b.{0,80}\b(bun run v1:dogfood-snapshot|bin\/dome (check|query|export-context))\b/i,
+  /\b(bun run v1:dogfood-snapshot|bin\/dome (check|query|export-context))\b.{0,80}\b(not run|not used|missing|absent|unavailable|failed to run)\b/i,
 ]);
 
 const serveHostEvidenceLinePatterns: readonly RegExp[] = Object.freeze([

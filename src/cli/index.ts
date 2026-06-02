@@ -146,7 +146,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("inspect")
+    .command("inspect", { hidden: true })
     .description("Read operational substrate rows.")
     .argument(
       "<subject>",
@@ -185,7 +185,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("doctor")
+    .command("doctor", { hidden: true })
     .description("Run engine-substrate health checks.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -209,7 +209,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("agenda")
+    .command("agenda", { hidden: true })
     .description("Render a source-backed agenda for a person or topic.")
     .argument("<topic...>", "Person or topic to prepare for.")
     .option("--date <YYYY-MM-DD>", "Date context (defaults to local today).")
@@ -259,7 +259,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("answer")
+    .command("answer", { hidden: true })
     .description("Resolve an engine-raised question.")
     .argument("<question-id>", "Question row id from `dome inspect questions`.")
     .argument("[value...]", "Answer value. Omit to print the question.")
@@ -283,7 +283,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("run")
+    .command("run", { hidden: true })
     .description("Invoke a view-phase command-triggered processor.")
     .argument("<name>", "View command name.")
     .allowUnknownOption(true)
@@ -304,7 +304,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("lint")
+    .command("lint", { hidden: true })
     .description("Render the adopted-state lint report.")
     .option(
       "--fail-on <severity>",
@@ -372,7 +372,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("today")
+    .command("today", { hidden: true })
     .description("Render today's source-backed task surface.")
     .option("--date <YYYY-MM-DD>", "Date to render (defaults to local today).")
     .option(
@@ -396,7 +396,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("prep")
+    .command("prep", { hidden: true })
     .description("Render source-backed planning context for a day.")
     .option("--date <YYYY-MM-DD>", "Date to prep (defaults to local today).")
     .option(
@@ -420,7 +420,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("rebuild")
+    .command("rebuild", { hidden: true })
     .description("Rebuild projection.db from the adopted commit.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")

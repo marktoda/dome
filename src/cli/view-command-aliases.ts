@@ -1,8 +1,8 @@
-// Public CLI command names for dedicated wrappers around view processors.
+// CLI command names for dedicated wrappers around view processors.
 //
 // Most view processors use the same command trigger the user runs through the
 // CLI. A few keep a more precise internal trigger name while exposing a simpler
-// public command. Keep that mapping centralized so tests and loop metadata do
+// wrapper command. Keep that mapping centralized so tests and loop metadata do
 // not leak internal trigger names into user-facing status surfaces.
 
 export const DEDICATED_VIEW_COMMAND_ALIASES: ReadonlyMap<string, string> =

@@ -34,14 +34,6 @@ async function main(): Promise<void> {
     opts.vault,
     "--json",
   ]);
-  const today = await domeJson<JsonRecord>(commands, [
-    "today",
-    "--vault",
-    opts.vault,
-    "--date",
-    opts.date,
-    "--json",
-  ]);
   const query = await domeJson<JsonRecord>(commands, [
     "query",
     "--vault",
@@ -66,7 +58,6 @@ async function main(): Promise<void> {
     commands,
     status,
     check,
-    today,
     query,
     exportContext,
   }));
@@ -77,7 +68,6 @@ function renderSnapshot(input: {
   readonly commands: ReadonlyArray<CommandRun>;
   readonly status: JsonRecord;
   readonly check: JsonRecord;
-  readonly today: JsonRecord;
   readonly query: JsonRecord;
   readonly exportContext: JsonRecord;
 }): string {
@@ -174,45 +164,25 @@ function renderSnapshot(input: {
     }
   }
 
-  const daily = record(input.today.daily);
-  const counts = record(input.today.counts);
-  const sourceCounts = record(input.today.sourceCounts);
-  const dailyCounts = record(sourceCounts.daily);
-  const backlogCounts = record(sourceCounts.backlog);
-  const dueCounts = record(record(input.today.dueCounts).openTasks);
+  const overview = record(input.exportContext.overview);
+  const readFirst = recordArray(overview.readFirst);
+  const packetLoops = recordArray(overview.openLoops);
   lines.push("");
-  lines.push("Daily surface:");
+  lines.push("Work surface:");
   lines.push(
-    `- Daily note: \`${stringValue(daily.path, "(unknown)")}\`; exists: ` +
-      `${yesNo(daily.exists)}`,
+    `- Topic: \`${opts.topic}\`; read-first entries: ${readFirst.length}; ` +
+      `open-loop examples: ${packetLoops.length}`,
   );
-  lines.push(
-    `- Open tasks: ${numberValue(counts.openTasks)} total (` +
-      `${numberValue(dailyCounts.openTasks)} daily, ` +
-      `${numberValue(backlogCounts.openTasks)} backlog); followups: ` +
-      `${numberValue(counts.followups)}; questions: ` +
-      `${numberValue(counts.questions)}`,
-  );
-  lines.push(
-    `- Due shape: ${numberValue(dueCounts.overdue)} overdue, ` +
-      `${numberValue(dueCounts.today)} today, ` +
-      `${numberValue(dueCounts.upcoming)} upcoming, ` +
-      `${numberValue(dueCounts.undated)} undated`,
-  );
-  const openTasks = recordArray(input.today.openTasks);
-  if (openTasks.length > 0) {
-    lines.push("- First visible tasks:");
-    for (const task of openTasks.slice(0, 5)) {
+  if (packetLoops.length > 0) {
+    lines.push("- Open-loop examples:");
+    for (const item of packetLoops.slice(0, 5)) {
       lines.push(
-        `  - ${trimOneLine(stringValue(task.text, "(missing text)"))} ` +
-          `(${formatPathLine(task.path, task.line)})`,
+        `  - ${trimOneLine(stringValue(item.text, "(missing text)"))} ` +
+          `(${stringValue(item.path, "(unknown)")})`,
       );
     }
   }
 
-  const overview = record(input.exportContext.overview);
-  const readFirst = recordArray(overview.readFirst);
-  const packetLoops = recordArray(overview.openLoops);
   lines.push("");
   lines.push(`Context packet: \`${opts.topic}\``);
   lines.push(
@@ -228,16 +198,6 @@ function renderSnapshot(input: {
       );
     }
   }
-  if (packetLoops.length > 0) {
-    lines.push("- Packet open-loop examples:");
-    for (const item of packetLoops.slice(0, 5)) {
-      lines.push(
-        `  - ${trimOneLine(stringValue(item.text, "(missing text)"))} ` +
-          `(${stringValue(item.path, "(unknown)")})`,
-      );
-    }
-  }
-
   const matches = recordArray(input.query.matches);
   if (matches.length > 0) {
     lines.push("");
