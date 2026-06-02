@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -32,6 +32,15 @@ describe("v1 dogfood snapshot script", () => {
     fixtures.push(vaultPath);
 
     expect((await runDome(["init", vaultPath])).exitCode).toBe(0);
+    mkdirSync(join(vaultPath, "notes"), { recursive: true });
+    writeFileSync(
+      join(vaultPath, "notes", "broken-link.md"),
+      "# Broken link\n\nSee [[missing thing]] for follow-up.\n",
+    );
+    expect((await runGit(vaultPath, ["add", "notes/broken-link.md"])).exitCode)
+      .toBe(0);
+    expect((await runGit(vaultPath, ["commit", "-m", "add broken link"])).exitCode)
+      .toBe(0);
     const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
     expect(sync.exitCode).toBe(0);
     expect(sync.stderr).toBe("");
@@ -56,6 +65,9 @@ describe("v1 dogfood snapshot script", () => {
     );
     expect(result.stdout).toContain("Operational state:");
     expect(result.stdout).toContain("Maintenance loops:");
+    expect(result.stdout).toContain("Content hygiene:");
+    expect(result.stdout).toContain("- Example findings:");
+    expect(result.stdout).toContain("Wikilink [[missing thing]]");
     expect(result.stdout).toContain("Daily surface:");
     expect(result.stdout).toContain("Context packet: `today open loops`");
     expect(result.stdout).toContain("Qualitative notes to fill after the work session:");
@@ -77,6 +89,24 @@ type ProcessResult = {
 
 async function runDome(args: ReadonlyArray<string>): Promise<ProcessResult> {
   return await runProcess([DOME_BIN, ...args]);
+}
+
+async function runGit(
+  cwd: string,
+  args: ReadonlyArray<string>,
+): Promise<ProcessResult> {
+  return await runProcess([
+    "git",
+    "-C",
+    cwd,
+    "-c",
+    "user.name=Dome Test",
+    "-c",
+    "user.email=dome@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    ...args,
+  ]);
 }
 
 async function runSnapshot(args: ReadonlyArray<string>): Promise<ProcessResult> {

@@ -147,6 +147,7 @@ function renderSnapshot(input: {
   const content = record(input.check.content);
   const repairSummary = record(content.repair_summary);
   const repairGroups = recordArray(repairSummary.groups);
+  const contentItems = recordArray(content.items);
   if (repairGroups.length > 0) {
     lines.push("");
     lines.push("Content hygiene:");
@@ -156,6 +157,17 @@ function renderSnapshot(input: {
           `${numberValue(group.count)} finding(s), ` +
           `${numberValue(group.attention_count)} attention`,
       );
+    }
+    if (contentItems.length > 0) {
+      lines.push("- Example findings:");
+      for (const item of contentItems.slice(0, 5)) {
+        lines.push(
+          `  - ${stringValue(item.severity, "unknown")} ` +
+            `${stringValue(item.code, "unknown")}: ` +
+            `${trimOneLine(stringValue(item.message, "(missing message)"))} ` +
+            `(${formatDiagnosticLocation(item)})`,
+        );
+      }
     }
   }
 
@@ -333,6 +345,16 @@ function formatPathLine(path: unknown, line: unknown): string {
   const renderedPath = stringValue(path, "(unknown)");
   const renderedLine = numberValue(line);
   return renderedLine > 0 ? `${renderedPath}:${renderedLine}` : renderedPath;
+}
+
+function formatDiagnosticLocation(item: JsonRecord): string {
+  const sourceRefs = stringValue(item.source_refs, "");
+  if (sourceRefs !== "") return sourceRefs;
+  const refs = recordArray(item.sourceRefs);
+  const first = refs[0];
+  if (first === undefined) return "(unknown)";
+  const range = record(first.range);
+  return formatPathLine(first.path, range.startLine);
 }
 
 function formatStderr(stderr: string): string {

@@ -600,3 +600,22 @@ Updated assessment:
   complete measured workday, not just an isolated capture mention.
 - V1 still should not be marked complete. The remaining gap is still elapsed
   real work-vault usage.
+
+## 2026-06-02 M10 Diagnostic Backlog Evidence Hardening
+
+Additional M10 evidence-surface hardening:
+
+- Updated `bun run v1:dogfood-snapshot` to render representative content
+  hygiene findings when `dome check --json` reports content diagnostics.
+- The snapshot still shows repair-path aggregate counts, but now also includes
+  source-backed example messages and locations. This makes the M10 claim
+  "remaining diagnostics are understood backlog" inspectable from the ledger
+  snapshot instead of relying only on a qualitative note.
+- Added a real CLI/adoption-path regression test: a temporary vault commits a
+  broken wikilink, syncs it through Dome, and verifies the snapshot includes
+  the content hygiene section plus an example wikilink finding.
+
+Updated assessment:
+
+- This does not reduce the elapsed M10 requirement, but it strengthens the
+  evidence collected on each future dogfood day.
