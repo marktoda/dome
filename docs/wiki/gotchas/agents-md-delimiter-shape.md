@@ -1,13 +1,12 @@
 ---
 type: gotcha
-created: 2026-05-26T00:00:00.000Z
-updated: 2026-06-02T00:00:00.000Z
+created: 2026-05-26
+updated: 2026-06-02
 sources:
-  - >-
-    [[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]
+  - "[[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]"
 coverage: off-matrix
 enforced_at: tests/invariants/agents-md-is-orientation-surface.test.ts
-first_observed: 2026-05-26T00:00:00.000Z
+first_observed: 2026-05-26
 severity: high
 ---
 
