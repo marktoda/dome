@@ -1590,3 +1590,37 @@ Qualitative read:
 - This does not close M10 and does not make this Codex shell a suitable
   long-running dogfood host. It closes a host-evidence reliability gap so
   normal terminal hangups are less likely to leave stale serve state behind.
+
+## 2026-06-02 V1 Release-Check Runner
+
+Verification action:
+
+- Re-audited the final V1 release gate. The package script was a shell `&&`
+  chain, which meant an implementation, preflight, or dogfood-report failure
+  hid any later gate results.
+- Added `scripts/v1-release-check.ts` as the single release-check runner. It
+  still runs the same three gates: `bun run v1:check`,
+  `bun run v1:dogfood-preflight -- --require-ready`, and
+  `bun run v1:dogfood-report -- --require-ready`.
+- The runner records each gate result and exits nonzero if any gate fails, so
+  the final command preserves the V1 release bias while making failures more
+  diagnosable.
+
+Measured result:
+
+- `bun test tests/scripts/v1-release-check.test.ts
+  tests/integration/v1-package-scripts.test.ts` passed with 4 tests and 22
+  assertions.
+- `bun scripts/v1-release-check.ts --dry-run` prints all three final gates.
+- `bun scripts/v1-release-check.ts --dry-run --json` reports stable gate ids:
+  `implementation`, `collection-readiness`, and `release-soak`.
+- `bun test` passed with 1058 tests and 22484 assertions.
+- `bunx tsc --noEmit`, `bunx tsc --noEmit -p tsconfig.bundles.json`, and
+  `git diff --check` passed.
+
+Qualitative read:
+
+- This does not change the M10 standard or add another Dome CLI command. It
+  makes the existing final package-script gate a better release-audit surface:
+  one command can now show whether the remaining problem is implementation,
+  current dogfood setup, elapsed M10 evidence, or more than one of those.

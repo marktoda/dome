@@ -28,7 +28,7 @@
     "v1:dogfood-report": "bun scripts/v1-dogfood-report.ts",
     "v1:dogfood-preflight": "bun scripts/v1-dogfood-preflight.ts",
     "v1:check": "bun run typecheck && git diff --check && bun test && bun run v1:smoke",
-    "v1:release-check": "bun run v1:check && bun run v1:dogfood-preflight -- --require-ready && bun run v1:dogfood-report -- --require-ready"
+    "v1:release-check": "bun scripts/v1-release-check.ts"
   },
   "dependencies": {
     "commander": "^14.0.3",
