@@ -24,6 +24,7 @@
     "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",
     "v1:llm-smoke": "bun scripts/v1-llm-smoke.ts",
+    "v1:dogfood-snapshot": "bun scripts/v1-dogfood-snapshot.ts",
     "v1:check": "bun run typecheck && git diff --check && bun test && bun run v1:smoke"
   },
   "dependencies": {

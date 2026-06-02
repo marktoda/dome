@@ -389,3 +389,23 @@ Additional fixes from the latest gate:
 - The `bin/dome` process-boundary test for `serve` now has explicit process
   and test timeouts, so full-suite load cannot leave a child process hanging
   inside the readiness predicate.
+
+## 2026-06-02 Dogfood Evidence Addendum
+
+Additional M10 support:
+
+- Added `bun run v1:dogfood-snapshot`, a read-only script that emits a
+  ledger-ready Markdown snapshot from the work-vault `status`, `check`,
+  `today`, `query`, and `export-context` surfaces.
+- The script intentionally lives under `scripts/` rather than adding another
+  product CLI command, preserving the V1 "small CLI, powerful compiler"
+  constraint.
+- A work-vault run on 2026-06-02 reported synced head/adopted `99fac73`, 0
+  dirty files, 0 failed runs, 46 informational diagnostics, 0 questions, and
+  the current daily surface as the top daily-intent context packet entry.
+
+Updated assessment:
+
+- This improves the quality and repeatability of M10 evidence collection.
+- It still does not satisfy M10 by itself. The remaining release-readiness gap
+  is elapsed work-vault usefulness across real work sessions.

@@ -487,3 +487,33 @@ Qualitative read:
   no-source-change compiler runs settle for the current docs and work vaults.
 - This still does not close M10. It is a convergence gate, not elapsed
   day-to-day usefulness evidence across two real work weeks.
+
+## 2026-06-02 M10 Dogfood Snapshot Script
+
+Dogfood action:
+
+- Added `bun run v1:dogfood-snapshot` as a read-only helper for the M10 dogfood
+  ledger.
+- The script runs the standard work-vault surfaces: `status`, `check`,
+  `today`, `query`, and `export-context`.
+- It emits a Markdown snapshot with operational state, maintenance-loop state,
+  known diagnostic backlog, daily cockpit counts, first visible tasks,
+  context-packet read-first entries, packet open-loop examples, query top
+  matches, and blanks for qualitative notes.
+
+Operational result:
+
+- `bun run v1:dogfood-snapshot -- --date 2026-06-02 --limit 5` passed against
+  the work vault.
+- The generated snapshot reported the work vault synced at head/adopted
+  `99fac73`, 0 dirty files, 0 failed runs, 46 informational diagnostics, 0
+  questions, the known inactive capture loop, and `notes/2026-06-02.md` as the
+  daily surface and first context-packet read-first entry.
+
+Qualitative read:
+
+- This makes M10 easier to run honestly. Future dogfood entries can start from
+  the same measured surface snapshot and then add the subjective notes the V1
+  plan requires.
+- This still does not close M10. It records evidence more reliably; it does
+  not create elapsed real work-vault usage.
