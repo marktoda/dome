@@ -18,7 +18,11 @@ export function searchFactObjectLabel(fact: FactEffect): string {
   ) {
     return raw;
   }
-  return dailyActionLabel(raw);
+  return searchDailyActionLabel(raw);
+}
+
+export function searchDailyActionLabel(text: string): string {
+  return dailyActionLabel(text);
 }
 
 function objectLabel(value: FactEffect["object"]): string {

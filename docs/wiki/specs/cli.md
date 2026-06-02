@@ -796,9 +796,13 @@ open loop, decision, unresolved question, or active diagnostic for that page,
 even if the page body itself did not match the FTS query. Daily-intent packets
 also recall existing date-named markdown files for the requested day from the
 adopted snapshot, so a foreground agent asking what to work on today sees the
-current daily surface as an explainable read-first entry. Read-first reasons,
-per-entry `Ranking` lines, and the overview's `Recall Signals` section expose
-the source-backed signals that promoted an entry. Entries are also
+current daily surface as an explainable read-first entry. These daily-intent
+packets also parse the recalled daily surface's hand-authored open checkboxes,
+directives, and generated source-backed open-loop rows into the overview's
+`Open Loops` section, preserving both the daily surface line SourceRef and the
+backing source SourceRef for generated rows. Read-first reasons, per-entry
+`Ranking` lines, and the overview's `Recall Signals` section expose the
+source-backed signals that promoted an entry. Entries are also
 bounded by `--limit`; the structured JSON includes `shown.entries`,
 `hasMore.entries`, `overview`, per-entry `ranking`, and text mode prints an
 expansion hint when more adopted-state matches are detected. `--json` emits the

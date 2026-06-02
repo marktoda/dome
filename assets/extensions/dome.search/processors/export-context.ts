@@ -19,7 +19,18 @@ import {
   questionAutomationLabel,
   questionAutomationPolicy,
 } from "../../../../src/question-resolution";
-import { searchFactObjectLabel } from "./labels";
+import {
+  searchDailyActionLabel,
+  searchFactObjectLabel,
+} from "./labels";
+import {
+  actionItemsFromMarkdown,
+  openLoopStableId,
+  openLoopSurfaceKey,
+  openSourceBackedOpenLoopsFromMarkdown,
+  type DailyOpenLoopSource,
+  type MarkdownActionItem,
+} from "../../dome.daily/processors/daily-shared";
 import {
   groupByMatchingPath,
   questionItemFromProjection,
@@ -50,11 +61,12 @@ const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
+const MAX_DAILY_SURFACE_PATHS = 3;
 const MAX_RECALL_PATHS = 24;
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.11",
+  version: "0.1.12",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -149,14 +161,30 @@ const exportContext: Processor = defineProcessor({
         match.ranking,
       ),
     );
-    const overview = buildOverview(input.topic, entries, recallSignalsByPath);
+    const dailySurfaceOpenLoops = await dailySurfaceOpenLoopsForContext({
+      ctx,
+      recallSignalsByPath,
+    });
+    const overview = buildOverview(
+      input.topic,
+      entries,
+      recallSignalsByPath,
+      dailySurfaceOpenLoops,
+    );
     const scope = uniqueSourceRefs(
-      entries.flatMap((entry) => [
-        ...entry.sourceRefs,
-        ...entry.facts.flatMap((fact) => fact.sourceRefs),
-        ...entry.diagnostics.flatMap((diagnostic) => diagnostic.sourceRefs),
-        ...entry.questions.flatMap((question) => question.sourceRefs),
-      ]),
+      [
+        ...entries.flatMap((entry) => [
+          ...entry.sourceRefs,
+          ...entry.facts.flatMap((fact) => fact.sourceRefs),
+          ...entry.diagnostics.flatMap((diagnostic) => diagnostic.sourceRefs),
+          ...entry.questions.flatMap((question) => question.sourceRefs),
+        ]),
+        ...overview.openLoops.flatMap((item) => item.sourceRefs),
+        ...overview.decisions.flatMap((item) => item.sourceRefs),
+        ...overview.unresolvedQuestions.flatMap((item) => item.sourceRefs),
+        ...overview.diagnostics.flatMap((item) => item.sourceRefs),
+        ...overview.recallSignals.flatMap((item) => item.sourceRefs),
+      ],
     );
     const data = Object.freeze({
       schema: SCHEMA,
@@ -488,6 +516,7 @@ function buildOverview(
   topic: string,
   entries: ReadonlyArray<ContextEntry>,
   recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
+  pinnedOpenLoops: ReadonlyArray<ContextOpenLoop> = Object.freeze([]),
 ): ContextOverview {
   return Object.freeze({
     readFirst: Object.freeze(
@@ -503,7 +532,10 @@ function buildOverview(
       ),
     ),
     openLoops: Object.freeze(
-      uniqueOpenLoops(entries, topic).slice(0, MAX_RELATED_ROWS),
+      uniqueOpenLoops(entries, topic, pinnedOpenLoops).slice(
+        0,
+        MAX_RELATED_ROWS,
+      ),
     ),
     decisions: Object.freeze(
       uniqueDecisions(entries, topic).slice(0, MAX_RELATED_ROWS),
@@ -531,24 +563,175 @@ function readFirstReason(topic: string, entry: ContextEntry): string {
 function uniqueOpenLoops(
   entries: ReadonlyArray<ContextEntry>,
   topic: string,
+  pinned: ReadonlyArray<ContextOpenLoop> = Object.freeze([]),
 ): ReadonlyArray<ContextOpenLoop> {
   const seen = new Set<string>();
   const out: ContextOpenLoop[] = [];
-  for (const entry of entries) {
-    for (const fact of entry.allFacts) {
-      if (!isSearchOpenLoopFact(fact)) continue;
-      const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
+  for (const item of pinned) {
+    const key = openLoopOverviewKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  const topicRelevantFacts = topicRelevantItems(
+    entries.flatMap((entry) =>
+      entry.allFacts
+        .filter(isSearchOpenLoopFact)
+        .map((fact) =>
+          Object.freeze({
+            path: entry.path,
+            predicate: fact.predicate,
+            text: fact.object,
+            sourceRefs: fact.sourceRefs,
+          })
+        )
+    ),
+    topic,
+    (item) => item.text,
+  );
+
+  for (const item of topicRelevantFacts) {
+    const key = openLoopOverviewKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return Object.freeze(out);
+}
+
+async function dailySurfaceOpenLoopsForContext(input: {
+  readonly ctx: ProcessorContext;
+  readonly recallSignalsByPath: ReadonlyMap<
+    string,
+    ReadonlyArray<ContextRecallSignal>
+  >;
+}): Promise<ReadonlyArray<ContextOpenLoop>> {
+  const paths = dailySurfacePaths(input.recallSignalsByPath);
+  const out: ContextOpenLoop[] = [];
+  const seen = new Set<string>();
+  for (const path of paths) {
+    const content = await input.ctx.snapshot.readFile(path);
+    if (content === null) continue;
+    const items = dailySurfaceActionItems(path, content);
+    for (const item of items) {
+      const loop = contextOpenLoopFromDailySurfaceItem(input.ctx, path, item);
+      const key = openLoopOverviewKey(loop);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(Object.freeze({
-        path: entry.path,
-        predicate: fact.predicate,
-        text: fact.object,
-        sourceRefs: fact.sourceRefs,
-      }));
+      out.push(loop);
+      if (out.length >= MAX_RELATED_ROWS) return Object.freeze(out);
     }
   }
-  return Object.freeze(topicRelevantItems(out, topic, (item) => item.text));
+  return Object.freeze(out);
+}
+
+function dailySurfacePaths(
+  recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
+): ReadonlyArray<string> {
+  return Object.freeze(
+    [...recallSignalsByPath.entries()]
+      .filter(([, signals]) => signals.some((signal) => signal.kind === "daily"))
+      .sort((a, b) => {
+        const weightCmp = maxDailySignalWeight(b[1]) -
+          maxDailySignalWeight(a[1]);
+        return weightCmp !== 0 ? weightCmp : a[0].localeCompare(b[0]);
+      })
+      .map(([path]) => path)
+      .slice(0, MAX_DAILY_SURFACE_PATHS),
+  );
+}
+
+function maxDailySignalWeight(
+  signals: ReadonlyArray<ContextRecallSignal>,
+): number {
+  return signals
+    .filter((signal) => signal.kind === "daily")
+    .reduce((max, signal) => Math.max(max, signal.weight), 0);
+}
+
+type DailySurfaceActionItem = DailyOpenLoopSource & {
+  readonly sourceBacked: boolean;
+};
+
+function dailySurfaceActionItems(
+  path: string,
+  content: string,
+): ReadonlyArray<DailySurfaceActionItem> {
+  const sourceBacked = openSourceBackedOpenLoopsFromMarkdown({
+    path,
+    content,
+  }).map((item) =>
+    Object.freeze({
+      ...item,
+      sourceBacked: true,
+    })
+  );
+  const direct = actionItemsFromMarkdown(content).map((item) =>
+    dailySurfaceActionItemFromMarkdownItem(path, item)
+  );
+  return Object.freeze(
+    [...sourceBacked, ...direct].sort((a, b) =>
+      a.line - b.line || a.body.localeCompare(b.body)
+    ),
+  );
+}
+
+function dailySurfaceActionItemFromMarkdownItem(
+  path: string,
+  item: MarkdownActionItem,
+): DailySurfaceActionItem {
+  return Object.freeze({
+    line: item.line,
+    stableId: openLoopStableId({ sourcePath: path, body: item.body }),
+    body: item.body,
+    followup: item.followup,
+    sourcePath: path,
+    sourceBacked: false,
+  });
+}
+
+function contextOpenLoopFromDailySurfaceItem(
+  ctx: ProcessorContext,
+  path: string,
+  item: DailySurfaceActionItem,
+): ContextOpenLoop {
+  const surfaceRef = ctx.sourceRef(
+    path,
+    { startLine: item.line, endLine: item.line },
+    item.stableId,
+  );
+  const sourceRefs = uniqueSourceRefs([
+    surfaceRef,
+    ...(item.sourceBacked && item.sourcePath !== path
+      ? [ctx.sourceRef(item.sourcePath, undefined, item.stableId)]
+      : []),
+  ]);
+  return Object.freeze({
+    path,
+    predicate: item.followup
+      ? "dome.daily.followup"
+      : "dome.daily.open_task",
+    text: searchDailyActionLabel(item.body),
+    sourceRefs,
+  });
+}
+
+function openLoopOverviewKey(item: ContextOpenLoop): string {
+  if (
+    item.predicate === "dome.daily.open_task" ||
+    item.predicate === "dome.daily.followup"
+  ) {
+    return [
+      item.predicate,
+      openLoopSurfaceKey({ body: item.text }),
+    ].join("\u0000");
+  }
+  return [
+    item.path,
+    item.predicate,
+    openLoopSurfaceKey({ body: item.text }),
+  ].join("\u0000");
 }
 
 function uniqueDecisions(

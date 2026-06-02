@@ -329,7 +329,17 @@ scenario(
         [dailyPath]:
           `# ${today}\n\n` +
           "## Open Loops\n\n" +
+          "<!-- dome.daily:open-loops:start -->\n" +
+          "### Source-backed Open Loops\n" +
+          "- [ ] #followup Handle source-backed launch review 🔺 " +
+          `📅 ${today} (from [[wiki/source-project]])\n` +
+          "<!-- dome.daily:open-loops:end -->\n\n" +
+          "## Notes\n\n" +
           "- [ ] Handle the current launch review.\n",
+        "wiki/source-project.md":
+          "# Source Project\n\n" +
+          "- [ ] #followup Handle source-backed launch review 🔺 " +
+          `📅 ${today}\n`,
       },
       message: "add current daily note",
     });
@@ -361,7 +371,14 @@ scenario(
           readonly label: string;
           readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
         }>;
+        readonly openLoops: ReadonlyArray<{
+          readonly path: string;
+          readonly predicate: string;
+          readonly text: string;
+          readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
+        }>;
       };
+      readonly markdown: string;
       readonly entries: ReadonlyArray<{
         readonly path: string;
         readonly ranking: { readonly reasons: ReadonlyArray<string> };
@@ -390,6 +407,31 @@ scenario(
         ]),
       }),
     );
+    expect(payload.overview.openLoops[0]).toEqual(
+      expect.objectContaining({
+        path: dailyPath,
+        predicate: "dome.daily.followup",
+        text:
+          `Handle source-backed launch review [due: ${today}, priority: highest]`,
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({ path: dailyPath }),
+          expect.objectContaining({ path: "wiki/source-project.md" }),
+        ]),
+      }),
+    );
+    expect(payload.overview.openLoops).toContainEqual(
+      expect.objectContaining({
+        path: dailyPath,
+        predicate: "dome.daily.open_task",
+        text: "Handle the current launch review.",
+        sourceRefs: expect.arrayContaining([
+          expect.objectContaining({ path: dailyPath }),
+        ]),
+      }),
+    );
+    expect(payload.markdown).toContain("## Open Loops");
+    expect(payload.markdown).toContain("Handle source-backed launch review");
+    expect(payload.markdown).toContain("wiki/source-project.md");
   },
 );
 

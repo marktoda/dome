@@ -272,3 +272,47 @@ Qualitative read:
 - The next dogfood question is whether the remaining semantic duplicates should
   become source-preserving consolidation proposals or be left as separate
   evidence until a model-backed loop can decide.
+
+## 2026-06-02 Daily-Intent Packet Open-Loop Overview
+
+Dogfood action:
+
+- Ran `bin/dome export-context --vault ~/vaults/work "what should I work on today" --json`.
+- Compared the packet overview against `bin/dome today --vault ~/vaults/work --json`.
+
+Observed issue:
+
+- The previous daily-intent recall fix put `notes/2026-06-02.md` first in
+  `Read First`, but `overview.openLoops` still came from generic projection
+  facts on matched pages.
+- For a foreground agent asking what to work on today, that meant the packet
+  identified the right cockpit file but did not carry the cockpit's visible
+  work queue in the overview.
+
+Fix shipped in the SDK:
+
+- `dome.search.export-context` now treats recalled daily files as daily surface
+  evidence for daily-intent packets.
+- It parses hand-authored open checkboxes/directives and generated
+  source-backed open-loop rows from the recalled daily surface.
+- Parsed daily rows are prepended to the packet overview's `Open Loops`
+  section before generic topic-relevant projection facts.
+- Generated rows preserve both the daily surface line SourceRef and the
+  backing source SourceRef, matching the `dome today` provenance model.
+
+Work-vault result:
+
+- `export-context "what should I work on today"` now returns
+  `notes/2026-06-02.md` as the first read-first entry with reason
+  `current daily surface`.
+- The first eight `overview.openLoops` rows all come from
+  `notes/2026-06-02.md`, so the packet carries the daily cockpit queue instead
+  of generic entity-page loops.
+- Generated daily rows include both the daily surface path and backing source
+  paths in their SourceRefs.
+
+Qualitative read:
+
+- This closes the next M4/M6 handoff gap: a foreground agent can ask the
+  natural daily-work question and receive both the daily note as read-first
+  context and the current daily work queue as structured overview data.

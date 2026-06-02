@@ -30,7 +30,7 @@ processors:
     module: processors/query.ts
 
   - id: dome.search.export-context
-    version: 0.1.11
+    version: 0.1.12
     phase: view
     triggers:
       - kind: command
