@@ -22,13 +22,18 @@ import {
   uniqueSourceRefs,
   type SearchQuestionItem,
 } from "./related";
+import {
+  compareRankedSearchEntries,
+  expandedSearchLimit,
+  rankSearchCandidate,
+} from "./ranking";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
 const searchQuery: Processor = defineProcessor({
   id: "dome.search.query",
-  version: "0.1.3",
+  version: "0.1.4",
   phase: "view",
   triggers: [{ kind: "command", name: "query" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -44,13 +49,29 @@ const searchQuery: Processor = defineProcessor({
       query: input.text,
       ...(input.category !== undefined ? { category: input.category } : {}),
       ...(input.type !== undefined ? { type: input.type } : {}),
-      limit: input.limit + 1,
+      limit: expandedSearchLimit(input.limit),
     });
-    const matches = Object.freeze(searchMatches.slice(0, input.limit));
-    const hasMoreMatches = searchMatches.length > matches.length;
-    const factsByPath = factsForMatches(ctx, matches);
-    const diagnosticsByPath = diagnosticsForMatches(ctx, matches);
-    const questionsByPath = questionsForMatches(ctx, matches);
+    const factsByPath = factsForMatches(ctx, searchMatches);
+    const diagnosticsByPath = diagnosticsForMatches(ctx, searchMatches);
+    const questionsByPath = questionsForMatches(ctx, searchMatches);
+    const rankedMatches = Object.freeze(
+      searchMatches
+        .map((match) =>
+          Object.freeze({
+            ...match,
+            ranking: rankSearchCandidate({
+              match,
+              facts: factsByPath.get(match.path) ?? Object.freeze([]),
+              diagnostics: diagnosticsByPath.get(match.path) ??
+                Object.freeze([]),
+              questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+            }),
+          })
+        )
+        .sort(compareRankedSearchEntries),
+    );
+    const matches = Object.freeze(rankedMatches.slice(0, input.limit));
+    const hasMoreMatches = rankedMatches.length > matches.length;
     const data = Object.freeze({
       schema: "dome.search.query/v1",
       query: input.text,
@@ -74,6 +95,7 @@ const searchQuery: Processor = defineProcessor({
             type: match.type,
             snippet: match.snippet,
             rank: match.rank,
+            ranking: match.ranking,
             sourceRefs: match.sourceRefs,
             facts: factsByPath.get(match.path) ?? Object.freeze([]),
             diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),

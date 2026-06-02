@@ -25,6 +25,14 @@ import {
   uniqueSourceRefs,
   type SearchQuestionItem,
 } from "./related";
+import {
+  compareRankedSearchEntries,
+  expandedSearchLimit,
+  isSearchDecisionFact,
+  isSearchOpenLoopFact,
+  rankSearchCandidate,
+  type SearchRanking,
+} from "./ranking";
 
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
@@ -36,7 +44,7 @@ const TASK_DUE_MARKER =
 
 const exportContext: Processor = defineProcessor({
   id: "dome.search.export-context",
-  version: "0.1.6",
+  version: "0.1.7",
   phase: "view",
   triggers: [{ kind: "command", name: "export-context" }],
   capabilities: [{ kind: "read", paths: ["**/*.md"] }],
@@ -51,11 +59,18 @@ const exportContext: Processor = defineProcessor({
     const input = parseInput(ctx.input);
     const searchMatches = projection.searchDocuments({
       query: input.topic,
-      limit: input.limit + 1,
+      limit: expandedSearchLimit(input.limit),
     });
-    const matches = Object.freeze(searchMatches.slice(0, input.limit));
-    const hasMoreEntries = searchMatches.length > matches.length;
-    const matchPaths = new Set(matches.map((match) => match.path));
+    const matchPaths = new Set(searchMatches.map((match) => match.path));
+    const factsByPath = new Map(
+      searchMatches.map((match) => [
+        match.path,
+        projection.facts({
+          subjectKind: "page",
+          subjectId: match.path,
+        }),
+      ]),
+    );
     const diagnosticsByPath = groupByMatchingPath(
       projection.diagnostics(),
       matchPaths,
@@ -66,15 +81,34 @@ const exportContext: Processor = defineProcessor({
         .map(questionItemFromProjection),
       matchPaths,
     );
+    const rankedMatches = Object.freeze(
+      searchMatches
+        .map((match) =>
+          Object.freeze({
+            ...match,
+            ranking: rankSearchCandidate({
+              match,
+              facts: factsByPath.get(match.path) ?? Object.freeze([]),
+              diagnostics: diagnosticsByPath.get(match.path) ??
+                Object.freeze([]),
+              questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+            }),
+            facts: factsByPath.get(match.path) ?? Object.freeze([]),
+            diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),
+            questions: questionsByPath.get(match.path) ?? Object.freeze([]),
+          })
+        )
+        .sort(compareRankedSearchEntries),
+    );
+    const matches = Object.freeze(rankedMatches.slice(0, input.limit));
+    const hasMoreEntries = rankedMatches.length > matches.length;
     const entries = matches.map((match) =>
       contextEntryFromMatch(
         match,
-        projection.facts({
-          subjectKind: "page",
-          subjectId: match.path,
-        }),
-        diagnosticsByPath.get(match.path) ?? Object.freeze([]),
-        questionsByPath.get(match.path) ?? Object.freeze([]),
+        match.facts,
+        match.diagnostics,
+        match.questions,
+        match.ranking,
       ),
     );
     const overview = buildOverview(input.topic, entries);
@@ -128,6 +162,7 @@ type ContextEntry = {
   readonly type: string | null;
   readonly snippet: string;
   readonly rank: number;
+  readonly ranking: SearchRanking;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly facts: ReadonlyArray<ContextFact>;
   readonly diagnostics: ReadonlyArray<ContextDiagnostic>;
@@ -147,6 +182,7 @@ type ContextReadFirst = {
   readonly title: string;
   readonly reason: string;
   readonly rank: number;
+  readonly ranking: SearchRanking;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -202,6 +238,7 @@ function contextEntryFromMatch(
   facts: ReadonlyArray<FactEffect>,
   diagnostics: ReadonlyArray<DiagnosticEffect>,
   questions: ReadonlyArray<SearchQuestionItem>,
+  ranking: SearchRanking,
 ): ContextEntry {
   return Object.freeze({
     path: match.path,
@@ -210,6 +247,7 @@ function contextEntryFromMatch(
     type: match.type,
     snippet: stripFtsMarkers(match.snippet),
     rank: match.rank,
+    ranking,
     sourceRefs: Object.freeze([...match.sourceRefs]),
     facts: Object.freeze(
       facts
@@ -266,6 +304,7 @@ function buildOverview(
           title: entry.title,
           reason: readFirstReason(topic, entry),
           rank: entry.rank,
+          ranking: entry.ranking,
           sourceRefs: entry.sourceRefs,
         })
       ),
@@ -286,18 +325,10 @@ function buildOverview(
 }
 
 function readFirstReason(topic: string, entry: ContextEntry): string {
-  const openLoops = entry.facts.filter(isOpenLoopFact).length;
-  const decisions = entry.facts.filter(isDecisionFact).length;
   const parts = [
     `matches "${topic}"`,
-    entry.type === null ? null : `${entry.type} page`,
-    entry.questions.length === 0 ? null : `${entry.questions.length} question(s)`,
-    openLoops === 0 ? null : `${openLoops} open loop(s)`,
-    decisions === 0 ? null : `${decisions} decision(s)`,
-    entry.diagnostics.length === 0
-      ? null
-      : `${entry.diagnostics.length} diagnostic(s)`,
-  ].filter((part): part is string => part !== null);
+    ...entry.ranking.reasons,
+  ];
   return parts.join("; ");
 }
 
@@ -308,7 +339,7 @@ function uniqueOpenLoops(
   const out: ContextOpenLoop[] = [];
   for (const entry of entries) {
     for (const fact of entry.facts) {
-      if (!isOpenLoopFact(fact)) continue;
+      if (!isSearchOpenLoopFact(fact)) continue;
       const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -330,7 +361,7 @@ function uniqueDecisions(
   const out: ContextDecision[] = [];
   for (const entry of entries) {
     for (const fact of entry.facts) {
-      if (!isDecisionFact(fact)) continue;
+      if (!isSearchDecisionFact(fact)) continue;
       const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -387,20 +418,6 @@ function uniqueDiagnostics(
   return Object.freeze(out);
 }
 
-function isOpenLoopFact(fact: ContextFact): boolean {
-  return (
-    fact.predicate === "dome.daily.open_task" ||
-    fact.predicate === "dome.daily.followup"
-  );
-}
-
-function isDecisionFact(fact: ContextFact): boolean {
-  return (
-    fact.predicate === "dome.intake.decision" ||
-    fact.predicate === "dome.daily.decision"
-  );
-}
-
 function renderMarkdown(
   topic: string,
   overview: ContextOverview,
@@ -428,6 +445,12 @@ function renderMarkdown(
     lines.push(`- Path: \`${entry.path}\``);
     lines.push(`- Category: \`${entry.category}\``);
     if (entry.type !== null) lines.push(`- Type: \`${entry.type}\``);
+    if (entry.ranking.reasons.length > 0) {
+      lines.push(
+        `- Ranking: ${entry.ranking.reasons.join("; ")} ` +
+          `(score ${entry.ranking.score}, fts ${entry.ranking.ftsRank})`,
+      );
+    }
     lines.push("- SourceRefs:");
     for (const ref of entry.sourceRefs) {
       lines.push(`  - \`${formatSourceRef(ref)}\``);

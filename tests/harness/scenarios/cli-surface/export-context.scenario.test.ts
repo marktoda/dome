@@ -81,6 +81,7 @@ scenario(
     expect(text.stdout).toContain("## Unresolved Questions");
     expect(text.stdout).toContain("## Active Diagnostics");
     expect(text.stdout).toContain("wiki/project-alpha.md");
+    expect(text.stdout).toContain("- Ranking:");
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("dome.graph.tagged");
@@ -115,6 +116,11 @@ scenario(
         readonly readFirst: ReadonlyArray<{
           readonly path: string;
           readonly reason: string;
+          readonly ranking: {
+            readonly score: number;
+            readonly ftsRank: number;
+            readonly reasons: ReadonlyArray<string>;
+          };
         }>;
         readonly openLoops: ReadonlyArray<{
           readonly path: string;
@@ -137,6 +143,11 @@ scenario(
       readonly entries: ReadonlyArray<{
         readonly path: string;
         readonly title: string;
+        readonly ranking: {
+          readonly score: number;
+          readonly ftsRank: number;
+          readonly reasons: ReadonlyArray<string>;
+        };
         readonly sourceRefs: ReadonlyArray<{ readonly path: string }>;
         readonly facts: ReadonlyArray<{
           readonly predicate: string;
@@ -166,6 +177,9 @@ scenario(
     expect(payload.overview.readFirst.some((item) =>
       item.reason.includes("open loop")
     )).toBe(true);
+    expect(payload.overview.readFirst.some((item) =>
+      item.ranking.reasons.includes("concept page")
+    )).toBe(true);
     expect(payload.overview.openLoops.some((item) =>
       item.text ===
         "Ask Danny about alpha launch handoff [due: 2026-01-07, priority: highest]"
@@ -180,6 +194,8 @@ scenario(
       (entry) => entry.path === "wiki/project-alpha.md",
     );
     expect(alpha?.title).toBe("Project Alpha");
+    expect(alpha?.ranking.score).toBeGreaterThan(0);
+    expect(alpha?.ranking.reasons).toContain("open loop");
     expect(alpha?.sourceRefs[0]?.path).toBe("wiki/project-alpha.md");
     expect(alpha?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
@@ -360,6 +376,9 @@ extensions:
         readonly readFirst: ReadonlyArray<{
           readonly path: string;
           readonly reason: string;
+          readonly ranking: {
+            readonly reasons: ReadonlyArray<string>;
+          };
         }>;
         readonly decisions: ReadonlyArray<{
           readonly path: string;
@@ -378,7 +397,8 @@ extensions:
     );
     expect(payload.overview.readFirst.some((item) =>
       item.path === "wiki/generated/intake/alpha-decision.md" &&
-      item.reason.includes("1 decision(s)")
+      item.reason.includes("decision") &&
+      item.ranking.reasons.includes("decision")
     )).toBe(true);
     expect(payload.overview.decisions).toContainEqual(
       expect.objectContaining({

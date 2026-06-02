@@ -615,6 +615,7 @@ processor-version hash is stale. Output (text mode):
 
 1. Platform Team Ownership (wiki/syntheses/platform-team-ownership.md)
    Atlas owns runtime; platform owns infrastructure boundaries...
+   why: project page; 2 open loops; decision (score 17, fts -2.41)
    SourceRefs:
      - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
    facts: dome.graph.tagged, dome.daily.followup x2
@@ -633,13 +634,19 @@ processor-version hash is stale. Output (text mode):
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the FTS rows are written from SearchDocumentEffect.
-Matches also include related page facts and unresolved diagnostics/questions
-whose SourceRefs point at the matched path. Open questions include durable row
-ids, options, and a ready-to-run `dome resolve <id> <value>` hint so recall can
-explain relevant engine state without forcing an immediate `inspect` detour.
-The top-level `limit`, `shown.matches`, and `hasMore.matches` fields describe
-bounded result rendering; when more visible matches are detected, text mode
-prints the expansion hint above.
+The processor fetches an expanded FTS candidate set before slicing to `--limit`,
+then ranks those candidates with source-backed signals: page type, graph facts,
+open-loop facts, decisions, unresolved questions, and active diagnostics. The
+legacy `rank` field remains the raw FTS rank; the `ranking` object carries
+`score`, `ftsRank`, human-readable `reasons`, and structured `signals` so
+agents can explain why a result was promoted. Matches also include related page
+facts and unresolved diagnostics/questions whose SourceRefs point at the matched
+path. Open questions include durable row ids, options, and a ready-to-run
+`dome resolve <id> <value>` hint so recall can explain relevant engine state
+without forcing an immediate `inspect` detour. The top-level `limit`,
+`shown.matches`, and `hasMore.matches` fields describe bounded result rendering;
+when more visible matches are detected, text mode prints the expansion hint
+above.
 Text mode summarizes repeated fact predicates and diagnostic codes with counts
 (`xN`) so multi-link or multi-task pages remain scan-friendly; JSON keeps the
 underlying structured fact and diagnostic rows unchanged.
@@ -690,11 +697,14 @@ related rows remain; the structured JSON entries retain the full related row
 arrays for consumers that want all evidence. Daily task facts use the same
 display convention as `dome today`: parsed `📅` due-date and priority glyph
 markers are rendered as bracketed `due` / `priority` metadata instead of
-duplicated inside the task text. Search-match entries are also bounded by
-`--limit`; the structured JSON includes `shown.entries`, `hasMore.entries`,
-`overview`, and text mode prints an expansion hint when more adopted-state
-matches are detected. `--json` emits the structured
-`dome.search.export-context/v1` payload, including the packet under `markdown`.
+duplicated inside the task text. Search-match entries use the same expanded
+candidate ranking as `dome query`; read-first reasons and per-entry `Ranking`
+lines expose the source-backed signals that promoted an entry. Entries are also
+bounded by `--limit`; the structured JSON includes `shown.entries`,
+`hasMore.entries`, `overview`, per-entry `ranking`, and text mode prints an
+expansion hint when more adopted-state matches are detected. `--json` emits the
+structured `dome.search.export-context/v1` payload, including the packet under
+`markdown`.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 

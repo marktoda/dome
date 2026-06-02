@@ -94,6 +94,12 @@ function formatQueryResult(data: unknown): string {
     if (match.snippet.length > 0) {
       lines.push(`   ${stripFtsMarkers(match.snippet)}`);
     }
+    if (match.ranking !== null && match.ranking.reasons.length > 0) {
+      lines.push(
+        `   why: ${match.ranking.reasons.join("; ")} ` +
+          `(score ${match.ranking.score}, fts ${match.ranking.ftsRank})`,
+      );
+    }
     if (match.sourceRefs.length > 0) {
       lines.push("   SourceRefs:");
       for (const ref of match.sourceRefs) {
@@ -148,10 +154,23 @@ type QueryResultData = {
     readonly path: string;
     readonly title: string;
     readonly snippet: string;
+    readonly ranking: QueryRanking | null;
     readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
     readonly facts: ReadonlyArray<{ readonly predicate: string }>;
     readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
     readonly questions: ReadonlyArray<QueryQuestion>;
+  }>;
+};
+
+type QueryRanking = {
+  readonly score: number;
+  readonly ftsRank: number;
+  readonly reasons: ReadonlyArray<string>;
+  readonly signals: ReadonlyArray<{
+    readonly kind: string;
+    readonly label: string;
+    readonly weight: number;
+    readonly count?: number;
   }>;
 };
 
@@ -200,6 +219,7 @@ function parseQueryResult(data: unknown): QueryResultData {
           path: stringOrEmpty(match.path),
           title: stringOrEmpty(match.title),
           snippet: stringOrEmpty(match.snippet),
+          ranking: parseRanking(match.ranking),
           sourceRefs: Object.freeze(parseSourceRefs(match.sourceRefs)),
           facts: Object.freeze(parseFacts(match.facts)),
           diagnostics: Object.freeze(parseDiagnostics(match.diagnostics)),
@@ -208,6 +228,43 @@ function parseQueryResult(data: unknown): QueryResultData {
       }),
     ),
   });
+}
+
+function parseRanking(raw: unknown): QueryRanking | null {
+  const record = objectRecord(raw);
+  if (Object.keys(record).length === 0) return null;
+  return Object.freeze({
+    score: numberValue(record.score) ?? 0,
+    ftsRank: numberValue(record.ftsRank) ?? 0,
+    reasons: Object.freeze(parseStringArray(record.reasons)),
+    signals: Object.freeze(parseRankingSignals(record.signals)),
+  });
+}
+
+function parseRankingSignals(raw: unknown): QueryRanking["signals"] {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(
+    raw
+      .map((item) => {
+        const record = objectRecord(item);
+        const kind = stringOrEmpty(record.kind);
+        const label = stringOrEmpty(record.label);
+        const weight = numberValue(record.weight);
+        if (kind.length === 0 || label.length === 0 || weight === null) {
+          return null;
+        }
+        const count = numberValue(record.count);
+        return Object.freeze({
+          kind,
+          label,
+          weight,
+          ...(count !== null ? { count } : {}),
+        });
+      })
+      .filter((item): item is QueryRanking["signals"][number] =>
+        item !== null
+      ),
+  );
 }
 
 function objectRecord(raw: unknown): Record<string, unknown> {

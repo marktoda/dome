@@ -94,6 +94,7 @@ const QUERY_MATCH_KEYS = Object.freeze([
   "type",
   "snippet",
   "rank",
+  "ranking",
   "sourceRefs",
   "facts",
   "diagnostics",
@@ -117,6 +118,7 @@ const EXPORT_ENTRY_KEYS = Object.freeze([
   "type",
   "snippet",
   "rank",
+  "ranking",
   "sourceRefs",
   "facts",
   "diagnostics",
@@ -201,6 +203,12 @@ scenario(
     const queryMatch = firstRecord(query["matches"]);
     expect(Object.keys(queryMatch)).toEqual([...QUERY_MATCH_KEYS]);
     expect(queryMatch["path"]).toBe("wiki/project-alpha.md");
+    expect(Object.keys(record(queryMatch["ranking"]))).toEqual([
+      "score",
+      "ftsRank",
+      "reasons",
+      "signals",
+    ]);
     expect(Array.isArray(queryMatch["sourceRefs"])).toBe(true);
     expect(Array.isArray(queryMatch["facts"])).toBe(true);
 
@@ -219,6 +227,12 @@ scenario(
     const exportEntry = firstRecord(exported["entries"]);
     expect(Object.keys(exportEntry)).toEqual([...EXPORT_ENTRY_KEYS]);
     expect(exportEntry["path"]).toBe("wiki/project-alpha.md");
+    expect(Object.keys(record(exportEntry["ranking"]))).toEqual([
+      "score",
+      "ftsRank",
+      "reasons",
+      "signals",
+    ]);
     expect(Array.isArray(exportEntry["sourceRefs"])).toBe(true);
     expect(Array.isArray(exportEntry["facts"])).toBe(true);
     expect(Array.isArray(exportEntry["diagnostics"])).toBe(true);

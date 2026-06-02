@@ -61,6 +61,7 @@ scenario(
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("SourceRefs:");
+    expect(text.stdout).toContain("why:");
     expect(text.stdout).toContain("wiki/project-alpha.md");
     expect(text.stdout).toContain("dome.graph.tagged x2");
     expect(text.stdout).toContain("Questions:");
@@ -79,6 +80,11 @@ scenario(
         readonly path: string;
         readonly title: string;
         readonly type: string | null;
+        readonly ranking: {
+          readonly score: number;
+          readonly ftsRank: number;
+          readonly reasons: ReadonlyArray<string>;
+        };
         readonly facts: ReadonlyArray<{ readonly predicate: string }>;
         readonly diagnostics: ReadonlyArray<{ readonly code: string }>;
         readonly questions: ReadonlyArray<{
@@ -105,6 +111,10 @@ scenario(
     const match = payload.matches.find((m) => m.path === "wiki/project-alpha.md");
     expect(match?.title).toBe("Project Alpha");
     expect(match?.type).toBe("project");
+    expect(match?.ranking.score).toBeGreaterThan(0);
+    expect(match?.ranking.reasons).toContain("project page");
+    expect(match?.ranking.reasons.some((reason) => reason.includes("graph signal")))
+      .toBe(true);
     expect(match?.facts.some((fact) => fact.predicate === "dome.graph.tagged"))
       .toBe(true);
     expect(
