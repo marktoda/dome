@@ -1984,6 +1984,7 @@ describe("runCheck", () => {
     expect(out).toContain("engine    ok");
     expect(out).toContain("content   0 diagnostic(s)");
     expect(out).toContain("decisions 0 open question(s)");
+    expect(out).toContain("loops     5 known");
   });
 
   test("--json reports engine findings, content diagnostics, and decisions", async () => {
@@ -2064,6 +2065,18 @@ describe("runCheck", () => {
     expect(record(parsed["decisions"])["owner_needed_questions"]).toBe(1);
     expect(record(parsed["decisions"])["shownItems"]).toBe(1);
     expect(record(parsed["decisions"])["omittedItems"]).toBe(0);
+    expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
+    const maintenanceLoops =
+      parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
+    expect(maintenanceLoops).toHaveLength(5);
+    expect(maintenanceLoops.find((loop) =>
+      loop["id"] === "dome.question.continuity"
+    )).toEqual(expect.objectContaining({
+      processor_ids: expect.arrayContaining([
+        "dome.intake.low-confidence-answer",
+      ]),
+      optional_processor_ids: ["dome.intake.low-confidence-answer"],
+    }));
     const diagnosticItems =
       record(parsed["content"])["items"] as ReadonlyArray<Record<string, unknown>>;
     expect(diagnosticItems[0]?.["source_refs"]).toContain("wiki/seed.md");
@@ -2831,6 +2844,7 @@ describe("runCheck", () => {
     expect(record(parsed["engine"])["status"]).toBe("unhealthy");
     expect(parsed["content"]).toBeNull();
     expect(parsed["decisions"]).toBeNull();
+    expect(parsed["maintenance_loops"]).toBeNull();
     expect(parsed["next_actions"]).toEqual([
       {
         reasons: ["engine"],

@@ -120,6 +120,7 @@ import {
 import { formatJson } from "../format";
 import {
   collectMaintenanceLoopSummaries,
+  formatMaintenanceLoopSummaryLine,
   type MaintenanceLoopSummary,
 } from "../maintenance-loop-summary";
 import {
@@ -456,7 +457,9 @@ function printStatusText(s: StatusSnapshot): void {
   console.log(
     `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
-  console.log(`loops     ${formatMaintenanceLoopLine(s.maintenance_loops)}`);
+  console.log(
+    `loops     ${formatMaintenanceLoopSummaryLine(s.maintenance_loops)}`,
+  );
   const diagnosticTop =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_summary
@@ -474,22 +477,6 @@ function printStatusText(s: StatusSnapshot): void {
   for (const line of formatNextActionLines(s.next_actions)) {
     console.log(line);
   }
-}
-
-function formatMaintenanceLoopLine(
-  loops: ReadonlyArray<MaintenanceLoopSummary>,
-): string {
-  const counts = {
-    quiet: 0,
-    attention: 0,
-    drift: 0,
-    partial: 0,
-    inactive: 0,
-  };
-  for (const loop of loops) {
-    counts[loop.state] += 1;
-  }
-  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.drift} drift | ${counts.partial} partial | ${counts.inactive} inactive`;
 }
 
 function formatServe(s: StatusSnapshot): string {

@@ -561,11 +561,58 @@ plus flattened `automation_policy`, `risk`, `confidence`,
 route work without understanding the full effect shape. Content and decision
 reports expose
 `shownItems` / `omittedItems` beside their bounded `items` arrays so agents can
-record truncation evidence without inferring it from array lengths.
+record truncation evidence without inferring it from array lengths. The report
+also includes `maintenance_loops`, the same first-party V1 loop summary exposed
+by `dome status --json`, so the normal explanation surface can attribute
+remaining work to the desired-state loop it belongs to. If the operational
+runtime cannot be opened and `check` is reporting only a schema/storage problem,
+`maintenance_loops` is `null`.
 Abbreviated example:
 
 ```json
-{"schema":"dome.check/v1","status":"attention","generatedAt":"2026-05-29T12:00:00.000Z","scopes":{"engine":true,"content":true,"decisions":true},"engine":{"status":"unhealthy","summary":{"findingCount":1}},"content":{"diagnostics":2,"content_diagnostics":2,"unlocated_diagnostics":0,"attention_diagnostics":1,"summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","count":1,"first_message":"...","first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"message_summary":{"total":2,"group_count":1,"shown_groups":1,"omitted_groups":0,"groups":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","count":1,"first_source_refs":"wiki/page.md:7","firstSourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"shownItems":1,"omittedItems":0,"items":[{"severity":"warning","code":"dome.markdown.broken-wikilink","message":"...","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"decisions":{"questions":1,"agent_safe_questions":0,"model_safe_questions":0,"owner_needed_questions":1,"shownItems":1,"omittedItems":0,"items":[{"id":42,"question":"Retry failed outbox row?","options":["retry","abandon"],"resolveCommand":"dome resolve 42 <retry|abandon>","processor_id":"dome.health.outbox-recovery-questions","source_refs":"wiki/page.md:7","sourceRefs":[{"commit":"41a98c2...","path":"wiki/page.md","range":{"startLine":7,"endLine":7}}]}]},"next_actions":[{"reasons":["engine"],"command":"dome sync --json","description":"Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain."},{"reasons":["diagnostics"],"command":"dome check --content --attention --limit 50 --json","description":"Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json."},{"reasons":["questions"],"command":"dome resolve 42 <retry|abandon>","description":"Resolve an open Dome decision using one of the listed options."}]}
+{
+  "schema": "dome.check/v1",
+  "status": "attention",
+  "generatedAt": "2026-05-29T12:00:00.000Z",
+  "scopes": {"engine": true, "content": true, "decisions": true},
+  "engine": {"status": "unhealthy", "summary": {"findingCount": 1}},
+  "content": {
+    "diagnostics": 2,
+    "content_diagnostics": 2,
+    "unlocated_diagnostics": 0,
+    "attention_diagnostics": 1,
+    "summary": {"total": 2, "groups": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "count": 1}]},
+    "message_summary": {"total": 2, "groups": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "message": "...", "count": 1}]},
+    "repair_summary": {"total": 2, "groups": [{"repair_path": "link.resolve-or-create", "count": 1}]},
+    "shownItems": 1,
+    "omittedItems": 0,
+    "items": [{"severity": "warning", "code": "dome.markdown.broken-wikilink", "message": "...", "source_refs": "wiki/page.md:7"}]
+  },
+  "decisions": {
+    "questions": 1,
+    "agent_safe_questions": 0,
+    "model_safe_questions": 0,
+    "owner_needed_questions": 1,
+    "shownItems": 1,
+    "omittedItems": 0,
+    "items": [{"id": 42, "question": "Retry failed outbox row?", "resolveCommand": "dome resolve 42 <retry|abandon>"}]
+  },
+  "maintenance_loops": [
+    {
+      "id": "dome.question.continuity",
+      "state": "attention",
+      "processor_ids": ["dome.health.outbox-recovery-questions"],
+      "required_processor_ids": ["dome.health.outbox-recovery-questions"],
+      "optional_processor_ids": [],
+      "questions": 1
+    }
+  ],
+  "next_actions": [
+    {"reasons": ["engine"], "command": "dome sync --json"},
+    {"reasons": ["diagnostics"], "command": "dome check --content --attention --limit 50 --json"},
+    {"reasons": ["questions"], "command": "dome resolve 42 <retry|abandon>"}
+  ]
+}
 ```
 
 `dome check` does not mutate state and does not run the compiler. When the

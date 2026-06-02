@@ -17,6 +17,8 @@ import {
   type HealthReport,
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
+import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
+import { queryRuns } from "../../ledger/runs";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
 import {
@@ -41,6 +43,11 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  collectMaintenanceLoopSummaries,
+  formatMaintenanceLoopSummaryLine,
+  type MaintenanceLoopSummary,
+} from "../maintenance-loop-summary";
+import {
   formatCliNextAction,
   nextActionsForCheck,
   type CliNextAction,
@@ -53,6 +60,7 @@ import { resolveBundleRoots } from "./sync-shared";
 
 const SCHEMA = "dome.check/v1";
 const DEFAULT_LIMIT = 10;
+const LOOP_RECENT_RUN_LIMIT = 25;
 const EX_USAGE = 64;
 
 export type RunCheckOptions = {
@@ -81,6 +89,7 @@ type CheckReport = {
   readonly engine: HealthReport | null;
   readonly content: CheckContentReport | null;
   readonly decisions: CheckDecisionReport | null;
+  readonly maintenance_loops: ReadonlyArray<MaintenanceLoopSummary> | null;
   readonly next_actions: ReadonlyArray<CliNextAction>;
 };
 
@@ -187,6 +196,10 @@ export async function runCheck(
   const runtime = runtimeResult.value;
 
   try {
+    const diagnosticRows = queryDiagnostics(runtime.projectionDb);
+    const unresolvedQuestions = queryQuestionRecords(runtime.projectionDb, {
+      resolved: false,
+    });
     const engine = scopes.engine
       ? await collectHealthReport({
           vaultPath: runtime.path,
@@ -205,25 +218,39 @@ export async function runCheck(
       : null;
     const content = scopes.content
       ? collectContentReport({
-          diagnostics: queryDiagnostics(runtime.projectionDb),
+          diagnostics: diagnosticRows,
           attentionOnly: options.attention === true,
           limit,
         })
       : null;
     const decisions = scopes.decisions
       ? collectDecisionReport({
-          questions: queryQuestionRecords(runtime.projectionDb, {
-            resolved: false,
-          }),
+          questions: unresolvedQuestions,
           limit,
         })
       : null;
+    const activeProcessorIds = new Set(
+      runtime.registry.all().map((processor) => processor.id),
+    );
+    const maintenance_loops = collectMaintenanceLoopSummaries({
+      loops: FIRST_PARTY_MAINTENANCE_LOOPS,
+      activeProcessorIds,
+      diagnosticsByProcessor: (processorId) =>
+        queryDiagnostics(runtime.projectionDb, { processorId }),
+      unresolvedQuestions,
+      runsByProcessor: (processorId) =>
+        queryRuns(runtime.ledgerDb, {
+          processorId,
+          limit: LOOP_RECENT_RUN_LIMIT,
+        }),
+    });
     const report = buildReport({
       generatedAt: engine?.generatedAt ?? new Date().toISOString(),
       scopes,
       engine,
       content,
       decisions,
+      maintenanceLoops: maintenance_loops,
     });
     printReport(report, options.json === true);
     return 0;
@@ -355,6 +382,7 @@ function buildReport(input: {
   readonly engine: HealthReport | null;
   readonly content: CheckContentReport | null;
   readonly decisions: CheckDecisionReport | null;
+  readonly maintenanceLoops: ReadonlyArray<MaintenanceLoopSummary> | null;
 }): CheckReport {
   const engineFindings = input.engine?.summary.findingCount ?? 0;
   const attentionDiagnostics = input.content?.attention_diagnostics ?? 0;
@@ -369,6 +397,7 @@ function buildReport(input: {
     engine: input.engine,
     content: input.content,
     decisions: input.decisions,
+    maintenance_loops: input.maintenanceLoops,
     next_actions: nextActionsForCheck({
       engineFindings,
       diagnostics: attentionDiagnostics,
@@ -392,6 +421,7 @@ function reportFromUnavailableRuntime(input: {
     engine: input.engine,
     content: null,
     decisions: null,
+    maintenanceLoops: null,
   });
 }
 
@@ -405,6 +435,7 @@ function printReport(report: CheckReport, json: boolean): void {
   console.log(`engine    ${formatEngine(report.engine)}`);
   console.log(`content   ${formatContent(report.content)}`);
   console.log(`decisions ${formatDecisions(report.decisions)}`);
+  console.log(`loops     ${formatLoops(report.maintenance_loops)}`);
   printFindings(report.engine?.findings ?? []);
   printDiagnostics(report.content);
   printQuestions(report.decisions);
@@ -449,6 +480,13 @@ function formatDecisions(report: CheckDecisionReport | null): string {
   const agentReady = report.agent_safe_questions + report.model_safe_questions;
   if (report.questions === 0) return "0 open question(s)";
   return `${report.questions} open question(s) | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
+}
+
+function formatLoops(
+  loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+): string {
+  if (loops === null) return "unavailable";
+  return formatMaintenanceLoopSummaryLine(loops);
 }
 
 function printFindings(findings: ReadonlyArray<HealthFinding>): void {

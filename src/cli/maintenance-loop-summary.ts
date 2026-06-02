@@ -57,6 +57,22 @@ export function collectMaintenanceLoopSummaries(opts: {
   return Object.freeze(opts.loops.map((loop) => summarizeLoop(loop, opts)));
 }
 
+export function formatMaintenanceLoopSummaryLine(
+  loops: ReadonlyArray<MaintenanceLoopSummary>,
+): string {
+  const counts = {
+    quiet: 0,
+    attention: 0,
+    drift: 0,
+    partial: 0,
+    inactive: 0,
+  };
+  for (const loop of loops) {
+    counts[loop.state] += 1;
+  }
+  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.drift} drift | ${counts.partial} partial | ${counts.inactive} inactive`;
+}
+
 function summarizeLoop(
   loop: MaintenanceLoop,
   opts: {
