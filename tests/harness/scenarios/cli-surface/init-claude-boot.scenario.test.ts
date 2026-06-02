@@ -47,6 +47,7 @@ scenario(
       expect(claude).toContain("dome sync --json");
       expect(claude).toContain("dome check --json");
       expect(claude).toContain("dome resolve <id> <value>");
+      expect(claude).toContain("before broad manual file hunting");
       expect(claude).toContain("agent-safe");
       expect(claude).toContain("owner-needed");
       expect(claude).not.toContain("only use `dome status`");
@@ -63,6 +64,9 @@ scenario(
       expect(agents).toContain("agent-safe");
       expect(agents).toContain("owner-needed");
       expect(agents).toContain("recommended_answer");
+      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("dome export-context <topic> --json");
+      expect(agents).toContain("dome query <text> --json");
       expect(agents).toContain("dome today");
       expect(agents).toContain("dome export-context <topic>");
       expect(agents).toContain("Advanced/debug commands");
@@ -190,6 +194,13 @@ scenario(
       };
       expect(report.status).toBe("ok");
       expect(report.summary.instructionDrift).toBe(0);
+
+      const agents = await readFile(join(target, "AGENTS.md"), "utf8");
+      expect(agents.startsWith("# This is a Dome vault.")).toBe(true);
+      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("## Previous vault-specific instructions");
+      expect(agents).toContain("# Old AGENTS");
+      expect(agents).toContain("Vault-specific instructions.");
     } finally {
       await rm(target, { recursive: true, force: true });
     }

@@ -82,3 +82,48 @@ Next dogfood checks:
    capture week.
 4. Record whether the 46 link/concept diagnostics shrink, stay as known
    backlog, or become distracting noise.
+
+## 2026-06-02 Foreground-Agent Orientation Refresh
+
+Dogfood action:
+
+- Ran `bin/dome init ~/vaults/work --refresh-instructions` after inspecting the
+  work-vault foreground-agent orientation.
+
+Observed issue:
+
+- `~/vaults/work/AGENTS.md` had stale managed Dome instructions even though it
+  already carried the user-prose delimiters.
+- The stale section included obsolete workflow guidance and a nonstandard
+  `.worktrees/` worktree location, which directly conflicts with the current
+  repo-wide worktree convention.
+- The CLI refresh path treated the presence of user-prose delimiters as a
+  reason to skip the file, so managed orientation could remain stale forever.
+
+Fix shipped in the SDK:
+
+- `dome init --refresh-instructions` now replaces the managed `AGENTS.md`
+  scaffold while preserving the delimited user-prose block.
+- Legacy files without delimiters are preserved inside a new
+  `## Previous vault-specific instructions` user-prose section instead of being
+  overwritten.
+- The managed template now tells foreground agents to use
+  `dome export-context <topic> --json`, `dome query <text> --json`, and the
+  daily/planning views as read-first context surfaces before broad manual file
+  hunting.
+
+Work-vault result:
+
+- `~/vaults/work/AGENTS.md` now has current Dome workflow guidance.
+- The work-vault-specific operating contract was preserved in the user-prose
+  block.
+- The stale `.worktrees/` guidance is gone from the active orientation surface.
+
+Qualitative read:
+
+- This closes one concrete M10 friction item: a foreground agent entering the
+  work vault now sees current Dome context-packet guidance instead of stale
+  scaffold text.
+- The next dogfood question is whether agents actually follow the read-first
+  guidance and whether the returned context packets are good enough to reduce
+  manual vault spelunking.

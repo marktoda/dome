@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-26T00:00:00.000Z
-updated: 2026-05-29T00:00:00.000Z
+updated: 2026-06-02T00:00:00.000Z
 sources:
   - >-
     [[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]
@@ -13,19 +13,19 @@ severity: high
 
 # AGENTS.md delimiter shape
 
-**Symptom:** A contributor edits `docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md` to change the user-prose section delimiters (e.g., renames `<!-- BEGIN user-prose -->` to `<!-- AGENT BEGIN -->`) for readability or clarity, without updating `src/agents-md.ts`. The next time the AGENTS.md merge logic at `mergeAgentsMd` runs against a real vault — today via `dome init` re-runs against a vault whose AGENTS.md already exists, and in v1.x via the reserved `dome doctor --repair` verb plus the planned `dome.health.agents-md-template-drift` garden-phase processor — it falls into the no-delimiter branch (cannot find the delimiters it expects in the existing file) and re-skeletons the file from the templated-sections-only shape, **destroying every user-authored line between the original delimiters**.
+**Symptom:** A contributor edits `docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md` to change the user-prose section delimiters (e.g., renames `<!-- BEGIN user-prose -->` to `<!-- AGENT BEGIN -->`) for readability or clarity, without updating `src/cli/commands/init.ts`. The next time `dome init --refresh-instructions` refreshes AGENTS.md for a real vault, the refresh logic cannot find the existing user-prose block and treats the whole old file as legacy prose. That avoids data loss, but it also stops the managed/user boundary from being recognized correctly and can duplicate stale managed instructions inside user prose.
 
 **Root cause:** The delimiter strings are shared between three surfaces:
 
-- **The runtime parser:** `src/agents-md.ts:9-10` exports `USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->"` and `USER_PROSE_END = "<!-- END user-prose -->"` as the load-bearing constants the merge logic reads.
+- **The refresh implementation:** `src/cli/commands/init.ts` defines `USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->"` and `USER_PROSE_END = "<!-- END user-prose -->"` as the load-bearing constants the refresh logic reads.
 - **The invariant doc:** [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] documents the delimiters as part of the user-prose contract.
-- **The CLI spec:** [[wiki/specs/cli]] §"`dome doctor`" (the reserved-for-v1.x section) describes the `--repair` flow that will run the merge, naming the delimiters as the substrate convention. The same merge runs today on `dome init` re-runs.
+- **The CLI spec:** [[wiki/specs/cli]] §"`dome init`" describes the `--refresh-instructions` flow that refreshes managed AGENTS content while preserving the delimited user-prose block.
 
 The delimiters appear as **literal strings** in all three places. There is no compile-time link between them — the parser reads its constants; the docs cite the same strings; a change in one drifts the others silently. The drift is detectable only by running `--repair` against a real vault and seeing user prose disappear.
 
-**Severity:** High — silent data loss in a `--repair`-driven workflow. The `--repair` flag is explicitly destructive-on-promise (it regenerates templated sections), and the user's mental model is "templated sections regenerate; my prose is preserved." A delimiter-shape regression violates the second half of the promise.
+**Severity:** High — instruction refresh is explicitly destructive-on-promise: managed sections regenerate, user prose is preserved. A delimiter-shape regression violates the clarity of that boundary and can leave stale managed instructions in the user-owned block.
 
-**Structural mitigation:** The lockstep test at `tests/invariants/agents-md-is-orientation-surface.test.ts` parses [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] for the literal `<!-- BEGIN user-prose -->` and `<!-- END user-prose -->` and asserts equality with the `USER_PROSE_BEGIN` / `USER_PROSE_END` exports from `src/agents-md.ts`. A regression in either surface fails the test. The invariant doc is the canonical source of the literal strings; the test pins the runtime constants to match.
+**Structural mitigation:** The lockstep test at `tests/invariants/agents-md-is-orientation-surface.test.ts` parses [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] for the literal `<!-- BEGIN user-prose -->` and `<!-- END user-prose -->` and asserts equality with the `USER_PROSE_BEGIN` / `USER_PROSE_END` constants in `src/cli/commands/init.ts`. A regression in either surface fails the test. The invariant doc is the canonical source of the literal strings; the test pins the runtime constants to match. The refresh tests also assert that stale managed AGENTS text is replaced while delimited user prose survives.
 
 The invariant doc carries this rule in its body: **the delimiter strings are load-bearing constants — do not edit them in the doc without editing the const, and do not edit the const without re-running the invariant test.**
 
@@ -33,11 +33,11 @@ The invariant doc carries this rule in its body: **the delimiter strings are loa
 
 - A contributor cleaning up the invariant doc replaces `<!-- BEGIN user-prose -->` with `<!-- BEGIN AGENT PROSE -->` for stylistic parallelism with another delimiter convention — the lockstep test fails on the next CI run.
 - A future v0.5.1 feature adds a second pair of delimiters (`<!-- BEGIN agent-instructions -->`) for a new section — the existing test pins only the user-prose pair; the new pair needs its own lockstep assertion before it ships.
-- A vault carries an old AGENTS.md generated with delimiters that have since been renamed in the SDK — `mergeAgentsMd` falls into the no-delimiter branch. The mitigation here is not the delimiter lockstep; it is `dome migrate` reading the version field and applying the rename forward. Backwards-compatible delimiter migration is an explicit ship in any release that renames them.
+- A vault carries an old AGENTS.md generated with delimiters that have since been renamed in the SDK — `dome init --refresh-instructions` falls into the no-delimiter branch and preserves the whole old file as legacy prose. The mitigation here is not the delimiter lockstep; it is a migration that reads the previous delimiter shape and applies the rename forward. Backwards-compatible delimiter migration is an explicit ship in any release that renames them.
 
 **Related:**
 
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — the invariant the delimiters serve
-- [[wiki/specs/cli]] §"`dome doctor`" — the v1.x `--repair` flow that will run the merge (today the merge also runs on `dome init` re-runs)
-- `src/agents-md.ts` — the runtime parser carrying the constants
+- [[wiki/specs/cli]] §"`dome init`" — the shipped refresh flow
+- `src/cli/commands/init.ts` — the refresh implementation carrying the constants
 - [[wiki/gotchas/substrate-count-drift]] — the sibling pattern (substrate-vs-code drift)

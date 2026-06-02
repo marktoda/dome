@@ -154,11 +154,14 @@ The shipped initialization steps:
    path rather than polish. The generated instructions tell agents to inspect
    `serve_status` from `dome status --json` at session start, using
    `dome sync --json` after commits when no foreground `dome serve` host is
-   running. First-write-only — re-runs preserve any user-prose section the
-   vault owner added. `--refresh-instructions` is an explicit maintenance path
-   for old orientation files: it adds the managed AGENTS user-prose delimiters
-   when missing and prepends the `@AGENTS.md` shim to CLAUDE.md when missing,
-   preserving existing file content.
+   running and to use `query` / `export-context` as read-first context surfaces
+   for nontrivial vault work. First-write-only by default — re-runs preserve
+   any local edits. `--refresh-instructions` is an explicit maintenance path
+   for old orientation files: it replaces the managed AGENTS scaffold with the
+   current shipped template while preserving the delimited user-prose block. If
+   an older AGENTS file has no delimiters, its previous content is moved into
+   the new user-prose block. The same flag prepends the `@AGENTS.md` shim to
+   CLAUDE.md when missing, preserving existing file content below it.
 7. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
    `.dome/config.yaml`, plus `.dome/model-provider.ts` when the provider

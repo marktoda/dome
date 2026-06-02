@@ -350,6 +350,9 @@ describe("runInit", () => {
       expect(agentsBody).toContain("agent-safe");
       expect(agentsBody).toContain("owner-needed");
       expect(agentsBody).toContain("recommended_answer");
+      expect(agentsBody).toContain("## Read-first context");
+      expect(agentsBody).toContain("dome export-context <topic> --json");
+      expect(agentsBody).toContain("dome query <text> --json");
       expect(agentsBody).toContain("dome today");
       expect(agentsBody).toContain("dome prep");
       expect(agentsBody).toContain("dome export-context <topic>");
@@ -373,6 +376,7 @@ describe("runInit", () => {
       expect(claudeBody).toContain("dome sync --json");
       expect(claudeBody).toContain("dome check --json");
       expect(claudeBody).toContain("dome resolve <id> <value>");
+      expect(claudeBody).toContain("before broad manual file hunting");
       expect(claudeBody).toContain("agent-safe");
       expect(claudeBody).toContain("owner-needed");
       expect(claudeBody).not.toContain("only use `dome status`");
@@ -605,6 +609,7 @@ describe("runInit", () => {
       const claude = await readFile(join(target, "CLAUDE.md"), "utf8");
       expect(agents).toContain("# Old instructions");
       expect(agents).toContain("Keep this vault-specific guidance.");
+      expect(agents).toContain("## Read-first context");
       expect(agents).toContain("<!-- BEGIN user-prose -->");
       expect(agents).toContain("<!-- END user-prose -->");
       expect(claude.startsWith("@AGENTS.md\n\n# Work Knowledge Base")).toBe(true);
@@ -615,6 +620,45 @@ describe("runInit", () => {
       expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
       expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(firstAgents);
       expect(await readFile(join(target, "CLAUDE.md"), "utf8")).toBe(firstClaude);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-instructions refreshes managed AGENTS while preserving user prose", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-managed-agents-"));
+    try {
+      await writeFile(
+        join(target, "AGENTS.md"),
+        [
+          "# Old managed heading",
+          "",
+          "Outdated instruction: use dome doctor --show diagnostics.",
+          "",
+          "<!-- BEGIN user-prose -->",
+          "",
+          "My private vault notes.",
+          "",
+          "<!-- END user-prose -->",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      await writeFile(join(target, "CLAUDE.md"), "@AGENTS.md\n", "utf8");
+
+      expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
+
+      const agents = await readFile(join(target, "AGENTS.md"), "utf8");
+      expect(agents.startsWith("# This is a Dome vault.")).toBe(true);
+      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("dome export-context <topic> --json");
+      expect(agents).toContain("My private vault notes.");
+      expect(agents).not.toContain("# Old managed heading");
+      expect(agents).not.toContain("doctor --show");
+
+      const firstAgents = agents;
+      expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
+      expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(firstAgents);
     } finally {
       await rm(target, { recursive: true, force: true });
     }

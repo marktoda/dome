@@ -82,6 +82,25 @@ boundary. The useful moments to call Dome explicitly are:
 - `dome export-context <topic>` for a portable context packet.
 - `dome lint` for deterministic vault hygiene.
 
+## Read-first context
+
+For nontrivial vault work, the foreground agent should use Dome's adopted-state
+views before broad manual file hunting:
+
+- use `dome export-context <topic> --json` for handoffs, review prep,
+  planning passes, and multi-file edits;
+- use `dome query <text> --json` for focused recall or when a packet is too
+  broad;
+- use `dome today --json`, `dome prep --json`, or
+  `dome agenda <person-or-topic> --json` for daily planning, meeting prep, and
+  person/topic follow-up.
+
+This is a read-first habit, not per-edit ceremony. Agents should still use
+normal file search when needed, but a useful V1 should make the first read set
+come from Dome more often than from ad hoc grep. If a packet misses obvious
+context or returns noisy results, record that as dogfood evidence; those misses
+are search/context-loop bugs to fix.
+
 ## Host-off catch-up
 
 If `dome serve` was not running, committed work is not lost. The next
@@ -184,6 +203,8 @@ state file to patch.
 - `dome query`, `dome today`, `dome prep`, `dome agenda`, and
   `dome export-context` read from adopted state and include source-backed
   evidence.
+- For nontrivial vault tasks, Claude can start from `dome export-context` or
+  `dome query` instead of manually rediscovering the same files.
 - Claude can continue normal markdown work without knowing SQLite, internal
   run ids, or processor implementation details.
 
