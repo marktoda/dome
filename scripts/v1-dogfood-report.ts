@@ -352,7 +352,7 @@ function analyzeSafety(text: string): {
   readonly missing: ReadonlyArray<string>;
   readonly blockers: ReadonlyArray<string>;
 } {
-  const answers = new Map<string, string>();
+  const answers = new Map<string, string[]>();
   for (const line of text.split(/\r?\n/)) {
     const normalized = line.trim();
     const match = /^(?:[-*]\s*)?([^:]{1,100}):\s*(.*)$/.exec(normalized);
@@ -361,7 +361,9 @@ function analyzeSafety(text: string): {
     const value = match[2].trim();
     for (const check of safetyChecks) {
       if (check.patterns.some((pattern) => pattern.test(label))) {
-        answers.set(check.id, value);
+        const existing = answers.get(check.id) ?? [];
+        existing.push(value);
+        answers.set(check.id, existing);
       }
     }
   }
@@ -369,12 +371,14 @@ function analyzeSafety(text: string): {
   const missing: string[] = [];
   const blockers: string[] = [];
   for (const check of safetyChecks) {
-    const answer = answers.get(check.id);
-    if (answer === undefined || answer === "") {
+    const nonEmptyAnswers = (answers.get(check.id) ?? []).filter((answer) =>
+      answer !== ""
+    );
+    if (nonEmptyAnswers.length === 0) {
       missing.push(check.id);
       continue;
     }
-    if (!isNegativeConfirmation(answer)) {
+    if (nonEmptyAnswers.some((answer) => !isNegativeConfirmation(answer))) {
       blockers.push(check.id);
     }
   }

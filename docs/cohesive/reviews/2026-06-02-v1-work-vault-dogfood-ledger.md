@@ -1015,3 +1015,27 @@ Qualitative read:
 - This makes M10 session setup more operator-useful: when dogfood collection is
   blocked by ordinary working-tree drift, preflight now names the same concrete
   remediation path that `dome status` already knows.
+
+## 2026-06-02 M10 Same-Day Safety Aggregation Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so repeated same-day safety answers
+  aggregate conservatively instead of using last-answer-wins semantics.
+- If any same-day section reports lost or overwritten human markdown edits, or
+  manual `.dome/state` edits, that safety item remains a release blocker even
+  when a later same-day entry says `no`.
+- Added regression coverage with two same-date ledger sections: the morning
+  section reports an overwritten draft, and the evening section says no
+  overwrite; the report still keeps `lost_or_overwritten_edits` as the blocker.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 17 tests and
+  110 assertions.
+
+Qualitative read:
+
+- This closes a same-day ledger merge overclaim path. M10 release readiness now
+  preserves any observed safety issue for that workday instead of allowing a
+  later clean note to erase it.

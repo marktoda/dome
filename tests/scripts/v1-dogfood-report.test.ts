@@ -570,6 +570,63 @@ Qualitative notes to fill after the work session:
     expect(report.days[0].safetyConfirmed).toBe(false);
   });
 
+  test("preserves safety blockers across repeated same-day answers", async () => {
+    const ledger = writeLedger(`
+# Test ledger
+
+## 2026-06-01 Morning Session
+
+Operational state:
+- \`bin/dome status --vault ~/vaults/work --json\`
+- Serve host: running; branch main; pid 123
+
+Qualitative notes to fill after the work session:
+- Daily note usefulness: Started from the daily surface.
+- Capture digestion: Processed one raw capture into \`wiki/generated/intake/example.md\`.
+- Open-loop surfacing: Helpful.
+- Context packet quality: Useful.
+- Question burden: Low.
+- Link/concept hygiene: Known backlog.
+- Friction / manual foreground-agent work Dome should own: Still needed manual duplicate review.
+- Lost or overwritten human markdown edits: yes, a draft was overwritten
+- Manual .dome/state edits: no
+
+## 2026-06-01 Evening Session
+
+Qualitative notes to fill after the work session:
+- Lost or overwritten human markdown edits: no
+- Manual .dome/state edits: no
+`);
+
+    const result = await runReport([
+      "--ledger",
+      ledger,
+      "--min-days",
+      "1",
+      "--min-capture-days",
+      "1",
+      "--min-span-days",
+      "1",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const report = JSON.parse(result.stdout);
+    expect(report.status).toBe("not-ready");
+    expect(report.completeWorkdays).toBe(0);
+    expect(report.releaseBlockers).toEqual([{
+      date: "2026-06-01",
+      blockers: ["lost_or_overwritten_edits"],
+    }]);
+    expect(report.days).toHaveLength(1);
+    expect(report.days[0].headings).toEqual([
+      "Morning Session",
+      "Evening Session",
+    ]);
+    expect(report.days[0].safetyConfirmed).toBe(false);
+  });
+
   test("require-ready exits nonzero for an incomplete release soak", async () => {
     const ledger = writeLedger(completeDay("2026-06-01"));
 
