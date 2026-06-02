@@ -42,9 +42,19 @@ type PreflightReport = {
     readonly captureEvidenceDays: number;
     readonly spanCalendarDays: number;
     readonly releaseBlockers: number;
+    readonly readiness: ReadonlyArray<ReleaseCriterion>;
   };
   readonly nextActions: ReadonlyArray<string>;
   readonly commands: ReadonlyArray<ReadonlyArray<string>>;
+};
+
+type ReleaseCriterion = {
+  readonly id: string;
+  readonly label: string;
+  readonly current: number;
+  readonly required: number;
+  readonly remaining: number;
+  readonly ready: boolean;
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
@@ -108,6 +118,7 @@ function buildReport(input: {
     captureEvidenceDays: numberValue(input.release.captureEvidenceDays),
     spanCalendarDays: numberValue(input.release.spanCalendarDays),
     releaseBlockers: releaseBlockers.length,
+    readiness: releaseCriteria(input.release),
   };
   const nextActions = buildNextActions({
     operational,
@@ -265,14 +276,57 @@ function buildNextActions(input: {
     actions.push("start dome serve while dogfooding to collect host evidence");
   }
   if (input.release.status !== "ready") {
+    const releaseActions = releaseNextActions(input.release.readiness);
     actions.push(
-      "continue recording measured dogfood snapshots and filled M10 notes",
+      ...(releaseActions.length === 0
+        ? ["continue recording measured dogfood snapshots and filled M10 notes"]
+        : releaseActions),
     );
   }
   if (actions.length === 0) {
     actions.push("run a dogfood session and append the snapshot to the ledger");
   }
   return actions;
+}
+
+function releaseNextActions(
+  readiness: ReadonlyArray<ReleaseCriterion>,
+): string[] {
+  return readiness
+    .filter((criterion) => !criterion.ready)
+    .map((criterion) => {
+      if (criterion.id === "release_blockers") {
+        return `resolve ${criterion.remaining} M10 release blocker(s)`;
+      }
+      if (criterion.id === "complete_workdays") {
+        return (
+          `collect ${criterion.remaining} more complete M10 workday(s) ` +
+          `(${criterion.current}/${criterion.required})`
+        );
+      }
+      if (criterion.id === "serve_host_evidence_days") {
+        return (
+          `collect serve-host evidence on ${criterion.remaining} more day(s) ` +
+          `(${criterion.current}/${criterion.required})`
+        );
+      }
+      if (criterion.id === "capture_evidence_days") {
+        return (
+          `collect complete capture evidence on ${criterion.remaining} more ` +
+          `workday(s) (${criterion.current}/${criterion.required})`
+        );
+      }
+      if (criterion.id === "span_calendar_days") {
+        return (
+          `continue dogfood until complete days span ${criterion.remaining} ` +
+          `more calendar day(s) (${criterion.current}/${criterion.required})`
+        );
+      }
+      return (
+        `collect ${criterion.remaining} more ${criterion.label.toLowerCase()} ` +
+        `for M10 (${criterion.current}/${criterion.required})`
+      );
+    });
 }
 
 function statusNextActionStrings(status: JsonRecord): string[] {
@@ -325,6 +379,19 @@ function renderReport(report: PreflightReport): string {
   );
   lines.push(`- Complete-workday span: ${report.release.spanCalendarDays}`);
   lines.push(`- Release blockers: ${report.release.releaseBlockers}`);
+  if (report.release.readiness.length > 0) {
+    lines.push("- Remaining criteria:");
+    const incomplete = report.release.readiness.filter((criterion) =>
+      !criterion.ready
+    );
+    if (incomplete.length === 0) {
+      lines.push("  - All criteria satisfied.");
+    } else {
+      for (const criterion of incomplete) {
+        lines.push(`  - ${formatReleaseCriterion(criterion)}`);
+      }
+    }
+  }
   lines.push("");
   lines.push("Next actions:");
   for (const action of report.nextActions) {
@@ -337,6 +404,22 @@ function renderReport(report: PreflightReport): string {
   }
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function formatReleaseCriterion(criterion: ReleaseCriterion): string {
+  if (criterion.id === "release_blockers") {
+    return `${criterion.label}: resolve ${criterion.remaining} blocker(s)`;
+  }
+  if (criterion.id === "span_calendar_days") {
+    return (
+      `${criterion.label}: need ${criterion.remaining} more calendar day(s) ` +
+      `(${criterion.current}/${criterion.required})`
+    );
+  }
+  return (
+    `${criterion.label}: need ${criterion.remaining} more ` +
+    `(${criterion.current}/${criterion.required})`
+  );
 }
 
 function renderFindings(lines: string[], findings: ReadonlyArray<string>): void {
@@ -428,6 +511,21 @@ function recordArray(value: unknown): JsonRecord[] {
   return value.filter(
     (item): item is JsonRecord =>
       item !== null && typeof item === "object" && !Array.isArray(item),
+  );
+}
+
+function releaseCriteria(release: JsonRecord): ReadonlyArray<ReleaseCriterion> {
+  return Object.freeze(
+    recordArray(release.readiness).map((row) =>
+      Object.freeze({
+        id: stringValue(row.id, "unknown"),
+        label: stringValue(row.label, "Release criterion"),
+        current: numberValue(row.current),
+        required: numberValue(row.required),
+        remaining: numberValue(row.remaining),
+        ready: row.ready === true,
+      })
+    ),
   );
 }
 

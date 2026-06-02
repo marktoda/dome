@@ -57,12 +57,27 @@ type DogfoodReport = {
     readonly date: string;
     readonly blockers: ReadonlyArray<string>;
   }>;
+  readonly readiness: ReadonlyArray<ReadinessCriterion>;
   readonly dimensions: ReadonlyArray<{
     readonly id: string;
     readonly label: string;
     readonly days: number;
   }>;
   readonly days: ReadonlyArray<DayReport>;
+};
+
+type ReadinessCriterion = {
+  readonly id:
+    | "complete_workdays"
+    | "serve_host_evidence_days"
+    | "capture_evidence_days"
+    | "span_calendar_days"
+    | "release_blockers";
+  readonly label: string;
+  readonly current: number;
+  readonly required: number;
+  readonly remaining: number;
+  readonly ready: boolean;
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
@@ -206,13 +221,22 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
   const releaseBlockers = days
     .filter((day) => day.releaseBlockers.length > 0)
     .map((day) => ({ date: day.date, blockers: day.releaseBlockers }));
-  const status =
-    completeWorkdays >= opts.minDays &&
-    captureEvidenceDays >= opts.minCaptureDays &&
-    spanCalendarDays >= opts.minSpanDays &&
-    releaseBlockers.length === 0
-      ? "ready"
-      : "not-ready";
+  const readiness = buildReadiness({
+    completeWorkdays,
+    serveHostEvidenceDays,
+    captureEvidenceDays,
+    spanCalendarDays,
+    releaseBlockers: releaseBlockers.length,
+    required: {
+      completeWorkdays: opts.minDays,
+      serveHostEvidenceDays: opts.minDays,
+      captureEvidenceDays: opts.minCaptureDays,
+      spanCalendarDays: opts.minSpanDays,
+    },
+  });
+  const status = readiness.every((criterion) => criterion.ready)
+    ? "ready"
+    : "not-ready";
 
   return {
     ledger: opts.ledger,
@@ -228,6 +252,7 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     captureEvidenceDays,
     spanCalendarDays,
     releaseBlockers,
+    readiness,
     dimensions: dimensions.map((dimension) => ({
       id: dimension.id,
       label: dimension.label,
@@ -238,6 +263,76 @@ function buildReport(markdown: string, opts: ReportOptions): DogfoodReport {
     })),
     days,
   };
+}
+
+function buildReadiness(input: {
+  readonly completeWorkdays: number;
+  readonly serveHostEvidenceDays: number;
+  readonly captureEvidenceDays: number;
+  readonly spanCalendarDays: number;
+  readonly releaseBlockers: number;
+  readonly required: {
+    readonly completeWorkdays: number;
+    readonly serveHostEvidenceDays: number;
+    readonly captureEvidenceDays: number;
+    readonly spanCalendarDays: number;
+  };
+}): ReadonlyArray<ReadinessCriterion> {
+  return Object.freeze([
+    thresholdCriterion({
+      id: "complete_workdays",
+      label: "Complete workdays",
+      current: input.completeWorkdays,
+      required: input.required.completeWorkdays,
+    }),
+    thresholdCriterion({
+      id: "serve_host_evidence_days",
+      label: "Serve-host evidence days",
+      current: input.serveHostEvidenceDays,
+      required: input.required.serveHostEvidenceDays,
+    }),
+    thresholdCriterion({
+      id: "capture_evidence_days",
+      label: "Complete capture-evidence days",
+      current: input.captureEvidenceDays,
+      required: input.required.captureEvidenceDays,
+    }),
+    thresholdCriterion({
+      id: "span_calendar_days",
+      label: "Complete-workday span",
+      current: input.spanCalendarDays,
+      required: input.required.spanCalendarDays,
+    }),
+    blockerCriterion(input.releaseBlockers),
+  ]);
+}
+
+function thresholdCriterion(input: {
+  readonly id: ReadinessCriterion["id"];
+  readonly label: string;
+  readonly current: number;
+  readonly required: number;
+}): ReadinessCriterion {
+  const remaining = Math.max(0, input.required - input.current);
+  return Object.freeze({
+    id: input.id,
+    label: input.label,
+    current: input.current,
+    required: input.required,
+    remaining,
+    ready: remaining === 0,
+  });
+}
+
+function blockerCriterion(current: number): ReadinessCriterion {
+  return Object.freeze({
+    id: "release_blockers",
+    label: "Release blockers",
+    current,
+    required: 0,
+    remaining: current,
+    ready: current === 0,
+  });
 }
 
 function completeWorkdaySpanDays(days: ReadonlyArray<DayReport>): number {
@@ -511,6 +606,16 @@ function renderReport(report: DogfoodReport): string {
   );
   lines.push(`Release blockers: ${report.releaseBlockers.length}`);
   lines.push("");
+  lines.push("Release readiness:");
+  const incomplete = report.readiness.filter((criterion) => !criterion.ready);
+  if (incomplete.length === 0) {
+    lines.push("- All criteria satisfied.");
+  } else {
+    for (const criterion of incomplete) {
+      lines.push(`- ${formatReadinessCriterion(criterion)}`);
+    }
+  }
+  lines.push("");
   lines.push("Rubric coverage:");
   for (const dimension of report.dimensions) {
     lines.push(`- ${dimension.label}: ${dimension.days} day(s)`);
@@ -556,6 +661,22 @@ function renderReport(report: DogfoodReport): string {
   );
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function formatReadinessCriterion(criterion: ReadinessCriterion): string {
+  if (criterion.id === "release_blockers") {
+    return `${criterion.label}: resolve ${criterion.remaining} blocker(s)`;
+  }
+  if (criterion.id === "span_calendar_days") {
+    return (
+      `${criterion.label}: need ${criterion.remaining} more calendar day(s) ` +
+      `(${criterion.current}/${criterion.required})`
+    );
+  }
+  return (
+    `${criterion.label}: need ${criterion.remaining} more ` +
+    `(${criterion.current}/${criterion.required})`
+  );
 }
 
 function parseArgs(args: ReadonlyArray<string>): ReportOptions {

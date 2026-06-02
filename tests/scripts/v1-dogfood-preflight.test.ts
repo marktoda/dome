@@ -61,11 +61,22 @@ describe("v1 dogfood preflight script", () => {
     expect(report.capture.findings).toContain("dome.intake is disabled");
     expect(report.release.status).toBe("not-ready");
     expect(report.release.serveHostEvidenceDays).toBe(1);
+    expect(report.release.readiness).toContainEqual({
+      id: "complete_workdays",
+      label: "Complete workdays",
+      current: 1,
+      required: 10,
+      remaining: 9,
+      ready: false,
+    });
     expect(report.nextActions).toContain(
       "enable dome.intake with a configured model provider before capture dogfood",
     );
     expect(report.nextActions).toContain(
       "start dome serve while dogfooding to collect host evidence",
+    );
+    expect(report.nextActions).toContain(
+      "collect 9 more complete M10 workday(s) (1/10)",
     );
   }, { timeout: 30_000 });
 
@@ -174,7 +185,17 @@ describe("v1 dogfood preflight script", () => {
     expect(result.stdout).toContain("Capture readiness:");
     expect(result.stdout).toContain("Release-soak report:");
     expect(result.stdout).toContain("- Serve-host evidence days: 1");
+    expect(result.stdout).toContain("- Remaining criteria:");
+    expect(result.stdout).toContain(
+      "Complete workdays: need 9 more (1/10)",
+    );
+    expect(result.stdout).toContain(
+      "Complete-workday span: need 11 more calendar day(s) (1/12)",
+    );
     expect(result.stdout).toContain("Next actions:");
+    expect(result.stdout).toContain(
+      "collect 9 more complete M10 workday(s) (1/10)",
+    );
     expect(result.stdout).toContain("Commands run:");
   }, { timeout: 30_000 });
 });
@@ -225,6 +246,7 @@ function completeDay(date: string): string {
 
 Operational state:
 - \`bin/dome status --vault ~/vaults/work --json\`
+- \`bin/dome today --vault ~/vaults/work --json\`
 - Serve host: running; branch main; pid 123
 
 Qualitative notes to fill after the work session:

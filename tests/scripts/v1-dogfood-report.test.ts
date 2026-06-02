@@ -80,6 +80,17 @@ Qualitative notes to fill after the work session:
     expect(report.serveHostEvidenceDays).toBe(1);
     expect(report.captureEvidenceDays).toBe(1);
     expect(report.spanCalendarDays).toBe(1);
+    expect(report.readiness).toContainEqual({
+      id: "complete_workdays",
+      label: "Complete workdays",
+      current: 1,
+      required: 1,
+      remaining: 0,
+      ready: true,
+    });
+    expect(report.readiness.every((criterion: { ready: boolean }) =>
+      criterion.ready
+    )).toBe(true);
     expect(report.days).toHaveLength(2);
     expect(report.days[0].complete).toBe(true);
     expect(report.days[1].complete).toBe(false);
@@ -119,6 +130,14 @@ Qualitative notes to fill after the work session:
     expect(result.stdout).toContain("Serve-host evidence days: 1/10");
     expect(result.stdout).toContain("Complete capture-evidence days: 0/5");
     expect(result.stdout).toContain("Complete-workday span: 1/12");
+    expect(result.stdout).toContain("Release readiness:");
+    expect(result.stdout).toContain("Complete workdays: need 9 more (1/10)");
+    expect(result.stdout).toContain(
+      "Complete capture-evidence days: need 5 more (0/5)",
+    );
+    expect(result.stdout).toContain(
+      "Complete-workday span: need 11 more calendar day(s) (1/12)",
+    );
   });
 
   test("requires running serve-host evidence for counted workdays", async () => {

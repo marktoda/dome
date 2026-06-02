@@ -1190,3 +1190,31 @@ M10 read:
 - This is useful same-day supporting evidence, not a new elapsed workday. The
   release report should remain `not-ready` until the ledger spans the required
   two real work weeks.
+
+## 2026-06-02 M10 Readiness Criteria Surface
+
+Verification action:
+
+- Added a structured `readiness` array to `bun run v1:dogfood-report -- --json`
+  with per-criterion `current`, `required`, `remaining`, and `ready` fields for
+  complete workdays, serve-host evidence days, capture-evidence days,
+  complete-workday calendar span, and release blockers.
+- Added a Markdown `Release readiness:` section to the report so humans can see
+  the exact remaining criteria without mentally diffing the counters.
+- Threaded the same readiness data into `bun run v1:dogfood-preflight`, so
+  `nextActions` can say exactly what remains for M10 rather than only giving a
+  generic "keep recording notes" action.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 22 tests and
+  156 assertions.
+- `bun test tests/scripts/v1-dogfood-preflight.test.ts` passes with 6 tests and
+  80 assertions.
+
+Qualitative read:
+
+- This makes the release-soak gate more inspectable for both humans and
+  foreground agents. The gate still fails closed until elapsed work-vault usage
+  reaches the required thresholds, but the missing criteria are now explicit in
+  both report and preflight surfaces.
