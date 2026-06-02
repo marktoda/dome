@@ -935,3 +935,27 @@ Qualitative read:
 - This closes another M10 overclaim path: release readiness now needs real
   capture-digestion evidence, not merely a completed capture-digestion rubric
   line that says no capture work happened.
+
+## 2026-06-02 M10 Safety-Confirmation Gate Tightening
+
+Verification action:
+
+- Tightened `bun run v1:dogfood-report` so contradictory safety confirmations
+  like "no, but one generated patch overwrote a draft" or "none except I
+  manually edited `.dome/state/runs.db`" become release blockers.
+- Plain negative confirmations such as `no`, `none`, `not observed`, and
+  `not seen` still count when they are not qualified by `but`, `except`,
+  `however`, or similar caveats.
+- Added regression coverage for contradictory lost-edit and manual-state-edit
+  confirmations in the same otherwise complete workday.
+
+Measured result:
+
+- `bun test tests/scripts/v1-dogfood-report.test.ts` passes with 13 tests and
+  84 assertions.
+
+Qualitative read:
+
+- This closes a safety overclaim path: M10 release readiness now fails closed
+  when a workday note contains a caveated negative confirmation instead of a
+  clean "nothing observed" safety statement.

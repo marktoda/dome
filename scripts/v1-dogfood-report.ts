@@ -140,6 +140,10 @@ const negativeCaptureEvidencePatterns: readonly RegExp[] = Object.freeze([
   /\b(did not|didn't|not)\b.{0,80}\b(process|digest|archive|generate|create|produce|extract|convert)\b.{0,80}\b(raw captures?|captures?|processed archive|generated intake|intake pages?)\b/i,
 ]);
 
+const contradictorySafetyQualifierPatterns: readonly RegExp[] = Object.freeze([
+  /\b(but|except|other than|aside from|however|although|though)\b/i,
+]);
+
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
   const markdown = await readFile(opts.ledger, "utf8");
@@ -355,8 +359,11 @@ function analyzeSafety(text: string): {
 
 function isNegativeConfirmation(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  return /^(no|none|not observed|not seen|n\/a|na)([.;,\s]|$)/.test(
-    normalized,
+  if (!/^(no|none|not observed|not seen|n\/a|na)([.;,\s]|$)/.test(normalized)) {
+    return false;
+  }
+  return !contradictorySafetyQualifierPatterns.some((pattern) =>
+    pattern.test(normalized)
   );
 }
 
