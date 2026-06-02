@@ -1,8 +1,8 @@
 id: dome.intake
-version: 0.4.5
+version: 0.4.6
 processors:
   - id: dome.intake.capture-index
-    version: 0.1.1
+    version: 0.1.2
     phase: adoption
     triggers:
       - kind: signal
@@ -23,7 +23,7 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.5
+    version: 0.3.6
     phase: garden
     triggers:
       - kind: schedule
@@ -139,7 +139,7 @@ processors:
     module: processors/synthesize-rollup.ts
 
   - id: dome.intake.low-confidence-answer
-    version: 0.2.1
+    version: 0.2.2
     phase: garden
     triggers:
       - kind: answer

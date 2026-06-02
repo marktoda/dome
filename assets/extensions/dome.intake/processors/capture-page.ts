@@ -32,7 +32,14 @@ export const INTAKE_PENDING_ITEMS_FIELD = "intake_pending_items";
 
 const CapturePageItemSchema = z
   .object({
-    kind: z.enum(["task", "followup", "decision", "entity", "source_quote"]),
+    kind: z.enum([
+      "task",
+      "followup",
+      "question",
+      "decision",
+      "entity",
+      "source_quote",
+    ]),
     text: z
       .string()
       .transform((value) => value.trim())
@@ -43,7 +50,7 @@ const CapturePageItemSchema = z
 const CapturePageItemsSchema = z.array(CapturePageItemSchema);
 const CapturePendingItemSchema = z
   .object({
-    kind: z.enum(["task", "followup", "decision", "entity"]),
+    kind: z.enum(["task", "followup", "question", "decision", "entity"]),
     text: z
       .string()
       .transform((value) => value.trim())
@@ -81,6 +88,8 @@ export function renderTrackedCaptureItem(input: {
       return `- [ ] ${input.text}`;
     case "followup":
       return `- [ ] #followup ${input.text}`;
+    case "question":
+      return `- ${input.text}`;
     case "decision":
       return `- ${input.text}`;
     case "entity":
@@ -179,6 +188,8 @@ export function currentCaptureDigest(input: {
   readonly archiveContent: string | null;
   readonly sourcePath: string;
   readonly sourceHash: string;
+  readonly processor: string;
+  readonly extractionSchema: string;
   readonly capture: string;
 }): CurrentCaptureDigest | null {
   if (input.generatedContent === null || input.archiveContent === null) {
@@ -198,6 +209,8 @@ export function currentCaptureDigest(input: {
     generated.data.type !== "capture" ||
     generated.data.processed_from !== input.sourcePath ||
     generated.data.source_hash !== input.sourceHash ||
+    generated.data.processor !== input.processor ||
+    generated.data.extraction_schema !== input.extractionSchema ||
     generated.data.disposition !== "digested" ||
     !hasPendingItemsFrontmatter(generated.data)
   ) {
@@ -208,6 +221,8 @@ export function currentCaptureDigest(input: {
     archive.data.type !== "capture" ||
     archive.data.processed_from !== input.sourcePath ||
     archive.data.source_hash !== input.sourceHash ||
+    archive.data.processor !== input.processor ||
+    archive.data.extraction_schema !== input.extractionSchema ||
     archive.data.disposition !== "archived" ||
     archiveBody(archive.content) !== input.capture.trimEnd()
   ) {
@@ -338,6 +353,8 @@ function headingForKind(kind: CaptureLowConfidenceKind): string {
       return "## Tasks";
     case "followup":
       return "## Follow-ups";
+    case "question":
+      return "## Questions";
     case "decision":
       return "## Decisions";
     case "entity":
@@ -379,12 +396,14 @@ function orderForHeading(heading: string): number | null {
       return 0;
     case "## Follow-ups":
       return 1;
-    case "## Decisions":
+    case "## Questions":
       return 2;
-    case "## Entities":
+    case "## Decisions":
       return 3;
-    case "## Source Quotes":
+    case "## Entities":
       return 4;
+    case "## Source Quotes":
+      return 5;
     default:
       return null;
   }
@@ -396,10 +415,12 @@ function kindOrder(kind: CaptureLowConfidenceKind): number {
       return 0;
     case "followup":
       return 1;
-    case "decision":
+    case "question":
       return 2;
-    case "entity":
+    case "decision":
       return 3;
+    case "entity":
+      return 4;
   }
 }
 

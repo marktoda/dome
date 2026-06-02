@@ -14,6 +14,7 @@ export type CaptureLowConfidenceAnswer = "track" | "ignore";
 export type CaptureLowConfidenceKind =
   | "task"
   | "followup"
+  | "question"
   | "decision"
   | "entity";
 
@@ -161,6 +162,11 @@ function lowConfidenceQuestionText(
         `Low-confidence follow-up from ${input.path}: "${input.text}". ` +
         "Should Dome track this as a follow-up?"
       );
+    case "question":
+      return (
+        `Low-confidence question from ${input.path}: "${input.text}". ` +
+        "Should Dome keep this as an open question?"
+      );
     case "decision":
       return (
         `Low-confidence decision from ${input.path}: "${input.text}". ` +
@@ -180,6 +186,7 @@ function isLowConfidenceKind(
   return (
     value === "task" ||
     value === "followup" ||
+    value === "question" ||
     value === "decision" ||
     value === "entity"
   );

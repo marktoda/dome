@@ -30,6 +30,7 @@ type CaptureExtraction = {
   readonly summary: string;
   readonly tasks: ReadonlyArray<ExtractedItem>;
   readonly followups: ReadonlyArray<ExtractedItem>;
+  readonly questions: ReadonlyArray<ExtractedItem>;
   readonly decisions: ReadonlyArray<ExtractedItem>;
   readonly entities: ReadonlyArray<ExtractedItem>;
   readonly sourceQuotes: ReadonlyArray<ExtractedItem>;
@@ -40,7 +41,8 @@ type ExtractedItem = {
   readonly confidence: number;
 };
 
-const MODEL_SCHEMA = "dome.intake.extract-capture/v2";
+const MODEL_SCHEMA = "dome.intake.extract-capture/v3";
+const PROCESSOR_ID = "dome.intake.extract-capture";
 const CONFIG_PATH = ".dome/config.yaml";
 const MODEL_PROVIDER_PATH = ".dome/model-provider.ts";
 const CONFIDENCE_THRESHOLD = 0.82;
@@ -67,6 +69,7 @@ const CaptureExtractionSchema = z
     summary: NonEmptyTrimmedString,
     tasks: z.array(ExtractedItemSchema),
     followups: z.array(ExtractedItemSchema),
+    questions: z.array(ExtractedItemSchema).optional().default([]),
     decisions: z.array(ExtractedItemSchema),
     entities: z.array(ExtractedItemSchema),
     sourceQuotes: z.array(ExtractedItemSchema),
@@ -95,6 +98,8 @@ const extractCapture = defineProcessorImplementation({
         archiveContent,
         sourcePath: path,
         sourceHash,
+        processor: PROCESSOR_ID,
+        extractionSchema: MODEL_SCHEMA,
         capture,
       });
 
@@ -241,13 +246,16 @@ function promptForCapture(path: string, capture: string): string {
   return [
     "Extract a Dome capture into strict JSON.",
     "Return only JSON with keys:",
-    "title:string, summary:string, tasks:item[], followups:item[], decisions:item[], entities:item[], sourceQuotes:item[].",
+    "title:string, summary:string, tasks:item[], followups:item[], questions:item[], decisions:item[], entities:item[], sourceQuotes:item[].",
     "Each item may be a string for high confidence or {text:string, confidence:number}.",
     `Use confidence below ${CONFIDENCE_THRESHOLD} when the item is plausible but uncertain.`,
     "Tasks should be concrete open action items.",
     "Followups should be people/project follow-up actions.",
+    "Questions should be explicit unresolved questions from the capture.",
     "Decisions should be explicit decisions from the capture.",
     "Source quotes should be short exact excerpts from the capture.",
+    "Do not turn questions into tasks.",
+    "Do not turn expected system behavior, validation criteria, or descriptions of Dome processing into tasks or followups unless the capture says someone still needs to do that work after the capture.",
     "",
     `Capture path: ${path}`,
     "",
@@ -265,6 +273,7 @@ function parseCaptureExtraction(value: unknown): CaptureExtraction {
     summary: parsed.data.summary,
     tasks: parsed.data.tasks,
     followups: parsed.data.followups,
+    questions: parsed.data.questions,
     decisions: parsed.data.decisions,
     entities: parsed.data.entities,
     sourceQuotes: parsed.data.sourceQuotes,
@@ -276,6 +285,7 @@ function deepFreezeExtraction(input: {
   readonly summary: string;
   readonly tasks: ReadonlyArray<ExtractedItem>;
   readonly followups: ReadonlyArray<ExtractedItem>;
+  readonly questions: ReadonlyArray<ExtractedItem>;
   readonly decisions: ReadonlyArray<ExtractedItem>;
   readonly entities: ReadonlyArray<ExtractedItem>;
   readonly sourceQuotes: ReadonlyArray<ExtractedItem>;
@@ -285,6 +295,7 @@ function deepFreezeExtraction(input: {
     summary: input.summary,
     tasks: freezeItems(input.tasks),
     followups: freezeItems(input.followups),
+    questions: freezeItems(input.questions),
     decisions: freezeItems(input.decisions),
     entities: freezeItems(input.entities),
     sourceQuotes: freezeItems(input.sourceQuotes),
@@ -313,6 +324,7 @@ function renderGeneratedCapture(input: {
   const { extraction } = input;
   const tasks = highConfidenceItems("task", extraction.tasks);
   const followups = highConfidenceItems("followup", extraction.followups);
+  const questions = highConfidenceItems("question", extraction.questions);
   const decisions = highConfidenceItems("decision", extraction.decisions);
   const entities = highConfidenceItems("entity", extraction.entities);
   const sourceQuotes = highConfidenceItems(
@@ -323,6 +335,7 @@ function renderGeneratedCapture(input: {
   const intakeItems = [
     ...tasks,
     ...followups,
+    ...questions,
     ...decisions,
     ...entities,
     ...sourceQuotes,
@@ -335,6 +348,8 @@ function renderGeneratedCapture(input: {
     ...renderPendingItemsFrontmatter(pendingItems),
     `processed_from: ${yamlString(input.sourcePath)}`,
     `source_hash: ${yamlString(input.sourceHash)}`,
+    `processor: ${PROCESSOR_ID}`,
+    `extraction_schema: ${yamlString(MODEL_SCHEMA)}`,
     "disposition: digested",
     "---",
     "",
@@ -349,6 +364,12 @@ function renderGeneratedCapture(input: {
     "## Follow-ups",
     followups,
     (item) => `- [ ] #followup ${item.text}`,
+  );
+  appendListSection(
+    lines,
+    "## Questions",
+    questions,
+    (item) => `- ${item.text}`,
   );
   appendListSection(
     lines,
@@ -394,6 +415,7 @@ function pendingCaptureItems(
   return Object.freeze([
     ...lowConfidenceItems("task", extraction.tasks),
     ...lowConfidenceItems("followup", extraction.followups),
+    ...lowConfidenceItems("question", extraction.questions),
     ...lowConfidenceItems("decision", extraction.decisions),
     ...lowConfidenceItems("entity", extraction.entities),
   ]);
@@ -464,6 +486,8 @@ function renderArchive(input: {
     "type: capture",
     `processed_from: ${yamlString(input.sourcePath)}`,
     `source_hash: ${yamlString(input.sourceHash)}`,
+    `processor: ${PROCESSOR_ID}`,
+    `extraction_schema: ${yamlString(MODEL_SCHEMA)}`,
     "disposition: archived",
     "---",
     "",

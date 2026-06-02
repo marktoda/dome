@@ -5,6 +5,7 @@ import matter from "gray-matter";
 import {
   diagnosticEffect,
   factEffect,
+  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import {
@@ -23,6 +24,7 @@ import { lowConfidenceQuestionEffect } from "./low-confidence-shared";
 const PREDICATE_BY_KIND = Object.freeze({
   task: "dome.intake.task",
   followup: "dome.intake.followup",
+  question: "dome.intake.question",
   decision: "dome.intake.decision",
   entity: "dome.intake.entity",
   source_quote: "dome.intake.source_quote",
@@ -65,8 +67,15 @@ const captureIndex = defineProcessorImplementation({
         continue;
       }
 
+      const sourcePath = sourcePathFromFrontmatter(parsed.data.processed_from);
+      const sourceHash = sourceHashFromFrontmatter(parsed.data.source_hash);
       for (const item of items) {
         effects.push(factForItem(ctx, path, content, item));
+        if (item.kind === "question") {
+          effects.push(
+            questionForItem(ctx, path, content, item, sourcePath, sourceHash),
+          );
+        }
       }
 
       const pendingItems = capturePendingItemsFromFrontmatter(
@@ -86,8 +95,6 @@ const captureIndex = defineProcessorImplementation({
         continue;
       }
 
-      const sourcePath = sourcePathFromFrontmatter(parsed.data.processed_from);
-      const sourceHash = sourceHashFromFrontmatter(parsed.data.source_hash);
       if (
         pendingItems.length > 0 &&
         (sourcePath === null || sourceHash === null)
@@ -142,6 +149,49 @@ function factForItem(
     confidence: item.confidence,
     sourceRefs: [ctx.sourceRef(path, lineRange(line))],
   });
+}
+
+function questionForItem(
+  ctx: ProcessorContext,
+  path: string,
+  content: string,
+  item: CapturePageItem,
+  sourcePath: string | null,
+  sourceHash: string | null,
+): Effect {
+  const sourceLabel = sourcePath ?? path;
+  const line = lineForCapturePageItem(content, item);
+  return questionEffect({
+    question: `Capture question from ${sourceLabel}: "${item.text}"`,
+    sourceRefs: [ctx.sourceRef(path, lineRange(line))],
+    idempotencyKey: intakeQuestionKey({
+      path: sourceLabel,
+      ...(sourceHash !== null ? { sourceHash } : {}),
+      text: item.text,
+    }),
+    metadata: {
+      risk: "low",
+      confidence: item.confidence,
+      automationPolicy: "agent-safe",
+    },
+  });
+}
+
+function intakeQuestionKey(input: {
+  readonly path: string;
+  readonly sourceHash?: string;
+  readonly text: string;
+}): string {
+  return `dome.intake.question:${encodeURIComponent(
+    JSON.stringify({
+      version: 1,
+      path: input.path,
+      ...(input.sourceHash !== undefined
+        ? { sourceHash: input.sourceHash }
+        : {}),
+      text: input.text,
+    }),
+  )}`;
 }
 
 function isGeneratedCapturePath(path: string): boolean {

@@ -219,9 +219,13 @@ scenario(
     await h.expectFile(OUTPUT_PATH).toContain("- [ ] #followup Ask Ben about hiring budget");
     await h.expectFile(OUTPUT_PATH).toContain(`[[${ARCHIVE_PATH}]]`);
     await h.expectFile(OUTPUT_PATH).toContain(`source_hash: ${PRIMARY_SOURCE_HASH}`);
+    await h.expectFile(OUTPUT_PATH).toContain("processor: dome.intake.extract-capture");
+    await h.expectFile(OUTPUT_PATH).toContain("extraction_schema: dome.intake.extract-capture/v3");
     await h.expectFile(OUTPUT_PATH).toContain("disposition: digested");
     await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
     await h.expectFile(ARCHIVE_PATH).toContain(`source_hash: ${PRIMARY_SOURCE_HASH}`);
+    await h.expectFile(ARCHIVE_PATH).toContain("processor: dome.intake.extract-capture");
+    await h.expectFile(ARCHIVE_PATH).toContain("extraction_schema: dome.intake.extract-capture/v3");
     await h.expectFile(ARCHIVE_PATH).toContain("disposition: archived");
     await h
       .expectFile(synthesisOutputPath(OUTPUT_PATH))
@@ -1097,6 +1101,105 @@ scenario(
 
 scenario(
   {
+    name: "effect-kinds: dome.intake preserves explicit capture questions",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "question" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "question.ask" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+      },
+      modelProvider: async (request) => {
+        if (request.prompt.startsWith("Extract a Dome capture")) {
+          expect(request.prompt).toContain("questions:item[]");
+          expect(request.prompt).toContain("Do not turn questions into tasks");
+          expect(request.prompt).toContain("expected system behavior");
+        }
+        return modelResponseForPrompt(request.prompt, {
+          title: "Dogfood capture",
+          summary:
+            "Dome intake is being evaluated during the V1 release soak.",
+          tasks: ["Record actual daily work sessions"],
+          followups: [],
+          questions: [
+            "Is the generated capture digest useful enough to count as real capture evidence?",
+          ],
+          decisions: ["Dome intake is enabled in the work vault"],
+          entities: ["Dome V1"],
+          sourceQuotes: [
+            "Is the generated capture digest useful enough to count as real capture evidence?",
+          ],
+        });
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    const capture = [
+      "# Capture",
+      "",
+      "Open loop: Record actual daily work sessions.",
+      "",
+      "Expected behavior: Dome should preserve the raw capture and generate a source-backed digest.",
+      "",
+      "Question:",
+      "",
+      "- Is the generated capture digest useful enough to count as real capture evidence?",
+      "",
+    ].join("\n");
+    const paths = outputPaths(CAPTURE_PATH, capture);
+
+    await h.userCommit({
+      files: { [CAPTURE_PATH]: capture },
+      message: "capture dogfood question",
+    });
+
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    await h.expectFile(paths.generated).toContain("## Questions");
+    await h
+      .expectFile(paths.generated)
+      .toContain(
+        "- Is the generated capture digest useful enough to count as real capture evidence?",
+      );
+    await h
+      .expectFile(paths.generated)
+      .toNotContain("#followup Dome should preserve");
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.question",
+        subjectId: paths.generated,
+        objectString:
+          "Is the generated capture digest useful enough to count as real capture evidence?",
+      })
+      .toHaveCount(1);
+    await h.expectProjection().questions().toHaveCount(1);
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Capture question from inbox/raw/day.md");
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("generated capture digest");
+  },
+);
+
+scenario(
+  {
     name: "effect-routing: dome.intake tracks accepted low-confidence answers",
     tags: [
       { kind: "group", group: "effect-kinds" },
@@ -1417,6 +1520,7 @@ type CaptureExtractionFixture = {
   readonly summary: string;
   readonly tasks: ReadonlyArray<unknown>;
   readonly followups: ReadonlyArray<unknown>;
+  readonly questions?: ReadonlyArray<unknown>;
   readonly decisions: ReadonlyArray<unknown>;
   readonly entities: ReadonlyArray<unknown>;
   readonly sourceQuotes: ReadonlyArray<unknown>;
