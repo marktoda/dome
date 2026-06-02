@@ -1497,3 +1497,28 @@ Qualitative read:
 - This keeps the M10 session setup surface cohesive. A stale or stopped
   compiler host is a host-operation problem with one obvious action, not a
   request for a foreground agent to inspect content diagnostics.
+
+## 2026-06-02 V1 Public CLI Help Lock
+
+Verification action:
+
+- Re-audited the CLI surface against the V1 "small CLI, powerful compiler"
+  rule after consolidating the day-to-day workflow around `serve`, `sync`,
+  `status`, `check`, `resolve`, `query`, and `export-context`.
+- Confirmed `bin/dome --help` exposes only the primary V1 commands plus
+  `init` and Commander help, while compatibility/debug commands such as
+  `today`, `prep`, `agenda`, `run`, `answer`, `lint`, `doctor`, `inspect`, and
+  `rebuild` remain hidden.
+- Added a process-boundary regression so the public help surface cannot drift
+  back into command sprawl accidentally.
+
+Measured result:
+
+- `bun test tests/cli/bin.test.ts` passed with 3 tests and 38 assertions.
+
+Qualitative read:
+
+- This does not remove the compatibility views or developer/debug surfaces. It
+  pins the user-facing workflow to the consolidated V1 command model, which
+  keeps foreground agents pointed at context packets, query, status, check, and
+  prepared markdown surfaces instead of narrow deterministic one-off views.

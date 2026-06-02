@@ -24,6 +24,32 @@ afterEach(async () => {
 });
 
 describe("bin/dome process boundary", () => {
+  test("top-level help exposes the consolidated V1 command surface", async () => {
+    const help = await runDome(["--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(help.stderr).toBe("");
+    expect(topLevelCommandNames(help.stdout)).toEqual([
+      "init",
+      "check",
+      "resolve",
+      "query",
+      "export-context",
+      "serve",
+      "status",
+      "sync",
+      "help",
+    ]);
+    expect(help.stdout).not.toContain("agenda");
+    expect(help.stdout).not.toContain("today");
+    expect(help.stdout).not.toContain("prep");
+    expect(help.stdout).not.toContain("inspect");
+    expect(help.stdout).not.toContain("doctor");
+    expect(help.stdout).not.toContain("lint");
+    expect(help.stdout).not.toContain("rebuild");
+    expect(help.stdout).not.toContain("answer");
+    expect(help.stdout).not.toContain(" run ");
+  });
+
   test("init, sync, and status work through the executable shim", async () => {
     const vaultPath = mkdtempSync(join(tmpdir(), "dome-bin-init-"));
     fixtures.push(vaultPath);
@@ -172,4 +198,14 @@ async function exitWithin(
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }
+}
+
+function topLevelCommandNames(helpText: string): string[] {
+  const commandsStart = helpText.indexOf("\nCommands:\n");
+  if (commandsStart < 0) return [];
+  return helpText
+    .slice(commandsStart + "\nCommands:\n".length)
+    .split(/\r?\n/)
+    .map((line) => /^\s{2}([a-z][a-z-]*)(?:\s|$)/.exec(line)?.[1] ?? null)
+    .filter((name): name is string => name !== null);
 }
