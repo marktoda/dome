@@ -341,6 +341,8 @@ function collectRows(
           commands: formatCommandTriggers(processor.triggers),
           capabilities: formatCapabilityKinds(processor.capabilities),
           bundle_grants: formatCapabilityKinds(grantedCapabilities),
+          grant_scopes: formatCapabilityScopes(grantedCapabilities),
+          grant_details: capabilityGrantDetails(grantedCapabilities),
           execution: processor.execution?.class ?? "default",
           model: formatModelStatus({
             declared: processor.capabilities.some(
@@ -904,6 +906,112 @@ function formatCommandTriggers(triggers: ReadonlyArray<Trigger>): string {
 
 function formatCapabilityKinds(capabilities: ReadonlyArray<Capability>): string {
   return formatUnique(capabilities.map((capability) => capability.kind));
+}
+
+function formatCapabilityScopes(capabilities: ReadonlyArray<Capability>): string {
+  const scopes = capabilities.flatMap(capabilityScopeLabels);
+  return scopes.length === 0 ? "-" : scopes.sort().join("; ");
+}
+
+type CapabilityGrantDetail = {
+  readonly kind: Capability["kind"];
+  readonly scope: string;
+  readonly values: ReadonlyArray<string>;
+};
+
+function capabilityGrantDetails(
+  capabilities: ReadonlyArray<Capability>,
+): ReadonlyArray<CapabilityGrantDetail> {
+  return Object.freeze(
+    capabilities
+      .flatMap((capability) =>
+        capabilityScopeDetails(capability).map((detail) =>
+          Object.freeze(detail)
+        )
+      )
+      .sort((a, b) =>
+        a.kind < b.kind
+          ? -1
+          : a.kind > b.kind
+            ? 1
+            : a.scope < b.scope
+              ? -1
+              : a.scope > b.scope
+                ? 1
+                : 0
+      ),
+  );
+}
+
+function capabilityScopeLabels(capability: Capability): ReadonlyArray<string> {
+  return capabilityScopeDetails(capability).map((detail) =>
+    detail.values.length === 0
+      ? detail.kind
+      : `${detail.kind}:${detail.values.join(",")}`
+  );
+}
+
+function capabilityScopeDetails(
+  capability: Capability,
+): ReadonlyArray<CapabilityGrantDetail> {
+  switch (capability.kind) {
+    case "read":
+    case "patch.propose":
+    case "patch.auto":
+    case "owns.path":
+    case "search.write":
+      return [grantDetail(capability.kind, "paths", capability.paths)];
+    case "owns.region":
+      return [grantDetail(capability.kind, "regionIds", capability.regionIds)];
+    case "graph.write":
+      return [grantDetail(capability.kind, "namespaces", capability.namespaces)];
+    case "job.enqueue":
+      return [grantDetail(capability.kind, "processors", capability.processors)];
+    case "model.invoke":
+      return [
+        ...(capability.maxDailyCostUsd === undefined
+          ? []
+          : [
+              grantDetail(capability.kind, "maxDailyCostUsd", [
+                String(capability.maxDailyCostUsd),
+              ]),
+            ]),
+        ...(capability.modelAllowlist === undefined
+          ? []
+          : [
+              grantDetail(
+                capability.kind,
+                "modelAllowlist",
+                capability.modelAllowlist,
+              ),
+            ]),
+      ];
+    case "external":
+      return [grantDetail(capability.kind, "capability", [capability.capability])];
+    case "outbox.read":
+      return [grantDetail(capability.kind, "statuses", capability.statuses ?? [])];
+    case "outbox.recover":
+    case "quarantine.recover":
+    case "run.recover":
+      return [grantDetail(capability.kind, "actions", capability.actions)];
+    case "run.read":
+      return [grantDetail(capability.kind, "statuses", capability.statuses ?? [])];
+    case "question.ask":
+    case "quarantine.read":
+      return [grantDetail(capability.kind, "all", [])];
+  }
+}
+
+function grantDetail(
+  kind: Capability["kind"],
+  scope: string,
+  values: ReadonlyArray<string>,
+): CapabilityGrantDetail {
+  return Object.freeze({
+    kind,
+    scope,
+    values: Object.freeze([...values].sort()),
+  });
 }
 
 function formatModelStatus(opts: {

@@ -1024,9 +1024,12 @@ Subjects (v1.0):
   processor modules, so optional features such as `dome.intake` are visible
   without making disabled bundle code part of the runtime.
 - `processors` — loaded processor/automation summary: bundle, phase, triggers,
-  command names, declared capability kinds, bundle grant kinds, execution class,
-  and model status (`none`, `declared-ungranted`, `granted-no-provider`, or
-  `ready`).
+  command names, declared capability kinds, bundle grant kinds, effective grant
+  scopes, execution class, and model status (`none`, `declared-ungranted`,
+  `granted-no-provider`, or `ready`). JSON rows include both compact
+  `grant_scopes` text and structured `grant_details` entries so broad grants
+  such as `read:**` or `patch.auto:**/*.md` are inspectable without opening
+  `.dome/config.yaml`.
 - `runs` — recent processor runs from `runs.db`.
 - `patches` — patch capability-use rows joined to their processor run,
   including run id, processor id, phase/status, patch capability, outcome,

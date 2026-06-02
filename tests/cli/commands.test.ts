@@ -1087,6 +1087,12 @@ describe("runInspect", () => {
       readonly commands: string;
       readonly capabilities: string;
       readonly bundle_grants: string;
+      readonly grant_scopes: string;
+      readonly grant_details: ReadonlyArray<{
+        readonly kind: string;
+        readonly scope: string;
+        readonly values: ReadonlyArray<string>;
+      }>;
       readonly execution: string;
       readonly model: string;
     }>;
@@ -1105,6 +1111,38 @@ describe("runInspect", () => {
     );
     expect(extract?.capabilities).toContain("model.invoke");
     expect(extract?.bundle_grants).toContain("model.invoke");
+    expect(extract?.grant_scopes).toContain("read:.dome/config.yaml");
+    expect(extract?.grant_scopes).toContain("inbox/raw/*.md");
+    expect(extract?.grant_scopes).toContain("patch.auto:");
+    expect(extract?.grant_details).toContainEqual({
+      kind: "patch.auto",
+      scope: "paths",
+      values: [
+        "inbox/processed/*.md",
+        "inbox/raw/*.md",
+        "wiki/generated/intake/*.md",
+      ],
+    });
+    expect(extract?.grant_details).toContainEqual({
+      kind: "model.invoke",
+      scope: "maxDailyCostUsd",
+      values: ["5"],
+    });
+
+    const markdownRepair = processors.find(
+      (row) => row.processor === "dome.markdown.repair-wikilinks",
+    );
+    expect(markdownRepair?.grant_scopes).toContain("patch.auto:**/*.md");
+
+    const healthRecovery = processors.find(
+      (row) => row.processor === "dome.health.outbox-recovery-questions",
+    );
+    expect(healthRecovery?.grant_scopes).toContain("read:**");
+    expect(healthRecovery?.grant_details).toContainEqual({
+      kind: "outbox.read",
+      scope: "statuses",
+      values: ["failed"],
+    });
 
     const query = processors.find(
       (row) => row.processor === "dome.search.query",
