@@ -97,7 +97,7 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
   ...EMPTY_OPERATIONAL_SUMMARY,
-  scheduledCount: 2,
+  scheduledCount: 3,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,

@@ -283,6 +283,21 @@ describe("dome.daily shared date helpers", () => {
     ).toEqual(["Keep source item", "Keep second source item"]);
   });
 
+  test("actionItemsFromMarkdown skips frontmatter metadata", () => {
+    expect(
+      actionItemsFromMarkdown(
+        [
+          "---",
+          "type: capture",
+          "text: TODO: Ignore frontmatter action",
+          "---",
+          "",
+          "TODO: Keep body action",
+        ].join("\n"),
+      ).map((item) => item.body),
+    ).toEqual(["Keep body action"]);
+  });
+
   test("ambiguousFollowupsFromMarkdown asks only for prose follow-up guesses", () => {
     expect(
       ambiguousFollowupsFromMarkdown(
@@ -305,6 +320,28 @@ describe("dome.daily shared date helpers", () => {
       {
         line: 6,
         text: "Please follow up with other teams about staffing.",
+      },
+    ]);
+  });
+
+  test("ambiguousFollowupsFromMarkdown skips frontmatter and quotes", () => {
+    expect(
+      ambiguousFollowupsFromMarkdown(
+        [
+          "---",
+          "type: capture",
+          "text: Follow up with Ben about budget",
+          "---",
+          "",
+          "> Follow up with Ben about budget",
+          "",
+          "We should follow up with Ben about budget.",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        text: "We should follow up with Ben about budget.",
       },
     ]);
   });

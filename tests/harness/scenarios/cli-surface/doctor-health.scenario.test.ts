@@ -187,7 +187,7 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(7);
+    expect(report.summary.capabilityGrantGaps).toBe(8);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
@@ -199,6 +199,7 @@ scenario(
       "dome.markdown.normalize-frontmatter",
       "dome.markdown.refresh-updated",
       "dome.markdown.repair-wikilinks",
+      "dome.markdown.simplify-indexes",
       "dome.markdown.validate-wikilinks",
     ]);
     expect(grantGaps).toContainEqual(
@@ -237,6 +238,14 @@ scenario(
       expect.objectContaining({
         capability: {
           processorId: "dome.markdown.repair-wikilinks",
+          missingKinds: ["patch.auto"],
+        },
+      }),
+    );
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.simplify-indexes",
           missingKinds: ["patch.auto"],
         },
       }),

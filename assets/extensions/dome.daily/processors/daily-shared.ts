@@ -197,9 +197,9 @@ export function actionItemsFromMarkdown(
 ): ReadonlyArray<MarkdownActionItem> {
   const items: MarkdownActionItem[] = [];
   const lines = content.split(/\r?\n/);
-  const generatedRanges = dailyGeneratedBlockLineRanges(content);
+  const ignoredRanges = actionExtractionLineRanges(content);
   for (let i = 0; i < lines.length; i += 1) {
-    if (lineIsInsideRanges(i + 1, generatedRanges)) continue;
+    if (lineIsInsideRanges(i + 1, ignoredRanges)) continue;
     const line = lines[i] ?? "";
     if (isOpenCheckboxLine(line)) {
       const task = openTaskFromLine(line, i + 1);
@@ -226,10 +226,11 @@ export function ambiguousFollowupsFromMarkdown(
 ): ReadonlyArray<AmbiguousFollowup> {
   const items: AmbiguousFollowup[] = [];
   const lines = content.split(/\r?\n/);
-  const generatedRanges = dailyGeneratedBlockLineRanges(content);
+  const ignoredRanges = actionExtractionLineRanges(content);
   for (let i = 0; i < lines.length; i += 1) {
-    if (lineIsInsideRanges(i + 1, generatedRanges)) continue;
+    if (lineIsInsideRanges(i + 1, ignoredRanges)) continue;
     const line = lines[i] ?? "";
+    if (line.trimStart().startsWith(">")) continue;
     if (isCheckboxLine(line)) continue;
     if (directiveActionItemFromLine(line, i + 1) !== null) continue;
     if (!looksLikeAmbiguousFollowup(line)) continue;
@@ -947,6 +948,29 @@ function dailyGeneratedBlockLineRanges(
     });
   }
   return Object.freeze(ranges.map((range) => Object.freeze(range)));
+}
+
+function actionExtractionLineRanges(
+  content: string,
+): ReadonlyArray<{ readonly start: number; readonly end: number }> {
+  const frontmatter = frontmatterLineRange(content);
+  return Object.freeze([
+    ...dailyGeneratedBlockLineRanges(content),
+    ...(frontmatter === null ? [] : [frontmatter]),
+  ]);
+}
+
+function frontmatterLineRange(
+  content: string,
+): { readonly start: number; readonly end: number } | null {
+  const lines = content.split(/\r?\n/);
+  if ((lines[0] ?? "").trim() !== "---") return null;
+  for (let i = 1; i < lines.length; i += 1) {
+    if ((lines[i] ?? "").trim() === "---") {
+      return Object.freeze({ start: 1, end: i + 1 });
+    }
+  }
+  return null;
 }
 
 function lineIsInsideRanges(

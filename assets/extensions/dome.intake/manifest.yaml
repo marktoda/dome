@@ -1,5 +1,5 @@
 id: dome.intake
-version: 0.4.4
+version: 0.4.5
 processors:
   - id: dome.intake.capture-index
     version: 0.1.1
@@ -23,9 +23,11 @@ processors:
     module: processors/capture-index.ts
 
   - id: dome.intake.extract-capture
-    version: 0.3.4
+    version: 0.3.5
     phase: garden
     triggers:
+      - kind: schedule
+        cron: "0 * * * *"
       - kind: signal
         name: file.created
         pathPattern: "inbox/raw/*.md"

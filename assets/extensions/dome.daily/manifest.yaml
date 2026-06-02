@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.1.14
+version: 0.1.15
 processors:
   - id: dome.daily.create-daily
     version: 0.1.4
@@ -15,7 +15,7 @@ processors:
     module: processors/create-daily.ts
 
   - id: dome.daily.task-index
-    version: 0.1.5
+    version: 0.1.6
     phase: adoption
     triggers:
       - kind: signal

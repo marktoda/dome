@@ -1037,6 +1037,7 @@ describe("runInspect", () => {
     const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
       readonly processor: string;
       readonly bundle: string;
+      readonly version: string;
       readonly phase: string;
       readonly triggers: string;
       readonly commands: string;
@@ -1051,8 +1052,9 @@ describe("runInspect", () => {
     expect(extract).toEqual(
       expect.objectContaining({
         bundle: "dome.intake",
+        version: "0.3.5",
         phase: "garden",
-        triggers: "signal",
+        triggers: "schedule,signal",
         execution: "llm",
         model: "granted-no-provider",
       }),
@@ -1266,7 +1268,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.4",
+        version: "0.4.5",
         processors: 6,
         garden: 5,
         model_processors: 3,

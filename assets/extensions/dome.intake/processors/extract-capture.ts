@@ -182,12 +182,20 @@ async function rawCapturePathsForRun(
   ctx: ProcessorContext,
 ): Promise<ReadonlyArray<string>> {
   const changedRaw = ctx.changedPaths.filter(isRawCapturePath);
-  if (isActivationRun(ctx)) {
+  if (isScheduleInput(ctx.input) || isActivationRun(ctx)) {
     return sortedUnique(
       (await ctx.snapshot.listMarkdownFiles()).filter(isRawCapturePath),
     );
   }
   return sortedUnique(changedRaw);
+}
+
+function isScheduleInput(input: unknown): boolean {
+  return (
+    input !== null &&
+    typeof input === "object" &&
+    (input as { readonly kind?: unknown }).kind === "schedule"
+  );
 }
 
 function isActivationRun(ctx: ProcessorContext): boolean {

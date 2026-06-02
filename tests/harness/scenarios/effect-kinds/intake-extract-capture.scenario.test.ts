@@ -273,15 +273,10 @@ scenario(
       factConfidence(h, "dome.intake.task", "Send Ada the launch staffing note"),
     ).toBe(1);
 
-    const run = await h
-      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
-      .toHaveExactlyOne();
-    const cost = h.ledger.raw
-      .query<{ cost_usd: number | null }, [string]>(
-        "SELECT cost_usd FROM runs WHERE id = ?",
-      )
-      .get(run.id);
-    expect(cost?.cost_usd).toBe(0.1);
+    const [run] = successfulExtractCaptureModelRuns(h);
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
+    if (run === undefined) throw new Error("expected one model-backed extract run");
+    expect(run?.cost_usd).toBe(0.1);
     expect(capabilityUsesByRun(h.ledger, run.id as RunId)).toEqual([
       expect.objectContaining({
         capability: "model.invoke",
@@ -357,15 +352,11 @@ scenario(
         objectString: "Send Ada the launch staffing note",
       })
       .toHaveCount(1);
-    await h
-      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
-      .toHaveExactlyOne();
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
 
     const settled = await h.runCli(["sync", "--json"]);
     expect(settled.exitCode).toBe(0);
-    await h
-      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
-      .toHaveExactlyOne();
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
   },
 );
 
@@ -430,9 +421,7 @@ scenario(
     await h.expectFile(secondPaths.generated).toContain("# Second launch follow-up");
     await h.expectFile(firstPaths.archive).toContain("first staffing note");
     await h.expectFile(secondPaths.archive).toContain("second staffing note");
-    await h
-      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
-      .toHaveCount(2);
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(2);
   },
 );
 
@@ -887,15 +876,68 @@ scenario(
     if (refs.head === null) throw new Error("expected HEAD");
     await h.expectFile(CAPTURE_PATH, { atCommit: refs.head }).toBeAbsent();
 
-    const run = await h
-      .expectLedger({ processorId: PROCESSOR_ID, status: "succeeded" })
-      .toHaveExactlyOne();
-    const cost = h.ledger.raw
-      .query<{ cost_usd: number | null }, [string]>(
-        "SELECT cost_usd FROM runs WHERE id = ?",
-      )
-      .get(run.id);
-    expect(cost?.cost_usd).toBe(0.2);
+    const [run] = successfulExtractCaptureModelRuns(h);
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
+    if (run === undefined) throw new Error("expected one model-backed extract run");
+    expect(run?.cost_usd).toBe(0.2);
+  },
+);
+
+scenario(
+  {
+    name: "convergence: dome.intake digests raw captures already present at first adoption",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "group", group: "convergence" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "fact" },
+      { kind: "capability", capability: "model.invoke" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "schedule" },
+      { kind: "route", route: "garden-schedule" },
+    ],
+    harness: {
+      bundles: ["dome.intake", "dome.daily", "dome.markdown"],
+      initialFiles: {
+        ".dome/config.yaml": BASE_CONFIG,
+        [CAPTURE_PATH]: PRIMARY_CAPTURE,
+      },
+      modelProvider: async (request) => {
+        expect(request.model).toBe("test-model");
+        return modelResponseForPrompt(request.prompt, {
+          title: "First adoption capture",
+          summary:
+            "Ada needs a launch staffing note and Ben owns the budget follow-up.",
+          tasks: ["Send Ada the launch staffing note"],
+          followups: ["Ask Ben about hiring budget"],
+          decisions: ["Keep launch staffing review in this week's plan"],
+          entities: ["Ada", "Ben"],
+          sourceQuotes: ["Ask Ben about hiring budget"],
+        });
+      },
+    },
+  },
+  async (h) => {
+    const first = await h.tick();
+    expect(first.adopted).toBe(true);
+
+    await h.expectFile(OUTPUT_PATH).toContain("# First adoption capture");
+    await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
+    await h.expectFile(CAPTURE_PATH).toBeAbsent();
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.intake.task",
+        subjectId: OUTPUT_PATH,
+        objectString: "Send Ada the launch staffing note",
+      })
+      .toHaveCount(1);
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
+
+    const settled = await h.runCli(["sync", "--json"]);
+    expect(settled.exitCode).toBe(0);
+    expect(successfulExtractCaptureModelRuns(h)).toHaveLength(1);
   },
 );
 
@@ -1420,6 +1462,25 @@ function modelResponseForPrompt(
     text: JSON.stringify(extraction),
     costUsd: 0.1,
   };
+}
+
+function successfulExtractCaptureModelRuns(
+  h: Harness,
+): ReadonlyArray<{ readonly id: string; readonly cost_usd: number | null }> {
+  return h.ledger.raw
+    .query<
+      { id: string; cost_usd: number | null },
+      [string]
+    >(
+      "SELECT id, cost_usd FROM runs WHERE processor_id = ? AND status = 'succeeded' ORDER BY started_at",
+    )
+    .all(PROCESSOR_ID)
+    .filter((run) =>
+      capabilityUsesByRun(h.ledger, run.id as RunId).some(
+        (use) =>
+          use.capability === "model.invoke" && use.outcome === "allowed",
+      ),
+    );
 }
 
 function factConfidence(
