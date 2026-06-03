@@ -367,7 +367,7 @@ export interface ProjectionMatcher {
   facts(filter?: { predicate?: string; subjectId?: string; objectString?: string }): {
     toHaveCount(n: number): Promise<void>;
   };
-  /** Assert N rows in the questions table match the filter. */
+  /** Assert N open rows in the questions table match the filter. */
   questions(): {
     toHaveCount(n: number): Promise<void>;
     toContainQuestion(substring: string): Promise<void>;

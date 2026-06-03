@@ -83,16 +83,20 @@ export class ProjectionMatcherImpl implements ProjectionMatcher {
     return {
       async toHaveCount(n: number): Promise<void> {
         const rows = h.projection.raw
-          .query<{ id: number }, []>("SELECT id FROM questions")
+          .query<{ id: number }, []>(
+            "SELECT id FROM questions WHERE answered_at IS NULL",
+          )
           .all();
         expect(
           rows.length,
-          `expected ${n} questions row(s); got ${rows.length}`,
+          `expected ${n} open questions row(s); got ${rows.length}`,
         ).toBe(n);
       },
       async toContainQuestion(substring: string): Promise<void> {
         const rows = h.projection.raw
-          .query<{ question: string }, []>("SELECT question FROM questions")
+          .query<{ question: string }, []>(
+            "SELECT question FROM questions WHERE answered_at IS NULL",
+          )
           .all();
         const found = rows.some((r) => r.question.includes(substring));
         expect(

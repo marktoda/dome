@@ -43,9 +43,21 @@ extensions:
 
     const cli = await h.runCli(["query", "alpha", "--json"]);
     expect(cli.exitCode).toBe(1);
-    expect(cli.stdout).toBe("");
-    expect(cli.stderr).toContain(
-      "dome query: expected view 'dome.search.query', got 'test.bad-query-view.query'.",
-    );
+    expect(cli.stderr).toBe("");
+    const payload = JSON.parse(cli.stdout) as {
+      readonly status: string;
+      readonly error: string;
+      readonly message: string;
+      readonly messages: ReadonlyArray<string>;
+    };
+    expect(payload).toMatchObject({
+      status: "error",
+      error: "view-command-failed",
+      message:
+        "dome query: expected view 'dome.search.query', got 'test.bad-query-view.query'.",
+      messages: [
+        "dome query: expected view 'dome.search.query', got 'test.bad-query-view.query'.",
+      ],
+    });
   },
 );
