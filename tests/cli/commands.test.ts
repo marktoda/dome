@@ -3422,21 +3422,22 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
+    expect(out).toContain("dome status"); // headline
+    expect(out).toContain("needs attention"); // headline status
     expect(out).toContain("(uninitialized)"); // adopted ref
-    expect(out).toContain("sync         needed");
-    expect(out).toContain("pending  unknown");
+    expect(out).toContain("sync"); expect(out).toContain("! needed"); // sync row
+    expect(out).toContain("pending"); expect(out).toContain("unknown"); // pending commits
     expect(out).toContain("(never)"); // last_sync
-    expect(out).toContain("Dome status  needs attention");
-    expect(out).toContain("content  2 pages");
-    expect(out).toContain("links 0");
-    expect(out).toContain("projection   fresh");
-    expect(out).toContain("loops       5 known");
-    expect(out).not.toContain("\nLoops\n");
-    expect(out).toContain("diagnostics  0");
-    expect(out).toContain("questions    0");
-    expect(out).toContain("outbox      0 pending | 0 failed");
-    expect(out).toContain("quarantine  0");
-    expect(out).toContain("serve        off (run dome serve)");
+    expect(out).toContain("content"); expect(out).toContain("2 pages"); // content summary
+    expect(out).toContain("links 0"); // wikilinks in content
+    expect(out).toContain("projection"); expect(out).toContain("√ fresh"); // projection row
+    expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
+    expect(out).not.toContain("\nLOOPS\n"); // no loop detail section
+    expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
+    expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
+    expect(out).toContain("outbox"); expect(out).toContain("0 pending · 0 failed"); // outbox row
+    expect(out).toContain("quarantine"); // quarantine row
+    expect(out).toContain("serve"); expect(out).toContain("o off"); // serve row (off glyph)
   });
 
   test("--loops prints maintenance-loop detail rows", async () => {
@@ -3447,8 +3448,8 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("loops       5 known");
-    expect(out).toContain("\nLoops\n");
+    expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
+    expect(out).toContain("\nLOOPS\n"); // loop detail section header (ALLCAPS)
     expect(out).toContain("dome.capture.digest");
     expect(out).toContain("processors:");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
@@ -3842,7 +3843,7 @@ describe("runStatus", () => {
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("runs        1 live pending | 0 failed");
+    expect(out).toContain("runs"); expect(out).toContain("1 live pending · 0 failed");
     expect(out).not.toContain("pending 1 | failed");
     expect(out).not.toContain("pending_runs");
 
@@ -3874,7 +3875,7 @@ describe("runStatus", () => {
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
 
     const staleOut = captured.out.join("\n");
-    expect(staleOut).toContain("runs        2 total (1 stale) pending | 0 failed");
+    expect(staleOut).toContain("runs"); expect(staleOut).toContain("2 total (1 stale) pending · 0 failed");
     expect(staleOut).toContain("dome check --json");
   });
 
