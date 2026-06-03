@@ -57,7 +57,7 @@ describe("bin/dome process boundary", () => {
     const init = await runDome(["init", vaultPath]);
     expect(init.exitCode).toBe(0);
     expect(init.stderr).toBe("");
-    expect(init.stdout).toContain("CLAUDE.md:");
+    expect(init.stdout).toContain("CLAUDE.md");
 
     const sync = await runDomeJson<{
       readonly status: string;

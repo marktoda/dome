@@ -24,7 +24,7 @@ scenario(
     try {
       const init = await runCliCaptured(["init", target]);
       expect(init.exitCode).toBe(0);
-      expect(init.stdout).toContain("CLAUDE.md:");
+      expect(init.stdout).toContain("CLAUDE.md");
       expect(init.stderr).toBe("");
 
       expect(existsSync(join(target, ".git"))).toBe(true);
@@ -130,7 +130,7 @@ scenario(
       const init = await runCliCaptured(["init", target, "--refresh-config"]);
       expect(init.exitCode).toBe(0);
       expect(init.stderr).toBe("");
-      expect(init.stdout).toContain(".dome/config.yaml:       updated");
+      expect(init.stdout).toContain(".dome/config.yaml        updated");
 
       const doctor = await runCliCaptured([
         "doctor",
@@ -178,8 +178,8 @@ scenario(
       ]);
       expect(init.exitCode).toBe(0);
       expect(init.stderr).toBe("");
-      expect(init.stdout).toContain("AGENTS.md:               updated");
-      expect(init.stdout).toContain("CLAUDE.md:               updated");
+      expect(init.stdout).toContain("AGENTS.md                updated");
+      expect(init.stdout).toContain("CLAUDE.md                updated");
 
       const doctor = await runCliCaptured([
         "doctor",
