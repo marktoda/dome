@@ -94,6 +94,23 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(lintProc).toBeDefined();
   });
 
+  test("all shipped processors build one registry and stay bundle-namespaced", async () => {
+    const result = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const flat = flattenBundleProcessors(result.value);
+    expect(flat.length).toBeGreaterThan(0);
+    for (const bundle of result.value) {
+      for (const processor of bundle.processors) {
+        expect(processor.id.startsWith(`${bundle.id}.`)).toBe(true);
+      }
+    }
+
+    const registry = buildRegistry(flat);
+    expect(registry.ok).toBe(true);
+  });
+
   test("the loaded processor's run() returns a ViewEffect (smoke)", async () => {
     const result = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
     expect(result.ok).toBe(true);
