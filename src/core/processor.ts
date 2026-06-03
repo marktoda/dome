@@ -266,6 +266,7 @@ export type ExternalCapability = {
 };
 export type OperationalOutboxStatus =
   | "pending"
+  | "dispatching"
   | "sent"
   | "failed"
   | "abandoned";
@@ -766,6 +767,7 @@ export const ExternalCapabilitySchema = z
 
 export const OperationalOutboxStatusSchema = z.enum([
   "pending",
+  "dispatching",
   "sent",
   "failed",
   "abandoned",

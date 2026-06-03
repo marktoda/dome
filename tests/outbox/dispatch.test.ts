@@ -338,7 +338,7 @@ describe("outbox lifecycle", () => {
       handlers: {
         "calendar.write": async ({ idempotencyKey, attempt }) => {
           calls.push(`${idempotencyKey}:${attempt}`);
-          expect(queryOutbox(db)[0]?.status).toBe("pending");
+          expect(queryOutbox(db)[0]?.status).toBe("dispatching");
           return { externalId: "external-abc" };
         },
       },
@@ -533,6 +533,47 @@ describe("outbox lifecycle", () => {
     expect(row?.externalId).toBe("external-1");
   });
 
+  it("dispatchPendingOutbox claims a row before calling the external handler", async () => {
+    insertPending(db, { effect: makeEffect("key-1"), runId: RUN_ID, now: T0 });
+
+    const handlerEntered = deferred<void>();
+    const releaseHandler = deferred<void>();
+    let calls = 0;
+    const first = dispatchPendingOutbox(db, {
+      now: T0,
+      handlers: {
+        "calendar.write": async () => {
+          calls += 1;
+          handlerEntered.resolve();
+          await releaseHandler.promise;
+          return { externalId: "external-1" };
+        },
+      },
+    });
+    await handlerEntered.promise;
+
+    const duringFirst = queryOutbox(db)[0];
+    expect(duringFirst?.status).toBe("dispatching");
+
+    const second = await dispatchPendingOutbox(db, {
+      now: T0,
+      handlers: {
+        "calendar.write": async () => {
+          calls += 1;
+          return { externalId: "external-duplicate" };
+        },
+      },
+    });
+    expect(second.length).toBe(0);
+    expect(calls).toBe(1);
+
+    releaseHandler.resolve();
+    const firstResults = await first;
+    expect(firstResults[0]?.kind).toBe("sent");
+    expect(queryOutbox(db)[0]?.externalId).toBe("external-1");
+    expect(calls).toBe(1);
+  });
+
   it("dispatchPendingOutbox can skip rows enqueued after the drain cutoff", async () => {
     const cutoff = new Date();
     insertPending(db, { effect: makeEffect("key-1"), runId: RUN_ID });
@@ -582,3 +623,14 @@ describe("outbox lifecycle", () => {
     expect(queryOutbox(db)[0]?.attempts).toBe(1);
   });
 });
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value?: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value?: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = (value) => innerResolve(value as T | PromiseLike<T>);
+  });
+  return Object.freeze({ promise, resolve });
+}

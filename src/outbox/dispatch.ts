@@ -1,6 +1,6 @@
 // outbox-dispatch: the durable boundary for ExternalActionEffect. Owns the
 // insert-before-call dispatch path, retry state transitions
-// (pending → sent / failed / abandoned), attempt-counter bookkeeping,
+// (pending → dispatching → sent / failed / abandoned), attempt-counter bookkeeping,
 // the user-triggered replay path, and the read surface for `dome inspect
 // outbox`.
 //
@@ -38,7 +38,10 @@
 //                     → insertPending, call the registered handler, then
 //                       markSent / incrementAttempts / markFailed.
 //
-//   incrementAttempts → status stays "pending", attempts++. Exposed for
+//   claimPending      → "pending" → "dispatching". Atomic lease before any
+//                       external handler runs.
+//
+//   incrementAttempts → "dispatching" → "pending", attempts++. Exposed for
 //                       tests and manual recovery paths; the dispatch
 //                       helper above performs the normal retry decision.
 //
@@ -103,7 +106,12 @@ export type OutboxInsertOpts = {
  * The four terminal+transient states a row can be in. Pinned by the
  * spec §"Outbox" `status` column and the lifecycle section.
  */
-export type OutboxStatus = "pending" | "sent" | "failed" | "abandoned";
+export type OutboxStatus =
+  | "pending"
+  | "dispatching"
+  | "sent"
+  | "failed"
+  | "abandoned";
 
 /**
  * Row shape returned by `queryOutbox`. JSON columns are deserialized.
@@ -243,19 +251,40 @@ INSERT OR IGNORE INTO outbox (
 const MARK_SENT_SQL = `
 UPDATE outbox
 SET status = 'sent', external_id = ?, sent_at = ?
-WHERE idempotency_key = ? AND status = 'pending'
+WHERE idempotency_key = ? AND status IN ('pending', 'dispatching')
 `.trim();
 
 const MARK_FAILED_SQL = `
 UPDATE outbox
 SET status = 'failed', last_error = ?
-WHERE idempotency_key = ? AND status = 'pending'
+WHERE idempotency_key = ? AND status IN ('pending', 'dispatching')
 `.trim();
 
 const INCREMENT_ATTEMPTS_SQL = `
 UPDATE outbox
-SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?
-WHERE idempotency_key = ? AND status = 'pending'
+SET status = 'pending', attempts = attempts + 1, last_error = ?, next_attempt_at = ?
+WHERE idempotency_key = ? AND status IN ('pending', 'dispatching')
+`.trim();
+
+const CLAIM_PENDING_SQL = `
+UPDATE outbox
+SET status = 'dispatching', last_error = NULL, next_attempt_at = ?
+WHERE idempotency_key = ? AND status = 'pending' AND next_attempt_at <= ?
+RETURNING id, capability, idempotency_key, payload_json, source_refs,
+          status, external_id, attempts, max_attempts, enqueued_at,
+          next_attempt_at, sent_at, last_error, run_id
+`.trim();
+
+const RELEASE_DISPATCHING_SQL = `
+UPDATE outbox
+SET status = 'pending', last_error = ?, next_attempt_at = ?
+WHERE idempotency_key = ? AND status = 'dispatching'
+`.trim();
+
+const REQUEUE_EXPIRED_DISPATCHING_SQL = `
+UPDATE outbox
+SET status = 'pending', last_error = ?
+WHERE status = 'dispatching' AND next_attempt_at <= ?
 `.trim();
 
 const MARK_ABANDONED_SQL = `
@@ -378,6 +407,7 @@ export async function dispatchPendingOutbox(
   } & OutboxDispatchControls,
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
   const now = opts.now ?? new Date();
+  requeueExpiredDispatching(db, now);
   const pending = queryOutbox(db, {
     status: "pending",
     nextAttemptAtOrBefore: now,
@@ -457,6 +487,15 @@ export function incrementAttempts(
   db.raw
     .query(INCREMENT_ATTEMPTS_SQL)
     .run(lastError, nextAttemptAt.toISOString(), idempotencyKey);
+}
+
+export function requeueExpiredDispatching(
+  db: OutboxDb,
+  now: Date = new Date(),
+): void {
+  db.raw
+    .query(REQUEUE_EXPIRED_DISPATCHING_SQL)
+    .run("Dispatch claim expired before completion.", now.toISOString());
 }
 
 /**
@@ -575,6 +614,16 @@ async function dispatchOutboxRow(
       externalId: row.externalId ?? "",
     });
   }
+  if (row.status === "dispatching") {
+    return Object.freeze({
+      kind: "pending" as const,
+      idempotencyKey: row.idempotencyKey,
+      attempts: row.attempts,
+      maxAttempts: row.maxAttempts,
+      lastError: row.lastError ?? `Dispatch already claimed until ${row.nextAttemptAt}.`,
+      nextAttemptAt: row.nextAttemptAt,
+    });
+  }
   if (row.status === "failed" || row.status === "abandoned") {
     return Object.freeze({
       kind: "skipped",
@@ -592,14 +641,33 @@ async function dispatchOutboxRow(
       nextAttemptAt: row.nextAttemptAt,
     });
   }
+  if (controls.signal?.aborted === true) {
+    return cancelledDispatchResult(row, "External handler dispatch was cancelled.");
+  }
+
+  const claimed = claimPendingOutboxRow(db, row, now, controls);
+  if (claimed === null) {
+    const current = getOutboxByIdempotencyKey(db, row.idempotencyKey);
+    return current === null
+      ? Object.freeze({
+          kind: "pending" as const,
+          idempotencyKey: row.idempotencyKey,
+          attempts: row.attempts,
+          maxAttempts: row.maxAttempts,
+          lastError: "Outbox row disappeared before dispatch claim.",
+          nextAttemptAt: row.nextAttemptAt,
+        })
+      : dispatchOutboxRow(db, current, handlers, now, {
+          ...controls,
+          signal: alreadyClaimedAbortSignal(),
+        });
+  }
+  row = claimed;
 
   const handler = lookupHandler(handlers, row.capability);
   if (handler === undefined) {
     const msg = `No external handler registered for capability '${row.capability}'.`;
     return recordFailedAttempt(db, row, msg, { terminal: true, now });
-  }
-  if (controls.signal?.aborted === true) {
-    return cancelledDispatchResult(row, "External handler dispatch was cancelled.");
   }
 
   try {
@@ -629,6 +697,7 @@ async function dispatchOutboxRow(
     });
   } catch (e) {
     if (isOutboxDispatchCancelled(e)) {
+      releaseDispatchingClaim(db, row, null, now);
       return cancelledDispatchResult(row, errorMessage(e));
     }
     return recordFailedAttempt(db, row, errorMessage(e), {
@@ -636,6 +705,42 @@ async function dispatchOutboxRow(
       now,
     });
   }
+}
+
+function claimPendingOutboxRow(
+  db: OutboxDb,
+  row: OutboxRow,
+  now: Date,
+  controls: OutboxDispatchControls,
+): OutboxRow | null {
+  const leaseMs =
+    controls.handlerTimeoutMs ?? DEFAULT_EXTERNAL_HANDLER_TIMEOUT_MS;
+  const leaseUntil = new Date(now.getTime() + leaseMs);
+  const claimed = db.raw
+    .query<OutboxRawRow, [string, string, string]>(CLAIM_PENDING_SQL)
+    .get(
+      leaseUntil.toISOString(),
+      row.idempotencyKey,
+      now.toISOString(),
+    );
+  return claimed === null ? null : rowToOutboxRow(claimed);
+}
+
+function releaseDispatchingClaim(
+  db: OutboxDb,
+  row: OutboxRow,
+  lastError: string | null,
+  now: Date,
+): void {
+  db.raw
+    .query(RELEASE_DISPATCHING_SQL)
+    .run(lastError, now.toISOString(), row.idempotencyKey);
+}
+
+function alreadyClaimedAbortSignal(): AbortSignal {
+  const controller = new AbortController();
+  controller.abort();
+  return controller.signal;
 }
 
 async function runExternalHandler(opts: {
@@ -814,6 +919,7 @@ function rowToOutboxRow(row: OutboxRawRow): OutboxRow {
 function narrowStatus(s: string): OutboxStatus {
   switch (s) {
     case "pending":
+    case "dispatching":
     case "sent":
     case "failed":
     case "abandoned":
