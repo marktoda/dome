@@ -35,7 +35,7 @@
 
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import {
   openVaultRuntime,
@@ -66,6 +66,14 @@ import {
   printHostFollowupLines,
 } from "./sync-shared";
 import { parsePositiveIntegerValue } from "../parse-options";
+import {
+  headline,
+  kv,
+  resolveCaps,
+  section,
+  type KvRow,
+  type Status,
+} from "../presenter";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -226,9 +234,17 @@ export async function runServe(
           ? startupDrift.branch
         : ((await getCurrentBranch(vaultPath)) ?? "(unknown)");
   if (!quiet) {
-    console.log(
-      `dome serve: watching ${startupBranch} at ${vaultPath} (poll ${pollIntervalMs}ms${verbose ? ", verbose" : ""})`,
-    );
+    const caps = resolveCaps();
+    const watchStatus: Status = { tone: "ok", label: "watching" };
+    const startupRows: KvRow[] = [
+      { label: "branch", value: startupBranch },
+      { label: "poll", value: `${pollIntervalMs}ms${verbose ? " · verbose" : ""}`, tone: "muted" },
+    ];
+    const startupLines: string[] = [
+      headline({ cmd: "serve", context: basename(vaultPath) }, watchStatus, caps),
+      ...section("Config", kv(startupRows, caps), caps),
+    ];
+    console.log(startupLines.join("\n"));
   }
   const heartbeat = createServeHeartbeatHandle();
   await writeServeHeartbeat({
@@ -301,7 +317,9 @@ export async function runServe(
   }
 
   if (!quiet) {
-    console.log("dome serve: shutting down");
+    const caps = resolveCaps();
+    const shutdownStatus: Status = { tone: "muted", label: "shutting down" };
+    console.log(headline({ cmd: "serve", context: basename(vaultPath) }, shutdownStatus, caps));
   }
   return 0;
 }
@@ -521,7 +539,7 @@ async function pollLoop(input: {
     if (drift.kind === "drift" || drift.kind === "in-sync") {
       if (verbose && !quiet) {
         if (drift.kind === "drift") {
-          console.log(
+          console.error(
             `dome serve: drift detected — adopting ${drift.info.base.slice(0, 7)}..${drift.info.head.slice(0, 7)}`,
           );
         }
@@ -726,7 +744,7 @@ async function runCompilerHostTickWithErrorHandling(input: {
                   ? { processorFilter: filterProcessor }
                   : {}),
               });
-              if (line !== null) console.log(line);
+              if (line !== null) console.error(line);
             },
           }
         : {}),

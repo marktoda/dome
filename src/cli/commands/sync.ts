@@ -34,7 +34,7 @@
 //     (`src/cli/index.ts`) calls `process.exit(code)`.
 //   - Console output goes through `console.log` / `console.error`.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
@@ -64,17 +64,21 @@ import {
   nextActionsForSync,
   type CliNextAction,
 } from "../next-actions";
-import {
-  formatHeadline,
-  formatNextActionsBlock,
-  formatSeverity,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+import { formatSeverity } from "../human-output";
 import {
   countAttentionDiagnostics,
   isSourceBackedDiagnostic,
 } from "../diagnostic-summary";
+import {
+  footer,
+  headline,
+  kv,
+  nextActions,
+  resolveCaps,
+  section,
+  type KvRow,
+  type Status,
+} from "../presenter";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -207,7 +211,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
                   ? { processorFilter: options.filterProcessor }
                   : {}),
               });
-              if (line !== null) console.log(line);
+              if (line !== null) console.error(line);
             },
           }
         : {}),
@@ -216,7 +220,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     if (jsonMode) {
       console.log(formatJson(result));
     } else {
-      printTickLines(tick, { quiet, result });
+      printTickLines(tick, { quiet, result, vaultPath });
     }
     return exitCodeForTick(tick);
   } finally {
@@ -227,38 +231,24 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
 // ----- Internals ------------------------------------------------------------
 
 /**
- * Render the adoption result as a small block of lines on stdout. The
- * shape mirrors `dome status`'s key-aligned summary — one fact per line
- * — rather than a single dense line; `dome sync` runs interactively and
- * the operator wants the result legible.
- *
- *   dome sync: adopted main: abc1234..def5678 (0 diagnostics, 1 iteration)
- *
- * On block: lists the first blocking diagnostic's code + message and
- * notes the total count.
+ * Render the adoption result as a block of presenter-styled lines on stdout.
+ * Uses the same presenter primitives as `dome status` — headline, section,
+ * kv, footer — so the output is visually consistent.
  */
 function printTickLines(
   tick: CompilerHostTickResult,
   opts: {
     readonly quiet: boolean;
     readonly result: SyncJsonResult;
+    readonly vaultPath: string;
   },
 ): void {
+  const caps = resolveCaps();
+
   if (tick.kind === "busy") {
     console.error(
       `dome sync: branch ${tick.branch} is already being processed by another Dome host.`,
     );
-    return;
-  }
-  if (tick.kind === "in-sync") {
-    if (opts.quiet) return;
-    const lines = [formatHeadline("dome sync", "already in sync")];
-    pushSection(lines, "Git", formatSummaryRows([
-      ["branch", tick.branch],
-      ["adopted", tick.finalAdoptedRef.slice(0, 7)],
-    ]));
-    console.log(lines.join("\n"));
-    printSyncAttentionLines(opts.result);
     return;
   }
   if (tick.kind === "diverged") {
@@ -283,6 +273,24 @@ function printTickLines(
     return;
   }
 
+  if (tick.kind === "in-sync") {
+    if (opts.quiet) return;
+    const outcomeStatus: Status = { tone: "ok", label: "in sync" };
+    const compiledRows: KvRow[] = [
+      { label: "branch", value: tick.branch },
+      { label: "adopted", value: tick.finalAdoptedRef.slice(0, 7), tone: "ident" },
+    ];
+    const lines: string[] = [
+      headline({ cmd: "sync", context: basename(opts.vaultPath) }, outcomeStatus, caps),
+      ...section("Compiled", kv(compiledRows, caps), caps),
+    ];
+    if (opts.result.attention_required) {
+      lines.push(...buildAttentionFooter(opts.result, caps));
+    }
+    console.log(lines.join("\n"));
+    return;
+  }
+
   const result = tick.adoption;
   const diagCount = result.diagnostics.length;
   const iters = result.iterations;
@@ -293,47 +301,83 @@ function printTickLines(
       tick.drift.base === tick.drift.head
         ? tick.drift.head.slice(0, 7)
         : `${tick.drift.base.slice(0, 7)}..${tick.drift.head.slice(0, 7)}`;
-    const lines = [formatHeadline("dome sync", `adopted ${tick.branch}`)];
-    pushSection(lines, "Compiled", formatSummaryRows([
-      ["range", range],
-      ["diagnostics", `${diagCount}`],
-      ["iterations", `${iters}`],
-    ]));
+    const outcomeStatus: Status = { tone: "ok", label: `adopted ${tick.branch}` };
+    const compiledRows: KvRow[] = [
+      { label: "range", value: range, tone: "ident" },
+      { label: "diagnostics", value: `${diagCount}` },
+      { label: "iterations", value: `${iters}` },
+    ];
+    // Build the operational section inline when there is operational work to show
+    const hasOperational =
+      tick.operational !== null &&
+      (tick.operational.scheduler.fired.length > 0 ||
+        tick.operational.jobs.drained.length > 0 ||
+        tick.operational.outbox.length > 0 ||
+        tick.operational.questionAutoResolution.answered > 0 ||
+        tick.operational.diagnostics.length > 0);
+    const lines: string[] = [
+      headline({ cmd: "sync", context: basename(opts.vaultPath) }, outcomeStatus, caps),
+      ...section("Compiled", kv(compiledRows, caps), caps),
+    ];
+    if (hasOperational && tick.operational !== null) {
+      const op = tick.operational;
+      const opRows: KvRow[] = [
+        { label: "scheduled", value: `${op.scheduler.fired.length}` },
+        { label: "jobs", value: `${op.jobs.drained.length}` },
+        { label: "outbox", value: `${op.outbox.length}` },
+        { label: "auto-resolved", value: `${op.questionAutoResolution.answered}` },
+        { label: "diagnostics", value: `${op.diagnostics.length}` },
+      ];
+      lines.push(...section("Operational", kv(opRows, caps), caps));
+    }
+    if (opts.result.attention_required) {
+      lines.push(...buildAttentionFooter(opts.result, caps));
+    }
     console.log(lines.join("\n"));
-    printHostFollowupLines("dome sync", tick.garden, tick.operational);
-    printSyncAttentionLines(opts.result);
+    // Garden follow-up (sub-proposals / rejected patches) is handled by the
+    // shared helper; operational is already shown above inline.
+    printHostFollowupLines("dome sync", tick.garden, null, basename(opts.vaultPath));
     return;
   }
 
-  const lines = [formatHeadline("dome sync", `blocked ${tick.branch}`)];
-  pushSection(lines, "Blocked", formatSummaryRows([
-    ["diagnostics", `${diagCount}`],
-    ["adopted", result.adoptedRef.slice(0, 7)],
-  ]));
+  // blocked
   const blockers = result.diagnostics.filter((d) => d.severity === "block");
-  const blockerLines: string[] = [];
+  const outcomeStatus: Status = { tone: "err", label: `blocked · ${tick.branch}` };
+  const blockedRows: KvRow[] = [
+    { label: "diagnostics", value: `${diagCount}` },
+    { label: "adopted", value: result.adoptedRef.slice(0, 7), tone: "ident" },
+  ];
+  const blockerBullets: string[] = [];
   for (const d of blockers.slice(0, 5)) {
-    blockerLines.push(
-      `  - [${formatSeverity(d.severity)}] ${d.code}: ${d.message}`,
+    blockerBullets.push(
+      `[${formatSeverity(d.severity)}] ${d.code}: ${d.message}`,
     );
   }
   if (blockers.length > 5) {
-    blockerLines.push(
-      `  ... and ${blockers.length - 5} more (see \`dome check --json\`).`,
+    blockerBullets.push(
+      `+${blockers.length - 5} more (see \`dome check --json\`).`,
     );
   }
-  pushSection(lines, "Blockers", blockerLines);
+  const lines: string[] = [
+    headline({ cmd: "sync", context: basename(opts.vaultPath) }, outcomeStatus, caps),
+    ...section("Compiled", kv(blockedRows, caps), caps),
+    ...section("Blockers", blockerBullets.map((l) => `  - ${l}`), caps),
+  ];
   console.error(lines.join("\n"));
 }
 
-function printSyncAttentionLines(result: SyncJsonResult): void {
-  if (!result.attention_required) return;
-  console.log("");
-  console.log(formatHeadline("dome sync", "needs attention"));
-  console.log(`attention: ${result.attention.join(", ")}`);
-  for (const line of formatNextActionsBlock(result.next_actions)) {
-    console.log(line);
+function buildAttentionFooter(
+  result: SyncJsonResult,
+  caps: ReturnType<typeof resolveCaps>,
+): string[] {
+  const lines: string[] = [];
+  lines.push(
+    ...footer({ tone: "warn", label: `needs attention · ${result.attention.join(", ")}` }, caps),
+  );
+  if (result.next_actions.length > 0) {
+    lines.push(...section("Next", nextActions(result.next_actions, caps), caps));
   }
+  return lines;
 }
 
 function exitCodeForTick(tick: CompilerHostTickResult): number {

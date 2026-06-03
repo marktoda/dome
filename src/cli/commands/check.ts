@@ -5,7 +5,7 @@
 // without creating a new mutation path. Recovery still flows through
 // QuestionEffect rows and `dome resolve`.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import type { SourceRef } from "../../core/source-ref";
@@ -52,16 +52,24 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
-  formatBulletLines,
   formatCommand,
-  formatHeadline,
-  formatNextActionsBlock,
   formatSeverity,
-  formatSummaryRows,
   plural,
-  pushSection,
   truncateText,
 } from "../human-output";
+import {
+  bullets,
+  footer,
+  headline,
+  kv,
+  nextActions,
+  resolveCaps,
+  section,
+  statusValue,
+  type Caps,
+  type KvRow,
+  type Status,
+} from "../presenter";
 import {
   collectMaintenanceLoopSummaries,
   formatMaintenanceLoopDetailLines,
@@ -212,6 +220,7 @@ export async function runCheck(
     });
     printReport(report, options.json === true, {
       showLoopDetails: options.loops === true,
+      vaultPath,
     });
     return 0;
   }
@@ -293,6 +302,7 @@ export async function runCheck(
     });
     printReport(report, options.json === true, {
       showLoopDetails: options.loops === true,
+      vaultPath,
     });
     return 0;
   } finally {
@@ -496,42 +506,106 @@ function reportFromUnavailableRuntime(input: {
 function printReport(
   report: CheckReport,
   json: boolean,
-  options: { readonly showLoopDetails: boolean },
+  options: { readonly showLoopDetails: boolean; readonly vaultPath: string },
 ): void {
   if (json) {
     console.log(formatJson(report));
     return;
   }
-  const lines = renderCheckReport(report, options);
+  const caps = resolveCaps();
+  const lines = renderCheckReport(report, { ...options, caps });
   console.log(lines.join("\n"));
 }
 
 function renderCheckReport(
   report: CheckReport,
-  options: { readonly showLoopDetails: boolean },
+  options: { readonly showLoopDetails: boolean; readonly vaultPath: string; readonly caps: Caps },
 ): ReadonlyArray<string> {
-  const lines = [formatHeadline("Dome check", formatCheckHeadline(report))];
-  lines.push(...formatNextActionsBlock(report.next_actions));
-  pushSection(lines, "At A Glance", formatSummaryRows([
-    ["status", report.status],
-    ["projection", formatProjection(report.projection)],
-    ["engine", formatEngine(report.engine)],
-    ["content", formatContent(report.content)],
-    ["decisions", formatDecisions(report.decisions)],
-    ["loops", formatLoops(report.maintenance_loops)],
-  ]));
+  const caps = options.caps;
+  const glance = (label: string, st: Status): KvRow => ({
+    label,
+    value: statusValue(st, caps),
+    tone: "plain",
+  });
+
+  const headStatus = checkHeadlineStatus(report);
+  const lines: string[] = [
+    headline({ cmd: "check", context: basename(options.vaultPath) }, headStatus, caps),
+  ];
+
+  lines.push(...section("Next", nextActions(report.next_actions, caps), caps));
+
+  lines.push(
+    ...section(
+      "At a glance",
+      kv(
+        [
+          glance("status", checkOverallStatus(report)),
+          glance("projection", projectionStatus(report.projection)),
+          glance("engine", engineStatus(report.engine)),
+          {
+            label: "content",
+            value: formatContent(report.content),
+            tone: "plain",
+          },
+          {
+            label: "decisions",
+            value: formatDecisions(report.decisions),
+            tone: "plain",
+          },
+          {
+            label: "loops",
+            value: formatLoops(report.maintenance_loops),
+            tone: "plain",
+          },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+
   if (options.showLoopDetails) {
-    pushSection(lines, "Loops", loopDetailLines(report.maintenance_loops));
+    lines.push(
+      ...section("Loops", loopDetailLines(report.maintenance_loops, caps), caps),
+    );
   }
-  pushSection(lines, "Engine", findingLines(report.engine?.findings ?? []));
-  pushSection(lines, "Content", diagnosticLines(report.content));
-  pushSection(lines, "Decisions", questionLines(report.decisions));
+
+  lines.push(...section("Engine", findingLines(report.engine?.findings ?? [], caps), caps));
+  lines.push(...section("Content", diagnosticLines(report.content, caps), caps));
+  lines.push(...section("Decisions", questionLines(report.decisions, caps), caps));
+
+  const footerStatus: Status = report.status === "ok"
+    ? { tone: "ok", label: "all clear" }
+    : { tone: "warn", label: "needs attention" };
+  lines.push(...footer(footerStatus, caps));
+
   return Object.freeze(lines);
 }
 
-function formatCheckHeadline(report: CheckReport): string {
-  if (report.projection.stale) return "needs sync";
-  return report.status === "ok" ? "ok" : "needs attention";
+function checkHeadlineStatus(report: CheckReport): Status {
+  if (report.projection.stale) return { tone: "warn", label: "needs sync" };
+  if (report.status === "ok") return { tone: "ok", label: "ok" };
+  return { tone: "warn", label: "needs attention" };
+}
+
+function checkOverallStatus(report: CheckReport): Status {
+  if (report.status === "ok") return { tone: "ok", label: "ok" };
+  return { tone: "warn", label: "attention" };
+}
+
+function projectionStatus(report: CheckProjectionReport): Status {
+  if (!report.stale) return { tone: "ok", label: "fresh" };
+  return { tone: "warn", label: report.cache_drift ? "stale (cache drift)" : "stale" };
+}
+
+function engineStatus(report: HealthReport | null): Status {
+  if (report === null) return { tone: "muted", label: "skipped" };
+  if (report.status === "ok") return { tone: "ok", label: "ok" };
+  return {
+    tone: "warn",
+    label: `${report.summary.findingCount} finding(s) · ${report.summary.errorCount} error · ${report.summary.warningCount} warning`,
+  };
 }
 
 async function collectProjectionReport(input: {
@@ -565,20 +639,10 @@ async function collectProjectionReport(input: {
 
 function loopDetailLines(
   loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+  caps: Caps,
 ): ReadonlyArray<string> {
   if (loops === null) return [];
-  return formatMaintenanceLoopDetailLines(loops);
-}
-
-function formatEngine(report: HealthReport | null): string {
-  if (report === null) return "skipped";
-  if (report.status === "ok") return "ok";
-  return `${report.summary.findingCount} finding(s) | ${report.summary.errorCount} error | ${report.summary.warningCount} warning`;
-}
-
-function formatProjection(report: CheckProjectionReport): string {
-  if (!report.stale) return "fresh";
-  return report.cache_drift ? "stale (cache drift)" : "stale";
+  return formatMaintenanceLoopDetailLines(loops, caps);
 }
 
 function formatContent(report: CheckContentReport | null): string {
@@ -586,11 +650,11 @@ function formatContent(report: CheckContentReport | null): string {
   const attention =
     report.diagnostics === 0
       ? ""
-      : ` | ${plural(report.attention_diagnostics, "attention item")}`;
+      : ` · ${plural(report.attention_diagnostics, "attention item")}`;
   const unlocated =
     report.unlocated_diagnostics === 0
       ? ""
-      : ` | ${plural(report.unlocated_diagnostics, "unlocated item")}`;
+      : ` · ${plural(report.unlocated_diagnostics, "unlocated item")}`;
   const filter =
     report.filter.attention && report.diagnostics > 0
       ? formatAttentionFilter(report)
@@ -600,19 +664,19 @@ function formatContent(report: CheckContentReport | null): string {
 
 function formatAttentionFilter(report: CheckContentReport): string {
   if (report.filtered_diagnostics === 0) {
-    return " | showing none";
+    return " · showing none";
   }
   if (report.items.length >= report.filtered_diagnostics) {
-    return ` | showing ${plural(report.filtered_diagnostics, "attention item")}`;
+    return ` · showing ${plural(report.filtered_diagnostics, "attention item")}`;
   }
-  return ` | showing ${report.items.length}/${report.filtered_diagnostics} attention`;
+  return ` · showing ${report.items.length}/${report.filtered_diagnostics} attention`;
 }
 
 function formatDecisions(report: CheckDecisionReport | null): string {
   if (report === null) return "skipped";
   const agentReady = report.agent_safe_questions + report.model_safe_questions;
   if (report.questions === 0) return "0 open questions";
-  return `${plural(report.questions, "open question")} | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
+  return `${plural(report.questions, "open question")} · ${agentReady} agent/model-safe · ${report.owner_needed_questions} owner-needed`;
 }
 
 function formatLoops(
@@ -622,7 +686,7 @@ function formatLoops(
   return formatMaintenanceLoopSummaryLine(loops);
 }
 
-function findingLines(findings: ReadonlyArray<HealthFinding>): ReadonlyArray<string> {
+function findingLines(findings: ReadonlyArray<HealthFinding>, _caps: Caps): ReadonlyArray<string> {
   if (findings.length === 0) return [];
   const lines: string[] = [];
   for (const finding of findings) {
@@ -636,6 +700,7 @@ function findingLines(findings: ReadonlyArray<HealthFinding>): ReadonlyArray<str
 
 function diagnosticLines(
   report: CheckContentReport | null,
+  caps: Caps,
 ): ReadonlyArray<string> {
   const items = report?.items ?? [];
   if (items.length === 0) return [];
@@ -651,7 +716,7 @@ function diagnosticLines(
       lines.push(`      fix: ${item.repair_path} - ${item.repair_hint}`);
     }
   }
-  appendDiagnosticPatterns(lines, report);
+  appendDiagnosticPatterns(lines, report, caps);
   appendMoreLine(
     lines,
     report?.filtered_diagnostics ?? 0,
@@ -664,6 +729,7 @@ function diagnosticLines(
 function appendDiagnosticPatterns(
   lines: string[],
   report: CheckContentReport | null,
+  caps: Caps,
 ): void {
   if (report === null) return;
   const patterns: string[] = [];
@@ -682,11 +748,17 @@ function appendDiagnosticPatterns(
     patterns.push(`${group.count}x ${group.repair_path}: ${group.repair_hint}`);
   }
   if (patterns.length === 0) return;
-  pushSection(lines, "Patterns", formatBulletLines(patterns));
+  // Patterns is a sub-section nested inside the Content section body.
+  // section() adds 2-space indent to each body line and prefixes an
+  // ALLCAPS title. Because these lines will themselves be indented
+  // another 2 spaces by the outer Content section, they end up at the
+  // correct visual nesting depth.
+  lines.push(...section("Patterns", bullets(patterns, caps), caps));
 }
 
 function questionLines(
   report: CheckDecisionReport | null,
+  _caps: Caps,
 ): ReadonlyArray<string> {
   const items = report?.items ?? [];
   if (items.length === 0) return [];

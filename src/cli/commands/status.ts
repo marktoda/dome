@@ -88,7 +88,8 @@
 //   - `--json` emits the snapshot as a JSON object. Text mode renders
 //     a compact dashboard intended for humans and agent transcripts.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
+import { homedir } from "node:os";
 
 import { commitOid } from "../../core/source-ref";
 import { countCommitsSince, currentSha, isAncestor } from "../../git";
@@ -136,14 +137,21 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
+import { formatSeverity } from "../human-output";
 import {
-  formatBulletLines,
-  formatHeadline,
-  formatNextActionsBlock,
-  formatSeverity,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  bullets,
+  footer,
+  headline,
+  kv,
+  nextActions,
+  resolveCaps,
+  section,
+  statusValue,
+  type Caps,
+  type KvRow,
+  type Status,
+} from "../presenter";
+import { freshnessTone, syncTone } from "./status-tone";
 import {
   formatMaintenanceLoopDetailLines,
   collectMaintenanceLoopSummaries,
@@ -478,7 +486,7 @@ export async function runStatus(
     if (options.json === true) {
       console.log(formatJson(snapshot));
     } else {
-      printStatusText(snapshot, { showLoopDetails: options.loops === true });
+      printStatusText(snapshot, { showLoopDetails: options.loops === true, caps: resolveCaps() });
     }
     return 0;
   } finally {
@@ -495,53 +503,86 @@ export async function runStatus(
  */
 function printStatusText(
   s: StatusSnapshot,
-  options: { readonly showLoopDetails: boolean },
+  options: { readonly showLoopDetails: boolean; readonly caps: Caps },
 ): void {
-  const lines = [
-    formatHeadline(
-      "Dome status",
-      s.attention_required ? "needs attention" : "ok",
-    ),
+  const caps = options.caps;
+  const glance = (label: string, st: Status): KvRow => ({
+    label,
+    value: statusValue(st, caps),
+    tone: "plain",
+  });
+
+  const head: Status = s.attention_required
+    ? { tone: "warn", label: "needs attention" }
+    : { tone: "ok", label: "ok" };
+
+  const lines: string[] = [
+    headline({ cmd: "status", context: basename(s.vault) }, head, caps),
   ];
-  lines.push(...formatNextActionsBlock(s.next_actions));
 
-  const syncState = s.adopted_diverged
-    ? "diverged"
-    : s.sync_needed
-      ? "needed"
-      : "ok";
+  lines.push(...section("Next", nextActions(s.next_actions, caps), caps));
 
-  pushSection(lines, "At A Glance", formatSummaryRows([
-    ["sync", syncState],
-    ["projection", formatProjectionFreshness(s)],
-    ["draft", formatDraftSummary(s)],
-    ["diagnostics", formatDiagnosticCount(s)],
-    ["questions", String(s.questions)],
-    ["serve", formatServe(s)],
-  ]));
-  pushSection(lines, "Vault", formatSummaryRows([
-    ["path", s.vault],
-    ["branch", s.branch ?? "(detached)"],
-    ["head", shortOid(s.head, "(none)")],
-    ["adopted", shortOid(s.adopted, "(uninitialized)")],
-    ["pending", formatPendingCommits(s.pending_commits)],
-    ["content", formatContentSummary(s)],
-  ]));
-  pushSection(lines, "Engine", formatSummaryRows([
-    ["last sync", s.last_sync ?? "(never)"],
-    ["runs", `${formatPendingRuns(s)} pending | ${s.failed_runs} failed`],
-    ["outbox", `${s.outbox_pending} pending | ${s.outbox_failed} failed`],
-    ["quarantine", String(s.quarantined)],
-    ["loops", formatMaintenanceLoopSummaryLine(s.maintenance_loops)],
-  ]));
+  lines.push(
+    ...section(
+      "At a glance",
+      kv(
+        [
+          glance("sync", syncTone(s)),
+          glance("projection", freshnessTone(s)),
+          glance("draft", draftStatus(s)),
+          glance("diagnostics", diagnosticStatus(s)),
+          glance("questions", countStatus(s.questions)),
+          glance("serve", serveStatus(s)),
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+
+  lines.push(
+    ...section(
+      "Vault",
+      kv(
+        [
+          { label: "path", value: tildify(s.vault), tone: "muted" },
+          { label: "branch", value: s.branch ?? "(detached)" },
+          { label: "head", value: shortOid(s.head, "(none)"), tone: "ident" },
+          { label: "adopted", value: shortOid(s.adopted, "(uninitialized)"), tone: "ident" },
+          { label: "pending", value: formatPendingCommits(s.pending_commits) },
+          { label: "content", value: formatContentSummary(s), tone: "muted" },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+
+  lines.push(
+    ...section(
+      "Engine",
+      kv(
+        [
+          { label: "last sync", value: s.last_sync ?? "(never)", tone: "muted" },
+          { label: "runs", value: `${formatPendingRuns(s)} pending · ${s.failed_runs} failed` },
+          { label: "outbox", value: `${s.outbox_pending} pending · ${s.outbox_failed} failed` },
+          { label: "quarantine", value: String(s.quarantined) },
+          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops) },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
 
   if (options.showLoopDetails) {
-    pushSection(lines, "Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops));
+    lines.push(
+      ...section("Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops, caps), caps),
+    );
   }
+
   const diagnosticTop =
-    s.attention_diagnostics > 0
-      ? s.attention_diagnostic_summary
-      : s.diagnostic_summary;
+    s.attention_diagnostics > 0 ? s.attention_diagnostic_summary : s.diagnostic_summary;
   const diagnosticFocus =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_message_summary
@@ -551,22 +592,23 @@ function printStatusText(
       ? s.attention_diagnostic_disposition_summary
       : s.diagnostic_disposition_summary;
   const diagnosticLines = [
-    ...(diagnosticTop.groups.length > 0
-      ? [`top: ${formatDiagnosticTopLine(diagnosticTop)}`]
-      : []),
-    ...(diagnosticFocus.groups.length > 0
-      ? [`fix: ${formatDiagnosticFocusLine(diagnosticFocus)}`]
-      : []),
+    ...(diagnosticTop.groups.length > 0 ? [`top: ${formatDiagnosticTopLine(diagnosticTop)}`] : []),
+    ...(diagnosticFocus.groups.length > 0 ? [`fix: ${formatDiagnosticFocusLine(diagnosticFocus)}`] : []),
     ...(diagnosticDisposition.groups.length > 0
       ? [`plan: ${formatDiagnosticDispositionLine(diagnosticDisposition)}`]
       : []),
   ];
-  pushSection(lines, "Diagnostics", formatBulletLines(diagnosticLines));
+  lines.push(...section("Diagnostics", bullets(diagnosticLines, caps), caps));
+
+  const footerStatus: Status = s.attention_required
+    ? { tone: "warn", label: `${s.attention.length} ${s.attention.length === 1 ? "item needs" : "items need"} attention` }
+    : { tone: "ok", label: "all clear" };
+  lines.push(...footer(footerStatus, caps));
+
   console.log(lines.join("\n"));
 }
 
 function formatServe(s: StatusSnapshot): string {
-  if (s.serve_status === "off") return "off (run dome serve)";
   const branch =
     s.serve_branch !== null && s.serve_branch !== s.branch
       ? ` on ${s.serve_branch}`
@@ -574,9 +616,31 @@ function formatServe(s: StatusSnapshot): string {
   return `${s.serve_status}${branch}`;
 }
 
-function formatProjectionFreshness(s: StatusSnapshot): string {
-  if (!s.projection_stale) return "fresh";
-  return s.projection_cache_drift ? "stale (cache drift)" : "stale";
+function draftStatus(s: StatusSnapshot): Status {
+  if (s.dirty_modified === 0 && s.dirty_untracked === 0) return { tone: "ok", label: "clean" };
+  return { tone: "warn", label: formatDraftSummary(s) };
+}
+
+function diagnosticStatus(s: StatusSnapshot): Status {
+  return { tone: s.diagnostics > 0 ? "warn" : "ok", label: formatDiagnosticCount(s) };
+}
+
+function countStatus(n: number): Status {
+  return { tone: n > 0 ? "warn" : "ok", label: String(n) };
+}
+
+function serveStatus(s: StatusSnapshot): Status {
+  if (s.serve_status === "off") return { tone: "muted", label: "off" };
+  if (s.serve_status === "stale") return { tone: "warn", label: formatServe(s) };
+  return { tone: "ok", label: formatServe(s) };
+}
+
+function tildify(path: string): string {
+  const home = homedir();
+  if (path === home || path.startsWith(`${home}/`)) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
 }
 
 function formatPendingRuns(s: StatusSnapshot): string {
@@ -588,7 +652,7 @@ function formatPendingRuns(s: StatusSnapshot): string {
 
 function formatDraftSummary(s: StatusSnapshot): string {
   if (s.dirty_modified === 0 && s.dirty_untracked === 0) return "clean";
-  return `${s.dirty_modified} modified | ${s.dirty_untracked} untracked`;
+  return `${s.dirty_modified} modified · ${s.dirty_untracked} untracked`;
 }
 
 function formatDiagnosticCount(s: StatusSnapshot): string {
@@ -606,7 +670,7 @@ function formatInboxPages(s: StatusSnapshot): string {
 }
 
 function formatContentSummary(s: StatusSnapshot): string {
-  return `${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${formatInboxPages(s)} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
+  return `${s.content_pages} pages · wiki ${s.wiki_pages} · notes ${s.notes_pages} · inbox ${formatInboxPages(s)} · links ${s.wikilinks} · raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
 }
 
 function statusAttention(input: {
@@ -676,7 +740,7 @@ function intakeModelProviderMissing(runtime: VaultRuntime): boolean {
 function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups
     .map((group) => `${group.count} ${formatSeverity(group.severity)} ${group.code}`)
-    .join(" | ");
+    .join(" · ");
 }
 
 function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
@@ -688,7 +752,7 @@ function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
   );
   const remaining = summary.group_count - groups.length;
   if (remaining > 0) lines.push(`+${remaining} more`);
-  return lines.join(" | ");
+  return lines.join(" · ");
 }
 
 function formatDiagnosticDispositionLine(
@@ -703,7 +767,7 @@ function formatDiagnosticDispositionLine(
   }
   return [...counts]
     .map(([disposition, count]) => `${count} ${disposition}`)
-    .join(" | ");
+    .join(" · ");
 }
 
 function truncateStatusMessage(message: string): string {

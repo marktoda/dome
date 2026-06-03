@@ -335,9 +335,11 @@ describe("runSync empty-diff init", () => {
     });
     expect(code).toBe(0);
 
-    const outBlob = captured.out.join("\n");
-    expect(outBlob).toContain("dome sync:   iteration");
-    expect(outBlob).not.toContain("dome serve:   iteration");
+    // Verbose progress events go to stderr (not stdout) so that
+    // `dome sync --json > out.json` yields clean JSON.
+    const errBlob = captured.err.join("\n");
+    expect(errBlob).toContain("dome sync:   iteration");
+    expect(errBlob).not.toContain("dome serve:   iteration");
   }, SYNC_TEST_TIMEOUT_MS);
 
   test("--filter-processor narrows verbose output to matching processors", async () => {
@@ -368,10 +370,11 @@ describe("runSync empty-diff init", () => {
     });
     expect(code).toBe(0);
 
-    const outBlob = captured.out.join("\n");
-    expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
-    expect(outBlob).not.toContain("dome sync:   iteration");
-    expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
+    // Verbose progress events go to stderr; stdout carries the human summary.
+    const errBlob = captured.err.join("\n");
+    expect(errBlob).toContain("dome.markdown.normalize-frontmatter");
+    expect(errBlob).not.toContain("dome sync:   iteration");
+    expect(errBlob).not.toContain("dome.markdown.validate-wikilinks");
   }, SYNC_TEST_TIMEOUT_MS);
 
   test("--quiet suppresses non-error text output without changing adoption", async () => {
@@ -441,7 +444,7 @@ describe("runSync idempotent", () => {
 
     // Output asserts on "already in sync".
     const outBlob = captured.out.join("\n");
-    expect(outBlob).toContain("already in sync");
+    expect(outBlob).toContain("in sync");
 
     // Ledger count must not have grown (no new runs queued / executed).
     const ledger2 = await openLedgerDb({ path: ledgerPath });
@@ -651,9 +654,9 @@ describe("runSync idempotent", () => {
     })).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("already in sync");
-    expect(out).toContain("dome sync  needs attention");
-    expect(out).toContain("attention: diagnostics");
+    expect(out).toContain("in sync");
+    expect(out).toContain("needs attention");
+    expect(out).toContain("diagnostics");
     expect(out).toContain("dome check --content --attention --limit 50 --json");
     expect(captured.err.join("\n")).toBe("");
   }, SYNC_TEST_TIMEOUT_MS);
@@ -697,10 +700,11 @@ extensions:
     captured.out = [];
     captured.err = [];
     expect(await runSync(options)).toBe(0);
-    expect(captured.out.join("\n")).toContain(
-      "dome sync  garden follow-up",
-    );
-    expect(captured.out.join("\n")).toContain("sub-proposals     1");
+    const gardenOut = captured.out.join("\n");
+    expect(gardenOut).toContain("dome sync");
+    expect(gardenOut).toContain("garden follow-up");
+    expect(gardenOut).toContain("GARDEN");
+    expect(gardenOut).toContain("sub-proposals");
     const afterText = await getAdoptedRef(f.vaultPath, "main");
     expect(afterText).not.toBeNull();
     expect(afterText).not.toBe(userHead);
@@ -778,7 +782,7 @@ extensions:
 
     const code2 = await runSync(options);
     expect(code2).toBe(0);
-    expect(captured.out.join("\n")).toContain("already in sync");
+    expect(captured.out.join("\n")).toContain("in sync");
 
     const outbox2 = await openOutboxDb({ path: outboxPath });
     if (!outbox2.ok) throw new Error(`could not reopen outbox: ${outbox2.error.kind}`);

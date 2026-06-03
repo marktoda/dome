@@ -42,7 +42,7 @@
 // `dome doctor` namespace is reserved for the v1.x health-check verb;
 // this surface is the read half.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import type {
   DiagnosticEffect,
@@ -82,9 +82,23 @@ import {
   type DiagnosticSeverity,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
-import { formatJson, formatTable } from "../format";
-import { formatHeadline, formatSummaryRows, pushSection } from "../human-output";
+import { formatJson } from "../format";
+import {
+  headline,
+  kv,
+  paint,
+  resolveCaps,
+  section,
+  table,
+  type KvRow,
+} from "../presenter";
 import { parsePositiveIntegerValue } from "../parse-options";
+import {
+  columnsFor,
+  DIAGNOSTIC_SUMMARY_COLUMNS,
+  hiddenHint,
+  hiddenHintForDiagnosticSummary,
+} from "./inspect-columns";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -230,7 +244,7 @@ export async function runInspect(
     if (options.json === true) {
       console.log(formatJson(jsonForResult(result)));
     } else {
-      printTextResult(subject, result);
+      printTextResult(subject, result, vaultPath);
     }
     return 0;
   } finally {
@@ -529,23 +543,57 @@ function jsonForResult(
   return result.kind === "rows" ? result.rows : result.summary;
 }
 
-function printTextResult(subject: string, result: InspectResult): void {
+function printTextResult(subject: string, result: InspectResult, vaultPath: string): void {
+  const caps = resolveCaps();
+  const context = basename(vaultPath);
   const lines: string[] = [];
   if (result.kind === "rows") {
-    lines.push(formatHeadline(`Dome inspect ${subject}`, `${result.rows.length} rows`));
-    pushSection(lines, "Rows", formatTable(result.rows).split("\n"));
+    const rowCount = result.rows.length;
+    const rowStatus =
+      rowCount === 0
+        ? { tone: "muted" as const, label: "no rows" }
+        : { tone: "plain" as const, label: `${rowCount} rows` };
+    lines.push(headline({ cmd: `inspect ${subject}`, context }, rowStatus, caps));
+    lines.push("");
+    lines.push(
+      ...table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), caps),
+    );
+    const hint = hiddenHint(subject);
+    if (hint.length > 0) {
+      lines.push("");
+      lines.push(`  ${paint(hint, "muted", caps)}`);
+    }
     console.log(lines.join("\n"));
     return;
   }
-  lines.push(formatHeadline("Dome inspect diagnostics", "summary"));
-  pushSection(lines, "Summary", formatSummaryRows([
-    ["total", String(result.summary.total)],
-    [
-      "groups",
-      `${result.summary.shown_groups}/${result.summary.group_count}`,
-    ],
-  ]));
-  pushSection(lines, "Groups", formatTable(result.summary.groups).split("\n"));
+  // diagnostic-summary mode
+  lines.push(
+    headline({ cmd: "inspect diagnostics", context }, { tone: "plain", label: "summary" }, caps),
+  );
+  const summaryKvRows: KvRow[] = [
+    { label: "total", value: String(result.summary.total) },
+    {
+      label: "groups",
+      value: `${result.summary.shown_groups}/${result.summary.group_count}`,
+    },
+  ];
+  lines.push(...section("Summary", kv(summaryKvRows, caps), caps));
+  // Render summary groups via dedicated summary column set
+  const summaryGroupRows = result.summary.groups.map((g) => ({
+    severity: g.severity,
+    code: g.code,
+    count: g.count,
+    first_source_refs: g.first_source_refs,
+  }));
+  lines.push("");
+  lines.push(
+    ...table(summaryGroupRows, DIAGNOSTIC_SUMMARY_COLUMNS, caps),
+  );
+  const summaryHint = hiddenHintForDiagnosticSummary();
+  if (summaryHint.length > 0) {
+    lines.push("");
+    lines.push(`  ${paint(summaryHint, "muted", caps)}`);
+  }
   console.log(lines.join("\n"));
 }
 

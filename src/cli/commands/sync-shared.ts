@@ -13,10 +13,12 @@ import type { AdoptEvent } from "../../engine/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden";
 import type { OperationalWorkResult } from "../../engine/operational-work";
 import {
-  formatHeadline,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  headline,
+  kv,
+  resolveCaps,
+  section,
+  type KvRow,
+} from "../presenter";
 
 const processorGlobCache = new Map<string, Bun.Glob>();
 
@@ -125,19 +127,29 @@ export function printHostFollowupLines(
   command: "dome serve" | "dome sync",
   garden: GardenPhaseResult | null,
   operational: OperationalWorkResult | null,
+  context?: string,
 ): void {
+  const caps = resolveCaps();
+  // Extract the subcommand after "dome " for the presenter headline.
+  const cmd = command.slice("dome ".length) as "serve" | "sync";
+  const headlineLeft =
+    context !== undefined ? { cmd, context } : { cmd };
+
   if (
     garden !== null &&
     (garden.subProposalCount > 0 ||
       garden.rejectedPatchCount > 0 ||
       garden.diagnostics.length > 0)
   ) {
-    const lines = [formatHeadline(command, "garden follow-up")];
-    pushSection(lines, "Garden", formatSummaryRows([
-      ["sub-proposals", String(garden.subProposalCount)],
-      ["rejected patches", String(garden.rejectedPatchCount)],
-      ["diagnostics", String(garden.diagnostics.length)],
-    ]));
+    const gardenRows: KvRow[] = [
+      { label: "sub-proposals", value: `${garden.subProposalCount}` },
+      { label: "rejected patches", value: `${garden.rejectedPatchCount}` },
+      { label: "diagnostics", value: `${garden.diagnostics.length}` },
+    ];
+    const lines: string[] = [
+      headline(headlineLeft, { tone: "plain", label: "garden follow-up" }, caps),
+      ...section("Garden", kv(gardenRows, caps), caps),
+    ];
     const text = ["", ...lines].join("\n");
     if (garden.rejectedPatchCount > 0 || garden.diagnostics.length > 0) {
       console.error(text);
@@ -154,14 +166,17 @@ export function printHostFollowupLines(
       operational.questionAutoResolution.answered > 0 ||
       operational.diagnostics.length > 0)
   ) {
-    const lines = [formatHeadline(command, "operational work")];
-    pushSection(lines, "Operational", formatSummaryRows([
-      ["scheduled", String(operational.scheduler.fired.length)],
-      ["jobs", String(operational.jobs.drained.length)],
-      ["outbox", String(operational.outbox.length)],
-      ["auto-resolved", String(operational.questionAutoResolution.answered)],
-      ["diagnostics", String(operational.diagnostics.length)],
-    ]));
+    const opRows: KvRow[] = [
+      { label: "scheduled", value: `${operational.scheduler.fired.length}` },
+      { label: "jobs", value: `${operational.jobs.drained.length}` },
+      { label: "outbox", value: `${operational.outbox.length}` },
+      { label: "auto-resolved", value: `${operational.questionAutoResolution.answered}` },
+      { label: "diagnostics", value: `${operational.diagnostics.length}` },
+    ];
+    const lines: string[] = [
+      headline(headlineLeft, { tone: "plain", label: "operational work" }, caps),
+      ...section("Operational", kv(opRows, caps), caps),
+    ];
     const text = ["", ...lines].join("\n");
     if (operational.diagnostics.length > 0) {
       console.error(text);
