@@ -13,6 +13,7 @@ describe("glyph", () => {
     expect(glyph("pending", UNI)).toBe("○");
     expect(glyph("pointer", UNI)).toBe("→");
     expect(glyph("sep", UNI)).toBe("·");
+    expect(glyph("bullet", UNI)).toBe("•");
   });
   test("ascii caps emit ascii fallbacks", () => {
     expect(glyph("ok", ASCII)).toBe("√");
@@ -20,6 +21,7 @@ describe("glyph", () => {
     expect(glyph("warn", ASCII)).toBe("!");
     expect(glyph("pointer", ASCII)).toBe(">");
     expect(glyph("sep", ASCII)).toBe("-");
+    expect(glyph("bullet", ASCII)).toBe("*");
   });
 });
 

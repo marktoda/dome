@@ -5,6 +5,8 @@ import type { Caps } from "./caps";
 export type Tone = "ok" | "warn" | "err" | "info" | "muted" | "ident" | "plain";
 export type GlyphName = "ok" | "err" | "warn" | "pending" | "pointer" | "sep" | "bullet";
 
+const c = createColors(true);
+
 const UNICODE: Record<GlyphName, string> = {
   ok: "✓",
   err: "✗",
@@ -31,7 +33,6 @@ export function glyph(name: GlyphName, caps: Caps): string {
 
 export function paint(text: string, tone: Tone, caps: Caps): string {
   if (!caps.color || tone === "plain") return text;
-  const c = createColors(true);
   switch (tone) {
     case "ok":
       return c.green(text);
