@@ -29,6 +29,9 @@
 //   - `noUncheckedIndexedAccess` discipline: row arrays are mapped
 //     functionally; no index access into raw `.all()` results.
 
+import { z } from "zod";
+
+import { parseJsonColumn } from "../sqlite/row-json";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
 import type { RunId } from "./runs";
@@ -155,6 +158,8 @@ type PatchRecordRawRow = CapabilityUseRawRow & {
   readonly finished_at: string | null;
 };
 
+const EffectHashesSchema = z.array(z.string().min(1));
+
 // ----- Public functions -----------------------------------------------------
 
 /**
@@ -246,7 +251,11 @@ function rowToPatchRecord(row: PatchRecordRawRow): PatchRecord {
     inputCommit: row.input_commit,
     outputCommit: row.output_commit,
     effectHashes: Object.freeze(
-      JSON.parse(row.effect_hashes_json) as ReadonlyArray<string>,
+      parseJsonColumn(
+        row.effect_hashes_json,
+        "runs.effect_hashes_json",
+        EffectHashesSchema,
+      ),
     ),
     startedAt: row.started_at,
     finishedAt: row.finished_at,

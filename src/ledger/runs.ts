@@ -83,7 +83,9 @@
 //     functionally; index access into `.all()` results checks `=== undefined`.
 
 import { randomBytes } from "node:crypto";
+import { z } from "zod";
 
+import { JsonValueSchema } from "../core/effect";
 import type { ProcessorPhase } from "../core/processor";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import {
@@ -92,6 +94,7 @@ import {
   type ProcessorTimeoutExecutionError,
   type RunId,
 } from "../engine/runner-contract";
+import { parseJsonColumn } from "../sqlite/row-json";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
 
@@ -444,6 +447,8 @@ type RunRawRow = {
 type SumCostRawRow = {
   readonly cost_usd: number | null;
 };
+
+const EffectHashesSchema = z.array(z.string().min(1));
 
 // ----- Public functions -----------------------------------------------------
 
@@ -802,13 +807,21 @@ function rowToRunRow(row: RunRawRow): RunRow {
     outputCommit: row.output_commit === null ? null : commitOid(row.output_commit),
     status: narrowStatus(row.status),
     effectHashes: Object.freeze(
-      JSON.parse(row.effect_hashes_json) as ReadonlyArray<string>,
+      parseJsonColumn(
+        row.effect_hashes_json,
+        "runs.effect_hashes_json",
+        EffectHashesSchema,
+      ),
     ),
     costUsd: row.cost_usd,
     durationMs: row.duration_ms,
     error: row.error,
     triggerKind: narrowTriggerKind(row.trigger_kind),
-    triggerPayload: JSON.parse(row.trigger_payload_json) as unknown,
+    triggerPayload: parseJsonColumn(
+      row.trigger_payload_json,
+      "runs.trigger_payload_json",
+      JsonValueSchema,
+    ),
     startedAt: row.started_at,
     finishedAt: row.finished_at,
   });

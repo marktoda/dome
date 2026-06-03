@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { commitOid } from "../../src/core/source-ref";
 import {
   capabilityUsesByRun,
+  queryPatchRecords,
   recordCapabilityUse,
 } from "../../src/ledger/capability-uses";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
@@ -237,6 +238,29 @@ describe("runs lifecycle", () => {
     });
     expect(row.startedAt).toBe("2026-05-27T12:00:00.000Z");
     expect(row.finishedAt).toBeNull();
+  });
+
+  it("run reads validate JSON columns instead of casting", () => {
+    const id = freshId();
+    queue(id);
+
+    db.raw
+      .query("UPDATE runs SET effect_hashes_json = ? WHERE id = ?")
+      .run(JSON.stringify(["sha-a", 1]), id);
+
+    expect(() => getRun(db, id)).toThrow(
+      "runs.effect_hashes_json failed validation",
+    );
+
+    db.raw
+      .query(
+        "UPDATE runs SET effect_hashes_json = ?, trigger_payload_json = ? WHERE id = ?",
+      )
+      .run(JSON.stringify([]), "{not-json", id);
+
+    expect(() => getRun(db, id)).toThrow(
+      "runs.trigger_payload_json contains invalid JSON",
+    );
   });
 
   it("queued → running → succeeded captures all terminal fields", () => {
@@ -1032,5 +1056,46 @@ describe("capability_uses accessor", () => {
     const runId = newRunId(new Date(), () => "eeeeee");
     const got = capabilityUsesByRun(db, runId);
     expect(got.length).toBe(0);
+  });
+
+  it("queryPatchRecords validates joined run JSON instead of casting", () => {
+    const runId = newRunId(new Date(), () => "cccccc");
+    insertQueued(db, {
+      id: runId,
+      proposalId: null,
+      processorId: "dome.proc",
+      processorVersion: "1.0.0",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "command",
+      triggerPayload: { name: "dome.proc.run" },
+      startedAt: new Date("2026-05-27T12:00:00.000Z"),
+    });
+    markRunning(db, runId, new Date("2026-05-27T12:00:01.000Z"));
+    markSucceeded(db, {
+      id: runId,
+      effectHashes: ["sha-a"],
+      costUsd: null,
+      durationMs: 1000,
+      outputCommit: OUTPUT_COMMIT,
+      finishedAt: new Date("2026-05-27T12:00:02.000Z"),
+    });
+    recordCapabilityUse(db, {
+      runId,
+      capability: "patch.auto",
+      resource: "wiki/a.md",
+      outcome: "allowed",
+      recordedAt: new Date("2026-05-27T12:00:03.000Z"),
+    });
+
+    expect(queryPatchRecords(db).length).toBe(1);
+
+    db.raw
+      .query("UPDATE runs SET effect_hashes_json = ? WHERE id = ?")
+      .run(JSON.stringify([1]), runId);
+
+    expect(() => queryPatchRecords(db)).toThrow(
+      "runs.effect_hashes_json failed validation",
+    );
   });
 });
