@@ -38,9 +38,11 @@ scenario(
     const text = await h.runCli(["lint"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("Dome lint  pass");
-    expect(text.stdout).toContain("Checked");
-    expect(text.stdout).toContain("fail-on  error");
+    expect(text.stdout).toContain("dome lint");
+    expect(text.stdout).toContain("pass");
+    expect(text.stdout).toContain("CHECKED");
+    expect(text.stdout).toContain("fail-on");
+    expect(text.stdout).toContain("error");
     expect(text.stdout).toContain("dome.markdown.broken-wikilink");
     expect(text.stdout).toContain("dome.lint.empty-markdown-file");
     expect(text.stdout).toContain("wiki/bad.md");

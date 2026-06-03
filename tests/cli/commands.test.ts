@@ -3228,8 +3228,9 @@ describe("runDoctor", () => {
     const code = await runDoctor({ vault: f.vaultPath });
     expect(code).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("Dome doctor  ok");
-    expect(out).toContain("Findings");
+    expect(out).toContain("dome doctor");
+    expect(out).toContain("ok");
+    expect(out).toContain("FINDINGS");
     expect(out).toContain("none");
   });
 

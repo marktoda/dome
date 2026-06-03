@@ -6,23 +6,26 @@
 // questions, the user resolves them with `dome resolve`, and answer handlers apply
 // the mutation.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
-  type HealthFinding,
   type HealthReport,
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
+import { formatSeverity } from "../human-output";
 import {
-  formatHeadline,
-  formatSeverity,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  bullets,
+  footer,
+  headline,
+  kv,
+  resolveCaps,
+  section,
+  type Status,
+} from "../presenter";
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
@@ -70,7 +73,7 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(storageReport));
     } else {
-      printDoctorText(storageReport);
+      printDoctorText(storageReport, vaultPath);
     }
     return 0;
   }
@@ -102,7 +105,7 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(report));
     } else {
-      printDoctorText(report);
+      printDoctorText(report, vaultPath);
     }
     return 0;
   } finally {
@@ -110,50 +113,66 @@ export async function runDoctor(
   }
 }
 
-function printDoctorText(report: HealthReport): void {
-  const lines = [
-    formatHeadline(
-      "Dome doctor",
-      report.status === "ok" ? "ok" : "needs attention",
-    ),
+function printDoctorText(report: HealthReport, vaultPath: string): void {
+  const caps = resolveCaps();
+  const headStatus: Status = report.status === "ok"
+    ? { tone: "ok", label: "ok" }
+    : { tone: "warn", label: `${report.summary.findingCount} finding${report.summary.findingCount === 1 ? "" : "s"}` };
+
+  const lines: string[] = [
+    headline({ cmd: "doctor", context: basename(vaultPath) }, headStatus, caps),
   ];
+
   if (report.status === "ok") {
-    pushSection(lines, "Findings", ["  none"]);
-    console.log(lines.join("\n"));
-    return;
+    lines.push(...section("Findings", bullets([], caps), caps));
+  } else {
+    const findingBullets: string[] = [];
+    for (const finding of report.findings) {
+      findingBullets.push(
+        `[${formatSeverity(finding.severity)}] ${finding.code}: ${finding.message}`,
+      );
+      findingBullets.push(`  recovery: ${finding.recovery}`);
+    }
+    lines.push(...section("Findings", findingBullets.map((l) => `  ${l}`), caps));
+
+    lines.push(
+      ...section(
+        "At a glance",
+        kv(
+          [
+            {
+              label: "health",
+              value: `${report.summary.errorCount} error · ${report.summary.warningCount} warning`,
+            },
+            {
+              label: "findings",
+              value:
+                `outbox ${report.summary.failedOutbox} failed · ` +
+                `${report.summary.stuckPendingOutbox} stuck · ` +
+                `orphans ${report.summary.orphanRuns} · ` +
+                `runs ${report.summary.failedRuns} failed · ` +
+                `quarantine ${report.summary.quarantinedProcessors} · ` +
+                `projection ${report.summary.projectionCacheDrift} · ` +
+                `git ${report.summary.adoptedRefDivergence} · ` +
+                `instructions ${report.summary.instructionDrift} · ` +
+                `storage ${report.summary.operationalSchemaMismatch} · ` +
+                `grants ${report.summary.capabilityGrantGaps} · ` +
+                `model ${report.summary.modelProviderMissing}`,
+            },
+          ],
+          caps,
+        ),
+        caps,
+      ),
+    );
   }
 
-  const findingLines: string[] = [];
-  for (const finding of report.findings) {
-    findingLines.push(formatFinding(finding));
-    findingLines.push(`    recovery: ${finding.recovery}`);
-  }
-  pushSection(lines, "Findings", findingLines);
-  pushSection(lines, "At A Glance", formatSummaryRows([
-    [
-      "health",
-      `${report.summary.errorCount} error | ${report.summary.warningCount} warning`,
-    ],
-    [
-      "findings",
-      `outbox ${report.summary.failedOutbox} failed | ` +
-        `${report.summary.stuckPendingOutbox} stuck | ` +
-        `orphans ${report.summary.orphanRuns} | ` +
-        `runs ${report.summary.failedRuns} failed | ` +
-        `quarantine ${report.summary.quarantinedProcessors} | ` +
-        `projection ${report.summary.projectionCacheDrift} | ` +
-        `git ${report.summary.adoptedRefDivergence} | ` +
-        `instructions ${report.summary.instructionDrift} | ` +
-        `storage ${report.summary.operationalSchemaMismatch} | ` +
-        `grants ${report.summary.capabilityGrantGaps} | ` +
-        `model ${report.summary.modelProviderMissing}`,
-    ],
-  ]));
+  const footerStatus: Status = report.status === "ok"
+    ? { tone: "ok", label: "all clear" }
+    : { tone: "warn", label: "needs attention" };
+  lines.push(...footer(footerStatus, caps));
+
   console.log(lines.join("\n"));
-}
-
-function formatFinding(finding: HealthFinding): string {
-  return `  - [${formatSeverity(finding.severity)}] ${finding.code} (${finding.id}): ${finding.message}`;
 }
 
 function parseNonNegativeInteger(
