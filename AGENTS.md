@@ -24,14 +24,14 @@ By task shape:
 By substrate type:
 
 - **Specs** — `docs/wiki/specs/`. The normative contract for each subsystem.
-- **Named invariants** — `docs/wiki/invariants/`. One file per invariant; `src/types.ts` `INVARIANTS` is the typed const.
+- **Named invariants** — `docs/wiki/invariants/`. One file per invariant; the directory is the canonical inventory.
 - **Behavior matrices** — `docs/wiki/matrices/`. The cross-references between concepts.
 - **Gotchas** — `docs/wiki/gotchas/`. Failure modes the design anticipates.
 - **Linters** — `docs/wiki/linters/`. Convention-as-substrate rules.
 
 ## Load-bearing rules
 
-- **The named invariants are pinned by AC3 lockstep.** `tests/integration/invariant-coverage.test.ts` iterates `INVARIANTS` (the typed const in `src/types.ts`) and requires `tests/invariants/<slug>.test.ts` per name. Off-matrix invariants delegate via `import(...)` to the canonical enforcement test.
+- **The named invariants are pinned by AC3 lockstep.** `tests/integration/invariant-coverage.test.ts` iterates `docs/wiki/invariants/*.md` and requires `tests/invariants/<slug>.test.ts` per shipped invariant unless the doc frontmatter says `tier: deferred`.
 - **The four-concept core is sealed.** Vault, Proposal, Processor, Effect. There is no Tool, no Hook, no Workflow as a separate primitive — those concepts dissolve into processors emitting effects. See [[docs/wiki/specs/sdk-surface]] §"Outputs the SDK does not have."
 - **Proposals are the only engine write path.** No `vault.tools.X(...)`, no privileged-writer escape hatch, and no public `submitProposal` API. Human/agent writes are ordinary git commits; the daemon constructs Proposals from branch drift, and garden PatchEffects construct internal sub-Proposals. Pinned by [[docs/wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] and [[docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 - **Effects are the only processor output.** A processor returns `Promise<Effect[]>` from its `run(ctx)` body. No direct mutation surface. Pinned by [[docs/wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].

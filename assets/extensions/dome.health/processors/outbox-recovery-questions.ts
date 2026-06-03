@@ -27,6 +27,7 @@ const outboxRecoveryQuestions: Processor = defineProcessor({
   phase: "garden",
   triggers: [{ kind: "schedule", cron: "* * * * *" }],
   capabilities: [
+    { kind: "read", paths: ["**"] },
     { kind: "outbox.read", statuses: ["failed"] },
     { kind: "question.ask" },
   ],

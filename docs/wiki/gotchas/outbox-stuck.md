@@ -49,7 +49,7 @@ recovered through `dome check --json` + `dome resolve`.
 
 - The outbox is **never** wiped by `dome rebuild` — projection.db rebuilds; outbox.db survives. Pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] (the rebuild scope is explicit about excluding the outbox).
 - Failed entries are not auto-pruned. They accumulate indefinitely unless the user abandons them. This is by design: dropped external actions are a serious failure mode; the user should see them and decide.
-- The integration test at `tests/integration/outbox-failure-recovery.test.ts` exercises the failure → replay loop.
+- `tests/harness/scenarios/effect-routing/health-outbox-recovery.scenario.test.ts` exercises the failure → question → retry/abandon recovery loop.
 
 **Related:**
 - [[wiki/specs/effects]] §"ExternalActionEffect"

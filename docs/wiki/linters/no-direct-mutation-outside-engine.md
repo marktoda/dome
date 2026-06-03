@@ -57,7 +57,7 @@ The linter is the structural fence. CI catches the call site before merge.
 The regex-based v1 implementation is intentionally simple — easy to extend, easy to debug. The v1.1+ implementation upgrades to TypeScript AST inspection via `ts-morph` or `@typescript-eslint/parser` for higher precision (catches method calls regardless of identifier renaming, catches calls through variable aliases).
 
 ```ts
-// tests/integration/no-direct-mutation-outside-engine.test.ts
+// tests/integration/no-direct-mutation-outside-boundaries.test.ts
 import { test, expect } from "bun:test";
 import { Glob } from "bun";
 import { readFile } from "node:fs/promises";

@@ -48,7 +48,7 @@ The static import-graph check catches the bypass at CI. The dynamic-import edge 
 ## Implementation sketch (v1 Phase 1)
 
 ```ts
-// tests/integration/engine-is-sole-applier.test.ts
+// tests/integration/no-direct-mutation-outside-boundaries.test.ts
 import { test, expect } from "bun:test";
 import { Glob } from "bun";
 import { parseImports } from "../helpers/parse-imports";

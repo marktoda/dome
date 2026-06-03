@@ -1142,8 +1142,8 @@ describe("runInspect", () => {
     const healthRecovery = processors.find(
       (row) => row.processor === "dome.health.outbox-recovery-questions",
     );
+    expect(healthRecovery?.grant_scopes).toContain("read:**");
     expect(healthRecovery?.grant_scopes).toContain("outbox.read:failed");
-    expect(healthRecovery?.grant_scopes).not.toContain("read:**");
     expect(healthRecovery?.grant_details).toContainEqual({
       kind: "outbox.read",
       scope: "statuses",

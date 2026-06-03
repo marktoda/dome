@@ -26,7 +26,7 @@ tier: axiom
 
 **Counter-example (what this invariant rules out):** A Dome installation that reports its "trusted state" via a `.dome/state/` cursor file alone — the file lives outside git, can drift from reality, and gives no structural signal of divergence. The v1 substrate retires that pattern entirely; the ref is the only cursor.
 
-**Test guarantee:** `tests/invariants/adopted-ref-is-semantic-cursor.test.ts` is the AC3 lockstep file. Following the off-matrix delegating-stub convention (per [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention"), it imports `tests/integration/sync-advances-adopted-ref.test.ts` — the canonical enforcement test with three cases:
+**Test guarantee:** `tests/invariants/adopted-ref-is-semantic-cursor.test.ts` is the AC3 lockstep file. Behavioral coverage lives in `tests/cli/sync.test.ts` and `tests/engine/adopt.test.ts` with these cases:
 
 1. **Fresh vault.** `dome sync` initializes `refs/dome/adopted/main` at the Proposal's adopted head; subsequent `dome status` reports no pending and zero divergence.
 2. **Source-ahead vault.** User commits land on top of the existing adopted ref; `dome sync` constructs a Proposal `adopted..HEAD`, the adoption loop reaches fixed point, the engine fast-forwards the ref to the new head (possibly through a closure commit).

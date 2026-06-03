@@ -21,11 +21,11 @@ This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: t
 1. **The engine applier writes an audit record per effect.** `src/engine/apply-effect.ts` calls the appropriate sink for each Effect kind: `ledger.recordEffect()` for the effect hash; `projections.facts.insert()` for FactEffects; `outbox.insert()` for ExternalActionEffects; `commitEngineChange()` carries the run id in the trailer for adopting PatchEffects.
 2. **Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]**, the RunRecord row carries `effect_hashes_json` — a sha256 list of every emitted effect for the run. Joined back to projection tables by the per-effect lookup, the union is the complete audit history.
 3. **`log.md` is a projection of the run ledger** reserved for the planned `dome.log` adoption-phase processor. The user-facing `log.md` view should be reconstructable from `runs.db` + `outbox.db` once that bundle ships; today the ledger DB and `dome inspect runs` are the implemented audit surfaces.
-4. **The integration test exercises every Effect kind's audit landing.** `tests/integration/effect-ledger-completeness.test.ts` runs each Effect kind against the engine and asserts the audit record reaches its expected sink.
+4. **The engine/storage tests exercise audit landings by sink.** `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows for adoption PatchEffects, `tests/engine/model-invoke.test.ts` verifies runtime capability-use audit rows, `tests/outbox/dispatch.test.ts` covers ExternalActionEffect outbox rows, and projection/answer tests cover durable projection landings.
 
 **Counter-example:** A processor emits a `FactEffect` outside its declared `graph.write` namespace. The broker denies the effect (per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]]); the denial itself is ledgered as a `capability_uses` row with `outcome: "denied"`. Even the rejected emission is auditable — there is no path from "processor emitted X" to "no audit record."
 
-**Test guarantee:** `tests/invariants/every-effect-is-ledgered.test.ts` — fires 100 effects of mixed kinds through the engine; asserts every effect lands in its expected sink (ledger row, projection table, outbox, or rejection record).
+**Test guarantee:** `tests/invariants/every-effect-is-ledgered.test.ts` pins the invariant doc into AC3. Behavioral coverage is distributed across the engine, projection, outbox, and model-invoke tests because each effect family lands in a different sink.
 
 **Related:**
 - [[wiki/specs/run-ledger]]

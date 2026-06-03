@@ -24,7 +24,7 @@ tier: axiom
 
 **Counter-example:** A garden-phase processor uses dynamic import (`await import("node:fs")`) to bypass the static linter. The processor calls `fs.writeFile` — but the file written is in the working tree, *not* in the candidate tree the engine built from the adopted commit. The write is invisible to the current Proposal's adoption (which reads from the candidate); it surfaces on the next watcher cycle as `vault.out-of-band-edit`, becoming a new Proposal. So the bypass doesn't corrupt adopted state; it just produces a confusing second Proposal. The semantic linter is upgraded to flag dynamic imports of mutation modules in v1.1+.
 
-**Test guarantee:** `tests/invariants/engine-is-the-only-applier.test.ts` (off-matrix; delegates to `tests/integration/engine-is-sole-applier.test.ts`) — walks the SDK's import graph and asserts no module outside the engine + projections + ledger directories imports mutation modules.
+**Test guarantee:** `tests/invariants/engine-is-the-only-applier.test.ts` is the AC3 lockstep marker. The active structural fence is `tests/integration/no-direct-mutation-outside-boundaries.test.ts`, which scans source files and rejects direct write APIs outside the approved engine/storage boundaries; effect routing behavior is covered by `tests/engine/apply-effect.test.ts` and `tests/engine/garden-patch-router.test.ts`.
 
 ## Implementation status
 

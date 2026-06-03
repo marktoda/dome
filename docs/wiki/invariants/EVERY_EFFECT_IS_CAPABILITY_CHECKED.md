@@ -21,25 +21,13 @@ tier: axiom
 2. **Returns `allow | downgrade | deny`.** The applier branches on the broker's verdict — `allow` applies the effect, `downgrade` rewrites it (e.g., PatchEffect `auto → propose`) and applies, `deny` writes a diagnostic and discards.
 3. **Capability uses are ledgered.** Every effect enforcement decision writes a `CapabilityUse` row in the run ledger (per [[wiki/specs/run-ledger]] §"capability_uses"). Runtime-only privileged powers such as `model.invoke` use the same table at their context boundary. The audit surface for "what did this processor reach" is structural, not heuristic.
 4. **Adoption-phase processors can't request `model.invoke`.** The bundle loader rejects manifests where an adoption-phase processor declares `model.invoke` capability — the broker refuses at registration time, not runtime.
-5. **The integration test exercises every Effect kind × every Capability tier.** `tests/integration/capability-enforcement.test.ts` ships positive and negative cases per pair per [[wiki/matrices/effect-x-capability]].
+5. **The engine test suite exercises every Effect kind × Capability boundary.** `tests/engine/capability-broker.test.ts` ships positive and negative broker cases per effect family, `tests/engine/apply-effect.test.ts` checks generic routing outcomes, `tests/engine/garden-patch-router.test.ts` checks garden PatchEffect routing, and `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows during adoption.
 
-**Off-matrix lockstep convention:** This invariant is enforced at the engine boundary, not at a processor's call site. The lockstep test file at `tests/invariants/every-effect-is-capability-checked.test.ts` uses the delegating-stub shape:
-
-```ts
-import { describe, test } from "bun:test";
-
-describe("EVERY_EFFECT_IS_CAPABILITY_CHECKED (off-matrix)", () => {
-  test("enforced by tests/integration/capability-enforcement.test.ts", async () => {
-    await import("../integration/capability-enforcement.test");
-  });
-});
-```
-
-The dynamic `import()` runs the linked test file's describe/test blocks; a regression in capability enforcement fails the lockstep stub.
+**Off-matrix lockstep convention:** This invariant is enforced at the engine boundary, not at a processor's call site. The lockstep test file at `tests/invariants/every-effect-is-capability-checked.test.ts` pins the invariant document into AC3; the behavior is exercised by the engine tests named above.
 
 **Counter-example:** A processor declares `patch.auto: ["wiki/**"]` but is granted only `patch.auto: ["wiki/generated/**"]` in vault config. The processor emits a PatchEffect touching `wiki/entities/danny.md` (outside the grant). The broker returns `downgrade`: the effect is rewritten to `patch.propose`, a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic is emitted, and adoption blocks until a review/apply surface is available or the user changes the grant/code.
 
-**Test guarantee:** `tests/invariants/every-effect-is-capability-checked.test.ts` delegates per the convention above. The canonical enforcement test is `tests/integration/capability-enforcement.test.ts`.
+**Test guarantee:** `tests/invariants/every-effect-is-capability-checked.test.ts` pins the invariant doc into AC3. The canonical enforcement coverage is the combination of `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, `tests/engine/garden-patch-router.test.ts`, `tests/engine/adopt-capability-uses.test.ts`, and `tests/engine/model-invoke.test.ts`.
 
 ## Implementation status
 

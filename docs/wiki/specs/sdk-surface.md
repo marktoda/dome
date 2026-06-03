@@ -425,9 +425,9 @@ capability name is the filename stem. Handler modules are intentionally outside
 remain effect-only.
 
 The substrate scaffold catches the missing pieces:
-- `tests/integration/processor-registration.test.ts` iterates the manifest entries and asserts each bound to an importable processor.
+- `tests/extensions/loader.test.ts` loads shipped and fixture bundles, rejects manifest/code drift, and asserts duplicate command triggers fail registry construction.
 - `tests/integration/processor-purity.test.ts` typechecks that no processor's `run` body reaches a mutation surface.
-- `tests/integration/capability-enforcement.test.ts` exercises capability check per effect × capability pair.
+- `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, and `tests/engine/garden-patch-router.test.ts` exercise capability checks at the broker and routing boundaries.
 
 ## Adding a maintenance loop
 
@@ -457,15 +457,14 @@ the existing `dome run <name>` / dedicated-wrapper pattern.
 
 ## Adding a new invariant
 
-Three file edits, paralleling the v0.5 recipe:
+Two file edits, plus the behavioral enforcement test where needed:
 
-1. **Add a `NAME: "NAME"` entry** to `src/types.ts` `INVARIANTS`.
-2. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template.
-3. **Create the test** at `tests/invariants/<slug>.test.ts`.
+1. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template.
+2. **Create the lockstep marker test** at `tests/invariants/<slug>.test.ts`.
 
-The AC3 lockstep test at `tests/integration/invariant-coverage.test.ts` iterates `Object.entries(INVARIANTS)` and asserts each named invariant has a corresponding test file.
+The AC3 lockstep test at `tests/integration/invariant-coverage.test.ts` iterates `docs/wiki/invariants/*.md` and asserts each non-deferred invariant has a corresponding test file.
 
-For an **off-matrix invariant** (one not enforced at a processor's capability boundary — e.g., `ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY` enforced at the bundling layer, `EVERY_EFFECT_IS_CAPABILITY_CHECKED` enforced at the engine boundary), the lockstep test file imports from the canonical enforcement test — see §"Off-matrix lockstep convention" in [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] for the delegating-stub shape.
+For an **off-matrix invariant** (one not enforced at a processor's capability boundary — e.g., `ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY` enforced at the bundling layer, `EVERY_EFFECT_IS_CAPABILITY_CHECKED` enforced at the engine boundary), keep the lockstep marker small and point the invariant doc at the concrete engine/integration tests that enforce the behavior.
 
 ## Registration matrix
 

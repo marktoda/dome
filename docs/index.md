@@ -28,7 +28,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Invariants
 
-Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
+Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical inventory: `docs/wiki/invariants/*.md`.
 
 - [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest fully-adopted commit; advanced only after a clean fixed-point sync. Fast-forward-only.
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; richer templated-section refresh remains planned.

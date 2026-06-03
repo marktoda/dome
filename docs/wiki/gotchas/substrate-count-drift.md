@@ -38,5 +38,5 @@ The deferred `dome.health.check-substrate-counts` view-phase or scheduled garden
 **Related:**
 - [[wiki/specs/cli]] §"The CLI surface" (canonical CLI commands)
 - [[wiki/matrices/built-in-extensions-x-phase]] (canonical first-party bundle catalogue, including processors and command-triggered view processors)
-- `wiki/invariants/` (canonical invariants — `src/types.ts` `INVARIANTS` is the typed const)
+- `wiki/invariants/` (canonical invariants — one markdown file per invariant)
 - [[wiki/linters/no-retired-symbol-names]] — sister structural fence catching the related drift pattern (retired symbol names rather than count drift)
