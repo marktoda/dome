@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bold, glyph, paint, statusGlyph, type Tone } from "../../../src/cli/presenter/theme";
+import { bold, glyph, paint, statusGlyph } from "../../../src/cli/presenter/theme";
 
 const ASCII = { color: false, unicode: false, width: 80 };
 const UNI = { color: false, unicode: true, width: 80 };
