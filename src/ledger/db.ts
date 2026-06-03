@@ -92,6 +92,10 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
+import {
+  validateSqliteTableShapes,
+  type SqliteTableShape,
+} from "../sqlite-shape";
 
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -183,6 +187,45 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   // 7. capability_uses_by_run — supports "every capability use for run X"
   //    (the audit-forensics surface for a single run).
   "CREATE INDEX IF NOT EXISTS capability_uses_by_run ON capability_uses(run_id)",
+]);
+
+const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
+  {
+    table: "ledger_meta",
+    columns: ["schema_hash", "built_at"],
+  },
+  {
+    table: "runs",
+    columns: [
+      "id",
+      "proposal_id",
+      "processor_id",
+      "processor_version",
+      "phase",
+      "input_commit",
+      "output_commit",
+      "status",
+      "effect_hashes_json",
+      "cost_usd",
+      "duration_ms",
+      "error",
+      "trigger_kind",
+      "trigger_payload_json",
+      "started_at",
+      "finished_at",
+    ],
+  },
+  {
+    table: "capability_uses",
+    columns: [
+      "id",
+      "run_id",
+      "capability",
+      "resource",
+      "outcome",
+      "recorded_at",
+    ],
+  },
 ]);
 
 // ----- sha256 helper --------------------------------------------------------
@@ -339,6 +382,10 @@ export async function openLedgerDb(
       });
     }
     applyDdl(raw);
+    const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
+    if (shapeError !== null) {
+      throw new Error(shapeError);
+    }
   } catch (e) {
     raw.close();
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });

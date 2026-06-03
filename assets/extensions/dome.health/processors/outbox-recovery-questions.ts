@@ -26,7 +26,10 @@ const outboxRecoveryQuestions: Processor = defineProcessor({
   version: "0.1.1",
   phase: "garden",
   triggers: [{ kind: "schedule", cron: "* * * * *" }],
-  capabilities: [{ kind: "question.ask" }],
+  capabilities: [
+    { kind: "outbox.read", statuses: ["failed"] },
+    { kind: "question.ask" },
+  ],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.operational === undefined) {
       throw new Error(

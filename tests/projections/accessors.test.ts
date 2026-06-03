@@ -60,6 +60,7 @@ import {
   getCursor,
   upsertCursor,
 } from "../../src/projections/schedule-cursors";
+import { buildProjectionQueryView } from "../../src/projections/query-view";
 
 const ADOPTED = commitOid("abcdef0000000000000000000000000000000000");
 const OTHER = commitOid("bbbbbb0000000000000000000000000000000000");
@@ -231,6 +232,28 @@ describe("facts accessor", () => {
       "run-test-fixture",
       "run-test-fixture",
     ]);
+  });
+
+  it("ProjectionQueryView facts fail closed on partial subject filters", () => {
+    insertFact(db, {
+      effect: factEffect({
+        subject: { kind: "page", path: "wiki/a.md" },
+        predicate: "dome.test",
+        object: { kind: "string", value: "visible" },
+        assertion: "explicit",
+        sourceRefs: [REF],
+      }),
+      processorId: "test.fact",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+
+    const view = buildProjectionQueryView(db);
+    expect(view.facts({ subjectKind: "page" })).toEqual([]);
+    expect(view.facts({ subjectId: "wiki/a.md" })).toEqual([]);
+    expect(
+      view.facts({ subjectKind: "page", subjectId: "wiki/a.md" }).length,
+    ).toBe(1);
   });
 
   it("resolveStalePageFacts clears only the processor's page-subject rows for inspected paths", () => {
@@ -906,6 +929,34 @@ describe("questions accessor", () => {
       "q-other-path",
       "q-other-processor",
     ]);
+  });
+
+  it("resolveStaleQuestions keeps answered stale questions", () => {
+    const answered = questionEffect({
+      question: "answered?",
+      sourceRefs: [sourceRef({ commit: ADOPTED, path: "wiki/a.md" })],
+      idempotencyKey: "q-answered-stale",
+    });
+    insertQuestion(db, {
+      effect: answered,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    answerQuestion(db, {
+      idempotencyKey: "q-answered-stale",
+      answer: "done",
+    });
+
+    const deleted = resolveStaleQuestions(db, {
+      processorId: "p1",
+      inspectedPaths: ["wiki/a.md"],
+      emittedQuestions: [],
+    });
+
+    expect(deleted).toBe(0);
+    expect(queryQuestions(db, { resolved: true }).map((q) => q.idempotencyKey))
+      .toEqual(["q-answered-stale"]);
   });
 
   it("resolveStaleQuestions keeps re-emitted questions by idempotency key", () => {

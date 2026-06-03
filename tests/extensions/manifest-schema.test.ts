@@ -174,6 +174,40 @@ describe("parseManifest — execution metadata", () => {
     expect(result.error.capability).toBe("model.invoke");
   });
 
+  test("rejects absolute and parent-traversal path patterns", () => {
+    for (const trigger of [
+      { kind: "path", pattern: "/absolute.md" },
+      { kind: "signal", name: "file.created", pathPattern: "../outside.md" },
+    ] as const) {
+      const result = parseManifest({
+        id: "test.bundle",
+        version: "0.0.1",
+        processors: [{ ...baseProcessor, triggers: [trigger] }],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.kind).toBe("invalid-shape");
+    }
+  });
+
+  test("rejects absolute and parent-traversal capability paths", () => {
+    for (const paths of [["/absolute.md"], ["wiki/../outside.md"]]) {
+      const result = parseManifest({
+        id: "test.bundle",
+        version: "0.0.1",
+        processors: [
+          {
+            ...baseProcessor,
+            capabilities: [{ kind: "read", paths }],
+          },
+        ],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.kind).toBe("invalid-shape");
+    }
+  });
+
   test("rejects owns.region until region ownership enforcement ships", () => {
     const result = parseManifest({
       id: "test.bundle",

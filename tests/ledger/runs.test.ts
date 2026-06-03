@@ -674,6 +674,16 @@ describe("runs lifecycle", () => {
     ).toEqual([garden, adoption]);
   });
 
+  it("queryRuns clamps invalid public limits to zero rows", () => {
+    const id = newRunId(new Date(100), () => "limit1");
+    queue(id);
+
+    expect(queryRuns(db, { limit: Number.NaN }).length).toBe(0);
+    expect(queryRuns(db, { limit: 0 }).length).toBe(0);
+    expect(queryRuns(db, { limit: -1 }).length).toBe(0);
+    expect(queryRuns(db, { limit: 1 }).map((run) => run.id)).toEqual([id]);
+  });
+
   it("orphanRuns + failOrphanedRuns recover a stuck-running row", () => {
     // Insert a run with a synthetic-old started_at so the orphan window
     // catches it. We bypass queue() for the timestamp control.

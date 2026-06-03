@@ -93,6 +93,7 @@ import {
   type RunId,
 } from "../engine/runner-contract";
 import type { LedgerDb } from "./db";
+import { limitClause } from "./limits";
 
 // ----- Branded RunId --------------------------------------------------------
 //
@@ -643,12 +644,7 @@ export function queryRuns(
   }
 
   const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
-  // `limit` is interpolated (not parameterized) because SQLite doesn't allow
-  // `?` placeholders in the LIMIT clause in older PRAGMA modes; `Math.floor`
-  // bounds it to an integer to prevent SQL-injection-via-NaN.
-  const limitClause =
-    filter?.limit !== undefined ? ` LIMIT ${Math.floor(filter.limit)}` : "";
-  const sql = `${SELECT_BASE_SQL}${where} ORDER BY started_at DESC${limitClause}`;
+  const sql = `${SELECT_BASE_SQL}${where} ORDER BY started_at DESC${limitClause(filter?.limit)}`;
 
   const rows = db.raw.query<RunRawRow, string[]>(sql).all(...params);
   return Object.freeze(rows.map(rowToRunRow));

@@ -95,6 +95,7 @@ type FactsFilter = {
  * Filter dispatch:
  *   - subject + predicate     → factsBySubject(...), filter by predicate
  *   - subject only            → factsBySubject(...)
+ *   - partial subject         → empty (fail closed; never broaden)
  *   - predicate only          → factsByPredicate(namespace, predicate)
  *   - no filter               → all facts
  */
@@ -104,8 +105,12 @@ function readFacts(
 ): ReadonlyArray<FactEffect> {
   const hasSubject =
     filter.subjectKind !== undefined && filter.subjectId !== undefined;
+  const hasPartialSubject =
+    (filter.subjectKind === undefined) !== (filter.subjectId === undefined);
   const hasPredicate =
     filter.predicate !== undefined && filter.predicate.length > 0;
+
+  if (hasPartialSubject) return Object.freeze([]);
 
   if (hasSubject) {
     // subjectKind + subjectId both narrowed by the `hasSubject` check.

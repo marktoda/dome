@@ -57,6 +57,7 @@ import { err, ok, type Result } from "../types";
 import type { Processor, ProcessorImplementation } from "../core/processor";
 import type { ExternalHandler } from "../outbox/dispatch";
 import {
+  DEFAULT_PAGE_TYPE_DECLARATIONS,
   mergePageTypeDeclarations,
   parsePageTypesYaml,
   type PageTypeDeclaration,
@@ -320,7 +321,10 @@ async function loadBundlesInRoot(
   }
 
   const pageTypeCollisionCheck = mergePageTypeDeclarations(
-    loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    [
+      ...DEFAULT_PAGE_TYPE_DECLARATIONS,
+      ...loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    ],
     { enforceKnownTypes: true },
   );
   if (!pageTypeCollisionCheck.ok) {
@@ -378,7 +382,10 @@ export async function loadBundlesFromRoots(
 
   const loaded = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
   const pageTypeCollisionCheck = mergePageTypeDeclarations(
-    loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    [
+      ...DEFAULT_PAGE_TYPE_DECLARATIONS,
+      ...loaded.flatMap((bundle) => [...bundle.pageTypes]),
+    ],
     { enforceKnownTypes: true },
   );
   if (!pageTypeCollisionCheck.ok) {
@@ -872,7 +879,51 @@ function checkProcessorMetadataBoundary(
   if (processor.phase !== decl.phase) {
     return `manifest declared phase '${decl.phase}' for processor '${decl.id}'; module exported phase '${processor.phase}'`;
   }
+  const mismatchedField = firstMismatchedManifestField(decl, processor);
+  if (mismatchedField !== null) {
+    return `manifest declared processor '${decl.id}'; module exported stale manifest-owned field '${mismatchedField}'`;
+  }
   return null;
+}
+
+function firstMismatchedManifestField(
+  decl: ProcessorDeclaration,
+  processor: Partial<Processor<unknown>>,
+): string | null {
+  const checks: ReadonlyArray<
+    readonly [keyof Processor<unknown>, unknown, unknown]
+  > = [
+    ["triggers", processor.triggers, decl.triggers],
+    ["capabilities", processor.capabilities, decl.capabilities],
+    ["execution", processor.execution, decl.execution],
+    ["inspection", processor.inspection, decl.inspection],
+  ];
+  for (const [field, exportedValue, manifestValue] of checks) {
+    if (
+      exportedValue !== undefined &&
+      stableJson(exportedValue) !== stableJson(manifestValue)
+    ) {
+      return field;
+    }
+  }
+  return null;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) => {
+    if (
+      inner !== null &&
+      typeof inner === "object" &&
+      !Array.isArray(inner)
+    ) {
+      return Object.fromEntries(
+        Object.entries(inner as Record<string, unknown>).sort(([a], [b]) =>
+          a.localeCompare(b),
+        ),
+      );
+    }
+    return inner;
+  });
 }
 
 function manifestMetadataKeys(exported: object): ReadonlyArray<string> {

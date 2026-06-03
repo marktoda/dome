@@ -151,11 +151,6 @@ describe("loadBundles — shipped dome.lint bundle", () => {
       join(processorsDir, "proc.ts"),
       `
         export default {
-          id: "test.exec.proc",
-          version: "0.1.0",
-          phase: "garden",
-          triggers: [],
-          capabilities: [],
           async run() {
             return [];
           },
@@ -222,6 +217,53 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(proc.capabilities).toEqual([
       { kind: "read", paths: ["wiki/**/*.md"] },
     ]);
+  });
+
+  test("rejects stale manifest-owned metadata on full processor exports", async () => {
+    const root = makeTmpRoot("loader-stale-metadata-");
+    const bundleDir = join(root, "test.stale");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.stale",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "test.stale.proc",
+            version: "0.1.0",
+            phase: "garden",
+            triggers: [{ kind: "signal", name: "file.created" }],
+            capabilities: [{ kind: "read", paths: ["wiki/**"] }],
+            module: "processors/proc.ts",
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(processorsDir, "proc.ts"),
+      `
+        export default {
+          id: "test.stale.proc",
+          version: "0.1.0",
+          phase: "garden",
+          triggers: [{ kind: "signal", name: "file.created" }],
+          capabilities: [{ kind: "read", paths: ["notes/**"] }],
+          async run() {
+            return [];
+          },
+        };
+      `,
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("processor-module-load-failed");
+    if (result.error.kind !== "processor-module-load-failed") return;
+    expect(result.error.cause).toContain("stale manifest-owned field 'capabilities'");
   });
 
   test("activeBundleIds filters before manifest reads and processor imports", async () => {
@@ -822,6 +864,29 @@ describe("loadBundles — error variants", () => {
     expect(result.error.kind).toBe("page-type-collision");
   });
 
+  test("bundle page types cannot shadow SDK defaults", async () => {
+    const root = makeTmpRoot("loader-default-page-type-collision-");
+    const bundleDir = join(root, "test.default-page");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "test.default-page",
+        version: "0.1.0",
+        processors: [],
+      }),
+    );
+    await writeFile(
+      join(bundleDir, "page-types.yaml"),
+      "extensions:\n  - name: entity\n",
+    );
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("page-type-collision");
+  });
+
   // Regression: pre-fix, Dirent.isDirectory() reported false for
   // symlink-to-directory entries, so symlinked bundles were silently
   // skipped — the loader returned an empty result. Real-world use
@@ -909,11 +974,6 @@ async function writeCommandBundle(
     join(processorsDir, "proc.ts"),
     `
       export default {
-        id: "${opts.processorId}",
-        version: "0.1.0",
-        phase: "view",
-        triggers: [],
-        capabilities: [],
         async run() {
           return [];
         },

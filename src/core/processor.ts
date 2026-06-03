@@ -632,6 +632,35 @@ export const InspectionScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("all-readable-markdown") }).strict(),
 ]);
 
+export const VaultRelativePatternSchema = z.string().min(1).superRefine(
+  (value, ctx) => {
+    if (value.startsWith("/")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must be vault-relative, not absolute",
+      });
+    }
+    if (value.includes("\\")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must use POSIX '/' separators",
+      });
+    }
+    if (value.split("/").some((segment) => segment === "..")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must not contain parent-directory '..' segments",
+      });
+    }
+    if (value.split("/").some((segment) => segment.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must not contain empty path segments",
+      });
+    }
+  },
+);
+
 export const SignalSchema = z.enum([
   "file.created",
   "file.modified",
@@ -647,14 +676,14 @@ export const SignalTriggerSchema = z
   .object({
     kind: z.literal("signal"),
     name: SignalSchema,
-    pathPattern: z.string().min(1).optional(),
+    pathPattern: VaultRelativePatternSchema.optional(),
   })
   .strict();
 
 export const PathTriggerSchema = z
   .object({
     kind: z.literal("path"),
-    pattern: z.string().min(1),
+    pattern: VaultRelativePatternSchema,
   })
   .strict();
 
@@ -691,21 +720,21 @@ export const TriggerSchema = z.discriminatedUnion("kind", [
 export const ReadCapabilitySchema = z
   .object({
     kind: z.literal("read"),
-    paths: z.array(z.string().min(1)),
+    paths: z.array(VaultRelativePatternSchema),
   })
   .strict();
 
 export const PatchProposeCapabilitySchema = z
   .object({
     kind: z.literal("patch.propose"),
-    paths: z.array(z.string().min(1)),
+    paths: z.array(VaultRelativePatternSchema),
   })
   .strict();
 
 export const PatchAutoCapabilitySchema = z
   .object({
     kind: z.literal("patch.auto"),
-    paths: z.array(z.string().min(1)),
+    paths: z.array(VaultRelativePatternSchema),
   })
   .strict();
 

@@ -148,7 +148,7 @@ WHERE idempotency_key = ?
 const QUERY_BY_PROCESSOR_SQL = `
 SELECT id, idempotency_key, source_refs
 FROM questions
-WHERE processor_id = ?
+WHERE processor_id = ? AND answered_at IS NULL
 `.trim();
 
 const DELETE_BY_ID_SQL = `

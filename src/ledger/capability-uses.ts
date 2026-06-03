@@ -30,6 +30,7 @@
 //     functionally; no index access into raw `.all()` results.
 
 import type { LedgerDb } from "./db";
+import { limitClause } from "./limits";
 import type { RunId } from "./runs";
 
 // ----- Public types ---------------------------------------------------------
@@ -213,9 +214,7 @@ export function queryPatchRecords(
   }
 
   const where = clauses.length === 0 ? "" : ` AND ${clauses.join(" AND ")}`;
-  const limitClause =
-    filter?.limit !== undefined ? ` LIMIT ${Math.floor(filter.limit)}` : "";
-  const sql = `${SELECT_PATCH_RECORDS_BASE_SQL}${where} ORDER BY capability_uses.recorded_at DESC, capability_uses.id DESC${limitClause}`;
+  const sql = `${SELECT_PATCH_RECORDS_BASE_SQL}${where} ORDER BY capability_uses.recorded_at DESC, capability_uses.id DESC${limitClause(filter?.limit)}`;
   const rows = db.raw.query<PatchRecordRawRow, string[]>(sql).all(...params);
   return Object.freeze(rows.map(rowToPatchRecord));
 }

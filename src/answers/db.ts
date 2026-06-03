@@ -11,6 +11,10 @@ import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 
 import { err, ok, type Result } from "../types";
+import {
+  validateSqliteTableShapes,
+  type SqliteTableShape,
+} from "../sqlite-shape";
 
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -37,6 +41,30 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "ON question_answers(answered_at)",
   "CREATE INDEX IF NOT EXISTS question_answers_by_handler_status "
     + "ON question_answers(handler_status, answered_at)",
+]);
+
+const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
+  {
+    table: "answers_meta",
+    columns: ["schema_hash", "built_at"],
+  },
+  {
+    table: "question_answers",
+    columns: [
+      "idempotency_key",
+      "answer",
+      "answered_at",
+      "question_id",
+      "question",
+      "processor_id",
+      "adopted_commit",
+      "handler_status",
+      "handler_attempts",
+      "last_handler_attempt_at",
+      "handled_at",
+      "last_handler_error",
+    ],
+  },
 ]);
 
 const sha256 = (s: string): string =>
@@ -108,6 +136,10 @@ export async function openAnswersDb(
       });
     }
     applyDdl(raw);
+    const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
+    if (shapeError !== null) {
+      throw new Error(shapeError);
+    }
     insertOrReplaceMetaRow(raw, schemaHash);
   } catch (e) {
     raw.close();
