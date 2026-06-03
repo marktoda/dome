@@ -118,15 +118,18 @@ function printDoctorText(report: HealthReport): void {
     ),
   ];
   if (report.status === "ok") {
-    pushSection(lines, "Summary", formatSummaryRows([
-      ["health", "ok"],
-      ["findings", "0"],
-    ]));
+    pushSection(lines, "Findings", ["  none"]);
     console.log(lines.join("\n"));
     return;
   }
 
-  pushSection(lines, "Summary", formatSummaryRows([
+  const findingLines: string[] = [];
+  for (const finding of report.findings) {
+    findingLines.push(formatFinding(finding));
+    findingLines.push(`    recovery: ${finding.recovery}`);
+  }
+  pushSection(lines, "Findings", findingLines);
+  pushSection(lines, "At A Glance", formatSummaryRows([
     [
       "health",
       `${report.summary.errorCount} error | ${report.summary.warningCount} warning`,
@@ -146,12 +149,6 @@ function printDoctorText(report: HealthReport): void {
         `model ${report.summary.modelProviderMissing}`,
     ],
   ]));
-  const findingLines: string[] = [];
-  for (const finding of report.findings) {
-    findingLines.push(formatFinding(finding));
-    findingLines.push(`    recovery: ${finding.recovery}`);
-  }
-  pushSection(lines, "Findings", findingLines);
   console.log(lines.join("\n"));
 }
 

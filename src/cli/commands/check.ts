@@ -52,6 +52,7 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatBulletLines,
   formatCommand,
   formatHeadline,
   formatNextActionsBlock,
@@ -510,8 +511,8 @@ function renderCheckReport(
   options: { readonly showLoopDetails: boolean },
 ): ReadonlyArray<string> {
   const lines = [formatHeadline("Dome check", formatCheckHeadline(report))];
-  pushSection(lines, "Next", formatNextActionsBlock(report.next_actions).slice(1));
-  pushSection(lines, "Summary", formatSummaryRows([
+  lines.push(...formatNextActionsBlock(report.next_actions));
+  pushSection(lines, "At A Glance", formatSummaryRows([
     ["status", report.status],
     ["projection", formatProjection(report.projection)],
     ["engine", formatEngine(report.engine)],
@@ -639,19 +640,18 @@ function diagnosticLines(
   const items = report?.items ?? [];
   if (items.length === 0) return [];
   const lines: string[] = [];
-  appendDiagnosticDispositionGroups(lines, report);
-  appendDiagnosticRepairGroups(lines, report);
-  appendDiagnosticMessageGroups(lines, report);
+  lines.push(`  showing ${items.length}/${report?.filtered_diagnostics ?? items.length}`);
   for (const [disposition, groupItems] of groupDiagnosticsByDisposition(items)) {
-    lines.push(`  ${formatDispositionHeading(disposition, groupItems.length)}`);
+    lines.push(``, `  ${formatDispositionHeading(disposition, groupItems.length)}`);
     for (const item of groupItems) {
       lines.push(
         `    - [${formatSeverity(item.severity)}] ${item.code}: ${truncateText(item.message, 160)}`,
       );
       lines.push(`      source: ${item.source_refs}`);
-      lines.push(`      repair: ${item.repair_path} - ${item.repair_hint}`);
+      lines.push(`      fix: ${item.repair_path} - ${item.repair_hint}`);
     }
   }
+  appendDiagnosticPatterns(lines, report);
   appendMoreLine(
     lines,
     report?.filtered_diagnostics ?? 0,
@@ -661,70 +661,28 @@ function diagnosticLines(
   return lines;
 }
 
-function appendDiagnosticDispositionGroups(
+function appendDiagnosticPatterns(
   lines: string[],
   report: CheckContentReport | null,
 ): void {
   if (report === null) return;
-  const groups = report.disposition_summary.groups;
-  if (!groups.some((group) => group.count > 1) && groups.length <= 1) return;
-  lines.push("  Dispositions");
-  for (const group of groups) {
-    lines.push(
-      `    - ${group.disposition} x${group.count}: ${group.disposition_hint}`,
-    );
-    lines.push(`      first: ${group.first_source_refs}`);
-  }
-  appendMoreGroupsLine(
-    lines,
-    report.disposition_summary.group_count,
-    groups.length,
-    "disposition groups",
+  const patterns: string[] = [];
+  const repeatedMessages = report.message_summary.groups.filter((group) =>
+    group.count > 1
   );
-}
-
-function appendDiagnosticRepairGroups(
-  lines: string[],
-  report: CheckContentReport | null,
-): void {
-  if (report === null) return;
-  const groups = report.repair_summary.groups;
-  if (!groups.some((group) => group.count > 1) && groups.length <= 1) return;
-  lines.push("  Repair paths");
-  for (const group of groups) {
-    lines.push(
-      `    - ${group.repair_path} x${group.count}: ${group.repair_hint}`,
+  for (const group of repeatedMessages) {
+    patterns.push(
+      `${group.count}x [${formatSeverity(group.severity)}] ${group.code}: ${group.message}`,
     );
-    lines.push(`      first: ${group.first_source_refs}`);
   }
-  appendMoreGroupsLine(
-    lines,
-    report.repair_summary.group_count,
-    groups.length,
-    "repair groups",
+  const repairGroups = report.repair_summary.groups.filter((group) =>
+    group.count > 1
   );
-}
-
-function appendDiagnosticMessageGroups(
-  lines: string[],
-  report: CheckContentReport | null,
-): void {
-  if (report === null) return;
-  const groups = report.message_summary.groups;
-  if (!groups.some((group) => group.count > 1)) return;
-  lines.push("  Repeated messages");
-  for (const group of groups) {
-    lines.push(
-      `    - [${formatSeverity(group.severity)}] ${group.code} x${group.count}: ${group.message}`,
-    );
-    lines.push(`      first: ${group.first_source_refs}`);
+  for (const group of repairGroups) {
+    patterns.push(`${group.count}x ${group.repair_path}: ${group.repair_hint}`);
   }
-  appendMoreGroupsLine(
-    lines,
-    report.message_summary.group_count,
-    groups.length,
-    "groups",
-  );
+  if (patterns.length === 0) return;
+  pushSection(lines, "Patterns", formatBulletLines(patterns));
 }
 
 function questionLines(
@@ -748,19 +706,6 @@ function questionLines(
   }
   appendMoreLine(lines, report?.questions ?? 0, items.length, "questions");
   return lines;
-}
-
-function appendMoreGroupsLine(
-  lines: string[],
-  total: number,
-  shown: number,
-  label: string,
-): void {
-  const remaining = total - shown;
-  if (remaining <= 0) return;
-  lines.push(
-    `  ... ${remaining} more ${label} (use --limit ${total} to show all ${label})`,
-  );
 }
 
 function appendMoreLine(

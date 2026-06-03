@@ -82,7 +82,12 @@ import {
   defaultConfigYaml,
 } from "../default-vault-config";
 import { formatJson } from "../format";
-import { formatHeadline, formatSummaryRows, pushSection } from "../human-output";
+import {
+  formatBulletLines,
+  formatHeadline,
+  formatSummaryRows,
+  pushSection,
+} from "../human-output";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -542,9 +547,29 @@ function printSummary(s: InitSummary, json: boolean): void {
     return;
   }
   const lines = [formatHeadline("Dome init", "vault ready")];
-  pushSection(lines, "Summary", formatSummaryRows([
-    ["vault", s.vaultPath],
-    ["git init", s.gitInit],
+  pushSection(lines, "Vault", formatSummaryRows([["path", s.vaultPath]]));
+  const steps = initStepRows(s);
+  pushSection(lines, "Created", formatBulletLines(steps.created));
+  pushSection(lines, "Updated", formatBulletLines(steps.updated));
+  pushSection(lines, "Already Present", formatBulletLines(steps.alreadyPresent));
+  pushSection(lines, "Skipped", formatBulletLines(steps.skipped));
+  console.log(lines.join("\n"));
+}
+
+function initStepRows(s: InitSummary): {
+  readonly created: ReadonlyArray<string>;
+  readonly updated: ReadonlyArray<string>;
+  readonly alreadyPresent: ReadonlyArray<string>;
+  readonly skipped: ReadonlyArray<string>;
+} {
+  const groups = {
+    created: [] as string[],
+    updated: [] as string[],
+    alreadyPresent: [] as string[],
+    skipped: [] as string[],
+  };
+  for (const [label, outcome] of [
+    ["git repo", s.gitInit],
     ["wiki/", s.wikiDir],
     ["notes/", s.notesDir],
     ["inbox/raw/", s.inboxRawDir],
@@ -556,8 +581,21 @@ function printSummary(s: InitSummary, json: boolean): void {
     ["AGENTS.md", s.agentsMd],
     ["CLAUDE.md", s.claudeMd],
     ["initial commit", s.initialCommit],
-  ]));
-  console.log(lines.join("\n"));
+  ] as const) {
+    if (outcome === "created") groups.created.push(label);
+    else if (outcome === "updated") groups.updated.push(label);
+    else if (outcome === "skipped (already present)") {
+      groups.alreadyPresent.push(label);
+    } else {
+      groups.skipped.push(label);
+    }
+  }
+  return Object.freeze({
+    created: Object.freeze(groups.created),
+    updated: Object.freeze(groups.updated),
+    alreadyPresent: Object.freeze(groups.alreadyPresent),
+    skipped: Object.freeze(groups.skipped),
+  });
 }
 
 function summaryToJson(s: InitSummary): InitJsonResult {

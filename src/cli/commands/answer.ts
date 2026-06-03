@@ -231,13 +231,13 @@ function formatQuestion(commandLabel: string, record: QuestionRecord): string {
   ];
   pushSection(lines, "Question", [`  ${record.effect.question}`]);
   const summary: Array<readonly [string, string]> = [
-    ["options", record.effect.options?.join(", ") ?? "free-form"],
     ["answer", record.answer ?? "none"],
-    ["processor", record.processorId],
+    ["options", record.effect.options?.join(", ") ?? "free-form"],
     ["asked", record.askedAt],
+    ["processor", record.processorId],
   ];
   if (record.answeredAt !== null) summary.push(["answered", record.answeredAt]);
-  pushSection(lines, "Summary", formatSummaryRows(summary));
+  pushSection(lines, "Details", formatSummaryRows(summary));
   if (record.effect.sourceRefs.length > 0) {
     pushSection(
       lines,
@@ -246,8 +246,9 @@ function formatQuestion(commandLabel: string, record: QuestionRecord): string {
     );
   }
   if (record.answeredAt === null) {
-    lines.push("");
-    lines.push(`Resolve: ${formatCommand(`${commandLabel} ${record.id} <value>`)}`);
+    pushSection(lines, "Next", [
+      `  ${formatCommand(`${commandLabel} ${record.id} <value>`)}`,
+    ]);
   }
   return lines.join("\n");
 }
@@ -264,7 +265,7 @@ function formatAnswerOutcome(input: {
       `${input.status} question ${input.record.id}`,
     ),
   ];
-  pushSection(lines, "Summary", formatSummaryRows([
+  pushSection(lines, "Result", formatSummaryRows([
     ["answer", input.record.answer ?? "none"],
     [
       "handlers",

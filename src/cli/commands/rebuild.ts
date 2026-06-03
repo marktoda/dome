@@ -127,12 +127,12 @@ function printRebuildText(result: {
   readonly effects: number;
 }): void {
   const lines = [formatHeadline("Dome rebuild", "rebuilt")];
-  pushSection(lines, "Summary", formatSummaryRows([
+  pushSection(lines, "Projection", formatSummaryRows([
     ["branch", result.branch],
     ["adopted", formatShortOid(result.adopted)],
-    ["files", String(result.files)],
-    ["processors", String(result.processors)],
-    ["effects", String(result.effects)],
+    ["files scanned", String(result.files)],
+    ["processors run", String(result.processors)],
+    ["effects recorded", String(result.effects)],
   ]));
   console.log(lines.join("\n"));
 }

@@ -182,11 +182,11 @@ function renderMarkdown(input: {
   readonly omittedIssues: number;
 }): string {
   const lines = [
-    `Dome lint: ${input.status}`,
+    `Dome lint  ${input.status}`,
     "",
-    "Summary",
-    `  status   ${input.status} | fail-on ${input.failOn}`,
-    `  checked  ${input.markdownFiles} markdown files`,
+    "Checked",
+    `  files    ${input.markdownFiles} markdown`,
+    `  fail-on  ${input.failOn}`,
     `  issues   ${input.counts.total} total | ${input.counts.block} block | ${input.counts.error} error | ${input.counts.warning} warning | ${input.counts.info} info`,
   ];
 

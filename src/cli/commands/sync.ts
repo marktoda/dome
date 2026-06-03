@@ -68,6 +68,8 @@ import {
   formatHeadline,
   formatNextActionsBlock,
   formatSeverity,
+  formatSummaryRows,
+  pushSection,
 } from "../human-output";
 import {
   countAttentionDiagnostics,
@@ -250,12 +252,12 @@ function printTickLines(
   }
   if (tick.kind === "in-sync") {
     if (opts.quiet) return;
-    console.log(
-      formatHeadline(
-        "dome sync",
-        `already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
-      ),
-    );
+    const lines = [formatHeadline("dome sync", "already in sync")];
+    pushSection(lines, "Git", formatSummaryRows([
+      ["branch", tick.branch],
+      ["adopted", tick.finalAdoptedRef.slice(0, 7)],
+    ]));
+    console.log(lines.join("\n"));
     printSyncAttentionLines(opts.result);
     return;
   }
@@ -291,35 +293,44 @@ function printTickLines(
       tick.drift.base === tick.drift.head
         ? tick.drift.head.slice(0, 7)
         : `${tick.drift.base.slice(0, 7)}..${tick.drift.head.slice(0, 7)}`;
-    console.log(
-      formatHeadline("dome sync", `adopted ${tick.branch}`) + `: ${range} ` +
-        `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
-        `${iters} iteration${iters === 1 ? "" : "s"})`,
-    );
+    const lines = [formatHeadline("dome sync", `adopted ${tick.branch}`)];
+    pushSection(lines, "Compiled", formatSummaryRows([
+      ["range", range],
+      ["diagnostics", `${diagCount}`],
+      ["iterations", `${iters}`],
+    ]));
+    console.log(lines.join("\n"));
     printHostFollowupLines("dome sync", tick.garden, tick.operational);
     printSyncAttentionLines(opts.result);
     return;
   }
 
-  console.error(
-    formatHeadline("dome sync", `blocked ${tick.branch}`) +
-      `: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"} ` +
-      `(adopted ref unchanged at ${result.adoptedRef.slice(0, 7)})`,
-  );
+  const lines = [formatHeadline("dome sync", `blocked ${tick.branch}`)];
+  pushSection(lines, "Blocked", formatSummaryRows([
+    ["diagnostics", `${diagCount}`],
+    ["adopted", result.adoptedRef.slice(0, 7)],
+  ]));
   const blockers = result.diagnostics.filter((d) => d.severity === "block");
+  const blockerLines: string[] = [];
   for (const d of blockers.slice(0, 5)) {
-    console.error(`  [${formatSeverity(d.severity)}] ${d.code}: ${d.message}`);
+    blockerLines.push(
+      `  - [${formatSeverity(d.severity)}] ${d.code}: ${d.message}`,
+    );
   }
   if (blockers.length > 5) {
-    console.error(
+    blockerLines.push(
       `  ... and ${blockers.length - 5} more (see \`dome check --json\`).`,
     );
   }
+  pushSection(lines, "Blockers", blockerLines);
+  console.error(lines.join("\n"));
 }
 
 function printSyncAttentionLines(result: SyncJsonResult): void {
   if (!result.attention_required) return;
-  console.log(formatHeadline("dome sync", `attention ${result.attention.join(", ")}`));
+  console.log("");
+  console.log(formatHeadline("dome sync", "needs attention"));
+  console.log(`attention: ${result.attention.join(", ")}`);
   for (const line of formatNextActionsBlock(result.next_actions)) {
     console.log(line);
   }

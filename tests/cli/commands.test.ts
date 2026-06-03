@@ -2186,7 +2186,7 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("Dome check: ok");
+    expect(out).toContain("Dome check  ok");
     expect(out).toContain("status      ok");
     expect(out).toContain("engine      ok");
     expect(out).toContain("content     0 diagnostics");
@@ -2415,7 +2415,7 @@ describe("runCheck", () => {
     captured.out = [];
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Dome check: ok");
+    expect(text).toContain("Dome check  ok");
     expect(text).toContain("status      ok");
     expect(text).toContain(
       "content     1 diagnostic | 0 attention items | showing none",
@@ -2800,9 +2800,9 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Repeated messages");
+    expect(text).toContain("Patterns");
     expect(text).toContain(
-      "[warning] check.repeated x2: Repeated diagnostic",
+      "2x [warning] check.repeated: Repeated diagnostic",
     );
     expect(text).toContain(
       "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
@@ -2930,12 +2930,10 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Dispositions");
-    expect(text).toContain("agent-fixable x2");
     expect(text).toContain("agent fixable");
-    expect(text).toContain("Repair paths");
-    expect(text).toContain("link.resolve-or-create x2");
-    expect(text).toContain("repair: link.resolve-or-create");
+    expect(text).toContain("Patterns");
+    expect(text).toContain("2x link.resolve-or-create");
+    expect(text).toContain("fix: link.resolve-or-create");
   });
 
   test("content report classifies optional-root diagnostic noise", async () => {
@@ -3027,8 +3025,7 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Dispositions");
-    expect(text).toContain("noise x1");
+    expect(text).toContain("noise (2 items)");
     expect(text).toContain("Content");
     expect(text).toContain("dome.markdown.broken-wikilink");
     expect(text).toContain("dome.markdown.type-unknown");
@@ -3228,8 +3225,9 @@ describe("runDoctor", () => {
     const code = await runDoctor({ vault: f.vaultPath });
     expect(code).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("Dome doctor: ok");
-    expect(out).toContain("health    ok");
+    expect(out).toContain("Dome doctor  ok");
+    expect(out).toContain("Findings");
+    expect(out).toContain("none");
   });
 
   test("--json reports failed outbox, orphan runs, and quarantines", async () => {
@@ -3425,20 +3423,20 @@ describe("runStatus", () => {
 
     const out = captured.out.join("\n");
     expect(out).toContain("(uninitialized)"); // adopted ref
-    expect(out).toContain("sync needed");
-    expect(out).toContain("pending unknown");
+    expect(out).toContain("sync         needed");
+    expect(out).toContain("pending  unknown");
     expect(out).toContain("(never)"); // last_sync
-    expect(out).toContain("Dome status: needs attention");
-    expect(out).toContain("content   2 pages");
+    expect(out).toContain("Dome status  needs attention");
+    expect(out).toContain("content  2 pages");
     expect(out).toContain("links 0");
-    expect(out).toContain("health    projection fresh | diagnostics 0");
-    expect(out).toContain("loops     5 known");
+    expect(out).toContain("projection   fresh");
+    expect(out).toContain("loops       5 known");
     expect(out).not.toContain("\nLoops\n");
-    expect(out).toContain("diagnostics 0");
-    expect(out).toContain("questions 0");
-    expect(out).toContain("outbox 0 pending / 0 failed");
-    expect(out).toContain("quarantine 0");
-    expect(out).toContain("serve off (run dome serve)");
+    expect(out).toContain("diagnostics  0");
+    expect(out).toContain("questions    0");
+    expect(out).toContain("outbox      0 pending | 0 failed");
+    expect(out).toContain("quarantine  0");
+    expect(out).toContain("serve        off (run dome serve)");
   });
 
   test("--loops prints maintenance-loop detail rows", async () => {
@@ -3449,7 +3447,7 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("loops     5 known");
+    expect(out).toContain("loops       5 known");
     expect(out).toContain("\nLoops\n");
     expect(out).toContain("dome.capture.digest");
     expect(out).toContain("processors:");
@@ -3844,7 +3842,7 @@ describe("runStatus", () => {
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("pending 1 live");
+    expect(out).toContain("runs        1 live pending | 0 failed");
     expect(out).not.toContain("pending 1 | failed");
     expect(out).not.toContain("pending_runs");
 
@@ -3876,7 +3874,7 @@ describe("runStatus", () => {
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
 
     const staleOut = captured.out.join("\n");
-    expect(staleOut).toContain("pending 2 total (1 stale)");
+    expect(staleOut).toContain("runs        2 total (1 stale) pending | 0 failed");
     expect(staleOut).toContain("dome check --json");
   });
 
@@ -4139,13 +4137,15 @@ describe("runStatus", () => {
 
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
-    const topLine = text.split("\n").find((line) => line.startsWith("diag top"));
+    const topLine = text.split("\n").find((line) =>
+      line.includes("top: ")
+    );
     expect(topLine).toBeDefined();
     expect(topLine).toContain("1 warning status.warning");
     expect(topLine).not.toContain("status.info");
     const focusLine = text
       .split("\n")
-      .find((line) => line.startsWith("diag fix"));
+      .find((line) => line.includes("fix: "));
     expect(focusLine).toBeDefined();
     expect(focusLine).toContain("actionable diagnostic");
     expect(focusLine).not.toContain("informational diagnostic");

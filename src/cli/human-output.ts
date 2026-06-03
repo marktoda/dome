@@ -31,7 +31,7 @@ export function statusWord(attention: boolean): "ok" | "needs attention" {
 }
 
 export function formatHeadline(command: string, status: string): string {
-  return `${color.bold(command)}: ${formatStatusValue(status)}`;
+  return `${color.bold(command)}  ${formatStatusValue(status)}`;
 }
 
 export function formatSectionTitle(title: string): string {
@@ -98,6 +98,14 @@ export function formatSummaryRows(
   );
 }
 
+export function formatBulletLines(
+  items: ReadonlyArray<string>,
+  empty = "none",
+): ReadonlyArray<string> {
+  if (items.length === 0) return [`  ${formatMuted(empty)}`];
+  return items.map((item) => `  - ${item}`);
+}
+
 export function formatNextActionsBlock(
   actions: ReadonlyArray<CliNextAction>,
 ): ReadonlyArray<string> {
@@ -126,6 +134,7 @@ function isGoodStatus(value: string): boolean {
     value === "pass" ||
     value === "rebuilt" ||
     value === "answered" ||
+    value === "clean" ||
     value === "vault ready" ||
     value.startsWith("adopted ") ||
     value.startsWith("already in sync") ||
@@ -138,6 +147,7 @@ function isBadStatus(value: string): boolean {
     value === "error" ||
     value === "block" ||
     value === "blocked" ||
+    value === "diverged" ||
     value.startsWith("blocked ");
 }
 
@@ -145,6 +155,7 @@ function isWarningStatus(value: string): boolean {
   return value === "needs attention" ||
     value === "needs sync" ||
     value === "attention" ||
+    value === "needed" ||
     value === "stale" ||
     value.startsWith("attention ") ||
     value.startsWith("stale ") ||
@@ -154,9 +165,9 @@ function isWarningStatus(value: string): boolean {
 }
 
 function colorizeHumanLine(line: string): string {
-  const headline = /^(Dome [^:]+): (.+)$/.exec(line);
+  const headline = /^(Dome .+?)(?::| {2,})(.+)$/.exec(line);
   if (headline !== null && headline[1] !== undefined && headline[2] !== undefined) {
-    return formatHeadline(headline[1], headline[2]);
+    return formatHeadline(headline[1].trimEnd(), headline[2].trimStart());
   }
   if (
     line.length > 0 &&

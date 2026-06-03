@@ -77,11 +77,11 @@ scenario(
     const text = await h.runCli(["query", "alpha launch"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("SourceRefs:");
+    expect(text.stdout).toContain("source:");
     expect(text.stdout).toContain("why:");
     expect(text.stdout).toContain("wiki/project-alpha.md");
     expect(text.stdout).toContain("dome.graph.tagged x2");
-    expect(text.stdout).toContain("Questions:");
+    expect(text.stdout).toContain("questions:");
     expect(text.stdout).toContain("resolve: dome resolve ");
 
     const cli = await h.runCli(["query", "alpha launch", "--json"]);

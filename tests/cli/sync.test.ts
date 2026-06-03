@@ -652,7 +652,8 @@ describe("runSync idempotent", () => {
 
     const out = captured.out.join("\n");
     expect(out).toContain("already in sync");
-    expect(out).toContain("dome sync: attention diagnostics");
+    expect(out).toContain("dome sync  needs attention");
+    expect(out).toContain("attention: diagnostics");
     expect(out).toContain("dome check --content --attention --limit 50 --json");
     expect(captured.err.join("\n")).toBe("");
   }, SYNC_TEST_TIMEOUT_MS);
@@ -697,8 +698,9 @@ extensions:
     captured.err = [];
     expect(await runSync(options)).toBe(0);
     expect(captured.out.join("\n")).toContain(
-      "garden follow-up (1 sub-proposal",
+      "dome sync  garden follow-up",
     );
+    expect(captured.out.join("\n")).toContain("sub-proposals     1");
     const afterText = await getAdoptedRef(f.vaultPath, "main");
     expect(afterText).not.toBeNull();
     expect(afterText).not.toBe(userHead);

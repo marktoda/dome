@@ -136,11 +136,12 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatBulletLines,
   formatHeadline,
   formatNextActionsBlock,
-  formatSectionTitle,
   formatSeverity,
-  formatStatusValue,
+  formatSummaryRows,
+  pushSection,
 } from "../human-output";
 import {
   formatMaintenanceLoopDetailLines,
@@ -495,76 +496,72 @@ function printStatusText(
   s: StatusSnapshot,
   options: { readonly showLoopDetails: boolean },
 ): void {
-  console.log(
+  const lines = [
     formatHeadline(
       "Dome status",
       s.attention_required ? "needs attention" : "ok",
     ),
-  );
-  for (const line of formatNextActionsBlock(s.next_actions)) {
-    console.log(line);
-  }
-  if (s.next_actions.length > 0) console.log("");
-  console.log(`vault     ${s.vault}`);
+  ];
+  lines.push(...formatNextActionsBlock(s.next_actions));
+
   const syncState = s.adopted_diverged
     ? "diverged"
     : s.sync_needed
       ? "needed"
       : "ok";
-  console.log(
-    `git       branch ${s.branch ?? "(detached)"} | head ${shortOid(s.head, "(none)")} | adopted ${shortOid(s.adopted, "(uninitialized)")} | sync ${syncState} | pending ${formatPendingCommits(s.pending_commits)}`,
-  );
-  console.log(
-    `draft     ${s.dirty_modified} modified | ${s.dirty_untracked} untracked`,
-  );
-  console.log(
-    `content   ${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${formatInboxPages(s)} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`,
-  );
-  console.log(
-    `engine    last sync ${s.last_sync ?? "(never)"} | pending ${formatPendingRuns(s)} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
-  );
-  console.log(
-    `health    projection ${formatStatusValue(formatProjectionFreshness(s))} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
-  );
-  console.log(
-    `loops     ${formatMaintenanceLoopSummaryLine(s.maintenance_loops)}`,
-  );
+
+  pushSection(lines, "At A Glance", formatSummaryRows([
+    ["sync", syncState],
+    ["projection", formatProjectionFreshness(s)],
+    ["draft", formatDraftSummary(s)],
+    ["diagnostics", formatDiagnosticCount(s)],
+    ["questions", String(s.questions)],
+    ["serve", formatServe(s)],
+  ]));
+  pushSection(lines, "Vault", formatSummaryRows([
+    ["path", s.vault],
+    ["branch", s.branch ?? "(detached)"],
+    ["head", shortOid(s.head, "(none)")],
+    ["adopted", shortOid(s.adopted, "(uninitialized)")],
+    ["pending", formatPendingCommits(s.pending_commits)],
+    ["content", formatContentSummary(s)],
+  ]));
+  pushSection(lines, "Engine", formatSummaryRows([
+    ["last sync", s.last_sync ?? "(never)"],
+    ["runs", `${formatPendingRuns(s)} pending | ${s.failed_runs} failed`],
+    ["outbox", `${s.outbox_pending} pending | ${s.outbox_failed} failed`],
+    ["quarantine", String(s.quarantined)],
+    ["loops", formatMaintenanceLoopSummaryLine(s.maintenance_loops)],
+  ]));
+
   if (options.showLoopDetails) {
-    printLoopDetails(s.maintenance_loops);
+    pushSection(lines, "Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops));
   }
   const diagnosticTop =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_summary
       : s.diagnostic_summary;
-  if (diagnosticTop.groups.length > 0) {
-    console.log(`diag top  ${formatDiagnosticTopLine(diagnosticTop)}`);
-  }
   const diagnosticFocus =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_message_summary
       : s.diagnostic_message_summary;
-  if (diagnosticFocus.groups.length > 0) {
-    console.log(`diag fix  ${formatDiagnosticFocusLine(diagnosticFocus)}`);
-  }
   const diagnosticDisposition =
     s.attention_diagnostics > 0
       ? s.attention_diagnostic_disposition_summary
       : s.diagnostic_disposition_summary;
-  if (diagnosticDisposition.groups.length > 0) {
-    console.log(
-      `diag plan ${formatDiagnosticDispositionLine(diagnosticDisposition)}`,
-    );
-  }
-}
-
-function printLoopDetails(
-  loops: ReadonlyArray<MaintenanceLoopSummary>,
-): void {
-  console.log("");
-  console.log(formatSectionTitle("Loops"));
-  for (const line of formatMaintenanceLoopDetailLines(loops)) {
-    console.log(line);
-  }
+  const diagnosticLines = [
+    ...(diagnosticTop.groups.length > 0
+      ? [`top: ${formatDiagnosticTopLine(diagnosticTop)}`]
+      : []),
+    ...(diagnosticFocus.groups.length > 0
+      ? [`fix: ${formatDiagnosticFocusLine(diagnosticFocus)}`]
+      : []),
+    ...(diagnosticDisposition.groups.length > 0
+      ? [`plan: ${formatDiagnosticDispositionLine(diagnosticDisposition)}`]
+      : []),
+  ];
+  pushSection(lines, "Diagnostics", formatBulletLines(diagnosticLines));
+  console.log(lines.join("\n"));
 }
 
 function formatServe(s: StatusSnapshot): string {
@@ -588,6 +585,11 @@ function formatPendingRuns(s: StatusSnapshot): string {
   return `${s.pending_runs} total (${s.orphan_runs} stale)`;
 }
 
+function formatDraftSummary(s: StatusSnapshot): string {
+  if (s.dirty_modified === 0 && s.dirty_untracked === 0) return "clean";
+  return `${s.dirty_modified} modified | ${s.dirty_untracked} untracked`;
+}
+
 function formatDiagnosticCount(s: StatusSnapshot): string {
   if (s.diagnostics === 0) return "0";
   const attention = `${s.attention_diagnostics} attention`;
@@ -600,6 +602,10 @@ function formatDiagnosticCount(s: StatusSnapshot): string {
 function formatInboxPages(s: StatusSnapshot): string {
   if (s.inbox_raw_pages === 0) return String(s.inbox_pages);
   return `${s.inbox_pages} (${s.inbox_raw_pages} raw)`;
+}
+
+function formatContentSummary(s: StatusSnapshot): string {
+  return `${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${formatInboxPages(s)} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
 }
 
 function statusAttention(input: {

@@ -20,7 +20,7 @@ describe("human CLI color output", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).not.toContain("\u001b[");
-    expect(result.stdout.trim()).toBe("Dome check: ok");
+    expect(result.stdout.trim()).toBe("Dome check  ok");
   });
 });
 

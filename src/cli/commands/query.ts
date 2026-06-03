@@ -107,11 +107,7 @@ function formatQueryResult(data: unknown): string {
   const result = parseQueryResult(data);
   if (result.matches.length === 0) {
     const lines = [formatHeadline("Dome query", "no matches")];
-    pushSection(lines, "Summary", formatSummaryRows([
-      ["query", result.query],
-      ["shown", "0 matches"],
-      ["limit", result.limit === null ? "default" : String(result.limit)],
-    ]));
+    pushSection(lines, "Query", [`  "${result.query}"`]);
     return lines.join("\n");
   }
 
@@ -121,56 +117,58 @@ function formatQueryResult(data: unknown): string {
       plural(result.matches.length, "match", "matches"),
     ),
   ];
-  pushSection(lines, "Summary", formatSummaryRows([
-    ["query", result.query],
+  pushSection(lines, "Query", formatSummaryRows([
+    ["text", `"${result.query}"`],
     ["shown", plural(result.shown.matches, "match", "matches")],
     ["limit", result.limit === null ? "default" : String(result.limit)],
     ["has more", result.hasMore.matches ? "yes" : "no"],
   ]));
-  lines.push("", "Matches");
+  const matchLines: string[] = [];
   for (const [index, match] of result.matches.entries()) {
-    lines.push(`${index + 1}. ${match.title} (${match.path})`);
+    matchLines.push(`${index + 1}. ${match.title}`);
+    matchLines.push(`   path: ${match.path}`);
     if (match.snippet.length > 0) {
-      lines.push(`   ${stripFtsMarkers(match.snippet)}`);
+      matchLines.push(`   text: ${stripFtsMarkers(match.snippet)}`);
     }
     if (match.ranking !== null && match.ranking.reasons.length > 0) {
-      lines.push(
+      matchLines.push(
         `   why: ${match.ranking.reasons.join("; ")} ` +
           `(score ${match.ranking.score}, fts ${match.ranking.ftsRank})`,
       );
     }
     if (match.sourceRefs.length > 0) {
-      lines.push("   SourceRefs:");
-      for (const ref of match.sourceRefs) {
-        lines.push(`     - ${formatSourceRef(ref)}`);
-      }
+      matchLines.push(
+        `   source: ${match.sourceRefs.map(formatSourceRef).join(", ")}`,
+      );
     }
     if (match.facts.length > 0) {
       const facts = summarizeLabels(
         match.facts.map((fact) => fact.predicate),
         5,
       );
-      lines.push(`   facts: ${facts}`);
+      matchLines.push(`   facts: ${facts}`);
     }
     if (match.diagnostics.length > 0) {
       const diagnostics = summarizeLabels(
         match.diagnostics.map((diagnostic) => diagnostic.code),
         5,
       );
-      lines.push(`   diagnostics: ${diagnostics}`);
+      matchLines.push(`   diagnostics: ${diagnostics}`);
     }
     if (match.questions.length > 0) {
-      lines.push("   Questions:");
+      matchLines.push("   questions:");
       for (const question of match.questions.slice(0, 5)) {
         const refs = question.sourceRefs.length === 0
           ? ""
           : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
-        lines.push(`     - [#${question.id}] ${question.question}${refs}`);
-        lines.push(`       policy: ${questionAutomationLabel(question.metadata)}`);
-        lines.push(`       resolve: ${formatCommand(question.resolveCommand)}`);
+        matchLines.push(`     - [#${question.id}] ${question.question}${refs}`);
+        matchLines.push(`       policy: ${questionAutomationLabel(question.metadata)}`);
+        matchLines.push(`       resolve: ${formatCommand(question.resolveCommand)}`);
       }
     }
+    if (index < result.matches.length - 1) matchLines.push("");
   }
+  pushSection(lines, "Matches", matchLines);
   if (result.hasMore.matches) {
     lines.push("");
     lines.push(

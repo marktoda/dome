@@ -12,6 +12,11 @@ import { fileURLToPath } from "node:url";
 import type { AdoptEvent } from "../../engine/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden";
 import type { OperationalWorkResult } from "../../engine/operational-work";
+import {
+  formatHeadline,
+  formatSummaryRows,
+  pushSection,
+} from "../human-output";
 
 const processorGlobCache = new Map<string, Bun.Glob>();
 
@@ -127,15 +132,17 @@ export function printHostFollowupLines(
       garden.rejectedPatchCount > 0 ||
       garden.diagnostics.length > 0)
   ) {
-    const line =
-      `${command}: garden follow-up (` +
-      `${garden.subProposalCount} sub-proposal${garden.subProposalCount === 1 ? "" : "s"}, ` +
-      `${garden.rejectedPatchCount} rejected patch${garden.rejectedPatchCount === 1 ? "" : "es"}, ` +
-      `${garden.diagnostics.length} diagnostic${garden.diagnostics.length === 1 ? "" : "s"})`;
+    const lines = [formatHeadline(command, "garden follow-up")];
+    pushSection(lines, "Garden", formatSummaryRows([
+      ["sub-proposals", String(garden.subProposalCount)],
+      ["rejected patches", String(garden.rejectedPatchCount)],
+      ["diagnostics", String(garden.diagnostics.length)],
+    ]));
+    const text = ["", ...lines].join("\n");
     if (garden.rejectedPatchCount > 0 || garden.diagnostics.length > 0) {
-      console.error(line);
+      console.error(text);
     } else {
-      console.log(line);
+      console.log(text);
     }
   }
 
@@ -147,17 +154,19 @@ export function printHostFollowupLines(
       operational.questionAutoResolution.answered > 0 ||
       operational.diagnostics.length > 0)
   ) {
-    const line =
-      `${command}: operational work (` +
-      `${operational.scheduler.fired.length} scheduled, ` +
-      `${operational.jobs.drained.length} jobs, ` +
-      `${operational.outbox.length} outbox, ` +
-      `${operational.questionAutoResolution.answered} auto-resolved questions, ` +
-      `${operational.diagnostics.length} diagnostic${operational.diagnostics.length === 1 ? "" : "s"})`;
+    const lines = [formatHeadline(command, "operational work")];
+    pushSection(lines, "Operational", formatSummaryRows([
+      ["scheduled", String(operational.scheduler.fired.length)],
+      ["jobs", String(operational.jobs.drained.length)],
+      ["outbox", String(operational.outbox.length)],
+      ["auto-resolved", String(operational.questionAutoResolution.answered)],
+      ["diagnostics", String(operational.diagnostics.length)],
+    ]));
+    const text = ["", ...lines].join("\n");
     if (operational.diagnostics.length > 0) {
-      console.error(line);
+      console.error(text);
     } else {
-      console.log(line);
+      console.log(text);
     }
   }
 }
