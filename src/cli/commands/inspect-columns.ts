@@ -417,6 +417,51 @@ const QUARANTINE_HINT =
   "trigger hash, quarantine id, version hidden → --json";
 
 // ---------------------------------------------------------------------------
+// diagnostic-summary (groups table)
+// ---------------------------------------------------------------------------
+
+export const DIAGNOSTIC_SUMMARY_COLUMNS: ReadonlyArray<Column<Row>> = [
+  {
+    header: "SEVERITY",
+    get: (r) => {
+      const sev = str(r["severity"]);
+      if (sev === "block" || sev === "error")
+        return { text: sev, tone: "err" as const };
+      if (sev === "warning") return { text: sev, tone: "warn" as const };
+      if (sev === "info") return { text: sev, tone: "info" as const };
+      return { text: sev };
+    },
+    priority: 1,
+  },
+  {
+    header: "CODE",
+    get: (r) => ({ text: str(r["code"]) }),
+    priority: 2,
+  },
+  {
+    header: "COUNT",
+    get: (r) => ({
+      text: String(typeof r["count"] === "number" ? r["count"] : "-"),
+    }),
+    priority: 3,
+    align: "right" as const,
+  },
+  {
+    header: "SOURCE",
+    get: (r) => {
+      const refs = str(r["first_source_refs"]);
+      // first_source_refs is a comma-separated list; take the first entry
+      const first = refs.split(",")[0]?.trim() ?? "-";
+      return { text: first, tone: "muted" as const };
+    },
+    priority: 4,
+  },
+];
+
+const DIAGNOSTIC_SUMMARY_HINT =
+  "first_message hidden → --json";
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -468,4 +513,8 @@ export function hiddenHint(subject: string): string {
     default:
       return "";
   }
+}
+
+export function hiddenHintForDiagnosticSummary(): string {
+  return DIAGNOSTIC_SUMMARY_HINT;
 }

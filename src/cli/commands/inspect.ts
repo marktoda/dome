@@ -92,7 +92,12 @@ import {
   table,
 } from "../presenter";
 import { parsePositiveIntegerValue } from "../parse-options";
-import { columnsFor, hiddenHint } from "./inspect-columns";
+import {
+  columnsFor,
+  DIAGNOSTIC_SUMMARY_COLUMNS,
+  hiddenHint,
+  hiddenHintForDiagnosticSummary,
+} from "./inspect-columns";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -547,15 +552,9 @@ function printTextResult(subject: string, result: InspectResult): void {
         ? { tone: "muted" as const, label: "no rows" }
         : { tone: "plain" as const, label: `${rowCount} rows` };
     lines.push(headline({ cmd: `inspect ${subject}` }, rowStatus, caps));
-    // section() adds 2 spaces of indent to each body line; shrink the
-    // width passed to table() so combined output stays within caps.width.
-    const tableCaps = { ...caps, width: caps.width - 2 };
+    lines.push("");
     lines.push(
-      ...section(
-        "Rows",
-        table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), tableCaps),
-        caps,
-      ),
+      ...table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), caps),
     );
     const hint = hiddenHint(subject);
     if (hint.length > 0) {
@@ -582,21 +581,22 @@ function printTextResult(subject: string, result: InspectResult): void {
       caps,
     ),
   );
-  // Render summary groups via curated table
+  // Render summary groups via dedicated summary column set
   const summaryGroupRows = result.summary.groups.map((g) => ({
     severity: g.severity,
     code: g.code,
     count: g.count,
     first_source_refs: g.first_source_refs,
   }));
-  const tableCaps = { ...caps, width: caps.width - 2 };
+  lines.push("");
   lines.push(
-    ...section(
-      "Groups",
-      table(summaryGroupRows, columnsFor("diagnostics"), tableCaps),
-      caps,
-    ),
+    ...table(summaryGroupRows, DIAGNOSTIC_SUMMARY_COLUMNS, caps),
   );
+  const summaryHint = hiddenHintForDiagnosticSummary();
+  if (summaryHint.length > 0) {
+    lines.push("");
+    lines.push(`  ${paint(summaryHint, "muted", caps)}`);
+  }
   console.log(lines.join("\n"));
 }
 
