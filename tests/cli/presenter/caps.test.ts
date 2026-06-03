@@ -20,6 +20,11 @@ describe("resolveCaps", () => {
     expect(caps.color).toBe(true);
   });
 
+  test("FORCE_COLOR exclusions: 0 and false disable color even when set", () => {
+    expect(resolveCaps({ isTTY: false }, { FORCE_COLOR: "0" }).color).toBe(false);
+    expect(resolveCaps({ isTTY: false }, { FORCE_COLOR: "false" }).color).toBe(false);
+  });
+
   test("non-TTY without FORCE_COLOR disables color and falls back to width 80", () => {
     const caps = resolveCaps({ isTTY: false }, {});
     expect(caps.color).toBe(false);

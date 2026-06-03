@@ -30,6 +30,9 @@ function isUtfLocale(env: Record<string, string | undefined>): boolean {
  * never reach this — they serialize and return before rendering.
  *
  * Precedence for color: NO_COLOR (off) > FORCE_COLOR (on) > stream.isTTY.
+ * Note: `unicode` is intentionally independent of `color`; a NO_COLOR terminal
+ * with a UTF locale still gets `unicode: true` so glyphs render as `✓` rather
+ * than the ASCII `√` fallback even when color is disabled.
  */
 export function resolveCaps(
   stream: OutStream = process.stdout,
