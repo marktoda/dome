@@ -124,3 +124,22 @@ describe("nextActions", () => {
     expect(nextActions([], UNI)).toEqual([]);
   });
 });
+
+import { tree } from "../../../src/cli/presenter/primitives";
+
+describe("tree", () => {
+  test("├─ for non-last, └─ for last", () => {
+    expect(
+      tree(
+        [
+          { label: "a", lines: [] },
+          { label: "b", lines: ["detail"] },
+        ],
+        ASCII,
+      ),
+    ).toEqual(["  |- a", "  `- b", "       detail"]);
+  });
+  test("unicode connectors", () => {
+    expect(tree([{ label: "x", lines: [] }], UNI)).toEqual(["  └─ x"]);
+  });
+});

@@ -82,3 +82,17 @@ export function nextActions(
     return `  ${glyph("pointer", caps)} ${cmd}   ${a.description}`;
   });
 }
+
+export type TreeNode = { readonly label: string; readonly lines: ReadonlyArray<string> };
+
+export function tree(nodes: ReadonlyArray<TreeNode>, caps: Caps): ReadonlyArray<string> {
+  const tee = caps.unicode ? "├─" : "|-";
+  const elbow = caps.unicode ? "└─" : "`-";
+  const out: string[] = [];
+  nodes.forEach((node, i) => {
+    const connector = i === nodes.length - 1 ? elbow : tee;
+    out.push(`  ${connector} ${node.label}`);
+    for (const line of node.lines) out.push(`       ${line}`);
+  });
+  return out;
+}
