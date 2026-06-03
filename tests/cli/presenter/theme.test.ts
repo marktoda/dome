@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { glyph, paint, statusGlyph, type Tone } from "../../../src/cli/presenter/theme";
+import { bold, glyph, paint, statusGlyph, type Tone } from "../../../src/cli/presenter/theme";
 
 const ASCII = { color: false, unicode: false, width: 80 };
 const UNI = { color: false, unicode: true, width: 80 };
@@ -46,5 +46,17 @@ describe("statusGlyph", () => {
     expect(statusGlyph("warn", UNI)).toBe("⚠");
     expect(statusGlyph("err", UNI)).toBe("✗");
     expect(statusGlyph("muted", UNI)).toBe("○");
+  });
+});
+
+describe("bold", () => {
+  test("color:false returns text unchanged", () => {
+    expect(bold("hi", { color: false, unicode: true, width: 80 })).toBe("hi");
+  });
+  test("color:true wraps with ANSI", () => {
+    const out = bold("hi", { color: true, unicode: true, width: 80 });
+    expect(out).not.toBe("hi");
+    expect(out).toContain("hi");
+    expect(out).toContain("\x1b[");
   });
 });

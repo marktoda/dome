@@ -62,3 +62,7 @@ const TONE_GLYPH: Record<Tone, GlyphName> = {
 export function statusGlyph(tone: Tone, caps: Caps): string {
   return glyph(TONE_GLYPH[tone], caps);
 }
+
+export function bold(text: string, caps: Caps): string {
+  return caps.color ? c.bold(text) : text;
+}

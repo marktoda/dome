@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { pad, truncate, visibleWidth } from "../../../src/cli/presenter/width";
+import { headline, statusValue } from "../../../src/cli/presenter/primitives";
 
 describe("visibleWidth", () => {
   test("counts plain ASCII as length", () => {
@@ -28,5 +29,37 @@ describe("truncate", () => {
   });
   test("degrades to ... ascii ellipsis when asked", () => {
     expect(truncate("abcdef", 5, false)).toBe("ab...");
+  });
+});
+
+const ASCII = { color: false, unicode: false, width: 40 };
+const UNI = { color: false, unicode: true, width: 40 };
+
+describe("statusValue", () => {
+  test("glyph + label", () => {
+    expect(statusValue({ tone: "warn", label: "needs attention" }, UNI))
+      .toBe("⚠ needs attention");
+    expect(statusValue({ tone: "ok", label: "adopted" }, ASCII))
+      .toBe("√ adopted");
+  });
+});
+
+describe("headline", () => {
+  test("dome cmd · context left, status right-aligned to width", () => {
+    // width 40: "dome status · docs" = 18, "⚠ needs attention" = 18 (⚠ is double-wide), gap = 4.
+    expect(
+      headline({ cmd: "status", context: "docs" }, { tone: "warn", label: "needs attention" }, UNI),
+    ).toBe("dome status · docs    ⚠ needs attention");
+  });
+
+  test("omits context when absent", () => {
+    expect(headline({ cmd: "doctor" }, { tone: "ok", label: "ok" }, UNI))
+      .toBe(`dome doctor${" ".repeat(40 - "dome doctor".length - "✓ ok".length)}✓ ok`);
+  });
+
+  test("two-space gap fallback when status would overflow width", () => {
+    const narrow = { color: false, unicode: true, width: 4 };
+    expect(headline({ cmd: "status" }, { tone: "ok", label: "ok" }, narrow))
+      .toBe("dome status  ✓ ok");
   });
 });
