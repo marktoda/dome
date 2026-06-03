@@ -260,6 +260,66 @@ describe("adoptionRunner — dispatch + match filtering", () => {
 
     expect(results).toEqual([]);
   });
+
+  test("runtime close cancels an in-flight adoption processor", async () => {
+    const inputController = new AbortController();
+    let resolveStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    let sawAbort = false;
+    const p = makeFixtureProcessor({
+      id: "test.close-cancels-adoption",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async (ctx) => {
+        resolveStarted();
+        if (ctx.signal.aborted) {
+          sawAbort = true;
+          return [];
+        }
+        await new Promise<void>((resolve) => {
+          ctx.signal.addEventListener(
+            "abort",
+            () => {
+              sawAbort = true;
+              resolve();
+            },
+            { once: true },
+          );
+        });
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const running = rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+      signal: inputController.signal,
+    });
+    await started;
+
+    const close = rt.close();
+    const closeFinished = await Promise.race([
+      close.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 250)),
+    ]);
+    if (!closeFinished) {
+      inputController.abort();
+    }
+
+    await close;
+    const results = await running;
+
+    expect(closeFinished).toBe(true);
+    expect(sawAbort).toBe(true);
+    expect(results[0]?.executionStatus).toBe("cancelled");
+  });
 });
 
 describe("adoptionRunner — processor exception synthesis", () => {

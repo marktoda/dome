@@ -339,49 +339,56 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       return Object.freeze([]);
     }
 
-    const snapshot = await makeSnapshot(
-      input.vault.path,
-      input.candidate,
-      resolveTree,
-    );
+    const runnerSignal = combineAbortSignals(input.signal, lifecycle.signal);
+    try {
+      const snapshot = await makeSnapshot(
+        input.vault.path,
+        input.candidate,
+        resolveTree,
+      );
 
-    const results: RunnerResult[] = [];
-    for (const processor of adoptionProcessors) {
-      if (input.signal?.aborted === true) break;
-      const readableSignals = readableSignalsForProcessor({
-        processor,
-        signals: input.signals,
-        resolveGrants,
-      });
-      const matches = matchTriggers(processor.triggers, readableSignals);
-      if (matches.length === 0) continue;
+      const results: RunnerResult[] = [];
+      for (const processor of adoptionProcessors) {
+        if (runnerSignal.signal?.aborted === true) break;
+        const readableSignals = readableSignalsForProcessor({
+          processor,
+          signals: input.signals,
+          resolveGrants,
+        });
+        const matches = matchTriggers(processor.triggers, readableSignals);
+        if (matches.length === 0) continue;
 
-      const result = await dispatchOneProcessor({
-        processor,
-        phase: "adoption",
-        envelope: Object.freeze({
-          kind: "adoption" as const,
-          matchedTriggers: matches,
-        }),
-        snapshot,
-        changedPaths: input.changedPaths,
-        proposal: input.proposal,
-        inputCommit: input.candidate,
-        matches,
-        resolveGrants,
-        extensionIdFor,
-        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
-        ledger,
-        executionState,
-        ...(executionCap !== undefined ? { executionCap } : {}),
-        ...(input.signal !== undefined ? { signal: input.signal } : {}),
-        ...(pageTypes !== undefined ? { pageTypes } : {}),
-        ...(modelProvider !== undefined ? { modelProvider } : {}),
-      });
-      results.push(result);
+        const result = await dispatchOneProcessor({
+          processor,
+          phase: "adoption",
+          envelope: Object.freeze({
+            kind: "adoption" as const,
+            matchedTriggers: matches,
+          }),
+          snapshot,
+          changedPaths: input.changedPaths,
+          proposal: input.proposal,
+          inputCommit: input.candidate,
+          matches,
+          resolveGrants,
+          extensionIdFor,
+          ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
+          ledger,
+          executionState,
+          ...(executionCap !== undefined ? { executionCap } : {}),
+          ...(runnerSignal.signal !== undefined
+            ? { signal: runnerSignal.signal }
+            : {}),
+          ...(pageTypes !== undefined ? { pageTypes } : {}),
+          ...(modelProvider !== undefined ? { modelProvider } : {}),
+        });
+        results.push(result);
+      }
+
+      return Object.freeze(results);
+    } finally {
+      runnerSignal.cleanup();
     }
-
-    return Object.freeze(results);
   }
 
   async function runGarden(
