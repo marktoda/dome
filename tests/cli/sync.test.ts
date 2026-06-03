@@ -700,10 +700,11 @@ extensions:
     captured.out = [];
     captured.err = [];
     expect(await runSync(options)).toBe(0);
-    expect(captured.out.join("\n")).toContain(
-      "dome sync  garden follow-up",
-    );
-    expect(captured.out.join("\n")).toContain("sub-proposals     1");
+    const gardenOut = captured.out.join("\n");
+    expect(gardenOut).toContain("dome sync");
+    expect(gardenOut).toContain("garden follow-up");
+    expect(gardenOut).toContain("GARDEN");
+    expect(gardenOut).toContain("sub-proposals");
     const afterText = await getAdoptedRef(f.vaultPath, "main");
     expect(afterText).not.toBeNull();
     expect(afterText).not.toBe(userHead);

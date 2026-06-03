@@ -336,7 +336,7 @@ function printTickLines(
     console.log(lines.join("\n"));
     // Garden follow-up (sub-proposals / rejected patches) is handled by the
     // shared helper; operational is already shown above inline.
-    printHostFollowupLines("dome sync", tick.garden, null);
+    printHostFollowupLines("dome sync", tick.garden, null, basename(opts.vaultPath));
     return;
   }
 

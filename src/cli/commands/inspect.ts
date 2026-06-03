@@ -83,13 +83,14 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
-import { formatSummaryRows } from "../human-output";
 import {
   headline,
+  kv,
   paint,
   resolveCaps,
   section,
   table,
+  type KvRow,
 } from "../presenter";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
@@ -569,19 +570,14 @@ function printTextResult(subject: string, result: InspectResult, vaultPath: stri
   lines.push(
     headline({ cmd: "inspect diagnostics", context }, { tone: "plain", label: "summary" }, caps),
   );
-  lines.push(
-    ...section(
-      "Summary",
-      formatSummaryRows([
-        ["total", String(result.summary.total)],
-        [
-          "groups",
-          `${result.summary.shown_groups}/${result.summary.group_count}`,
-        ],
-      ]),
-      caps,
-    ),
-  );
+  const summaryKvRows: KvRow[] = [
+    { label: "total", value: String(result.summary.total) },
+    {
+      label: "groups",
+      value: `${result.summary.shown_groups}/${result.summary.group_count}`,
+    },
+  ];
+  lines.push(...section("Summary", kv(summaryKvRows, caps), caps));
   // Render summary groups via dedicated summary column set
   const summaryGroupRows = result.summary.groups.map((g) => ({
     severity: g.severity,
