@@ -214,6 +214,8 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "attempts INTEGER NOT NULL DEFAULT 0,"
     + "status TEXT NOT NULL,"
     + "enqueued_at TEXT NOT NULL,"
+    + "claimed_at TEXT,"
+    + "claim_expires_at TEXT,"
     + "completed_at TEXT"
     + ")",
 
@@ -326,6 +328,8 @@ const REQUIRED_TABLE_COLUMNS: ReadonlyArray<{
       "attempts",
       "status",
       "enqueued_at",
+      "claimed_at",
+      "claim_expires_at",
       "completed_at",
     ],
   },

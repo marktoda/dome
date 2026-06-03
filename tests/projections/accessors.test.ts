@@ -54,6 +54,7 @@ import {
   markJobRunning,
   markJobSucceeded,
   nextEligibleJob,
+  recoverExpiredRunningJobs,
 } from "../../src/projections/jobs";
 import {
   allCursors,
@@ -1170,13 +1171,23 @@ describe("jobs accessor", () => {
     expect(nextEligibleJob(db, new Date())).toBeNull();
 
     const row = db.raw
-      .query<{ status: string; attempts: number }, [number]>(
-        "SELECT status, attempts FROM scheduled_jobs WHERE id = ?",
+      .query<
+        {
+          status: string;
+          attempts: number;
+          claimed_at: string | null;
+          claim_expires_at: string | null;
+        },
+        [number]
+      >(
+        "SELECT status, attempts, claimed_at, claim_expires_at FROM scheduled_jobs WHERE id = ?",
       )
       .all(next.id)[0];
     expect(row).toBeDefined();
     expect(row?.status).toBe("running");
     expect(row?.attempts).toBe(1);
+    expect(row?.claimed_at).not.toBeNull();
+    expect(row?.claim_expires_at).not.toBeNull();
   });
 
   it("claimNextEligibleJob atomically claims the next due job", () => {
@@ -1193,8 +1204,80 @@ describe("jobs accessor", () => {
     expect(claimed.idempotencyKey).toBe("j-claim");
     expect(claimed.status).toBe("running");
     expect(claimed.attempts).toBe(1);
+    expect(claimed.claimedAt).not.toBeNull();
+    expect(claimed.claimExpiresAt).not.toBeNull();
     expect(claimNextEligibleJob(db, new Date())).toBeNull();
     expect(nextEligibleJob(db, new Date())).toBeNull();
+  });
+
+  it("recoverExpiredRunningJobs requeues or fails expired running claims", () => {
+    const claimAt = new Date("2026-05-28T12:00:00.000Z");
+    const afterLease = new Date("2026-05-28T12:00:02.000Z");
+    enqueueJob(db, {
+      processorId: "p",
+      effect: jobEffect({
+        processorId: "p.retry",
+        input: null,
+        idempotencyKey: "j-retry",
+        runAfter: claimAt.toISOString(),
+        maxAttempts: 2,
+      }),
+    });
+    enqueueJob(db, {
+      processorId: "p",
+      effect: jobEffect({
+        processorId: "p.fail",
+        input: null,
+        idempotencyKey: "j-fail",
+        runAfter: claimAt.toISOString(),
+        maxAttempts: 1,
+      }),
+    });
+
+    expect(claimNextEligibleJob(db, claimAt, 1000)?.idempotencyKey).toBe(
+      "j-retry",
+    );
+    expect(claimNextEligibleJob(db, claimAt, 1000)?.idempotencyKey).toBe(
+      "j-fail",
+    );
+
+    expect(recoverExpiredRunningJobs(db, afterLease)).toEqual({
+      requeued: 1,
+      failed: 1,
+    });
+    const rows = db.raw
+      .query<
+        {
+          idempotency_key: string;
+          status: string;
+          attempts: number;
+          run_after: string;
+          claimed_at: string | null;
+          claim_expires_at: string | null;
+        },
+        []
+      >(
+        "SELECT idempotency_key, status, attempts, run_after, claimed_at, claim_expires_at FROM scheduled_jobs ORDER BY idempotency_key",
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        idempotency_key: "j-fail",
+        status: "failed",
+        attempts: 1,
+        run_after: expect.any(String),
+        claimed_at: null,
+        claim_expires_at: null,
+      },
+      {
+        idempotency_key: "j-retry",
+        status: "pending",
+        attempts: 1,
+        run_after: afterLease.toISOString(),
+        claimed_at: null,
+        claim_expires_at: null,
+      },
+    ]);
   });
 
   it("claimNextEligibleJob skips future and non-pending rows", () => {

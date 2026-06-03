@@ -15,6 +15,7 @@ import {
 } from "../../../../src/core/processor";
 
 import {
+  failureTokenFromQuestionIdempotencyKey,
   OUTBOX_RECOVERY_QUESTION_PREFIX,
   outboxKeyFromQuestionIdempotencyKey,
   parseOutboxRecoveryAnswer,
@@ -51,12 +52,16 @@ const outboxRecoveryAnswer: Processor = defineProcessor({
     const outboxKey = outboxKeyFromQuestionIdempotencyKey(
       input.question.idempotencyKey,
     );
+    const failureToken = failureTokenFromQuestionIdempotencyKey(
+      input.question.idempotencyKey,
+    );
     const action = parseOutboxRecoveryAnswer(input.answer);
     if (outboxKey === null || action === null) return Object.freeze([]);
 
     return [
       outboxRecoveryEffect({
         idempotencyKey: outboxKey,
+        ...(failureToken !== null ? { failureToken } : {}),
         action,
         reason: `dome.health: ${action} failed outbox row`,
         sourceRefs: input.question.sourceRefs,

@@ -58,7 +58,14 @@ export type ScheduledJobRow = {
   readonly attempts: number;
   readonly status: JobStatus;
   readonly enqueuedAt: string;
+  readonly claimedAt: string | null;
+  readonly claimExpiresAt: string | null;
   readonly completedAt: string | null;
+};
+
+export type ExpiredJobClaimRecovery = {
+  readonly requeued: number;
+  readonly failed: number;
 };
 
 // ----- SQL ------------------------------------------------------------------
@@ -72,7 +79,8 @@ INSERT OR IGNORE INTO scheduled_jobs (
 
 const NEXT_ELIGIBLE_JOB_SQL = `
 SELECT id, processor_id, input_json, run_after, idempotency_key,
-       max_attempts, attempts, status, enqueued_at, completed_at
+       max_attempts, attempts, status, enqueued_at, claimed_at,
+       claim_expires_at, completed_at
 FROM scheduled_jobs
 WHERE status = 'pending' AND run_after <= ?
 ORDER BY run_after, id
@@ -81,13 +89,19 @@ LIMIT 1
 
 const MARK_RUNNING_SQL = `
 UPDATE scheduled_jobs
-SET status = 'running', attempts = attempts + 1
+SET status = 'running',
+    attempts = attempts + 1,
+    claimed_at = ?,
+    claim_expires_at = ?
 WHERE id = ? AND status = 'pending'
 `.trim();
 
 const CLAIM_NEXT_ELIGIBLE_JOB_SQL = `
 UPDATE scheduled_jobs
-SET status = 'running', attempts = attempts + 1
+SET status = 'running',
+    attempts = attempts + 1,
+    claimed_at = ?,
+    claim_expires_at = ?
 WHERE id = (
   SELECT id
   FROM scheduled_jobs
@@ -96,12 +110,17 @@ WHERE id = (
   LIMIT 1
 )
 RETURNING id, processor_id, input_json, run_after, idempotency_key,
-          max_attempts, attempts, status, enqueued_at, completed_at
+          max_attempts, attempts, status, enqueued_at, claimed_at,
+          claim_expires_at, completed_at
 `.trim();
 
 const MARK_PENDING_SQL = `
 UPDATE scheduled_jobs
-SET status = 'pending', run_after = ?, completed_at = NULL
+SET status = 'pending',
+    run_after = ?,
+    claimed_at = NULL,
+    claim_expires_at = NULL,
+    completed_at = NULL
 WHERE id = ? AND status = 'running'
 `.trim();
 
@@ -110,20 +129,53 @@ UPDATE scheduled_jobs
 SET status = 'pending',
     attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
     run_after = ?,
+    claimed_at = NULL,
+    claim_expires_at = NULL,
     completed_at = NULL
 WHERE id = ? AND status = 'running'
 `.trim();
 
 const MARK_SUCCEEDED_SQL = `
 UPDATE scheduled_jobs
-SET status = 'succeeded', completed_at = ?
+SET status = 'succeeded',
+    claimed_at = NULL,
+    claim_expires_at = NULL,
+    completed_at = ?
 WHERE id = ? AND status = 'running'
 `.trim();
 
 const MARK_FAILED_SQL = `
 UPDATE scheduled_jobs
-SET status = 'failed', completed_at = ?
+SET status = 'failed',
+    claimed_at = NULL,
+    claim_expires_at = NULL,
+    completed_at = ?
 WHERE id = ? AND status = 'running'
+`.trim();
+
+const REQUEUE_EXPIRED_RUNNING_SQL = `
+UPDATE scheduled_jobs
+SET status = 'pending',
+    run_after = ?,
+    claimed_at = NULL,
+    claim_expires_at = NULL,
+    completed_at = NULL
+WHERE status = 'running'
+  AND claim_expires_at IS NOT NULL
+  AND claim_expires_at <= ?
+  AND attempts < max_attempts
+`.trim();
+
+const FAIL_EXPIRED_RUNNING_SQL = `
+UPDATE scheduled_jobs
+SET status = 'failed',
+    claimed_at = NULL,
+    claim_expires_at = NULL,
+    completed_at = ?
+WHERE status = 'running'
+  AND claim_expires_at IS NOT NULL
+  AND claim_expires_at <= ?
+  AND attempts >= max_attempts
 `.trim();
 
 // ----- Row shape ------------------------------------------------------------
@@ -138,6 +190,8 @@ type JobRow = {
   readonly attempts: number;
   readonly status: string;
   readonly enqueued_at: string;
+  readonly claimed_at: string | null;
+  readonly claim_expires_at: string | null;
   readonly completed_at: string | null;
 };
 
@@ -148,6 +202,7 @@ type JobRow = {
 // always supply an explicit value to SQLite (defensive against schema-DDL
 // drift between the table definition and this accessor).
 const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_JOB_CLAIM_LEASE_MS = 15 * 60 * 1000;
 
 // ----- Public functions -----------------------------------------------------
 
@@ -209,10 +264,12 @@ export function nextEligibleJob(
 export function claimNextEligibleJob(
   db: ProjectionDb,
   now: Date,
+  leaseMs: number = DEFAULT_JOB_CLAIM_LEASE_MS,
 ): ScheduledJobRow | null {
+  const claimExpiresAt = new Date(now.getTime() + leaseMs);
   const row = db.raw
-    .query<JobRow, [string]>(CLAIM_NEXT_ELIGIBLE_JOB_SQL)
-    .get(now.toISOString());
+    .query<JobRow, [string, string, string]>(CLAIM_NEXT_ELIGIBLE_JOB_SQL)
+    .get(now.toISOString(), claimExpiresAt.toISOString(), now.toISOString());
   return row === null ? null : rowToScheduledJob(row);
 }
 
@@ -220,8 +277,16 @@ export function claimNextEligibleJob(
  * Transition a `pending` row to `running` and bump `attempts`. No-op if the
  * row is already in another status (concurrent runner picked it up).
  */
-export function markJobRunning(db: ProjectionDb, id: number): void {
-  db.raw.query(MARK_RUNNING_SQL).run(id);
+export function markJobRunning(
+  db: ProjectionDb,
+  id: number,
+  now: Date = new Date(),
+  leaseMs: number = DEFAULT_JOB_CLAIM_LEASE_MS,
+): void {
+  const claimExpiresAt = new Date(now.getTime() + leaseMs);
+  db.raw
+    .query(MARK_RUNNING_SQL)
+    .run(now.toISOString(), claimExpiresAt.toISOString(), id);
 }
 
 /**
@@ -274,6 +339,25 @@ export function markJobFailed(
   db.raw.query(MARK_FAILED_SQL).run(completedAt.toISOString(), id);
 }
 
+/**
+ * Recover jobs left in `running` by a crashed host. A claimed job has already
+ * consumed one attempt; if budget remains, make it pending again at `now`.
+ * If the crashed attempt exhausted the row, mark it failed instead.
+ */
+export function recoverExpiredRunningJobs(
+  db: ProjectionDb,
+  now: Date,
+): ExpiredJobClaimRecovery {
+  const nowIso = now.toISOString();
+  const requeued = db.raw
+    .query(REQUEUE_EXPIRED_RUNNING_SQL)
+    .run(nowIso, nowIso).changes;
+  const failed = db.raw
+    .query(FAIL_EXPIRED_RUNNING_SQL)
+    .run(nowIso, nowIso).changes;
+  return Object.freeze({ requeued, failed });
+}
+
 // ----- internals ------------------------------------------------------------
 
 function rowToScheduledJob(row: JobRow): ScheduledJobRow {
@@ -287,6 +371,8 @@ function rowToScheduledJob(row: JobRow): ScheduledJobRow {
     attempts: row.attempts,
     status: row.status as JobStatus,
     enqueuedAt: row.enqueued_at,
+    claimedAt: row.claimed_at,
+    claimExpiresAt: row.claim_expires_at,
     completedAt: row.completed_at,
   });
 }

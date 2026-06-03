@@ -24,6 +24,7 @@ import {
   markJobFailed,
   markJobPending,
   markJobSucceeded,
+  recoverExpiredRunningJobs,
   releaseClaimedJob,
   type ScheduledJobRow,
 } from "../projections/jobs";
@@ -96,6 +97,7 @@ export async function runQueuedJobs(opts: {
   const diagnostics: DiagnosticEffect[] = [];
   const applyGardenPatch =
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
+  recoverExpiredRunningJobs(opts.projection, opts.now());
 
   for (let i = 0; i < maxJobs; i += 1) {
     if (opts.signal?.aborted === true) break;

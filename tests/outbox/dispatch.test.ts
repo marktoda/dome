@@ -24,6 +24,7 @@ import {
   markFailed,
   markSent,
   queryOutbox,
+  recoverFailedOutboxRow,
   replayFailed,
 } from "../../src/outbox/dispatch";
 
@@ -512,6 +513,48 @@ describe("outbox lifecycle", () => {
     expect(row?.status).toBe("failed");
     expect(row?.attempts).toBe(1);
     expect(row?.lastError).toContain("No external handler registered");
+  });
+
+  it("recoverFailedOutboxRow rejects stale failure tokens", () => {
+    insertPending(db, {
+      effect: makeEffect("key-stale-recovery"),
+      runId: RUN_ID,
+      now: T0,
+    });
+    markFailed(db, "key-stale-recovery", "terminal failure");
+    const failed = queryOutbox(db)[0];
+    if (failed === undefined) throw new Error("missing failed row");
+    const token = encodeURIComponent(
+      JSON.stringify({
+        attempts: failed.attempts,
+        nextAttemptAt: failed.nextAttemptAt,
+        lastError: failed.lastError,
+      }),
+    );
+
+    expect(
+      recoverFailedOutboxRow(db, {
+        idempotencyKey: "key-stale-recovery",
+        action: "retry",
+        failureToken: `${token}-old`,
+        now: T0,
+      }),
+    ).toBe(false);
+    expect(queryOutbox(db)[0]?.status).toBe("failed");
+
+    expect(
+      recoverFailedOutboxRow(db, {
+        idempotencyKey: "key-stale-recovery",
+        action: "retry",
+        failureToken: token,
+        now: T0,
+      }),
+    ).toBe(true);
+    expect(queryOutbox(db)[0]).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lastError: null,
+    });
   });
 
   it("dispatchPendingOutbox retries pending rows from a prior process", async () => {

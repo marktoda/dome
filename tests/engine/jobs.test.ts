@@ -21,7 +21,7 @@ import { noopSinks } from "../../src/engine/apply-effect";
 import type { ApplyPatchInput } from "../../src/engine/apply-patch";
 import { runQueuedJobs } from "../../src/engine/jobs";
 import type { EngineVault } from "../../src/engine/vault-shape";
-import { enqueueJob } from "../../src/projections/jobs";
+import { claimNextEligibleJob, enqueueJob } from "../../src/projections/jobs";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import { buildRegistry } from "../../src/processors/registry";
 
@@ -270,6 +270,41 @@ describe("runQueuedJobs", () => {
     ]);
     expect(jobRow(fixture.projection, "job-1")).toMatchObject({
       status: "failed",
+      attempts: 2,
+    });
+  });
+
+  test("expired running claims are recovered before draining due jobs", async () => {
+    let calls = 0;
+    const processor = defineProcessor({
+      id: "test.jobs.expired-claim",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "document.changed" }],
+      capabilities: [],
+      run: async () => {
+        calls += 1;
+        return [];
+      },
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    enqueue(fixture, "job-expired", processor.id, null, 2);
+
+    const claimed = claimNextEligibleJob(fixture.projection, NOW, 1000);
+    expect(claimed?.status).toBe("running");
+    expect(claimed?.attempts).toBe(1);
+
+    const result = await runWithProcessors(
+      fixture,
+      [processor],
+      () => new Date(NOW.getTime() + 2000),
+    );
+
+    expect(result.drained[0]?.status).toBe("succeeded");
+    expect(calls).toBe(1);
+    expect(jobRow(fixture.projection, "job-expired")).toMatchObject({
+      status: "succeeded",
       attempts: 2,
     });
   });

@@ -266,7 +266,7 @@ export type ApplyEffectSinks = {
     readonly effect: OutboxRecoveryEffect;
     readonly processorId: string;
     readonly runId: RunId;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 
   /** QuarantineRecoveryEffect — reset a quarantined processor trigger. */
   readonly recoverQuarantine: (input: {
@@ -387,7 +387,7 @@ export function noopSinks(): ApplyEffectSinks {
     recordQuestion: async () => undefined,
     enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
-    recoverOutbox: async () => undefined,
+    recoverOutbox: async () => true,
     recoverQuarantine: async () => undefined,
     recoverRun: async () => true,
     captureView: async () => undefined,
@@ -688,11 +688,27 @@ async function routeToSink(
       });
       return EMPTY_SINK_RESULT;
     case "outbox-recovery":
-      await opts.sinks.recoverOutbox({
-        effect,
-        processorId: opts.processorId,
-        runId: opts.runId,
-      });
+      if (
+        !(await opts.sinks.recoverOutbox({
+          effect,
+          processorId: opts.processorId,
+          runId: opts.runId,
+        }))
+      ) {
+        return {
+          newCandidate: null,
+          diagnostics: Object.freeze([
+            diagnosticEffect({
+              severity: "warning",
+              code: "outbox-recovery.stale-or-missing",
+              message:
+                `OutboxRecoveryEffect did not change row ${effect.idempotencyKey}: ` +
+                "the row is no longer failed, no longer matches the question generation, or does not exist.",
+              sourceRefs: effect.sourceRefs,
+            }),
+          ]),
+        };
+      }
       return EMPTY_SINK_RESULT;
     case "quarantine-recovery":
       await opts.sinks.recoverQuarantine({

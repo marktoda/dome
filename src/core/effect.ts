@@ -290,6 +290,7 @@ export type OutboxRecoveryEffect = {
   readonly kind: "outbox-recovery";
   readonly action: "retry" | "abandon";
   readonly idempotencyKey: string;
+  readonly failureToken?: string;
   readonly reason: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -617,6 +618,7 @@ export const OutboxRecoveryEffectSchema = z
     kind: z.literal("outbox-recovery"),
     action: z.enum(["retry", "abandon"]),
     idempotencyKey: z.string().min(1),
+    failureToken: z.string().min(1).optional(),
     reason: z.string().min(1),
     sourceRefs: z.array(SourceRefSchema),
   })
@@ -828,6 +830,7 @@ export function outboxRecoveryEffect(
     reason: input.reason,
     sourceRefs: input.sourceRefs,
   };
+  if (input.failureToken !== undefined) e.failureToken = input.failureToken;
   return Object.freeze(e);
 }
 

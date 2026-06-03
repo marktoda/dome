@@ -266,6 +266,15 @@ SET status = 'pending', attempts = attempts + 1, last_error = ?, next_attempt_at
 WHERE idempotency_key = ? AND status IN ('pending', 'dispatching')
 `.trim();
 
+const RECORD_FAILED_ATTEMPT_SQL = `
+UPDATE outbox
+SET status = ?,
+    attempts = attempts + 1,
+    last_error = ?,
+    next_attempt_at = ?
+WHERE idempotency_key = ? AND status IN ('pending', 'dispatching')
+`.trim();
+
 const CLAIM_PENDING_SQL = `
 UPDATE outbox
 SET status = 'dispatching', last_error = NULL, next_attempt_at = ?
@@ -293,10 +302,36 @@ SET status = 'abandoned'
 WHERE idempotency_key = ? AND status = 'failed'
 `.trim();
 
+const MARK_ABANDONED_IF_GENERATION_SQL = `
+UPDATE outbox
+SET status = 'abandoned'
+WHERE idempotency_key = ?
+  AND status = 'failed'
+  AND attempts = ?
+  AND next_attempt_at = ?
+  AND (
+    (last_error IS NULL AND ? IS NULL)
+    OR last_error = ?
+  )
+`.trim();
+
 const REPLAY_FAILED_SQL = `
 UPDATE outbox
 SET status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = ?
 WHERE idempotency_key = ? AND status = 'failed'
+`.trim();
+
+const REPLAY_FAILED_IF_GENERATION_SQL = `
+UPDATE outbox
+SET status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = ?
+WHERE idempotency_key = ?
+  AND status = 'failed'
+  AND attempts = ?
+  AND next_attempt_at = ?
+  AND (
+    (last_error IS NULL AND ? IS NULL)
+    OR last_error = ?
+  )
 `.trim();
 
 const SELECT_OUTBOX_BASE_SQL = `
@@ -513,8 +548,9 @@ export function requeueExpiredDispatching(
  * they first need to wait for it to terminally fail (or surface a
  * separate cancellation API in a future phase).
  */
-export function markAbandoned(db: OutboxDb, idempotencyKey: string): void {
-  db.raw.query(MARK_ABANDONED_SQL).run(idempotencyKey);
+export function markAbandoned(db: OutboxDb, idempotencyKey: string): boolean {
+  const result = db.raw.query(MARK_ABANDONED_SQL).run(idempotencyKey);
+  return result.changes > 0;
 }
 
 /**
@@ -536,8 +572,61 @@ export function replayFailed(
   db: OutboxDb,
   idempotencyKey: string,
   now: Date = new Date(),
-): void {
-  db.raw.query(REPLAY_FAILED_SQL).run(now.toISOString(), idempotencyKey);
+): boolean {
+  const result = db.raw
+    .query(REPLAY_FAILED_SQL)
+    .run(now.toISOString(), idempotencyKey);
+  return result.changes > 0;
+}
+
+export function recoverFailedOutboxRow(
+  db: OutboxDb,
+  opts: {
+    readonly idempotencyKey: string;
+    readonly action: "retry" | "abandon";
+    readonly failureToken?: string;
+    readonly now?: Date;
+  },
+): boolean {
+  const current = getOutboxByIdempotencyKey(db, opts.idempotencyKey);
+  if (current === null || current.status !== "failed") return false;
+  if (
+    opts.failureToken !== undefined &&
+    opts.failureToken !== failureToken(current)
+  ) {
+    return false;
+  }
+
+  if (opts.failureToken === undefined) {
+    return opts.action === "retry"
+      ? replayFailed(db, opts.idempotencyKey, opts.now)
+      : markAbandoned(db, opts.idempotencyKey);
+  }
+
+  const lastError = current.lastError;
+  const params = [
+    ...(opts.action === "retry"
+      ? [(opts.now ?? new Date()).toISOString()]
+      : []),
+    opts.idempotencyKey,
+    current.attempts,
+    current.nextAttemptAt,
+    lastError,
+    lastError,
+  ] as const;
+  const result =
+    opts.action === "retry"
+      ? db.raw.query(REPLAY_FAILED_IF_GENERATION_SQL).run(...params)
+      : db.raw
+          .query(MARK_ABANDONED_IF_GENERATION_SQL)
+          .run(
+            opts.idempotencyKey,
+            current.attempts,
+            current.nextAttemptAt,
+            lastError,
+            lastError,
+          );
+  return result.changes > 0;
 }
 
 /**
@@ -819,9 +908,11 @@ function recordFailedAttempt(
   const nextAttemptAt = terminal
     ? opts.now
     : computeNextAttemptAt(opts.now, attempts);
-  incrementAttempts(db, row.idempotencyKey, lastError, nextAttemptAt);
+  const status = terminal ? "failed" : "pending";
+  db.raw
+    .query(RECORD_FAILED_ATTEMPT_SQL)
+    .run(status, lastError, nextAttemptAt.toISOString(), row.idempotencyKey);
   if (terminal) {
-    markFailed(db, row.idempotencyKey, lastError);
     return Object.freeze({
       kind: "failed",
       idempotencyKey: row.idempotencyKey,
@@ -839,6 +930,16 @@ function recordFailedAttempt(
     lastError,
     nextAttemptAt: nextAttemptAt.toISOString(),
   });
+}
+
+function failureToken(row: OutboxRow): string {
+  return encodeURIComponent(
+    JSON.stringify({
+      attempts: row.attempts,
+      nextAttemptAt: row.nextAttemptAt,
+      lastError: row.lastError,
+    }),
+  );
 }
 
 function computeNextAttemptAt(now: Date, failedAttemptCount: number): Date {

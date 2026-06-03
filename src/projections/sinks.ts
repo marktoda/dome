@@ -15,7 +15,7 @@
 //   - resolveQuestions → src/projections/questions.ts:   resolveStaleQuestions
 //   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
-//   - recoverOutbox    → src/outbox/dispatch.ts:         replayFailed / markAbandoned
+//   - recoverOutbox    → src/outbox/dispatch.ts:         recoverFailedOutboxRow
 //
 // Four sinks are injected by the caller (engine layer):
 //
@@ -74,8 +74,7 @@ import { insertQuestion, resolveStaleQuestions } from "./questions";
 import { enqueueJob as enqueueJobRow } from "./jobs";
 import {
   dispatchExternalEffect,
-  markAbandoned,
-  replayFailed,
+  recoverFailedOutboxRow,
   type ExternalHandlerRegistry,
 } from "../outbox/dispatch";
 
@@ -249,13 +248,14 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       });
     },
 
-    recoverOutbox: async ({ effect }) => {
-      if (effect.action === "retry") {
-        replayFailed(opts.outboxDb, effect.idempotencyKey);
-      } else {
-        markAbandoned(opts.outboxDb, effect.idempotencyKey);
-      }
-    },
+    recoverOutbox: async ({ effect }) =>
+      recoverFailedOutboxRow(opts.outboxDb, {
+        idempotencyKey: effect.idempotencyKey,
+        action: effect.action,
+        ...(effect.failureToken !== undefined
+          ? { failureToken: effect.failureToken }
+          : {}),
+      }),
 
     recoverQuarantine: opts.recoverQuarantine,
     recoverRun: opts.recoverRun,

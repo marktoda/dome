@@ -346,7 +346,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       markFailed(outboxDb, key, "terminal");
     }
 
-    await sinks.recoverOutbox({
+    await expect(sinks.recoverOutbox({
       effect: outboxRecoveryEffect({
         action: "retry",
         idempotencyKey: "retry-me",
@@ -355,8 +355,8 @@ describe("buildSqliteSinks projection-store sinks", () => {
       }),
       processorId: PROCESSOR_ID,
       runId: RUN_ID,
-    });
-    await sinks.recoverOutbox({
+    })).resolves.toBe(true);
+    await expect(sinks.recoverOutbox({
       effect: outboxRecoveryEffect({
         action: "abandon",
         idempotencyKey: "abandon-me",
@@ -365,7 +365,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
       }),
       processorId: PROCESSOR_ID,
       runId: RUN_ID,
-    });
+    })).resolves.toBe(true);
 
     expect(
       queryOutbox(outboxDb).map((row) => ({
