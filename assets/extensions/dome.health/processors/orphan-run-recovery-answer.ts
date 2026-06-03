@@ -5,10 +5,8 @@
 // and ledgering.
 
 import {
-  diagnosticEffect,
   runRecoveryEffect,
   type Effect,
-  type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
   defineProcessor,
@@ -21,6 +19,10 @@ import {
   orphanRunTargetFromQuestionIdempotencyKey,
   parseOrphanRunRecoveryAnswer,
 } from "./orphan-run-recovery-shared";
+import {
+  invalidRecoveryAnswerInputDiagnostic,
+  parseRecoveryAnswerInput,
+} from "./recovery-answer-input";
 
 const orphanRunRecoveryAnswer: Processor = defineProcessor({
   id: "dome.health.orphan-run-recovery-answer",
@@ -35,15 +37,13 @@ const orphanRunRecoveryAnswer: Processor = defineProcessor({
   ],
   capabilities: [{ kind: "run.recover", actions: ["fail"] }],
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    const input = parseAnswerInput(ctx.input);
+    const input = parseRecoveryAnswerInput(ctx.input);
     if (input === null) {
       return [
-        diagnosticEffect({
-          severity: "error",
+        invalidRecoveryAnswerInputDiagnostic({
           code: "dome.health.orphan-run-recovery.invalid-answer-input",
           message:
             "Orphan run recovery answer handler received an invalid answer envelope.",
-          sourceRefs: [],
         }),
       ];
     }
@@ -72,29 +72,3 @@ const orphanRunRecoveryAnswer: Processor = defineProcessor({
 });
 
 export default orphanRunRecoveryAnswer;
-
-type AnswerInput = {
-  readonly question: {
-    readonly idempotencyKey: string;
-    readonly sourceRefs: QuestionEffect["sourceRefs"];
-  };
-  readonly answer: string;
-};
-
-function parseAnswerInput(input: unknown): AnswerInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  const question = record.question;
-  if (question === null || typeof question !== "object") return null;
-  const questionRecord = question as Record<string, unknown>;
-  if (typeof questionRecord.idempotencyKey !== "string") return null;
-  if (!Array.isArray(questionRecord.sourceRefs)) return null;
-  if (typeof record.answer !== "string") return null;
-  return Object.freeze({
-    question: Object.freeze({
-      idempotencyKey: questionRecord.idempotencyKey,
-      sourceRefs: questionRecord.sourceRefs as AnswerInput["question"]["sourceRefs"],
-    }),
-    answer: record.answer,
-  });
-}
