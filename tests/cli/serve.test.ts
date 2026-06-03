@@ -881,10 +881,11 @@ describe("runServe smoke", () => {
       code = await servePromise;
     }
     expect(code).toBe(0);
-    const outBlob = captured.out.join("\n");
-    expect(outBlob).toContain("dome.markdown.normalize-frontmatter");
-    expect(outBlob).not.toContain("dome.markdown.validate-wikilinks");
-    expect(outBlob).not.toContain("dome serve:   iteration");
+    // Verbose progress events go to stderr; stdout carries the human summary.
+    const errBlob = captured.err.join("\n");
+    expect(errBlob).toContain("dome.markdown.normalize-frontmatter");
+    expect(errBlob).not.toContain("dome.markdown.validate-wikilinks");
+    expect(errBlob).not.toContain("dome serve:   iteration");
   }, 15_000);
 
   test("coalesces HEAD movement that happens while adoption is active", async () => {
