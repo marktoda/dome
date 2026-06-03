@@ -76,6 +76,69 @@ import {
 } from "./effect-capability-use";
 import type { RunId } from "./runner-contract";
 
+type EffectKind = Effect["kind"];
+type PhaseCompatibilityTable = {
+  readonly [K in EffectKind]: Readonly<Record<ProcessorPhase, boolean>>;
+};
+
+export const EFFECT_PHASE_COMPATIBILITY = Object.freeze({
+  patch: Object.freeze({
+    adoption: true,
+    garden: false,
+    view: false,
+  }),
+  diagnostic: Object.freeze({
+    adoption: true,
+    garden: true,
+    view: true,
+  }),
+  fact: Object.freeze({
+    adoption: true,
+    garden: true,
+    view: false,
+  }),
+  "search-document": Object.freeze({
+    adoption: true,
+    garden: true,
+    view: false,
+  }),
+  question: Object.freeze({
+    adoption: true,
+    garden: true,
+    view: false,
+  }),
+  job: Object.freeze({
+    adoption: false,
+    garden: true,
+    view: false,
+  }),
+  external: Object.freeze({
+    adoption: false,
+    garden: true,
+    view: false,
+  }),
+  "outbox-recovery": Object.freeze({
+    adoption: false,
+    garden: true,
+    view: false,
+  }),
+  "quarantine-recovery": Object.freeze({
+    adoption: false,
+    garden: true,
+    view: false,
+  }),
+  "run-recovery": Object.freeze({
+    adoption: false,
+    garden: true,
+    view: false,
+  }),
+  view: Object.freeze({
+    adoption: false,
+    garden: false,
+    view: true,
+  }),
+} satisfies PhaseCompatibilityTable);
+
 // ----- ApplyEffectSinks -----------------------------------------------------
 
 /**
@@ -519,37 +582,13 @@ function capabilityUseField(
  * Every other (kind, phase) pair is routed normally.
  */
 function isPhaseCompatible(effect: Effect, phase: ProcessorPhase): boolean {
-  switch (phase) {
-    case "adoption":
-      return (
-        effect.kind !== "job" &&
-        effect.kind !== "external" &&
-        effect.kind !== "outbox-recovery" &&
-        effect.kind !== "quarantine-recovery" &&
-        effect.kind !== "run-recovery" &&
-        effect.kind !== "view"
-      );
-    case "garden":
-      return effect.kind !== "patch" && effect.kind !== "view";
-    case "view":
-      if (
-        effect.kind === "patch" ||
-        effect.kind === "fact" ||
-        effect.kind === "search-document" ||
-        effect.kind === "question" ||
-        effect.kind === "job" ||
-        effect.kind === "external" ||
-        effect.kind === "outbox-recovery" ||
-        effect.kind === "quarantine-recovery" ||
-        effect.kind === "run-recovery"
-      ) {
-        return false;
-      }
-      if (effect.kind === "diagnostic" && effect.severity === "block") {
-        return false;
-      }
-      return true;
+  if (!EFFECT_PHASE_COMPATIBILITY[effect.kind][phase]) {
+    return false;
   }
+  if (effect.kind === "diagnostic" && phase === "view") {
+    return effect.severity !== "block";
+  }
+  return true;
 }
 
 function rejectedByPhase(

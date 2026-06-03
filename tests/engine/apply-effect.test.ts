@@ -3,7 +3,11 @@
 // docs/wiki/matrices/effect-router-targets.md.
 
 import { describe, test, expect } from "bun:test";
-import { applyEffect, noopSinks } from "../../src/engine/apply-effect";
+import {
+  EFFECT_PHASE_COMPATIBILITY,
+  applyEffect,
+  noopSinks,
+} from "../../src/engine/apply-effect";
 import {
   diagnosticEffect,
   externalActionEffect,
@@ -35,6 +39,35 @@ const baseOpts = {
     "0000000000000000000000000000000000000001",
   ),
 };
+
+test("phase compatibility table covers every effect kind and phase", () => {
+  expect(Object.keys(EFFECT_PHASE_COMPATIBILITY).sort()).toEqual([
+    "diagnostic",
+    "external",
+    "fact",
+    "job",
+    "outbox-recovery",
+    "patch",
+    "quarantine-recovery",
+    "question",
+    "run-recovery",
+    "search-document",
+    "view",
+  ]);
+  for (const row of Object.values(EFFECT_PHASE_COMPATIBILITY)) {
+    expect(Object.keys(row).sort()).toEqual(["adoption", "garden", "view"]);
+  }
+  expect(EFFECT_PHASE_COMPATIBILITY.patch).toEqual({
+    adoption: true,
+    garden: false,
+    view: false,
+  });
+  expect(EFFECT_PHASE_COMPATIBILITY.view).toEqual({
+    adoption: false,
+    garden: false,
+    view: true,
+  });
+});
 
 describe("phase-mismatch rejections", () => {
   test("JobEffect in adoption phase", async () => {
