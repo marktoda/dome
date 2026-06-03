@@ -21,6 +21,9 @@ import {
 
 import { resolveBundleRoots } from "./sync-shared";
 import { formatJson } from "../format";
+import { formatSummaryRows, pushSection } from "../human-output";
+
+const ANSWER_SCHEMA = "dome.answer/v1";
 
 export type RunAnswerOptions = {
   readonly id?: string | number | undefined;
@@ -37,9 +40,14 @@ export async function runAnswer(
   const commandLabel = options.commandLabel ?? "dome answer";
   const id = parseQuestionId(options.id);
   if (id === null) {
-    console.error(
-      `${commandLabel}: question id must be a positive integer. Usage: ${commandLabel} <question-id> [value]`,
-    );
+    printAnswerError({
+      commandLabel,
+      json: options.json === true,
+      error: "answer-usage",
+      message:
+        `${commandLabel}: question id must be a positive integer. ` +
+        `Usage: ${commandLabel} <question-id> [value]`,
+    });
     return 64;
   }
 
@@ -50,9 +58,14 @@ export async function runAnswer(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    console.error(
-      `${commandLabel}: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
-    );
+    printAnswerError({
+      commandLabel,
+      json: options.json === true,
+      error: runtimeResult.error.kind,
+      message:
+        `${commandLabel}: openVaultRuntime failed (${runtimeResult.error.kind}). ` +
+        "Run `dome init` first to initialize the vault.",
+    });
     return 1;
   }
   const runtime = runtimeResult.value;
@@ -62,13 +75,21 @@ export async function runAnswer(
     if (rawValue === undefined || rawValue.length === 0) {
       const record = getQuestionRecord(runtime.projectionDb, id);
       if (record === null) {
-        console.error(`${commandLabel}: question ${id} was not found.`);
+        printAnswerError({
+          commandLabel,
+          json: options.json === true,
+          error: "question-not-found",
+          message: `${commandLabel}: question ${id} was not found.`,
+        });
         return 64;
       }
       if (options.json === true) {
-        console.log(formatJson(recordToJson(record)));
+        console.log(formatJson({
+          schema: ANSWER_SCHEMA,
+          ...recordToJson(record),
+        }));
       } else {
-        console.log(formatQuestion(record));
+        console.log(formatQuestion(commandLabel, record));
       }
       return 0;
     }
@@ -94,7 +115,12 @@ export async function runAnswer(
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`${commandLabel}: failed: ${msg}`);
+    printAnswerError({
+      commandLabel,
+      json: options.json === true,
+      error: "answer-failed",
+      message: `${commandLabel}: failed: ${msg}`,
+    });
     return 1;
   } finally {
     await runtime.close();
@@ -109,12 +135,18 @@ function printAnswerResult(
 ): number {
   switch (result.kind) {
     case "not-found":
-      console.error(`${commandLabel}: question was not found.`);
+      printAnswerError({
+        commandLabel,
+        json,
+        error: "question-not-found",
+        message: `${commandLabel}: question was not found.`,
+      });
       return 64;
     case "already-answered":
       if (json) {
         console.log(
           formatJson({
+            schema: ANSWER_SCHEMA,
             status: "already-answered",
             question: recordToJson(result.record),
             handlers:
@@ -128,30 +160,39 @@ function printAnswerResult(
             : handlerResult?.kind === "skipped"
               ? ` | handlers skipped (${handlerResult.reason})`
               : "";
-        console.log(
-          `question ${result.record.id} is already answered: ${result.record.answer ?? ""}${suffix}`,
-        );
+        console.log(formatAnswerOutcome({
+          commandLabel,
+          status: "already answered",
+          record: result.record,
+          suffix,
+        }));
       }
       return 0;
     case "invalid-option":
       if (json) {
         console.log(
           formatJson({
+            schema: ANSWER_SCHEMA,
             status: "invalid-option",
             options: result.options,
             question: recordToJson(result.record),
           }),
         );
       } else {
-        console.error(
-          `${commandLabel}: invalid answer. Expected one of: ${result.options.join(", ")}`,
-        );
+        printAnswerError({
+          commandLabel,
+          json,
+          error: "invalid-option",
+          message:
+            `${commandLabel}: invalid answer. Expected one of: ${result.options.join(", ")}`,
+        });
       }
       return 64;
     case "answered":
       if (json) {
         console.log(
           formatJson({
+            schema: ANSWER_SCHEMA,
             status: "answered",
             question: recordToJson(result.record),
             handlers:
@@ -165,26 +206,97 @@ function printAnswerResult(
             : handlerResult?.kind === "skipped"
               ? ` | handlers skipped (${handlerResult.reason})`
               : "";
-        console.log(
-          `answered question ${result.record.id}: ${result.record.answer ?? ""}${suffix}`,
-        );
+        console.log(formatAnswerOutcome({
+          commandLabel,
+          status: "answered",
+          record: result.record,
+          suffix,
+        }));
       }
       return 0;
   }
 }
 
-function formatQuestion(record: QuestionRecord): string {
+function formatQuestion(commandLabel: string, record: QuestionRecord): string {
   const lines = [
-    `question ${record.id} (${record.answeredAt === null ? "open" : "answered"})`,
-    record.effect.question,
+    `${titleForCommand(commandLabel)}: question ${record.id} ${record.answeredAt === null ? "open" : "answered"}`,
   ];
-  if (record.effect.options !== undefined) {
-    lines.push(`options: ${record.effect.options.join(", ")}`);
+  pushSection(lines, "Question", [`  ${record.effect.question}`]);
+  const summary: Array<readonly [string, string]> = [
+    ["options", record.effect.options?.join(", ") ?? "free-form"],
+    ["answer", record.answer ?? "none"],
+    ["processor", record.processorId],
+    ["asked", record.askedAt],
+  ];
+  if (record.answeredAt !== null) summary.push(["answered", record.answeredAt]);
+  pushSection(lines, "Summary", formatSummaryRows(summary));
+  if (record.effect.sourceRefs.length > 0) {
+    pushSection(
+      lines,
+      "SourceRefs",
+      record.effect.sourceRefs.map((ref) => `  - ${formatSourceRef(ref)}`),
+    );
   }
-  if (record.answer !== null) {
-    lines.push(`answer: ${record.answer}`);
+  if (record.answeredAt === null) {
+    lines.push("");
+    lines.push(`Resolve: ${commandLabel} ${record.id} <value>`);
   }
   return lines.join("\n");
+}
+
+function formatAnswerOutcome(input: {
+  readonly commandLabel: string;
+  readonly status: "answered" | "already answered";
+  readonly record: QuestionRecord;
+  readonly suffix: string;
+}): string {
+  const lines = [
+    `${titleForCommand(input.commandLabel)}: ${input.status} question ${input.record.id}`,
+  ];
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["answer", input.record.answer ?? "none"],
+    [
+      "handlers",
+      input.suffix.length === 0
+        ? "none"
+        : input.suffix.replace(/^ \| /, ""),
+    ],
+  ]));
+  return lines.join("\n");
+}
+
+function titleForCommand(commandLabel: string): string {
+  return commandLabel
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatSourceRef(
+  ref: QuestionRecord["effect"]["sourceRefs"][number],
+): string {
+  const range = ref.range === undefined
+    ? ""
+    : `:${ref.range.startLine}-${ref.range.endLine}`;
+  return `${ref.path}${range} @ ${ref.commit.slice(0, 7)}`;
+}
+
+function printAnswerError(input: {
+  readonly commandLabel: string;
+  readonly json: boolean;
+  readonly error: string;
+  readonly message: string;
+}): void {
+  if (input.json) {
+    console.log(formatJson({
+      schema: ANSWER_SCHEMA,
+      status: "error",
+      error: input.error,
+      message: input.message,
+    }));
+    return;
+  }
+  console.error(input.message);
 }
 
 function recordToJson(record: QuestionRecord): Record<string, unknown> {

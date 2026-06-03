@@ -743,6 +743,14 @@ matching garden-phase answer handlers. The dedicated verb exists so the
 primary path reads naturally: `status` routes, `check` explains, `resolve`
 answers.
 
+Text output uses a short `Dome Resolve: ...` headline plus `Question`,
+`Summary`, and `SourceRefs` sections when printing an unresolved row. On
+answer, it prints the resolved answer and answer-handler summary.
+
+`--json` emits `dome.answer/v1` while preserving the root `status`,
+`question`, and `handlers` fields used by agent callers. Error cases emit
+`{ schema, status: "error", error, message }` to stdout.
+
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
 
 Invokes the `dome.search.query` view-phase processor against adopted-state
@@ -1301,6 +1309,11 @@ prints the question when `<value>` is omitted, validates `<value>` against
 garden-phase answer handlers. Duplicate-detection content questions plus a
 fixture answer handler
 are covered end-to-end by the harness.
+
+`--json` emits `dome.answer/v1`, the same envelope as `dome resolve`. Success
+payloads preserve the root `status`, `question`, and `handlers` fields; usage,
+lookup, runtime-open, and unexpected failure paths return structured error
+payloads when `--json` is set.
 
 Answer-handler dispatch is retryable from the durable answer record. The CLI
 records the answer before dispatching handlers, marks handler dispatch

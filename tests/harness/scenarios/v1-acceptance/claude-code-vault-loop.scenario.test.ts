@@ -226,12 +226,21 @@ scenario(
     expect(statusPayload.outbox_failed).toBe(0);
     expect(statusPayload.quarantined).toBe(0);
 
-    const today = await h.runCli(["today", "--date", "2026-01-06", "--json"]);
+    const today = await h.runCli([
+      "run",
+      "today",
+      "--date",
+      "2026-01-06",
+      "--json",
+    ]);
     expect(today.exitCode).toBe(0);
-    const todayPayload = JSON.parse(today.stdout) as {
-      readonly openTasks: ReadonlyArray<{ readonly text: string }>;
-      readonly followups: ReadonlyArray<{ readonly text: string }>;
+    const todayView = JSON.parse(today.stdout) as {
+      readonly data: {
+        readonly openTasks: ReadonlyArray<{ readonly text: string }>;
+        readonly followups: ReadonlyArray<{ readonly text: string }>;
+      };
     };
+    const todayPayload = todayView.data;
     expect(todayPayload.openTasks.map((task) => task.text)).toContain(
       "Send Ada the launch staffing note",
     );
@@ -239,10 +248,13 @@ scenario(
       "Ask Ben about hiring budget",
     );
 
-    const prep = await h.runCli(["prep", "--date", "2026-01-06"]);
+    const prep = await h.runCli(["run", "prep", "--date", "2026-01-06"]);
     expect(prep.exitCode).toBe(0);
-    expect(prep.stdout).toContain("# Dome Prep: 2026-01-06");
-    expect(prep.stdout).toContain("Ask Ben about hiring budget");
+    const prepView = JSON.parse(prep.stdout) as {
+      readonly data: { readonly markdown: string };
+    };
+    expect(prepView.data.markdown).toContain("# Dome Prep: 2026-01-06");
+    expect(prepView.data.markdown).toContain("Ask Ben about hiring budget");
 
     const query = await h.runCli(["query", "hiring budget", "--json"]);
     expect(query.exitCode).toBe(0);
