@@ -54,6 +54,10 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
     console.error(program.helpInformation().trimEnd());
     return EX_USAGE;
   }
+  if (argv[0] === "submit" || argv[0] === "reconcile") {
+    console.error(`dome ${argv[0]}: retired. Use \`dome sync\` instead.`);
+    return EX_USAGE;
+  }
 
   try {
     await program.parseAsync([...argv], { from: "user" });
@@ -62,7 +66,23 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
     if (error instanceof CommanderError) {
       return error.exitCode === 0 ? 0 : EX_USAGE;
     }
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (argv.includes("--json")) {
+      console.log(
+        JSON.stringify(
+          {
+            status: "error",
+            error: "internal-error",
+            message,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(`dome: failed: ${message}`);
+    }
+    return 1;
   }
 }
 
@@ -300,7 +320,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
           json: options.json,
-          commandFlags: parseProcessorFlags(processorArgs(command.args)),
+          commandArgs: parseProcessorArgs(processorArgs(command.args)),
         }),
       );
     });
@@ -668,13 +688,25 @@ function processorArgs(commandArgs: readonly string[]): ReadonlyArray<string> {
   return commandArgs.slice(1);
 }
 
-function parseProcessorFlags(
+type ParsedProcessorArgs = {
+  readonly raw: ReadonlyArray<string>;
+  readonly flags: Readonly<Record<string, string | boolean | ReadonlyArray<string | boolean>>>;
+  readonly positionals: ReadonlyArray<string>;
+};
+
+function parseProcessorArgs(
   argv: ReadonlyArray<string>,
-): Record<string, string | boolean> {
-  const flags: Record<string, string | boolean> = {};
+): ParsedProcessorArgs {
+  const flags: Record<string, string | boolean | Array<string | boolean>> = {};
+  const positionals: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
+    if (token === "--") {
+      positionals.push(...argv.slice(i + 1));
+      break;
+    }
     if (token === undefined || !token.startsWith("--") || token.length <= 2) {
+      if (token !== undefined) positionals.push(token);
       continue;
     }
 
@@ -682,19 +714,38 @@ function parseProcessorFlags(
     const eqIdx = body.indexOf("=");
     if (eqIdx >= 0) {
       const key = body.slice(0, eqIdx);
-      if (key.length > 0) flags[key] = body.slice(eqIdx + 1);
+      if (key.length > 0) addProcessorFlag(flags, key, body.slice(eqIdx + 1));
       continue;
     }
 
     const next = argv[i + 1];
     if (next !== undefined && !next.startsWith("--")) {
-      flags[body] = next;
+      addProcessorFlag(flags, body, next);
       i++;
     } else {
-      flags[body] = true;
+      addProcessorFlag(flags, body, true);
     }
   }
-  return flags;
+  return Object.freeze({
+    raw: Object.freeze([...argv]),
+    flags: Object.freeze(flags),
+    positionals: Object.freeze(positionals),
+  });
+}
+
+function addProcessorFlag(
+  flags: Record<string, string | boolean | Array<string | boolean>>,
+  key: string,
+  value: string | boolean,
+): void {
+  const existing = flags[key];
+  if (existing === undefined) {
+    flags[key] = value;
+  } else if (Array.isArray(existing)) {
+    existing.push(value);
+  } else {
+    flags[key] = [existing, value];
+  }
 }
 
 function parseLintFailOnOption(value: string): LintFailOn {

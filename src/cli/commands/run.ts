@@ -57,6 +57,11 @@ export type RunCommandOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
   readonly commandFlags?: Readonly<Record<string, string | boolean>> | undefined;
+  readonly commandArgs?: {
+    readonly raw: ReadonlyArray<string>;
+    readonly flags: Readonly<Record<string, string | boolean | ReadonlyArray<string | boolean>>>;
+    readonly positionals: ReadonlyArray<string>;
+  } | undefined;
 };
 
 /**
@@ -93,11 +98,13 @@ export async function runRun(
   // View-phase processors that care about CLI flags inspect
   // `ctx.input.commandArgs.flags`. The envelope shape is opaque to
   // the engine — `runViewCommand` passes it through verbatim.
-  const flags: Record<string, string | boolean> = {
-    ...(options.commandFlags ?? {}),
-  };
   const commandArgs = Object.freeze({
-    flags: Object.freeze(flags),
+    raw: Object.freeze([...(options.commandArgs?.raw ?? [])]),
+    flags: Object.freeze({
+      ...(options.commandFlags ?? {}),
+      ...(options.commandArgs?.flags ?? {}),
+    }),
+    positionals: Object.freeze([...(options.commandArgs?.positionals ?? [])]),
   });
 
   // ----- 3. Dispatch via shared view-command boundary -------------------

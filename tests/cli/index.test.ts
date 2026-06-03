@@ -183,6 +183,14 @@ describe("runCli", () => {
     expect(err).toContain("Usage: dome");
   });
 
+  test("retired submit and reconcile commands point to sync", async () => {
+    expect(await runCli(["submit"])).toBe(64);
+    expect(await runCli(["reconcile"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain("dome submit: retired. Use `dome sync` instead.");
+    expect(err).toContain("dome reconcile: retired. Use `dome sync` instead.");
+  });
+
   test("unknown option exits 64 before invoking the command", async () => {
     expect(await runCli(["status", "--bogus"])).toBe(64);
     const err = captured.err.join("\n");

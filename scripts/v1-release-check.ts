@@ -28,6 +28,7 @@ type GateResult = {
   readonly durationMs: number;
   readonly stdout: string;
   readonly stderr: string;
+  readonly timedOut: boolean;
 };
 
 type GateReportResult = Omit<GateResult, "stdout" | "stderr"> & {
@@ -57,6 +58,7 @@ type ReleaseCheckReport =
     };
 
 const JSON_OUTPUT_LIMIT_CHARS = 12000;
+const GATE_TIMEOUT_MS = 10 * 60 * 1000;
 const repoRoot = resolve(import.meta.dir, "..");
 
 async function main(): Promise<void> {
@@ -140,26 +142,36 @@ function releaseCheckPlan(): ReadonlyArray<Gate> {
 
 async function runGate(gate: Gate): Promise<GateResult> {
   const startedAt = Date.now();
+  let timedOut = false;
   const proc = Bun.spawn({
     cmd: [...gate.command],
     cwd: gate.cwd,
     stdout: "pipe",
     stderr: "pipe",
   });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill("SIGTERM");
+  }, GATE_TIMEOUT_MS);
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
+  clearTimeout(timer);
+  const timeoutMessage = timedOut
+    ? `\nTimed out after ${GATE_TIMEOUT_MS}ms.\n`
+    : "";
   return {
     id: gate.id,
     label: gate.label,
     cwd: gate.cwd,
     command: displayCommand(gate.command),
-    exitCode,
+    exitCode: timedOut ? 124 : exitCode,
     durationMs: Date.now() - startedAt,
     stdout,
-    stderr,
+    stderr: `${stderr}${timeoutMessage}`,
+    timedOut,
   };
 }
 

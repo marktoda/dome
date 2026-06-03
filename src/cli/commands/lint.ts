@@ -66,7 +66,13 @@ export async function runLint(
     return data.status === "fail" ? 1 : 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome lint: failed: ${msg}`);
+    if (options.json === true) {
+      console.log(
+        formatJson({ status: "error", error: "lint-failed", message: msg }),
+      );
+    } else {
+      console.error(`dome lint: failed: ${msg}`);
+    }
     return 1;
   }
 }
@@ -75,10 +81,17 @@ function parseLintData(data: unknown): {
   readonly status: "pass" | "fail";
   readonly markdown: string;
 } {
-  const record = data !== null && typeof data === "object"
-    ? data as Record<string, unknown>
-    : {};
-  const status = record.status === "fail" ? "fail" : "pass";
-  const markdown = typeof record.markdown === "string" ? record.markdown : "";
+  if (data === null || typeof data !== "object") {
+    throw new Error("lint structured data must be an object.");
+  }
+  const record = data as Record<string, unknown>;
+  if (record.status !== "pass" && record.status !== "fail") {
+    throw new Error("lint structured data status must be 'pass' or 'fail'.");
+  }
+  if (typeof record.markdown !== "string") {
+    throw new Error("lint structured data markdown must be a string.");
+  }
+  const status = record.status;
+  const markdown = record.markdown;
   return Object.freeze({ status, markdown });
 }

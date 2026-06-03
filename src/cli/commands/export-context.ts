@@ -64,15 +64,29 @@ export async function runExportContext(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome export-context: failed: ${msg}`);
+    if (options.json === true) {
+      console.log(
+        formatJson({
+          status: "error",
+          error: "export-context-failed",
+          message: msg,
+        }),
+      );
+    } else {
+      console.error(`dome export-context: failed: ${msg}`);
+    }
     return 1;
   }
 }
 
 function markdownFromData(data: unknown): string {
-  const record = data !== null && typeof data === "object"
-    ? data as Record<string, unknown>
-    : {};
+  if (data === null || typeof data !== "object") {
+    throw new Error("export-context structured data must be an object.");
+  }
+  const record = data as Record<string, unknown>;
   const markdown = record.markdown;
-  return typeof markdown === "string" ? markdown : "";
+  if (typeof markdown !== "string") {
+    throw new Error("export-context structured data markdown must be a string.");
+  }
+  return markdown;
 }

@@ -76,7 +76,13 @@ export async function runQuery(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome query: failed: ${msg}`);
+    if (options.json === true) {
+      console.log(
+        formatJson({ status: "error", error: "query-failed", message: msg }),
+      );
+    } else {
+      console.error(`dome query: failed: ${msg}`);
+    }
     return 1;
   }
 }
@@ -194,13 +200,26 @@ type QuerySourceRef = {
 };
 
 function parseQueryResult(data: unknown): QueryResultData {
-  const record = data !== null && typeof data === "object"
-    ? data as Record<string, unknown>
-    : {};
-  const query = typeof record.query === "string" ? record.query : "";
+  if (!isObjectRecord(data)) {
+    throw new Error("query structured data must be an object.");
+  }
+  const record = data;
+  if (typeof record.query !== "string") {
+    throw new Error("query structured data query must be a string.");
+  }
+  if (!isObjectRecord(record.shown)) {
+    throw new Error("query structured data shown must be an object.");
+  }
+  if (!isObjectRecord(record.hasMore)) {
+    throw new Error("query structured data hasMore must be an object.");
+  }
+  if (!Array.isArray(record.matches)) {
+    throw new Error("query structured data matches must be an array.");
+  }
+  const query = record.query;
   const shownRecord = objectRecord(record.shown);
   const hasMoreRecord = objectRecord(record.hasMore);
-  const rawMatches = Array.isArray(record.matches) ? record.matches : [];
+  const rawMatches = record.matches;
   return Object.freeze({
     query,
     limit: numberValue(record.limit),
@@ -268,9 +287,11 @@ function parseRankingSignals(raw: unknown): QueryRanking["signals"] {
 }
 
 function objectRecord(raw: unknown): Record<string, unknown> {
-  return raw !== null && typeof raw === "object" && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : {};
+  return isObjectRecord(raw) ? raw : {};
+}
+
+function isObjectRecord(raw: unknown): raw is Record<string, unknown> {
+  return raw !== null && typeof raw === "object" && !Array.isArray(raw);
 }
 
 function parseFacts(raw: unknown): ReadonlyArray<{ readonly predicate: string }> {
