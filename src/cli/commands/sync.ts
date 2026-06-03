@@ -61,10 +61,10 @@ import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";
 import {
-  formatCliNextAction,
   nextActionsForSync,
   type CliNextAction,
 } from "../next-actions";
+import { formatNextActionsBlock } from "../human-output";
 import {
   countAttentionDiagnostics,
   isSourceBackedDiagnostic,
@@ -312,8 +312,8 @@ function printTickLines(
 function printSyncAttentionLines(result: SyncJsonResult): void {
   if (!result.attention_required) return;
   console.log(`dome sync: attention ${result.attention.join(", ")}`);
-  for (const action of result.next_actions) {
-    console.log(`  next: ${formatCliNextAction(action)}`);
+  for (const line of formatNextActionsBlock(result.next_actions)) {
+    console.log(line);
   }
 }
 

@@ -3406,7 +3406,7 @@ describe("runStatus", () => {
     expect(out).toContain("sync needed");
     expect(out).toContain("pending unknown");
     expect(out).toContain("(never)"); // last_sync
-    expect(out).toContain("DOME status");
+    expect(out).toContain("Dome status: needs attention");
     expect(out).toContain("content   2 pages");
     expect(out).toContain("links 0");
     expect(out).toContain("health    projection fresh | diagnostics 0");

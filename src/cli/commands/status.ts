@@ -135,6 +135,7 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
+import { formatNextActionsBlock } from "../human-output";
 import {
   formatMaintenanceLoopDetailLines,
   collectMaintenanceLoopSummaries,
@@ -142,7 +143,6 @@ import {
   type MaintenanceLoopSummary,
 } from "../maintenance-loop-summary";
 import {
-  formatCliNextAction,
   nextActionsForStatus,
   type CliNextAction,
 } from "../next-actions";
@@ -489,7 +489,11 @@ function printStatusText(
   s: StatusSnapshot,
   options: { readonly showLoopDetails: boolean },
 ): void {
-  console.log("DOME status");
+  console.log(`Dome status: ${s.attention_required ? "needs attention" : "ok"}`);
+  for (const line of formatNextActionsBlock(s.next_actions)) {
+    console.log(line);
+  }
+  if (s.next_actions.length > 0) console.log("");
   console.log(`vault     ${s.vault}`);
   const syncState = s.adopted_diverged
     ? "diverged"
@@ -539,9 +543,6 @@ function printStatusText(
     console.log(
       `diag plan ${formatDiagnosticDispositionLine(diagnosticDisposition)}`,
     );
-  }
-  for (const line of formatNextActionLines(s.next_actions)) {
-    console.log(line);
   }
 }
 
@@ -691,16 +692,6 @@ function truncateStatusMessage(message: string): string {
   const maxLength = 80;
   if (message.length <= maxLength) return message;
   return `${message.slice(0, maxLength - 3)}...`;
-}
-
-function formatNextActionLines(
-  actions: ReadonlyArray<CliNextAction>,
-): ReadonlyArray<string> {
-  if (actions.length === 0) return [];
-  return actions.map((action, index) => {
-    const prefix = index === 0 ? "next      " : "          ";
-    return `${prefix}${formatCliNextAction(action)}`;
-  });
 }
 
 function shortOid(oid: string | null, fallback: string): string {
