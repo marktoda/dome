@@ -95,6 +95,9 @@ processors:
       - kind: signal
         name: document.changed
         pathPattern: "wiki/generated/intake/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/generated/intake/*.md"
     capabilities:
       - kind: read
         paths:
@@ -143,6 +146,10 @@ processors:
     phase: garden
     triggers:
       - kind: answer
+        questionProcessorId: dome.intake.capture-index
+        idempotencyKeyPrefix: "dome.intake.low-confidence:"
+      - kind: answer
+        questionProcessorId: dome.intake.extract-capture
         idempotencyKeyPrefix: "dome.intake.low-confidence:"
     capabilities:
       - kind: read

@@ -54,6 +54,41 @@ scenario(
       .diagnostics({ code: "dome.markdown.broken-image" })
       .toContainMessage("assets/missing.png");
 
+    await h.userCommit({
+      files: {
+        "assets/missing.png": "fixture image bytes",
+      },
+      message: "add missing image asset",
+    });
+
+    const fixed = await h.tick();
+    expect(fixed.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-image" })
+      .toHaveCount(0);
+
+    await h.userCommit({
+      files: {
+        "assets/logo.png": null,
+      },
+      message: "delete referenced image asset",
+    });
+
+    const brokenAgain = await h.tick();
+    expect(brokenAgain.adopted).toBe(true);
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-image" })
+      .toHaveCount(1);
+
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.broken-image" })
+      .toContainMessage("assets/logo.png");
+
     await h
       .expectLedger({ processorId: "dome.markdown.broken-images" })
       .toAllHaveStatus("succeeded");

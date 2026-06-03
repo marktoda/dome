@@ -885,6 +885,7 @@ async function rollbackBranchAdvance(opts: {
   readonly expectedOld?: CommitOid;
   readonly paths: ReadonlyArray<string>;
 }): Promise<DiagnosticEffect | null> {
+  let refRolledBack = false;
   try {
     const writeOpts: Parameters<typeof writeRef>[0] = {
       path: opts.vaultPath,
@@ -893,20 +894,33 @@ async function rollbackBranchAdvance(opts: {
     };
     if (opts.expectedOld !== undefined) writeOpts.expectedOld = opts.expectedOld;
     await writeRef(writeOpts);
+    refRolledBack = true;
     await checkoutPathsAtRef({
       path: opts.vaultPath,
       ref: opts.sourceHead,
       filepaths: opts.paths,
-      force: true,
     });
     return null;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (refRolledBack) {
+      return diagnosticEffect({
+        severity: "block",
+        code: "adoption.branch-rollback-working-tree-conflict",
+        message:
+          `Rolled refs/heads/${opts.branch} back to source HEAD ` +
+          `${opts.sourceHead.slice(0, 7)}, but refused to force-checkout ` +
+          `affected working-tree paths because local edits may have arrived ` +
+          `after adoption preflight: ${msg}. Reconcile the working tree ` +
+          `manually, then rerun dome sync.`,
+        sourceRefs: [],
+      });
+    }
     return diagnosticEffect({
       severity: "block",
       code: "adoption.branch-rollback-failed",
       message:
-        `Failed to roll refs/heads/${opts.branch} and working-tree paths ` +
+        `Failed to roll refs/heads/${opts.branch} ` +
         `back to source HEAD ${opts.sourceHead.slice(0, 7)} after adoption finalization failed: ${msg}`,
       sourceRefs: [],
     });
@@ -919,6 +933,12 @@ function rollbackMessage(
   sourceHead: CommitOid,
 ): string {
   if (rollbackDiagnostic !== null) {
+    if (rollbackDiagnostic.code === "adoption.branch-rollback-working-tree-conflict") {
+      return (
+        `; refs/heads/${branch} was rolled back to ${sourceHead.slice(0, 7)}, ` +
+        "but affected working-tree paths were left untouched to preserve local edits."
+      );
+    }
     return "; rollback also failed, inspect diagnostics before continuing.";
   }
   return `; rolled refs/heads/${branch} and affected working-tree paths back to ${sourceHead.slice(0, 7)}.`;

@@ -1,17 +1,17 @@
 // apply-patch: the candidate-tree mutator for adoption-phase PatchEffects.
 //
 // Given the current candidate commit OID + a PatchEffect's whole-content
-// `changes` list, this function produces a new candidate commit OID whose
-// tree carries the changes applied. The working tree is never read or
-// written; everything goes through isomorphic-git plumbing (`writeBlob` /
-// `readTree` / `writeTree` / `writeCommit`). That isolation lets the
-// daemon advance the candidate even while the user has uncommitted edits
-// in `<vault>/`.
+// `changes` list, this function produces a new candidate commit OID when the
+// patch changes the candidate tree. Same-tree patches return `null`. The
+// working tree is never read or written; everything goes through
+// isomorphic-git plumbing (`writeBlob` / `readTree` / `writeTree` /
+// `writeCommit`). That isolation lets the daemon advance the candidate even
+// while the user has uncommitted edits in `<vault>/`.
 //
-// Each PatchEffect produces one commit. The adoption loop accumulates a chain
-// of these commits as the candidate; the final candidate OID becomes the new
-// value of `refs/dome/adopted/<branch>` (Decision 6 in v1.x Phase 12a). The
-// commit carries the four `Dome-*` trailers per
+// Each tree-moving PatchEffect produces one commit. The adoption loop
+// accumulates a chain of these commits as the candidate; the final candidate
+// OID becomes the new value of `refs/dome/adopted/<branch>` (Decision 6 in
+// v1.x Phase 12a). The commit carries the four `Dome-*` trailers per
 // ENGINE_COMMITS_CARRY_DOME_TRAILERS via `composeCommitMessage` from
 // `../engine-commit`.
 //
@@ -31,9 +31,9 @@
 //
 // Whole-content writes always succeed (we overwrite the blob OID at the
 // path regardless of prior content); deletes are no-ops when the path
-// doesn't exist in the candidate's tree but still produce a new commit
-// for any sibling writes in the same `changes` list. There is no
-// "patch failed to apply" path — the FileChange shape is non-merging.
+// doesn't exist in the candidate's tree. If all writes/deletes collapse to
+// the same root tree OID, no commit is written. There is no "patch failed to
+// apply" path — the FileChange shape is non-merging.
 //
 // House-style notes (matches src/engine/closure-commit.ts,
 // src/engine/apply-effect.ts, src/engine/compile-range.ts):
@@ -165,6 +165,9 @@ export async function applyPatchToCandidate(
     treeOid: oldRootTreeOid,
     changes: treeChanges,
   });
+  if (newRootTreeOid === oldRootTreeOid) {
+    return null;
+  }
 
   // 4. Write the new commit. `writeCommit` accepts a CommitObject directly —
   //    we don't go through `git.commit` because that path requires staging

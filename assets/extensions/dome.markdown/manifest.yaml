@@ -90,16 +90,21 @@ processors:
     module: processors/lint-frontmatter.ts
 
   - id: dome.markdown.broken-images
-    version: 0.1.0
+    version: 0.1.1
     phase: adoption
     triggers:
       - kind: signal
         name: document.changed
       - kind: signal
         name: file.created
+      - kind: signal
+        name: file.deleted
+        pathPattern: "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
     capabilities:
       - kind: read
         paths: ["**/*.md", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"]
+    inspection:
+      kind: all-readable-markdown
     module: processors/broken-images.ts
 
   - id: dome.markdown.duplicate-detection

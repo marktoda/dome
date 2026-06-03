@@ -35,20 +35,30 @@ const IMAGE_EXTENSIONS = new Set([
 
 const brokenImages: Processor = defineProcessor({
   id: "dome.markdown.broken-images",
-  version: "0.1.0",
+  version: "0.1.1",
   phase: "adoption",
   triggers: [
     { kind: "signal", name: "document.changed" },
     { kind: "signal", name: "file.created" },
+    {
+      kind: "signal",
+      name: "file.deleted",
+      pathPattern: "**/*.{png,jpg,jpeg,gif,webp,svg,avif}",
+    },
   ],
   capabilities: [
     { kind: "read", paths: ["**/*.md", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"] },
   ],
+  inspection: { kind: "all-readable-markdown" },
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const diagnostics: DiagnosticEffect[] = [];
     const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));
+    const touchedImage = ctx.changedPaths.some(isImagePath);
+    const markdownPaths = touchedImage
+      ? await ctx.snapshot.listMarkdownFiles()
+      : changedMarkdown;
 
-    for (const path of changedMarkdown) {
+    for (const path of markdownPaths) {
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
@@ -151,6 +161,10 @@ function stripQueryAndHash(target: string): string {
 
 function hasImageExtension(path: string): boolean {
   return IMAGE_EXTENSIONS.has(posix.extname(path).toLowerCase());
+}
+
+function isImagePath(path: string): boolean {
+  return hasImageExtension(path);
 }
 
 function positionAt(content: string, offset: number): { line: number; col: number } {

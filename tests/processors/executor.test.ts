@@ -274,7 +274,7 @@ describe("executeProcessor", () => {
     expect("effectHashes" in result).toBe(false);
   });
 
-  test("unhashable schema-valid effect fails invalid-output without routing effects", async () => {
+  test("non-JSON payload effect fails invalid-output without routing effects", async () => {
     const unhashableEffect = externalActionEffect({
       capability: "test.external",
       idempotencyKey: "test.external.bigint",
@@ -282,7 +282,7 @@ describe("executeProcessor", () => {
       sourceRefs: [],
     });
 
-    expect(EffectSchema.safeParse(unhashableEffect).success).toBe(true);
+    expect(EffectSchema.safeParse(unhashableEffect).success).toBe(false);
 
     const result = await executeProcessor({
       processorId: "test.executor.unhashable",
@@ -300,9 +300,9 @@ describe("executeProcessor", () => {
     expect(result.status).toBe("failed");
     if (result.status !== "failed") return;
     expect(result.error.code).toBe("processor.invalid-output");
-    expect(result.error.message).toMatch(/hash|serial|JSON/i);
+    expect(result.error.message).toMatch(/effect\[0\]|payload/i);
     expect(result.diagnostic.severity).toBe("error");
-    expect(result.diagnostic.message).toMatch(/hash|serial|JSON/i);
+    expect(result.diagnostic.message).toMatch(/effect\[0\]|payload/i);
     expect("effects" in result).toBe(false);
     expect("effectHashes" in result).toBe(false);
   });

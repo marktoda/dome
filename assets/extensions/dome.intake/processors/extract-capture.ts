@@ -165,16 +165,6 @@ const extractCapture = defineProcessorImplementation({
           reason: `dome.intake: extract capture ${path}`,
           sourceRefs: [ctx.sourceRef(path)],
         }),
-        ...lowConfidenceQuestions({
-          path,
-          sourceHash,
-          generatedPath: paths.generated,
-          sourceRefs: [
-            ctx.sourceRef(path),
-            ctx.sourceRef(paths.generated),
-          ],
-          extraction,
-        }),
       );
     }
     return Object.freeze(effects);
@@ -419,22 +409,6 @@ function pendingCaptureItems(
     ...lowConfidenceItems("decision", extraction.decisions),
     ...lowConfidenceItems("entity", extraction.entities),
   ]);
-}
-
-function lowConfidenceQuestions(input: {
-  readonly path: string;
-  readonly sourceHash: string;
-  readonly generatedPath: string;
-  readonly sourceRefs: ReadonlyArray<SourceRef>;
-  readonly extraction: CaptureExtraction;
-}): ReadonlyArray<Effect> {
-  return lowConfidenceQuestionsFromPending({
-    path: input.path,
-    sourceHash: input.sourceHash,
-    generatedPath: input.generatedPath,
-    sourceRefs: input.sourceRefs,
-    pendingItems: pendingCaptureItems(input.extraction),
-  });
 }
 
 function lowConfidenceQuestionsFromPending(input: {

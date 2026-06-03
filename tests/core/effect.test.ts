@@ -208,9 +208,47 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
     expect(EffectSchema.parse(e).kind).toBe("job");
   });
 
+  test("JobEffect requires JSON input", () => {
+    expect(
+      EffectSchema.safeParse({
+        kind: "job",
+        processorId: "dome.test",
+        idempotencyKey: "missing-input",
+      }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({
+        kind: "job",
+        processorId: "dome.test",
+        input: 1n,
+        idempotencyKey: "bigint-input",
+      }).success,
+    ).toBe(false);
+  });
+
   test("ExternalActionEffect", () => {
     const e = minEffects.external();
     expect(EffectSchema.parse(e).kind).toBe("external");
+  });
+
+  test("ExternalActionEffect requires JSON payload", () => {
+    expect(
+      EffectSchema.safeParse({
+        kind: "external",
+        capability: "calendar.write",
+        idempotencyKey: "missing-payload",
+        sourceRefs: refs,
+      }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({
+        kind: "external",
+        capability: "calendar.write",
+        idempotencyKey: "bigint-payload",
+        payload: 1n,
+        sourceRefs: refs,
+      }).success,
+    ).toBe(false);
   });
 
   test("OutboxRecoveryEffect", () => {
@@ -231,6 +269,32 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
   test("ViewEffect", () => {
     const e = minEffects.view();
     expect(EffectSchema.parse(e).kind).toBe("view");
+  });
+
+  test("structured ViewEffect requires JSON data", () => {
+    expect(
+      EffectSchema.safeParse({
+        kind: "view",
+        name: "structured",
+        content: {
+          kind: "structured",
+          schema: "test/v1",
+        },
+        scope: refs,
+      }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({
+        kind: "view",
+        name: "structured",
+        content: {
+          kind: "structured",
+          schema: "test/v1",
+          data: 1n,
+        },
+        scope: refs,
+      }).success,
+    ).toBe(false);
   });
 });
 

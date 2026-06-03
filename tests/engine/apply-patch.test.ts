@@ -224,6 +224,33 @@ describe("applyPatchToCandidate", () => {
     expect(existing).toBe("existing\n");
   });
 
+  test("same-content write returns null instead of creating a no-op commit", async () => {
+    const f = await makeFixture({ "wiki/a.md": "existing\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [
+        {
+          kind: "write",
+          path: "wiki/a.md",
+          content: "existing\n",
+        },
+      ],
+      reason: "same content",
+      sourceRefs: [],
+    });
+
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+    });
+
+    expect(result).toBeNull();
+  });
+
   test("writing under an existing file rejects with a path-collision error", async () => {
     const f = await makeFixture({ "wiki/topic": "plain file\n" });
     fixtures.push(f);
@@ -337,6 +364,27 @@ describe("applyPatchToCandidate", () => {
     // Other file remains.
     const kept = await readBlobAt(f.vaultPath, result, "wiki/keep.md");
     expect(kept).toBe("keep\n");
+  });
+
+  test("delete of missing path returns null instead of creating a no-op commit", async () => {
+    const f = await makeFixture({ "wiki/keep.md": "keep\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "delete", path: "wiki/missing.md" }],
+      reason: "delete missing",
+      sourceRefs: [],
+    });
+
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+    });
+
+    expect(result).toBeNull();
   });
 
   test("mixed write + delete in same call applies both", async () => {

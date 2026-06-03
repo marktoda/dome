@@ -90,6 +90,14 @@ export type Literal =
   | { readonly kind: "number"; readonly value: number }
   | { readonly kind: "date"; readonly value: string }; // ISO-8601
 
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<JsonValue>
+  | { readonly [key: string]: JsonValue };
+
 // ----- ViewContent (ViewEffect payload) -------------------------------------
 
 /**
@@ -372,12 +380,23 @@ export const LiteralSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number().finite(),
+    z.string(),
+    z.array(JsonValueSchema),
+    z.record(JsonValueSchema),
+  ])
+);
+
 export const ViewContentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markdown"), body: z.string() }).strict(),
   z
     .object({
       kind: z.literal("structured"),
-      data: z.unknown(),
+      data: JsonValueSchema,
       schema: z.string().min(1),
     })
     .strict(),
@@ -576,7 +595,7 @@ export const JobEffectSchema = z
   .object({
     kind: z.literal("job"),
     processorId: z.string().min(1),
-    input: z.unknown(),
+    input: JsonValueSchema,
     runAfter: z.string().datetime({ offset: true }).optional(),
     idempotencyKey: z.string().min(1),
     maxAttempts: z.number().int().positive().optional(),
@@ -588,7 +607,7 @@ export const ExternalActionEffectSchema = z
     kind: z.literal("external"),
     capability: z.string().min(1),
     idempotencyKey: z.string().min(1),
-    payload: z.unknown(),
+    payload: JsonValueSchema,
     sourceRefs: z.array(SourceRefSchema),
   })
   .strict();

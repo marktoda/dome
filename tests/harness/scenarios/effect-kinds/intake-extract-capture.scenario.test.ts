@@ -293,6 +293,7 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+
   },
 );
 
@@ -601,6 +602,19 @@ scenario(
         outcome: "allowed",
       }),
     ]);
+
+    await h.userCommit({
+      files: {
+        [generatedPath]: null,
+      },
+      message: "delete generated capture",
+    });
+    const deleted = await h.tick();
+    expect(deleted.adopted).toBe(true);
+    await h.expectFile(synthesisPath).toBeAbsent();
+    await h
+      .expectLedger({ processorId: "dome.intake.synthesize-capture" })
+      .toAllHaveStatus("succeeded");
   },
 );
 

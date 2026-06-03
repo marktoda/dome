@@ -39,17 +39,36 @@ const CaptureSynthesisSchema = z
 
 const synthesizeCapture = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    if (ctx.modelInvoke === undefined) {
-      throw new Error("dome.intake.synthesize-capture requires model.invoke");
-    }
-
     const effects: Effect[] = [];
     for (const path of ctx.changedPaths.filter(isGeneratedCapturePath).sort()) {
       const capture = await ctx.snapshot.readFile(path);
-      if (capture === null) continue;
+      const outputPath = synthesisOutputPath(path);
+      if (capture === null) {
+        if ((await ctx.snapshot.readFile(outputPath)) !== null) {
+          effects.push(
+            patchEffect({
+              mode: "auto",
+              changes: [
+                {
+                  kind: "delete",
+                  path: outputPath,
+                },
+              ],
+              reason:
+                `dome.intake: remove stale synthesis ${outputPath} after ` +
+                `${path} was deleted`,
+              sourceRefs: [ctx.sourceRef(outputPath)],
+            }),
+          );
+        }
+        continue;
+      }
+
+      if (ctx.modelInvoke === undefined) {
+        throw new Error("dome.intake.synthesize-capture requires model.invoke");
+      }
 
       const inputHash = captureSynthesisInputHash(capture);
-      const outputPath = synthesisOutputPath(path);
       const existing = await ctx.snapshot.readFile(outputPath);
       if (frontmatterInputHash(existing) === inputHash) continue;
 
