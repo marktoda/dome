@@ -18,6 +18,11 @@ import {
 const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
+const EXEMPT_FIRST_PARTY_PROCESSORS = new Set([
+  // Read-only report surface; it explains diagnostics but does not maintain a
+  // desired state itself.
+  "dome.lint.report",
+]);
 
 describe("first-party maintenance loops", () => {
   test("declare the five V1 loop design units", () => {
@@ -65,6 +70,32 @@ describe("first-party maintenance loops", () => {
       processorIds,
       commandNames,
     })).toEqual([]);
+  });
+
+  test("cover every shipped first-party maintenance processor", async () => {
+    const bundles = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
+    expect(bundles.ok).toBe(true);
+    if (!bundles.ok) return;
+
+    const shippedProcessorIds = flattenBundleProcessors(bundles.value)
+      .map((processor) => processor.id)
+      .sort();
+    const loopProcessorIds = new Set(
+      FIRST_PARTY_MAINTENANCE_LOOPS.flatMap((loop) => [
+        ...loop.processors,
+        ...(loop.optionalProcessors ?? []),
+      ]),
+    );
+    const uncovered = shippedProcessorIds.filter(
+      (processorId) =>
+        !loopProcessorIds.has(processorId) &&
+        !EXEMPT_FIRST_PARTY_PROCESSORS.has(processorId),
+    );
+
+    expect(uncovered).toEqual([]);
+    expect(shippedProcessorIds).toEqual(
+      expect.arrayContaining([...EXEMPT_FIRST_PARTY_PROCESSORS]),
+    );
   });
 
   test("validation catches stale processor references", () => {

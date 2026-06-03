@@ -302,6 +302,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.lint-frontmatter",
         "dome.markdown.broken-images",
         "dome.markdown.duplicate-detection",
+        "dome.markdown.duplicate-detection-answer",
         "dome.markdown.stale-dates",
         "dome.markdown.refresh-updated",
         "dome.markdown.raw-immutable",
@@ -372,6 +373,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.health.orphan-run-recovery-questions",
         "dome.health.orphan-run-recovery-answer",
         "dome.markdown.ambiguous-wikilink-answer",
+        "dome.markdown.duplicate-detection-answer",
         "dome.daily.ambiguous-followup-answer",
       ],
       optionalProcessors: [
