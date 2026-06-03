@@ -1,6 +1,6 @@
 import type { Caps } from "./caps";
 import { bold, glyph, paint, statusGlyph, type Tone } from "./theme";
-import { visibleWidth } from "./width";
+import { pad, visibleWidth } from "./width";
 
 export type Status = { readonly tone: Tone; readonly label: string };
 
@@ -26,4 +26,24 @@ export function headline(
   const gap = caps.width - visibleWidth(leftPlain) - visibleWidth(rightPlain);
   const spacer = gap >= 1 ? " ".repeat(gap) : "  ";
   return `${leftStyled}${spacer}${right}`;
+}
+
+export function section(
+  title: string,
+  body: ReadonlyArray<string>,
+  caps: Caps,
+): ReadonlyArray<string> {
+  if (body.length === 0) return [];
+  return ["", paint(title.toUpperCase(), "muted", caps), ...body];
+}
+
+export type KvRow = { readonly label: string; readonly value: string; readonly tone?: Tone };
+
+export function kv(rows: ReadonlyArray<KvRow>, caps: Caps): ReadonlyArray<string> {
+  const labelWidth = rows.reduce((m, r) => Math.max(m, visibleWidth(r.label)), 0);
+  return rows.map((r) => {
+    const label = paint(pad(r.label, labelWidth), "muted", caps);
+    const value = paint(r.value, r.tone ?? "plain", caps);
+    return `  ${label}   ${value}`;
+  });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { pad, truncate, visibleWidth } from "../../../src/cli/presenter/width";
-import { headline, statusValue } from "../../../src/cli/presenter/primitives";
+import { headline, kv, section, statusValue } from "../../../src/cli/presenter/primitives";
 
 describe("visibleWidth", () => {
   test("counts plain ASCII as length", () => {
@@ -61,5 +61,32 @@ describe("headline", () => {
     const narrow = { color: false, unicode: true, width: 4 };
     expect(headline({ cmd: "status" }, { tone: "ok", label: "ok" }, narrow))
       .toBe("dome status  ✓ ok");
+  });
+});
+
+describe("section", () => {
+  test("ALLCAPS title, blank line before, indented body, only when body non-empty", () => {
+    expect(section("At a glance", ["  sync   ok"], ASCII)).toEqual([
+      "",
+      "AT A GLANCE",
+      "  sync   ok",
+    ]);
+  });
+  test("empty body yields no lines", () => {
+    expect(section("Diagnostics", [], ASCII)).toEqual([]);
+  });
+});
+
+describe("kv", () => {
+  test("aligns labels to max width, dims labels, paints values", () => {
+    expect(
+      kv(
+        [
+          { label: "sync", value: "needed", tone: "warn" },
+          { label: "projection", value: "stale", tone: "warn" },
+        ],
+        ASCII,
+      ),
+    ).toEqual(["  sync         needed", "  projection   stale"]);
   });
 });
