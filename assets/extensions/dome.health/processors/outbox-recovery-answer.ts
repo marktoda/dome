@@ -9,8 +9,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -25,18 +24,7 @@ import {
   parseRecoveryAnswerInput,
 } from "./recovery-answer-input";
 
-const outboxRecoveryAnswer: Processor = defineProcessor({
-  id: "dome.health.outbox-recovery-answer",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    {
-      kind: "answer",
-      questionProcessorId: "dome.health.outbox-recovery-questions",
-      idempotencyKeyPrefix: OUTBOX_RECOVERY_QUESTION_PREFIX,
-    },
-  ],
-  capabilities: [{ kind: "outbox.recover", actions: ["retry", "abandon"] }],
+const outboxRecoveryAnswer = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseRecoveryAnswerInput(ctx.input);
     if (input === null) {

@@ -9,9 +9,8 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
+  defineProcessorImplementation,
   type OperationalQuarantineRow,
-  type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -20,12 +19,7 @@ import {
   quarantineRecoveryQuestionKey,
 } from "./quarantine-recovery-shared";
 
-const quarantineRecoveryQuestions: Processor = defineProcessor({
-  id: "dome.health.quarantine-recovery-questions",
-  version: "0.1.1",
-  phase: "garden",
-  triggers: [{ kind: "schedule", cron: "* * * * *" }],
-  capabilities: [{ kind: "quarantine.read" }, { kind: "question.ask" }],
+const quarantineRecoveryQuestions = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.operational === undefined) {
       throw new Error(

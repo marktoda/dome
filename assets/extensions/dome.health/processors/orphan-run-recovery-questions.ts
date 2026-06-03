@@ -9,9 +9,8 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
+  defineProcessorImplementation,
   type OperationalRunRow,
-  type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -20,15 +19,7 @@ import {
   orphanRunRecoveryQuestionKey,
 } from "./orphan-run-recovery-shared";
 
-const orphanRunRecoveryQuestions: Processor = defineProcessor({
-  id: "dome.health.orphan-run-recovery-questions",
-  version: "0.1.1",
-  phase: "garden",
-  triggers: [{ kind: "schedule", cron: "* * * * *" }],
-  capabilities: [
-    { kind: "run.read", statuses: ["running"] },
-    { kind: "question.ask" },
-  ],
+const orphanRunRecoveryQuestions = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.operational === undefined) {
       throw new Error(

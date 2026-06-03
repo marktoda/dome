@@ -9,8 +9,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -24,18 +23,7 @@ import {
   parseRecoveryAnswerInput,
 } from "./recovery-answer-input";
 
-const orphanRunRecoveryAnswer: Processor = defineProcessor({
-  id: "dome.health.orphan-run-recovery-answer",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    {
-      kind: "answer",
-      questionProcessorId: "dome.health.orphan-run-recovery-questions",
-      idempotencyKeyPrefix: ORPHAN_RUN_RECOVERY_QUESTION_PREFIX,
-    },
-  ],
-  capabilities: [{ kind: "run.recover", actions: ["fail"] }],
+const orphanRunRecoveryAnswer = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseRecoveryAnswerInput(ctx.input);
     if (input === null) {

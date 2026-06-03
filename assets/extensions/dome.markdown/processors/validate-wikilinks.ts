@@ -43,8 +43,7 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -69,19 +68,7 @@ import {
 
 // ----- Processor ------------------------------------------------------------
 
-const validateWikilinks: Processor = defineProcessor({
-  id: "dome.markdown.validate-wikilinks",
-  version: "0.4.1",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "patch.auto", paths: ["**/*.md"] },
-    { kind: "question.ask" },
-  ],
+const validateWikilinks = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // Materialize the candidate snapshot's markdown set once per dispatch.
     // Build the resolver once so both qualified-path and bare-name resolution

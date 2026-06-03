@@ -17,13 +17,14 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   flattenBundleProcessors,
+  loadBundleManifestSummaryFromRoots,
   loadBundles,
   loadBundlesFromRoots,
 } from "../../src/extensions/loader";
@@ -109,6 +110,59 @@ describe("loadBundles — shipped dome.lint bundle", () => {
 
     const registry = buildRegistry(flat);
     expect(registry.ok).toBe(true);
+  });
+
+  test("shipped processor modules are implementation-only", async () => {
+    const bundleIds = (await readdir(SHIPPED_BUNDLES_ROOT, {
+      withFileTypes: true,
+    }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    const offenders: string[] = [];
+    const metadataKeys = [
+      "id",
+      "version",
+      "phase",
+      "triggers",
+      "capabilities",
+      "execution",
+      "inspection",
+    ];
+
+    for (const bundleId of bundleIds) {
+      const summary = await loadBundleManifestSummaryFromRoots({
+        bundleId,
+        bundlesRoots: [SHIPPED_BUNDLES_ROOT],
+      });
+      expect(summary.ok).toBe(true);
+      if (!summary.ok || summary.value === null) continue;
+
+      for (const processor of summary.value.processors) {
+        const moduleAbs = join(summary.value.bundlePath, processor.module);
+        const mod = (await import(pathToFileURL(moduleAbs).href)) as {
+          default?: unknown;
+        };
+        const exported = mod.default;
+        if (
+          exported === null ||
+          exported === undefined ||
+          typeof exported !== "object" ||
+          typeof (exported as { readonly run?: unknown }).run !== "function"
+        ) {
+          offenders.push(`${processor.id}: missing implementation run()`);
+          continue;
+        }
+        const staleKeys = metadataKeys.filter((key) =>
+          Object.prototype.hasOwnProperty.call(exported, key),
+        );
+        if (staleKeys.length > 0) {
+          offenders.push(`${processor.id}: ${staleKeys.join(",")}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 
   test("the loaded processor's run() returns a ViewEffect (smoke)", async () => {

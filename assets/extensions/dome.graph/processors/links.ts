@@ -38,8 +38,7 @@ import {
   type FactEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -67,19 +66,7 @@ const REQUIRED_NAMESPACE_PREFIX = "dome.graph.";
 
 // ----- Processor ------------------------------------------------------------
 
-const graphLinks: Processor = defineProcessor({
-  id: "dome.graph.links",
-  version: "0.1.0",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-    { kind: "signal", name: "file.deleted" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "graph.write", namespaces: ["dome.graph.*"] },
-  ],
+const graphLinks = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // Defense-in-depth: refuse to emit if the processor's predicate has
     // drifted outside its declared namespace. The broker enforces this

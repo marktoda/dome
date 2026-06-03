@@ -18,8 +18,7 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -34,18 +33,7 @@ const NON_CANONICAL_CONTENT_PREFIXES = [
   "wiki/generated/",
 ] as const;
 
-const duplicateDetection: Processor = defineProcessor({
-  id: "dome.markdown.duplicate-detection",
-  version: "0.1.1",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "question.ask" },
-  ],
+const duplicateDetection = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const allMarkdown = await ctx.snapshot.listMarkdownFiles();
     const allPages = await readComparablePages(ctx, allMarkdown);

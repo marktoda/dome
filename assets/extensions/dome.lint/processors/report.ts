@@ -7,8 +7,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -23,12 +22,7 @@ const SEVERITY_ORDER = Object.freeze({
   block: 3,
 } satisfies Record<LintSeverity, number>);
 
-const report: Processor = defineProcessor({
-  id: "dome.lint.report",
-  version: "0.1.1",
-  phase: "view",
-  triggers: [{ kind: "command", name: "lint" }],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+const report = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

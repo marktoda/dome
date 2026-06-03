@@ -6,8 +6,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -24,47 +23,7 @@ import {
 const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
-const taskIndex: Processor = defineProcessor({
-  id: "dome.daily.task-index",
-  version: "0.1.6",
-  phase: "adoption",
-  triggers: [
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "notes/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "notes/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "notes/*.md",
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] },
-    { kind: "graph.write", namespaces: ["dome.daily.*"] },
-    { kind: "question.ask" },
-  ],
+const taskIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: Effect[] = [];
     for (const path of ctx.changedPaths) {

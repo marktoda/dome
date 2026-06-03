@@ -12,8 +12,7 @@ import {
   type FileChangeInput,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -45,47 +44,7 @@ import {
 const DAILY_CRON = "0 6 * * *";
 const OPEN_LOOP_SURFACE_LIMIT = 12;
 
-const carryForward: Processor = defineProcessor({
-  id: "dome.daily.carry-forward",
-  version: "0.2.7",
-  phase: "garden",
-  triggers: [
-    { kind: "schedule", cron: DAILY_CRON },
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.created",
-      pathPattern: "notes/*.md",
-    },
-    {
-      kind: "signal",
-      name: "document.changed",
-      pathPattern: "notes/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "wiki/**/*.md",
-    },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "notes/*.md",
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/dailies/*.md", "notes/*.md"] },
-  ],
+const carryForward = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const settings = dailyPathSettings(ctx.extensionConfig);
     const targetDate = targetDailyDate(ctx);

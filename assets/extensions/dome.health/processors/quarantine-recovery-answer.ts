@@ -9,8 +9,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -24,18 +23,7 @@ import {
   parseRecoveryAnswerInput,
 } from "./recovery-answer-input";
 
-const quarantineRecoveryAnswer: Processor = defineProcessor({
-  id: "dome.health.quarantine-recovery-answer",
-  version: "0.1.0",
-  phase: "garden",
-  triggers: [
-    {
-      kind: "answer",
-      questionProcessorId: "dome.health.quarantine-recovery-questions",
-      idempotencyKeyPrefix: QUARANTINE_RECOVERY_QUESTION_PREFIX,
-    },
-  ],
-  capabilities: [{ kind: "quarantine.recover", actions: ["reset"] }],
+const quarantineRecoveryAnswer = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseRecoveryAnswerInput(ctx.input);
     if (input === null) {

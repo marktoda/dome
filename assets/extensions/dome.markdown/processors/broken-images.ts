@@ -14,8 +14,7 @@ import {
 } from "../../../../src/core/effect";
 import { canonicalVaultPath } from "../../../../src/core/vault-path";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -33,23 +32,7 @@ const IMAGE_EXTENSIONS = new Set([
   ".avif",
 ]);
 
-const brokenImages: Processor = defineProcessor({
-  id: "dome.markdown.broken-images",
-  version: "0.1.1",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-    {
-      kind: "signal",
-      name: "file.deleted",
-      pathPattern: "**/*.{png,jpg,jpeg,gif,webp,svg,avif}",
-    },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"] },
-  ],
-  inspection: { kind: "all-readable-markdown" },
+const brokenImages = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const diagnostics: DiagnosticEffect[] = [];
     const changedMarkdown = ctx.changedPaths.filter((p) => p.endsWith(".md"));

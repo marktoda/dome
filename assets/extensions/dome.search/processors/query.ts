@@ -10,8 +10,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
@@ -43,12 +42,7 @@ const MAX_LIMIT = 50;
 const MAX_QUERY_RECALL_PATHS = 24;
 const MAX_RELATED_ROWS = 8;
 
-const searchQuery: Processor = defineProcessor({
-  id: "dome.search.query",
-  version: "0.1.6",
-  phase: "view",
-  triggers: [{ kind: "command", name: "query" }],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+const searchQuery = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

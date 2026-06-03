@@ -6,8 +6,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
@@ -28,12 +27,7 @@ import {
 const SCHEMA = "dome.daily.agenda-with/v1";
 const DEFAULT_LIMIT = 12;
 
-const agendaWith: Processor = defineProcessor({
-  id: "dome.daily.agenda-with",
-  version: "0.1.7",
-  phase: "view",
-  triggers: [{ kind: "command", name: "agenda-with" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
+const agendaWith = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

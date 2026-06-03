@@ -9,9 +9,8 @@ import {
   type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
+  defineProcessorImplementation,
   type OperationalOutboxRow,
-  type Processor,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -21,16 +20,7 @@ import {
   OUTBOX_RECOVERY_QUESTION_PREFIX,
 } from "./outbox-recovery-shared";
 
-const outboxRecoveryQuestions: Processor = defineProcessor({
-  id: "dome.health.outbox-recovery-questions",
-  version: "0.1.1",
-  phase: "garden",
-  triggers: [{ kind: "schedule", cron: "* * * * *" }],
-  capabilities: [
-    { kind: "read", paths: ["**"] },
-    { kind: "outbox.read", statuses: ["failed"] },
-    { kind: "question.ask" },
-  ],
+const outboxRecoveryQuestions = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.operational === undefined) {
       throw new Error(

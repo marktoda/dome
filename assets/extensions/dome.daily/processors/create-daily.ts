@@ -12,8 +12,7 @@ import {
 } from "../../../../src/core/effect";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -44,15 +43,7 @@ type ScheduleInput = {
   readonly firedAt: string;
 };
 
-const createDaily: Processor = defineProcessor({
-  id: "dome.daily.create-daily",
-  version: "0.1.4",
-  phase: "garden",
-  triggers: [{ kind: "schedule", cron: DAILY_CRON }],
-  capabilities: [
-    { kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] },
-    { kind: "patch.auto", paths: ["wiki/dailies/*.md", "notes/*.md"] },
-  ],
+const createDaily = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseScheduleInput(ctx.input);
     if (input === null) return [];

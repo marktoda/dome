@@ -9,8 +9,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
   type SearchDocumentResult,
 } from "../../../../src/core/processor";
@@ -62,12 +61,7 @@ const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
 
-const exportContext: Processor = defineProcessor({
-  id: "dome.search.export-context",
-  version: "0.1.12",
-  phase: "view",
-  triggers: [{ kind: "command", name: "export-context" }],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+const exportContext = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (ctx.projection === undefined) {
       throw new Error(

@@ -47,8 +47,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import {
@@ -82,15 +81,7 @@ const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 // ----- Processor ------------------------------------------------------------
 
-const lintFrontmatter: Processor = defineProcessor({
-  id: "dome.markdown.lint-frontmatter",
-  version: "0.1.4",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-  ],
-  capabilities: [{ kind: "read", paths: ["**/*.md", PAGE_TYPES_PATH] }],
+const lintFrontmatter = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const diagnostics: DiagnosticEffect[] = [];
     const pageTypes = await loadPageTypeRegistry(ctx);

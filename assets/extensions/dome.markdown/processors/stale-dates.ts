@@ -15,8 +15,7 @@ import {
   type Effect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import { dateOnly, daysBetween } from "./frontmatter-dates";
@@ -25,15 +24,7 @@ import { frontmatterLintModeForPath } from "./path-policy";
 const CODE_STALE_UPDATED = "dome.markdown.stale-updated";
 const MAX_DRIFT_DAYS = 1;
 
-const staleDates: Processor = defineProcessor({
-  id: "dome.markdown.stale-dates",
-  version: "0.1.2",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-  ],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+const staleDates = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (!shouldDiagnoseStaleDates(ctx)) return [];
 

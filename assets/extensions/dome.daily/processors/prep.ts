@@ -7,8 +7,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -30,12 +29,7 @@ import {
 const SCHEMA = "dome.daily.prep/v1";
 const DEFAULT_LIMIT = 12;
 
-const prep: Processor = defineProcessor({
-  id: "dome.daily.prep",
-  version: "0.1.13",
-  phase: "view",
-  triggers: [{ kind: "command", name: "prep" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
+const prep = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(

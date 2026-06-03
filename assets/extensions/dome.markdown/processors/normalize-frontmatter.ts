@@ -52,8 +52,7 @@ import {
   type FileChangeInput,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -68,18 +67,7 @@ import { frontmatterLintModeForPath } from "./path-policy";
 
 // ----- Processor ------------------------------------------------------------
 
-const normalizeFrontmatter: Processor = defineProcessor({
-  id: "dome.markdown.normalize-frontmatter",
-  version: "0.2.1",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "patch.auto", paths: ["**/*.md"] },
-  ],
+const normalizeFrontmatter = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // `file.created` fires for every added path; we only care about
     // markdown bodies because that's the only file shape that carries

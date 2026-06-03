@@ -14,24 +14,11 @@ import {
   type SearchDocumentEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-const searchIndexText: Processor = defineProcessor({
-  id: "dome.search.index-text",
-  version: "0.1.1",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-    { kind: "signal", name: "file.deleted" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "search.write", paths: ["**/*.md"] },
-  ],
+const searchIndexText = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: SearchDocumentEffect[] = [];
     const seen = new Set<string>();

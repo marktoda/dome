@@ -6,8 +6,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -22,12 +21,7 @@ import {
 const SCHEMA = "dome.daily.today/v1";
 const DEFAULT_LIMIT = 12;
 
-const today: Processor = defineProcessor({
-  id: "dome.daily.today",
-  version: "0.1.11",
-  phase: "view",
-  triggers: [{ kind: "command", name: "today" }],
-  capabilities: [{ kind: "read", paths: ["wiki/**/*.md", "notes/*.md"] }],
+const today = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(

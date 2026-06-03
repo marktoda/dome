@@ -14,8 +14,7 @@ import {
   type FactEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
@@ -26,19 +25,7 @@ const REQUIRED_NAMESPACE_PREFIX = "dome.graph.";
 const TAG_VALUE_RE = /^[A-Za-z][A-Za-z0-9_-]*(?:\/[A-Za-z0-9][A-Za-z0-9_-]*)*$/;
 const INLINE_TAG_RE = /(^|[^A-Za-z0-9_/-])#([A-Za-z][A-Za-z0-9_/-]*)(?=$|[^A-Za-z0-9_/-])/g;
 
-const graphTagIndex: Processor = defineProcessor({
-  id: "dome.graph.tag-index",
-  version: "0.1.0",
-  phase: "adoption",
-  triggers: [
-    { kind: "signal", name: "document.changed" },
-    { kind: "signal", name: "file.created" },
-    { kind: "signal", name: "file.deleted" },
-  ],
-  capabilities: [
-    { kind: "read", paths: ["**/*.md"] },
-    { kind: "graph.write", namespaces: ["dome.graph.*"] },
-  ],
+const graphTagIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     if (!PREDICATE.startsWith(REQUIRED_NAMESPACE_PREFIX)) {
       throw new Error(

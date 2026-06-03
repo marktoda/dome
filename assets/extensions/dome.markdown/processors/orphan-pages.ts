@@ -46,8 +46,7 @@ import {
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
-  defineProcessor,
-  type Processor,
+  defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
@@ -74,12 +73,7 @@ const LINKS_TO_PREDICATE = "dome.graph.links_to";
 
 // ----- Processor ------------------------------------------------------------
 
-const orphanPages: Processor = defineProcessor({
-  id: "dome.markdown.orphan-pages",
-  version: "0.1.0",
-  phase: "view",
-  triggers: [{ kind: "command", name: "orphan-pages" }],
-  capabilities: [{ kind: "read", paths: ["**/*.md"] }],
+const orphanPages = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const projection = ctx.projection;
     if (projection === undefined) {
