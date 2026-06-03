@@ -93,11 +93,11 @@ export function nextActionsForStatus(
     attention.includes(reason),
   );
   if (syncReasons.length > 0) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(syncReasons),
       command: "dome sync --json",
       description: syncStatusDescription(syncReasons),
-    }));
+    });
   }
 
   const checkReasons = CHECK_REASONS.filter((reason) =>
@@ -107,19 +107,19 @@ export function nextActionsForStatus(
     (reason) => reason !== "diagnostics",
   );
   if (nonDiagnosticCheckReasons.length > 0) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(checkReasons),
       command: "dome check --json",
       description:
         "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
-    }));
+    });
   } else if (checkReasons.includes("diagnostics")) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(["diagnostics"]),
       command: "dome check --content --attention --limit 50 --json",
       description:
         "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
-    }));
+    });
   }
   return Object.freeze(out);
 }
@@ -198,19 +198,19 @@ export function nextActionsForSync(input: {
     (reason) => reason !== "diagnostics",
   );
   if (nonDiagnosticCheckReasons.length > 0) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(checkReasons),
       command: "dome check --json",
       description:
         "Explain remaining compiler attention across engine health, content diagnostics, and open decisions.",
-    }));
+    });
   } else if (checkReasons.includes("diagnostics")) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(["diagnostics"]),
       command: "dome check --content --attention --limit 50 --json",
       description:
         "Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.",
-    }));
+    });
   }
 
   pushAction(out, attention, ["detached_head"], {
@@ -245,47 +245,47 @@ export function nextActionsForCheck(input: {
 }): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
   if (input.engineFindings > 0) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(["engine"]),
       command: "dome sync --json",
       description:
         "Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain.",
-    }));
+    });
   }
   if (input.projectionStale) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(["projection_stale"]),
       command: "dome sync --json",
       description:
         "Rebuild stale projection rows before relying on projection-backed diagnostics or questions.",
-    }));
+    });
   }
   if (input.diagnostics > 0) {
     if (input.diagnosticsAlreadyBounded) {
-      out.push(Object.freeze({
+      appendAction(out, {
         reasons: Object.freeze(["diagnostics"]),
         command: null,
         description:
           "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
-      }));
+      });
     } else {
-      out.push(Object.freeze({
+      appendAction(out, {
         reasons: Object.freeze(["diagnostics"]),
         command: "dome check --content --attention --limit 50 --json",
         description:
           "Review a larger bounded attention-diagnostic list; fix the source markdown issue(s), commit, then run dome sync --json.",
-      }));
+      });
     }
   }
   if (input.questions > 0) {
-    out.push(Object.freeze({
+    appendAction(out, {
       reasons: Object.freeze(["questions"]),
       command: resolveQuestionCommand({
         id: input.firstQuestionId,
         options: input.firstQuestionOptions,
       }),
       description: questionResolutionDescription(input.firstQuestionOptions),
-    }));
+    });
   }
   return Object.freeze(out);
 }
@@ -298,8 +298,53 @@ function pushAction(
 ): void {
   const reasons = candidates.filter((reason) => attention.includes(reason));
   if (reasons.length === 0) return;
-  out.push(Object.freeze({
+  appendAction(out, {
     reasons: Object.freeze(reasons),
     ...action,
-  }));
+  });
+}
+
+function appendAction(out: CliNextAction[], action: CliNextAction): void {
+  const existingIndex = out.findIndex((candidate) =>
+    actionKey(candidate) === actionKey(action)
+  );
+  if (existingIndex < 0) {
+    out.push(freezeAction(action));
+    return;
+  }
+  const existing = out[existingIndex];
+  if (existing === undefined) {
+    out.push(freezeAction(action));
+    return;
+  }
+  out[existingIndex] = freezeAction({
+    command: existing.command,
+    reasons: uniqueStrings([...existing.reasons, ...action.reasons]),
+    description: mergeDescriptions(existing.description, action.description),
+  });
+}
+
+function actionKey(action: CliNextAction): string {
+  return action.command === null
+    ? `manual:${action.description}`
+    : `command:${action.command}`;
+}
+
+function mergeDescriptions(a: string, b: string): string {
+  if (a === b) return a;
+  if (a.includes(b)) return a;
+  if (b.includes(a)) return b;
+  return `${a} Also: ${b}`;
+}
+
+function uniqueStrings(values: ReadonlyArray<string>): ReadonlyArray<string> {
+  return Object.freeze([...new Set(values)]);
+}
+
+function freezeAction(action: CliNextAction): CliNextAction {
+  return Object.freeze({
+    command: action.command,
+    reasons: Object.freeze([...action.reasons]),
+    description: action.description,
+  });
 }

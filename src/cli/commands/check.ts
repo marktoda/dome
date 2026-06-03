@@ -52,13 +52,19 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatNextActionsBlock,
+  formatSummaryRows,
+  plural,
+  pushSection,
+  truncateText,
+} from "../human-output";
+import {
   collectMaintenanceLoopSummaries,
   formatMaintenanceLoopDetailLines,
   formatMaintenanceLoopSummaryLine,
   type MaintenanceLoopSummary,
 } from "../maintenance-loop-summary";
 import {
-  formatCliNextAction,
   nextActionsForCheck,
   type CliNextAction,
 } from "../next-actions";
@@ -492,20 +498,36 @@ function printReport(
     console.log(formatJson(report));
     return;
   }
-  console.log("DOME check");
-  console.log(`status    ${report.status}`);
-  console.log(`projection ${formatProjection(report.projection)}`);
-  console.log(`engine    ${formatEngine(report.engine)}`);
-  console.log(`content   ${formatContent(report.content)}`);
-  console.log(`decisions ${formatDecisions(report.decisions)}`);
-  console.log(`loops     ${formatLoops(report.maintenance_loops)}`);
+  const lines = renderCheckReport(report, options);
+  console.log(lines.join("\n"));
+}
+
+function renderCheckReport(
+  report: CheckReport,
+  options: { readonly showLoopDetails: boolean },
+): ReadonlyArray<string> {
+  const lines = [`Dome check: ${formatCheckHeadline(report)}`];
+  pushSection(lines, "Next", formatNextActionsBlock(report.next_actions).slice(1));
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["status", report.status],
+    ["projection", formatProjection(report.projection)],
+    ["engine", formatEngine(report.engine)],
+    ["content", formatContent(report.content)],
+    ["decisions", formatDecisions(report.decisions)],
+    ["loops", formatLoops(report.maintenance_loops)],
+  ]));
   if (options.showLoopDetails) {
-    printLoopDetails(report.maintenance_loops);
+    pushSection(lines, "Loops", loopDetailLines(report.maintenance_loops));
   }
-  printFindings(report.engine?.findings ?? []);
-  printDiagnostics(report.content);
-  printQuestions(report.decisions);
-  printNextActions(report.next_actions);
+  pushSection(lines, "Engine", findingLines(report.engine?.findings ?? []));
+  pushSection(lines, "Content", diagnosticLines(report.content));
+  pushSection(lines, "Decisions", questionLines(report.decisions));
+  return Object.freeze(lines);
+}
+
+function formatCheckHeadline(report: CheckReport): string {
+  if (report.projection.stale) return "needs sync";
+  return report.status === "ok" ? "ok" : "needs attention";
 }
 
 async function collectProjectionReport(input: {
@@ -537,15 +559,11 @@ async function collectProjectionReport(input: {
   });
 }
 
-function printLoopDetails(
+function loopDetailLines(
   loops: ReadonlyArray<MaintenanceLoopSummary> | null,
-): void {
-  if (loops === null) return;
-  console.log("");
-  console.log("Loops");
-  for (const line of formatMaintenanceLoopDetailLines(loops)) {
-    console.log(line);
-  }
+): ReadonlyArray<string> {
+  if (loops === null) return [];
+  return formatMaintenanceLoopDetailLines(loops);
 }
 
 function formatEngine(report: HealthReport | null): string {
@@ -564,33 +582,33 @@ function formatContent(report: CheckContentReport | null): string {
   const attention =
     report.diagnostics === 0
       ? ""
-      : ` | ${report.attention_diagnostics} attention`;
+      : ` | ${plural(report.attention_diagnostics, "attention item")}`;
   const unlocated =
     report.unlocated_diagnostics === 0
       ? ""
-      : ` | ${report.unlocated_diagnostics} unlocated`;
+      : ` | ${plural(report.unlocated_diagnostics, "unlocated item")}`;
   const filter =
-    report.filter.attention
+    report.filter.attention && report.diagnostics > 0
       ? formatAttentionFilter(report)
       : "";
-  return `${report.diagnostics} diagnostic(s)${attention}${unlocated}${filter}`;
+  return `${plural(report.diagnostics, "diagnostic")}${attention}${unlocated}${filter}`;
 }
 
 function formatAttentionFilter(report: CheckContentReport): string {
   if (report.filtered_diagnostics === 0) {
-    return " | 0 attention shown";
+    return " | showing none";
   }
   if (report.items.length >= report.filtered_diagnostics) {
-    return ` | showing ${report.filtered_diagnostics} attention`;
+    return ` | showing ${plural(report.filtered_diagnostics, "attention item")}`;
   }
-  return ` | showing ${report.items.length} of ${report.filtered_diagnostics} attention`;
+  return ` | showing ${report.items.length}/${report.filtered_diagnostics} attention`;
 }
 
 function formatDecisions(report: CheckDecisionReport | null): string {
   if (report === null) return "skipped";
   const agentReady = report.agent_safe_questions + report.model_safe_questions;
-  if (report.questions === 0) return "0 open question(s)";
-  return `${report.questions} open question(s) | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
+  if (report.questions === 0) return "0 open questions";
+  return `${plural(report.questions, "open question")} | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
 }
 
 function formatLoops(
@@ -600,144 +618,181 @@ function formatLoops(
   return formatMaintenanceLoopSummaryLine(loops);
 }
 
-function printFindings(findings: ReadonlyArray<HealthFinding>): void {
-  if (findings.length === 0) return;
-  console.log("");
-  console.log("Engine");
+function findingLines(findings: ReadonlyArray<HealthFinding>): ReadonlyArray<string> {
+  if (findings.length === 0) return [];
+  const lines: string[] = [];
   for (const finding of findings) {
-    console.log(
+    lines.push(
       `  - [${finding.severity}] ${finding.code}: ${finding.message}`,
     );
-    console.log(`    recovery: ${finding.recovery}`);
+    lines.push(`    recovery: ${finding.recovery}`);
   }
+  return lines;
 }
 
-function printDiagnostics(report: CheckContentReport | null): void {
+function diagnosticLines(
+  report: CheckContentReport | null,
+): ReadonlyArray<string> {
   const items = report?.items ?? [];
-  if (items.length === 0) return;
-  printDiagnosticDispositionGroups(report);
-  printDiagnosticRepairGroups(report);
-  printDiagnosticMessageGroups(report);
-  console.log("");
-  console.log("Content");
-  for (const item of items) {
-    console.log(`  - [${item.severity}] ${item.code}: ${item.message}`);
-    console.log(`    repair: ${item.repair_path} - ${item.repair_hint}`);
-    console.log(
-      `    disposition: ${item.disposition} - ${item.disposition_hint}`,
-    );
-    console.log(`    ${item.source_refs}`);
+  if (items.length === 0) return [];
+  const lines: string[] = [];
+  appendDiagnosticDispositionGroups(lines, report);
+  appendDiagnosticRepairGroups(lines, report);
+  appendDiagnosticMessageGroups(lines, report);
+  for (const [disposition, groupItems] of groupDiagnosticsByDisposition(items)) {
+    lines.push(`  ${formatDispositionHeading(disposition, groupItems.length)}`);
+    for (const item of groupItems) {
+      lines.push(
+        `    - [${item.severity}] ${item.code}: ${truncateText(item.message, 160)}`,
+      );
+      lines.push(`      source: ${item.source_refs}`);
+      lines.push(`      repair: ${item.repair_path} - ${item.repair_hint}`);
+    }
   }
   appendMoreLine(
+    lines,
     report?.filtered_diagnostics ?? 0,
     items.length,
     "diagnostics",
   );
+  return lines;
 }
 
-function printDiagnosticDispositionGroups(
+function appendDiagnosticDispositionGroups(
+  lines: string[],
   report: CheckContentReport | null,
 ): void {
   if (report === null) return;
   const groups = report.disposition_summary.groups;
   if (!groups.some((group) => group.count > 1) && groups.length <= 1) return;
-  console.log("");
-  console.log("Content dispositions");
+  lines.push("  Dispositions");
   for (const group of groups) {
-    console.log(
-      `  - ${group.disposition} x${group.count}: ${group.disposition_hint}`,
+    lines.push(
+      `    - ${group.disposition} x${group.count}: ${group.disposition_hint}`,
     );
-    console.log(`    first: ${group.first_source_refs}`);
+    lines.push(`      first: ${group.first_source_refs}`);
   }
   appendMoreGroupsLine(
+    lines,
     report.disposition_summary.group_count,
     groups.length,
     "disposition groups",
   );
 }
 
-function printDiagnosticRepairGroups(report: CheckContentReport | null): void {
+function appendDiagnosticRepairGroups(
+  lines: string[],
+  report: CheckContentReport | null,
+): void {
   if (report === null) return;
   const groups = report.repair_summary.groups;
   if (!groups.some((group) => group.count > 1) && groups.length <= 1) return;
-  console.log("");
-  console.log("Content repair paths");
+  lines.push("  Repair paths");
   for (const group of groups) {
-    console.log(
-      `  - ${group.repair_path} x${group.count}: ${group.repair_hint}`,
+    lines.push(
+      `    - ${group.repair_path} x${group.count}: ${group.repair_hint}`,
     );
-    console.log(`    first: ${group.first_source_refs}`);
+    lines.push(`      first: ${group.first_source_refs}`);
   }
   appendMoreGroupsLine(
+    lines,
     report.repair_summary.group_count,
     groups.length,
     "repair groups",
   );
 }
 
-function printDiagnosticMessageGroups(report: CheckContentReport | null): void {
+function appendDiagnosticMessageGroups(
+  lines: string[],
+  report: CheckContentReport | null,
+): void {
   if (report === null) return;
   const groups = report.message_summary.groups;
   if (!groups.some((group) => group.count > 1)) return;
-  console.log("");
-  console.log("Content groups");
+  lines.push("  Repeated messages");
   for (const group of groups) {
-    console.log(
-      `  - [${group.severity}] ${group.code} x${group.count}: ${group.message}`,
+    lines.push(
+      `    - [${group.severity}] ${group.code} x${group.count}: ${group.message}`,
     );
-    console.log(`    first: ${group.first_source_refs}`);
+    lines.push(`      first: ${group.first_source_refs}`);
   }
   appendMoreGroupsLine(
+    lines,
     report.message_summary.group_count,
     groups.length,
     "groups",
   );
 }
 
-function printQuestions(report: CheckDecisionReport | null): void {
+function questionLines(
+  report: CheckDecisionReport | null,
+): ReadonlyArray<string> {
   const items = report?.items ?? [];
-  if (items.length === 0) return;
-  console.log("");
-  console.log("Decisions");
+  if (items.length === 0) return [];
+  const lines: string[] = [];
   for (const item of items) {
     const options = item.options === null ? "" : ` options: ${item.options.join(", ")}`;
-    console.log(`  - #${item.id}: ${item.question}${options}`);
-    console.log(`    policy: ${questionAutomationLabel(item.metadata)}`);
+    lines.push(`  - #${item.id}: ${item.question}${options}`);
+    lines.push(`    policy: ${questionAutomationLabel(item.metadata)}`);
     if (item.recommended_answer !== null) {
-      console.log(`    recommended: ${item.recommended_answer}`);
+      lines.push(`    recommended: ${item.recommended_answer}`);
     }
     if (item.owner_needed_reason !== null) {
-      console.log(`    owner-needed: ${item.owner_needed_reason}`);
+      lines.push(`    owner-needed: ${item.owner_needed_reason}`);
     }
-    console.log(`    ${item.source_refs}`);
-    console.log(`    resolve: ${item.resolveCommand}`);
+    lines.push(`    source: ${item.source_refs}`);
+    lines.push(`    resolve: ${item.resolveCommand}`);
   }
-  appendMoreLine(report?.questions ?? 0, items.length, "questions");
+  appendMoreLine(lines, report?.questions ?? 0, items.length, "questions");
+  return lines;
 }
 
-function appendMoreGroupsLine(total: number, shown: number, label: string): void {
+function appendMoreGroupsLine(
+  lines: string[],
+  total: number,
+  shown: number,
+  label: string,
+): void {
   const remaining = total - shown;
   if (remaining <= 0) return;
-  console.log(
+  lines.push(
     `  ... ${remaining} more ${label} (use --limit ${total} to show all ${label})`,
   );
 }
 
-function appendMoreLine(total: number, shown: number, label: string): void {
+function appendMoreLine(
+  lines: string[],
+  total: number,
+  shown: number,
+  label: string,
+): void {
   const remaining = total - shown;
   if (remaining <= 0) return;
-  console.log(
+  lines.push(
     `  ... ${remaining} more ${label} (use --limit ${total} to show all)`,
   );
 }
 
-function printNextActions(actions: ReadonlyArray<CliNextAction>): void {
-  if (actions.length === 0) return;
-  console.log("");
-  console.log("Next");
-  for (const action of actions) {
-    console.log(`  - ${formatCliNextAction(action)}`);
+function groupDiagnosticsByDisposition(
+  items: ReadonlyArray<CheckDiagnosticItem>,
+): ReadonlyArray<readonly [string, ReadonlyArray<CheckDiagnosticItem>]> {
+  const order = ["owner-needed", "agent-fixable", "auto-fixable", "noise"];
+  const groups = new Map<string, CheckDiagnosticItem[]>();
+  for (const item of items) {
+    const group = groups.get(item.disposition) ?? [];
+    group.push(item);
+    groups.set(item.disposition, group);
   }
+  return Object.freeze(
+    [...groups.entries()].sort(
+      ([a], [b]) => order.indexOf(a) - order.indexOf(b),
+    ),
+  );
+}
+
+function formatDispositionHeading(disposition: string, count: number): string {
+  const label = disposition.replace(/-/g, " ");
+  return `${label} (${plural(count, "item")})`;
 }
 
 function parseLimit(raw: string | number | boolean | undefined): number | null {

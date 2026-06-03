@@ -2164,12 +2164,12 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("DOME check");
-    expect(out).toContain("status    ok");
-    expect(out).toContain("engine    ok");
-    expect(out).toContain("content   0 diagnostic(s)");
-    expect(out).toContain("decisions 0 open question(s)");
-    expect(out).toContain("loops     5 known");
+    expect(out).toContain("Dome check: ok");
+    expect(out).toContain("status      ok");
+    expect(out).toContain("engine      ok");
+    expect(out).toContain("content     0 diagnostics");
+    expect(out).toContain("decisions   0 open questions");
+    expect(out).toContain("loops       5 known");
     expect(out).not.toContain("\nLoops\n");
   });
 
@@ -2180,7 +2180,7 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("loops     5 known");
+    expect(out).toContain("loops       5 known");
     expect(out).toContain("\nLoops\n");
     expect(out).toContain("[inactive] dome.capture.digest");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
@@ -2393,9 +2393,10 @@ describe("runCheck", () => {
     captured.out = [];
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("status    ok");
+    expect(text).toContain("Dome check: ok");
+    expect(text).toContain("status      ok");
     expect(text).toContain(
-      "content   1 diagnostic(s) | 0 attention | 0 attention shown",
+      "content     1 diagnostic | 0 attention items | showing none",
     );
     expect(text).not.toContain("\nContent\n");
     expect(text).not.toContain("informational diagnostic");
@@ -2777,14 +2778,13 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Content groups");
+    expect(text).toContain("Repeated messages");
     expect(text).toContain(
       "[warning] check.repeated x2: Repeated diagnostic",
     );
     expect(text).toContain(
-      "manual: Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
+      "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
     );
-    expect(text).not.toContain("(manual)");
   });
 
   test("content report groups diagnostics by repair path", async () => {
@@ -2908,10 +2908,10 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Content dispositions");
+    expect(text).toContain("Dispositions");
     expect(text).toContain("agent-fixable x2");
-    expect(text).toContain("disposition: agent-fixable");
-    expect(text).toContain("Content repair paths");
+    expect(text).toContain("agent fixable");
+    expect(text).toContain("Repair paths");
     expect(text).toContain("link.resolve-or-create x2");
     expect(text).toContain("repair: link.resolve-or-create");
   });
@@ -3005,7 +3005,7 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Content dispositions");
+    expect(text).toContain("Dispositions");
     expect(text).toContain("noise x1");
     expect(text).toContain("Content");
     expect(text).toContain("dome.markdown.broken-wikilink");
@@ -3069,7 +3069,7 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain(
-      "content   3 diagnostic(s) | 3 attention | showing 2 of 3 attention",
+      "content     3 diagnostics | 3 attention items | showing 2/3 attention",
     );
     expect(text).toContain(
       "... 1 more diagnostics (use --limit 3 to show all)",
