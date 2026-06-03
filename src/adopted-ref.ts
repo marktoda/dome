@@ -71,7 +71,12 @@ export async function setAdoptedRef(
 
   if (current === null) {
     // Initialization — no ancestor to check.
-    await writeRef({ path: vaultPath, ref: refName, value: sha });
+    await writeRef({
+      path: vaultPath,
+      ref: refName,
+      value: sha,
+      expectedOld: null,
+    });
     return ok({ from: null, to: sha });
   }
 
@@ -93,6 +98,11 @@ export async function setAdoptedRef(
     }
   }
 
-  await writeRef({ path: vaultPath, ref: refName, value: sha });
+  await writeRef({
+    path: vaultPath,
+    ref: refName,
+    value: sha,
+    expectedOld: current,
+  });
   return ok({ from: current, to: sha });
 }

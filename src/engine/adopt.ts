@@ -664,6 +664,7 @@ export async function adopt(opts: {
         path: vault.path,
         ref: `refs/heads/${branch}`,
         value: branchAdvanceTarget,
+        expectedOld: sourceHead,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -702,6 +703,7 @@ export async function adopt(opts: {
         vaultPath: vault.path,
         branch,
         sourceHead,
+        expectedOld: branchAdvanceTarget,
         paths: materializePaths,
       });
       const materializeFailedDiag = diagnosticEffect({
@@ -751,6 +753,7 @@ export async function adopt(opts: {
           vaultPath: vault.path,
           branch,
           sourceHead,
+          expectedOld: branchAdvanceTarget,
           paths: materializePaths,
         })
       : null;
@@ -784,8 +787,23 @@ export async function adopt(opts: {
     });
   }
 
-  await resolveRecoveredEngineAdoptionDiagnostics(sinks);
-  await projectionBuffer.flush();
+  try {
+    await resolveRecoveredEngineAdoptionDiagnostics(sinks);
+    await projectionBuffer.flush();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    allDiagnostics.push(
+      diagnosticEffect({
+        severity: "warning",
+        code: "adoption.projection-flush-failed",
+        message:
+          `Adoption advanced refs to ${newAdopted.slice(0, 7)}, but ` +
+          `incremental projection flush failed: ${msg}. Projection rows are ` +
+          `rebuildable and will be refreshed before adopted-state reads.`,
+        sourceRefs: [],
+      }),
+    );
+  }
 
   return frozenResult({
     proposalId: proposal.id,
@@ -864,14 +882,17 @@ async function rollbackBranchAdvance(opts: {
   readonly vaultPath: string;
   readonly branch: string;
   readonly sourceHead: CommitOid;
+  readonly expectedOld?: CommitOid;
   readonly paths: ReadonlyArray<string>;
 }): Promise<DiagnosticEffect | null> {
   try {
-    await writeRef({
+    const writeOpts: Parameters<typeof writeRef>[0] = {
       path: opts.vaultPath,
       ref: `refs/heads/${opts.branch}`,
       value: opts.sourceHead,
-    });
+    };
+    if (opts.expectedOld !== undefined) writeOpts.expectedOld = opts.expectedOld;
+    await writeRef(writeOpts);
     await checkoutPathsAtRef({
       path: opts.vaultPath,
       ref: opts.sourceHead,

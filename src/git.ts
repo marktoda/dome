@@ -542,13 +542,31 @@ function splitNul(output: string): ReadonlyArray<string> {
  * isomorphic-git throws on unknown refs; this wrapper turns the throw into a
  * null so callers don't need a try/catch at every read site.
  */
-export async function readRef(opts: { path: string; ref: string }): Promise<string | null> {
+export type ReadRefResult =
+  | { readonly kind: "found"; readonly value: string }
+  | { readonly kind: "missing" };
+
+export async function readRefResult(opts: {
+  path: string;
+  ref: string;
+}): Promise<ReadRefResult> {
   try {
     const { root } = await resolveGitContext(opts.path);
-    return await git.resolveRef({ fs, dir: root, ref: opts.ref });
-  } catch {
-    return null;
+    return Object.freeze({
+      kind: "found" as const,
+      value: await git.resolveRef({ fs, dir: root, ref: opts.ref }),
+    });
+  } catch (error) {
+    if (isMissingRefError(error)) {
+      return Object.freeze({ kind: "missing" as const });
+    }
+    throw error;
   }
+}
+
+export async function readRef(opts: { path: string; ref: string }): Promise<string | null> {
+  const result = await readRefResult(opts);
+  return result.kind === "found" ? result.value : null;
 }
 
 /**
@@ -557,9 +575,43 @@ export async function readRef(opts: { path: string; ref: string }): Promise<stri
  * is responsible for any fast-forward / divergence semantics; this is a
  * mechanical writer.
  */
-export async function writeRef(opts: { path: string; ref: string; value: string }): Promise<void> {
+export async function writeRef(opts: {
+  path: string;
+  ref: string;
+  value: string;
+  /**
+   * When set, the update is compare-and-swap:
+   * - string: ref must currently equal this OID.
+   * - null: ref must not exist.
+   */
+  expectedOld?: string | null;
+}): Promise<void> {
   const { root } = await resolveGitContext(opts.path);
+  if ("expectedOld" in opts) {
+    const expected = opts.expectedOld ?? "0000000000000000000000000000000000000000";
+    await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value, expected]);
+    return;
+  }
   await git.writeRef({ fs, dir: root, ref: opts.ref, value: opts.value, force: true });
+}
+
+function isMissingRefError(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { readonly code?: unknown }).code;
+    if (
+      code === "NotFoundError" ||
+      code === "ResolveRefError" ||
+      code === "MissingNameError"
+    ) {
+      return true;
+    }
+  }
+  if (error instanceof Error) {
+    return /could not resolve|not found|unknown ref|ambiguous argument/i.test(
+      error.message,
+    );
+  }
+  return false;
 }
 
 /**

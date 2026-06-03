@@ -8,7 +8,7 @@
 // deliberately does not apply PatchEffects, enqueue jobs, dispatch external
 // work, read operational recovery state, or make model calls.
 
-import { join, posix } from "node:path";
+import { posix } from "node:path";
 
 import type { Effect } from "../core/effect";
 import type { Capability, Processor } from "../core/processor";
@@ -33,7 +33,7 @@ import {
 } from "../processors/runtime";
 import { matchTriggers } from "../processors/triggers";
 import type { RunnerResult } from "./runner-contract";
-import { withExclusiveFileLock } from "./file-lock";
+import { withProjectionWriteLock } from "./projection-lock";
 
 export type ProjectionRebuildResult = {
   readonly adopted: CommitOid;
@@ -57,28 +57,12 @@ type ProjectionRebuildRun = {
 const REBUILD_SAFE_GARDEN_CAPABILITIES: ReadonlySet<Capability["kind"]> =
   new Set(["read", "graph.write", "search.write", "question.ask"]);
 
-const PROJECTION_REBUILD_LOCK_TIMEOUT_MS = 60_000;
-const PROJECTION_REBUILD_LOCK_INTERVAL_MS = 50;
-
 export async function rebuildProjection(
   opts: ProjectionRebuildOpts,
 ): Promise<ProjectionRebuildResult> {
-  const locked = await withExclusiveFileLock(
-    {
-      lockPath: projectionRebuildLockPath(opts.runtime.path),
-      command: "projection-rebuild",
-      wait: {
-        timeoutMs: PROJECTION_REBUILD_LOCK_TIMEOUT_MS,
-        intervalMs: PROJECTION_REBUILD_LOCK_INTERVAL_MS,
-      },
-    },
+  return withProjectionWriteLock(
+    { vaultPath: opts.runtime.path, command: "projection-rebuild" },
     () => rebuildProjectionUnlocked(opts),
-  );
-  if (locked.kind === "acquired") return locked.value;
-
-  throw new Error(
-    "projection rebuild lock busy after " +
-      `${PROJECTION_REBUILD_LOCK_TIMEOUT_MS}ms at ${locked.lockPath}`,
   );
 }
 
@@ -176,10 +160,6 @@ async function rebuildProjectionUnlocked(
     processorCount: rebuildRuns.length,
     effectCount: routedEffects,
   });
-}
-
-function projectionRebuildLockPath(vaultPath: string): string {
-  return join(vaultPath, ".dome", "state", "locks", "projection-rebuild.lock");
 }
 
 async function runDeterministicGardenProjectionProcessors(opts: {

@@ -14,6 +14,7 @@ import { runViewCommand, type RunCommandResult } from "./commands";
 import { rebuildProjectionIfStale } from "./compiler-host";
 import { openVaultRuntime, type VaultRuntime } from "./vault-runtime";
 import { buildSqliteSinks } from "../projections/sinks";
+import { withProjectionWriteLock } from "./projection-lock";
 
 export type RuntimeViewCommandOptions = {
   readonly vaultPath: string;
@@ -164,6 +165,11 @@ function buildViewCommandSinks(opts: {
     projectionDb: opts.runtime.projectionDb,
     outboxDb: opts.runtime.outboxDb,
     adoptedCommit: opts.adopted,
+    projectionWriteLock: (fn) =>
+      withProjectionWriteLock(
+        { vaultPath: opts.runtime.path, command: "projection-view-sink" },
+        fn,
+      ),
     captureView,
     applyPatch,
     externalHandlers: opts.runtime.externalHandlers,

@@ -28,7 +28,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -933,7 +933,7 @@ extensions:
     expect(lockResult.kind).toBe("acquired");
   }, SYNC_TEST_TIMEOUT_MS);
 
-  test("recovers from a corrupt compiler-host lock file", async () => {
+  test("reports busy for a fresh corrupt compiler-host lock file", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     silenceConsole();
@@ -941,6 +941,26 @@ extensions:
     const lockPath = compilerHostLockPath(f.vaultPath, "main");
     await mkdir(dirname(lockPath), { recursive: true });
     await writeFile(lockPath, "{not-json", "utf8");
+
+    const code = await runSync({
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+    });
+    expect(code).toBe(75);
+    expect(captured.err.join("\n")).toContain("already being processed");
+    expect(await getAdoptedRef(f.vaultPath, "main")).toBe(null);
+  }, SYNC_TEST_TIMEOUT_MS);
+
+  test("recovers from a stale corrupt compiler-host lock file", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    const lockPath = compilerHostLockPath(f.vaultPath, "main");
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "{not-json", "utf8");
+    const stale = new Date(Date.now() - 10 * 60 * 1000);
+    await utimes(lockPath, stale, stale);
 
     const code = await runSync({
       vault: f.vaultPath,

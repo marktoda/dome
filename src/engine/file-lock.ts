@@ -7,7 +7,7 @@
 // file-lock substrate for those host-level sections.
 
 import { randomUUID } from "node:crypto";
-import { open, mkdir, readFile, unlink } from "node:fs/promises";
+import { open, mkdir, readFile, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { hostname } from "node:os";
 
@@ -63,6 +63,8 @@ export async function withExclusiveFileLock<T>(
 type LockFile = FileLockHolder & {
   readonly token: string;
 };
+
+const UNKNOWN_OR_MALFORMED_LOCK_STALE_MS = 5 * 60 * 1000;
 
 async function acquireLock(opts: {
   readonly lockPath: string;
@@ -177,20 +179,41 @@ async function readLockFile(lockPath: string): Promise<LockFile | null> {
         typeof parsed.acquiredAt === "string" ? parsed.acquiredAt : null,
     });
   } catch {
-    return null;
+    let acquiredAt: string | null = null;
+    try {
+      acquiredAt = (await stat(lockPath)).mtime.toISOString();
+    } catch {
+      acquiredAt = null;
+    }
+    return Object.freeze({
+      token: "",
+      pid: null,
+      hostname: null,
+      command: "unparseable-lock",
+      acquiredAt,
+    });
   }
 }
 
 function isDefinitelyStale(holder: FileLockHolder): boolean {
-  if (holder.hostname === null) return true;
+  if (holder.hostname === null) {
+    return lockTimestampIsStale(holder.acquiredAt);
+  }
   if (holder.hostname !== hostname()) return false;
-  if (holder.pid === null) return true;
+  if (holder.pid === null) return lockTimestampIsStale(holder.acquiredAt);
   try {
     process.kill(holder.pid, 0);
     return false;
   } catch {
     return true;
   }
+}
+
+function lockTimestampIsStale(timestamp: string | null): boolean {
+  if (timestamp === null) return false;
+  const acquiredAtMs = Date.parse(timestamp);
+  if (!Number.isFinite(acquiredAtMs)) return false;
+  return Date.now() - acquiredAtMs > UNKNOWN_OR_MALFORMED_LOCK_STALE_MS;
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

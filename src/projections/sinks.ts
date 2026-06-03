@@ -95,6 +95,12 @@ export type BuildSqliteSinksOpts = {
    */
   readonly adoptedCommit: CommitOid;
   /**
+   * Optional host-level mutex for projection.db writes. Runtime hosts pass the
+   * shared projection write lock so rebuild/reset cannot interleave with
+   * incremental projection rows. Tests and isolated in-memory sinks may omit it.
+   */
+  readonly projectionWriteLock?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /**
    * Injected by the engine layer. The view-effect delivery surface (CLI
    * stdout, MCP response, future HTTP stream) doesn't live in the
    * projection store, so the engine wires this in.
@@ -139,17 +145,22 @@ export type BuildSqliteSinksOpts = {
  * with `applyEffect` is that errors propagate.
  */
 export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
+  const projectionWrite = <T>(fn: () => Promise<T>): Promise<T> =>
+    opts.projectionWriteLock === undefined ? fn() : opts.projectionWriteLock(fn);
+
   return Object.freeze<ApplyEffectSinks>({
     applyPatch: opts.applyPatch,
     captureView: opts.captureView,
 
     recordDiagnostic: async ({ effect, processorId, runId, proposalId }) => {
-      insertDiagnostic(opts.projectionDb, {
-        effect,
-        processorId,
-        proposalId,
-        adoptedCommit: opts.adoptedCommit,
-        ...(runId !== undefined ? { runId } : {}),
+      await projectionWrite(async () => {
+        insertDiagnostic(opts.projectionDb, {
+          effect,
+          processorId,
+          proposalId,
+          adoptedCommit: opts.adoptedCommit,
+          ...(runId !== undefined ? { runId } : {}),
+        });
       });
     },
 
@@ -158,17 +169,21 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       inspectedPaths,
       emittedDiagnostics,
     }) => {
-      resolveStaleDiagnostics(opts.projectionDb, {
-        processorId,
-        inspectedPaths,
-        emittedDiagnostics,
+      await projectionWrite(async () => {
+        resolveStaleDiagnostics(opts.projectionDb, {
+          processorId,
+          inspectedPaths,
+          emittedDiagnostics,
+        });
       });
     },
 
     resolveFacts: async ({ processorId, inspectedPaths }) => {
-      resolveStalePageFacts(opts.projectionDb, {
-        processorId,
-        inspectedPaths,
+      await projectionWrite(async () => {
+        resolveStalePageFacts(opts.projectionDb, {
+          processorId,
+          inspectedPaths,
+        });
       });
     },
 
@@ -177,42 +192,52 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       inspectedPaths,
       emittedQuestions,
     }) => {
-      resolveStaleQuestions(opts.projectionDb, {
-        processorId,
-        inspectedPaths,
-        emittedQuestions,
+      await projectionWrite(async () => {
+        resolveStaleQuestions(opts.projectionDb, {
+          processorId,
+          inspectedPaths,
+          emittedQuestions,
+        });
       });
     },
 
     recordFact: async ({ effect, processorId, runId }) => {
-      insertFact(opts.projectionDb, {
-        effect,
-        processorId,
-        runId,
-        adoptedCommit: opts.adoptedCommit,
+      await projectionWrite(async () => {
+        insertFact(opts.projectionDb, {
+          effect,
+          processorId,
+          runId,
+          adoptedCommit: opts.adoptedCommit,
+        });
       });
     },
 
     recordSearchDocument: async ({ effect }) => {
-      applySearchDocumentEffect(opts.projectionDb, {
-        effect,
-        adoptedCommit: opts.adoptedCommit,
+      await projectionWrite(async () => {
+        applySearchDocumentEffect(opts.projectionDb, {
+          effect,
+          adoptedCommit: opts.adoptedCommit,
+        });
       });
     },
 
     recordQuestion: async ({ effect, processorId, runId }) => {
-      insertQuestion(opts.projectionDb, {
-        effect,
-        processorId,
-        runId,
-        adoptedCommit: opts.adoptedCommit,
+      await projectionWrite(async () => {
+        insertQuestion(opts.projectionDb, {
+          effect,
+          processorId,
+          runId,
+          adoptedCommit: opts.adoptedCommit,
+        });
       });
     },
 
     enqueueJob: async ({ effect, processorId }) => {
-      enqueueJobRow(opts.projectionDb, {
-        effect,
-        processorId,
+      await projectionWrite(async () => {
+        enqueueJobRow(opts.projectionDb, {
+          effect,
+          processorId,
+        });
       });
     },
 

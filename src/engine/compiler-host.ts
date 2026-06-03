@@ -71,6 +71,7 @@ import { currentSha, isAncestor } from "../git";
 import type { ApplyEffectSinks } from "./apply-effect";
 import { failRunIfCurrent } from "../ledger/runs";
 import { buildOperationalQueryView } from "./operational-query-view";
+import { withProjectionWriteLock } from "./projection-lock";
 
 // These files affect projection rows for pages that may not appear in the
 // changed-path set, so adoption treats them as full projection invalidators.
@@ -335,7 +336,7 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
   if (drift.kind === "in-sync") {
     let operational: OperationalWorkResult | null = null;
     if (opts.runOperationalWhenInSync !== false) {
-      operational = await runOperationalWorkForAdopted({
+      operational = await runOperationalWorkForAdoptedUnlocked({
         runtime: opts.runtime,
         adopted: drift.head,
         branch: drift.branch,
@@ -437,7 +438,20 @@ export async function runOneAdoption(opts: {
    */
   readonly onEvent?: (event: AdoptEvent) => void;
 }): Promise<AdoptionResult> {
-  return (await runAdoptionCycle(opts)).adoption;
+  const locked = await withCompilerHostBranchLock(
+    {
+      vaultPath: opts.runtime.path,
+      branch: opts.drift.branch,
+      command: "compiler-host-run-one-adoption",
+    },
+    () => runAdoptionCycle(opts),
+  );
+  if (locked.kind === "busy") {
+    throw new Error(
+      `compiler host lock busy for branch ${locked.branch} at ${locked.lockPath}`,
+    );
+  }
+  return locked.value.adoption;
 }
 
 async function runAdoptionCycle(opts: {
@@ -496,9 +510,9 @@ async function runAdoptionCycle(opts: {
       adopted: adoptionResult.adoptedRef,
       branch: drift.branch,
       initialBootstrap: drift.base === drift.head,
-      globalConfigChanged: projectionGlobalConfigChanged(
-        adoptedCompiled.changedPaths,
-      ),
+      globalConfigChanged:
+        projectionGlobalConfigChanged(adoptedCompiled.changedPaths) ||
+        adoptionProjectionFlushFailed(adoptionResult),
       now,
     });
 
@@ -526,7 +540,7 @@ async function runAdoptionCycle(opts: {
       now,
     });
 
-    operational = await runOperationalWorkForAdopted({
+    operational = await runOperationalWorkForAdoptedUnlocked({
       runtime,
       adopted: cursor.current,
       now,
@@ -546,11 +560,8 @@ async function runAdoptionCycle(opts: {
         }) ?? projectionRebuild;
     }
 
-    markProjectionBuilt(runtime.projectionDb, {
+    await markProjectionBuiltForRuntime(runtime, {
       adoptedCommit: cursor.current,
-      extensionSet: runtime.extensions,
-      processorVersions: runtime.processorVersions,
-      capabilityPolicyHash: runtime.capabilityPolicyHash,
       builtAt: now(),
     });
   }
@@ -565,6 +576,36 @@ async function runAdoptionCycle(opts: {
 }
 
 export async function runOperationalWorkForAdopted(opts: {
+  readonly runtime: VaultRuntime;
+  readonly adopted: CommitOid;
+  readonly branch?: string;
+  readonly now?: () => Date;
+  readonly sinks?: ApplyEffectSinks;
+  readonly adoptSubProposal?: AdoptSubProposalFn;
+  readonly cursor?: AdoptedCursor;
+  readonly signal?: AbortSignal;
+}): Promise<OperationalWorkResult> {
+  if (opts.branch !== undefined) {
+    const locked = await withCompilerHostBranchLock(
+      {
+        vaultPath: opts.runtime.path,
+        branch: opts.branch,
+        command: "compiler-host-operational",
+      },
+      () => runOperationalWorkForAdoptedUnlocked(opts),
+    );
+    if (locked.kind === "busy") {
+      throw new Error(
+        `compiler host lock busy for branch ${locked.branch} at ${locked.lockPath}`,
+      );
+    }
+    return locked.value;
+  }
+
+  return runOperationalWorkForAdoptedUnlocked(opts);
+}
+
+async function runOperationalWorkForAdoptedUnlocked(opts: {
   readonly runtime: VaultRuntime;
   readonly adopted: CommitOid;
   readonly branch?: string;
@@ -634,11 +675,8 @@ export async function runOperationalWorkForAdopted(opts: {
       branch: opts.branch,
       now,
     });
-    markProjectionBuilt(opts.runtime.projectionDb, {
+    await markProjectionBuiltForRuntime(opts.runtime, {
       adoptedCommit: cursor.current,
-      extensionSet: opts.runtime.extensions,
-      processorVersions: opts.runtime.processorVersions,
-      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
       builtAt: now(),
     });
   }
@@ -677,6 +715,28 @@ export async function runAnswerHandlersForQuestion(opts: {
   if (branch === null) {
     return Object.freeze({ kind: "skipped" as const, reason: "detached-head" });
   }
+  const locked = await withCompilerHostBranchLock(
+    {
+      vaultPath: opts.runtime.path,
+      branch,
+      command: "compiler-host-answer-handlers",
+    },
+    () => runAnswerHandlersForQuestionUnlocked({ ...opts, branch }),
+  );
+  if (locked.kind === "busy") {
+    throw new Error(
+      `compiler host lock busy for branch ${locked.branch} at ${locked.lockPath}`,
+    );
+  }
+  return locked.value;
+}
+
+async function runAnswerHandlersForQuestionUnlocked(opts: {
+  readonly runtime: VaultRuntime;
+  readonly question: QuestionRecord;
+  readonly branch: string;
+}): Promise<AnswerHandlersForQuestionResult> {
+  const { branch } = opts;
   const adoptedRaw = await getAdoptedRef(opts.runtime.path, branch);
   if (adoptedRaw === null) {
     return Object.freeze({ kind: "skipped" as const, reason: "no-adopted-ref" });
@@ -724,11 +784,8 @@ export async function runAnswerHandlersForQuestion(opts: {
       branch,
       now,
     });
-    markProjectionBuilt(opts.runtime.projectionDb, {
+    await markProjectionBuiltForRuntime(opts.runtime, {
       adoptedCommit: cursor.current,
-      extensionSet: opts.runtime.extensions,
-      processorVersions: opts.runtime.processorVersions,
-      capabilityPolicyHash: opts.runtime.capabilityPolicyHash,
       builtAt: now(),
     });
   }
@@ -797,6 +854,12 @@ function projectionGlobalConfigChanged(
   changedPaths: ReadonlyArray<string>,
 ): boolean {
   return changedPaths.some((path) => PROJECTION_GLOBAL_CONFIG_PATHS.has(path));
+}
+
+function adoptionProjectionFlushFailed(result: AdoptionResult): boolean {
+  return result.diagnostics.some(
+    (diagnostic) => diagnostic.code === "adoption.projection-flush-failed",
+  );
 }
 
 async function rebuildProjectionIfGlobalConfigChanged(opts: {
@@ -883,6 +946,11 @@ function sinksForRuntime(
       projectionDb: runtime.projectionDb,
       outboxDb: runtime.outboxDb,
       adoptedCommit: frame.head,
+      projectionWriteLock: (fn) =>
+        withProjectionWriteLock(
+          { vaultPath: runtime.path, command: "projection-sink" },
+          fn,
+        ),
       applyPatch: realApplyPatch,
       captureView: captureViewPlaceholder,
       externalHandlers: runtime.externalHandlers,
@@ -911,6 +979,27 @@ function sinksForRuntime(
       },
     });
   };
+}
+
+async function markProjectionBuiltForRuntime(
+  runtime: VaultRuntime,
+  opts: {
+    readonly adoptedCommit: CommitOid;
+    readonly builtAt: Date;
+  },
+): Promise<void> {
+  await withProjectionWriteLock(
+    { vaultPath: runtime.path, command: "projection-mark-built" },
+    async () => {
+      markProjectionBuilt(runtime.projectionDb, {
+        adoptedCommit: opts.adoptedCommit,
+        extensionSet: runtime.extensions,
+        processorVersions: runtime.processorVersions,
+        capabilityPolicyHash: runtime.capabilityPolicyHash,
+        builtAt: opts.builtAt,
+      });
+    },
+  );
 }
 
 function sinksForCursor(opts: {
