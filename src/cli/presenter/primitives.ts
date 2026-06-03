@@ -126,8 +126,9 @@ export function table<R>(
   const fixed = INDENT + COL_GAP * (columns.length - 1);
   let total = fixed + widths.reduce((a, b) => a + b, 0);
   while (total > caps.width) {
+    // Ties resolve to the left-most widest column (deterministic).
     const widest = widths.indexOf(Math.max(...widths));
-    if ((widths[widest] ?? 0) <= 4) break; // floor
+    if (widths[widest]! <= 4) break; // floor
     widths[widest]!--;
     total--;
   }

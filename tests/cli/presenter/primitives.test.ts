@@ -168,11 +168,25 @@ describe("table", () => {
   test("truncates the widest cell when over width, fitting the terminal", () => {
     const rows: Row[] = [{ name: "a".repeat(40), phase: "adoption" }];
     const lines = table(rows, COLS, { color: false, unicode: true, width: 24 });
-    for (const l of lines) expect(l.length).toBeLessThanOrEqual(24);
+    for (const l of lines) expect(visibleWidth(l)).toBeLessThanOrEqual(24);
     expect(lines[1]).toContain("…");
   });
 
   test("empty rows render a muted placeholder", () => {
     expect(table([], COLS, ASCII)).toEqual(["  (no rows)"]);
+  });
+
+  test("does not drop columns under extreme width pressure (may exceed width)", () => {
+    type R3 = { a: string; b: string; c: string };
+    const cols: Column<R3>[] = [
+      { header: "A", get: (r) => ({ text: r.a }), priority: 1 },
+      { header: "B", get: (r) => ({ text: r.b }), priority: 2 },
+      { header: "C", get: (r) => ({ text: r.c }), priority: 3 },
+    ];
+    const lines = table([{ a: "xxxx", b: "yyyy", c: "zzzz" }], cols, { color: false, unicode: true, width: 10 });
+    // header + 1 body row; all three columns survive (no dropping in v1).
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toContain("A");
+    expect(lines[0]).toContain("C");
   });
 });
