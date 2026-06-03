@@ -42,7 +42,7 @@
 // `dome doctor` namespace is reserved for the v1.x health-check verb;
 // this surface is the read half.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import type {
   DiagnosticEffect,
@@ -243,7 +243,7 @@ export async function runInspect(
     if (options.json === true) {
       console.log(formatJson(jsonForResult(result)));
     } else {
-      printTextResult(subject, result);
+      printTextResult(subject, result, vaultPath);
     }
     return 0;
   } finally {
@@ -542,8 +542,9 @@ function jsonForResult(
   return result.kind === "rows" ? result.rows : result.summary;
 }
 
-function printTextResult(subject: string, result: InspectResult): void {
+function printTextResult(subject: string, result: InspectResult, vaultPath: string): void {
   const caps = resolveCaps();
+  const context = basename(vaultPath);
   const lines: string[] = [];
   if (result.kind === "rows") {
     const rowCount = result.rows.length;
@@ -551,7 +552,7 @@ function printTextResult(subject: string, result: InspectResult): void {
       rowCount === 0
         ? { tone: "muted" as const, label: "no rows" }
         : { tone: "plain" as const, label: `${rowCount} rows` };
-    lines.push(headline({ cmd: `inspect ${subject}` }, rowStatus, caps));
+    lines.push(headline({ cmd: `inspect ${subject}`, context }, rowStatus, caps));
     lines.push("");
     lines.push(
       ...table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), caps),
@@ -566,7 +567,7 @@ function printTextResult(subject: string, result: InspectResult): void {
   }
   // diagnostic-summary mode
   lines.push(
-    headline({ cmd: "inspect diagnostics" }, { tone: "plain", label: "summary" }, caps),
+    headline({ cmd: "inspect diagnostics", context }, { tone: "plain", label: "summary" }, caps),
   );
   lines.push(
     ...section(

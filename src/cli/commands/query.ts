@@ -4,6 +4,8 @@
 // view-phase processor named `query`. The processor owns retrieval behavior;
 // this file owns CLI ergonomics and rendering.
 
+import { basename, resolve } from "node:path";
+
 import {
   firstPartyViewNotFoundMessage,
   printViewCommandError,
@@ -43,6 +45,7 @@ export type QueryCommandOptions = {
 export async function runQuery(
   options: QueryCommandOptions = {},
 ): Promise<number> {
+  const vaultPath = resolve(options.vault ?? process.cwd());
   const text = options.text?.trim() ?? "";
   if (text.length === 0) {
     printViewCommandError({
@@ -92,7 +95,7 @@ export async function runQuery(
     if (options.json === true) {
       console.log(formatJson(run.data));
     } else {
-      console.log(formatQueryResult(run.data, resolveCaps()));
+      console.log(formatQueryResult(run.data, resolveCaps(), vaultPath));
     }
     return 0;
   } catch (e) {
@@ -107,15 +110,18 @@ export async function runQuery(
   }
 }
 
-function formatQueryResult(data: unknown, caps: Caps): string {
+function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
   const result = parseQueryResult(data);
   const n = result.matches.length;
   const matchLabel = n === 1 ? "match" : "matches";
+  const cmdLeft = vault !== undefined
+    ? { cmd: "query", context: basename(vault) }
+    : { cmd: "query" };
 
   if (n === 0) {
     const lines: string[] = [
       headline(
-        { cmd: "query" },
+        cmdLeft,
         { tone: "muted", label: "no matches" },
         caps,
       ),
@@ -133,7 +139,7 @@ function formatQueryResult(data: unknown, caps: Caps): string {
 
   const lines: string[] = [
     headline(
-      { cmd: "query" },
+      cmdLeft,
       { tone: "ok", label: `${n} ${matchLabel}` },
       caps,
     ),
