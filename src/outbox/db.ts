@@ -81,6 +81,10 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
+import {
+  validateSqliteTableShapes,
+  type SqliteTableShape,
+} from "../sqlite-shape";
 
 const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
   "82000d3d8dd8578f9c34d23fcca621c085aaf78d5d228ee62df824b739f19a68";
@@ -139,6 +143,32 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   //    the index ordering.
   "CREATE INDEX IF NOT EXISTS outbox_by_status ON outbox(status, enqueued_at)",
   "CREATE INDEX IF NOT EXISTS outbox_by_due ON outbox(status, next_attempt_at, enqueued_at)",
+]);
+
+const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
+  {
+    table: "outbox_meta",
+    columns: ["schema_hash", "built_at"],
+  },
+  {
+    table: "outbox",
+    columns: [
+      "id",
+      "capability",
+      "idempotency_key",
+      "payload_json",
+      "source_refs",
+      "status",
+      "external_id",
+      "attempts",
+      "max_attempts",
+      "enqueued_at",
+      "next_attempt_at",
+      "sent_at",
+      "last_error",
+      "run_id",
+    ],
+  },
 ]);
 
 // ----- sha256 helper --------------------------------------------------------
@@ -302,6 +332,10 @@ export async function openOutboxDb(
       }
     }
     applyDdl(raw);
+    const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
+    if (shapeError !== null) {
+      throw new Error(shapeError);
+    }
   } catch (e) {
     raw.close();
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
