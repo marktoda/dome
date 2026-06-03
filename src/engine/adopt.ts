@@ -33,12 +33,11 @@
 //     `engine.adoption.blocked` are NOT emitted from this layer; Phase 8
 //     wires the ledger + event-emission surface. Phase 2 returns the
 //     `AdoptionResult`; the caller is responsible for any event emission.
-//   - Divergence diagnostic is minimal. The full forensic detail named in
-//     `processor-fixed-point-divergence.md` (last 3 iterations' effect
-//     histories, candidate-processor naming) is a Phase 3+ refinement when
-//     the ledger is wired and per-iteration history is queryable. Phase 2
-//     emits the blocking diagnostic with the iteration cap and a generic
-//     message.
+//   - Divergence diagnostics carry compact forensic detail. The loop keeps
+//     the last 3 iteration summaries in memory and includes processor ids,
+//     effect shapes, routed outcomes, and candidate movement in the cap-hit
+//     blocking diagnostic. This avoids depending on a successfully flushed
+//     ledger row for the exact failure path that may need debugging.
 //
 // House-style notes (matches src/engine/compile-range.ts,
 // src/engine/capability-broker.ts, src/engine/apply-effect.ts,
@@ -91,7 +90,11 @@ import {
 // taken once at loop start (`sourceHeadSha`).
 import type { LedgerDb } from "../ledger/db";
 import { updateOutputCommit } from "../ledger/runs";
-import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
+import {
+  applyEffect,
+  type ApplyEffectResult,
+  type ApplyEffectSinks,
+} from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
 import { compileRange } from "./compile-range";
 import { recordDiagnosticsViaSink } from "./diagnostics";
@@ -169,6 +172,21 @@ function emitEvent(
  * below 30 risks false positives on shipped-default processor sets.
  */
 export const DEFAULT_MAX_ITERATIONS = 100;
+const MAX_DIVERGENCE_HISTORY = 3;
+
+type DivergenceProcessorHistory = {
+  readonly processorId: string;
+  readonly runId: RunId;
+  readonly executionStatus: string;
+  readonly emitted: ReadonlyArray<string>;
+  readonly routed: ReadonlyArray<string>;
+};
+
+type DivergenceIterationHistory = {
+  readonly iteration: number;
+  readonly autoPatchCount: number;
+  readonly processors: ReadonlyArray<DivergenceProcessorHistory>;
+};
 
 // ----- adopt ----------------------------------------------------------------
 
@@ -297,6 +315,7 @@ export async function adopt(opts: {
   // `makeClosureCommit` returns — completing the dual-surface join from
   // `runs.output_commit` to the `Dome-Run` trailer.
   const contributingRunIds = new Set<RunId>();
+  const divergenceHistory: DivergenceIterationHistory[] = [];
 
   // The loop body — bounded by maxIterations. Convergence is detected by
   // an iteration that produces no auto-mode PatchEffect; divergence is
@@ -330,6 +349,7 @@ export async function adopt(opts: {
     // step sees the actual routed shape (an `auto → propose` downgrade does
     // NOT count as an auto-patch for fixed-point purposes).
     const effectsThisIteration: Effect[] = [];
+    const processorHistories: DivergenceProcessorHistory[] = [];
 
     // Phase 12a: track the candidate OID across the per-effect loop. Each
     // successful PatchEffect's sink returns the new candidate via
@@ -349,6 +369,9 @@ export async function adopt(opts: {
       inspectedPaths,
       effects,
     } of runnerResults) {
+      const emittedEffects = Object.freeze(effects.map(summarizeEffect));
+      const routedEffects: string[] = [];
+
       // A run "contributes" to the closure commit iff at least one of its
       // effects is a PatchEffect — those are what land via `applyPatch`
       // and become part of the closure's content. Diagnostic-only runs
@@ -402,6 +425,7 @@ export async function adopt(opts: {
           sinks: routingSinks,
           candidate: candidateAtIterationEnd,
         });
+        routedEffects.push(summarizeRoutedEffect(effect, applied));
 
         // Ledger: capability-use rows per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
         // §"Structural enforcement" §2. The broker's structured verdict
@@ -455,6 +479,14 @@ export async function adopt(opts: {
           candidateAtIterationEnd = applied.newCandidate;
         }
       }
+
+      processorHistories.push(Object.freeze({
+        processorId,
+        runId,
+        executionStatus,
+        emitted: emittedEffects,
+        routed: Object.freeze([...routedEffects]),
+      }));
 
       if (
         executionStatus === "succeeded" &&
@@ -510,6 +542,11 @@ export async function adopt(opts: {
       (e): e is PatchEffect => e.kind === "patch" && e.mode === "auto",
     );
     const converged = autoPatchesThisIteration.length === 0;
+    pushDivergenceHistory(divergenceHistory, {
+      iteration,
+      autoPatchCount: autoPatchesThisIteration.length,
+      processors: Object.freeze([...processorHistories]),
+    });
     emitEvent(onEvent, {
       kind: "iteration-end",
       iteration,
@@ -536,7 +573,10 @@ export async function adopt(opts: {
     const divergenceDiag = diagnosticEffect({
       severity: "block",
       code: "fixed-point.divergence",
-      message: `Adoption loop hit MAX_ITER=${maxIterations} without reaching fixed point. The last iteration's processors emitted patches that didn't converge.`,
+      message:
+        `Adoption loop hit MAX_ITER=${maxIterations} without reaching fixed point. ` +
+        "Recent iteration history: " +
+        formatDivergenceHistory(divergenceHistory),
       sourceRefs: [],
     });
     allDiagnostics.push(divergenceDiag);
@@ -942,6 +982,131 @@ function rollbackMessage(
     return "; rollback also failed, inspect diagnostics before continuing.";
   }
   return `; rolled refs/heads/${branch} and affected working-tree paths back to ${sourceHead.slice(0, 7)}.`;
+}
+
+function pushDivergenceHistory(
+  history: DivergenceIterationHistory[],
+  entry: DivergenceIterationHistory,
+): void {
+  history.push(Object.freeze({
+    iteration: entry.iteration,
+    autoPatchCount: entry.autoPatchCount,
+    processors: Object.freeze([...entry.processors]),
+  }));
+  while (history.length > MAX_DIVERGENCE_HISTORY) {
+    history.shift();
+  }
+}
+
+function formatDivergenceHistory(
+  history: ReadonlyArray<DivergenceIterationHistory>,
+): string {
+  if (history.length === 0) return "none captured.";
+  const candidateProcessors = processorIdsWithPatches(history);
+  return (
+    history.map(formatDivergenceIteration).join(" | ") +
+    `. Candidate processors: ${formatList(candidateProcessors, 8)}.`
+  );
+}
+
+function formatDivergenceIteration(
+  history: DivergenceIterationHistory,
+): string {
+  return (
+    `iter ${history.iteration} autoPatches=${history.autoPatchCount}: ` +
+    formatList(history.processors.map(formatDivergenceProcessor), 6)
+  );
+}
+
+function formatDivergenceProcessor(
+  history: DivergenceProcessorHistory,
+): string {
+  return (
+    `${history.processorId}(${history.executionStatus}, run=${history.runId}) ` +
+    `emitted=${formatList(history.emitted, 5)} ` +
+    `routed=${formatList(history.routed, 5)}`
+  );
+}
+
+function processorIdsWithPatches(
+  history: ReadonlyArray<DivergenceIterationHistory>,
+): ReadonlyArray<string> {
+  const ids = new Set<string>();
+  for (const iterationHistory of history) {
+    for (const processor of iterationHistory.processors) {
+      if (processor.emitted.some((summary) => summary.startsWith("patch:"))) {
+        ids.add(processor.processorId);
+      }
+    }
+  }
+  return Object.freeze([...ids]);
+}
+
+function summarizeRoutedEffect(
+  emitted: Effect,
+  applied: ApplyEffectResult,
+): string {
+  const routed =
+    applied.appliedEffect === null
+      ? "none"
+      : summarizeEffect(applied.appliedEffect);
+  const candidate =
+    applied.newCandidate === undefined
+      ? ""
+      : ` candidate=${shortOid(applied.newCandidate)}`;
+  const diagnostics =
+    applied.diagnostics.length === 0
+      ? ""
+      : ` diagnostics=${formatList(applied.diagnostics.map((d) => d.code), 4)}`;
+  return (
+    `${summarizeEffect(emitted)} -> ${applied.outcome} ` +
+    `as ${routed}${candidate}${diagnostics}`
+  );
+}
+
+function summarizeEffect(effect: Effect): string {
+  switch (effect.kind) {
+    case "patch": {
+      const changes = effect.changes.map(
+        (change) => `${change.kind}:${change.path}`,
+      );
+      return `patch:${effect.mode}[${formatList(changes, 4)}]`;
+    }
+    case "diagnostic":
+      return `diagnostic:${effect.severity}:${effect.code}`;
+    case "fact":
+      return `fact:${effect.predicate}`;
+    case "search-document":
+      return `search-document:${effect.operation}:${effect.path}`;
+    case "question":
+      return `question:${effect.idempotencyKey}`;
+    case "job":
+      return `job:${effect.processorId}`;
+    case "external":
+      return `external:${effect.capability}`;
+    case "outbox-recovery":
+      return `outbox-recovery:${effect.action}:${effect.idempotencyKey}`;
+    case "quarantine-recovery":
+      return `quarantine-recovery:${effect.action}:${effect.processorId}`;
+    case "run-recovery":
+      return `run-recovery:${effect.action}:${effect.runId}`;
+    case "view":
+      return `view:${effect.name}`;
+  }
+}
+
+function formatList(
+  values: ReadonlyArray<string>,
+  limit: number,
+): string {
+  if (values.length === 0) return "none";
+  const head = values.slice(0, limit);
+  const suffix = values.length > limit ? `,+${values.length - limit} more` : "";
+  return head.join(",") + suffix;
+}
+
+function shortOid(oid: CommitOid): string {
+  return oid.slice(0, 7);
 }
 
 type ResolveDiagnosticsInput = Parameters<

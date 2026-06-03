@@ -184,9 +184,14 @@ describe("adopt fixed-point loop", () => {
 
     expect(r.adopted).toBe(false);
     expect(r.iterations).toBe(3);
-    expect(r.diagnostics.some((d) => d.code === "fixed-point.divergence")).toBe(
-      true,
+    const divergence = r.diagnostics.find(
+      (d) => d.code === "fixed-point.divergence",
     );
+    expect(divergence).toBeDefined();
+    expect(divergence?.message).toContain("MAX_ITER=3");
+    expect(divergence?.message).toContain("test.diverger");
+    expect(divergence?.message).toContain("patch:auto[write:wiki/seed.md]");
+    expect(divergence?.message).toContain("Candidate processors: test.diverger");
     expect(recorded).toEqual([
       {
         code: "fixed-point.divergence",
