@@ -47,3 +47,38 @@ export function kv(rows: ReadonlyArray<KvRow>, caps: Caps): ReadonlyArray<string
     return `  ${label}   ${value}`;
   });
 }
+
+export function rule(caps: Caps, label?: string): string {
+  const ch = caps.unicode ? "─" : "-";
+  const line = ch.repeat(Math.max(0, caps.width));
+  const text =
+    label === undefined
+      ? line
+      : `${ch}${ch} ${label} ${ch.repeat(Math.max(0, caps.width - label.length - 4))}`;
+  return paint(text, "muted", caps);
+}
+
+export function footer(status: Status, caps: Caps): ReadonlyArray<string> {
+  return ["", rule(caps), statusValue(status, caps)];
+}
+
+export function bullets(
+  items: ReadonlyArray<string>,
+  caps: Caps,
+  empty = "none",
+): ReadonlyArray<string> {
+  if (items.length === 0) return [`  ${paint(empty, "muted", caps)}`];
+  return items.map((it) => `  - ${it}`);
+}
+
+export type NextAction = { readonly command: string | null; readonly description: string };
+
+export function nextActions(
+  actions: ReadonlyArray<NextAction>,
+  caps: Caps,
+): ReadonlyArray<string> {
+  return actions.map((a) => {
+    const cmd = paint(a.command ?? "manual", "ident", caps);
+    return `  ${glyph("pointer", caps)} ${cmd}   ${a.description}`;
+  });
+}

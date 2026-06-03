@@ -90,3 +90,37 @@ describe("kv", () => {
     ).toEqual(["  sync         needed", "  projection   stale"]);
   });
 });
+
+import { bullets, footer, nextActions, rule } from "../../../src/cli/presenter/primitives";
+
+describe("rule", () => {
+  test("fills width with the line char", () => {
+    expect(rule({ color: false, unicode: true, width: 10 })).toBe("──────────");
+    expect(rule({ color: false, unicode: false, width: 10 })).toBe("----------");
+  });
+});
+
+describe("footer", () => {
+  test("rule line then glyph + message", () => {
+    expect(footer({ tone: "warn", label: "1 action needed → dome sync" }, { color: false, unicode: true, width: 12 }))
+      .toEqual(["", "────────────", "⚠ 1 action needed → dome sync"]);
+  });
+});
+
+describe("bullets", () => {
+  test("dash bullets, or an empty marker", () => {
+    expect(bullets(["a", "b"], ASCII)).toEqual(["  - a", "  - b"]);
+    expect(bullets([], ASCII, "none")).toEqual(["  none"]);
+  });
+});
+
+describe("nextActions", () => {
+  test("pointer + command + description", () => {
+    expect(
+      nextActions([{ command: "dome sync", description: "adopt pending commits" }], UNI),
+    ).toEqual(["  → dome sync   adopt pending commits"]);
+  });
+  test("empty list yields no lines", () => {
+    expect(nextActions([], UNI)).toEqual([]);
+  });
+});
