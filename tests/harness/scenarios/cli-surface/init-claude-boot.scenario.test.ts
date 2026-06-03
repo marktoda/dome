@@ -130,7 +130,7 @@ scenario(
       const init = await runCliCaptured(["init", target, "--refresh-config"]);
       expect(init.exitCode).toBe(0);
       expect(init.stderr).toBe("");
-      expect(init.stdout).toContain("Updated");
+      expect(init.stdout).toContain("UPDATED");
       expect(init.stdout).toContain("- .dome/config.yaml");
 
       const doctor = await runCliCaptured([
@@ -179,7 +179,7 @@ scenario(
       ]);
       expect(init.exitCode).toBe(0);
       expect(init.stderr).toBe("");
-      expect(init.stdout).toContain("Updated");
+      expect(init.stdout).toContain("UPDATED");
       expect(init.stdout).toContain("- AGENTS.md");
       expect(init.stdout).toContain("- CLAUDE.md");
 

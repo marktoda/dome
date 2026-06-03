@@ -70,7 +70,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -83,11 +83,13 @@ import {
 } from "../default-vault-config";
 import { formatJson } from "../format";
 import {
-  formatBulletLines,
-  formatHeadline,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  bullets,
+  footer,
+  headline,
+  kv,
+  resolveCaps,
+  section,
+} from "../presenter";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -546,13 +548,19 @@ function printSummary(s: InitSummary, json: boolean): void {
     console.log(formatJson(summaryToJson(s)));
     return;
   }
-  const lines = [formatHeadline("Dome init", "vault ready")];
-  pushSection(lines, "Vault", formatSummaryRows([["path", s.vaultPath]]));
+  const caps = resolveCaps();
+  const lines: string[] = [
+    headline({ cmd: "init", context: basename(s.vaultPath) }, { tone: "ok", label: "vault ready" }, caps),
+  ];
+  lines.push(
+    ...section("Vault", kv([{ label: "path", value: s.vaultPath, tone: "muted" }], caps), caps),
+  );
   const steps = initStepRows(s);
-  pushSection(lines, "Created", formatBulletLines(steps.created));
-  pushSection(lines, "Updated", formatBulletLines(steps.updated));
-  pushSection(lines, "Already Present", formatBulletLines(steps.alreadyPresent));
-  pushSection(lines, "Skipped", formatBulletLines(steps.skipped));
+  lines.push(...section("Created", bullets(steps.created, caps, "none"), caps));
+  lines.push(...section("Updated", bullets(steps.updated, caps, "none"), caps));
+  lines.push(...section("Already Present", bullets(steps.alreadyPresent, caps, "none"), caps));
+  lines.push(...section("Skipped", bullets(steps.skipped, caps, "none"), caps));
+  lines.push(...footer({ tone: "ok", label: "vault ready" }, caps));
   console.log(lines.join("\n"));
 }
 

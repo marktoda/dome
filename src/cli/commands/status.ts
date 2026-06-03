@@ -577,7 +577,7 @@ function printStatusText(
 
   if (options.showLoopDetails) {
     lines.push(
-      ...section("Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops), caps),
+      ...section("Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops, caps), caps),
     );
   }
 

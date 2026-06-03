@@ -567,7 +567,7 @@ function renderCheckReport(
 
   if (options.showLoopDetails) {
     lines.push(
-      ...section("Loops", loopDetailLines(report.maintenance_loops), caps),
+      ...section("Loops", loopDetailLines(report.maintenance_loops, caps), caps),
     );
   }
 
@@ -639,9 +639,10 @@ async function collectProjectionReport(input: {
 
 function loopDetailLines(
   loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+  caps: Caps,
 ): ReadonlyArray<string> {
   if (loops === null) return [];
-  return formatMaintenanceLoopDetailLines(loops);
+  return formatMaintenanceLoopDetailLines(loops, caps);
 }
 
 function formatContent(report: CheckContentReport | null): string {

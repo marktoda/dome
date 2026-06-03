@@ -3454,11 +3454,15 @@ describe("runStatus", () => {
     const out = captured.out.join("\n");
     expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
     expect(out).toContain("\n  LOOPS\n"); // loop detail section header (ALLCAPS, indent 2)
+    // Tree connectors present (ASCII form — tests run without UTF locale)
+    expect(out).toMatch(/[|`][-]/); // |- or `- tree connectors
+    // Loop id and state in the node label
     expect(out).toContain("dome.capture.digest");
+    // Child detail lines
     expect(out).toContain("processors:");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
-    expect(out).toContain("latest run:");
-    expect(out).toContain("last success:");
+    expect(out).toContain("settlement:");
+    expect(out).toContain("no-op:");
   });
 
   test("fails early when config enables a missing bundle", async () => {

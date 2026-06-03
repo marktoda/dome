@@ -13,6 +13,7 @@ import {
   diagnosticDisposition,
   isSourceBackedDiagnostic,
 } from "./diagnostic-summary";
+import { tree, type Caps } from "./presenter";
 
 export type MaintenanceLoopState =
   | "inactive"
@@ -92,45 +93,71 @@ export function formatMaintenanceLoopSummaryLine(
 
 export function formatMaintenanceLoopDetailLines(
   loops: ReadonlyArray<MaintenanceLoopSummary>,
+  caps: Caps,
 ): ReadonlyArray<string> {
+  const nodes = loops.map((loop) => ({
+    label: `[${loop.state}] ${loop.id}: ${loop.goal}`,
+    lines: buildLoopDetailLines(loop),
+  }));
+  return tree(nodes, caps);
+}
+
+function buildLoopDetailLines(loop: MaintenanceLoopSummary): ReadonlyArray<string> {
   const lines: string[] = [];
-  for (const loop of loops) {
-    lines.push(`  - [${loop.state}] ${loop.id}: ${loop.goal}`);
-    lines.push(`    processors: ${formatProcessorCounts(loop)}`);
-    if (loop.missing_processors.length > 0) {
-      lines.push(`    missing: ${formatBoundedList(loop.missing_processors)}`);
-    }
-    if (loop.inactive_optional_processors.length > 0) {
-      lines.push(
-        `    inactive optional: ${formatBoundedList(loop.inactive_optional_processors)}`,
-      );
-    }
-    lines.push(
-      `    attention: ${loop.attention_diagnostics} attention diagnostic(s), ${loop.drift_diagnostics} drift diagnostic(s), ${loop.noise_diagnostics} noise diagnostic(s), ${loop.questions} question(s), ${loop.recent_problem_runs} problem run(s)`,
-    );
-    if (loop.questions > 0) {
-      lines.push(
-        `    questions: ${loop.agent_safe_questions} agent-safe, ${loop.model_safe_questions} model-safe, ${loop.owner_needed_questions} owner-needed`,
-      );
-    }
-    lines.push(`    surfaces: ${loop.surfaces.join(", ")}`);
-    lines.push(
-      `    settlement: ${loop.settlement.settled ? "settled" : "unsettled"} (${countPassedSettlementChecks(loop.settlement.checks)}/${loop.settlement.checks.length} checks)`,
-    );
-    if (loop.settlement.failed_checks.length > 0) {
-      lines.push(
-        `    failed checks: ${formatBoundedList(loop.settlement.failed_checks)}`,
-      );
-    }
-    lines.push(`    no-op: ${loop.settlement.no_op_when}`);
-    lines.push(`    latest run: ${loop.latest_run_at ?? "(none)"}`);
-    lines.push(
-      `    last success: ${loop.last_successful_run_at ?? "(none)"}`,
-    );
-    if (loop.latest_problem_run_at !== null) {
-      lines.push(`    latest problem: ${loop.latest_problem_run_at}`);
-    }
+
+  // Processors: active/total + missing if any
+  lines.push(`processors: ${loop.active_processors.length}/${loop.processor_ids.length} active`);
+  if (loop.missing_processors.length > 0) {
+    lines.push(`missing: ${formatBoundedList(loop.missing_processors)}`);
   }
+
+  // Attention: only non-zero terms
+  const attentionParts: string[] = [];
+  if (loop.attention_diagnostics > 0) attentionParts.push(`${loop.attention_diagnostics} attention`);
+  if (loop.drift_diagnostics > 0) attentionParts.push(`${loop.drift_diagnostics} drift`);
+  if (loop.noise_diagnostics > 0) attentionParts.push(`${loop.noise_diagnostics} noise`);
+  if (loop.questions > 0) attentionParts.push(`${loop.questions} question(s)`);
+  if (loop.recent_problem_runs > 0) attentionParts.push(`${loop.recent_problem_runs} problem run(s)`);
+  if (attentionParts.length > 0) {
+    lines.push(`attention: ${attentionParts.join(", ")}`);
+  }
+
+  // Questions breakdown only when there are questions
+  if (loop.questions > 0) {
+    const qParts: string[] = [];
+    if (loop.agent_safe_questions > 0) qParts.push(`${loop.agent_safe_questions} agent-safe`);
+    if (loop.model_safe_questions > 0) qParts.push(`${loop.model_safe_questions} model-safe`);
+    if (loop.owner_needed_questions > 0) qParts.push(`${loop.owner_needed_questions} owner-needed`);
+    if (qParts.length > 0) lines.push(`questions: ${qParts.join(", ")}`);
+  }
+
+  // Surfaces
+  if (loop.surfaces.length > 0) {
+    lines.push(`surfaces: ${loop.surfaces.join(", ")}`);
+  }
+
+  // Settlement
+  const passedChecks = countPassedSettlementChecks(loop.settlement.checks);
+  const settlementStatus = loop.settlement.settled ? "settled" : "unsettled";
+  lines.push(`settlement: ${settlementStatus} (${passedChecks}/${loop.settlement.checks.length})`);
+  if (loop.settlement.failed_checks.length > 0) {
+    lines.push(`failed: ${formatBoundedList(loop.settlement.failed_checks)}`);
+  }
+
+  // No-op condition
+  lines.push(`no-op: ${loop.settlement.no_op_when}`);
+
+  // Run timestamps — omit null/none rows
+  if (loop.latest_run_at !== null) {
+    lines.push(`latest run: ${loop.latest_run_at}`);
+  }
+  if (loop.last_successful_run_at !== null) {
+    lines.push(`last success: ${loop.last_successful_run_at}`);
+  }
+  if (loop.latest_problem_run_at !== null) {
+    lines.push(`latest problem: ${loop.latest_problem_run_at}`);
+  }
+
   return Object.freeze(lines);
 }
 
@@ -407,20 +434,6 @@ function formatSurface(surface: MaintenanceLoop["surfaces"][number]): string {
   }
   const _exhaustive: never = surface;
   return _exhaustive;
-}
-
-function formatProcessorCounts(loop: MaintenanceLoopSummary): string {
-  const counts = [
-    `${loop.active_processors.length}/${loop.processor_ids.length} active`,
-    `${loop.required_processor_ids.length} required`,
-  ];
-  if (loop.missing_processors.length > 0) {
-    counts.push(`${loop.missing_processors.length} missing`);
-  }
-  if (loop.inactive_optional_processors.length > 0) {
-    counts.push(`${loop.inactive_optional_processors.length} inactive optional`);
-  }
-  return counts.join(", ");
 }
 
 function formatBoundedList(values: ReadonlyArray<string>): string {

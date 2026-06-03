@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
-import { collectMaintenanceLoopSummaries } from "../../src/cli/maintenance-loop-summary";
+import {
+  collectMaintenanceLoopSummaries,
+  formatMaintenanceLoopDetailLines,
+} from "../../src/cli/maintenance-loop-summary";
 import { diagnosticEffect, questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { MaintenanceLoop } from "../../src/extensions/maintenance-loops";
 import { newRunId, type RunRow, type RunStatus } from "../../src/ledger/runs";
 import type { QuestionRecord } from "../../src/projections/questions";
+
+// Minimal ASCII caps (unicode: false) so tree connectors are ASCII |-/`-.
+const ASCII_CAPS = Object.freeze({
+  color: false,
+  unicode: false,
+  width: 120,
+});
 
 const REF = sourceRef({
   commit: commitOid("abc123"),
@@ -437,6 +447,157 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.latest_problem_run_at).toBe(
       "2026-06-02T12:05:00.000Z",
     );
+  });
+});
+
+describe("formatMaintenanceLoopDetailLines", () => {
+  test("renders each loop as a tree node with label and child detail lines", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+    expect(summary).toBeDefined();
+    if (summary === undefined) return;
+
+    const lines = formatMaintenanceLoopDetailLines([summary], ASCII_CAPS);
+    const text = lines.join("\n");
+
+    // Tree connector on the only (last) node
+    expect(text).toContain("`-");
+    // Label has state tag and loop id
+    expect(text).toContain("[quiet] test.loop: Keep test work visible.");
+    // Processors child line
+    expect(text).toContain("processors: 1/1 active");
+    // Settlement
+    expect(text).toContain("settlement: settled (5/5)");
+    // No-op line
+    expect(text).toContain("no-op:");
+    // No null timestamp lines emitted
+    expect(text).not.toContain("latest run:");
+    expect(text).not.toContain("last success:");
+  });
+
+  test("suppresses zero-count attention parts and omits the line when all zero", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+    expect(summary).toBeDefined();
+    if (summary === undefined) return;
+
+    const lines = formatMaintenanceLoopDetailLines([summary], ASCII_CAPS);
+    const text = lines.join("\n");
+
+    // When all attention counts are zero, no attention line is emitted
+    expect(text).not.toContain("attention:");
+    expect(text).not.toContain("0 attention");
+    expect(text).not.toContain("0 drift");
+    expect(text).not.toContain("0 question");
+  });
+
+  test("emits non-zero attention parts and suppresses zero-count terms", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+    const ownerQuestion: QuestionRecord = {
+      id: 1,
+      effect: questionEffect({
+        question: "What should happen?",
+        sourceRefs: [REF],
+        idempotencyKey: "test-q",
+      }),
+      processorId: "test.active-processor",
+      runId: "run-test",
+      adoptedCommit: commitOid("abc123"),
+      askedAt: "2026-06-01T00:00:00.000Z",
+      answeredAt: null,
+      answer: null,
+    };
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [ownerQuestion],
+      runsByProcessor: () => [],
+    });
+    expect(summary).toBeDefined();
+    if (summary === undefined) return;
+
+    const lines = formatMaintenanceLoopDetailLines([summary], ASCII_CAPS);
+    const text = lines.join("\n");
+
+    // Attention line should show questions but not drift/noise/problem-runs
+    expect(text).toContain("attention:");
+    expect(text).toContain("1 question(s)");
+    expect(text).not.toContain("0 drift");
+    expect(text).not.toContain("0 noise");
+    // Question breakdown by policy
+    expect(text).toContain("questions:");
+    expect(text).toContain("owner-needed");
+  });
+
+  test("uses |- connector for non-last node and `- for last", () => {
+    const loopA: MaintenanceLoop = { ...LOOP, id: "test.loop.a", processors: ["test.a"] };
+    const loopB: MaintenanceLoop = { ...LOOP, id: "test.loop.b", processors: ["test.b"] };
+    const summaries = collectMaintenanceLoopSummaries({
+      loops: [loopA, loopB],
+      activeProcessorIds: new Set(["test.a", "test.b"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: () => [],
+    });
+
+    const lines = formatMaintenanceLoopDetailLines(summaries, ASCII_CAPS);
+    const text = lines.join("\n");
+
+    expect(text).toContain("|- [quiet] test.loop.a:");
+    expect(text).toContain("`- [quiet] test.loop.b:");
+  });
+
+  test("shows latest run and last success timestamps when present", () => {
+    const loop: MaintenanceLoop = {
+      ...LOOP,
+      processors: ["test.active-processor"],
+    };
+    const [summary] = collectMaintenanceLoopSummaries({
+      loops: [loop],
+      activeProcessorIds: new Set(["test.active-processor"]),
+      diagnosticsByProcessor: () => [],
+      unresolvedQuestions: [],
+      runsByProcessor: (processorId) =>
+        processorId === "test.active-processor"
+          ? [
+              runRow({
+                processorId,
+                status: "succeeded",
+                startedAt: "2026-06-03T10:00:00.000Z",
+              }),
+            ]
+          : [],
+    });
+    expect(summary).toBeDefined();
+    if (summary === undefined) return;
+
+    const lines = formatMaintenanceLoopDetailLines([summary], ASCII_CAPS);
+    const text = lines.join("\n");
+
+    expect(text).toContain("latest run: 2026-06-03T10:00:00.000Z");
+    expect(text).toContain("last success: 2026-06-03T10:00:00.000Z");
   });
 });
 
