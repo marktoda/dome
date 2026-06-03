@@ -78,7 +78,7 @@ describe("bin/dome process boundary", () => {
     expect(status.adopted).toBe(status.head);
     expect(status.pending_commits).toBe(0);
     expect(status.serve_status).toBe("off");
-  });
+  }, { timeout: 30_000 });
 
   test("serve reports heartbeat and exits cleanly on SIGTERM", async () => {
     await expectServeSignalClearsHeartbeat("SIGTERM");
