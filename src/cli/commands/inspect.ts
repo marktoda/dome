@@ -83,6 +83,7 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson, formatTable } from "../format";
+import { formatSummaryRows, pushSection } from "../human-output";
 import { parsePositiveIntegerValue } from "../parse-options";
 
 // ----- Constants ------------------------------------------------------------
@@ -529,16 +530,23 @@ function jsonForResult(
 }
 
 function printTextResult(subject: string, result: InspectResult): void {
+  const lines: string[] = [];
   if (result.kind === "rows") {
-    console.log(`dome inspect ${subject}:`);
-    console.log(formatTable(result.rows));
+    lines.push(`Dome inspect ${subject}: ${result.rows.length} rows`);
+    pushSection(lines, "Rows", formatTable(result.rows).split("\n"));
+    console.log(lines.join("\n"));
     return;
   }
-  console.log("dome inspect diagnostics summary:");
-  console.log(
-    `total ${result.summary.total} | groups ${result.summary.shown_groups}/${result.summary.group_count}`,
-  );
-  console.log(formatTable(result.summary.groups));
+  lines.push("Dome inspect diagnostics: summary");
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["total", String(result.summary.total)],
+    [
+      "groups",
+      `${result.summary.shown_groups}/${result.summary.group_count}`,
+    ],
+  ]));
+  pushSection(lines, "Groups", formatTable(result.summary.groups).split("\n"));
+  console.log(lines.join("\n"));
 }
 
 function parseDiagnosticOptions(opts: {

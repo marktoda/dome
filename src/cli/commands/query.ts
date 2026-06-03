@@ -12,6 +12,11 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 import { formatJson } from "../format";
+import {
+  formatSummaryRows,
+  plural,
+  pushSection,
+} from "../human-output";
 import type { QuestionMetadata } from "../../core/effect";
 import {
   questionAutomationLabel,
@@ -99,12 +104,26 @@ export async function runQuery(
 function formatQueryResult(data: unknown): string {
   const result = parseQueryResult(data);
   if (result.matches.length === 0) {
-    return `No adopted-state matches for "${result.query}".`;
+    const lines = ["Dome query: no matches"];
+    pushSection(lines, "Summary", formatSummaryRows([
+      ["query", result.query],
+      ["shown", "0 matches"],
+      ["limit", result.limit === null ? "default" : String(result.limit)],
+    ]));
+    return lines.join("\n");
   }
 
-  const lines = [`${result.matches.length} adopted-state match(es) for "${result.query}"`];
+  const lines = [
+    `Dome query: ${plural(result.matches.length, "match", "matches")}`,
+  ];
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["query", result.query],
+    ["shown", plural(result.shown.matches, "match", "matches")],
+    ["limit", result.limit === null ? "default" : String(result.limit)],
+    ["has more", result.hasMore.matches ? "yes" : "no"],
+  ]));
+  lines.push("", "Matches");
   for (const [index, match] of result.matches.entries()) {
-    lines.push("");
     lines.push(`${index + 1}. ${match.title} (${match.path})`);
     if (match.snippet.length > 0) {
       lines.push(`   ${stripFtsMarkers(match.snippet)}`);

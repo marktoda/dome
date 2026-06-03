@@ -182,10 +182,12 @@ function renderMarkdown(input: {
   readonly omittedIssues: number;
 }): string {
   const lines = [
-    "DOME lint",
-    `status   ${input.status} | fail-on ${input.failOn}`,
-    `checked  ${input.markdownFiles} markdown files`,
-    `issues   ${input.counts.total} total | ${input.counts.block} block | ${input.counts.error} error | ${input.counts.warning} warning | ${input.counts.info} info`,
+    `Dome lint: ${input.status}`,
+    "",
+    "Summary",
+    `  status   ${input.status} | fail-on ${input.failOn}`,
+    `  checked  ${input.markdownFiles} markdown files`,
+    `  issues   ${input.counts.total} total | ${input.counts.block} block | ${input.counts.error} error | ${input.counts.warning} warning | ${input.counts.info} info`,
   ];
 
   lines.push("");
