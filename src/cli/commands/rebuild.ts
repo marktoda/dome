@@ -1,6 +1,6 @@
 // cli/commands/rebuild: rebuild projection.db from the adopted commit.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { commitOid } from "../../core/source-ref";
@@ -8,11 +8,12 @@ import { rebuildProjection } from "../../engine/projection-rebuild";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
 import {
-  formatHeadline,
-  formatShortOid,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  footer,
+  headline,
+  kv,
+  resolveCaps,
+  section,
+} from "../presenter";
 import { resolveBundleRoots } from "./sync-shared";
 
 export type RunRebuildOptions = {
@@ -106,6 +107,7 @@ export async function runRebuild(
       console.log(formatJson(payload));
     } else {
       printRebuildText({
+        vaultPath,
         branch,
         adopted,
         files: result.fileCount,
@@ -120,20 +122,38 @@ export async function runRebuild(
 }
 
 function printRebuildText(result: {
+  readonly vaultPath: string;
   readonly branch: string;
   readonly adopted: string;
   readonly files: number;
   readonly processors: number;
   readonly effects: number;
 }): void {
-  const lines = [formatHeadline("Dome rebuild", "rebuilt")];
-  pushSection(lines, "Projection", formatSummaryRows([
-    ["branch", result.branch],
-    ["adopted", formatShortOid(result.adopted)],
-    ["files scanned", String(result.files)],
-    ["processors run", String(result.processors)],
-    ["effects recorded", String(result.effects)],
-  ]));
+  const caps = resolveCaps();
+  const lines: string[] = [
+    headline(
+      { cmd: "rebuild", context: basename(result.vaultPath) },
+      { tone: "ok", label: "rebuilt" },
+      caps,
+    ),
+  ];
+  lines.push(
+    ...section(
+      "Projection",
+      kv(
+        [
+          { label: "branch", value: result.branch },
+          { label: "adopted", value: result.adopted.slice(0, 7), tone: "ident" },
+          { label: "files scanned", value: String(result.files) },
+          { label: "processors run", value: String(result.processors) },
+          { label: "effects recorded", value: String(result.effects) },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+  lines.push(...footer({ tone: "ok", label: "rebuilt" }, caps));
   console.log(lines.join("\n"));
 }
 

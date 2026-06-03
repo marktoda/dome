@@ -5,7 +5,7 @@
 // It owns CLI parsing/printing only; the projection accessor owns row
 // lookup, multiple-choice validation, and mutation semantics.
 
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import {
   answerQuestionDurably,
@@ -21,12 +21,15 @@ import {
 
 import { resolveBundleRoots } from "./sync-shared";
 import { formatJson } from "../format";
+import { formatCommand } from "../human-output";
 import {
-  formatCommand,
-  formatHeadline,
-  formatSummaryRows,
-  pushSection,
-} from "../human-output";
+  bullets,
+  footer,
+  headline,
+  kv,
+  resolveCaps,
+  section,
+} from "../presenter";
 
 const ANSWER_SCHEMA = "dome.answer/v1";
 
@@ -94,7 +97,7 @@ export async function runAnswer(
           ...recordToJson(record),
         }));
       } else {
-        console.log(formatQuestion(commandLabel, record));
+        console.log(formatQuestion(commandLabel, vaultPath, record));
       }
       return 0;
     }
@@ -117,6 +120,7 @@ export async function runAnswer(
       options.json === true,
       handlerResult,
       commandLabel,
+      vaultPath,
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -137,6 +141,7 @@ function printAnswerResult(
   json: boolean,
   handlerResult: AnswerHandlerDispatchResult,
   commandLabel: string,
+  vaultPath: string,
 ): number {
   switch (result.kind) {
     case "not-found":
@@ -159,17 +164,13 @@ function printAnswerResult(
           }),
         );
       } else {
-        const suffix =
-          handlerResult?.kind === "handled"
-            ? ` | handlers ${handlerResult.result.runs.length}`
-            : handlerResult?.kind === "skipped"
-              ? ` | handlers skipped (${handlerResult.reason})`
-              : "";
+        const handlersSummary = formatHandlersSummary(handlerResult);
         console.log(formatAnswerOutcome({
           commandLabel,
-          status: "already answered",
+          vaultPath,
+          statusLabel: `already answered question ${result.record.id}`,
           record: result.record,
-          suffix,
+          handlersSummary,
         }));
       }
       return 0;
@@ -205,83 +206,105 @@ function printAnswerResult(
           }),
         );
       } else {
-        const suffix =
-          handlerResult?.kind === "handled"
-            ? ` | handlers ${handlerResult.result.runs.length}`
-            : handlerResult?.kind === "skipped"
-              ? ` | handlers skipped (${handlerResult.reason})`
-              : "";
+        const handlersSummary = formatHandlersSummary(handlerResult);
         console.log(formatAnswerOutcome({
           commandLabel,
-          status: "answered",
+          vaultPath,
+          statusLabel: `answered question ${result.record.id}`,
           record: result.record,
-          suffix,
+          handlersSummary,
         }));
       }
       return 0;
   }
 }
 
-function formatQuestion(commandLabel: string, record: QuestionRecord): string {
-  const lines = [
-    formatHeadline(
-      titleForCommand(commandLabel),
-      `question ${record.id} ${record.answeredAt === null ? "open" : "answered"}`,
-    ),
+function formatHandlersSummary(handlerResult: AnswerHandlerDispatchResult): string {
+  if (handlerResult?.kind === "handled") return `${handlerResult.result.runs.length} run(s)`;
+  if (handlerResult?.kind === "skipped") return `skipped (${handlerResult.reason})`;
+  return "none";
+}
+
+function formatQuestion(
+  commandLabel: string,
+  vaultPath: string,
+  record: QuestionRecord,
+): string {
+  const caps = resolveCaps();
+  const cmd = commandLabel.split(/\s+/).pop() ?? commandLabel;
+  const statusTone = record.answeredAt === null ? "warn" : "ok";
+  const statusLabel = `question ${record.id} ${record.answeredAt === null ? "open" : "answered"}`;
+  const lines: string[] = [
+    headline({ cmd, context: basename(vaultPath) }, { tone: statusTone, label: statusLabel }, caps),
   ];
-  pushSection(lines, "Question", [`  ${record.effect.question}`]);
-  const summary: Array<readonly [string, string]> = [
-    ["answer", record.answer ?? "none"],
-    ["options", record.effect.options?.join(", ") ?? "free-form"],
-    ["asked", record.askedAt],
-    ["processor", record.processorId],
-  ];
-  if (record.answeredAt !== null) summary.push(["answered", record.answeredAt]);
-  pushSection(lines, "Details", formatSummaryRows(summary));
+  lines.push(...section("Question", bullets([record.effect.question], caps), caps));
+
+  const detailRows = buildDetailRows(record);
+  lines.push(...section("Details", kv(detailRows, caps), caps));
+
   if (record.effect.sourceRefs.length > 0) {
-    pushSection(
-      lines,
-      "SourceRefs",
-      record.effect.sourceRefs.map((ref) => `  - ${formatSourceRef(ref)}`),
+    lines.push(
+      ...section(
+        "Source Refs",
+        bullets(record.effect.sourceRefs.map((ref) => formatSourceRef(ref)), caps),
+        caps,
+      ),
     );
   }
   if (record.answeredAt === null) {
-    pushSection(lines, "Next", [
-      `  ${formatCommand(`${commandLabel} ${record.id} <value>`)}`,
-    ]);
+    lines.push(
+      ...section(
+        "Next",
+        [`  ${formatCommand(`${commandLabel} ${record.id} <value>`)}`],
+        caps,
+      ),
+    );
   }
   return lines.join("\n");
+}
+
+function buildDetailRows(record: QuestionRecord): Array<{ readonly label: string; readonly value: string }> {
+  const rows: Array<{ label: string; value: string }> = [
+    { label: "answer", value: record.answer ?? "none" },
+    { label: "options", value: record.effect.options?.join(", ") ?? "free-form" },
+    { label: "asked", value: record.askedAt },
+    { label: "processor", value: record.processorId },
+  ];
+  if (record.answeredAt !== null) rows.push({ label: "answered", value: record.answeredAt });
+  return rows;
 }
 
 function formatAnswerOutcome(input: {
   readonly commandLabel: string;
-  readonly status: "answered" | "already answered";
+  readonly vaultPath: string;
+  readonly statusLabel: string;
   readonly record: QuestionRecord;
-  readonly suffix: string;
+  readonly handlersSummary: string;
 }): string {
-  const lines = [
-    formatHeadline(
-      titleForCommand(input.commandLabel),
-      `${input.status} question ${input.record.id}`,
+  const caps = resolveCaps();
+  const cmd = input.commandLabel.split(/\s+/).pop() ?? input.commandLabel;
+  const lines: string[] = [
+    headline(
+      { cmd, context: basename(input.vaultPath) },
+      { tone: "ok", label: input.statusLabel },
+      caps,
     ),
   ];
-  pushSection(lines, "Result", formatSummaryRows([
-    ["answer", input.record.answer ?? "none"],
-    [
-      "handlers",
-      input.suffix.length === 0
-        ? "none"
-        : input.suffix.replace(/^ \| /, ""),
-    ],
-  ]));
+  lines.push(
+    ...section(
+      "Result",
+      kv(
+        [
+          { label: "answer", value: input.record.answer ?? "none" },
+          { label: "handlers", value: input.handlersSummary },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+  lines.push(...footer({ tone: "ok", label: input.statusLabel }, caps));
   return lines.join("\n");
-}
-
-function titleForCommand(commandLabel: string): string {
-  return commandLabel
-    .split(/\s+/)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function formatSourceRef(
