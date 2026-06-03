@@ -116,6 +116,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Write a local command model provider template (currently: anthropic).",
       parseInitModelProviderOption,
     )
+    .option("--json", "Emit JSON.")
     .action(async (path: string | undefined, options: InitCliOptions) => {
       setExitCode(
         await runInit({
@@ -123,6 +124,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           refreshConfig: options.refreshConfig,
           refreshInstructions: options.refreshInstructions,
           modelProvider: options.withModelProvider,
+          json: options.json,
         }),
       );
     });
@@ -473,6 +475,7 @@ type InitCliOptions = {
   readonly refreshConfig?: boolean;
   readonly refreshInstructions?: boolean;
   readonly withModelProvider?: "anthropic";
+  readonly json?: boolean;
 };
 
 type CheckCliOptions = {

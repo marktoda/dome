@@ -79,6 +79,7 @@ describe("runCli", () => {
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome init");
     expect(out).toContain("--with-model-provider <provider>");
+    expect(out).toContain("--json");
   });
 
   test("init rejects unknown model-provider scaffolds", async () => {

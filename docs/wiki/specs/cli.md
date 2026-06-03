@@ -1086,12 +1086,19 @@ today.
 Wipes `<vault>/.dome/state/projection.db` and rebuilds from the adopted commit per [[wiki/specs/projection-store]] §"Rebuild path". The run ledger (`runs.db`) and outbox (`outbox.db`) are preserved. Text output is intentionally terse:
 
 ```text
-dome rebuild: rebuilding projection.db from adopted commit 41a98c2...
-dome rebuild: done (234 files, 9 processors, 812 effects)
+Dome rebuild: rebuilt projections
+
+Summary
+  branch      main
+  adopted     41a98c2
+  files       234
+  processors  9
+  effects     812
 ```
 
-`--json` emits `{ status, branch, adopted, files, processors, effects }` on
-success or `{ status: "error", branch, adopted, error }` on failure.
+`--json` emits `dome.rebuild/v1` with `{ schema, status, branch, adopted,
+files, processors, effects }` on success or `{ schema, status: "error",
+branch, adopted, error }` on failure.
 
 Exit codes: 0 on success; 1 on rebuild/runtime failure; 64 (EX_USAGE) on
 detached HEAD or uninitialized adopted ref.

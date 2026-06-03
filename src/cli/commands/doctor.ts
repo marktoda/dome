@@ -17,6 +17,7 @@ import {
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
+import { formatSummaryRows, pushSection } from "../human-output";
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
@@ -105,43 +106,47 @@ export async function runDoctor(
 }
 
 function printDoctorText(report: HealthReport): void {
-  console.log("DOME doctor");
+  const lines = [`Dome doctor: ${report.status === "ok" ? "ok" : "needs attention"}`];
   if (report.status === "ok") {
-    console.log("health    ok");
-    console.log("findings  0");
+    pushSection(lines, "Summary", formatSummaryRows([
+      ["health", "ok"],
+      ["findings", "0"],
+    ]));
+    console.log(lines.join("\n"));
     return;
   }
 
-  console.log(
-    `health    ${report.summary.errorCount} error | ` +
-      `${report.summary.warningCount} warning`,
-  );
-  console.log(
-    `findings  outbox ${report.summary.failedOutbox} failed | ` +
-      `${report.summary.stuckPendingOutbox} stuck | ` +
-      `orphans ${report.summary.orphanRuns} | ` +
-      `runs ${report.summary.failedRuns} failed | ` +
-      `quarantine ${report.summary.quarantinedProcessors} | ` +
-      `projection ${report.summary.projectionCacheDrift} | ` +
-      `git ${report.summary.adoptedRefDivergence} | ` +
-      `instructions ${report.summary.instructionDrift} | ` +
-      `storage ${report.summary.operationalSchemaMismatch} | ` +
-      `grants ${report.summary.capabilityGrantGaps} | ` +
-      `model ${report.summary.modelProviderMissing}`,
-  );
+  pushSection(lines, "Summary", formatSummaryRows([
+    [
+      "health",
+      `${report.summary.errorCount} error | ${report.summary.warningCount} warning`,
+    ],
+    [
+      "findings",
+      `outbox ${report.summary.failedOutbox} failed | ` +
+        `${report.summary.stuckPendingOutbox} stuck | ` +
+        `orphans ${report.summary.orphanRuns} | ` +
+        `runs ${report.summary.failedRuns} failed | ` +
+        `quarantine ${report.summary.quarantinedProcessors} | ` +
+        `projection ${report.summary.projectionCacheDrift} | ` +
+        `git ${report.summary.adoptedRefDivergence} | ` +
+        `instructions ${report.summary.instructionDrift} | ` +
+        `storage ${report.summary.operationalSchemaMismatch} | ` +
+        `grants ${report.summary.capabilityGrantGaps} | ` +
+        `model ${report.summary.modelProviderMissing}`,
+    ],
+  ]));
+  const findingLines: string[] = [];
   for (const finding of report.findings) {
-    console.log(formatFinding(finding));
+    findingLines.push(formatFinding(finding));
+    findingLines.push(`    recovery: ${finding.recovery}`);
   }
+  pushSection(lines, "Findings", findingLines);
+  console.log(lines.join("\n"));
 }
 
 function formatFinding(finding: HealthFinding): string {
-  return [
-    finding.severity.padEnd(7),
-    finding.code.padEnd(22),
-    finding.id,
-    "-",
-    finding.message,
-  ].join(" ");
+  return `  - [${finding.severity}] ${finding.code} (${finding.id}): ${finding.message}`;
 }
 
 function parseNonNegativeInteger(

@@ -93,10 +93,12 @@ scenario(
     const cli = await h.runCli(["rebuild", "--json"]);
     expect(cli.exitCode).toBe(0);
     const payload = JSON.parse(cli.stdout) as {
+      readonly schema: string;
       readonly status: string;
       readonly adopted: string;
       readonly effects: number;
     };
+    expect(payload.schema).toBe("dome.rebuild/v1");
     expect(payload.status).toBe("rebuilt");
     expect(payload.adopted).toBe(adoptedRef);
     expect(payload.effects).toBeGreaterThanOrEqual(2);

@@ -7,6 +7,7 @@ import { commitOid } from "../../core/source-ref";
 import { rebuildProjection } from "../../engine/projection-rebuild";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
+import { formatShortOid, formatSummaryRows, pushSection } from "../human-output";
 import { resolveBundleRoots } from "./sync-shared";
 
 export type RunRebuildOptions = {
@@ -17,6 +18,7 @@ export type RunRebuildOptions = {
 
 type RebuildJsonResult =
   | {
+      readonly schema: "dome.rebuild/v1";
       readonly status: "rebuilt";
       readonly branch: string;
       readonly adopted: string;
@@ -25,6 +27,7 @@ type RebuildJsonResult =
       readonly effects: number;
     }
   | {
+      readonly schema: "dome.rebuild/v1";
       readonly status: "error";
       readonly branch: string | null;
       readonly adopted: string | null;
@@ -80,11 +83,6 @@ export async function runRebuild(
 
   const runtime = runtimeResult.value;
   try {
-    if (!jsonMode) {
-      console.log(
-        `dome rebuild: rebuilding projection.db from adopted commit ${adopted.slice(0, 7)}...`,
-      );
-    }
     const result = await rebuildProjection({
       runtime,
       adopted: commitOid(adopted),
@@ -92,6 +90,7 @@ export async function runRebuild(
     });
     if (jsonMode) {
       const payload: RebuildJsonResult = {
+        schema: "dome.rebuild/v1",
         status: "rebuilt",
         branch,
         adopted,
@@ -101,15 +100,36 @@ export async function runRebuild(
       };
       console.log(formatJson(payload));
     } else {
-      console.log(
-        `dome rebuild: done (${result.fileCount} files, ` +
-          `${result.processorCount} processors, ${result.effectCount} effects)`,
-      );
+      printRebuildText({
+        branch,
+        adopted,
+        files: result.fileCount,
+        processors: result.processorCount,
+        effects: result.effectCount,
+      });
     }
     return 0;
   } finally {
     await runtime.close();
   }
+}
+
+function printRebuildText(result: {
+  readonly branch: string;
+  readonly adopted: string;
+  readonly files: number;
+  readonly processors: number;
+  readonly effects: number;
+}): void {
+  const lines = ["Dome rebuild: rebuilt projections"];
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["branch", result.branch],
+    ["adopted", formatShortOid(result.adopted)],
+    ["files", String(result.files)],
+    ["processors", String(result.processors)],
+    ["effects", String(result.effects)],
+  ]));
+  console.log(lines.join("\n"));
 }
 
 function emitError(opts: {
@@ -121,6 +141,7 @@ function emitError(opts: {
 }): number {
   if (opts.jsonMode) {
     const payload: RebuildJsonResult = {
+      schema: "dome.rebuild/v1",
       status: "error",
       branch: opts.branch,
       adopted: opts.adopted,

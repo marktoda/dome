@@ -81,6 +81,8 @@ import {
   defaultConfigRecord,
   defaultConfigYaml,
 } from "../default-vault-config";
+import { formatJson } from "../format";
+import { formatSummaryRows, pushSection } from "../human-output";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -89,6 +91,7 @@ export type RunInitOptions = {
   readonly refreshConfig?: boolean | undefined;
   readonly refreshInstructions?: boolean | undefined;
   readonly modelProvider?: DefaultModelProvider | undefined;
+  readonly json?: boolean | undefined;
 };
 
 /**
@@ -116,6 +119,33 @@ type InitSummary = {
   readonly claudeMd: StepOutcome;
   readonly initialCommit: StepOutcome;
 };
+
+type InitJsonResult =
+  | {
+      readonly schema: "dome.init/v1";
+      readonly status: "initialized";
+      readonly vault: string;
+      readonly steps: {
+        readonly git_init: StepOutcome;
+        readonly wiki_dir: StepOutcome;
+        readonly notes_dir: StepOutcome;
+        readonly inbox_raw_dir: StepOutcome;
+        readonly inbox_processed_dir: StepOutcome;
+        readonly state_dir: StepOutcome;
+        readonly config_yaml: StepOutcome;
+        readonly model_provider: StepOutcome;
+        readonly gitignore: StepOutcome;
+        readonly agents_md: StepOutcome;
+        readonly claude_md: StepOutcome;
+        readonly initial_commit: StepOutcome;
+      };
+    }
+  | {
+      readonly schema: "dome.init/v1";
+      readonly status: "error";
+      readonly vault: string;
+      readonly error: string;
+    };
 
 // ----- runInit --------------------------------------------------------------
 
@@ -238,11 +268,20 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       initialCommit: initialCommitOutcome,
     };
 
-    printSummary(summary);
+    printSummary(summary, options.json === true);
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome init: failed: ${msg}`);
+    if (options.json === true) {
+      console.log(formatJson({
+        schema: "dome.init/v1",
+        status: "error",
+        vault: vaultPath,
+        error: msg,
+      } satisfies InitJsonResult));
+    } else {
+      console.error(`dome init: failed: ${msg}`);
+    }
     return 1;
   }
 }
@@ -497,20 +536,50 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
  * tooling that wants a structured shape can shell out to
  * `dome status --json` after init for the canonical state read.
  */
-function printSummary(s: InitSummary): void {
-  console.log(`dome init: initialized vault at ${s.vaultPath}`);
-  console.log(`  git init:                ${s.gitInit}`);
-  console.log(`  wiki/:                   ${s.wikiDir}`);
-  console.log(`  notes/:                  ${s.notesDir}`);
-  console.log(`  inbox/raw/:              ${s.inboxRawDir}`);
-  console.log(`  inbox/processed/:        ${s.inboxProcessedDir}`);
-  console.log(`  .dome/state/:            ${s.stateDir}`);
-  console.log(`  .dome/config.yaml:       ${s.configYaml}`);
-  console.log(`  .dome/model-provider.ts: ${s.modelProvider}`);
-  console.log(`  .gitignore:              ${s.gitignore}`);
-  console.log(`  AGENTS.md:               ${s.agentsMd}`);
-  console.log(`  CLAUDE.md:               ${s.claudeMd}`);
-  console.log(`  initial commit:          ${s.initialCommit}`);
+function printSummary(s: InitSummary, json: boolean): void {
+  if (json) {
+    console.log(formatJson(summaryToJson(s)));
+    return;
+  }
+  const lines = ["Dome init: vault ready"];
+  pushSection(lines, "Summary", formatSummaryRows([
+    ["vault", s.vaultPath],
+    ["git init", s.gitInit],
+    ["wiki/", s.wikiDir],
+    ["notes/", s.notesDir],
+    ["inbox/raw/", s.inboxRawDir],
+    ["inbox/processed/", s.inboxProcessedDir],
+    [".dome/state/", s.stateDir],
+    [".dome/config.yaml", s.configYaml],
+    [".dome/model-provider.ts", s.modelProvider],
+    [".gitignore", s.gitignore],
+    ["AGENTS.md", s.agentsMd],
+    ["CLAUDE.md", s.claudeMd],
+    ["initial commit", s.initialCommit],
+  ]));
+  console.log(lines.join("\n"));
+}
+
+function summaryToJson(s: InitSummary): InitJsonResult {
+  return {
+    schema: "dome.init/v1",
+    status: "initialized",
+    vault: s.vaultPath,
+    steps: {
+      git_init: s.gitInit,
+      wiki_dir: s.wikiDir,
+      notes_dir: s.notesDir,
+      inbox_raw_dir: s.inboxRawDir,
+      inbox_processed_dir: s.inboxProcessedDir,
+      state_dir: s.stateDir,
+      config_yaml: s.configYaml,
+      model_provider: s.modelProvider,
+      gitignore: s.gitignore,
+      agents_md: s.agentsMd,
+      claude_md: s.claudeMd,
+      initial_commit: s.initialCommit,
+    },
+  };
 }
 
 // ----- Templates ------------------------------------------------------------

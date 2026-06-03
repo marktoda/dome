@@ -387,9 +387,9 @@ describe("runInit", () => {
       expect(claudeBody).toContain("agent-safe");
       expect(claudeBody).toContain("owner-needed");
       expect(claudeBody).not.toContain("only use `dome status`");
-      expect(captured.out.join("\n")).toContain("CLAUDE.md:");
-      expect(captured.out.join("\n")).toContain("inbox/raw/:");
-      expect(captured.out.join("\n")).toContain(".dome/model-provider.ts:");
+      expect(captured.out.join("\n")).toContain("CLAUDE.md");
+      expect(captured.out.join("\n")).toContain("inbox/raw/");
+      expect(captured.out.join("\n")).toContain(".dome/model-provider.ts");
 
       // Git initialized + HEAD resolves (the initial scaffold commit landed).
       expect(existsSync(join(target, ".git"))).toBe(true);
@@ -478,6 +478,28 @@ describe("runInit", () => {
       expect(await readFile(configPath, "utf8")).toBe(configBody);
       expect(await readFile(providerPath, "utf8")).toBe(providerBody);
       expect(await currentSha(target)).toBe(head);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--json emits a stable initialization summary", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-json-"));
+    try {
+      const code = await runInit({ path: target, json: true });
+      expect(code).toBe(0);
+      const parsed = JSON.parse(captured.out.join("\n")) as {
+        readonly schema: string;
+        readonly status: string;
+        readonly vault: string;
+        readonly steps: Record<string, string>;
+      };
+      expect(parsed.schema).toBe("dome.init/v1");
+      expect(parsed.status).toBe("initialized");
+      expect(parsed.vault).toBe(target);
+      expect(parsed.steps.config_yaml).toBe("created");
+      expect(parsed.steps.initial_commit).toBe("created");
+      expect(parsed.steps.model_provider).toBe("skipped (not requested)");
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -3206,7 +3228,7 @@ describe("runDoctor", () => {
     const code = await runDoctor({ vault: f.vaultPath });
     expect(code).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("DOME doctor");
+    expect(out).toContain("Dome doctor: ok");
     expect(out).toContain("health    ok");
   });
 
