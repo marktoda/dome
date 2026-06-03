@@ -15,7 +15,6 @@ import {
 
 import {
   failureTokenFromQuestionIdempotencyKey,
-  OUTBOX_RECOVERY_QUESTION_PREFIX,
   outboxKeyFromQuestionIdempotencyKey,
   parseOutboxRecoveryAnswer,
 } from "./outbox-recovery-shared";

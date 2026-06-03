@@ -41,7 +41,6 @@ import {
   type DailySettledOpenLoopSource,
 } from "./daily-shared";
 
-const DAILY_CRON = "0 6 * * *";
 const OPEN_LOOP_SURFACE_LIMIT = 12;
 
 const carryForward = defineProcessorImplementation({

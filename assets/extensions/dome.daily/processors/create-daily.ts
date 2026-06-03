@@ -35,8 +35,6 @@ import {
   type DailyPathSettings,
 } from "./daily-shared";
 
-const DAILY_CRON = "0 6 * * *";
-
 type ScheduleInput = {
   readonly kind: "schedule";
   readonly cron: string;

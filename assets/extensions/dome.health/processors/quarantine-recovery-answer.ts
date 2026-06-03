@@ -14,7 +14,6 @@ import {
 } from "../../../../src/core/processor";
 
 import {
-  QUARANTINE_RECOVERY_QUESTION_PREFIX,
   parseQuarantineRecoveryAnswer,
   targetFromQuestionIdempotencyKey,
 } from "./quarantine-recovery-shared";
