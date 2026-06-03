@@ -130,8 +130,24 @@ type AgendaContextEntry = {
 };
 
 function parseAgendaInput(input: unknown): AgendaInput {
-  const topic = parseInputString(input, ["topic", "person"]) ?? "";
+  const topic = parseInputString(input, ["topic", "person"]) ??
+    parseInputPositionals(input).join(" ").trim();
   return Object.freeze({ topic });
+}
+
+function parseInputPositionals(input: unknown): ReadonlyArray<string> {
+  const envelope = input !== null && typeof input === "object"
+    ? input as Record<string, unknown>
+    : {};
+  const commandArgs = envelope.commandArgs !== null &&
+    typeof envelope.commandArgs === "object"
+    ? envelope.commandArgs as Record<string, unknown>
+    : envelope;
+  const raw = commandArgs.positionals;
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  return Object.freeze(
+    raw.filter((item): item is string => typeof item === "string"),
+  );
 }
 
 function agendaItemsFor(

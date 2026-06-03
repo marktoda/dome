@@ -98,43 +98,6 @@ describe("runCli", () => {
     expect(out).toContain("Suppress non-error text output");
   });
 
-  test("hidden today compatibility help exposes date and json options", async () => {
-    expect(await runCli(["today", "-h"])).toBe(0);
-    const out = captured.out.join("\n");
-    expect(out).toContain("Usage: dome today");
-    expect(out).toContain("--date <YYYY-MM-DD>");
-    expect(out).toContain("--json");
-  });
-
-  test("today rejects invalid dates before opening a vault", async () => {
-    expect(await runCli(["today", "--date", "2026-99-99"])).toBe(64);
-    expect(captured.err.join("\n")).toContain("invalid --date");
-  });
-
-  test("hidden prep compatibility help exposes date, limit, and json options", async () => {
-    expect(await runCli(["prep", "-h"])).toBe(0);
-    const out = captured.out.join("\n");
-    expect(out).toContain("Usage: dome prep");
-    expect(out).toContain("--date <YYYY-MM-DD>");
-    expect(out).toContain("--limit <n>");
-    expect(out).toContain("--json");
-  });
-
-  test("hidden agenda compatibility help exposes topic, date, limit, and json options", async () => {
-    expect(await runCli(["agenda", "-h"])).toBe(0);
-    const out = captured.out.join("\n");
-    expect(out).toContain("Usage: dome agenda");
-    expect(out).toContain("<topic...>");
-    expect(out).toContain("--date <YYYY-MM-DD>");
-    expect(out).toContain("--limit <n>");
-    expect(out).toContain("--json");
-  });
-
-  test("prep rejects invalid dates before opening a vault", async () => {
-    expect(await runCli(["prep", "--date", "2026-99-99"])).toBe(64);
-    expect(captured.err.join("\n")).toContain("invalid --date");
-  });
-
   test("export-context help exposes limit and json options", async () => {
     expect(await runCli(["export-context", "-h"])).toBe(0);
     const out = captured.out.join("\n");
@@ -202,8 +165,6 @@ describe("runCli", () => {
   test("numeric options are validated by Commander before actions run", async () => {
     expect(await runCli(["query", "alpha", "--limit", "10x"])).toBe(64);
     expect(await runCli(["export-context", "alpha", "--limit", "x"])).toBe(64);
-    expect(await runCli(["prep", "--limit", "x"])).toBe(64);
-    expect(await runCli(["agenda", "Ada", "--limit", "x"])).toBe(64);
     expect(await runCli(["lint", "--fail-on", "oops"])).toBe(64);
     expect(await runCli(["inspect", "runs", "--limit", "0"])).toBe(64);
     expect(await runCli(["doctor", "--orphan-threshold-ms", "-1"])).toBe(64);

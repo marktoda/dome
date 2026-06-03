@@ -1,6 +1,6 @@
 // scenarios/cli-surface/prep-view.scenario.test.ts
 //
-// `dome prep` is a source-backed planning packet over the daily task facts.
+// `dome run prep` is a source-backed planning packet over the daily task facts.
 
 import { expect } from "bun:test";
 
@@ -8,7 +8,7 @@ import { TestClock, scenario } from "../../index";
 
 scenario(
   {
-    name: "cli-surface: dome prep samples daily and backlog detail rows within the limit",
+    name: "cli-surface: dome run prep samples daily and backlog detail rows within the limit",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -55,6 +55,7 @@ scenario(
     expect(sync.adopted).toBe(true);
 
     const json = await h.runCli([
+      "run",
       "prep",
       "--date",
       "2026-01-05",
@@ -63,7 +64,7 @@ scenario(
       "--json",
     ]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly limit: number;
       readonly counts: { readonly openTasks: number };
       readonly sourceCounts: {
@@ -133,6 +134,7 @@ scenario(
     expect(payload.markdown).not.toContain("Backlog three");
 
     const text = await h.runCli([
+      "run",
       "prep",
       "--date",
       "2026-01-05",
@@ -140,23 +142,26 @@ scenario(
       "2",
     ]);
     expect(text.exitCode).toBe(0);
-    expect(text.stdout).toContain("## Start Here");
-    expect(text.stdout).toContain("[task] Daily one");
-    expect(text.stdout).toContain("[task] Daily two");
-    expect(text.stdout).toContain(
+    const textPayload = structuredData(text.stdout) as {
+      readonly markdown: string;
+    };
+    expect(textPayload.markdown).toContain("## Start Here");
+    expect(textPayload.markdown).toContain("[task] Daily one");
+    expect(textPayload.markdown).toContain("[task] Daily two");
+    expect(textPayload.markdown).toContain(
       "- 2 open tasks already listed in Start Here",
     );
-    expect(text.stdout).toContain("- Wider wiki backlog");
-    expect(text.stdout).toContain("Backlog one");
-    expect(text.stdout).toContain("Backlog two");
-    expect(text.stdout).not.toContain("Daily three");
-    expect(text.stdout).not.toContain("Backlog three");
+    expect(textPayload.markdown).toContain("- Wider wiki backlog");
+    expect(textPayload.markdown).toContain("Backlog one");
+    expect(textPayload.markdown).toContain("Backlog two");
+    expect(textPayload.markdown).not.toContain("Daily three");
+    expect(textPayload.markdown).not.toContain("Backlog three");
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome prep renders source-backed planning context",
+    name: "cli-surface: dome run prep renders source-backed planning context",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -212,6 +217,7 @@ scenario(
     expect(sync.adopted).toBe(true);
 
     const text = await h.runCli([
+      "run",
       "prep",
       "--date",
       "2026-01-05",
@@ -220,41 +226,49 @@ scenario(
     ]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("# Dome Prep: 2026-01-05");
-    expect(text.stdout).toContain("Daily note: wiki/dailies/2026-01-05.md");
-    expect(text.stdout).toContain(
+    const textPayload = structuredData(text.stdout) as {
+      readonly markdown: string;
+    };
+    expect(textPayload.markdown).toContain("# Dome Prep: 2026-01-05");
+    expect(textPayload.markdown).toContain(
+      "Daily note: wiki/dailies/2026-01-05.md",
+    );
+    expect(textPayload.markdown).toContain(
       "Daily note scope: 4 open tasks, 2 followups, 0 questions",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "Backlog scope: 0 open tasks, 0 followups, 1 questions",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16; source wiki/captures/launch.md:9)",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "- 2 followups already listed in Start Here",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "- 1 open task already listed in Start Here",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "- 1 question already listed in Start Here",
     );
-    expect(text.stdout).toContain("resolve: dome resolve ");
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain("resolve: dome resolve ");
+    expect(textPayload.markdown).toContain(
       "policy: agent-safe; risk low; confidence 0.65",
     );
-    expect(text.stdout).toContain("<track|ignore>");
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain("<track|ignore>");
+    expect(textPayload.markdown).toContain(
       "- ... 1 more open task (use --limit 4 to show all open tasks)",
     );
-    expect(occurrences(text.stdout, "Ask Ben about hiring budget")).toBe(1);
-    expect(text.stdout).toContain("## SourceRefs");
+    expect(occurrences(textPayload.markdown, "Ask Ben about hiring budget")).toBe(
+      1,
+    );
+    expect(textPayload.markdown).toContain("## SourceRefs");
 
     const json = await h.runCli([
+      "run",
       "prep",
       "--date",
       "2026-01-05",
@@ -265,7 +279,7 @@ scenario(
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
 
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly date: string;
       readonly limit: number;
       readonly daily: {
@@ -432,4 +446,9 @@ scenario(
 
 function occurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
+}
+
+function structuredData(stdout: string): unknown {
+  const envelope = JSON.parse(stdout) as { readonly data?: unknown };
+  return envelope.data;
 }

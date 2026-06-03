@@ -14,14 +14,12 @@ import {
 } from "commander";
 
 import { runCheck } from "./commands/check";
-import { runAgenda } from "./commands/agenda";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
-import { runPrep } from "./commands/prep";
 import { runQuery } from "./commands/query";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
@@ -29,7 +27,6 @@ import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
-import { runToday } from "./commands/today";
 import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
@@ -231,32 +228,6 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("agenda", { hidden: true })
-    .description("Render a source-backed agenda for a person or topic.")
-    .argument("<topic...>", "Person or topic to prepare for.")
-    .option("--date <YYYY-MM-DD>", "Date context (defaults to local today).")
-    .option(
-      "--limit <n>",
-      "Maximum items per agenda section.",
-      parsePositiveIntegerOption,
-    )
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (topic: string[], options: AgendaCliOptions) => {
-      setExitCode(
-        await runAgenda({
-          topic: topic.join(" "),
-          date: options.date,
-          limit: options.limit,
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
     .command("resolve")
     .description("Resolve an engine-raised decision.")
     .argument("<question-id>", "Question row id from `dome check`.")
@@ -385,54 +356,6 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       setExitCode(
         await runExportContext({
           topic: topic.join(" "),
-          limit: options.limit,
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
-    .command("today", { hidden: true })
-    .description("Render today's source-backed task surface.")
-    .option("--date <YYYY-MM-DD>", "Date to render (defaults to local today).")
-    .option(
-      "--limit <n>",
-      "Maximum items per today section.",
-      parsePositiveIntegerOption,
-    )
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (options: TodayCliOptions) => {
-      setExitCode(
-        await runToday({
-          date: options.date,
-          limit: options.limit,
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
-    .command("prep", { hidden: true })
-    .description("Render source-backed planning context for a day.")
-    .option("--date <YYYY-MM-DD>", "Date to prep (defaults to local today).")
-    .option(
-      "--limit <n>",
-      "Maximum items per prep section.",
-      parsePositiveIntegerOption,
-    )
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (options: PrepCliOptions) => {
-      setExitCode(
-        await runPrep({
-          date: options.date,
           limit: options.limit,
           json: options.json,
           vault: options.vault,
@@ -588,14 +511,6 @@ type DoctorCliOptions = {
   readonly orphanThresholdMs?: number;
 };
 
-type AgendaCliOptions = {
-  readonly date?: string;
-  readonly limit?: number;
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
 type AnswerCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
@@ -628,22 +543,6 @@ type QueryCliOptions = {
 };
 
 type ExportContextCliOptions = {
-  readonly limit?: number;
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
-type TodayCliOptions = {
-  readonly date?: string;
-  readonly limit?: number;
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
-type PrepCliOptions = {
-  readonly date?: string;
   readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;

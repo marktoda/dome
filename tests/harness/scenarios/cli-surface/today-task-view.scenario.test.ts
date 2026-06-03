@@ -1,8 +1,7 @@
 // scenarios/cli-surface/today-task-view.scenario.test.ts
 //
-// `dome today` is the first daily workflow view with a dedicated CLI binding.
-// It stays an extension-owned view processor: the CLI is only a thin wrapper
-// around the command-triggered `dome.daily.today` processor.
+// `dome run today` exercises the extension-owned `dome.daily.today` view
+// processor without keeping a dedicated top-level daily CLI command.
 
 import { expect } from "bun:test";
 
@@ -10,7 +9,7 @@ import { TestClock, scenario } from "../../index";
 
 scenario(
   {
-    name: "cli-surface: dome today renders source-backed task and followup data",
+    name: "cli-surface: dome run today renders source-backed task and followup data",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -65,11 +64,11 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
 
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly date: string;
       readonly daily: {
         readonly path: string;
@@ -251,9 +250,9 @@ scenario(
         + "('dome.daily.open_task', 'dome.daily.followup')",
     );
 
-    const deduped = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const deduped = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(deduped.exitCode).toBe(0);
-    const dedupedPayload = JSON.parse(deduped.stdout) as {
+    const dedupedPayload = structuredData(deduped.stdout) as {
       readonly counts: {
         readonly openTasks: number;
         readonly followups: number;
@@ -271,6 +270,7 @@ scenario(
     );
 
     const limited = await h.runCli([
+      "run",
       "today",
       "--date",
       "2026-01-05",
@@ -279,7 +279,7 @@ scenario(
       "--json",
     ]);
     expect(limited.exitCode).toBe(0);
-    const limitedPayload = JSON.parse(limited.stdout) as {
+    const limitedPayload = structuredData(limited.stdout) as {
       readonly limit: number;
       readonly counts: {
         readonly openTasks: number;
@@ -325,48 +325,12 @@ scenario(
       payload.followups.map((task) => task.text),
     );
     expect(limitedPayload.questions).toHaveLength(1);
-
-    const text = await h.runCli(["today", "--date", "2026-01-05"]);
-    expect(text.exitCode).toBe(0);
-    expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("DOME today 2026-01-05");
-    expect(text.stdout).toContain(
-      "daily    wiki/dailies/2026-01-05.md | exists | 4 open | 2 followups | 0 questions",
-    );
-    expect(text.stdout).toContain("backlog  0 open | 0 followups | 1 questions");
-    expect(text.stdout).toContain("4 open | 2 followups | 1 questions");
-    expect(text.stdout).toContain(
-      "due      open 0 overdue | 0 today | 1 upcoming | 3 undated | followups 0 overdue | 0 today | 0 upcoming | 2 undated",
-    );
-    expect(text.stdout).toContain("Daily note");
-    expect(text.stdout).toContain("Wider wiki backlog");
-    expect(text.stdout).toContain(
-      "Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16; source wiki/captures/2026-01-05.md:9)",
-    );
-    expect(text.stdout).toContain(
-      `resolve: dome resolve ${payload.questions[0]?.id} <track|ignore>`,
-    );
-
-    const limitedText = await h.runCli([
-      "today",
-      "--date",
-      "2026-01-05",
-      "--limit",
-      "2",
-    ]);
-    expect(limitedText.exitCode).toBe(0);
-    expect(limitedText.stdout).toContain("  ... 2 more open tasks");
-    expect(limitedText.stdout).toContain("Ship weekly update");
-    expect(limitedText.stdout).toContain("Send Ada launch notes");
-    expect(limitedText.stdout).not.toContain(
-      "Draft project staffing note",
-    );
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome today treats generated open loops as daily surface",
+    name: "cli-surface: dome run today treats generated open loops as daily surface",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -431,11 +395,11 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
 
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly counts: {
         readonly openTasks: number;
         readonly followups: number;
@@ -554,6 +518,7 @@ scenario(
     }))).toEqual([{ text: "Ask Ada about beta", source: "daily" }]);
 
     const prep = await h.runCli([
+      "run",
       "prep",
       "--date",
       "2026-01-05",
@@ -563,7 +528,7 @@ scenario(
     ]);
     expect(prep.exitCode).toBe(0);
     expect(prep.stderr).toBe("");
-    const prepPayload = JSON.parse(prep.stdout) as {
+    const prepPayload = structuredData(prep.stdout) as {
       readonly counts: {
         readonly openTasks: number;
         readonly followups: number;
@@ -573,25 +538,12 @@ scenario(
     };
     expect(prepPayload.counts).toEqual(payload.counts);
     expect(prepPayload.sourceCounts).toEqual(payload.sourceCounts);
-
-    const text = await h.runCli(["today", "--date", "2026-01-05"]);
-    expect(text.exitCode).toBe(0);
-    expect(text.stdout).toContain(
-      "daily    wiki/dailies/2026-01-05.md | exists | 3 open | 1 followups | 0 questions",
-    );
-    expect(text.stdout).toContain("backlog  0 open | 0 followups | 0 questions");
-    expect(text.stdout).toContain("3 open | 1 followups | 0 questions");
-    expect(text.stdout).toContain(
-      "Ship alpha note (wiki/dailies/2026-01-05.md:12; source wiki/projects/alpha.md:3)",
-    );
-    expect(text.stdout).not.toContain("Done generated task");
-    expect(text.stdout).not.toContain("Dismissed generated task");
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome today samples daily and backlog rows within the limit",
+    name: "cli-surface: dome run today samples daily and backlog rows within the limit",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -638,6 +590,7 @@ scenario(
     expect(sync.adopted).toBe(true);
 
     const json = await h.runCli([
+      "run",
       "today",
       "--date",
       "2026-01-05",
@@ -646,7 +599,7 @@ scenario(
       "--json",
     ]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly limit: number;
       readonly counts: { readonly openTasks: number };
       readonly sourceCounts: {
@@ -678,30 +631,12 @@ scenario(
       "backlog",
       "backlog",
     ]);
-
-    const text = await h.runCli([
-      "today",
-      "--date",
-      "2026-01-05",
-      "--limit",
-      "2",
-    ]);
-    expect(text.exitCode).toBe(0);
-    expect(text.stdout).toContain("Daily one");
-    expect(text.stdout).toContain("Daily two");
-    expect(text.stdout).not.toContain("Daily three");
-    expect(text.stdout).toContain("Backlog one");
-    expect(text.stdout).toContain("Backlog two");
-    expect(text.stdout).not.toContain("Backlog three");
-    expect(text.stdout).toContain(
-      "... 1 more open task (use --limit 3 to show all)",
-    );
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome today ranks backlog by due proximity and recency",
+    name: "cli-surface: dome run today ranks backlog by due proximity and recency",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -764,9 +699,9 @@ scenario(
     const newSync = await h.tick();
     expect(newSync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly openTasks: ReadonlyArray<{
         readonly text: string;
         readonly lastChangedAt: string | null;
@@ -789,6 +724,7 @@ scenario(
     ]);
 
     const limited = await h.runCli([
+      "run",
       "today",
       "--date",
       "2026-01-05",
@@ -806,7 +742,7 @@ scenario(
 
 scenario(
   {
-    name: "cli-surface: dome today folds repeated source-backed open loops",
+    name: "cli-surface: dome run today folds repeated source-backed open loops",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -862,9 +798,9 @@ scenario(
     const newSync = await h.tick();
     expect(newSync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly counts: { readonly openTasks: number };
       readonly sourceCounts: {
         readonly backlog: { readonly openTasks: number };
@@ -885,16 +821,12 @@ scenario(
     expect(payload.openTasks[0]?.path).toBe("wiki/projects/new.md");
     expect(payload.openTasks[0]?.sourceRefs.map((ref) => ref.path).sort())
       .toEqual(["wiki/projects/new.md", "wiki/projects/old.md"]);
-
-    const text = await h.runCli(["today", "--date", "2026-01-05"]);
-    expect(text.exitCode).toBe(0);
-    expect(occurrences(text.stdout, "Ship Conv 1 written follow-up")).toBe(1);
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome today folds near-duplicate backlog loops into daily rows",
+    name: "cli-surface: dome run today folds near-duplicate backlog loops into daily rows",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -943,9 +875,9 @@ scenario(
     const dailySync = await h.tick();
     expect(dailySync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly counts: { readonly openTasks: number };
       readonly sourceCounts: {
         readonly daily: { readonly openTasks: number };
@@ -986,17 +918,12 @@ scenario(
       "wiki/dailies/2026-01-05.md",
       "wiki/projects/hayden.md",
     ]);
-
-    const text = await h.runCli(["today", "--date", "2026-01-05"]);
-    expect(text.exitCode).toBe(0);
-    expect(occurrences(text.stdout, "Hayden conversation")).toBe(1);
-    expect(text.stdout).toContain("Book hotel for Seattle");
   },
 );
 
 scenario(
   {
-    name: "cli-surface: dome today respects configured daily note path",
+    name: "cli-surface: dome run today respects configured daily note path",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -1050,9 +977,9 @@ extensions:
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
-    const json = await h.runCli(["today", "--date", "2026-01-05", "--json"]);
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
     expect(json.exitCode).toBe(0);
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly daily: { readonly path: string; readonly exists: boolean };
       readonly sourceCounts: {
         readonly daily: { readonly openTasks: number };
@@ -1067,7 +994,7 @@ extensions:
   },
 );
 
-function occurrences(value: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  return value.split(needle).length - 1;
+function structuredData(stdout: string): unknown {
+  const envelope = JSON.parse(stdout) as { readonly data?: unknown };
+  return envelope.data;
 }

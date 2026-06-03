@@ -1,6 +1,6 @@
 // scenarios/cli-surface/agenda-view.scenario.test.ts
 //
-// `dome agenda` renders source-backed person/topic prep by composing daily
+// `dome run agenda-with` renders source-backed person/topic prep by composing daily
 // task facts with adopted-state search context.
 
 import { expect } from "bun:test";
@@ -9,7 +9,7 @@ import { TestClock, scenario } from "../../index";
 
 scenario(
   {
-    name: "cli-surface: dome agenda renders source-backed people and topic prep",
+    name: "cli-surface: dome run agenda-with renders source-backed people and topic prep",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -69,7 +69,8 @@ scenario(
     expect(sync.adopted).toBe(true);
 
     const text = await h.runCli([
-      "agenda",
+      "run",
+      "agenda-with",
       "Ada",
       "--date",
       "2026-01-05",
@@ -78,22 +79,26 @@ scenario(
     ]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("# Dome Agenda: Ada");
-    expect(text.stdout).toContain(
+    const textPayload = structuredData(text.stdout) as {
+      readonly markdown: string;
+    };
+    expect(textPayload.markdown).toContain("# Dome Agenda: Ada");
+    expect(textPayload.markdown).toContain(
       "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:16; source wiki/projects/launch.md:9)",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
     );
-    expect(text.stdout).toContain(
+    expect(textPayload.markdown).toContain(
       "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
     );
-    expect(text.stdout).toContain("resolve: dome resolve ");
-    expect(text.stdout).toContain("<track|ignore>");
-    expect(text.stdout).toContain("## SourceRefs");
+    expect(textPayload.markdown).toContain("resolve: dome resolve ");
+    expect(textPayload.markdown).toContain("<track|ignore>");
+    expect(textPayload.markdown).toContain("## SourceRefs");
 
     const json = await h.runCli([
-      "agenda",
+      "run",
+      "agenda-with",
       "Ada",
       "--date",
       "2026-01-05",
@@ -104,7 +109,7 @@ scenario(
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
 
-    const payload = JSON.parse(json.stdout) as {
+    const payload = structuredData(json.stdout) as {
       readonly topic: string;
       readonly date: string;
       readonly counts: {
@@ -180,7 +185,8 @@ scenario(
     );
 
     const limitedContext = await h.runCli([
-      "agenda",
+      "run",
+      "agenda-with",
       "Ada",
       "--date",
       "2026-01-05",
@@ -190,7 +196,7 @@ scenario(
     ]);
     expect(limitedContext.exitCode).toBe(0);
     expect(limitedContext.stderr).toBe("");
-    const limitedPayload = JSON.parse(limitedContext.stdout) as {
+    const limitedPayload = structuredData(limitedContext.stdout) as {
       readonly shown: {
         readonly context: number;
       };
@@ -208,3 +214,8 @@ scenario(
     );
   },
 );
+
+function structuredData(stdout: string): unknown {
+  const envelope = JSON.parse(stdout) as { readonly data?: unknown };
+  return envelope.data;
+}
