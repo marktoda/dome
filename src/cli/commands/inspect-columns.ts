@@ -24,6 +24,15 @@ function str(value: unknown): string {
   return "-";
 }
 
+// source-ref fields are produced by formatSourceRefs(), which joins with ", ".
+function sourceRefCell(fieldName: string): (r: Row) => { text: string; tone: "muted" } {
+  return (r) => {
+    const refs = str(r[fieldName]);
+    const first = refs.split(",")[0]?.trim();
+    return { text: first && first.length > 0 ? first : "-", tone: "muted" as const };
+  };
+}
+
 // ---------------------------------------------------------------------------
 // processors
 // ---------------------------------------------------------------------------
@@ -200,12 +209,7 @@ const DIAGNOSTICS_COLUMNS: ReadonlyArray<Column<Row>> = [
   },
   {
     header: "SOURCE",
-    get: (r) => {
-      const refs = str(r["source_refs"]);
-      // source_refs is a semicolon-separated list; take the first one
-      const first = refs.split(";")[0]?.trim() ?? "-";
-      return { text: first, tone: "muted" as const };
-    },
+    get: sourceRefCell("source_refs"),
     priority: 4,
   },
 ];
@@ -235,11 +239,7 @@ const FACTS_COLUMNS: ReadonlyArray<Column<Row>> = [
   },
   {
     header: "SOURCE",
-    get: (r) => {
-      const refs = str(r["source_refs"]);
-      const first = refs.split(";")[0]?.trim() ?? "-";
-      return { text: first, tone: "muted" as const };
-    },
+    get: sourceRefCell("source_refs"),
     priority: 4,
   },
 ];
@@ -314,11 +314,7 @@ const QUESTIONS_COLUMNS: ReadonlyArray<Column<Row>> = [
   },
   {
     header: "SOURCE",
-    get: (r) => {
-      const refs = str(r["source_refs"]);
-      const first = refs.split(";")[0]?.trim() ?? "-";
-      return { text: first, tone: "muted" as const };
-    },
+    get: sourceRefCell("source_refs"),
     priority: 4,
   },
 ];
@@ -448,12 +444,7 @@ export const DIAGNOSTIC_SUMMARY_COLUMNS: ReadonlyArray<Column<Row>> = [
   },
   {
     header: "SOURCE",
-    get: (r) => {
-      const refs = str(r["first_source_refs"]);
-      // first_source_refs is a comma-separated list; take the first entry
-      const first = refs.split(",")[0]?.trim() ?? "-";
-      return { text: first, tone: "muted" as const };
-    },
+    get: sourceRefCell("first_source_refs"),
     priority: 4,
   },
 ];
