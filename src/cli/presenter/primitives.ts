@@ -36,7 +36,10 @@ export function section(
   if (body.length === 0) return [];
   // Body lines arrive already carrying the primitives' 2-space indent; section
   // adds 2 more so the ALLCAPS title sits at indent 2 and body at indent 4.
-  return ["", `  ${paint(title.toUpperCase(), "muted", caps)}`, ...body.map((l) => `  ${l}`)];
+  // Titles are bold + cyan ("ident" tone) so the section structure stands out;
+  // cyan is non-status, so it doesn't collide with green/red/yellow semantics.
+  const heading = bold(paint(title.toUpperCase(), "ident", caps), caps);
+  return ["", `  ${heading}`, ...body.map((l) => `  ${l}`)];
 }
 
 export type KvRow = { readonly label: string; readonly value: string; readonly tone?: Tone };
