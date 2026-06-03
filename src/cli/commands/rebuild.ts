@@ -7,7 +7,12 @@ import { commitOid } from "../../core/source-ref";
 import { rebuildProjection } from "../../engine/projection-rebuild";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
-import { formatShortOid, formatSummaryRows, pushSection } from "../human-output";
+import {
+  formatHeadline,
+  formatShortOid,
+  formatSummaryRows,
+  pushSection,
+} from "../human-output";
 import { resolveBundleRoots } from "./sync-shared";
 
 export type RunRebuildOptions = {
@@ -121,7 +126,7 @@ function printRebuildText(result: {
   readonly processors: number;
   readonly effects: number;
 }): void {
-  const lines = ["Dome rebuild: rebuilt projections"];
+  const lines = [formatHeadline("Dome rebuild", "rebuilt")];
   pushSection(lines, "Summary", formatSummaryRows([
     ["branch", result.branch],
     ["adopted", formatShortOid(result.adopted)],

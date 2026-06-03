@@ -83,7 +83,7 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson, formatTable } from "../format";
-import { formatSummaryRows, pushSection } from "../human-output";
+import { formatHeadline, formatSummaryRows, pushSection } from "../human-output";
 import { parsePositiveIntegerValue } from "../parse-options";
 
 // ----- Constants ------------------------------------------------------------
@@ -532,12 +532,12 @@ function jsonForResult(
 function printTextResult(subject: string, result: InspectResult): void {
   const lines: string[] = [];
   if (result.kind === "rows") {
-    lines.push(`Dome inspect ${subject}: ${result.rows.length} rows`);
+    lines.push(formatHeadline(`Dome inspect ${subject}`, `${result.rows.length} rows`));
     pushSection(lines, "Rows", formatTable(result.rows).split("\n"));
     console.log(lines.join("\n"));
     return;
   }
-  lines.push("Dome inspect diagnostics: summary");
+  lines.push(formatHeadline("Dome inspect diagnostics", "summary"));
   pushSection(lines, "Summary", formatSummaryRows([
     ["total", String(result.summary.total)],
     [

@@ -15,6 +15,8 @@
 //     "empty-table message on a fresh vault" assertion in the Phase 9
 //     `dome inspect` smoke test.
 
+import { formatMuted, formatSectionTitle } from "./human-output";
+
 // ----- formatTable ----------------------------------------------------------
 
 /**
@@ -67,8 +69,10 @@ export function formatTable(
   const pad = (s: string, n: number): string =>
     s.length >= n ? s : s + " ".repeat(n - s.length);
 
-  const headerLine = cols.map((c) => pad(c, widths[c] ?? 0)).join("  ");
-  const sepLine = cols.map((c) => "-".repeat(widths[c] ?? 0)).join("  ");
+  const headerLine = cols.map((c) => formatSectionTitle(pad(c, widths[c] ?? 0)))
+    .join("  ");
+  const sepLine = cols.map((c) => formatMuted("-".repeat(widths[c] ?? 0)))
+    .join("  ");
   const bodyLines = rows.map((row) =>
     cols.map((c) => pad(stringifyCell(row[c]), widths[c] ?? 0)).join("  "),
   );

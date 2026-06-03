@@ -1,6 +1,7 @@
 // cli/commands/lint: first-class wrapper for the dome.lint report view.
 
 import { formatJson } from "../format";
+import { colorizeHumanOutput } from "../human-output";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
   firstPartyViewNotFoundMessage,
@@ -71,7 +72,7 @@ export async function runLint(
     if (options.json === true) {
       console.log(formatJson(run.data));
     } else {
-      console.log(data.markdown);
+      console.log(colorizeHumanOutput(data.markdown));
     }
     return data.status === "fail" ? 1 : 0;
   } catch (e) {

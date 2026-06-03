@@ -52,7 +52,10 @@ import {
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
 import {
+  formatCommand,
+  formatHeadline,
   formatNextActionsBlock,
+  formatSeverity,
   formatSummaryRows,
   plural,
   pushSection,
@@ -506,7 +509,7 @@ function renderCheckReport(
   report: CheckReport,
   options: { readonly showLoopDetails: boolean },
 ): ReadonlyArray<string> {
-  const lines = [`Dome check: ${formatCheckHeadline(report)}`];
+  const lines = [formatHeadline("Dome check", formatCheckHeadline(report))];
   pushSection(lines, "Next", formatNextActionsBlock(report.next_actions).slice(1));
   pushSection(lines, "Summary", formatSummaryRows([
     ["status", report.status],
@@ -623,7 +626,7 @@ function findingLines(findings: ReadonlyArray<HealthFinding>): ReadonlyArray<str
   const lines: string[] = [];
   for (const finding of findings) {
     lines.push(
-      `  - [${finding.severity}] ${finding.code}: ${finding.message}`,
+      `  - [${formatSeverity(finding.severity)}] ${finding.code}: ${finding.message}`,
     );
     lines.push(`    recovery: ${finding.recovery}`);
   }
@@ -643,7 +646,7 @@ function diagnosticLines(
     lines.push(`  ${formatDispositionHeading(disposition, groupItems.length)}`);
     for (const item of groupItems) {
       lines.push(
-        `    - [${item.severity}] ${item.code}: ${truncateText(item.message, 160)}`,
+        `    - [${formatSeverity(item.severity)}] ${item.code}: ${truncateText(item.message, 160)}`,
       );
       lines.push(`      source: ${item.source_refs}`);
       lines.push(`      repair: ${item.repair_path} - ${item.repair_hint}`);
@@ -712,7 +715,7 @@ function appendDiagnosticMessageGroups(
   lines.push("  Repeated messages");
   for (const group of groups) {
     lines.push(
-      `    - [${group.severity}] ${group.code} x${group.count}: ${group.message}`,
+      `    - [${formatSeverity(group.severity)}] ${group.code} x${group.count}: ${group.message}`,
     );
     lines.push(`      first: ${group.first_source_refs}`);
   }
@@ -741,7 +744,7 @@ function questionLines(
       lines.push(`    owner-needed: ${item.owner_needed_reason}`);
     }
     lines.push(`    source: ${item.source_refs}`);
-    lines.push(`    resolve: ${item.resolveCommand}`);
+    lines.push(`    resolve: ${formatCommand(item.resolveCommand)}`);
   }
   appendMoreLine(lines, report?.questions ?? 0, items.length, "questions");
   return lines;

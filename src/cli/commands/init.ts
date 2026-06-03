@@ -82,7 +82,7 @@ import {
   defaultConfigYaml,
 } from "../default-vault-config";
 import { formatJson } from "../format";
-import { formatSummaryRows, pushSection } from "../human-output";
+import { formatHeadline, formatSummaryRows, pushSection } from "../human-output";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -541,7 +541,7 @@ function printSummary(s: InitSummary, json: boolean): void {
     console.log(formatJson(summaryToJson(s)));
     return;
   }
-  const lines = ["Dome init: vault ready"];
+  const lines = [formatHeadline("Dome init", "vault ready")];
   pushSection(lines, "Summary", formatSummaryRows([
     ["vault", s.vaultPath],
     ["git init", s.gitInit],

@@ -13,6 +13,8 @@ import {
 } from "./view-shared";
 import { formatJson } from "../format";
 import {
+  formatCommand,
+  formatHeadline,
   formatSummaryRows,
   plural,
   pushSection,
@@ -104,7 +106,7 @@ export async function runQuery(
 function formatQueryResult(data: unknown): string {
   const result = parseQueryResult(data);
   if (result.matches.length === 0) {
-    const lines = ["Dome query: no matches"];
+    const lines = [formatHeadline("Dome query", "no matches")];
     pushSection(lines, "Summary", formatSummaryRows([
       ["query", result.query],
       ["shown", "0 matches"],
@@ -114,7 +116,10 @@ function formatQueryResult(data: unknown): string {
   }
 
   const lines = [
-    `Dome query: ${plural(result.matches.length, "match", "matches")}`,
+    formatHeadline(
+      "Dome query",
+      plural(result.matches.length, "match", "matches"),
+    ),
   ];
   pushSection(lines, "Summary", formatSummaryRows([
     ["query", result.query],
@@ -162,7 +167,7 @@ function formatQueryResult(data: unknown): string {
           : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
         lines.push(`     - [#${question.id}] ${question.question}${refs}`);
         lines.push(`       policy: ${questionAutomationLabel(question.metadata)}`);
-        lines.push(`       resolve: ${question.resolveCommand}`);
+        lines.push(`       resolve: ${formatCommand(question.resolveCommand)}`);
       }
     }
   }

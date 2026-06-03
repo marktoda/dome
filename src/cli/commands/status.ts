@@ -135,7 +135,13 @@ import {
   type DiagnosticSummary,
 } from "../diagnostic-summary";
 import { formatJson } from "../format";
-import { formatNextActionsBlock } from "../human-output";
+import {
+  formatHeadline,
+  formatNextActionsBlock,
+  formatSectionTitle,
+  formatSeverity,
+  formatStatusValue,
+} from "../human-output";
 import {
   formatMaintenanceLoopDetailLines,
   collectMaintenanceLoopSummaries,
@@ -489,7 +495,12 @@ function printStatusText(
   s: StatusSnapshot,
   options: { readonly showLoopDetails: boolean },
 ): void {
-  console.log(`Dome status: ${s.attention_required ? "needs attention" : "ok"}`);
+  console.log(
+    formatHeadline(
+      "Dome status",
+      s.attention_required ? "needs attention" : "ok",
+    ),
+  );
   for (const line of formatNextActionsBlock(s.next_actions)) {
     console.log(line);
   }
@@ -513,7 +524,7 @@ function printStatusText(
     `engine    last sync ${s.last_sync ?? "(never)"} | pending ${formatPendingRuns(s)} | failed ${s.failed_runs} | serve ${formatServe(s)}`,
   );
   console.log(
-    `health    projection ${formatProjectionFreshness(s)} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
+    `health    projection ${formatStatusValue(formatProjectionFreshness(s))} | diagnostics ${formatDiagnosticCount(s)} | questions ${s.questions} | outbox ${s.outbox_pending} pending / ${s.outbox_failed} failed | quarantine ${s.quarantined}`,
   );
   console.log(
     `loops     ${formatMaintenanceLoopSummaryLine(s.maintenance_loops)}`,
@@ -550,7 +561,7 @@ function printLoopDetails(
   loops: ReadonlyArray<MaintenanceLoopSummary>,
 ): void {
   console.log("");
-  console.log("Loops");
+  console.log(formatSectionTitle("Loops"));
   for (const line of formatMaintenanceLoopDetailLines(loops)) {
     console.log(line);
   }
@@ -657,7 +668,7 @@ function intakeModelProviderMissing(runtime: VaultRuntime): boolean {
 
 function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups
-    .map((group) => `${group.count} ${group.severity} ${group.code}`)
+    .map((group) => `${group.count} ${formatSeverity(group.severity)} ${group.code}`)
     .join(" | ");
 }
 
@@ -665,7 +676,7 @@ function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
   const maxGroups = 2;
   const groups = summary.groups.slice(0, maxGroups);
   const lines = groups.map((group) =>
-    `${group.count} ${group.severity} ${group.code}: ` +
+    `${group.count} ${formatSeverity(group.severity)} ${group.code}: ` +
       truncateStatusMessage(group.message)
   );
   const remaining = summary.group_count - groups.length;

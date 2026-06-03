@@ -21,7 +21,12 @@ import {
 
 import { resolveBundleRoots } from "./sync-shared";
 import { formatJson } from "../format";
-import { formatSummaryRows, pushSection } from "../human-output";
+import {
+  formatCommand,
+  formatHeadline,
+  formatSummaryRows,
+  pushSection,
+} from "../human-output";
 
 const ANSWER_SCHEMA = "dome.answer/v1";
 
@@ -219,7 +224,10 @@ function printAnswerResult(
 
 function formatQuestion(commandLabel: string, record: QuestionRecord): string {
   const lines = [
-    `${titleForCommand(commandLabel)}: question ${record.id} ${record.answeredAt === null ? "open" : "answered"}`,
+    formatHeadline(
+      titleForCommand(commandLabel),
+      `question ${record.id} ${record.answeredAt === null ? "open" : "answered"}`,
+    ),
   ];
   pushSection(lines, "Question", [`  ${record.effect.question}`]);
   const summary: Array<readonly [string, string]> = [
@@ -239,7 +247,7 @@ function formatQuestion(commandLabel: string, record: QuestionRecord): string {
   }
   if (record.answeredAt === null) {
     lines.push("");
-    lines.push(`Resolve: ${commandLabel} ${record.id} <value>`);
+    lines.push(`Resolve: ${formatCommand(`${commandLabel} ${record.id} <value>`)}`);
   }
   return lines.join("\n");
 }
@@ -251,7 +259,10 @@ function formatAnswerOutcome(input: {
   readonly suffix: string;
 }): string {
   const lines = [
-    `${titleForCommand(input.commandLabel)}: ${input.status} question ${input.record.id}`,
+    formatHeadline(
+      titleForCommand(input.commandLabel),
+      `${input.status} question ${input.record.id}`,
+    ),
   ];
   pushSection(lines, "Summary", formatSummaryRows([
     ["answer", input.record.answer ?? "none"],

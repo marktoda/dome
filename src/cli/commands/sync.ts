@@ -64,7 +64,11 @@ import {
   nextActionsForSync,
   type CliNextAction,
 } from "../next-actions";
-import { formatNextActionsBlock } from "../human-output";
+import {
+  formatHeadline,
+  formatNextActionsBlock,
+  formatSeverity,
+} from "../human-output";
 import {
   countAttentionDiagnostics,
   isSourceBackedDiagnostic,
@@ -247,7 +251,10 @@ function printTickLines(
   if (tick.kind === "in-sync") {
     if (opts.quiet) return;
     console.log(
-      `dome sync: already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
+      formatHeadline(
+        "dome sync",
+        `already in sync (${tick.finalAdoptedRef.slice(0, 7)} on ${tick.branch})`,
+      ),
     );
     printSyncAttentionLines(opts.result);
     return;
@@ -285,7 +292,7 @@ function printTickLines(
         ? tick.drift.head.slice(0, 7)
         : `${tick.drift.base.slice(0, 7)}..${tick.drift.head.slice(0, 7)}`;
     console.log(
-      `dome sync: adopted ${tick.branch}: ${range} ` +
+      formatHeadline("dome sync", `adopted ${tick.branch}`) + `: ${range} ` +
         `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
         `${iters} iteration${iters === 1 ? "" : "s"})`,
     );
@@ -295,12 +302,13 @@ function printTickLines(
   }
 
   console.error(
-    `dome sync: blocked ${tick.branch}: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"} ` +
+    formatHeadline("dome sync", `blocked ${tick.branch}`) +
+      `: ${diagCount} diagnostic${diagCount === 1 ? "" : "s"} ` +
       `(adopted ref unchanged at ${result.adoptedRef.slice(0, 7)})`,
   );
   const blockers = result.diagnostics.filter((d) => d.severity === "block");
   for (const d of blockers.slice(0, 5)) {
-    console.error(`  [${d.code}] ${d.message}`);
+    console.error(`  [${formatSeverity(d.severity)}] ${d.code}: ${d.message}`);
   }
   if (blockers.length > 5) {
     console.error(
@@ -311,7 +319,7 @@ function printTickLines(
 
 function printSyncAttentionLines(result: SyncJsonResult): void {
   if (!result.attention_required) return;
-  console.log(`dome sync: attention ${result.attention.join(", ")}`);
+  console.log(formatHeadline("dome sync", `attention ${result.attention.join(", ")}`));
   for (const line of formatNextActionsBlock(result.next_actions)) {
     console.log(line);
   }

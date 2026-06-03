@@ -17,7 +17,12 @@ import {
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
-import { formatSummaryRows, pushSection } from "../human-output";
+import {
+  formatHeadline,
+  formatSeverity,
+  formatSummaryRows,
+  pushSection,
+} from "../human-output";
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
@@ -106,7 +111,12 @@ export async function runDoctor(
 }
 
 function printDoctorText(report: HealthReport): void {
-  const lines = [`Dome doctor: ${report.status === "ok" ? "ok" : "needs attention"}`];
+  const lines = [
+    formatHeadline(
+      "Dome doctor",
+      report.status === "ok" ? "ok" : "needs attention",
+    ),
+  ];
   if (report.status === "ok") {
     pushSection(lines, "Summary", formatSummaryRows([
       ["health", "ok"],
@@ -146,7 +156,7 @@ function printDoctorText(report: HealthReport): void {
 }
 
 function formatFinding(finding: HealthFinding): string {
-  return `  - [${finding.severity}] ${finding.code} (${finding.id}): ${finding.message}`;
+  return `  - [${formatSeverity(finding.severity)}] ${finding.code} (${finding.id}): ${finding.message}`;
 }
 
 function parseNonNegativeInteger(
