@@ -782,7 +782,9 @@ describe("runInit", () => {
         );
         expect(inspectCode).toBe(0);
         const inspectOut = captured.out.join("\n");
-        expect(inspectOut).toContain("[[broken]]");
+        // The message "Wikilink [[broken]] does not resolve..." may be
+        // truncated by the width-fit table column; check the visible prefix.
+        expect(inspectOut).toContain("[[broken]");
       } finally {
         await rm(target, { recursive: true, force: true });
       }

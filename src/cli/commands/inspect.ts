@@ -82,9 +82,17 @@ import {
   type DiagnosticSeverity,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
-import { formatJson, formatTable } from "../format";
-import { formatHeadline, formatSummaryRows, pushSection } from "../human-output";
+import { formatJson } from "../format";
+import { formatSummaryRows } from "../human-output";
+import {
+  headline,
+  paint,
+  resolveCaps,
+  section,
+  table,
+} from "../presenter";
 import { parsePositiveIntegerValue } from "../parse-options";
+import { columnsFor, hiddenHint } from "./inspect-columns";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -530,22 +538,65 @@ function jsonForResult(
 }
 
 function printTextResult(subject: string, result: InspectResult): void {
+  const caps = resolveCaps();
   const lines: string[] = [];
   if (result.kind === "rows") {
-    lines.push(formatHeadline(`Dome inspect ${subject}`, `${result.rows.length} rows`));
-    pushSection(lines, "Rows", formatTable(result.rows).split("\n"));
+    const rowCount = result.rows.length;
+    const rowStatus =
+      rowCount === 0
+        ? { tone: "muted" as const, label: "no rows" }
+        : { tone: "plain" as const, label: `${rowCount} rows` };
+    lines.push(headline({ cmd: `inspect ${subject}` }, rowStatus, caps));
+    // section() adds 2 spaces of indent to each body line; shrink the
+    // width passed to table() so combined output stays within caps.width.
+    const tableCaps = { ...caps, width: caps.width - 2 };
+    lines.push(
+      ...section(
+        "Rows",
+        table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), tableCaps),
+        caps,
+      ),
+    );
+    const hint = hiddenHint(subject);
+    if (hint.length > 0) {
+      lines.push("");
+      lines.push(`  ${paint(hint, "muted", caps)}`);
+    }
     console.log(lines.join("\n"));
     return;
   }
-  lines.push(formatHeadline("Dome inspect diagnostics", "summary"));
-  pushSection(lines, "Summary", formatSummaryRows([
-    ["total", String(result.summary.total)],
-    [
-      "groups",
-      `${result.summary.shown_groups}/${result.summary.group_count}`,
-    ],
-  ]));
-  pushSection(lines, "Groups", formatTable(result.summary.groups).split("\n"));
+  // diagnostic-summary mode
+  lines.push(
+    headline({ cmd: "inspect diagnostics" }, { tone: "plain", label: "summary" }, caps),
+  );
+  lines.push(
+    ...section(
+      "Summary",
+      formatSummaryRows([
+        ["total", String(result.summary.total)],
+        [
+          "groups",
+          `${result.summary.shown_groups}/${result.summary.group_count}`,
+        ],
+      ]),
+      caps,
+    ),
+  );
+  // Render summary groups via curated table
+  const summaryGroupRows = result.summary.groups.map((g) => ({
+    severity: g.severity,
+    code: g.code,
+    count: g.count,
+    first_source_refs: g.first_source_refs,
+  }));
+  const tableCaps = { ...caps, width: caps.width - 2 };
+  lines.push(
+    ...section(
+      "Groups",
+      table(summaryGroupRows, columnsFor("diagnostics"), tableCaps),
+      caps,
+    ),
+  );
   console.log(lines.join("\n"));
 }
 
