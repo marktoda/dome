@@ -319,7 +319,7 @@ export async function runServe(
   if (!quiet) {
     const caps = resolveCaps();
     const shutdownStatus: Status = { tone: "muted", label: "shutting down" };
-    console.log(headline({ cmd: "serve" }, shutdownStatus, caps));
+    console.log(headline({ cmd: "serve", context: basename(vaultPath) }, shutdownStatus, caps));
   }
   return 0;
 }

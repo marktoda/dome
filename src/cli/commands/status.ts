@@ -740,7 +740,7 @@ function intakeModelProviderMissing(runtime: VaultRuntime): boolean {
 function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups
     .map((group) => `${group.count} ${formatSeverity(group.severity)} ${group.code}`)
-    .join(" | ");
+    .join(" · ");
 }
 
 function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
@@ -752,7 +752,7 @@ function formatDiagnosticFocusLine(summary: DiagnosticMessageSummary): string {
   );
   const remaining = summary.group_count - groups.length;
   if (remaining > 0) lines.push(`+${remaining} more`);
-  return lines.join(" | ");
+  return lines.join(" · ");
 }
 
 function formatDiagnosticDispositionLine(
@@ -767,7 +767,7 @@ function formatDiagnosticDispositionLine(
   }
   return [...counts]
     .map(([disposition, count]) => `${count} ${disposition}`)
-    .join(" | ");
+    .join(" · ");
 }
 
 function truncateStatusMessage(message: string): string {
