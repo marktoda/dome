@@ -19,7 +19,13 @@ type CommandRun = {
 const repoRoot = resolve(import.meta.dir, "..");
 
 async function main(): Promise<void> {
-  const opts = parseArgs(Bun.argv.slice(2));
+  const args = Bun.argv.slice(2);
+  if (args.includes("-h") || args.includes("--help")) {
+    nodeWrite(helpText());
+    return;
+  }
+
+  const opts = parseArgs(args);
   const commands: CommandRun[] = [];
 
   const status = await domeJson<JsonRecord>(commands, [
@@ -437,8 +443,7 @@ function parseArgs(args: ReadonlyArray<string>): SnapshotOptions {
       continue;
     }
     if (arg === "-h" || arg === "--help") {
-      printHelp();
-      process.exit(0);
+      throw new Error(`${arg} must be handled before parsing`);
     }
     throw new Error(`unknown argument: ${arg}`);
   }
@@ -477,8 +482,8 @@ function localDateString(now: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-function printHelp(): void {
-  nodeWrite([
+function helpText(): string {
+  return [
     "Usage: bun scripts/v1-dogfood-snapshot.ts [options]",
     "",
     "Emits a read-only Markdown snapshot for the M10 work-vault dogfood ledger.",
@@ -490,7 +495,7 @@ function printHelp(): void {
     "  --limit <n>          Query/export-context limit (default: 8).",
     "  -h, --help           Show this help.",
     "",
-  ].join("\n"));
+  ].join("\n");
 }
 
 function nodeWrite(text: string): void {
