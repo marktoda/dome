@@ -650,11 +650,11 @@ function formatContent(report: CheckContentReport | null): string {
   const attention =
     report.diagnostics === 0
       ? ""
-      : ` | ${plural(report.attention_diagnostics, "attention item")}`;
+      : ` · ${plural(report.attention_diagnostics, "attention item")}`;
   const unlocated =
     report.unlocated_diagnostics === 0
       ? ""
-      : ` | ${plural(report.unlocated_diagnostics, "unlocated item")}`;
+      : ` · ${plural(report.unlocated_diagnostics, "unlocated item")}`;
   const filter =
     report.filter.attention && report.diagnostics > 0
       ? formatAttentionFilter(report)
@@ -664,19 +664,19 @@ function formatContent(report: CheckContentReport | null): string {
 
 function formatAttentionFilter(report: CheckContentReport): string {
   if (report.filtered_diagnostics === 0) {
-    return " | showing none";
+    return " · showing none";
   }
   if (report.items.length >= report.filtered_diagnostics) {
-    return ` | showing ${plural(report.filtered_diagnostics, "attention item")}`;
+    return ` · showing ${plural(report.filtered_diagnostics, "attention item")}`;
   }
-  return ` | showing ${report.items.length}/${report.filtered_diagnostics} attention`;
+  return ` · showing ${report.items.length}/${report.filtered_diagnostics} attention`;
 }
 
 function formatDecisions(report: CheckDecisionReport | null): string {
   if (report === null) return "skipped";
   const agentReady = report.agent_safe_questions + report.model_safe_questions;
   if (report.questions === 0) return "0 open questions";
-  return `${plural(report.questions, "open question")} | ${agentReady} agent/model-safe | ${report.owner_needed_questions} owner-needed`;
+  return `${plural(report.questions, "open question")} · ${agentReady} agent/model-safe · ${report.owner_needed_questions} owner-needed`;
 }
 
 function formatLoops(

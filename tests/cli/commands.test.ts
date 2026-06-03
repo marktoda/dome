@@ -2421,7 +2421,7 @@ describe("runCheck", () => {
     expect(text).toContain("dome check");
     expect(text).toMatch(/status\s+.*ok/);
     expect(text).toContain(
-      "1 diagnostic | 0 attention items | showing none",
+      "1 diagnostic · 0 attention items · showing none",
     );
     expect(text).not.toContain("  CONTENT\n");
     expect(text).not.toContain("informational diagnostic");
@@ -3091,7 +3091,7 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain(
-      "3 diagnostics | 3 attention items | showing 2/3 attention",
+      "3 diagnostics · 3 attention items · showing 2/3 attention",
     );
     expect(text).toContain(
       "... 1 more diagnostics (use --limit 3 to show all)",
