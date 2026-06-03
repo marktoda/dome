@@ -601,7 +601,7 @@ function printStatusText(
   lines.push(...section("Diagnostics", bullets(diagnosticLines, caps), caps));
 
   const footerStatus: Status = s.attention_required
-    ? { tone: "warn", label: `${s.attention.length} ${s.attention.length === 1 ? "item" : "items"} need attention` }
+    ? { tone: "warn", label: `${s.attention.length} ${s.attention.length === 1 ? "item needs" : "items need"} attention` }
     : { tone: "ok", label: "all clear" };
   lines.push(...footer(footerStatus, caps));
 
@@ -609,7 +609,6 @@ function printStatusText(
 }
 
 function formatServe(s: StatusSnapshot): string {
-  if (s.serve_status === "off") return "off (run dome serve)";
   const branch =
     s.serve_branch !== null && s.serve_branch !== s.branch
       ? ` on ${s.serve_branch}`
@@ -638,7 +637,10 @@ function serveStatus(s: StatusSnapshot): Status {
 
 function tildify(path: string): string {
   const home = homedir();
-  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  if (path === home || path.startsWith(`${home}/`)) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
 }
 
 function formatPendingRuns(s: StatusSnapshot): string {
