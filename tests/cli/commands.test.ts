@@ -2186,13 +2186,14 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("Dome check  ok");
-    expect(out).toContain("status      ok");
-    expect(out).toContain("engine      ok");
-    expect(out).toContain("content     0 diagnostics");
-    expect(out).toContain("decisions   0 open questions");
-    expect(out).toContain("loops       5 known");
-    expect(out).not.toContain("\nLoops\n");
+    expect(out).toContain("dome check");
+    expect(out).toContain("AT A GLANCE");
+    expect(out).toMatch(/status\s+.*ok/);
+    expect(out).toMatch(/engine\s+.*ok/);
+    expect(out).toContain("0 diagnostics");
+    expect(out).toContain("0 open questions");
+    expect(out).toContain("5 known");
+    expect(out).not.toContain("  LOOPS\n");
   });
 
   test("--loops prints maintenance-loop detail rows", async () => {
@@ -2202,8 +2203,8 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("loops       5 known");
-    expect(out).toContain("\nLoops\n");
+    expect(out).toContain("5 known");
+    expect(out).toContain("  LOOPS\n");
     expect(out).toContain("[inactive] dome.capture.digest");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
     expect(out).toContain("command:export-context");
@@ -2415,12 +2416,12 @@ describe("runCheck", () => {
     captured.out = [];
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Dome check  ok");
-    expect(text).toContain("status      ok");
+    expect(text).toContain("dome check");
+    expect(text).toMatch(/status\s+.*ok/);
     expect(text).toContain(
-      "content     1 diagnostic | 0 attention items | showing none",
+      "1 diagnostic | 0 attention items | showing none",
     );
-    expect(text).not.toContain("\nContent\n");
+    expect(text).not.toContain("  CONTENT\n");
     expect(text).not.toContain("informational diagnostic");
   });
 
@@ -2800,7 +2801,7 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain("Patterns");
+    expect(text).toContain("PATTERNS");
     expect(text).toContain(
       "2x [warning] check.repeated: Repeated diagnostic",
     );
@@ -2931,7 +2932,7 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("agent fixable");
-    expect(text).toContain("Patterns");
+    expect(text).toContain("PATTERNS");
     expect(text).toContain("2x link.resolve-or-create");
     expect(text).toContain("fix: link.resolve-or-create");
   });
@@ -3026,7 +3027,7 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("noise (2 items)");
-    expect(text).toContain("Content");
+    expect(text).toContain("CONTENT");
     expect(text).toContain("dome.markdown.broken-wikilink");
     expect(text).toContain("dome.markdown.type-unknown");
   });
@@ -3088,7 +3089,7 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain(
-      "content     3 diagnostics | 3 attention items | showing 2/3 attention",
+      "3 diagnostics | 3 attention items | showing 2/3 attention",
     );
     expect(text).toContain(
       "... 1 more diagnostics (use --limit 3 to show all)",
