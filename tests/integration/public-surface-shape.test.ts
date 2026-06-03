@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 
 import * as PublicApi from "../../src";
+import * as CliApi from "../../src/cli";
 
 const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   // Result + helpers.
@@ -111,5 +112,10 @@ describe("public-surface-shape", () => {
       `Forbidden public export(s): ${leaked.join(", ")}. ` +
         `Keep write-capable internals behind implementation paths.`,
     ).toEqual([]);
+  });
+
+  test("cli entrypoint exports only runCli", () => {
+    const actualExports = Object.keys(CliApi).filter((k) => k !== "default");
+    expect(actualExports.sort()).toEqual(["runCli"]);
   });
 });

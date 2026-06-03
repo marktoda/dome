@@ -7,6 +7,7 @@ import {
 } from "./daily-options";
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -50,7 +51,11 @@ export async function runPrep(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome prep",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -65,7 +70,12 @@ export async function runPrep(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome prep: failed: ${msg}`);
+    printViewCommandError({
+      commandLabel: "dome prep",
+      json: options.json === true,
+      error: "prep-failed",
+      messages: [`dome prep: failed: ${msg}`],
+    });
     return 1;
   }
 }

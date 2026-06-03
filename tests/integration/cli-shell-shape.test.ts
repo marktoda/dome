@@ -17,6 +17,17 @@ const REPO_ROOT = dirname(dirname(dirname(THIS_FILE)));
 const EXTENSIONS_ROOT = join(REPO_ROOT, "assets", "extensions");
 const CLI_INDEX = join(REPO_ROOT, "src", "cli", "index.ts");
 const CLI_SPEC = join(REPO_ROOT, "docs", "wiki", "specs", "cli.md");
+const SCENARIOS_ROOT = join(REPO_ROOT, "tests", "harness", "scenarios");
+
+const COMMAND_SCENARIO_FILES: ReadonlyMap<string, string> = new Map([
+  ["agenda-with", "cli-surface/agenda-view.scenario.test.ts"],
+  ["export-context", "cli-surface/export-context.scenario.test.ts"],
+  ["lint", "cli-surface/lint-report.scenario.test.ts"],
+  ["orphan-pages", "effect-kinds/view-effect-via-dome-run.scenario.test.ts"],
+  ["prep", "cli-surface/prep-view.scenario.test.ts"],
+  ["query", "cli-surface/query-adopted-state.scenario.test.ts"],
+  ["today", "cli-surface/today-task-view.scenario.test.ts"],
+]);
 
 type CommandTrigger = {
   readonly bundleId: string;
@@ -62,6 +73,37 @@ describe("CLI shell shape", () => {
         cliSpec,
         `${trigger.processorId} declares command '${trigger.commandName}' but has no dedicated alias and cli.md does not document '${documentedRunPath}'`,
       ).toContain(documentedRunPath);
+    }
+  });
+
+  test("every shipped command trigger has an end-to-end harness scenario", async () => {
+    const commandTriggers = await shippedCommandTriggers();
+    const triggerNames = new Set(commandTriggers.map((t) => t.commandName));
+    const missing = [...triggerNames]
+      .filter((commandName) => !COMMAND_SCENARIO_FILES.has(commandName))
+      .sort();
+    expect(
+      missing,
+      `Add scenario coverage for command trigger(s): ${missing.join(", ")}`,
+    ).toEqual([]);
+
+    const stale = [...COMMAND_SCENARIO_FILES.keys()]
+      .filter((commandName) => !triggerNames.has(commandName))
+      .sort();
+    expect(
+      stale,
+      `COMMAND_SCENARIO_FILES contains stale command trigger(s): ${stale.join(", ")}`,
+    ).toEqual([]);
+
+    for (const [commandName, relativePath] of COMMAND_SCENARIO_FILES.entries()) {
+      const scenarioPath = join(SCENARIOS_ROOT, relativePath);
+      const body = await readFile(scenarioPath, "utf8");
+      const alias = DEDICATED_VIEW_COMMAND_ALIASES.get(commandName);
+      expect(
+        body.includes(commandName) ||
+          (alias !== undefined && body.includes(alias)),
+        `${relativePath} should exercise command trigger '${commandName}'`,
+      ).toBe(true);
     }
   });
 });

@@ -3,6 +3,7 @@
 import { formatJson } from "../format";
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -21,9 +22,14 @@ export async function runExportContext(
 ): Promise<number> {
   const topic = options.topic?.trim() ?? "";
   if (topic.length === 0) {
-    console.error(
-      "dome export-context: missing topic. Usage: dome export-context <topic>",
-    );
+    printViewCommandError({
+      commandLabel: "dome export-context",
+      json: options.json === true,
+      error: "export-context-usage",
+      messages: [
+        "dome export-context: missing topic. Usage: dome export-context <topic>",
+      ],
+    });
     return 64;
   }
 
@@ -49,7 +55,11 @@ export async function runExportContext(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome export-context",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -64,17 +74,12 @@ export async function runExportContext(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (options.json === true) {
-      console.log(
-        formatJson({
-          status: "error",
-          error: "export-context-failed",
-          message: msg,
-        }),
-      );
-    } else {
-      console.error(`dome export-context: failed: ${msg}`);
-    }
+    printViewCommandError({
+      commandLabel: "dome export-context",
+      json: options.json === true,
+      error: "export-context-failed",
+      messages: [`dome export-context: failed: ${msg}`],
+    });
     return 1;
   }
 }

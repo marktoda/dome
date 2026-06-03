@@ -60,6 +60,7 @@ type SmokeOptions = {
 };
 
 const repoRoot = resolve(import.meta.dir, "..");
+const DOME_COMMAND_TIMEOUT_MS = 120_000;
 
 async function main(): Promise<void> {
   const opts = parseArgs(Bun.argv.slice(2));
@@ -516,6 +517,7 @@ async function runDomeJson<T>(args: ReadonlyArray<string>): Promise<T> {
     cwd: repoRoot,
     stdout: "pipe",
     stderr: "pipe",
+    timeout: DOME_COMMAND_TIMEOUT_MS,
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(result.stdout).text(),

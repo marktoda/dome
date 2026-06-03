@@ -30,8 +30,10 @@ import { runInit } from "../../src/cli/commands/init";
 import { runAnswer } from "../../src/cli/commands/answer";
 import { runCheck } from "../../src/cli/commands/check";
 import { runDoctor } from "../../src/cli/commands/doctor";
+import { runExportContext } from "../../src/cli/commands/export-context";
 import { runInspect } from "../../src/cli/commands/inspect";
 import { runLint } from "../../src/cli/commands/lint";
+import { runQuery } from "../../src/cli/commands/query";
 import { runResolve } from "../../src/cli/commands/resolve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
@@ -3338,6 +3340,55 @@ describe("runLint", () => {
       "--limit must be a positive integer",
     );
   });
+
+  test("--json usage errors emit structured JSON", async () => {
+    expect(await runLint({ limit: "nope", json: true })).toBe(64);
+    const payload = JSON.parse(captured.out.join("\n")) as {
+      readonly status: string;
+      readonly error: string;
+      readonly message: string;
+    };
+    expect(payload).toMatchObject({
+      status: "error",
+      error: "lint-usage",
+      message: "dome lint: --limit must be a positive integer.",
+    });
+    expect(captured.err).toEqual([]);
+  });
+});
+
+// ----- structured view command errors --------------------------------------
+
+describe("structured view command errors", () => {
+  test("query and export-context usage errors honor --json", async () => {
+    expect(await runQuery({ json: true })).toBe(64);
+    const queryPayload = JSON.parse(captured.out.join("\n")) as {
+      readonly status: string;
+      readonly error: string;
+      readonly message: string;
+    };
+    expect(queryPayload).toMatchObject({
+      status: "error",
+      error: "query-usage",
+      message: "dome query: missing query text. Usage: dome query <text>",
+    });
+
+    captured.out = [];
+    captured.err = [];
+    expect(await runExportContext({ json: true })).toBe(64);
+    const exportPayload = JSON.parse(captured.out.join("\n")) as {
+      readonly status: string;
+      readonly error: string;
+      readonly message: string;
+    };
+    expect(exportPayload).toMatchObject({
+      status: "error",
+      error: "export-context-usage",
+      message:
+        "dome export-context: missing topic. Usage: dome export-context <topic>",
+    });
+    expect(captured.err).toEqual([]);
+  });
 });
 
 // ----- runStatus ------------------------------------------------------------
@@ -4283,6 +4334,55 @@ describe("runStatus", () => {
     expect((parsed["attention"] as ReadonlyArray<string>)[0]).toBe(
       "projection_stale",
     );
+  });
+
+  test("check --content --json reports stale projection rows", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runSync({ vault: f.vaultPath, json: true })).toBe(0);
+    captured.out = [];
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "stale-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      markProjectionBuilt(projection.value.db, {
+        adoptedCommit: commitOid(f.headSha),
+        extensionSet: [],
+        processorVersions: [],
+        capabilityPolicyHash: "stale-policy",
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(await runCheck({
+      vault: f.vaultPath,
+      content: true,
+      json: true,
+    })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(record(parsed["scopes"])["engine"]).toBe(false);
+    expect(record(parsed["projection"])["stale"]).toBe(true);
+    expect(parsed["status"]).toBe("attention");
+    expect(parsed["next_actions"]).toEqual(expect.arrayContaining([
+      {
+        reasons: ["projection_stale"],
+        command: "dome sync --json",
+        description:
+          "Rebuild stale projection rows before relying on projection-backed diagnostics or questions.",
+      },
+    ]));
   });
 
   test("--json mode reports stale serve heartbeat", async () => {

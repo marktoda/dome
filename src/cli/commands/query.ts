@@ -6,6 +6,7 @@
 
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -33,7 +34,12 @@ export async function runQuery(
 ): Promise<number> {
   const text = options.text?.trim() ?? "";
   if (text.length === 0) {
-    console.error("dome query: missing query text. Usage: dome query <text>");
+    printViewCommandError({
+      commandLabel: "dome query",
+      json: options.json === true,
+      error: "query-usage",
+      messages: ["dome query: missing query text. Usage: dome query <text>"],
+    });
     return 64;
   }
 
@@ -61,7 +67,11 @@ export async function runQuery(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome query",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -76,13 +86,12 @@ export async function runQuery(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (options.json === true) {
-      console.log(
-        formatJson({ status: "error", error: "query-failed", message: msg }),
-      );
-    } else {
-      console.error(`dome query: failed: ${msg}`);
-    }
+    printViewCommandError({
+      commandLabel: "dome query",
+      json: options.json === true,
+      error: "query-failed",
+      messages: [`dome query: failed: ${msg}`],
+    });
     return 1;
   }
 }

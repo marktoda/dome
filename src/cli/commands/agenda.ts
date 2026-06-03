@@ -7,6 +7,7 @@ import {
 } from "./daily-options";
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -28,7 +29,12 @@ export async function runAgenda(
 ): Promise<number> {
   const topic = options.topic.trim();
   if (topic.length === 0) {
-    console.error("dome agenda: missing person or topic.");
+    printViewCommandError({
+      commandLabel: "dome agenda",
+      json: options.json === true,
+      error: "agenda-usage",
+      messages: ["dome agenda: missing person or topic."],
+    });
     return 64;
   }
 
@@ -58,7 +64,11 @@ export async function runAgenda(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome agenda",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -73,7 +83,12 @@ export async function runAgenda(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome agenda: failed: ${msg}`);
+    printViewCommandError({
+      commandLabel: "dome agenda",
+      json: options.json === true,
+      error: "agenda-failed",
+      messages: [`dome agenda: failed: ${msg}`],
+    });
     return 1;
   }
 }

@@ -7,7 +7,9 @@
 
 import { resolve } from "node:path";
 
+import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import type { SourceRef } from "../../core/source-ref";
+import { commitOid } from "../../core/source-ref";
 import type { QuestionMetadata } from "../../core/effect";
 import {
   collectHealthReport,
@@ -16,9 +18,13 @@ import {
   type HealthFinding,
   type HealthReport,
 } from "../../engine/health";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import { queryRuns } from "../../ledger/runs";
+import {
+  projectionCacheKeysChanged,
+  projectionRequiresRebuild,
+} from "../../projections/db";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestionRecords } from "../../projections/questions";
 import {
@@ -91,11 +97,19 @@ type CheckReport = {
   readonly status: "ok" | "attention";
   readonly generatedAt: string;
   readonly scopes: CheckScopes;
+  readonly projection: CheckProjectionReport;
   readonly engine: HealthReport | null;
   readonly content: CheckContentReport | null;
   readonly decisions: CheckDecisionReport | null;
   readonly maintenance_loops: ReadonlyArray<MaintenanceLoopSummary> | null;
   readonly next_actions: ReadonlyArray<CliNextAction>;
+};
+
+type CheckProjectionReport = {
+  readonly stale: boolean;
+  readonly cache_drift: boolean;
+  readonly branch: string | null;
+  readonly adopted: string | null;
 };
 
 type CheckContentReport = {
@@ -206,6 +220,10 @@ export async function runCheck(
   const runtime = runtimeResult.value;
 
   try {
+    const projection = await collectProjectionReport({
+      vaultPath: runtime.path,
+      runtime,
+    });
     const diagnosticRows = queryDiagnostics(runtime.projectionDb);
     const unresolvedQuestions = queryQuestionRecords(runtime.projectionDb, {
       resolved: false,
@@ -257,6 +275,7 @@ export async function runCheck(
     const report = buildReport({
       generatedAt: engine?.generatedAt ?? new Date().toISOString(),
       scopes,
+      projection,
       engine,
       content,
       decisions,
@@ -405,6 +424,7 @@ function collectDecisionReport(opts: {
 function buildReport(input: {
   readonly generatedAt: string;
   readonly scopes: CheckScopes;
+  readonly projection: CheckProjectionReport;
   readonly engine: HealthReport | null;
   readonly content: CheckContentReport | null;
   readonly decisions: CheckDecisionReport | null;
@@ -415,17 +435,23 @@ function buildReport(input: {
   const questions = input.decisions?.questions ?? 0;
   return Object.freeze({
     schema: SCHEMA,
-    status: engineFindings > 0 || attentionDiagnostics > 0 || questions > 0
+    status:
+      input.projection.stale ||
+      engineFindings > 0 ||
+      attentionDiagnostics > 0 ||
+      questions > 0
       ? "attention"
       : "ok",
     generatedAt: input.generatedAt,
     scopes: input.scopes,
+    projection: input.projection,
     engine: input.engine,
     content: input.content,
     decisions: input.decisions,
     maintenance_loops: input.maintenanceLoops,
     next_actions: nextActionsForCheck({
       engineFindings,
+      projectionStale: input.projection.stale,
       diagnostics: attentionDiagnostics,
       diagnosticsAlreadyBounded:
         input.scopes.content && input.content?.filter.attention === true,
@@ -444,6 +470,12 @@ function reportFromUnavailableRuntime(input: {
   return buildReport({
     generatedAt: input.generatedAt,
     scopes: input.scopes,
+    projection: Object.freeze({
+      stale: false,
+      cache_drift: false,
+      branch: null,
+      adopted: null,
+    }),
     engine: input.engine,
     content: null,
     decisions: null,
@@ -462,6 +494,7 @@ function printReport(
   }
   console.log("DOME check");
   console.log(`status    ${report.status}`);
+  console.log(`projection ${formatProjection(report.projection)}`);
   console.log(`engine    ${formatEngine(report.engine)}`);
   console.log(`content   ${formatContent(report.content)}`);
   console.log(`decisions ${formatDecisions(report.decisions)}`);
@@ -473,6 +506,35 @@ function printReport(
   printDiagnostics(report.content);
   printQuestions(report.decisions);
   printNextActions(report.next_actions);
+}
+
+async function collectProjectionReport(input: {
+  readonly vaultPath: string;
+  readonly runtime: VaultRuntime;
+}): Promise<CheckProjectionReport> {
+  const branch = await getCurrentBranch(input.vaultPath);
+  const adopted = branch === null
+    ? null
+    : await getAdoptedRef(input.vaultPath, branch);
+  const cache_drift = projectionCacheKeysChanged(input.runtime.projectionDb, {
+    extensionSet: input.runtime.extensions,
+    processorVersions: input.runtime.processorVersions,
+    capabilityPolicyHash: input.runtime.capabilityPolicyHash,
+  });
+  const stale = adopted === null
+    ? cache_drift
+    : projectionRequiresRebuild(input.runtime.projectionDb, {
+        adoptedCommit: commitOid(adopted),
+        extensionSet: input.runtime.extensions,
+        processorVersions: input.runtime.processorVersions,
+        capabilityPolicyHash: input.runtime.capabilityPolicyHash,
+      });
+  return Object.freeze({
+    stale,
+    cache_drift,
+    branch,
+    adopted,
+  });
 }
 
 function printLoopDetails(
@@ -490,6 +552,11 @@ function formatEngine(report: HealthReport | null): string {
   if (report === null) return "skipped";
   if (report.status === "ok") return "ok";
   return `${report.summary.findingCount} finding(s) | ${report.summary.errorCount} error | ${report.summary.warningCount} warning`;
+}
+
+function formatProjection(report: CheckProjectionReport): string {
+  if (!report.stale) return "fresh";
+  return report.cache_drift ? "stale (cache drift)" : "stale";
 }
 
 function formatContent(report: CheckContentReport | null): string {

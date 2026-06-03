@@ -35,6 +35,10 @@ export type RuntimeViewCommandResult =
       readonly errorKind: string;
     }
   | {
+      readonly kind: "adopted-ref-unstable";
+      readonly branch: string;
+    }
+  | {
       readonly kind: "ok";
       readonly adopted: CommitOid;
       readonly result: RunCommandResult;
@@ -51,6 +55,10 @@ export type OpenRuntimeViewCommandOptions = {
    */
   readonly adopted?: CommitOid;
   readonly branch?: string;
+  readonly readAdoptedForBranch?: (opts: {
+    readonly vaultPath: string;
+    readonly branch: string;
+  }) => Promise<CommitOid | null>;
 };
 
 export type OpenRuntimeViewCommandResult = Exclude<
@@ -95,7 +103,8 @@ export async function runViewCommandWithRuntime(
     return Object.freeze({ kind: "detached-head" as const });
   }
 
-  const adopted = opts.adopted ?? await adoptedForBranch({
+  const readAdoptedForBranch = opts.readAdoptedForBranch ?? adoptedForBranch;
+  let adopted = opts.adopted ?? await readAdoptedForBranch({
     vaultPath: opts.runtime.path,
     branch,
   });
@@ -106,11 +115,32 @@ export async function runViewCommandWithRuntime(
     });
   }
 
-  await rebuildProjectionIfStale({
-    runtime: opts.runtime,
-    adopted,
-    branch,
-  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await rebuildProjectionIfStale({
+      runtime: opts.runtime,
+      adopted,
+      branch,
+    });
+    if (opts.adopted !== undefined) break;
+    const latestAdopted = await readAdoptedForBranch({
+      vaultPath: opts.runtime.path,
+      branch,
+    });
+    if (latestAdopted === null) {
+      return Object.freeze({
+        kind: "missing-adopted-ref" as const,
+        branch,
+      });
+    }
+    if (latestAdopted === adopted) break;
+    adopted = latestAdopted;
+    if (attempt === 2) {
+      return Object.freeze({
+        kind: "adopted-ref-unstable" as const,
+        branch,
+      });
+    }
+  }
 
   const capturedViews: ViewEffect[] = [];
   const sinks = buildViewCommandSinks({

@@ -13,6 +13,7 @@ import {
 } from "./daily-options";
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -56,7 +57,11 @@ export async function runToday(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome today",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -71,7 +76,12 @@ export async function runToday(
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`dome today: failed: ${msg}`);
+    printViewCommandError({
+      commandLabel: "dome today",
+      json: options.json === true,
+      error: "today-failed",
+      messages: [`dome today: failed: ${msg}`],
+    });
     return 1;
   }
 }

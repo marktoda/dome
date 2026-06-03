@@ -75,6 +75,32 @@ describe("default vault config", () => {
     }
   });
 
+  test("first-party defaults do not grant undeclared capability kinds", async () => {
+    const loaded = await loadBundles({ bundlesRoot: resolveShippedBundlesRoot() });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) throw new Error(loaded.error.kind);
+
+    const bundlesById = new Map(
+      loaded.value.map((bundle) => [bundle.id, bundle]),
+    );
+    const extras: string[] = [];
+    for (const entry of FIRST_PARTY_EXTENSION_DEFAULTS) {
+      const bundle = bundlesById.get(entry.id);
+      expect(bundle, `${entry.id} default has no shipped bundle`).toBeDefined();
+      if (bundle === undefined) continue;
+      const declaredKinds: Set<string> = new Set(
+        bundle.processors.flatMap((processor) =>
+          processor.capabilities.map((capability) => capability.kind)
+        ),
+      );
+      for (const key of Object.keys(entry.grant)) {
+        if (!declaredKinds.has(key)) extras.push(`${entry.id}:${key}`);
+      }
+    }
+
+    expect(extras).toEqual([]);
+  });
+
   test("broad first-party default path grants stay explicit", () => {
     expect(broadDefaultPathGrants()).toEqual([
       "dome.graph:read:**/*.md",

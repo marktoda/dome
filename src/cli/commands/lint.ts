@@ -4,6 +4,7 @@ import { formatJson } from "../format";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
   firstPartyViewNotFoundMessage,
+  printViewCommandError,
   printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
@@ -25,7 +26,12 @@ export async function runLint(
   try {
     const limit = parsePositiveIntegerValue(options.limit, null);
     if (options.limit !== undefined && limit === null) {
-      console.error("dome lint: --limit must be a positive integer.");
+      printViewCommandError({
+        commandLabel: "dome lint",
+        json: options.json === true,
+        error: "lint-usage",
+        messages: ["dome lint: --limit must be a positive integer."],
+      });
       return 64;
     }
 
@@ -50,7 +56,11 @@ export async function runLint(
     });
 
     if (run.kind === "error") {
-      printViewCommandMessages(run.messages);
+      printViewCommandError({
+        commandLabel: "dome lint",
+        json: options.json === true,
+        messages: run.messages,
+      });
       return run.exitCode;
     }
     printViewCommandMessages(
@@ -66,13 +76,12 @@ export async function runLint(
     return data.status === "fail" ? 1 : 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (options.json === true) {
-      console.log(
-        formatJson({ status: "error", error: "lint-failed", message: msg }),
-      );
-    } else {
-      console.error(`dome lint: failed: ${msg}`);
-    }
+    printViewCommandError({
+      commandLabel: "dome lint",
+      json: options.json === true,
+      error: "lint-failed",
+      messages: [`dome lint: failed: ${msg}`],
+    });
     return 1;
   }
 }

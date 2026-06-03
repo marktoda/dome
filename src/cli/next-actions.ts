@@ -236,6 +236,7 @@ export function nextActionsForSync(input: {
 
 export function nextActionsForCheck(input: {
   readonly engineFindings: number;
+  readonly projectionStale: boolean;
   readonly diagnostics: number;
   readonly diagnosticsAlreadyBounded: boolean;
   readonly questions: number;
@@ -249,6 +250,14 @@ export function nextActionsForCheck(input: {
       command: "dome sync --json",
       description:
         "Run the compiler so health processors can raise recovery questions; rerun dome check if findings remain.",
+    }));
+  }
+  if (input.projectionStale) {
+    out.push(Object.freeze({
+      reasons: Object.freeze(["projection_stale"]),
+      command: "dome sync --json",
+      description:
+        "Rebuild stale projection rows before relying on projection-backed diagnostics or questions.",
     }));
   }
   if (input.diagnostics > 0) {

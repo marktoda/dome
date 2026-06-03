@@ -57,6 +57,43 @@ describe("runViewCommandWithRuntime", () => {
     if (missing.kind !== "ok") return;
     expect(missing.result.kind).toBe("not-found");
   });
+
+  test("retries when the adopted ref moves during projection rebuild", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeFile(
+      join(f.vaultPath, "wiki", "beta.md"),
+      "# Beta\n\nBeta appears only after adopted moves.\n",
+      "utf8",
+    );
+    const newerHead = await commit({
+      path: f.vaultPath,
+      message: "add beta page\n",
+      files: ["wiki/beta.md"],
+    });
+    const sequence = [commitOid(f.head), commitOid(newerHead), commitOid(newerHead)];
+
+    const query = await runViewCommandWithRuntime({
+      runtime: f.runtime,
+      branch: "main",
+      commandName: "query",
+      commandArgs: { text: "beta" },
+      readAdoptedForBranch: async () => {
+        const next = sequence.shift();
+        if (next === undefined) throw new Error("unexpected adopted read");
+        return next;
+      },
+    });
+
+    expect(query.kind).toBe("ok");
+    if (query.kind !== "ok") return;
+    expect(query.adopted).toBe(commitOid(newerHead));
+    expect(query.result.kind).toBe("found");
+    const data = query.capturedViews[0]?.content.kind === "structured"
+      ? query.capturedViews[0].content.data
+      : null;
+    expect(JSON.stringify(data)).toContain("wiki/beta.md");
+  });
 });
 
 async function makeFixture(): Promise<Fixture> {

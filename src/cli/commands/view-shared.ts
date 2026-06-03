@@ -16,6 +16,7 @@ import type { CommitOid } from "../../core/source-ref";
 import type { RunCommandResult } from "../../engine/commands";
 import { runRuntimeViewCommand } from "../../engine/view-command";
 
+import { formatJson } from "../format";
 import { resolveBundleRoots } from "./sync-shared";
 
 export type ViewCommandOptions = {
@@ -112,6 +113,13 @@ export async function runSharedViewCommand(
       kind: "runtime-error" as const,
       message:
         `${opts.commandLabel}: openVaultRuntime failed (${run.errorKind}). Run \`dome init\` to initialize the vault.`,
+    });
+  }
+  if (run.kind === "adopted-ref-unstable") {
+    return Object.freeze({
+      kind: "runtime-error" as const,
+      message:
+        `${opts.commandLabel}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry the command after the current sync finishes.`,
     });
   }
 
@@ -248,6 +256,27 @@ export function printViewCommandMessages(
   messages: ReadonlyArray<string>,
 ): void {
   for (const message of messages) console.error(message);
+}
+
+export function printViewCommandError(opts: {
+  readonly commandLabel: string;
+  readonly json: boolean;
+  readonly messages: ReadonlyArray<string>;
+  readonly error?: string;
+}): void {
+  if (!opts.json) {
+    printViewCommandMessages(opts.messages);
+    return;
+  }
+  const message = opts.messages[0] ?? `${opts.commandLabel}: failed.`;
+  console.log(
+    formatJson({
+      status: "error",
+      error: opts.error ?? "view-command-failed",
+      message,
+      messages: opts.messages,
+    }),
+  );
 }
 
 function structuredError(
