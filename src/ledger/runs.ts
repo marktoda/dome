@@ -284,6 +284,20 @@ export type RunRow = {
   readonly finishedAt: string | null;
 };
 
+export type RunSummaryRow = Pick<
+  RunRow,
+  | "id"
+  | "processorId"
+  | "processorVersion"
+  | "phase"
+  | "status"
+  | "durationMs"
+  | "error"
+  | "triggerKind"
+  | "startedAt"
+  | "finishedAt"
+>;
+
 export type RunsQueryFilter = {
   readonly processorId?: string;
   readonly phase?: ProcessorPhase | ReadonlyArray<ProcessorPhase>;
@@ -389,6 +403,12 @@ SELECT id, proposal_id, processor_id, processor_version, phase,
 FROM runs
 `.trim();
 
+const SELECT_SUMMARY_BASE_SQL = `
+SELECT id, processor_id, processor_version, phase, status, duration_ms,
+       error, trigger_kind, started_at, finished_at
+FROM runs
+`.trim();
+
 const SELECT_BY_ID_SQL = `${SELECT_BASE_SQL} WHERE id = ?`;
 
 const SUM_COST_USD_BY_PROCESSOR_PREFIX_SQL = `
@@ -403,6 +423,38 @@ const ORPHAN_RUNS_SQL = `
 ${SELECT_BASE_SQL}
 WHERE status = 'running' AND started_at < ?
 ORDER BY started_at
+`.trim();
+
+const LATEST_ACTIVE_PROBLEM_WHERE_SQL = `
+WHERE status IN ('failed', 'timed_out', 'cancelled')
+  AND NOT (
+    status = 'failed'
+    AND (
+      error LIKE 'orphaned-run:%'
+      OR error = 'dome.health: mark orphaned processor run failed'
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM runs AS newer
+    WHERE newer.processor_id = runs.processor_id
+      AND (
+        newer.started_at > runs.started_at
+        OR (newer.started_at = runs.started_at AND newer.id > runs.id)
+      )
+  )
+`.trim();
+
+const LATEST_ACTIVE_PROBLEM_RUNS_SQL = `
+${SELECT_BASE_SQL}
+${LATEST_ACTIVE_PROBLEM_WHERE_SQL}
+ORDER BY started_at DESC, id DESC
+`.trim();
+
+const COUNT_LATEST_ACTIVE_PROBLEM_RUNS_SQL = `
+SELECT COUNT(*) AS count
+FROM runs
+${LATEST_ACTIVE_PROBLEM_WHERE_SQL}
 `.trim();
 
 const FAIL_ORPHANS_SQL = `
@@ -444,8 +496,25 @@ type RunRawRow = {
   readonly finished_at: string | null;
 };
 
+type RunSummaryRawRow = {
+  readonly id: string;
+  readonly processor_id: string;
+  readonly processor_version: string;
+  readonly phase: string;
+  readonly status: string;
+  readonly duration_ms: number | null;
+  readonly error: string | null;
+  readonly trigger_kind: string;
+  readonly started_at: string;
+  readonly finished_at: string | null;
+};
+
 type SumCostRawRow = {
   readonly cost_usd: number | null;
+};
+
+type CountRawRow = {
+  readonly count: number;
 };
 
 const EffectHashesSchema = z.array(z.string().min(1));
@@ -623,36 +692,40 @@ export function queryRuns(
   db: LedgerDb,
   filter?: RunsQueryFilter,
 ): ReadonlyArray<RunRow> {
-  const clauses: string[] = [];
-  const params: string[] = [];
-
-  if (filter?.processorId !== undefined) {
-    clauses.push("processor_id = ?");
-    params.push(filter.processorId);
-  }
-  if (filter?.phase !== undefined) {
-    const phases = Array.isArray(filter.phase) ? filter.phase : [filter.phase];
-    if (phases.length === 0) {
-      clauses.push("0 = 1");
-    } else {
-      clauses.push(`phase IN (${phases.map(() => "?").join(", ")})`);
-      params.push(...phases);
-    }
-  }
-  if (filter?.status !== undefined) {
-    clauses.push("status = ?");
-    params.push(filter.status);
-  }
-  if (filter?.sinceIso !== undefined) {
-    clauses.push("started_at >= ?");
-    params.push(filter.sinceIso);
-  }
-
-  const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
+  const { where, params } = runsWhereClause(filter);
   const sql = `${SELECT_BASE_SQL}${where} ORDER BY started_at DESC${limitClause(filter?.limit)}`;
 
   const rows = db.raw.query<RunRawRow, string[]>(sql).all(...params);
   return Object.freeze(rows.map(rowToRunRow));
+}
+
+/**
+ * Read run metadata without deserializing the JSON payload columns.
+ *
+ * Use this for dashboards and health summaries that only need processor ids,
+ * statuses, timestamps, and error text. `queryRuns` remains the strict full-row
+ * accessor for detailed inspection surfaces.
+ */
+export function queryRunSummaries(
+  db: LedgerDb,
+  filter?: RunsQueryFilter,
+): ReadonlyArray<RunSummaryRow> {
+  const { where, params } = runsWhereClause(filter);
+  const sql = `${SELECT_SUMMARY_BASE_SQL}${where} ORDER BY started_at DESC${limitClause(filter?.limit)}`;
+
+  const rows = db.raw.query<RunSummaryRawRow, string[]>(sql).all(...params);
+  return Object.freeze(rows.map(rowToRunSummaryRow));
+}
+
+export function countRuns(
+  db: LedgerDb,
+  filter?: RunsQueryFilter,
+): number {
+  const { where, params } = runsWhereClause(filter);
+  const row = db.raw
+    .query<CountRawRow, string[]>(`SELECT COUNT(*) AS count FROM runs${where}`)
+    .get(...params);
+  return row?.count ?? 0;
 }
 
 /**
@@ -672,18 +745,15 @@ export function isActiveProblemRun(
 export function latestActiveProblemRuns(
   db: LedgerDb,
 ): ReadonlyArray<RunRow> {
-  const seen = new Set<string>();
-  const out: RunRow[] = [];
-  for (const row of queryRuns(db)) {
-    if (seen.has(row.processorId)) continue;
-    seen.add(row.processorId);
-    if (isActiveProblemRun(row)) out.push(row);
-  }
-  return Object.freeze(out);
+  const rows = db.raw.query<RunRawRow, []>(LATEST_ACTIVE_PROBLEM_RUNS_SQL).all();
+  return Object.freeze(rows.map(rowToRunRow));
 }
 
 export function countLatestActiveProblemRuns(db: LedgerDb): number {
-  return latestActiveProblemRuns(db).length;
+  const row = db.raw
+    .query<CountRawRow, []>(COUNT_LATEST_ACTIVE_PROBLEM_RUNS_SQL)
+    .get();
+  return row?.count ?? 0;
 }
 
 /**
@@ -824,6 +894,55 @@ function rowToRunRow(row: RunRawRow): RunRow {
     ),
     startedAt: row.started_at,
     finishedAt: row.finished_at,
+  });
+}
+
+function rowToRunSummaryRow(row: RunSummaryRawRow): RunSummaryRow {
+  return Object.freeze({
+    id: row.id as RunId,
+    processorId: row.processor_id,
+    processorVersion: row.processor_version,
+    phase: narrowPhase(row.phase),
+    status: narrowStatus(row.status),
+    durationMs: row.duration_ms,
+    error: row.error,
+    triggerKind: narrowTriggerKind(row.trigger_kind),
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+  });
+}
+
+function runsWhereClause(
+  filter?: RunsQueryFilter,
+): { readonly where: string; readonly params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+
+  if (filter?.processorId !== undefined) {
+    clauses.push("processor_id = ?");
+    params.push(filter.processorId);
+  }
+  if (filter?.phase !== undefined) {
+    const phases = Array.isArray(filter.phase) ? filter.phase : [filter.phase];
+    if (phases.length === 0) {
+      clauses.push("0 = 1");
+    } else {
+      clauses.push(`phase IN (${phases.map(() => "?").join(", ")})`);
+      params.push(...phases);
+    }
+  }
+  if (filter?.status !== undefined) {
+    clauses.push("status = ?");
+    params.push(filter.status);
+  }
+  if (filter?.sinceIso !== undefined) {
+    clauses.push("started_at >= ?");
+    params.push(filter.sinceIso);
+  }
+
+  return Object.freeze({
+    where: clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`,
+    params,
   });
 }
 

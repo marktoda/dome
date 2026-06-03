@@ -5,7 +5,7 @@
 
 import type { DiagnosticEffect } from "../core/effect";
 import type { MaintenanceLoop } from "../extensions/maintenance-loops";
-import { isActiveProblemRun, type RunRow } from "../ledger/runs";
+import { isActiveProblemRun, type RunSummaryRow } from "../ledger/runs";
 import type { QuestionRecord } from "../projections/questions";
 import { countQuestionAutomationPolicies } from "../question-resolution";
 import {
@@ -69,7 +69,7 @@ export function collectMaintenanceLoopSummaries(opts: {
   readonly activeProcessorIds: ReadonlySet<string>;
   readonly diagnosticsByProcessor: (processorId: string) => ReadonlyArray<DiagnosticEffect>;
   readonly unresolvedQuestions: ReadonlyArray<QuestionRecord>;
-  readonly runsByProcessor: (processorId: string) => ReadonlyArray<RunRow>;
+  readonly runsByProcessor: (processorId: string) => ReadonlyArray<RunSummaryRow>;
 }): ReadonlyArray<MaintenanceLoopSummary> {
   return Object.freeze(opts.loops.map((loop) => summarizeLoop(loop, opts)));
 }
@@ -140,7 +140,7 @@ function summarizeLoop(
     readonly activeProcessorIds: ReadonlySet<string>;
     readonly diagnosticsByProcessor: (processorId: string) => ReadonlyArray<DiagnosticEffect>;
     readonly unresolvedQuestions: ReadonlyArray<QuestionRecord>;
-    readonly runsByProcessor: (processorId: string) => ReadonlyArray<RunRow>;
+    readonly runsByProcessor: (processorId: string) => ReadonlyArray<RunSummaryRow>;
   },
 ): MaintenanceLoopSummary {
   const optionalProcessors = loop.optionalProcessors ?? Object.freeze([]);
@@ -382,8 +382,10 @@ function stateForLoop(input: {
   return "quiet";
 }
 
-function latestActiveProblemRun(runs: ReadonlyArray<RunRow>): RunRow | null {
-  let latest: RunRow | null = null;
+function latestActiveProblemRun(
+  runs: ReadonlyArray<RunSummaryRow>,
+): RunSummaryRow | null {
+  let latest: RunSummaryRow | null = null;
   for (const run of runs) {
     if (latest === null || run.startedAt > latest.startedAt) {
       latest = run;

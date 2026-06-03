@@ -20,7 +20,7 @@ import {
 } from "../../engine/health";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
-import { queryRuns } from "../../ledger/runs";
+import { queryRunSummaries } from "../../ledger/runs";
 import {
   projectionCacheKeysChanged,
   projectionRequiresRebuild,
@@ -277,7 +277,7 @@ export async function runCheck(
         queryDiagnostics(runtime.projectionDb, { processorId }),
       unresolvedQuestions,
       runsByProcessor: (processorId) =>
-        queryRuns(runtime.ledgerDb, {
+        queryRunSummaries(runtime.ledgerDb, {
           processorId,
           limit: LOOP_RECENT_RUN_LIMIT,
         }),

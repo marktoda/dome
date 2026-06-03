@@ -23,6 +23,7 @@ import {
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import {
   countLatestActiveProblemRuns,
+  countRuns,
   failRunIfCurrent,
   failOrphanedRuns,
   getRun,
@@ -36,6 +37,7 @@ import {
   markTimedOut,
   newRunId,
   orphanRuns,
+  queryRunSummaries,
   queryRuns,
   updateOutputCommit,
   type RunId,
@@ -696,6 +698,47 @@ describe("runs lifecycle", () => {
     expect(
       queryRuns(db, { phase: ["adoption", "garden"] }).map((run) => run.id),
     ).toEqual([garden, adoption]);
+  });
+
+  it("queryRunSummaries reads dashboard metadata without parsing JSON payload columns", () => {
+    const id = newRunId(new Date(100), () => "sum001");
+    queue(id);
+    markRunning(db, id, new Date("2026-05-27T12:00:00.000Z"));
+    markSucceeded(db, {
+      id,
+      effectHashes: [],
+      costUsd: null,
+      durationMs: 12,
+      outputCommit: null,
+      finishedAt: new Date("2026-05-27T12:00:00.012Z"),
+    });
+
+    db.raw
+      .query("UPDATE runs SET trigger_payload_json = ? WHERE id = ?")
+      .run("{not-json", id);
+
+    const summaries = queryRunSummaries(db, {
+      processorId: "dome.intake.extract",
+      limit: 1,
+    });
+    expect(summaries).toEqual([
+      {
+        id,
+        processorId: "dome.intake.extract",
+        processorVersion: "1.0.0",
+        phase: "adoption",
+        status: "succeeded",
+        durationMs: 12,
+        error: null,
+        triggerKind: "signal",
+        startedAt: expect.any(String),
+        finishedAt: "2026-05-27T12:00:00.012Z",
+      },
+    ]);
+    expect(countRuns(db, { status: "succeeded" })).toBe(1);
+    expect(() =>
+      queryRuns(db, { processorId: "dome.intake.extract" })
+    ).toThrow("runs.trigger_payload_json contains invalid JSON");
   });
 
   it("queryRuns clamps invalid public limits to zero rows", () => {

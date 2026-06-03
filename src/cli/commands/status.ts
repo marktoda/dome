@@ -106,10 +106,11 @@ import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loop
 import type { LedgerDb } from "../../ledger/db";
 import {
   countLatestActiveProblemRuns,
+  countRuns,
   isActiveProblemRun,
   orphanRuns as ledgerOrphanRuns,
-  queryRuns,
-  type RunRow,
+  queryRunSummaries,
+  type RunSummaryRow,
   type RunStatus,
 } from "../../ledger/runs";
 import { queryOutbox } from "../../outbox/dispatch";
@@ -169,7 +170,7 @@ const PENDING_RUN_STATUSES: ReadonlyArray<RunStatus> = Object.freeze([
 type ProcessorRunSummary = {
   readonly processor_id: string;
   readonly processor_version: string;
-  readonly phase: RunRow["phase"];
+  readonly phase: RunSummaryRow["phase"];
   readonly latest_run_id: string;
   readonly latest_status: RunStatus;
   readonly latest_started_at: string;
@@ -288,7 +289,7 @@ export async function runStatus(
     // desc (the `queryRuns` default ordering). View commands are
     // ledgered for auditability, but they are read-only and should not
     // make `last_sync` look like the compiler adopted or drained work.
-    const latestSyncRun = queryRuns(runtime.ledgerDb, {
+    const latestSyncRun = queryRunSummaries(runtime.ledgerDb, {
       phase: LAST_SYNC_PHASES,
       status: "succeeded",
       limit: 1,
@@ -306,7 +307,7 @@ export async function runStatus(
     ).length;
     const failed_runs = countLatestActiveProblemRuns(runtime.ledgerDb);
     const recent_processor_runs = summarizeRecentProcessorRuns(
-      queryRuns(runtime.ledgerDb, {
+      queryRunSummaries(runtime.ledgerDb, {
         limit: RECENT_PROCESSOR_RUN_LIMIT,
       }),
     );
@@ -390,7 +391,7 @@ export async function runStatus(
         queryDiagnostics(runtime.projectionDb, { processorId }),
       unresolvedQuestions,
       runsByProcessor: (processorId) =>
-        queryRuns(runtime.ledgerDb, {
+        queryRunSummaries(runtime.ledgerDb, {
           processorId,
           limit: LOOP_RECENT_RUN_LIMIT,
         }),
@@ -757,7 +758,7 @@ function formatPendingCommits(count: number | null): string {
 }
 
 function summarizeRecentProcessorRuns(
-  rows: ReadonlyArray<RunRow>,
+  rows: ReadonlyArray<RunSummaryRow>,
 ): ReadonlyArray<ProcessorRunSummary> {
   const byProcessor = new Map<string, MutableProcessorRunSummary>();
   for (const row of rows) {
@@ -797,7 +798,7 @@ function countRunsByStatus(
 ): number {
   let total = 0;
   for (const status of statuses) {
-    total += queryRuns(ledger, { status }).length;
+    total += countRuns(ledger, { status });
   }
   return total;
 }

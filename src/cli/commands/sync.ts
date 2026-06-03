@@ -52,8 +52,8 @@ import {
 import { formatJson } from "../format";
 import {
   countLatestActiveProblemRuns,
+  countRuns,
   orphanRuns as ledgerOrphanRuns,
-  queryRuns,
   type RunStatus,
 } from "../../ledger/runs";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
@@ -610,7 +610,7 @@ function countRunsByStatus(
 ): number {
   let total = 0;
   for (const status of statuses) {
-    total += queryRuns(runtime.ledgerDb, { status }).length;
+    total += countRuns(runtime.ledgerDb, { status });
   }
   return total;
 }
