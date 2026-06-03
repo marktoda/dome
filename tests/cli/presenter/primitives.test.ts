@@ -143,3 +143,36 @@ describe("tree", () => {
     expect(tree([{ label: "x", lines: [] }], UNI)).toEqual(["  └─ x"]);
   });
 });
+
+import { table, type Column } from "../../../src/cli/presenter/primitives";
+
+type Row = { name: string; phase: string };
+const COLS: Column<Row>[] = [
+  { header: "PROCESSOR", get: (r) => ({ text: r.name }), priority: 1 },
+  { header: "PHASE", get: (r) => ({ text: r.phase }), priority: 2 },
+];
+
+describe("table", () => {
+  test("headers + aligned columns, no trailing whitespace on the last column", () => {
+    const rows: Row[] = [
+      { name: "dome.graph.links", phase: "adoption" },
+      { name: "dome.daily.today", phase: "view" },
+    ];
+    expect(table(rows, COLS, { color: false, unicode: true, width: 80 })).toEqual([
+      "  PROCESSOR         PHASE",
+      "  dome.graph.links  adoption",
+      "  dome.daily.today  view",
+    ]);
+  });
+
+  test("truncates the widest cell when over width, fitting the terminal", () => {
+    const rows: Row[] = [{ name: "a".repeat(40), phase: "adoption" }];
+    const lines = table(rows, COLS, { color: false, unicode: true, width: 24 });
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(24);
+    expect(lines[1]).toContain("…");
+  });
+
+  test("empty rows render a muted placeholder", () => {
+    expect(table([], COLS, ASCII)).toEqual(["  (no rows)"]);
+  });
+});

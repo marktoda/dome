@@ -1,6 +1,6 @@
 import type { Caps } from "./caps";
 import { bold, glyph, paint, statusGlyph, type Tone } from "./theme";
-import { pad, visibleWidth } from "./width";
+import { pad, truncate, visibleWidth } from "./width";
 
 export type Status = { readonly tone: Tone; readonly label: string };
 
@@ -95,4 +95,59 @@ export function tree(nodes: ReadonlyArray<TreeNode>, caps: Caps): ReadonlyArray<
     for (const line of node.lines) out.push(`       ${line}`);
   });
   return out;
+}
+
+export type Cell = { readonly text: string; readonly tone?: Tone };
+export type Column<R> = {
+  readonly header: string;
+  readonly get: (row: R) => Cell;
+  readonly priority: number; // higher = dropped first under width pressure (reserved; v1 shrinks instead)
+  readonly align?: "left" | "right";
+};
+
+const INDENT = 2;
+const COL_GAP = 2;
+
+export function table<R>(
+  rows: ReadonlyArray<R>,
+  columns: ReadonlyArray<Column<R>>,
+  caps: Caps,
+): ReadonlyArray<string> {
+  if (rows.length === 0) return [`  ${paint("(no rows)", "muted", caps)}`];
+
+  const widths = columns.map((col) =>
+    Math.max(
+      visibleWidth(col.header),
+      ...rows.map((r) => visibleWidth(col.get(r).text)),
+    ),
+  );
+
+  // Shrink the widest column until the row fits caps.width. Never drop columns in v1.
+  const fixed = INDENT + COL_GAP * (columns.length - 1);
+  let total = fixed + widths.reduce((a, b) => a + b, 0);
+  while (total > caps.width) {
+    const widest = widths.indexOf(Math.max(...widths));
+    if ((widths[widest] ?? 0) <= 4) break; // floor
+    widths[widest]!--;
+    total--;
+  }
+
+  const renderCells = (cells: ReadonlyArray<Cell>): string => {
+    const parts = cells.map((c, i) => {
+      const w = widths[i]!;
+      const align = columns[i]!.align ?? "left";
+      const clipped = truncate(c.text, w, caps.unicode);
+      // Don't pad a left-aligned final column — avoids trailing whitespace.
+      const isLastLeft = i === cells.length - 1 && align === "left";
+      const sized = isLastLeft ? clipped : pad(clipped, w, align);
+      return c.tone !== undefined ? paint(sized, c.tone, caps) : sized;
+    });
+    return " ".repeat(INDENT) + parts.join(" ".repeat(COL_GAP));
+  };
+
+  const header = renderCells(
+    columns.map((c) => ({ text: c.header, tone: "muted" as Tone })),
+  );
+  const body = rows.map((r) => renderCells(columns.map((c) => c.get(r))));
+  return [header, ...body];
 }
