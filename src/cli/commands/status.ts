@@ -652,7 +652,7 @@ function formatPendingRuns(s: StatusSnapshot): string {
 
 function formatDraftSummary(s: StatusSnapshot): string {
   if (s.dirty_modified === 0 && s.dirty_untracked === 0) return "clean";
-  return `${s.dirty_modified} modified | ${s.dirty_untracked} untracked`;
+  return `${s.dirty_modified} modified · ${s.dirty_untracked} untracked`;
 }
 
 function formatDiagnosticCount(s: StatusSnapshot): string {
@@ -670,7 +670,7 @@ function formatInboxPages(s: StatusSnapshot): string {
 }
 
 function formatContentSummary(s: StatusSnapshot): string {
-  return `${s.content_pages} pages | wiki ${s.wiki_pages} | notes ${s.notes_pages} | inbox ${formatInboxPages(s)} | links ${s.wikilinks} | raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
+  return `${s.content_pages} pages · wiki ${s.wiki_pages} · notes ${s.notes_pages} · inbox ${formatInboxPages(s)} · links ${s.wikilinks} · raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
 }
 
 function statusAttention(input: {

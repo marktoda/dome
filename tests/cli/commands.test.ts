@@ -3432,7 +3432,7 @@ describe("runStatus", () => {
     expect(out).toContain("links 0"); // wikilinks in content
     expect(out).toContain("projection"); expect(out).toContain("√ fresh"); // projection row
     expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
-    expect(out).not.toContain("\nLOOPS\n"); // no loop detail section
+    expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
     expect(out).toContain("outbox"); expect(out).toContain("0 pending · 0 failed"); // outbox row
@@ -3449,7 +3449,7 @@ describe("runStatus", () => {
 
     const out = captured.out.join("\n");
     expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
-    expect(out).toContain("\nLOOPS\n"); // loop detail section header (ALLCAPS)
+    expect(out).toContain("\n  LOOPS\n"); // loop detail section header (ALLCAPS, indent 2)
     expect(out).toContain("dome.capture.digest");
     expect(out).toContain("processors:");
     expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");

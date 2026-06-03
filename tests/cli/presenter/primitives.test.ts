@@ -65,11 +65,11 @@ describe("headline", () => {
 });
 
 describe("section", () => {
-  test("ALLCAPS title, blank line before, indented body, only when body non-empty", () => {
+  test("ALLCAPS title at indent 2, body bumped 2, only when body non-empty", () => {
     expect(section("At a glance", ["  sync   ok"], ASCII)).toEqual([
       "",
-      "AT A GLANCE",
-      "  sync   ok",
+      "  AT A GLANCE",
+      "    sync   ok",
     ]);
   });
   test("empty body yields no lines", () => {

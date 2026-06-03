@@ -87,7 +87,7 @@ export function formatMaintenanceLoopSummaryLine(
   for (const loop of loops) {
     counts[loop.state] += 1;
   }
-  return `${loops.length} known | ${counts.quiet} quiet | ${counts.attention} attention | ${counts.drift} drift | ${counts.partial} partial | ${counts.inactive} inactive`;
+  return `${loops.length} known · ${counts.quiet} quiet · ${counts.attention} attention · ${counts.drift} drift · ${counts.partial} partial · ${counts.inactive} inactive`;
 }
 
 export function formatMaintenanceLoopDetailLines(

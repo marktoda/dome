@@ -34,7 +34,9 @@ export function section(
   caps: Caps,
 ): ReadonlyArray<string> {
   if (body.length === 0) return [];
-  return ["", paint(title.toUpperCase(), "muted", caps), ...body];
+  // Body lines arrive already carrying the primitives' 2-space indent; section
+  // adds 2 more so the ALLCAPS title sits at indent 2 and body at indent 4.
+  return ["", `  ${paint(title.toUpperCase(), "muted", caps)}`, ...body.map((l) => `  ${l}`)];
 }
 
 export type KvRow = { readonly label: string; readonly value: string; readonly tone?: Tone };
