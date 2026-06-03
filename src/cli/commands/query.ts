@@ -12,13 +12,17 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 import { formatJson } from "../format";
+import { formatCommand } from "../human-output";
 import {
-  formatCommand,
-  formatHeadline,
-  formatSummaryRows,
-  plural,
-  pushSection,
-} from "../human-output";
+  footer,
+  glyph,
+  headline,
+  kv,
+  paint,
+  resolveCaps,
+  section,
+  type Caps,
+} from "../presenter";
 import type { QuestionMetadata } from "../../core/effect";
 import {
   questionAutomationLabel,
@@ -88,7 +92,7 @@ export async function runQuery(
     if (options.json === true) {
       console.log(formatJson(run.data));
     } else {
-      console.log(formatQueryResult(run.data));
+      console.log(formatQueryResult(run.data, resolveCaps()));
     }
     return 0;
   } catch (e) {
@@ -103,42 +107,78 @@ export async function runQuery(
   }
 }
 
-function formatQueryResult(data: unknown): string {
+function formatQueryResult(data: unknown, caps: Caps): string {
   const result = parseQueryResult(data);
-  if (result.matches.length === 0) {
-    const lines = [formatHeadline("Dome query", "no matches")];
-    pushSection(lines, "Query", [`  "${result.query}"`]);
+  const n = result.matches.length;
+  const matchLabel = n === 1 ? "match" : "matches";
+
+  if (n === 0) {
+    const lines: string[] = [
+      headline(
+        { cmd: "query" },
+        { tone: "muted", label: "no matches" },
+        caps,
+      ),
+    ];
+    lines.push(
+      ...section(
+        "Query",
+        kv([{ label: "text", value: `"${result.query}"`, tone: "plain" }], caps),
+        caps,
+      ),
+    );
+    lines.push(...footer({ tone: "muted", label: "no matches" }, caps));
     return lines.join("\n");
   }
 
-  const lines = [
-    formatHeadline(
-      "Dome query",
-      plural(result.matches.length, "match", "matches"),
+  const lines: string[] = [
+    headline(
+      { cmd: "query" },
+      { tone: "ok", label: `${n} ${matchLabel}` },
+      caps,
     ),
   ];
-  pushSection(lines, "Query", formatSummaryRows([
-    ["text", `"${result.query}"`],
-    ["shown", plural(result.shown.matches, "match", "matches")],
-    ["limit", result.limit === null ? "default" : String(result.limit)],
-    ["has more", result.hasMore.matches ? "yes" : "no"],
-  ]));
+
+  lines.push(
+    ...section(
+      "Query",
+      kv(
+        [
+          { label: "text", value: `"${result.query}"`, tone: "plain" },
+          {
+            label: "shown",
+            value: `${result.shown.matches} ${result.shown.matches === 1 ? "match" : "matches"}`,
+          },
+          {
+            label: "limit",
+            value: result.limit === null ? "default" : String(result.limit),
+          },
+          { label: "has more", value: result.hasMore.matches ? "yes" : "no" },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+
   const matchLines: string[] = [];
   for (const [index, match] of result.matches.entries()) {
-    matchLines.push(`${index + 1}. ${match.title}`);
-    matchLines.push(`   path: ${match.path}`);
+    matchLines.push(`${index + 1}. ${paint(match.title, "plain", caps)}`);
+    matchLines.push(`   ${paint("path:", "muted", caps)} ${match.path}`);
     if (match.snippet.length > 0) {
-      matchLines.push(`   text: ${stripFtsMarkers(match.snippet)}`);
+      matchLines.push(
+        `   ${paint("text:", "muted", caps)} ${stripFtsMarkers(match.snippet)}`,
+      );
     }
     if (match.ranking !== null && match.ranking.reasons.length > 0) {
-      matchLines.push(
-        `   why: ${match.ranking.reasons.join("; ")} ` +
-          `(score ${match.ranking.score}, fts ${match.ranking.ftsRank})`,
-      );
+      const why =
+        `${match.ranking.reasons.join("; ")} ` +
+        `(score ${match.ranking.score}, fts ${match.ranking.ftsRank})`;
+      matchLines.push(`   ${paint("why:", "muted", caps)} ${why}`);
     }
     if (match.sourceRefs.length > 0) {
       matchLines.push(
-        `   source: ${match.sourceRefs.map(formatSourceRef).join(", ")}`,
+        `   ${paint("source:", "muted", caps)} ${match.sourceRefs.map(formatSourceRef).join(", ")}`,
       );
     }
     if (match.facts.length > 0) {
@@ -146,35 +186,51 @@ function formatQueryResult(data: unknown): string {
         match.facts.map((fact) => fact.predicate),
         5,
       );
-      matchLines.push(`   facts: ${facts}`);
+      matchLines.push(`   ${paint("facts:", "muted", caps)} ${facts}`);
     }
     if (match.diagnostics.length > 0) {
       const diagnostics = summarizeLabels(
         match.diagnostics.map((diagnostic) => diagnostic.code),
         5,
       );
-      matchLines.push(`   diagnostics: ${diagnostics}`);
+      matchLines.push(
+        `   ${paint("diagnostics:", "muted", caps)} ${diagnostics}`,
+      );
     }
     if (match.questions.length > 0) {
-      matchLines.push("   questions:");
+      matchLines.push(`   ${paint("questions:", "muted", caps)}`);
       for (const question of match.questions.slice(0, 5)) {
-        const refs = question.sourceRefs.length === 0
-          ? ""
-          : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
-        matchLines.push(`     - [#${question.id}] ${question.question}${refs}`);
-        matchLines.push(`       policy: ${questionAutomationLabel(question.metadata)}`);
-        matchLines.push(`       resolve: ${formatCommand(question.resolveCommand)}`);
+        const refs =
+          question.sourceRefs.length === 0
+            ? ""
+            : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
+        matchLines.push(
+          `     ${glyph("bullet", caps)} [#${question.id}] ${question.question}${refs}`,
+        );
+        matchLines.push(
+          `       ${paint("policy:", "muted", caps)} ${questionAutomationLabel(question.metadata)}`,
+        );
+        matchLines.push(
+          `       ${paint("resolve:", "muted", caps)} ${formatCommand(question.resolveCommand)}`,
+        );
       }
     }
     if (index < result.matches.length - 1) matchLines.push("");
   }
-  pushSection(lines, "Matches", matchLines);
+  lines.push(...section("Matches", matchLines, caps));
+
   if (result.hasMore.matches) {
     lines.push("");
     lines.push(
-      "(more adopted-state matches exist; increase --limit to show more)",
+      paint(
+        "(more adopted-state matches exist; increase --limit to show more)",
+        "muted",
+        caps,
+      ),
     );
   }
+
+  lines.push(...footer({ tone: "ok", label: `${n} ${matchLabel}` }, caps));
   return lines.join("\n");
 }
 
