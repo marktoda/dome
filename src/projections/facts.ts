@@ -20,9 +20,18 @@
 //   - `noUncheckedIndexedAccess` discipline: SQLite `.all()` returns arrays
 //     of typed row shapes; mapping is functional (no index access).
 
+import { z } from "zod";
+
 import type { FactEffect, NodeRef, NodeRefInput, Literal } from "../core/effect";
-import { factEffect, nodeRef } from "../core/effect";
-import type { CommitOid, SourceRef } from "../core/source-ref";
+import {
+  factEffect,
+  FactEffectSchema,
+  LiteralSchema,
+  nodeRef,
+  NodeRefSchema,
+} from "../core/effect";
+import type { CommitOid } from "../core/source-ref";
+import { parseJsonColumn, parseSourceRefsColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -121,6 +130,14 @@ type FactRecordRow = FactRow & {
   readonly adopted_commit: CommitOid;
   readonly written_at: string;
 };
+
+const FactObjectSchema = z.union([NodeRefSchema, LiteralSchema]);
+const FactAssertionSchema = z.enum([
+  "explicit",
+  "extracted",
+  "inferred",
+  "generated",
+]);
 
 // ----- Public functions -----------------------------------------------------
 
@@ -285,9 +302,16 @@ function rebuildSubject(kind: string, id: string): NodeRef {
  */
 function rowToFact(row: FactRow): FactEffect {
   const subject = rebuildSubject(row.subject_kind, row.subject_id);
-  const object = JSON.parse(row.object_json) as NodeRef | Literal;
-  const sourceRefs = JSON.parse(row.source_refs) as ReadonlyArray<SourceRef>;
-  const assertion = row.assertion as FactEffect["assertion"];
+  const object = parseJsonColumn<NodeRef | Literal>(
+    row.object_json,
+    "facts.object_json",
+    FactObjectSchema,
+  );
+  const sourceRefs = parseSourceRefsColumn(
+    row.source_refs,
+    "facts.source_refs",
+  );
+  const assertion = FactAssertionSchema.parse(row.assertion);
   const input: Omit<FactEffect, "kind"> =
     row.confidence === null
       ? { subject, predicate: row.predicate, object, assertion, sourceRefs }
@@ -299,7 +323,9 @@ function rowToFact(row: FactRow): FactEffect {
           sourceRefs,
           confidence: row.confidence,
         };
-  return factEffect(input);
+  const effect = factEffect(input);
+  FactEffectSchema.parse(effect);
+  return effect;
 }
 
 function rowToFactRecord(row: FactRecordRow): FactRecord {

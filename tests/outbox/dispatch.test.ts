@@ -330,6 +330,35 @@ describe("outbox lifecycle", () => {
     expect(got[0]?.status).toBe("pending");
   });
 
+  it("queryOutbox validates payload and source refs instead of casting", () => {
+    insertPending(db, {
+      effect: makeEffect("key-invalid-row"),
+      runId: RUN_ID,
+      now: T0,
+    });
+    db.raw
+      .query("UPDATE outbox SET payload_json = ? WHERE idempotency_key = ?")
+      .run("{not-json", "key-invalid-row");
+
+    expect(() => queryOutbox(db)).toThrow(
+      "outbox.payload_json contains invalid JSON",
+    );
+
+    db.raw
+      .query(
+        "UPDATE outbox SET payload_json = ?, source_refs = ? WHERE idempotency_key = ?",
+      )
+      .run(
+        JSON.stringify({ ok: true }),
+        JSON.stringify([{ commit: "", path: "wiki/x.md" }]),
+        "key-invalid-row",
+      );
+
+    expect(() => queryOutbox(db)).toThrow(
+      "outbox.source_refs failed validation",
+    );
+  });
+
   it("dispatchExternalEffect inserts before handler and marks the row sent", async () => {
     const calls: string[] = [];
 

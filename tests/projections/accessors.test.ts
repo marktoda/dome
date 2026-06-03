@@ -235,6 +235,30 @@ describe("facts accessor", () => {
     ]);
   });
 
+  it("fact reads validate JSON columns instead of casting", () => {
+    const effect = factEffect({
+      subject: { kind: "page", path: "wiki/alice.md" },
+      predicate: "dome.tasks.dueDate",
+      object: { kind: "string", value: "2026-01-01" },
+      assertion: "explicit",
+      sourceRefs: [REF],
+    });
+    insertFact(db, {
+      effect,
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    db.raw
+      .query("UPDATE facts SET object_json = ? WHERE predicate = ?")
+      .run(
+        JSON.stringify({ kind: "date", value: "not-a-date" }),
+        "dome.tasks.dueDate",
+      );
+
+    expect(() => allFacts(db)).toThrow("facts.object_json failed validation");
+  });
+
   it("ProjectionQueryView facts fail closed on partial subject filters", () => {
     insertFact(db, {
       effect: factEffect({
@@ -1076,6 +1100,27 @@ describe("questions accessor", () => {
     });
   });
 
+  it("question reads validate metadata JSON instead of casting", () => {
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "what is the dueDate?",
+        sourceRefs: [REF],
+        idempotencyKey: "q-invalid-metadata",
+        metadata: { risk: "low" },
+      }),
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    db.raw
+      .query("UPDATE questions SET metadata_json = ? WHERE idempotency_key = ?")
+      .run(JSON.stringify({ risk: "weird" }), "q-invalid-metadata");
+
+    expect(() => queryQuestionRecords(db)).toThrow(
+      "questions.metadata_json failed validation",
+    );
+  });
+
   it("answerQuestionById validates options and records the answer", () => {
     const effect = questionEffect({
       question: "choose?",
@@ -1151,6 +1196,24 @@ describe("jobs accessor", () => {
     // ISO-8601. Bound it [before, after].
     expect(next.runAfter >= before.toISOString()).toBe(true);
     expect(next.runAfter <= after.toISOString()).toBe(true);
+  });
+
+  it("job reads validate input JSON instead of casting", () => {
+    const effect = jobEffect({
+      processorId: "dome.immediate",
+      input: null,
+      idempotencyKey: "j-invalid-input",
+    });
+    enqueueJob(db, { effect, processorId: "p.emitter" });
+    db.raw
+      .query(
+        "UPDATE scheduled_jobs SET input_json = ? WHERE idempotency_key = ?",
+      )
+      .run("{not-json", "j-invalid-input");
+
+    expect(() => nextEligibleJob(db, new Date())).toThrow(
+      "scheduled_jobs.input_json contains invalid JSON",
+    );
   });
 
   it("markJobRunning transitions pending→running and bumps attempts", () => {

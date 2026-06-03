@@ -35,10 +35,12 @@
 //     subject_hash) quadruple is a no-op.
 
 import { createHash } from "node:crypto";
+import { z } from "zod";
 
 import type { DiagnosticEffect } from "../core/effect";
-import { diagnosticEffect } from "../core/effect";
+import { diagnosticEffect, DiagnosticEffectSchema } from "../core/effect";
 import { commitOid, type CommitOid, type SourceRef } from "../core/source-ref";
+import { parseSourceRefsColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -193,6 +195,8 @@ type UnresolvedDiagnosticRow = {
   readonly source_refs: string;
   readonly subject_hash: string;
 };
+
+const DiagnosticSeveritySchema = z.enum(["info", "warning", "error", "block"]);
 
 // ----- Public functions -----------------------------------------------------
 
@@ -378,13 +382,18 @@ export function resolveStaleDiagnostics(
 // ----- internals ------------------------------------------------------------
 
 function rowToDiagnostic(row: DiagnosticRow): DiagnosticEffect {
-  const sourceRefs = JSON.parse(row.source_refs) as ReadonlyArray<SourceRef>;
-  return diagnosticEffect({
-    severity: row.severity as DiagnosticEffect["severity"],
+  const sourceRefs = parseSourceRefsColumn(
+    row.source_refs,
+    "diagnostics.source_refs",
+  );
+  const effect = diagnosticEffect({
+    severity: DiagnosticSeveritySchema.parse(row.severity),
     code: row.code,
     message: row.message,
     sourceRefs,
   });
+  DiagnosticEffectSchema.parse(effect);
+  return effect;
 }
 
 function rowToDiagnosticRecord(row: DiagnosticRow): DiagnosticRecord {
@@ -406,7 +415,10 @@ function diagnosticIsInResolvedScope(
 ): boolean {
   let refs: ReadonlyArray<SourceRef>;
   try {
-    refs = JSON.parse(sourceRefsJson) as ReadonlyArray<SourceRef>;
+    refs = parseSourceRefsColumn(
+      sourceRefsJson,
+      "diagnostics.source_refs",
+    );
   } catch {
     return false;
   }

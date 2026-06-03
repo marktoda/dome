@@ -16,9 +16,15 @@
 //   - INSERT honors the `idempotency_key UNIQUE` constraint by refreshing
 //     unanswered rows on re-emission while preserving answered rows.
 
-import type { QuestionEffect } from "../core/effect";
-import { questionEffect } from "../core/effect";
+import { z } from "zod";
+
+import type { QuestionEffect, QuestionMetadata } from "../core/effect";
+import { questionEffect, QuestionEffectSchema } from "../core/effect";
 import { commitOid, type CommitOid, type SourceRef } from "../core/source-ref";
+import {
+  parseOptionalJsonColumn,
+  parseSourceRefsColumn,
+} from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -178,6 +184,19 @@ type QuestionStaleRow = {
   readonly idempotency_key: string;
   readonly source_refs: string;
 };
+
+const QuestionOptionsSchema = z.array(z.string().min(1));
+const QuestionMetadataSchema = z
+  .object({
+    risk: z.enum(["low", "medium", "high"]).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    recommendedAnswer: z.string().min(1).optional(),
+    automationPolicy: z
+      .enum(["agent-safe", "model-safe", "owner-needed"])
+      .optional(),
+    ownerNeededReason: z.string().min(1).optional(),
+  })
+  .strict();
 
 // ----- Public functions -----------------------------------------------------
 
@@ -373,15 +392,20 @@ function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
 }
 
 function rowToQuestion(row: QuestionRow): QuestionEffect {
-  const sourceRefs = JSON.parse(row.source_refs) as ReadonlyArray<SourceRef>;
-  const options =
-    row.options_json === null
-      ? undefined
-      : (JSON.parse(row.options_json) as ReadonlyArray<string>);
-  const metadata =
-    row.metadata_json === null
-      ? undefined
-      : (JSON.parse(row.metadata_json) as QuestionEffect["metadata"]);
+  const sourceRefs = parseSourceRefsColumn(
+    row.source_refs,
+    "questions.source_refs",
+  );
+  const options = parseOptionalJsonColumn(
+    row.options_json,
+    "questions.options_json",
+    QuestionOptionsSchema,
+  );
+  const metadata = parseOptionalJsonColumn(
+    row.metadata_json,
+    "questions.metadata_json",
+    QuestionMetadataSchema,
+  );
   const input: {
     -readonly [K in keyof Omit<QuestionEffect, "kind">]: Omit<
       QuestionEffect,
@@ -393,8 +417,34 @@ function rowToQuestion(row: QuestionRow): QuestionEffect {
     idempotencyKey: row.idempotency_key,
   };
   if (options !== undefined) input.options = options;
-  if (metadata !== undefined) input.metadata = metadata;
-  return questionEffect(input);
+  if (metadata !== undefined) input.metadata = questionMetadata(metadata);
+  const effect = questionEffect(input);
+  QuestionEffectSchema.parse(effect);
+  return effect;
+}
+
+function questionMetadata(raw: {
+  readonly risk?: "low" | "medium" | "high" | undefined;
+  readonly confidence?: number | undefined;
+  readonly recommendedAnswer?: string | undefined;
+  readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed" | undefined;
+  readonly ownerNeededReason?: string | undefined;
+}): QuestionMetadata {
+  const metadata: {
+    -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
+  } = {};
+  if (raw.risk !== undefined) metadata.risk = raw.risk;
+  if (raw.confidence !== undefined) metadata.confidence = raw.confidence;
+  if (raw.recommendedAnswer !== undefined) {
+    metadata.recommendedAnswer = raw.recommendedAnswer;
+  }
+  if (raw.automationPolicy !== undefined) {
+    metadata.automationPolicy = raw.automationPolicy;
+  }
+  if (raw.ownerNeededReason !== undefined) {
+    metadata.ownerNeededReason = raw.ownerNeededReason;
+  }
+  return Object.freeze(metadata);
 }
 
 function questionTouchesAnyPath(
@@ -403,7 +453,10 @@ function questionTouchesAnyPath(
 ): boolean {
   let refs: ReadonlyArray<SourceRef>;
   try {
-    refs = JSON.parse(sourceRefsJson) as ReadonlyArray<SourceRef>;
+    refs = parseSourceRefsColumn(
+      sourceRefsJson,
+      "questions.source_refs",
+    );
   } catch {
     return false;
   }

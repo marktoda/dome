@@ -27,7 +27,10 @@
 //     a generic `setStatus` — keeps the call sites in the engine runner self-
 //     describing and bounds the legal transitions per the spec.
 
-import type { JobEffect } from "../core/effect";
+import { z } from "zod";
+
+import { JsonValueSchema, type JobEffect } from "../core/effect";
+import { parseJsonColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -203,6 +206,7 @@ type JobRow = {
 // drift between the table definition and this accessor).
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_JOB_CLAIM_LEASE_MS = 15 * 60 * 1000;
+const JobStatusSchema = z.enum(["pending", "running", "succeeded", "failed"]);
 
 // ----- Public functions -----------------------------------------------------
 
@@ -364,12 +368,16 @@ function rowToScheduledJob(row: JobRow): ScheduledJobRow {
   return Object.freeze({
     id: row.id,
     processorId: row.processor_id,
-    input: JSON.parse(row.input_json) as unknown,
+    input: parseJsonColumn(
+      row.input_json,
+      "scheduled_jobs.input_json",
+      JsonValueSchema,
+    ),
     runAfter: row.run_after,
     idempotencyKey: row.idempotency_key,
     maxAttempts: row.max_attempts,
     attempts: row.attempts,
-    status: row.status as JobStatus,
+    status: JobStatusSchema.parse(row.status),
     enqueuedAt: row.enqueued_at,
     claimedAt: row.claimed_at,
     claimExpiresAt: row.claim_expires_at,

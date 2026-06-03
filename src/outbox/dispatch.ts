@@ -75,8 +75,12 @@
 //   - `noUncheckedIndexedAccess` discipline: row arrays are mapped
 //     functionally; no index access into the raw `.all()` result.
 
-import type { ExternalActionEffect } from "../core/effect";
+import { JsonValueSchema, type ExternalActionEffect } from "../core/effect";
 import type { SourceRef } from "../core/source-ref";
+import {
+  parseJsonColumn,
+  parseSourceRefsColumn,
+} from "../sqlite/row-json";
 import type { OutboxDb } from "./db";
 
 // ----- Constants ------------------------------------------------------------
@@ -998,8 +1002,15 @@ function rowToOutboxRow(row: OutboxRawRow): OutboxRow {
     id: row.id,
     capability: row.capability,
     idempotencyKey: row.idempotency_key,
-    payload: JSON.parse(row.payload_json) as unknown,
-    sourceRefs: JSON.parse(row.source_refs) as ReadonlyArray<SourceRef>,
+    payload: parseJsonColumn(
+      row.payload_json,
+      "outbox.payload_json",
+      JsonValueSchema,
+    ),
+    sourceRefs: parseSourceRefsColumn(
+      row.source_refs,
+      "outbox.source_refs",
+    ),
     status: narrowStatus(row.status),
     externalId: row.external_id,
     attempts: row.attempts,
