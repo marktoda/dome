@@ -424,7 +424,9 @@ async function sourceLastChangedAtIndex(
   const entries = await Promise.all(
     uniquePaths.map(async (path) => {
       const info = await ctx.snapshot.getFileInfo(path);
-      return [path, info?.lastChangedAt ?? null] as const;
+      // Prefer the human-authored timestamp so an engine rewrite (e.g.
+      // ^block-anchor stamping) cannot reset open-loop recency ranking.
+      return [path, info?.lastHumanChangedAt ?? info?.lastChangedAt ?? null] as const;
     }),
   );
   return new Map(

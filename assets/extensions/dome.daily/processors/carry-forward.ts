@@ -171,7 +171,9 @@ async function collectOpenLoopSources(input: {
         lastChangedAt: openLoopFreshnessKey({
           path,
           settings,
-          lastChangedAt: info?.lastChangedAt,
+          // Prefer the human-authored timestamp so an engine rewrite (e.g.
+          // ^block-anchor stamping) cannot reset open-loop recency.
+          lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
         }),
       };
       items.push(candidate);

@@ -111,6 +111,7 @@ async function makeVaultWithFiles(
       return {
         lastChangedCommit: commitOid(info.lastChangedCommit),
         lastChangedAt: info.lastChangedAt,
+        lastHumanChangedAt: info.lastHumanChangedAt,
       };
     },
   });
@@ -212,6 +213,7 @@ function fakeSnapshotForFile(opts: {
         ? {
             lastChangedCommit: HEAD_COMMIT,
             lastChangedAt: opts.lastChangedAt,
+            lastHumanChangedAt: opts.lastChangedAt,
           }
         : null,
   });

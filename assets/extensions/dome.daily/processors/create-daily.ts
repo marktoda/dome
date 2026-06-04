@@ -126,7 +126,9 @@ async function collectOpenLoopSourcesForNewDaily(input: {
         lastChangedAt: openLoopFreshnessKey({
           path,
           settings: input.settings,
-          lastChangedAt: info?.lastChangedAt,
+          // Prefer the human-authored timestamp so an engine rewrite (e.g.
+          // ^block-anchor stamping) cannot reset open-loop recency.
+          lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
         }),
       });
     }

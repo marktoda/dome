@@ -677,6 +677,7 @@ export async function makeSnapshot(
               : {
                   lastChangedCommit: commitOid(info.lastChangedCommit),
                   lastChangedAt: info.lastChangedAt,
+                  lastHumanChangedAt: info.lastHumanChangedAt,
                 }
           );
         fileInfoCache.set(path, cached);

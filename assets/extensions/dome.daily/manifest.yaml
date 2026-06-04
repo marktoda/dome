@@ -1,6 +1,52 @@
 id: dome.daily
-version: 0.1.16
+version: 0.1.19
 processors:
+  - id: dome.daily.normalize-task-syntax
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    module: processors/normalize-task-syntax.ts
+
+  - id: dome.daily.stamp-block-id
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    module: processors/stamp-block-id.ts
+
   - id: dome.daily.create-daily
     version: 0.1.4
     phase: garden
@@ -121,3 +167,28 @@ processors:
       - kind: patch.auto
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/carry-forward.ts
+
+  - id: dome.daily.reconcile-tasks
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    inspection:
+      kind: all-readable-markdown
+    module: processors/reconcile-tasks.ts

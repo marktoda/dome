@@ -142,6 +142,7 @@ function fakeSnapshot(files: Readonly<Record<string, FileFixture>>): Snapshot {
         : {
             lastChangedCommit: HEAD_COMMIT,
             lastChangedAt: file.lastChangedAt,
+            lastHumanChangedAt: file.lastChangedAt,
           };
     },
   });

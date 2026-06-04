@@ -104,6 +104,7 @@ function fakeSnapshotForFile(opts: {
         ? {
             lastChangedCommit: HEAD_COMMIT,
             lastChangedAt: opts.lastChangedAt,
+            lastHumanChangedAt: opts.lastChangedAt,
           }
         : null,
   });

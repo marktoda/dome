@@ -260,6 +260,9 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       processors: [
         "dome.daily.create-daily",
         "dome.daily.task-index",
+        "dome.daily.stamp-block-id",
+        "dome.daily.reconcile-tasks",
+        "dome.daily.normalize-task-syntax",
         "dome.daily.ambiguous-followup-answer",
         "dome.daily.today",
         "dome.daily.prep",
@@ -341,6 +344,9 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.search.query",
         "dome.search.export-context",
       ],
+      optionalProcessors: [
+        "dome.warden.daily-briefing",
+      ],
       surfaces: [
         { kind: "command", name: "query" },
         { kind: "command", name: "export-context" },
@@ -378,6 +384,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
       optionalProcessors: [
         "dome.intake.low-confidence-answer",
+        "dome.warden.integrity",
+        "dome.warden.integrity-answer",
       ],
       questionScope: "all",
       surfaces: [

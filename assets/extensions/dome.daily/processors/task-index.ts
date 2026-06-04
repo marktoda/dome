@@ -14,6 +14,7 @@ import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
   openLoopStableId,
+  taskStableId,
 } from "./daily-shared";
 import {
   AMBIGUOUS_FOLLOWUP_OPTIONS,
@@ -31,9 +32,10 @@ const taskIndex = defineProcessorImplementation({
       if (content === null) continue;
 
       for (const task of actionItemsFromMarkdown(content)) {
-        const stableId = openLoopStableId({
+        const stableId = taskStableId({
           sourcePath: path,
           body: task.body,
+          ...(task.anchor !== undefined ? { anchor: task.anchor } : {}),
         });
         const ref = ctx.sourceRef(path, lineRange(task.line), stableId);
         effects.push(

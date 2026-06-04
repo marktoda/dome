@@ -146,6 +146,7 @@ function fakeSnapshot(files: Readonly<Record<string, string>>): Snapshot {
         : {
             lastChangedCommit: HEAD_COMMIT,
             lastChangedAt: "2026-06-02T09:00:00.000Z",
+            lastHumanChangedAt: "2026-06-02T09:00:00.000Z",
           },
   });
 }

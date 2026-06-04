@@ -853,6 +853,10 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
           path === "wiki/allowed.md"
             ? "2026-05-28T00:00:00.000Z"
             : "2026-05-27T00:00:00.000Z",
+        lastHumanChangedAt:
+          path === "wiki/allowed.md"
+            ? "2026-05-28T00:00:00.000Z"
+            : "2026-05-27T00:00:00.000Z",
       }),
     });
     const p = makeFixtureProcessor({

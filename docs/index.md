@@ -23,6 +23,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
 - [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
+- [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; generative cron-only daily-briefing; no-op without a model).
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/vault-layout]] — Directory structure; category from path; ownership rules; git repository structure; derived operational state under `.dome/state/`.
 
@@ -44,6 +45,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files should move/delete on processing; stale-inbox diagnostics surface lingering files.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom target)* future `log.md` projection mutated only by `dome.log`'s append-only adoption processor; current v1 uses run ledger + git trailers.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
+- [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] — *(axiom)* A garden-phase `model.invoke` processor never declares `graph.write`; model judgment surfaces as a question (durable via `answers.db`) or a regenerated surface patch, never a `FactEffect` that would vanish on rebuild.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* Raw files are immutable after creation; broker raw-patch denial plus `dome.markdown.raw-immutable` block committed mutations.

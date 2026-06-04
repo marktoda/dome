@@ -1203,11 +1203,13 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(3);
+    expect(modelProcessors.length).toBe(5);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
       "dome.intake.extract-capture",
       "dome.intake.synthesize-capture",
       "dome.intake.synthesize-rollup",
+      "dome.warden.daily-briefing",
+      "dome.warden.integrity",
     ]);
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
   });
@@ -1448,6 +1450,13 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         model_processors: 3,
+        model: "disabled-no-provider",
+      }),
+      expect.objectContaining({
+        bundle: "dome.warden",
+        status: "disabled",
+        loaded: false,
+        model_processors: 2,
         model: "disabled-no-provider",
       }),
     ]);
@@ -2303,7 +2312,11 @@ describe("runCheck", () => {
       processor_ids: expect.arrayContaining([
         "dome.intake.low-confidence-answer",
       ]),
-      optional_processor_ids: ["dome.intake.low-confidence-answer"],
+      optional_processor_ids: [
+        "dome.intake.low-confidence-answer",
+        "dome.warden.integrity",
+        "dome.warden.integrity-answer",
+      ],
       questions: 1,
       agent_safe_questions: 0,
       model_safe_questions: 0,

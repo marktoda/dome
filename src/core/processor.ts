@@ -93,6 +93,13 @@ export type Snapshot = {
 export type SnapshotFileInfo = {
   readonly lastChangedCommit: CommitOid;
   readonly lastChangedAt: string;
+  /**
+   * Most recent human-authored (non-Dome) commit time for this path, or
+   * `null` when every commit touching it is Dome-authored. Daily open-loop
+   * freshness ranking prefers this over `lastChangedAt` so an engine rewrite
+   * cannot reset human-edit recency. See `FileInfoAtCommit` in `../git`.
+   */
+  readonly lastHumanChangedAt: string | null;
 };
 
 // ----- ProcessorPhase -------------------------------------------------------

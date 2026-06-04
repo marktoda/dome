@@ -355,6 +355,17 @@ export async function log(opts: {
 export type FileInfoAtCommit = {
   readonly lastChangedCommit: string;
   readonly lastChangedAt: string;
+  /**
+   * The most recent commit touching the path whose message does NOT carry a
+   * `Dome-Run:` trailer (i.e. is not an engine/Dome-authored closure commit
+   * per src/engine-commit.ts). `null` when every commit touching the path is
+   * Dome-authored. Daily open-loop freshness ranking prefers this over
+   * `lastChangedAt` so an engine rewrite (e.g. ^block-anchor stamping) cannot
+   * reset a task's human-edit recency. `lastChangedAt`/`lastChangedCommit`
+   * keep their true-latest-commit meaning for every other consumer.
+   */
+  readonly lastHumanChangedCommit: string | null;
+  readonly lastHumanChangedAt: string | null;
 };
 
 type CommitFileInfoCache = {
@@ -477,11 +488,16 @@ async function latestFileInfoByPath(opts: {
   readonly prefix: string;
   readonly commit: string;
 }): Promise<ReadonlyMap<string, FileInfoAtCommit>> {
+  // The third header field is the Dome-Run trailer value (joined by %x0c
+  // when multiple), non-empty iff the commit is a Dome-authored closure
+  // commit per src/engine-commit.ts. It rides ahead of the %x00 that
+  // delimits the header from the -z name-only list, so the existing parse is
+  // unchanged. Verified against git 2.50.x.
   const args = [
     "-C",
     opts.root,
     "log",
-    "--pretty=format:%x1e%H%x1f%ct%x00",
+    "--pretty=format:%x1e%H%x1f%ct%x1f%(trailers:key=Dome-Run,valueonly,separator=%x0c)%x00",
     "--name-only",
     "-z",
     "--diff-filter=ACMRT",
@@ -491,25 +507,50 @@ async function latestFileInfoByPath(opts: {
     args.push("--", opts.prefix);
   }
   const output = await runNativeGit(args);
-  const entries = new Map<string, FileInfoAtCommit>();
+  // Per path we record the first (most recent) commit as lastChanged*, and
+  // the first non-Dome commit as lastHumanChanged*. We walk newest→oldest, so
+  // a mutable accumulator lets us fill the human fields lazily without a
+  // second pass.
+  type Accumulator = {
+    lastChangedCommit: string;
+    lastChangedAt: string;
+    lastHumanChangedCommit: string | null;
+    lastHumanChangedAt: string | null;
+  };
+  const accumulators = new Map<string, Accumulator>();
   for (const record of output.split("\x1e")) {
     if (record.length === 0) continue;
     const headerEnd = record.indexOf("\0");
     if (headerEnd === -1) continue;
     const header = record.slice(0, headerEnd);
-    const [commitOid, timestamp] = header.split("\x1f");
+    const [commitOid, timestamp, domeRunTrailer] = header.split("\x1f");
     if (commitOid === undefined || timestamp === undefined) continue;
     const seconds = Number(timestamp);
     if (!Number.isFinite(seconds)) continue;
-    const info = Object.freeze({
-      lastChangedCommit: commitOid,
-      lastChangedAt: new Date(seconds * 1000).toISOString(),
-    });
+    const at = new Date(seconds * 1000).toISOString();
+    const isDomeAuthored =
+      domeRunTrailer !== undefined && domeRunTrailer.length > 0;
     for (const rawPath of splitNul(record.slice(headerEnd + 1))) {
       const path = rawPath.startsWith("\n") ? rawPath.slice(1) : rawPath;
-      if (path.length === 0 || entries.has(path)) continue;
-      entries.set(path, info);
+      if (path.length === 0) continue;
+      let acc = accumulators.get(path);
+      if (acc === undefined) {
+        acc = {
+          lastChangedCommit: commitOid,
+          lastChangedAt: at,
+          lastHumanChangedCommit: isDomeAuthored ? null : commitOid,
+          lastHumanChangedAt: isDomeAuthored ? null : at,
+        };
+        accumulators.set(path, acc);
+      } else if (!isDomeAuthored && acc.lastHumanChangedCommit === null) {
+        acc.lastHumanChangedCommit = commitOid;
+        acc.lastHumanChangedAt = at;
+      }
     }
+  }
+  const entries = new Map<string, FileInfoAtCommit>();
+  for (const [path, acc] of accumulators) {
+    entries.set(path, Object.freeze({ ...acc }));
   }
   return Object.freeze(entries);
 }

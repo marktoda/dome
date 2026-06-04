@@ -108,6 +108,7 @@ async function makeVaultWithFiles(
       return {
         lastChangedCommit: commitOid(info.lastChangedCommit),
         lastChangedAt: info.lastChangedAt,
+        lastHumanChangedAt: info.lastHumanChangedAt,
       };
     },
   });

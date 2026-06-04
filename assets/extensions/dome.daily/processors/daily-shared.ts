@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 
+import {
+  appendBlockAnchor,
+  hasBlockAnchor,
+  parseBlockAnchor,
+} from "../../../../src/core/block-anchor";
+
 const CARRY_FORWARD_RE =
   /\s+\(from \[\[([^\]\n]*\d{4}-\d{2}-\d{2})(?:\.md)?\]\]\)\s*$/;
 const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
@@ -31,6 +37,8 @@ export type OpenTask = {
   readonly sourcePath: string | null;
   readonly body: string;
   readonly followup: boolean;
+  /** The stamped `^block-anchor` id, if the line carries one. */
+  readonly anchor?: string;
 };
 
 export type MarkdownActionItem = {
@@ -39,6 +47,8 @@ export type MarkdownActionItem = {
   readonly body: string;
   readonly followup: boolean;
   readonly origin: "checkbox" | "directive";
+  /** The stamped `^block-anchor` id, if the line carries one. */
+  readonly anchor?: string;
 };
 
 export type AmbiguousFollowup = {
@@ -210,6 +220,7 @@ export function actionItemsFromMarkdown(
           body: task.body,
           followup: task.followup,
           origin: "checkbox" as const,
+          ...(task.anchor !== undefined ? { anchor: task.anchor } : {}),
         }),
       );
       continue;
@@ -219,6 +230,118 @@ export function actionItemsFromMarkdown(
     if (directive !== null) items.push(directive);
   }
   return Object.freeze(items);
+}
+
+/**
+ * Stamp a stable `^block-anchor` onto every action-item line that lacks one,
+ * returning the rewritten document — or `null` when nothing needs stamping
+ * (the idempotent fixed point). The stamped line-set is exactly
+ * {@link actionItemsFromMarkdown}, so identity and surfacing agree and
+ * generated blocks (which that extractor already skips) are never stamped.
+ *
+ * The anchor id is a deterministic function of the normalized source path,
+ * the normalized task body, and the body's occurrence index within the file —
+ * so it is reproducible (rebuild-safe), collision-resistant, and unique even
+ * for two identical-body tasks in one file. Once stamped, a line carries its
+ * identity in the markdown itself and survives moves and body edits.
+ */
+export function stampTaskAnchors(input: {
+  readonly path: string;
+  readonly content: string;
+}): string | null {
+  const lines = input.content.split(/\r?\n/);
+  const occurrences = new Map<string, number>();
+  let changed = false;
+  for (const item of actionItemsFromMarkdown(input.content)) {
+    const idx = item.line - 1;
+    const line = lines[idx];
+    if (line === undefined || hasBlockAnchor(line)) continue;
+    const bodyKey = normalizeOpenLoopBody(item.body);
+    const occurrence = occurrences.get(bodyKey) ?? 0;
+    occurrences.set(bodyKey, occurrence + 1);
+    lines[idx] = appendBlockAnchor(
+      line,
+      taskAnchorId({ path: input.path, body: item.body, occurrence }),
+    );
+    changed = true;
+  }
+  return changed ? lines.join("\n") : null;
+}
+
+/**
+ * Normalize the *cosmetic* syntax of task lines, returning the rewritten
+ * document — or `null` when nothing needs normalizing (the idempotent fixed
+ * point). Operates on the same checkbox lines {@link actionItemsFromMarkdown}
+ * targets, sharing its generated/ignored-range exclusions (frontmatter and
+ * dome.daily-generated blocks are never touched), so cosmetic cleanup and
+ * surfacing agree.
+ *
+ * Three safe, deterministic, idempotent rewrites — casing and spacing only,
+ * never semantics:
+ *   1. Uppercase checkbox marker `- [X]` → `- [x]` (`[ ]`/`[-]` left as-is).
+ *   2. Collapse the run of spaces immediately after `]` to exactly one.
+ *   3. Trim trailing whitespace, preserving a trailing `^block-anchor` exactly.
+ *
+ * Non-task lines, anchors, tags, line count, and all other internal spacing are
+ * preserved verbatim, so a re-run over the output returns `null`.
+ */
+export function normalizeTaskSyntax(content: string): string | null {
+  const lines = content.split(/\r?\n/);
+  const ignoredRanges = actionExtractionLineRanges(content);
+  let changed = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lineIsInsideRanges(i + 1, ignoredRanges)) continue;
+    const line = lines[i] ?? "";
+    if (!isAnyCheckboxLine(line)) continue;
+    const next = normalizeTaskLineSyntax(line);
+    if (next !== line) {
+      lines[i] = next;
+      changed = true;
+    }
+  }
+  return changed ? lines.join("\n") : null;
+}
+
+/** Any checkbox task line, regardless of marker state (` `, `x`, `X`, `-`). */
+function isAnyCheckboxLine(line: string): boolean {
+  return /^\s*[-*]\s+\[[ xX-]\]/.test(line);
+}
+
+/**
+ * Apply the cosmetic normalizations to a single checkbox line: lowercase an
+ * uppercase `X` marker, collapse the post-marker space run to one, and trim
+ * trailing whitespace while preserving any trailing `^block-anchor`.
+ */
+function normalizeTaskLineSyntax(line: string): string {
+  let next = line.replace(/^(\s*[-*]\s+)\[X\]/, "$1[x]");
+  next = next.replace(/^(\s*[-*]\s+\[[ x-]\]) +/, "$1 ");
+  const anchor = parseBlockAnchor(next);
+  if (anchor !== null) {
+    return `${anchor.withoutAnchor} ^${anchor.id}`;
+  }
+  return next.trimEnd();
+}
+
+/**
+ * Deterministic, collision-resistant block-anchor id for a task line. The
+ * `t` prefix namespaces Dome task anchors away from hand-authored block refs.
+ */
+export function taskAnchorId(input: {
+  readonly path: string;
+  readonly body: string;
+  readonly occurrence: number;
+}): string {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify([
+        normalizeSourcePath(input.path),
+        normalizeOpenLoopBody(input.body),
+        input.occurrence,
+      ]),
+    )
+    .digest("hex")
+    .slice(0, 8);
+  return `t${hash}`;
 }
 
 export function ambiguousFollowupsFromMarkdown(
@@ -370,9 +493,10 @@ export function openLoopSurfaceSources(input: {
     items.push(
       Object.freeze({
         line: item.line,
-        stableId: openLoopStableId({
+        stableId: taskStableId({
           sourcePath: input.path,
           body: item.body,
+          ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
         }),
         body: item.body,
         followup: item.followup,
@@ -476,6 +600,126 @@ export function openSourceBackedOpenLoopsFromMarkdown(input: {
   return Object.freeze(items);
 }
 
+/**
+ * Propagate a *settled* (resolved/dismissed) state from generated source-backed
+ * open-loop copies in daily notes BACK to the origin task line in its source
+ * file — "close it in one place, close it everywhere."
+ *
+ * Across all `files`, every settled `- [x]/[-] body (from [[origin]])` copy
+ * yields a target `{ sourcePath, body, status }`. For each target, the file at
+ * `sourcePath` (matched within the same `files` list, path-normalized with
+ * `.md`) is scanned for the OPEN action-item line whose normalized body matches.
+ * Matching is by normalized body, not by anchor — the generated copy carries no
+ * `^anchor`. When exactly one open line matches, only its checkbox marker is
+ * rewritten (`[ ]` → `[x]` for resolved, `[ ]` → `[-]` for dismissed); when the
+ * origin has two open lines sharing that body the match is ambiguous and is
+ * skipped (never guess which to close). The rest of the line — trailing
+ * `^anchor`, tags, source suffix — is preserved verbatim, and no line is ever
+ * deleted. The daily's own generated copy is never modified.
+ *
+ * Only files whose content changed are returned. The transform is idempotent:
+ * an already-settled origin line yields no change, so a re-run over the output
+ * returns `[]`.
+ */
+export function reconcileSettledOpenLoops(input: {
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly content: string;
+  }>;
+}): ReadonlyArray<{ readonly path: string; readonly content: string }> {
+  const contentByPath = new Map<string, string>();
+  for (const file of input.files) {
+    contentByPath.set(normalizeSourcePath(file.path), file.content);
+  }
+
+  const targets: DailySettledOpenLoopSource[] = [];
+  for (const file of input.files) {
+    targets.push(
+      ...settledSourceBackedOpenLoopsFromMarkdown({
+        path: file.path,
+        content: file.content,
+      }),
+    );
+  }
+
+  // Track which origin lines have already been consumed so two settled copies
+  // of the same body don't both claim the same open line.
+  const consumedLines = new Map<string, Set<number>>();
+  const rewrites = new Map<string, string>();
+
+  for (const target of targets) {
+    const originPath = normalizeSourcePath(target.sourcePath);
+    const current = rewrites.get(originPath) ?? contentByPath.get(originPath);
+    if (current === undefined) continue;
+
+    const consumed = consumedLines.get(originPath) ?? new Set<number>();
+    const wantBody = reconcileBodyKey(target.body);
+    const matches = actionItemsFromMarkdown(current).filter(
+      (item) =>
+        item.origin === "checkbox" &&
+        !consumed.has(item.line) &&
+        reconcileBodyKey(item.body) === wantBody,
+    );
+    // The generated daily copy carries no `^anchor`, so a body match is the
+    // only signal. When two open lines in the origin share a body we cannot
+    // tell which one the user settled — skip rather than close the wrong line.
+    // (carry-forward dedups surfaced copies by body, so the unambiguous 1:1
+    // case is the norm; genuine duplicates are left for explicit settling.)
+    if (matches.length !== 1) continue;
+    const match = matches[0];
+    if (match === undefined) continue;
+
+    const next = settleCheckboxLine(current, match.line, target.status);
+    if (next === null) continue;
+
+    consumed.add(match.line);
+    consumedLines.set(originPath, consumed);
+    rewrites.set(originPath, next);
+  }
+
+  const out: { readonly path: string; readonly content: string }[] = [];
+  for (const file of input.files) {
+    const originPath = normalizeSourcePath(file.path);
+    const next = rewrites.get(originPath);
+    if (next === undefined || next === file.content) continue;
+    out.push(Object.freeze({ path: file.path, content: next }));
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * Body-match key for reconciliation. The surfaced daily copy renders open-loop
+ * bodies with leading `#task`/`#followup` tags stripped (only `#followup` is
+ * re-prepended), while the origin line may carry those tags inline. Comparing
+ * with tags removed (wherever they sit on the line) lets the daily copy line up
+ * with its origin regardless of tag placement.
+ */
+function reconcileBodyKey(body: string): string {
+  return normalizeOpenLoopBody(body)
+    .replace(/(^|\s)#(?:task|follow-?up)(?=\s|$)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Rewrite the open `[ ]` marker on the given 1-based line to the settled
+ * marker (`x` resolved / `-` dismissed), preserving the rest of the line
+ * verbatim. Returns `null` when the line is missing or not an open checkbox.
+ */
+function settleCheckboxLine(
+  content: string,
+  lineNumber: number,
+  status: DailyOpenLoopSettlementStatus,
+): string | null {
+  const lines = content.split(/\r?\n/);
+  const idx = lineNumber - 1;
+  const line = lines[idx];
+  if (line === undefined || !isOpenCheckboxLine(line)) return null;
+  const marker = status === "dismissed" ? "-" : "x";
+  lines[idx] = line.replace(/^(\s*[-*]\s+)\[ \]/, `$1[${marker}]`);
+  return lines.join("\n");
+}
+
 export function completedSourceBackedOpenLoopsFromMarkdown(input: {
   readonly path: string;
   readonly content: string;
@@ -496,6 +740,25 @@ export function openLoopIdentity(input: {
 
 export function openLoopSurfaceKey(input: { readonly body: string }): string {
   return normalizeOpenLoopBody(input.body);
+}
+
+/**
+ * The canonical stable identity for an action item. When the line carries a
+ * stamped `^block-anchor`, identity is the anchor — path-independent and
+ * move-stable, surviving relocation and body edits. Otherwise it falls back to
+ * the legacy path+body hash, so unstamped tasks keep their prior identity
+ * during the transition. Both forms share the `dome.daily.open-loop:` prefix
+ * so prefix-scoped consumers are unaffected.
+ */
+export function taskStableId(input: {
+  readonly sourcePath: string;
+  readonly body: string;
+  readonly anchor?: string;
+}): string {
+  if (input.anchor !== undefined) {
+    return `dome.daily.open-loop:${input.anchor}`;
+  }
+  return openLoopStableId({ sourcePath: input.sourcePath, body: input.body });
 }
 
 export function openLoopStableId(input: {
@@ -629,12 +892,14 @@ function isCheckboxLine(line: string): boolean {
 }
 
 function openTaskFromLine(line: string, lineNumber: number): OpenTask {
+  const anchor = parseBlockAnchor(stripCarryForwardSource(line))?.id;
   return Object.freeze({
     line: lineNumber,
     text: stripCarryForwardSource(line),
     sourcePath: carryForwardSourcePath(line),
     body: taskBodyFromCheckboxLine(line),
     followup: isExplicitFollowup(line),
+    ...(anchor !== undefined ? { anchor } : {}),
   });
 }
 
@@ -642,8 +907,11 @@ function directiveActionItemFromLine(
   line: string,
   lineNumber: number,
 ): MarkdownActionItem | null {
+  const parsedAnchor = parseBlockAnchor(line);
+  const lineWithoutAnchor =
+    parsedAnchor === null ? line : parsedAnchor.withoutAnchor;
   const match = /^\s*(?:[-*]\s+)?(todo|follow[- ]?up)\s*:\s*(\S.*)$/i.exec(
-    line,
+    lineWithoutAnchor,
   );
   if (match === null) return null;
   const marker = match[1]?.toLowerCase().replace(/\s+/g, "-") ?? "";
@@ -658,14 +926,15 @@ function directiveActionItemFromLine(
       marker === "followup" ||
       isExplicitFollowup(body),
     origin: "directive",
+    ...(parsedAnchor !== null ? { anchor: parsedAnchor.id } : {}),
   });
 }
 
 function taskBodyFromCheckboxLine(line: string): string {
+  const base = stripCarryForwardSource(line);
+  const withoutAnchor = parseBlockAnchor(base)?.withoutAnchor ?? base;
   return semanticActionBody(
-    stripCarryForwardSource(line)
-      .replace(/^\s*[-*]\s+\[ \]\s+/, "")
-      .trim(),
+    withoutAnchor.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
   );
 }
 
@@ -969,8 +1238,42 @@ function actionExtractionLineRanges(
   const frontmatter = frontmatterLineRange(content);
   return Object.freeze([
     ...dailyGeneratedBlockLineRanges(content),
+    ...fencedCodeBlockLineRanges(content),
     ...(frontmatter === null ? [] : [frontmatter]),
   ]);
+}
+
+/**
+ * Line ranges (1-indexed, inclusive of the fence lines) covered by fenced
+ * code blocks (``` or ~~~). Checkbox/directive syntax inside a fence is
+ * documentation, not an action item — excluding these ranges keeps task
+ * extraction, stamping, and syntax normalization from mutating example code.
+ * A fence opens on a line whose first non-space run is ``` (3+) or ~~~ (3+)
+ * and closes on the next line opening with the same fence character; an
+ * unterminated fence extends to end of file.
+ */
+function fencedCodeBlockLineRanges(
+  content: string,
+): ReadonlyArray<{ readonly start: number; readonly end: number }> {
+  const lines = content.split(/\r?\n/);
+  const ranges: { start: number; end: number }[] = [];
+  let openLine = -1;
+  let fenceChar = "";
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = /^(`{3,}|~{3,})/.exec((lines[i] ?? "").trimStart());
+    if (match === null) continue;
+    const char = (match[1] ?? "").charAt(0);
+    if (openLine < 0) {
+      openLine = i + 1;
+      fenceChar = char;
+    } else if (char === fenceChar) {
+      ranges.push({ start: openLine, end: i + 1 });
+      openLine = -1;
+      fenceChar = "";
+    }
+  }
+  if (openLine > 0) ranges.push({ start: openLine, end: lines.length });
+  return Object.freeze(ranges.map((range) => Object.freeze(range)));
 }
 
 function frontmatterLineRange(

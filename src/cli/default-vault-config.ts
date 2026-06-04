@@ -77,6 +77,12 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "run.read": ["running"],
       "run.recover": true,
     }),
+    extension("dome.warden", false, {
+      read: ["wiki/**/*.md"],
+      "model.invoke": Object.freeze({ maxDailyCostUsd: 10 }),
+      "question.ask": true,
+      "patch.auto": ["wiki/generated/briefing/*.md"],
+    }),
   ]);
 
 export function defaultConfigRecord(opts: {

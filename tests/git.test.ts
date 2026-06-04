@@ -50,6 +50,8 @@ describe("git boundary", () => {
       expect(firstInfo).toEqual({
         lastChangedCommit: first,
         lastChangedAt: "2026-05-01T12:00:00.000Z",
+        lastHumanChangedCommit: first,
+        lastHumanChangedAt: "2026-05-01T12:00:00.000Z",
       });
 
       const latestInfo = await fileInfoAtCommit({
@@ -60,6 +62,85 @@ describe("git boundary", () => {
       expect(latestInfo).toEqual({
         lastChangedCommit: third,
         lastChangedAt: "2026-05-03T12:00:00.000Z",
+        lastHumanChangedCommit: third,
+        lastHumanChangedAt: "2026-05-03T12:00:00.000Z",
+      });
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("fileInfoAtCommit ignores Dome-authored commits for lastHumanChanged*", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-human-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      const human = await commit({
+        path,
+        message: "human edit",
+        files: ["wiki/a.md"],
+        committer: identityAt("2026-05-01T12:00:00.000Z"),
+      });
+
+      // An engine "closure commit" carrying a Dome-Run trailer (per
+      // src/engine-commit.ts). This rewrites the same file but must NOT
+      // count as the human-authored last-changed signal.
+      await write(path, "wiki/a.md", "one ^block-anchor\n");
+      const dome = await commit({
+        path,
+        message:
+          "garden: stamp block anchors\n\n" +
+          "Dome-Run: run-abc\n" +
+          "Dome-Extension: dome.task.stamp-block-id\n" +
+          "Dome-Base: base-oid\n" +
+          "Dome-Source-Head: head-oid",
+        files: ["wiki/a.md"],
+        committer: identityAt("2026-05-02T12:00:00.000Z"),
+      });
+
+      const info = await fileInfoAtCommit({
+        path,
+        commit: dome,
+        filepath: "wiki/a.md",
+      });
+      expect(info).toEqual({
+        lastChangedCommit: dome,
+        lastChangedAt: "2026-05-02T12:00:00.000Z",
+        lastHumanChangedCommit: human,
+        lastHumanChangedAt: "2026-05-01T12:00:00.000Z",
+      });
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("fileInfoAtCommit reports null lastHumanChanged* when every commit is Dome-authored", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-all-dome-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one ^anchor\n");
+      const dome = await commit({
+        path,
+        message:
+          "garden: stamp block anchors\n\n" +
+          "Dome-Run: run-xyz\n" +
+          "Dome-Extension: dome.task.stamp-block-id\n" +
+          "Dome-Base: base-oid\n" +
+          "Dome-Source-Head: head-oid",
+        files: ["wiki/a.md"],
+        committer: identityAt("2026-05-01T12:00:00.000Z"),
+      });
+
+      const info = await fileInfoAtCommit({
+        path,
+        commit: dome,
+        filepath: "wiki/a.md",
+      });
+      expect(info).toEqual({
+        lastChangedCommit: dome,
+        lastChangedAt: "2026-05-01T12:00:00.000Z",
+        lastHumanChangedCommit: null,
+        lastHumanChangedAt: null,
       });
     } finally {
       await rm(path, { recursive: true, force: true });
