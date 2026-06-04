@@ -718,6 +718,10 @@ Optional adopted-state views:
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
+- \`dome run today\` / \`dome run prep\` / \`dome run agenda-with <person-or-topic>\` -
+  deterministic daily / planning / meeting-prep views, invoked through the
+  \`dome run <name>\` dispatcher (they are view processors, not standalone
+  top-level commands).
 
 ## Read-first context
 
@@ -740,9 +744,9 @@ or tell the user; that feedback is V1 dogfood evidence.
 Advanced/debug commands:
 
 - \`dome inspect <subject>\`, \`dome doctor\`, \`dome lint\`, \`dome answer\`,
-  \`dome run\`, \`dome rebuild\`, and hidden compatibility daily views remain
-  available for debugging, compatibility, and extension development, but they
-  are not the normal Claude Code workflow.
+  \`dome run <name>\`, and \`dome rebuild\` remain available for debugging,
+  compatibility, and extension development, but they are not the normal Claude
+  Code workflow.
 - Useful inspect subjects are \`bundles\`, \`processors\`, \`runs\`, \`patches\`,
   \`facts\`, \`diagnostics\`, \`questions\`, \`outbox\`, and \`quarantine\`.
 
