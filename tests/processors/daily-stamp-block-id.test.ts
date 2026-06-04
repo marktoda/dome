@@ -53,6 +53,23 @@ describe("stampTaskAnchors", () => {
     expect(a).toBe(b);
   });
 
+  test("skips Obsidian Tasks query-dashboard files entirely", () => {
+    const content = [
+      "# Tasks",
+      "",
+      "```tasks",
+      "not done",
+      "sort by priority",
+      "```",
+      "",
+      "- [ ] loose task in a dashboard file #task",
+      "",
+    ].join("\n");
+    // A file containing an Obsidian Tasks query block is plugin-managed —
+    // Dome must not stamp it (even loose checkboxes outside the query).
+    expect(stampTaskAnchors({ path: "notes/tasks.md", content })).toBeNull();
+  });
+
   test("does not stamp checkbox examples inside a fenced code block", () => {
     const content = [
       "# Doc",

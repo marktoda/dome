@@ -28,6 +28,8 @@ Three garden-phase, `patch.auto` processors maintain task lines. All three are d
 
 All three are **garden** (not adoption) phase. The reason is the capability-failure surface. In the adoption phase a capability-denied auto-patch becomes a `severity: "block"` diagnostic that blocks the human's adoption — a cosmetic or convenience patch that cannot land would wedge the loop. In the garden phase the same denial degrades quietly (the patch is downgraded or skipped) without blocking the human's commit from being adopted. Task maintenance is convenience work; it must never gate the human. See [[wiki/specs/adoption]] §"The fixed-point adoption loop".
 
+**Obsidian Tasks dashboards are left alone.** A file containing a fenced ` ```tasks ` query block is an Obsidian Tasks plugin dashboard — the plugin parses task lines and would be confused by an injected `^anchor`. All three rewriters skip such files entirely (`isObsidianTasksDashboard`), so a vault's `notes/tasks.md`-style query files stay user-maintained. This is interop, not a capability grant: the grant model matches paths with positive globs only (`notes/*.md` cannot subtract one file), so the exclusion lives in the processor logic. Read-only extraction (`task-index`) still projects those task lines into facts.
+
 ## The `lastHumanChangedAt` freshness rule
 
 Daily open-loop recency ranking must reflect *human* edit recency, not engine churn. The problem: stamping a `^block-anchor` (or any garden patch) produces an engine commit, which would reset a naive "last changed" timestamp and make a stale task look fresh.

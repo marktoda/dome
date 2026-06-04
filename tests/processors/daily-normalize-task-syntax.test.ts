@@ -3,6 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { normalizeTaskSyntax } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
 describe("normalizeTaskSyntax", () => {
+  test("returns null for an Obsidian Tasks query-dashboard file", () => {
+    const content = "# Tasks\n\n```tasks\nnot done\n```\n\n- [X] loose   spacing #task\n";
+    expect(normalizeTaskSyntax(content)).toBeNull();
+  });
+
   test("lowercases an uppercase checkbox marker", () => {
     expect(normalizeTaskSyntax("- [X] foo\n")).toBe("- [x] foo\n");
   });

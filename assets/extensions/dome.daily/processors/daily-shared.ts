@@ -245,10 +245,23 @@ export function actionItemsFromMarkdown(
  * for two identical-body tasks in one file. Once stamped, a line carries its
  * identity in the markdown itself and survives moves and body edits.
  */
+/**
+ * True when the file is an Obsidian Tasks plugin query dashboard — it contains
+ * a fenced ` ```tasks ` (or `~~~tasks`) query block. Such files are managed by
+ * the plugin (which parses task lines and would choke on a `^anchor` suffix),
+ * so the task-lifecycle rewriters (stamp / normalize / reconcile) leave the
+ * whole file alone. Read-only extraction (`actionItemsFromMarkdown`,
+ * task-index) is unaffected — the tasks still project into facts.
+ */
+export function isObsidianTasksDashboard(content: string): boolean {
+  return /^[ ]{0,3}(?:```|~~~)\s*tasks(?:\s|$)/m.test(content);
+}
+
 export function stampTaskAnchors(input: {
   readonly path: string;
   readonly content: string;
 }): string | null {
+  if (isObsidianTasksDashboard(input.content)) return null;
   const lines = input.content.split(/\r?\n/);
   const occurrences = new Map<string, number>();
   let changed = false;
@@ -286,6 +299,7 @@ export function stampTaskAnchors(input: {
  * preserved verbatim, so a re-run over the output returns `null`.
  */
 export function normalizeTaskSyntax(content: string): string | null {
+  if (isObsidianTasksDashboard(content)) return null;
   const lines = content.split(/\r?\n/);
   const ignoredRanges = actionExtractionLineRanges(content);
   let changed = false;
@@ -651,6 +665,8 @@ export function reconcileSettledOpenLoops(input: {
     const originPath = normalizeSourcePath(target.sourcePath);
     const current = rewrites.get(originPath) ?? contentByPath.get(originPath);
     if (current === undefined) continue;
+    // Never rewrite an Obsidian Tasks plugin dashboard back-propagating a close.
+    if (isObsidianTasksDashboard(current)) continue;
 
     const consumed = consumedLines.get(originPath) ?? new Set<number>();
     const wantBody = reconcileBodyKey(target.body);
