@@ -12,7 +12,10 @@ import { fileURLToPath } from "node:url";
 import type { AdoptEvent } from "../../engine/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden";
 import type { OperationalWorkResult } from "../../engine/operational-work";
+import type { DiagnosticEffect } from "../../core/effect";
 import {
+  type Caps,
+  glyph,
   headline,
   kv,
   resolveCaps,
@@ -123,6 +126,118 @@ export function formatFilteredAdoptEvent(
   return formatAdoptEvent(event, { command: opts.command });
 }
 
+/** Severities most-severe-first, so the breakdown leads with what matters. */
+const SEVERITY_ORDER = ["block", "error", "warning", "info"] as const;
+
+/**
+ * Default number of active processor ids shown inline on the adopted line
+ * before collapsing the tail into `+N more`. Keeps the one-liner readable
+ * on a vault with a dozen processors while still naming the ones that did
+ * the work.
+ */
+const DEFAULT_MAX_PROCESSORS = 4;
+
+/**
+ * Build the operator-facing one-line adoption summary, e.g.
+ *
+ *   dome serve: adopted main 84b81a3 · 2 iterations · 12 diagnostics (3 warning, 9 info) · ran dome.graph, dome.markdown
+ *
+ * The diagnostic severity breakdown (most-severe-first, zero buckets
+ * omitted) turns the bare count into a sense of *what kind* of findings
+ * surfaced; the `ran …` tail names the adoption-phase processors that
+ * actually emitted effects this tick, so the operator sees *which*
+ * improvements landed without reaching for `dome inspect`. The separator
+ * is the caps-aware `sep` glyph (`·` unicode, `-` ascii).
+ */
+export function formatAdoptedSummaryLine(
+  input: {
+    readonly command: "serve" | "sync";
+    readonly branch: string;
+    readonly adoptedRef: string;
+    readonly iterations: number;
+    readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+    readonly activeProcessorIds: ReadonlyArray<string>;
+  },
+  caps: Caps,
+  opts?: { readonly maxProcessors?: number },
+): string {
+  const sep = ` ${glyph("sep", caps)} `;
+  const iters = input.iterations;
+  const diagCount = input.diagnostics.length;
+
+  const parts: string[] = [
+    `${input.iterations} iteration${iters === 1 ? "" : "s"}`,
+  ];
+
+  let diagPart = `${diagCount} diagnostic${diagCount === 1 ? "" : "s"}`;
+  const breakdown = formatSeverityBreakdown(input.diagnostics);
+  if (breakdown !== null) diagPart += ` (${breakdown})`;
+  parts.push(diagPart);
+
+  const processorPart = formatActiveProcessors(
+    input.activeProcessorIds,
+    opts?.maxProcessors ?? DEFAULT_MAX_PROCESSORS,
+  );
+  if (processorPart !== null) parts.push(processorPart);
+
+  return (
+    `dome ${input.command}: adopted ${input.branch} ` +
+    `${input.adoptedRef.slice(0, 7)}${sep}${parts.join(sep)}`
+  );
+}
+
+/**
+ * Render a `<count> <severity>` breakdown for the non-empty severity
+ * buckets, most-severe-first. Returns `null` when there are no diagnostics
+ * (the caller shows the bare count instead).
+ */
+function formatSeverityBreakdown(
+  diagnostics: ReadonlyArray<DiagnosticEffect>,
+): string | null {
+  if (diagnostics.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const d of diagnostics) {
+    counts.set(d.severity, (counts.get(d.severity) ?? 0) + 1);
+  }
+  const segments = SEVERITY_ORDER.filter((s) => (counts.get(s) ?? 0) > 0).map(
+    (s) => `${counts.get(s)} ${s}`,
+  );
+  return segments.length > 0 ? segments.join(", ") : null;
+}
+
+/**
+ * Render the `ran a, b, c [+N more]` tail naming the processors that did
+ * work this tick. Ids are sorted for determinism and capped at `max`.
+ * Returns `null` when no processor was active.
+ */
+function formatActiveProcessors(
+  processorIds: ReadonlyArray<string>,
+  max: number,
+): string | null {
+  if (processorIds.length === 0) return null;
+  const sorted = [...processorIds].sort();
+  const shown = sorted.slice(0, max);
+  const overflow = sorted.length - shown.length;
+  const tail = overflow > 0 ? ` +${overflow} more` : "";
+  return `ran ${shown.join(", ")}${tail}`;
+}
+
+/**
+ * The sorted, de-duplicated processor ids whose garden runs emitted at
+ * least one effect. This is the post-adoption analogue of the adopted
+ * line's `ran …` tail: it names *which* garden processors produced the
+ * sub-Proposals / facts reported by the GARDEN counts.
+ */
+export function activeGardenProcessorIds(
+  garden: GardenPhaseResult,
+): ReadonlyArray<string> {
+  const ids = new Set<string>();
+  for (const run of garden.runs) {
+    if (run.effectCount > 0) ids.add(run.processorId);
+  }
+  return [...ids].sort();
+}
+
 export function printHostFollowupLines(
   command: "dome serve" | "dome sync",
   garden: GardenPhaseResult | null,
@@ -143,9 +258,18 @@ export function printHostFollowupLines(
   ) {
     const gardenRows: KvRow[] = [
       { label: "sub-proposals", value: `${garden.subProposalCount}` },
+    ];
+    const gardenProcessors = activeGardenProcessorIds(garden);
+    if (gardenProcessors.length > 0) {
+      gardenRows.push({
+        label: "processors",
+        value: gardenProcessors.join(", "),
+      });
+    }
+    gardenRows.push(
       { label: "rejected patches", value: `${garden.rejectedPatchCount}` },
       { label: "diagnostics", value: `${garden.diagnostics.length}` },
-    ];
+    );
     const lines: string[] = [
       headline(headlineLeft, { tone: "plain", label: "garden follow-up" }, caps),
       ...section("Garden", kv(gardenRows, caps), caps),

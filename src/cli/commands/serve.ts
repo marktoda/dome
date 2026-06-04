@@ -62,6 +62,7 @@ import {
 } from "../../engine/compiler-host-heartbeat";
 import {
   resolveBundleRoots,
+  formatAdoptedSummaryLine,
   formatFilteredAdoptEvent,
   printHostFollowupLines,
 } from "./sync-shared";
@@ -729,28 +730,34 @@ async function runCompilerHostTickWithErrorHandling(input: {
     suppressBusyLine,
   } = input;
 
+  // Accumulate the adoption-phase processors that emitted effects this tick
+  // (regardless of verbosity) so the adopted summary line can name *which*
+  // processors did work. Verbose mode additionally streams each event to
+  // stderr; both observers share the one `onEvent` callback.
+  const activeProcessorIds = new Set<string>();
   try {
     const tick = await runCompilerHostTick({
       runtime,
       drift,
       runOperationalWhenInSync,
       signal: cancel,
-      ...(verbose && !quiet
-        ? {
-            onEvent: (e) => {
-              const line = formatFilteredAdoptEvent(e, {
-                command: "serve",
-                ...(filterProcessor !== undefined
-                  ? { processorFilter: filterProcessor }
-                  : {}),
-              });
-              if (line !== null) console.error(line);
-            },
-          }
-        : {}),
+      onEvent: (e) => {
+        if (e.kind === "processor-result" && e.effectCount > 0) {
+          activeProcessorIds.add(e.processorId);
+        }
+        if (verbose && !quiet) {
+          const line = formatFilteredAdoptEvent(e, {
+            command: "serve",
+            ...(filterProcessor !== undefined
+              ? { processorFilter: filterProcessor }
+              : {}),
+          });
+          if (line !== null) console.error(line);
+        }
+      },
     });
     if (tick.kind === "busy" && suppressBusyLine) return tick;
-    printTickLine(tick, { verbose, quiet });
+    printTickLine(tick, { verbose, quiet, activeProcessorIds });
     return tick;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -763,16 +770,23 @@ async function runCompilerHostTickWithErrorHandling(input: {
  * Render the adoption result as a single line on stdout. The format
  * mirrors the operator-facing summary the serve banner sets up:
  *
- *   dome serve: adopted main 41a98c2 (0 diagnostics, 1 iteration)
+ *   dome serve: adopted main 41a98c2 · 1 iteration · 3 diagnostics (1 warning, 2 info) · ran dome.markdown
  *   dome serve: blocked main: 3 diagnostics — first: <message>
  *
+ * The adopted line carries a severity breakdown and the adoption-phase
+ * processors that emitted effects (`activeProcessorIds`), so the operator
+ * sees what kind of findings surfaced and which processors did the work.
  * Diagnostics counts are total; the first blocking diagnostic's message
  * is appended for the blocked case so the operator sees what to fix
  * without reaching for `dome inspect diagnostics`.
  */
 function printTickLine(
   tick: CompilerHostTickResult,
-  opts: { readonly verbose: boolean; readonly quiet: boolean },
+  opts: {
+    readonly verbose: boolean;
+    readonly quiet: boolean;
+    readonly activeProcessorIds: ReadonlySet<string>;
+  },
 ): void {
   if (tick.kind === "busy") {
     if (opts.quiet) return;
@@ -802,9 +816,17 @@ function printTickLine(
   if (result.adopted) {
     if (!opts.quiet) {
       console.log(
-        `dome serve: adopted ${tick.branch} ${tick.finalAdoptedRef.slice(0, 7)} ` +
-          `(${diagCount} diagnostic${diagCount === 1 ? "" : "s"}, ` +
-          `${iters} iteration${iters === 1 ? "" : "s"})`,
+        formatAdoptedSummaryLine(
+          {
+            command: "serve",
+            branch: tick.branch,
+            adoptedRef: tick.finalAdoptedRef,
+            iterations: iters,
+            diagnostics: result.diagnostics,
+            activeProcessorIds: [...opts.activeProcessorIds],
+          },
+          resolveCaps(),
+        ),
       );
       if (opts.verbose && tick.projectionRebuild !== null) {
         console.log(
