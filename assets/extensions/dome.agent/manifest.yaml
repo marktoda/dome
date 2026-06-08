@@ -1,0 +1,57 @@
+id: dome.agent
+version: 0.1.0
+processors:
+  - id: dome.agent.ingest
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/raw/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/raw/*.md"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "notes/**/*.md"
+          - "inbox/**/*.md"
+          - "index.md"
+          - "log.md"
+      - kind: patch.auto
+        paths:
+          - "wiki/**/*.md"
+          - "notes/**/*.md"
+          - "index.md"
+          - "log.md"
+          - "inbox/processed/*.md"
+          - "inbox/raw/*.md"
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+      - kind: question.ask
+    execution:
+      class: llm
+      timeoutMs: 900000
+      modelCallTimeoutMs: 180000
+    module: processors/ingest.ts
+
+  - id: dome.agent.inbox-stale-check
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 * * * *"
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "inbox/**/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/**/*.md"]
+    module: processors/inbox-stale-check.ts
