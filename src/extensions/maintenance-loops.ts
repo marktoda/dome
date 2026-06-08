@@ -212,39 +212,37 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
   Object.freeze([
     freezeLoop({
       id: "dome.capture.digest",
-      goal: "New raw captures have a source-backed disposition.",
+      goal: "New raw captures are integrated into the knowledge graph and consumed.",
       evidence: [
         { kind: "path", pattern: ".dome/config.yaml" },
         { kind: "path", pattern: ".dome/model-provider.ts" },
         { kind: "path", pattern: "inbox/raw/*.md" },
         { kind: "path", pattern: "inbox/processed/*.md" },
-        { kind: "path", pattern: "wiki/generated/intake/*.md" },
-        { kind: "projection", name: "facts:dome.intake.*" },
+        { kind: "path", pattern: "wiki/**/*.md" },
         { kind: "operational", name: "questions" },
+        { kind: "operational", name: "diagnostics" },
       ],
       processors: [
-        "dome.intake.extract-capture",
-        "dome.intake.capture-index",
-        "dome.intake.inbox-stale-check",
-        "dome.intake.low-confidence-answer",
-        "dome.intake.synthesize-capture",
-        "dome.intake.synthesize-rollup",
+        "dome.agent.ingest",
+        "dome.agent.inbox-stale-check",
       ],
       surfaces: [
-        { kind: "path", pattern: "wiki/generated/intake/*.md" },
-        { kind: "path", pattern: "wiki/syntheses/intake-*.md" },
+        { kind: "path", pattern: "wiki/sources/*.md" },
+        { kind: "path", pattern: "wiki/entities/*.md" },
+        { kind: "path", pattern: "wiki/concepts/*.md" },
+        { kind: "path", pattern: "index.md" },
         { kind: "command", name: "query" },
         { kind: "command", name: "export-context" },
       ],
       settlement: {
-        key: "raw path + raw content hash + processor version",
+        key: "raw path + raw content hash",
         noOpWhen:
-          "the current raw capture hash has a matching generated digest, processed archive, disposition, extractor schema, and rebuildable pending-question state",
+          "the raw capture has been integrated into the wiki and archived out of inbox/raw",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
-        "LLM extraction can still produce noisy summaries even when source-hash identity is stable.",
-        "Low-confidence findings should remain questions instead of becoming silent claims.",
+        "LLM integration can produce noisy or incorrect pages; git history and the integrity warden are the safety nets.",
+        "Auto-merging into curated pages can overwrite nuance; the Dome-Run commit split keeps changes reviewable and revertable.",
       ],
     }),
     freezeLoop({
@@ -380,7 +378,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.ambiguous-followup-answer",
       ],
       optionalProcessors: [
-        "dome.intake.low-confidence-answer",
         "dome.warden.integrity",
         "dome.warden.integrity-answer",
       ],
