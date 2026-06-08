@@ -317,6 +317,13 @@ describe("runInit", () => {
       expect(existsSync(join(target, "notes"))).toBe(true);
       expect(existsSync(join(target, "inbox", "raw"))).toBe(true);
       expect(existsSync(join(target, "inbox", "processed"))).toBe(true);
+      // `.gitkeep` keeps the inbox dirs tracked once the ingest agent empties
+      // inbox/raw/ — a dotfile so it matches neither inbox/raw/*.md (ingest)
+      // nor inbox/**/*.md (stale-check).
+      expect(existsSync(join(target, "inbox", "raw", ".gitkeep"))).toBe(true);
+      expect(
+        existsSync(join(target, "inbox", "processed", ".gitkeep")),
+      ).toBe(true);
       expect(existsSync(join(target, ".dome", "state"))).toBe(true);
       expect(existsSync(join(target, ".dome", "extensions"))).toBe(false);
 

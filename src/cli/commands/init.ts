@@ -195,6 +195,12 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     const notesOutcome = await ensureDir(notesDir);
     const inboxRawOutcome = await ensureDir(inboxRawDir);
     const inboxProcessedOutcome = await ensureDir(inboxProcessedDir);
+    // Keep the inbox drop-zone + archive tracked in git even when empty: the
+    // ingest agent empties `inbox/raw/` after each capture, and git does not
+    // track empty directories. `.gitkeep` is a dotfile, so it matches neither
+    // `inbox/raw/*.md` (ingest trigger) nor `inbox/**/*.md` (stale-check).
+    await writeIfMissing(join(inboxRawDir, ".gitkeep"), "");
+    await writeIfMissing(join(inboxProcessedDir, ".gitkeep"), "");
     const stateOutcome = await ensureDir(stateDir);
 
     // 4. Write `.dome/config.yaml` (first-write-only by default). Existing
