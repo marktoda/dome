@@ -886,8 +886,22 @@ async function main(): Promise<void> {
   if (API_KEY === undefined || API_KEY.trim().length === 0) {
     throw new Error("ANTHROPIC_API_KEY is required");
   }
+  const raw = JSON.parse(await Bun.stdin.text());
+  if (raw.schema === "dome.model-provider.step/v1") {
+    process.stdout.write(JSON.stringify(await runStep(raw)));
+    return;
+  }
+  if (raw.schema === "dome.model-provider.request/v1") {
+    process.stdout.write(JSON.stringify(await runText(raw)));
+    return;
+  }
+  throw new Error("unsupported Dome model provider request schema");
+}
 
-  const request = parseRequest(await Bun.stdin.text());
+async function runText(
+  raw: unknown,
+): Promise<{ text: string; model: string; costUsd?: number }> {
+  const request = parseRequest(raw);
   const model = request.model ?? DEFAULT_MODEL;
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -918,17 +932,104 @@ async function main(): Promise<void> {
   }
 
   const costUsd = costFromUsage(parsed.usage);
-  process.stdout.write(
-    JSON.stringify({
-      text,
-      model: parsed.model ?? model,
-      ...(costUsd === undefined ? {} : { costUsd }),
-    }),
-  );
+  return {
+    text,
+    model: parsed.model ?? model,
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
 }
 
-function parseRequest(raw: string): ProviderRequest {
-  const parsed = JSON.parse(raw) as Partial<ProviderRequest>;
+async function runStep(req: {
+  messages: Array<
+    | { role: "system"; content: string }
+    | { role: "user"; content: string }
+    | { role: "assistant"; content: string; toolCalls?: Array<{ id: string; name: string; input: unknown }> }
+    | { role: "tool"; toolCallId: string; toolName: string; content: string }
+  >;
+  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  model?: string;
+}): Promise<{ toolCalls?: Array<{ id: string; name: string; input: unknown }>; text?: string; model?: string; costUsd?: number }> {
+  const model = req.model ?? DEFAULT_MODEL;
+  const system = req.messages
+    .filter((m) => m.role === "system")
+    .map((m) => (m as { content: string }).content)
+    .join("\\n\\n");
+  const messages = req.messages
+    .filter((m) => m.role !== "system")
+    .map((m) => toAnthropicMessage(m));
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: MAX_TOKENS,
+    messages,
+    tools: req.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema,
+    })),
+  };
+  if (system.length > 0) body.system = system;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(
+      \`Anthropic step request failed \${response.status}: \${errBody.slice(0, 1000)}\`,
+    );
+  }
+  const parsed = await response.json();
+  const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }> =
+    parsed.content ?? [];
+  const toolCalls = blocks
+    .filter((b) => b.type === "tool_use")
+    .map((b) => ({ id: String(b.id), name: String(b.name), input: b.input }));
+  const text = blocks
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("\\n")
+    .trim();
+  const costUsd = costFromUsage(parsed.usage);
+  return {
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(text.length > 0 ? { text } : {}),
+    model: parsed.model ?? model,
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
+}
+
+function toAnthropicMessage(m: {
+  role: string;
+  content: string;
+  toolCalls?: Array<{ id: string; name: string; input: unknown }>;
+  toolCallId?: string;
+  toolName?: string;
+}): unknown {
+  if (m.role === "assistant") {
+    const content: unknown[] = [];
+    if (m.content.length > 0) content.push({ type: "text", text: m.content });
+    for (const c of m.toolCalls ?? []) {
+      content.push({ type: "tool_use", id: c.id, name: c.name, input: c.input });
+    }
+    return { role: "assistant", content };
+  }
+  if (m.role === "tool") {
+    return {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: m.content }],
+    };
+  }
+  return { role: "user", content: m.content };
+}
+
+function parseRequest(raw: unknown): ProviderRequest {
+  const parsed = raw as Partial<ProviderRequest>;
   if (parsed.schema !== "dome.model-provider.request/v1") {
     throw new Error("unsupported Dome model provider request schema");
   }
