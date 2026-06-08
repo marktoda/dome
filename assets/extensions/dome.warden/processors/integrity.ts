@@ -117,6 +117,12 @@ const integrity = defineProcessorImplementation({
         : "agent-safe";
 
       for (const finding of result.findings) {
+        // Only surface findings that warrant an editorial decision. Low-risk
+        // inference is pervasive in a synthesized vault; emitting a question
+        // for each one out-produces triage and trains the owner to ignore the
+        // warden. Drop low-risk; keep medium/high. (Tunable: the threshold
+        // could move to vault config later.)
+        if (finding.severity === "low") continue;
         effects.push(
           questionEffect({
             question: questionTextFor(path, finding),

@@ -37,6 +37,32 @@ type Finding = {
 };
 
 describe("dome.warden.integrity", () => {
+  test("drops low-risk findings — only risk >= medium becomes a question", async () => {
+    const effects = await runIntegrity({
+      path: "wiki/concepts/x.md",
+      content: "# X\n\nAn unsourced inference and another.\n",
+      findings: [
+        {
+          kind: "inference-as-fact",
+          claim: "An unsourced inference",
+          severity: "low",
+          confidence: 0.6,
+          recommendedAnswer: "cite a source",
+        },
+        {
+          kind: "self-corroborating",
+          claim: "another",
+          severity: "medium",
+          confidence: 0.7,
+          recommendedAnswer: "cite a source",
+        },
+      ],
+    });
+    const questions = effects.filter(isQuestion);
+    expect(questions.length).toBe(1);
+    expect(questions[0]?.metadata?.risk).toBe("medium");
+  });
+
   test("high-severity finding on a people page → owner-needed QuestionEffect, content-hash idempotencyKey, no fact/patch", async () => {
     const path = "wiki/entities/danny.md";
     const content =
