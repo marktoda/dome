@@ -31,27 +31,3 @@ processors:
       - kind: read
         paths: ["wiki/**/*.md"]
     module: processors/integrity-answer.ts
-
-  - id: dome.warden.daily-briefing
-    version: 0.1.0
-    phase: garden
-    # CRON ONLY. The processor WRITES a markdown page; a document.changed
-    # trigger would re-fire on its own output and cascade. A schedule trigger
-    # does not re-fire on the resulting sub-proposal's doc change, so the
-    # garden cascade converges.
-    triggers:
-      - kind: schedule
-        cron: "0 7 * * *"
-    capabilities:
-      - kind: read
-        paths: ["wiki/**/*.md"]
-      - kind: model.invoke
-        maxDailyCostUsd: 10
-      # Narrow patch.auto: ONLY the generated, derived briefing surface.
-      - kind: patch.auto
-        paths: ["wiki/generated/briefing/*.md"]
-    execution:
-      class: llm
-      timeoutMs: 600000
-      modelCallTimeoutMs: 180000
-    module: processors/daily-briefing.ts

@@ -1203,12 +1203,11 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(5);
+    expect(modelProcessors.length).toBe(4);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
       "dome.intake.extract-capture",
       "dome.intake.synthesize-capture",
       "dome.intake.synthesize-rollup",
-      "dome.warden.daily-briefing",
       "dome.warden.integrity",
     ]);
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
@@ -1456,7 +1455,7 @@ describe("runInspect", () => {
         bundle: "dome.warden",
         status: "disabled",
         loaded: false,
-        model_processors: 2,
+        model_processors: 1,
         model: "disabled-no-provider",
       }),
     ]);

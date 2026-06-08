@@ -81,7 +81,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       read: ["wiki/**/*.md"],
       "model.invoke": Object.freeze({ maxDailyCostUsd: 10 }),
       "question.ask": true,
-      "patch.auto": ["wiki/generated/briefing/*.md"],
     }),
   ]);
 

@@ -46,15 +46,9 @@ The integrity warden reads `wiki/**/*.md`, asks the model to find knowledge-inte
 
 This is structurally required by [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]: a garden `model.invoke` processor is **not** re-run during projection rebuild (model calls are excluded from rebuild), so any `FactEffect` it emitted would silently vanish on `dome rebuild`. The warden's judgment is transient; it becomes durable only through the **resolution-is-durable** contract: a human or agent answers the question via `dome resolve`, the answer is recorded in `answers.db`, and rebuild rehydrates that answer. The companion **`dome.warden.integrity-answer`** handler (an `answer`-triggered garden processor, `read` only) reacts to the resolved answer. Model output proposes; the human/agent resolution disposes, and only the disposition is durable.
 
-### `dome.warden.daily-briefing` — generative briefing surface
-
-The briefing warden generates a daily briefing page. It is granted `read` + `model.invoke` + `patch.auto` **scoped narrowly to the generated surface** `wiki/generated/briefing/*.md` — and, again, **no `graph.write`**. The briefing is a regenerated generated surface, not a durable fact: rebuild re-derives it by re-running the (cron-driven) processor against adopted state, so it stays consistent with [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] and [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
-
-The briefing warden is **cron-only** (`schedule: "0 7 * * *"`), with no `document.changed` trigger. A document-change trigger would re-fire on the warden's own written output and cascade; a schedule trigger does not re-fire on the resulting sub-Proposal's document change, so the garden cascade converges. See [[wiki/gotchas/garden-cascade-cap]].
-
 ### No-op without a model
 
-Both wardens **degrade to a clean no-op** when no model provider is configured. With `model.invoke` ungranted or no provider wired, the warden returns no effects rather than failing — it is never a failed run. This keeps a vault with wardens enabled but no model key fully green.
+The integrity warden **degrades to a clean no-op** when no model provider is configured. With `model.invoke` ungranted or no provider wired, the warden returns no effects rather than failing — it is never a failed run. This keeps a vault with the warden enabled but no model key fully green.
 
 ## Related
 

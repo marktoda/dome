@@ -344,9 +344,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.search.query",
         "dome.search.export-context",
       ],
-      optionalProcessors: [
-        "dome.warden.daily-briefing",
-      ],
       surfaces: [
         { kind: "command", name: "query" },
         { kind: "command", name: "export-context" },
