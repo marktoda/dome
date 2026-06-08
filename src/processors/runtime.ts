@@ -137,6 +137,7 @@ import { makeRunContext } from "../run-context";
 import {
   modelInvokeForProcessor,
   type ModelProvider,
+  type ModelStepProvider,
 } from "../engine/model-invoke";
 import {
   filterReadablePaths,
@@ -282,6 +283,7 @@ export type BuildRuntimeOptions = {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
 };
 
 // ----- buildRuntime ---------------------------------------------------------
@@ -316,6 +318,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     pageTypes,
     executionCap,
     modelProvider,
+    modelStepProvider,
   } = opts;
   const executionState =
     opts.executionState ?? buildProcessorExecutionState();
@@ -381,6 +384,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
             : {}),
           ...(pageTypes !== undefined ? { pageTypes } : {}),
           ...(modelProvider !== undefined ? { modelProvider } : {}),
+          ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
         });
         results.push(result);
       }
@@ -452,6 +456,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(operational !== undefined ? { operational } : {}),
           ...(pageTypes !== undefined ? { pageTypes } : {}),
           ...(modelProvider !== undefined ? { modelProvider } : {}),
+          ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
         });
         results.push(result);
       }
@@ -544,6 +549,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           : {}),
         ...(pageTypes !== undefined ? { pageTypes } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
+        ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
         // View-phase processors receive the projection query view so they
         // can read facts / diagnostics / questions out of the projection
         // store via `ctx.projection`. Adoption + garden phases do NOT pass
@@ -723,6 +729,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly signal?: AbortSignal;
   readonly executionState?: ProcessorExecutionState;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly pageTypes?: PageTypeRegistry;
   readonly operational?: OperationalQueryView;
   /**
@@ -1001,6 +1008,9 @@ function buildExecutionContext<TEnvelope>(
         signal,
         ...(opts.modelProvider !== undefined
           ? { provider: opts.modelProvider }
+          : {}),
+        ...(opts.modelStepProvider !== undefined
+          ? { stepProvider: opts.modelStepProvider }
           : {}),
         onCost: (cost) => {
           costUsd += cost;

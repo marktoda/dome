@@ -69,7 +69,10 @@ import {
   type CapabilityPolicy,
   type RuntimeConfig,
 } from "./capability-policy";
-import { buildCommandModelProvider } from "./command-model-provider";
+import {
+  buildCommandModelProvider,
+  buildCommandModelStepProvider,
+} from "./command-model-provider";
 import { readTree } from "../git";
 import { openAnswersDb, type AnswersDb } from "../answers/db";
 import { openProjectionDb, type ProjectionDb } from "../projections/db";
@@ -82,7 +85,7 @@ import type {
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
 import { buildOperationalQueryView } from "./operational-query-view";
 import { openQuarantineStore } from "./quarantine-store";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import {
   buildRuntime,
   type ProcessorRuntime,
@@ -149,6 +152,7 @@ export type VaultRuntime = {
   readonly externalHandlers: ExternalHandlerRegistry;
   readonly operationalQueryView: OperationalQueryView;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly close: () => Promise<void>;
 };
 
@@ -362,6 +366,7 @@ type RuntimeSettings = {
   readonly extensionConfigFor: CapabilityPolicy["configForExtension"];
   readonly externalHandlers: ExternalHandlerRegistry;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
 };
 
 function runtimeSettingsForPolicy(input: {
@@ -376,9 +381,12 @@ function runtimeSettingsForPolicy(input: {
         input.resolved.processorExtensionIds,
       )
     : defaultResolveGrants(input.resolved.registry);
-  const modelProvider =
-    input.opts.modelProvider ??
-    modelProviderFromConfig(input.policy.runtime, input.opts.vaultPath);
+  const builtProviders = modelProviderFromConfig(
+    input.policy.runtime,
+    input.opts.vaultPath,
+  );
+  const modelProvider = input.opts.modelProvider ?? builtProviders?.text;
+  const modelStepProvider = builtProviders?.step;
 
   return Object.freeze({
     resolveGrants,
@@ -392,6 +400,7 @@ function runtimeSettingsForPolicy(input: {
       input.opts.externalHandlers,
     ),
     ...(modelProvider !== undefined ? { modelProvider } : {}),
+    ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
   });
 }
 
@@ -534,6 +543,9 @@ function buildVaultRuntime(input: {
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),
+    ...(settings.modelStepProvider !== undefined
+      ? { modelStepProvider: settings.modelStepProvider }
+      : {}),
   });
 
   return Object.freeze({
@@ -558,6 +570,9 @@ function buildVaultRuntime(input: {
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),
+    ...(settings.modelStepProvider !== undefined
+      ? { modelStepProvider: settings.modelStepProvider }
+      : {}),
     close: async () => {
       await processorRuntime.close();
       // Close in reverse-open order. SQLite handles are idempotent under
@@ -575,12 +590,15 @@ function buildVaultRuntime(input: {
 function modelProviderFromConfig(
   config: RuntimeConfig,
   vaultPath: string,
-): ModelProvider | undefined {
+): { text?: ModelProvider; step?: ModelStepProvider } | undefined {
   const provider = config.modelProvider;
   if (provider === undefined) return undefined;
   switch (provider.kind) {
     case "command":
-      return buildCommandModelProvider(provider, { cwd: vaultPath });
+      return {
+        text: buildCommandModelProvider(provider, { cwd: vaultPath }),
+        step: buildCommandModelStepProvider(provider, { cwd: vaultPath }),
+      };
   }
 }
 
