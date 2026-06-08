@@ -22,7 +22,7 @@ describe("dome.search ranking", () => {
       match: match({ path: "wiki/project-alpha.md", rank: 4, type: "project" }),
       facts: [
         fact("dome.daily.open_task"),
-        fact("dome.intake.decision"),
+        fact("dome.daily.decision"),
         fact("dome.graph.tagged"),
         fact("dome.graph.links_to"),
       ],

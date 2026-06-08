@@ -87,7 +87,7 @@ describe("buildRegistry — happy paths", () => {
 
 describe("buildRegistry — error variants", () => {
   test("duplicate id → err 'duplicate-processor-id' carrying the conflict list", () => {
-    const dupId = "dome.intake:extract";
+    const dupId = "dome.agent:extract";
     const a = makeProcessor({ id: dupId });
     const b = makeProcessor({ id: dupId });
     const r = buildRegistry([a, b]);

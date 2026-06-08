@@ -32,7 +32,7 @@ The v1 threshold is a fixed 168 hours. A configurable `engine.inbox_stale_age_ho
 
 **Counter-example:** The `dome.intake` extract-capture processor is quarantined because it crashed on a malformed input. New captures land in `inbox/raw/` and accumulate. After 7 days, the garden-phase inbox-stale-check fires a warning diagnostic for each lingering file. The user runs `dome check --json` to see the stale diagnostics and quarantine decision. The quarantine-recovery flow follows the engine-asks model: the `dome.health.quarantine-recovery-questions` processor emits a `QuestionEffect`; the user answers `dome resolve <question-id> reset` (un-quarantine the processor on next adoption) or `ignore` (leave quarantined); the `dome.health.quarantine-recovery-answer` garden-phase processor emits `QuarantineRecoveryEffect`; next `dome sync` re-processes the backlog. (The pre-recut `dome doctor --reset-quarantined-processors` flag is retired.)
 
-**Test guarantee:** `tests/harness/scenarios/effect-kinds/intake-extract-capture.scenario.test.ts` includes a stale-inbox scenario: it creates an old file under an active intake bucket, asserts one `inbox.stale` warning, then deletes the file and asserts the diagnostic resolves.
+**Required test guarantee:** a stale-inbox scenario should re-home under the `dome.agent.inbox-stale-check` processor — create an old file under an active inbox bucket, assert one `inbox.stale` warning, then delete the file and assert the diagnostic resolves. (The previous guarantee lived in the retired `dome.intake` extract-capture scenario.)
 
 **Related:**
 - [[wiki/specs/vault-layout]] §"`inbox/`"

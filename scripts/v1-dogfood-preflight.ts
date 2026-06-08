@@ -280,10 +280,10 @@ function captureCheck(
   readonly intakeLoaded: boolean;
   readonly modelStatus: string;
 } {
-  const intake = bundles.find((row) => row.bundle === "dome.intake");
+  const intake = bundles.find((row) => row.bundle === "dome.agent");
   const findings: string[] = [];
   if (intake === undefined) {
-    findings.push("dome.intake bundle is not visible");
+    findings.push("dome.agent bundle is not visible");
     return {
       ready: false,
       findings,
@@ -297,13 +297,13 @@ function captureCheck(
   const intakeLoaded = intake.loaded === true;
   const modelStatus = stringValue(intake.model, "unknown");
   if (intakeStatus !== "enabled") {
-    findings.push(`dome.intake is ${intakeStatus}`);
+    findings.push(`dome.agent is ${intakeStatus}`);
   }
   if (!intakeLoaded) {
-    findings.push("dome.intake processors are not loaded");
+    findings.push("dome.agent processors are not loaded");
   }
   if (modelStatus !== "ready") {
-    findings.push(`dome.intake model status is ${modelStatus}`);
+    findings.push(`dome.agent model status is ${modelStatus}`);
   }
 
   return {
@@ -333,7 +333,7 @@ function buildNextActions(input: {
   }
   if (!input.capture.ready) {
     actions.push(
-      "enable dome.intake with a configured model provider before capture dogfood",
+      "enable dome.agent with a configured model provider before capture dogfood",
     );
   }
   if (!input.serve.ready) {
@@ -431,8 +431,8 @@ function renderReport(report: PreflightReport): string {
   lines.push("");
   lines.push("Capture readiness:");
   lines.push(`- Ready: ${yesNo(report.capture.ready)}`);
-  lines.push(`- dome.intake status: ${report.capture.intakeStatus}`);
-  lines.push(`- dome.intake loaded: ${yesNo(report.capture.intakeLoaded)}`);
+  lines.push(`- dome.agent status: ${report.capture.intakeStatus}`);
+  lines.push(`- dome.agent loaded: ${yesNo(report.capture.intakeLoaded)}`);
   lines.push(`- model status: ${report.capture.modelStatus}`);
   renderFindings(lines, report.capture.findings);
   lines.push("");

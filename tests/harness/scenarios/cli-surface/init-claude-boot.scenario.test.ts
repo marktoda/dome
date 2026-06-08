@@ -74,7 +74,7 @@ scenario(
       expect(agents).toContain("dome inspect <subject>");
       expect(agents).toContain("dome inspect bundles --json");
       expect(agents).toContain("inbox/raw/");
-      expect(agents).toContain("dome.intake");
+      expect(agents).toContain("dome.agent");
       expect(agents).toContain('model: "ready"');
       expect(agents).toContain(".dome/state/");
       expect(gitignore).toContain(".dome/state/");

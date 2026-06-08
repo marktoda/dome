@@ -82,7 +82,7 @@ describe("v1 dogfood preflight script", () => {
     expect(report.capture.ready).toBe(false);
     expect(report.capture.intakeStatus).toBe("disabled");
     expect(report.capture.modelStatus).toBe("disabled-provider-configured");
-    expect(report.capture.findings).toContain("dome.intake is disabled");
+    expect(report.capture.findings).toContain("dome.agent is disabled");
     expect(report.release.status).toBe("not-ready");
     expect(report.release.serveHostEvidenceDays).toBe(1);
     expect(report.release.readiness).toContainEqual({
@@ -94,7 +94,7 @@ describe("v1 dogfood preflight script", () => {
       ready: false,
     });
     expect(report.nextActions).toContain(
-      "enable dome.intake with a configured model provider before capture dogfood",
+      "enable dome.agent with a configured model provider before capture dogfood",
     );
     expect(
       report.nextActions.some((action: string) =>
@@ -342,14 +342,14 @@ async function makeIntakeReadyVault(): Promise<string> {
   const configPath = join(vaultPath, ".dome", "config.yaml");
   const configBody = readFileSync(configPath, "utf8");
   const updated = configBody.replace(
-    /(^\s+dome\.intake:\s*\n\s+enabled:\s*)false/m,
+    /(^\s+dome\.agent:\s*\n\s+enabled:\s*)false/m,
     "$1true",
   );
   expect(updated).not.toBe(configBody);
   await writeFile(configPath, updated, "utf8");
   await commit({
     path: vaultPath,
-    message: "enable intake for preflight\n",
+    message: "enable agent for preflight\n",
     files: [".dome/config.yaml"],
   });
   const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);

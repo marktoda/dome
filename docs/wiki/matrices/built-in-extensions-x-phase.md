@@ -28,12 +28,12 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
-| **`dome.intake`** | shipped | shipped: `capture-index` | shipped: `extract-capture`, `inbox-stale-check`, `low-confidence-answer`, `synthesize-capture`, `synthesize-rollup` | — |
+| **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`) | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts
 
-- **Shipped processors:** 37 active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, and `dome.intake`.
+- **Shipped processors:** active processor modules across `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, `dome.warden`, and `dome.agent`.
 - **Planned processors:** listed as `planned` above; they are future pressure inside otherwise shipped bundles and do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.

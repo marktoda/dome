@@ -204,7 +204,7 @@ describe("runs lifecycle", () => {
     insertQueued(db, {
       id,
       proposalId: overrides.proposalId === undefined ? null : overrides.proposalId,
-      processorId: "dome.intake.extract",
+      processorId: "dome.agent.ingest",
       processorVersion: "1.0.0",
       phase: "adoption",
       inputCommit: INPUT_COMMIT,
@@ -223,7 +223,7 @@ describe("runs lifecycle", () => {
     if (row === null) return;
     expect(row.id).toBe(id);
     expect(row.status).toBe("queued");
-    expect(row.processorId).toBe("dome.intake.extract");
+    expect(row.processorId).toBe("dome.agent.ingest");
     expect(row.processorVersion).toBe("1.0.0");
     expect(row.phase).toBe("adoption");
     expect(row.inputCommit).toBe(INPUT_COMMIT);
@@ -332,7 +332,7 @@ describe("runs lifecycle", () => {
         message: "processor exceeded timeout of 2000ms",
         retryable: false,
         phase: "adoption",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 2000,
       finishedAt,
@@ -347,7 +347,7 @@ describe("runs lifecycle", () => {
       message: "processor exceeded timeout of 2000ms",
       retryable: false,
       phase: "adoption",
-      processorId: "dome.intake.extract",
+      processorId: "dome.agent.ingest",
     });
   });
 
@@ -364,7 +364,7 @@ describe("runs lifecycle", () => {
         message: "processor cancelled during shutdown",
         retryable: false,
         phase: "garden",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 100,
       finishedAt,
@@ -392,7 +392,7 @@ describe("runs lifecycle", () => {
         message: "processor exceeded timeout of 2000ms",
         retryable: false,
         phase: "adoption",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 2000,
       finishedAt: new Date(),
@@ -406,7 +406,7 @@ describe("runs lifecycle", () => {
         message: "processor cancelled during shutdown",
         retryable: false,
         phase: "garden",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 100,
       finishedAt: new Date(),
@@ -527,7 +527,7 @@ describe("runs lifecycle", () => {
         message: "processor exceeded timeout of 2000ms",
         retryable: false,
         phase: "adoption",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 2000,
       finishedAt: new Date(),
@@ -547,7 +547,7 @@ describe("runs lifecycle", () => {
         message: "processor exceeded timeout of 2000ms",
         retryable: false,
         phase: "adoption",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 2000,
       finishedAt: new Date("2026-05-27T12:00:03.000Z"),
@@ -559,7 +559,7 @@ describe("runs lifecycle", () => {
         message: "processor cancelled during shutdown",
         retryable: false,
         phase: "garden",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       },
       durationMs: 100,
       finishedAt: new Date("2026-05-27T12:00:04.000Z"),
@@ -601,7 +601,7 @@ describe("runs lifecycle", () => {
         code: "execution-policy.phase-class-denied",
         message: "Adoption processors must use deterministic execution.",
         phase: "adoption",
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
       }),
     });
 
@@ -615,7 +615,7 @@ describe("runs lifecycle", () => {
     const parsed = JSON.parse(done.error ?? "{}");
     expect(parsed.code).toBe("execution-policy.phase-class-denied");
     expect(parsed.phase).toBe("adoption");
-    expect(parsed.processorId).toBe("dome.intake.extract");
+    expect(parsed.processorId).toBe("dome.agent.ingest");
   });
 
   it("markRunning on an already-running row is a no-op (status unchanged)", () => {
@@ -718,13 +718,13 @@ describe("runs lifecycle", () => {
       .run("{not-json", id);
 
     const summaries = queryRunSummaries(db, {
-      processorId: "dome.intake.extract",
+      processorId: "dome.agent.ingest",
       limit: 1,
     });
     expect(summaries).toEqual([
       {
         id,
-        processorId: "dome.intake.extract",
+        processorId: "dome.agent.ingest",
         processorVersion: "1.0.0",
         phase: "adoption",
         status: "succeeded",
@@ -737,7 +737,7 @@ describe("runs lifecycle", () => {
     ]);
     expect(countRuns(db, { status: "succeeded" })).toBe(1);
     expect(() =>
-      queryRuns(db, { processorId: "dome.intake.extract" })
+      queryRuns(db, { processorId: "dome.agent.ingest" })
     ).toThrow("runs.trigger_payload_json contains invalid JSON");
   });
 

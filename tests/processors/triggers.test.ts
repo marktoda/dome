@@ -89,7 +89,7 @@ describe("matchTriggers — schedule + command no-ops (Phase 3 scope limit)", ()
 
   test("answer trigger returns no match — answer dispatcher owns answer dispatch", () => {
     const triggers: ReadonlyArray<Trigger> = [
-      { kind: "answer", idempotencyKeyPrefix: "dome.intake." },
+      { kind: "answer", idempotencyKeyPrefix: "dome.agent." },
     ];
     const r = matchTriggers(triggers, events);
     expect(r.length).toBe(0);

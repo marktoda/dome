@@ -7,94 +7,9 @@
 
 import { expect } from "bun:test";
 
-import {
-  captureOutputPaths,
-  captureSourceHash,
-} from "../../../../assets/extensions/dome.intake/processors/capture-page";
-import { synthesisOutputPath } from "../../../../assets/extensions/dome.intake/processors/synthesize-capture";
-import { rollupOutputPath } from "../../../../assets/extensions/dome.intake/processors/synthesize-rollup";
 import { TestClock, scenario } from "../../index";
 
-const CAPTURE_PATH = "inbox/raw/manager-day.md";
-const CAPTURE_BODY = [
-  "# Manager day capture",
-  "",
-  "Need to send Ada the launch staffing note.",
-  "Ask Ben about hiring budget.",
-  "",
-].join("\n");
-const CAPTURE_PATHS = captureOutputPaths({
-  path: CAPTURE_PATH,
-  sourceHash: captureSourceHash(CAPTURE_BODY),
-});
-const GENERATED_CAPTURE_PATH = CAPTURE_PATHS.generated;
-const ARCHIVE_PATH = CAPTURE_PATHS.archive;
-const SYNTHESIS_PATH = synthesisOutputPath(GENERATED_CAPTURE_PATH);
-const ROLLUP_PATH = rollupOutputPath();
-const COMMAND_PROVIDER_PATH = ".dome/test-command-model-provider.js";
-const COMMAND_PROVIDER_SOURCE = `
-const request = JSON.parse(await Bun.stdin.text());
-if (request.model !== "test-model") {
-  console.error("expected test-model");
-  process.exit(2);
-}
-if (
-  request.prompt.startsWith(
-    "Synthesize recent Dome generated intake captures",
-  )
-) {
-  console.log(JSON.stringify({
-    text: JSON.stringify({
-      title: "Manager day rollup",
-      thesis:
-        "Recent captures keep launch staffing and hiring budget follow-up in view.",
-      themes: [
-        "Ada needs launch staffing notes",
-        "Ben owns the hiring budget follow-up",
-      ],
-      risks: ["Budget follow-up may block the launch staffing thread"],
-      nextSteps: ["Send Ada the launch staffing note"],
-    }),
-    model: request.model,
-    costUsd: 0.05,
-  }));
-} else if (
-  request.prompt.startsWith(
-    "Synthesize a Dome generated intake capture",
-  )
-) {
-  console.log(JSON.stringify({
-    text: JSON.stringify({
-      title: "Manager day synthesis",
-      thesis:
-        "The capture keeps launch staffing and hiring budget follow-up in view.",
-      highlights: [
-        "Ada needs launch staffing notes",
-        "Ben owns the hiring budget follow-up",
-      ],
-      risks: ["Budget follow-up may block the launch staffing thread"],
-      nextSteps: ["Send Ada the launch staffing note"],
-    }),
-    model: request.model,
-    costUsd: 0.05,
-  }));
-} else {
-  console.log(JSON.stringify({
-    text: JSON.stringify({
-      title: "Manager day follow-up",
-      summary:
-        "Ada needs launch staffing notes and Ben owns the hiring budget follow-up.",
-      tasks: ["Send Ada the launch staffing note"],
-      followups: ["Ask Ben about hiring budget"],
-      decisions: ["Keep launch staffing review in this week's plan"],
-      entities: [],
-      sourceQuotes: ["Ask Ben about hiring budget"],
-    }),
-    model: request.model,
-    costUsd: 0.1,
-  }));
-}
-`;
+const PROJECT_PATH = "wiki/projects/alpha-review.md";
 
 scenario(
   {
@@ -117,7 +32,6 @@ scenario(
       { kind: "capability", capability: "graph.write" },
       { kind: "capability", capability: "search.write" },
       { kind: "capability", capability: "question.ask" },
-      { kind: "capability", capability: "model.invoke" },
     ],
     timeoutMs: 30_000,
     harness: {
@@ -127,13 +41,11 @@ scenario(
         "dome.graph",
         "dome.search",
         "dome.daily",
-        "dome.intake",
         "dome.lint",
         "dome.health",
       ],
       initialFiles: {
         ".dome/config.yaml": v1Config(),
-        [COMMAND_PROVIDER_PATH]: COMMAND_PROVIDER_SOURCE,
         "AGENTS.md": [
           "# This is a Dome vault.",
           "",
@@ -172,43 +84,27 @@ scenario(
     await h.userCommit({
       message: "capture manager day",
       files: {
-        "wiki/projects/alpha-review.md": projectPage(),
+        [PROJECT_PATH]: projectPage(),
         "wiki/projects/alpha-review-copy.md": projectPage(),
-        [CAPTURE_PATH]: CAPTURE_BODY,
       },
     });
 
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
-    await h.expectFile(GENERATED_CAPTURE_PATH).toContain("# Manager day follow-up");
-    await h
-      .expectFile(GENERATED_CAPTURE_PATH)
-      .toContain("- [ ] Send Ada the launch staffing note");
-    await h
-      .expectFile(GENERATED_CAPTURE_PATH)
-      .toContain("- [ ] #followup Ask Ben about hiring budget");
-    await h.expectFile(SYNTHESIS_PATH).toContain("# Manager day synthesis");
-    await h.expectFile(SYNTHESIS_PATH).toContain(`[[${GENERATED_CAPTURE_PATH}]]`);
-    await h.expectFile(ROLLUP_PATH).toContain("# Manager day rollup");
-    await h.expectFile(ROLLUP_PATH).toContain(`[[${GENERATED_CAPTURE_PATH}]]`);
-    await h.expectFile(ARCHIVE_PATH).toContain("Need to send Ada");
-    const refs = await h.refs.current();
-    await h.expectFile(CAPTURE_PATH, { atCommit: refs.head }).toBeAbsent();
-
     await h
       .expectProjection()
       .facts({
         predicate: "dome.daily.open_task",
-        subjectId: GENERATED_CAPTURE_PATH,
-        objectString: "Send Ada the launch staffing note",
+        subjectId: PROJECT_PATH,
+        objectString: "Draft launch staffing update",
       })
       .toHaveCount(1);
     await h
       .expectProjection()
       .facts({
         predicate: "dome.daily.followup",
-        subjectId: GENERATED_CAPTURE_PATH,
+        subjectId: PROJECT_PATH,
         objectString: "Ask Ben about hiring budget",
       })
       .toHaveCount(1);
@@ -242,7 +138,7 @@ scenario(
     };
     const todayPayload = todayView.data;
     expect(todayPayload.openTasks.map((task) => task.text)).toContain(
-      "Send Ada the launch staffing note",
+      "Draft launch staffing update",
     );
     expect(todayPayload.followups.map((task) => task.text)).toContain(
       "Ask Ben about hiring budget",
@@ -262,7 +158,7 @@ scenario(
       readonly matches: ReadonlyArray<{ readonly path: string }>;
     };
     expect(queryPayload.matches.map((match) => match.path)).toContain(
-      GENERATED_CAPTURE_PATH,
+      PROJECT_PATH,
     );
 
     const exportContext = await h.runCli([
@@ -279,10 +175,10 @@ scenario(
       }>;
     };
     expect(exportPayload.markdown).toContain("# Dome Context: hiring budget");
-    const exportedCapture = exportPayload.entries.find(
-      (entry) => entry.path === GENERATED_CAPTURE_PATH,
+    const exportedProject = exportPayload.entries.find(
+      (entry) => entry.path === PROJECT_PATH,
     );
-    expect(exportedCapture?.sourceRefs[0]?.path).toBe(GENERATED_CAPTURE_PATH);
+    expect(exportedProject?.sourceRefs[0]?.path).toBe(PROJECT_PATH);
 
     const lint = await h.runCli(["lint", "--json"]);
     expect(lint.exitCode).toBe(0);
@@ -329,9 +225,6 @@ scenario(
 
 function v1Config(): string {
   return `
-model_provider:
-  kind: command
-  command: ${JSON.stringify([process.execPath, COMMAND_PROVIDER_PATH])}
 extensions:
   dome.markdown:
     enabled: true
@@ -360,23 +253,6 @@ extensions:
         - "wiki/dailies/*.md"
       patch.auto: ["wiki/**/*.md"]
       graph.write: ["dome.daily.*"]
-      question.ask: true
-  dome.intake:
-    enabled: true
-    grant:
-      read:
-        - "inbox/**/*.md"
-        - "wiki/generated/intake/*.md"
-        - "wiki/syntheses/intake-*.md"
-      patch.auto:
-        - "wiki/generated/intake/*.md"
-        - "wiki/syntheses/intake-*.md"
-        - "inbox/processed/*.md"
-        - "inbox/raw/*.md"
-      graph.write: ["dome.intake.*"]
-      model.invoke:
-        modelAllowlist: ["test-model"]
-        maxDailyCostUsd: 1
       question.ask: true
   dome.lint:
     enabled: true

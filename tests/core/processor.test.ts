@@ -95,7 +95,7 @@ describe("TriggerSchema (discriminated union)", () => {
   test("parses an AnswerTrigger", () => {
     const t = TriggerSchema.parse({
       kind: "answer",
-      idempotencyKeyPrefix: "dome.intake.",
+      idempotencyKeyPrefix: "dome.agent.",
     });
     expect(t.kind).toBe("answer");
   });
@@ -148,7 +148,7 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
     expect(() =>
       CapabilitySchema.parse({
         kind: "question.ask",
-        namespaces: ["dome.intake"],
+        namespaces: ["dome.agent"],
       }),
     ).toThrow();
   });

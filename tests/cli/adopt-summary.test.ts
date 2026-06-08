@@ -88,7 +88,7 @@ describe("formatAdoptedSummaryLine", () => {
           "dome.graph",
           "dome.health",
           "dome.daily",
-          "dome.intake",
+          "dome.agent",
         ],
       },
       UNICODE_CAPS,
@@ -96,7 +96,7 @@ describe("formatAdoptedSummaryLine", () => {
     );
     expect(line).toBe(
       "dome serve: adopted main 84b81a3 · 1 iteration · 0 diagnostics · " +
-        "ran dome.daily, dome.graph, dome.health, dome.intake +2 more",
+        "ran dome.agent, dome.daily, dome.graph, dome.health +2 more",
     );
   });
 

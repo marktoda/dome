@@ -20,9 +20,9 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
-| "Quick-capture a thought" | shipped | `dome.intake.extract-capture`, `dome.intake.low-confidence-answer`, `dome.intake.synthesize-capture`, `dome.intake.synthesize-rollup`, `dome.intake.capture-index`, `dome.intake.inbox-stale-check` | garden + adoption | inline prompts in `assets/extensions/dome.intake/processors/extract-capture.ts`, `assets/extensions/dome.intake/processors/synthesize-capture.ts`, and `assets/extensions/dome.intake/processors/synthesize-rollup.ts`; none for deterministic indexing/staleness | PatchEffect (generated capture page), PatchEffect (archive inbox raw → processed), PatchEffect (source-linked per-capture synthesis page), PatchEffect (source-linked cross-capture rollup), QuestionEffect for low-confidence extracted items rebuilt from generated `intake_pending_items`, answer-triggered PatchEffect for accepted items, deterministic FactEffect under `dome.intake.*`, DiagnosticEffect for stale inbox files, downstream FactEffect via `dome.daily.task-index`; config/provider activation and scheduled pending-capture scans pick up raw captures, matching generated digest/archive state clears duplicate raw captures without model churn; richer long-horizon synthesis remains planned |
-| "Voice-capture a meeting" | planned | `dome.intake.extract-capture` (with voice frontmatter type) | garden | same | same |
-| "Drop a research clip" | planned | `dome.intake.extract-capture` (with research frontmatter type) | garden | same | same |
+| "Quick-capture a thought" | shipped | `dome.agent.ingest`, `dome.agent.inbox-stale-check` | garden | model-driven agent loop in `assets/extensions/dome.agent/processors/ingest.ts` (charter + tool bindings); none for deterministic staleness | PatchEffect (agent-authored wiki/notes edits integrating the capture), PatchEffect (archive inbox raw → processed), QuestionEffect for owner clarifications during ingest, DiagnosticEffect for stale inbox files; the ingest loop reads, writes, and archives captures without `graph.write`, so durable facts come downstream via `dome.daily.task-index`; richer long-horizon synthesis remains planned |
+| "Voice-capture a meeting" | planned | `dome.agent.ingest` (with voice frontmatter type) | garden | same | same |
+| "Drop a research clip" | planned | `dome.agent.ingest` (with research frontmatter type) | garden | same | same |
 | "Add a follow-up to a daily" | planned | `dome.daily.append-followup` | garden | `assets/extensions/dome.daily/processors/append-followup.prompt.md` | PatchEffect (insert into daily's followups section) |
 
 ## Maintenance intents
@@ -55,7 +55,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "Raise source-backed open loops into today's daily note" | shipped | `dome.daily.carry-forward` | garden | daily cron plus markdown create/change/delete signals under readable daily/wiki roots | PatchEffect (replace small generated `## Start Here` and `## Open Loops` blocks in the configured daily path) |
 | "Create this week's weekly" | planned | `dome.daily.create-weekly` | garden | cron `0 6 * * MON` | PatchEffect (create wiki/weeklies/YYYY-Www.md) |
 | "Auto-lint weekly" | planned | future `dome.lint.scheduled-report` | garden (cron) | cron `0 7 * * MON` | DiagnosticEffect or PatchEffect for a durable scheduled lint report |
-| "Inbox staleness check" | shipped | `dome.intake.inbox-stale-check` | garden | hourly schedule plus inbox path signals | DiagnosticEffect (`inbox.stale` warning for files older than 168 hours) |
+| "Inbox staleness check" | shipped | `dome.agent.inbox-stale-check` | garden | hourly schedule plus inbox path signals | DiagnosticEffect (`inbox.stale` warning for files older than 168 hours) |
 
 ## Why this matrix exists
 

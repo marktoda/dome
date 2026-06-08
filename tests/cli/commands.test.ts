@@ -367,7 +367,7 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome inspect <subject>");
       expect(agentsBody).toContain("dome inspect bundles --json");
       expect(agentsBody).toContain("inbox/raw/");
-      expect(agentsBody).toContain("dome.intake");
+      expect(agentsBody).toContain("dome.agent");
       expect(agentsBody).toContain('model: "ready"');
       expect(agentsBody).toContain("Do not edit or commit it");
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
@@ -413,7 +413,7 @@ describe("runInit", () => {
       if (loaded.ok) {
         const ids = loaded.value.map((b) => b.id);
         expect(ids).toContain("dome.graph");
-        expect(ids).toContain("dome.intake");
+        expect(ids).toContain("dome.agent");
         expect(ids).toContain("dome.lint");
         expect(ids).toContain("dome.markdown");
       }
@@ -445,7 +445,7 @@ describe("runInit", () => {
         defaultModelProviderConfig("anthropic"),
       );
       const extensions = record(parsedConfig.extensions);
-      expect(record(extensions["dome.intake"]).enabled).toBe(false);
+      expect(record(extensions["dome.agent"]).enabled).toBe(false);
 
       const providerBody = await readFile(providerPath, "utf8");
       expect(providerBody.startsWith("#!/usr/bin/env bun")).toBe(true);
@@ -606,7 +606,7 @@ describe("runInit", () => {
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
-      expect(refreshed.extensions["dome.intake"]?.enabled).toBe(false);
+      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(false);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);
 
@@ -1087,14 +1087,14 @@ describe("runInspect", () => {
       readonly model_processors: number;
       readonly model: string;
     }>;
-    const intakeBundle = bundles.find((row) => row.bundle === "dome.intake");
-    expect(intakeBundle).toEqual(
+    const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
+    expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 6,
-        adoption: 1,
-        garden: 5,
+        processors: 2,
+        adoption: 0,
+        garden: 2,
         view: 0,
-        model_processors: 3,
+        model_processors: 1,
         model: "granted-no-provider",
       }),
     );
@@ -1127,34 +1127,37 @@ describe("runInspect", () => {
       readonly execution: string;
       readonly model: string;
     }>;
-    const extract = processors.find(
-      (row) => row.processor === "dome.intake.extract-capture",
+    const ingest = processors.find(
+      (row) => row.processor === "dome.agent.ingest",
     );
-    expect(extract).toEqual(
+    expect(ingest).toEqual(
       expect.objectContaining({
-        bundle: "dome.intake",
-        version: "0.3.6",
+        bundle: "dome.agent",
+        version: "0.1.0",
         phase: "garden",
-        triggers: "schedule,signal",
+        triggers: "signal",
         execution: "llm",
         model: "granted-no-provider",
       }),
     );
-    expect(extract?.capabilities).toContain("model.invoke");
-    expect(extract?.bundle_grants).toContain("model.invoke");
-    expect(extract?.grant_scopes).toContain("read:.dome/config.yaml");
-    expect(extract?.grant_scopes).toContain("inbox/raw/*.md");
-    expect(extract?.grant_scopes).toContain("patch.auto:");
-    expect(extract?.grant_details).toContainEqual({
+    expect(ingest?.capabilities).toContain("model.invoke");
+    expect(ingest?.bundle_grants).toContain("model.invoke");
+    expect(ingest?.grant_scopes).toContain("read:inbox/**/*.md");
+    expect(ingest?.grant_scopes).toContain("wiki/**/*.md");
+    expect(ingest?.grant_scopes).toContain("patch.auto:");
+    expect(ingest?.grant_details).toContainEqual({
       kind: "patch.auto",
       scope: "paths",
       values: [
         "inbox/processed/*.md",
         "inbox/raw/*.md",
-        "wiki/generated/intake/*.md",
+        "index.md",
+        "log.md",
+        "notes/**/*.md",
+        "wiki/**/*.md",
       ],
     });
-    expect(extract?.grant_details).toContainEqual({
+    expect(ingest?.grant_details).toContainEqual({
       kind: "model.invoke",
       scope: "maxDailyCostUsd",
       values: ["5"],
@@ -1203,11 +1206,9 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(4);
+    expect(modelProcessors.length).toBe(2);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
-      "dome.intake.extract-capture",
-      "dome.intake.synthesize-capture",
-      "dome.intake.synthesize-rollup",
+      "dome.agent.ingest",
       "dome.warden.integrity",
     ]);
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
@@ -1379,16 +1380,16 @@ describe("runInspect", () => {
       readonly model_processors: number;
       readonly model: string;
     }>;
-    const intake = bundles.find((row) => row.bundle === "dome.intake");
-    expect(intake).toEqual(
+    const agent = bundles.find((row) => row.bundle === "dome.agent");
+    expect(agent).toEqual(
       expect.objectContaining({
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.7",
-        processors: 6,
-        garden: 5,
-        model_processors: 3,
+        version: "0.1.0",
+        processors: 2,
+        garden: 2,
+        model_processors: 1,
         model: "disabled-no-provider",
       }),
     );
@@ -1413,7 +1414,7 @@ describe("runInspect", () => {
       readonly processor: string;
     }>;
     expect(
-      processors.some((row) => row.processor.startsWith("dome.intake.")),
+      processors.some((row) => row.processor.startsWith("dome.agent.")),
     ).toBe(false);
 
     captured.out = [];
@@ -1445,10 +1446,10 @@ describe("runInspect", () => {
     }>;
     expect(modelBundles).toEqual([
       expect.objectContaining({
-        bundle: "dome.intake",
+        bundle: "dome.agent",
         status: "disabled",
         loaded: false,
-        model_processors: 3,
+        model_processors: 1,
         model: "disabled-no-provider",
       }),
       expect.objectContaining({
@@ -2216,7 +2217,7 @@ describe("runCheck", () => {
     expect(out).toContain("5 known");
     expect(out).toContain("  LOOPS\n");
     expect(out).toContain("[inactive] dome.capture.digest");
-    expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
+    expect(out).toContain("surfaces: path:wiki/sources/*.md");
     expect(out).toContain("command:export-context");
     expect(out).toContain("no-op:");
   });
@@ -2309,10 +2310,9 @@ describe("runCheck", () => {
     )).toEqual(expect.objectContaining({
       question_scope: "all",
       processor_ids: expect.arrayContaining([
-        "dome.intake.low-confidence-answer",
+        "dome.warden.integrity",
       ]),
       optional_processor_ids: [
-        "dome.intake.low-confidence-answer",
         "dome.warden.integrity",
         "dome.warden.integrity-answer",
       ],
@@ -3472,7 +3472,7 @@ describe("runStatus", () => {
     expect(out).toContain("dome.capture.digest");
     // Child detail lines
     expect(out).toContain("processors:");
-    expect(out).toContain("surfaces: path:wiki/generated/intake/*.md");
+    expect(out).toContain("surfaces: path:wiki/sources/*.md");
     expect(out).toContain("settlement:");
     expect(out).toContain("no-op:");
   });
@@ -3619,7 +3619,7 @@ describe("runStatus", () => {
       join(f.vaultPath, ".dome", "config.yaml"),
       [
         "extensions:",
-        "  dome.intake:",
+        "  dome.agent:",
         "    enabled: false",
         "",
       ].join("\n"),
@@ -3641,7 +3641,7 @@ describe("runStatus", () => {
     );
     await commit({
       path: f.vaultPath,
-      message: "add raw capture with disabled intake",
+      message: "add raw capture with disabled agent",
       files: [".dome/config.yaml", "inbox/raw/day.md"],
     });
 
@@ -3667,7 +3667,7 @@ describe("runStatus", () => {
         reasons: ["capture_loop_inactive"],
         command: "dome inspect bundles --json",
         description:
-          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.intake, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
+          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.agent, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
       },
     ]);
     const maintenanceLoops =
@@ -3677,7 +3677,7 @@ describe("runStatus", () => {
     )).toEqual(expect.objectContaining({
       state: "inactive",
       missing_processors: expect.arrayContaining([
-        "dome.intake.extract-capture",
+        "dome.agent.ingest",
       ]),
     }));
 
@@ -3699,19 +3699,22 @@ describe("runStatus", () => {
       join(f.vaultPath, ".dome", "config.yaml"),
       [
         "extensions:",
-        "  dome.intake:",
+        "  dome.agent:",
         "    enabled: true",
         "    grant:",
         "      read:",
+        "        - \"wiki/**/*.md\"",
+        "        - \"notes/**/*.md\"",
         "        - \"inbox/**/*.md\"",
-        "        - \"wiki/generated/intake/*.md\"",
-        "        - \"wiki/syntheses/intake-*.md\"",
+        "        - \"index.md\"",
+        "        - \"log.md\"",
         "      patch.auto:",
-        "        - \"wiki/generated/intake/*.md\"",
-        "        - \"wiki/syntheses/intake-*.md\"",
+        "        - \"wiki/**/*.md\"",
+        "        - \"notes/**/*.md\"",
+        "        - \"index.md\"",
+        "        - \"log.md\"",
         "        - \"inbox/processed/*.md\"",
         "        - \"inbox/raw/*.md\"",
-        "      graph.write: [\"dome.intake.*\"]",
         "      model.invoke:",
         "        maxDailyCostUsd: 5",
         "      question.ask: true",
@@ -3756,7 +3759,7 @@ describe("runStatus", () => {
         reasons: ["capture_loop_inactive"],
         command: "dome inspect bundles --json",
         description:
-          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.intake, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
+          "Raw captures are waiting but the capture digestion loop is inactive or not model-ready; inspect dome.agent, enable it in .dome/config.yaml when ready, commit, then run dome sync --json.",
       },
       {
         reasons: ["sync_needed"],
@@ -3772,7 +3775,7 @@ describe("runStatus", () => {
     )).toEqual(expect.objectContaining({
       state: "quiet",
       active_processors: expect.arrayContaining([
-        "dome.intake.extract-capture",
+        "dome.agent.ingest",
       ]),
     }));
   });
