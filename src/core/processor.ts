@@ -359,11 +359,60 @@ export type ModelInvokeStructuredInput<T> = ModelInvokeTextInput & {
   readonly retries?: number;
 };
 
+// ----- Tool-use step (agent loop) -------------------------------------------
+
+/** A message in a tool-use exchange. Provider-neutral; the engine maps it to
+ * the configured provider's wire format. */
+export type ModelMessage =
+  | { readonly role: "system"; readonly content: string }
+  | { readonly role: "user"; readonly content: string }
+  | {
+      readonly role: "assistant";
+      readonly content: string;
+      readonly toolCalls?: ReadonlyArray<ModelToolCall>;
+    }
+  | {
+      readonly role: "tool";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      readonly content: string;
+    };
+
+/** A tool the model may call. `inputSchema` is a JSON Schema object. */
+export type ModelToolSchema = {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Readonly<Record<string, unknown>>;
+};
+
+/** A single tool call the model requested. `input` is unvalidated provider JSON. */
+export type ModelToolCall = {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+};
+
+/** Input to one tool-use step. */
+export type ModelStepInput = {
+  readonly messages: ReadonlyArray<ModelMessage>;
+  readonly tools: ReadonlyArray<ModelToolSchema>;
+  readonly model?: string;
+};
+
+/** Result of one tool-use step: either tool calls to execute, or final text. */
+export type ModelStepResult = {
+  readonly toolCalls?: ReadonlyArray<ModelToolCall>;
+  readonly text?: string;
+};
+
 export type ModelInvokeFn = {
   (input: ModelInvokeTextInput): Promise<string>;
   readonly structured: <T>(
     input: ModelInvokeStructuredInput<T>,
   ) => Promise<T>;
+  /** One tool-use step. Present only when the runtime wired a step provider.
+   * The loop itself lives in caller code (e.g. the dome.agent harness). */
+  readonly step?: (input: ModelStepInput) => Promise<ModelStepResult>;
 };
 
 // ----- ProjectionQueryView --------------------------------------------------
