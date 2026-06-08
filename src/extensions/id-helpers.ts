@@ -24,7 +24,7 @@
  * are dotted names whose first two segments name the bundle. For example:
  *
  *   - `dome.markdown.validate-wikilinks` → bundle `dome.markdown`
- *   - `dome.intake.extract-capture`      → bundle `dome.intake`
+ *   - `dome.agent.ingest`                 → bundle `dome.agent`
  *   - `community.heavy-linter.scan`      → bundle `community.heavy-linter`
  *
  * For less-canonical ids (single segment, or fewer than two segments

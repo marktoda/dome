@@ -219,7 +219,7 @@ const DEFAULT_CONFIG_HEADER = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
 # grants. The shipped first-party bundles (\`dome.daily\`, \`dome.graph\`,
-# \`dome.health\`, \`dome.intake\`, \`dome.lint\`, \`dome.markdown\`,
+# \`dome.health\`, \`dome.agent\`, \`dome.lint\`, \`dome.markdown\`,
 # \`dome.search\`) live with the SDK. By default, CLI commands compose those
 # shipped bundles with any vault-local bundles under \`.dome/extensions/\`.
 #

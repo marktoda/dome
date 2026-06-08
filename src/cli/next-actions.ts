@@ -81,7 +81,7 @@ export function nextActionsForStatus(
     command: "dome inspect bundles --json",
     description:
       "Raw captures are waiting but the capture digestion loop is inactive " +
-      "or not model-ready; inspect dome.intake, enable it in " +
+      "or not model-ready; inspect dome.agent, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
   });
   pushAction(out, attention, ["serve_stale"], {

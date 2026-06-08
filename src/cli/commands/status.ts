@@ -407,7 +407,7 @@ export async function runStatus(
     const captureLoopInactive = captureLoopNeedsAttention({
       inboxRawPages: analytics.inbox_raw_pages,
       maintenanceLoops: maintenance_loops,
-      intakeModelProviderMissing: intakeModelProviderMissing(runtime),
+      captureModelProviderMissing: captureModelProviderMissing(runtime),
     });
     const attention = statusAttention({
       syncNeeded,
@@ -710,7 +710,7 @@ function statusAttention(input: {
 function captureLoopNeedsAttention(input: {
   readonly inboxRawPages: number;
   readonly maintenanceLoops: ReadonlyArray<MaintenanceLoopSummary>;
-  readonly intakeModelProviderMissing: boolean;
+  readonly captureModelProviderMissing: boolean;
 }): boolean {
   if (input.inboxRawPages === 0) return false;
   const captureLoop = input.maintenanceLoops.find((loop) =>
@@ -720,14 +720,14 @@ function captureLoopNeedsAttention(input: {
   return (
     captureLoop.state === "inactive" ||
     captureLoop.state === "partial" ||
-    input.intakeModelProviderMissing
+    input.captureModelProviderMissing
   );
 }
 
-function intakeModelProviderMissing(runtime: VaultRuntime): boolean {
+function captureModelProviderMissing(runtime: VaultRuntime): boolean {
   if (runtime.modelProvider !== undefined) return false;
   return runtime.registry.all().some((processor) =>
-    processor.id.startsWith("dome.intake.") &&
+    processor.id.startsWith("dome.agent.") &&
     processor.capabilities.some((capability) =>
       capability.kind === "model.invoke"
     ) &&

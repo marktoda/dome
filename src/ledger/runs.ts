@@ -769,7 +769,7 @@ export function getRun(db: LedgerDb, id: RunId): RunRow | null {
 /**
  * Sum model costs for every processor in a bundle-prefix since a given
  * timestamp. The runtime passes the extension id as the prefix, so
- * `dome.intake` includes `dome.intake.extract-capture` and any sibling
+ * `dome.agent` includes `dome.agent.ingest` and any sibling
  * processors while avoiding unrelated bundles.
  */
 export function sumCostUsdByProcessorPrefix(

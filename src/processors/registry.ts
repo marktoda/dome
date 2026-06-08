@@ -24,7 +24,7 @@
 //     processor runtime (Phase 3 next task), not here. Generic-preserving
 //     registries in TypeScript cost more than they pay for a v1 surface.
 //   - Convention (not enforced here): manifest ids are fully qualified
-//     with the bundle namespace (e.g., `dome.intake.extract-capture`).
+//     with the bundle namespace (e.g., `dome.agent.ingest`).
 //     This file treats ids as opaque strings and only enforces uniqueness.
 //   - Validation is structural, not Zod. Manifest-owned static fields are
 //     already shape-checked by `parseManifest`; the registry's checks cover

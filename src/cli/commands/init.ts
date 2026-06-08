@@ -7,7 +7,7 @@
 //   - `.git/`              — git repository
 //   - `wiki/`              — markdown content
 //   - `notes/`             — loose markdown notes
-//   - `inbox/raw/`         — raw capture drop-zone when dome.intake is enabled
+//   - `inbox/raw/`         — raw capture drop-zone when dome.agent is enabled
 //   - `inbox/processed/`   — processed capture archive target
 //   - `.dome/state/`       — derived sqlite databases (gitignored)
 //   - `.dome/config.yaml`  — extension activation + grants
@@ -16,7 +16,7 @@
 //   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
 // The vault does NOT carry the first-party extension bundles
-// (`dome.daily`, `dome.graph`, `dome.health`, `dome.intake`, `dome.lint`,
+// (`dome.daily`, `dome.graph`, `dome.health`, `dome.agent`, `dome.lint`,
 // `dome.markdown`, `dome.search`). They live with the SDK at
 // `<SDK>/assets/extensions/` and are
 // resolved at runtime by the bundle loader (`resolveShippedBundlesRoot` in
@@ -791,12 +791,12 @@ fields.
 - \`notes/\` is available for loose markdown notes that do not yet belong in a
   wiki page.
 - \`inbox/raw/\` is the raw capture drop-zone for committed captures when
-  \`dome.intake\` is enabled and model-ready. Before using it, run
-  \`dome inspect bundles --json\` and check the \`dome.intake\` row reports
+  \`dome.agent\` is enabled and model-ready. Before using it, run
+  \`dome inspect bundles --json\` and check the \`dome.agent\` row reports
   \`status: "enabled"\` and \`model: "ready"\`. Until then, keep management
   notes directly under \`wiki/\` or \`notes/\`.
-- \`inbox/processed/\` is where \`dome.intake\` archives captures it has
-  compiled into generated wiki material.
+- \`inbox/processed/\` is where \`dome.agent\` archives captures it has
+  ingested and integrated into generated wiki material.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
 - \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
   run ledger. Do not edit or commit it.
@@ -1012,7 +1012,7 @@ Includes:
 - .dome/config.yaml (extension activation + engine settings)
 
 The first-party extension bundles (dome.daily, dome.graph, dome.health,
-dome.intake, dome.lint, dome.markdown, dome.search) live with the SDK at
+dome.agent, dome.lint, dome.markdown, dome.search) live with the SDK at
 <SDK>/assets/extensions/ and
 are resolved at runtime — the vault doesn't carry copies.
 

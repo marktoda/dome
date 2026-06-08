@@ -18,7 +18,7 @@ export interface RunContext {
   /** `run_<unix-ms>_<6-char-random>` — sortable, debuggable, unique. */
   readonly runId: string;
   /**
-   * Extension name for engine commits (e.g., `"dome.intake"`); the well-known
+   * Extension name for engine commits (e.g., `"dome.agent"`); the well-known
    * `ENGINE_EXTENSION_ID` (`"engine"`) for closure-pass commits made directly
    * by the engine; bundle-originated commits carry their own bundle id.
    */
