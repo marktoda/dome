@@ -5,6 +5,11 @@ import type {
   ModelInvokeFn,
   ModelInvokeStructuredInput,
   ModelInvokeTextInput,
+  ModelMessage,
+  ModelStepInput,
+  ModelStepResult,
+  ModelToolCall,
+  ModelToolSchema,
   ProcessorPhase,
 } from "../core/processor";
 import type { ResolvedExecutionPolicy } from "../processors/execution-policy";
@@ -40,6 +45,56 @@ export type ModelProvider = (
   request: ModelProviderRequest,
 ) => Promise<ModelProviderResponse>;
 
+export type ModelStepRequest = {
+  readonly messages: ReadonlyArray<ModelMessage>;
+  readonly tools: ReadonlyArray<ModelToolSchema>;
+  readonly model?: string;
+  readonly signal: AbortSignal;
+};
+
+export type ModelStepResponse = {
+  readonly toolCalls?: ReadonlyArray<ModelToolCall>;
+  readonly text?: string;
+  readonly model?: string;
+  readonly costUsd?: number;
+};
+
+export type ModelStepProvider = (
+  request: ModelStepRequest,
+) => Promise<ModelStepResponse>;
+
+const ModelToolCallSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+  })
+  .passthrough()
+  .transform((c): ModelToolCall => Object.freeze({ id: c.id, name: c.name, input: c.input }));
+
+const ModelStepResponseSchema = z.object({
+  toolCalls: z.array(ModelToolCallSchema).optional(),
+  text: z.string().optional(),
+  model: z.string().optional(),
+  costUsd: z.number().finite().nonnegative().optional(),
+});
+
+export function parseModelStepResponse(response: unknown): ModelStepResponse {
+  const parsed = ModelStepResponseSchema.safeParse(response);
+  if (!parsed.success) {
+    throw invalidProviderResponse(modelProviderResponseError(parsed.error));
+  }
+  const value = parsed.data;
+  return Object.freeze({
+    ...(value.toolCalls !== undefined
+      ? { toolCalls: Object.freeze(value.toolCalls) }
+      : {}),
+    ...(value.text !== undefined ? { text: value.text } : {}),
+    ...(value.model !== undefined ? { model: value.model } : {}),
+    ...(value.costUsd !== undefined ? { costUsd: value.costUsd } : {}),
+  });
+}
+
 const ModelProviderResponseSchema = z.object({
   text: z.string(),
   model: z.string().optional(),
@@ -60,6 +115,7 @@ export function modelInvokeForProcessor(opts: {
   readonly policy: ResolvedExecutionPolicy;
   readonly signal: AbortSignal;
   readonly provider?: ModelProvider;
+  readonly stepProvider?: ModelStepProvider;
   readonly onCost?: (costUsd: number) => void;
   readonly onCapabilityUse?: (use: ModelInvokeCapabilityUse) => void;
   readonly spentUsdToday?: () => number;
@@ -124,6 +180,51 @@ export function modelInvokeForProcessor(opts: {
     ): Promise<T> => invokeStructured(fn, input),
     enumerable: true,
   });
+
+  if (opts.stepProvider !== undefined) {
+    const stepProvider = opts.stepProvider;
+    const invokeStep = async (
+      input: ModelStepInput,
+    ): Promise<ModelStepResult> => {
+      let model: string | undefined;
+      try {
+        model = resolveStepModel(input.model, modelPolicy);
+        enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
+      } catch (error) {
+        recordModelCapabilityUse(opts.onCapabilityUse, {
+          resource: input.model ?? null,
+          outcome: "denied",
+        });
+        throw error;
+      }
+      recordModelCapabilityUse(opts.onCapabilityUse, {
+        resource: model ?? null,
+        outcome: "allowed",
+      });
+      const response = await stepProvider({
+        messages: input.messages,
+        tools: input.tools,
+        ...(model !== undefined ? { model } : {}),
+        signal: opts.signal,
+      });
+      if (
+        response.costUsd !== undefined &&
+        Number.isFinite(response.costUsd) &&
+        response.costUsd > 0
+      ) {
+        opts.onCost?.(response.costUsd);
+        enforceBudgetAfterCall(modelPolicy, opts.spentUsdToday);
+      }
+      return Object.freeze({
+        ...(response.toolCalls !== undefined
+          ? { toolCalls: response.toolCalls }
+          : {}),
+        ...(response.text !== undefined ? { text: response.text } : {}),
+      });
+    };
+    Object.defineProperty(fn, "step", { value: invokeStep, enumerable: true });
+  }
+
   return Object.freeze(fn);
 }
 
@@ -210,6 +311,29 @@ function normalizeRequest(
       ? { temperature: input.temperature }
       : {}),
   });
+}
+
+function resolveStepModel(
+  requested: string | undefined,
+  policy: EffectiveModelPolicy,
+): string | undefined {
+  if (policy.allowlist === null) return requested;
+  if (policy.allowlist.length === 0) {
+    throw modelError(
+      "model.invoke.denied",
+      "model.invoke has no model allowed by both declaration and grant.",
+      false,
+    );
+  }
+  const model = requested ?? policy.allowlist[0];
+  if (model === undefined || !policy.allowlist.includes(model)) {
+    throw modelError(
+      "model.invoke.denied",
+      `model.invoke denied model '${String(model)}'; allowed models: ${policy.allowlist.join(", ")}`,
+      false,
+    );
+  }
+  return model;
 }
 
 async function callProviderWithTimeout(opts: {
