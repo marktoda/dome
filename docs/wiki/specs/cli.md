@@ -103,8 +103,8 @@ The shipped initialization steps:
    idempotent — a no-op when `.git/` already exists).
 2. Creates the directory scaffold: `wiki/`, `notes/`, `inbox/raw/`,
    `inbox/processed/`, and `.dome/state/`. `inbox/raw/` is the raw
-   capture drop-zone once `dome.intake` is enabled and model-ready; generated
-   AGENTS guidance tells Claude Code to verify the `dome.intake` row from
+   capture drop-zone once `dome.agent` is enabled and model-ready; generated
+   AGENTS guidance tells Claude Code to verify the `dome.agent` row from
    `dome inspect bundles --json` reports `status: "enabled"` and
    `model: "ready"` before using raw captures. `inbox/processed/` is the
    archive target for processed captures. `.dome/extensions/` is not created —
@@ -125,7 +125,7 @@ The shipped initialization steps:
    `.dome/config.yaml`:
    `model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`.
    The scaffold expects `ANTHROPIC_API_KEY` at runtime, keeps the vendor SDK
-   outside `@dome/sdk`, and does not enable `dome.intake` or any other
+   outside `@dome/sdk`, and does not enable `dome.agent` or any other
    model-capable bundle. Enabling model-backed loops remains an explicit
    config choice.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
@@ -507,7 +507,7 @@ when a vault has a large draft set. `capture_loop_inactive` fires only when top-
 `inbox/raw/*.md` captures are present and the `dome.capture.digest` loop is
 inactive, partial, or enabled without a configured model provider; its next
 action routes through `dome inspect bundles --json` so a vault-aware agent can
-inspect `dome.intake`, enable it in `.dome/config.yaml` when appropriate,
+inspect `dome.agent`, enable it in `.dome/config.yaml` when appropriate,
 commit the config, and run `dome sync --json`. The `pending_runs` count
 is the live queued/running ledger count, while `orphan_runs` is the subset of
 running rows old enough for recovery; transient in-flight view or compiler
@@ -1126,7 +1126,7 @@ Subjects (v1.0):
   (`none`, `disabled-no-provider`, `disabled-provider-configured`,
   `declared-ungranted`, `granted-no-provider`, or `ready`). Disabled
   configured bundles are summarized from their manifest without importing
-  processor modules, so optional features such as `dome.intake` are visible
+  processor modules, so optional features such as `dome.agent` are visible
   without making disabled bundle code part of the runtime.
 - `processors` — loaded processor/automation summary: bundle, phase, triggers,
   command names, declared capability kinds, bundle grant kinds, effective grant

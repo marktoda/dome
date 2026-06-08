@@ -37,7 +37,7 @@ describe("ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY (off-matrix)", () => {
 });
 ```
 
-**Counter-example:** A garden-phase processor under `assets/extensions/dome.intake/processors/extract-capture.ts` imports `ai`'s `generateText`. The import is fine — the bundle's processor lives outside `@dome/sdk` core. The capability broker's `model.invoke` grant routes the call through `ProcessorContext.modelInvoke`, which is the seam where LLM access enters. The core entrypoint never imports `ai`; the `dome.intake` bundle's runtime does, and the bundle is loaded via dynamic import — the static import graph of `src/index.ts` stays clean.
+**Counter-example:** A garden-phase processor under `assets/extensions/dome.agent/processors/ingest.ts` calls `ctx.modelInvoke.step(...)` to drive its tool-use loop. The provider adapter in `.dome/model-provider.ts` imports `ai`'s `generateText` to handle the step request. The import is fine — the bundle's processor lives outside `@dome/sdk` core, and the vendor SDK lives in the vault-side command adapter. The capability broker's `model.invoke` grant routes calls through `ProcessorContext.modelInvoke`, which is the provider-neutral seam. The core entrypoint never imports `ai`; the `dome.agent` bundle's runtime and `.dome/model-provider.ts` do, and both are loaded outside the static import graph of `src/index.ts`.
 
 **Test guarantee:** `tests/invariants/engine-has-no-llm-or-mcp-dependency.test.ts` delegates per the off-matrix convention; `tests/integration/bundle-deps.test.ts` is the canonical enforcement.
 

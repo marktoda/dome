@@ -73,7 +73,7 @@ A page's *type* (singular) is the directory name in `wiki/` mapped through the `
 
 - `PatchEffect` targeting any `raw/<path>` is rejected by the broker, regardless of broad patch grants.
 - `dome.markdown.raw-immutable` emits a blocking diagnostic if any Proposal modifies or deletes an existing `raw/` file.
-- `dome.intake`'s capture compilation writes *new* `wiki/` pages citing the raw; it never modifies the raw.
+- `dome.agent.ingest`'s ingest loop writes *new* `wiki/` pages citing the raw; it never modifies the raw.
 
 Raw files may carry `type:` frontmatter naming the capture source (e.g., `type: voice-capture`, `type: research-clip`), but frontmatter is optional in v1 because raw material is user-owned and immutable after adoption. Subdirectory structure is convention, not contract — `raw/voice/`, `raw/meetings/`, `raw/clips/` are common but not required.
 
@@ -89,15 +89,15 @@ Raw files may carry `type:` frontmatter naming the capture source (e.g., `type: 
 
 ```
 inbox/
-  raw/         # quick-capture target (dome.intake default)
+  raw/         # quick-capture target (dome.agent.ingest default)
   voice/       # voice capture target (opt-in via voice-ingest activation)
   research/    # research-clip target (opt-in)
   clip/        # share-sheet target (opt-in)
   review/      # dome.lint report destination (NOT an intake)
-  processed/   # where dome.intake archives successfully-processed captures
+  processed/   # where dome.agent.ingest archives successfully-processed captures
 ```
 
-Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's intake processor via `signal:file.created` + a bucket path pattern. The shipped `dome.intake.extract-capture` processor handles `inbox/raw/*.md`, also scans pending raw captures when `.dome/config.yaml` or `.dome/model-provider.ts` activation changes make intake newly usable, and archives processed captures under `inbox/processed/` while writing generated pages under `wiki/generated/intake/`; both archive and generated page names include the raw capture content hash and carry `source_hash` plus `disposition` frontmatter. Generated capture pages also carry pending low-confidence candidates in `intake_pending_items`, letting `dome.intake.capture-index` rebuild the same questions from markdown and letting reintroduced raw captures clear without another model call when the generated digest and archive already match. `dome.intake.synthesize-capture` turns those generated capture pages into source-linked `wiki/syntheses/intake-*.md` pages with `input_hash` frontmatter so unchanged synthesis inputs settle without another model call. The shipped `dome.intake.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — intake files are expected to move out or surface a recoverable diagnostic.
+Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's ingest processor via `signal:file.created` + a bucket path pattern. The shipped `dome.agent.ingest` processor handles `inbox/raw/*.md` — it runs a tool-use loop to read the raw source, create/update wiki pages (source, entities, concepts) with bidirectional wikilinks, update `index.md` and `log.md`, route action-items to the daily note or entity pages, and archive the raw file to `inbox/processed/`. All edits land as one `PatchEffect`. The shipped `dome.agent.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox files are expected to move out or surface a recoverable diagnostic. See [[wiki/specs/autonomous-agents]] for the full agent framework and ingest workflow.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
 
@@ -180,7 +180,7 @@ above. The command runs from the vault root, receives
 `dome.model-provider.request/v1` JSON on stdin, and writes provider-neutral JSON
 on stdout (`text`, optional `model`, optional `costUsd`). The scaffold expects
 `ANTHROPIC_API_KEY` at runtime and keeps vendor API wiring outside the SDK core.
-It does not enable `dome.intake`; model-capable bundles still require explicit
+It does not enable `dome.agent`; model-capable bundles still require explicit
 `extensions.<bundle>.enabled: true` plus effective `model.invoke` grants.
 
 Vault identity is currently git-native (`HEAD`, current branch, and
@@ -259,10 +259,9 @@ The capability broker enforces ownership. Default rules:
 | `log.md` | planned `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
-| `wiki/generated/intake/**` | `dome.intake` (via `patch.auto`) |
-| `wiki/syntheses/intake-*.md` | `dome.intake` (via `patch.auto`, source-backed capture synthesis) |
-| `inbox/processed/**` | `dome.intake` (via `patch.auto`) |
-| `notes/**` | user only — engine never writes here |
+| `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
+| `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |
+| `inbox/processed/**` | `dome.agent.ingest` (via `patch.auto`) |
 
 Plugin / third-party bundles should not grant themselves `owns.path` on shipped-default reserved paths (`index.md`, `log.md`). The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
 

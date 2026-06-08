@@ -197,64 +197,32 @@ The five contribution kinds replace v0.5's five (tool / hook / prompt / page-typ
 ### `manifest.yaml` schema
 
 ```yaml
-id: dome.intake
-version: 0.4.7
-description: "Compile raw captures into wiki updates."
+id: dome.agent
+version: 1.0.0
+description: "Autonomous-agent processors for vault-wide ingest and maintenance."
 
 processors:
-  - id: dome.intake.capture-index
-    version: 0.1.2
-    phase: adoption
-    triggers:
-      - kind: signal
-        name: document.changed
-        pathPattern: "wiki/generated/intake/*.md"
-      - kind: signal
-        name: file.created
-        pathPattern: "wiki/generated/intake/*.md"
-      - kind: signal
-        name: file.deleted
-        pathPattern: "wiki/generated/intake/*.md"
-    capabilities:
-      - kind: read
-        paths: ["wiki/generated/intake/*.md"]
-      - kind: graph.write
-        namespaces: ["dome.intake.*"]
-      - kind: question.ask
-    inspection:
-      kind: changed-paths
-    module: processors/capture-index.ts
-
-  - id: dome.intake.extract-capture
-    version: 0.3.6
+  - id: dome.agent.ingest
+    version: 1.0.0
     phase: garden
     triggers:
       - kind: signal
         name: file.created
         pathPattern: "inbox/raw/*.md"
-      - kind: signal
-        name: file.created
-        pathPattern: ".dome/config.yaml"
-      - kind: signal
-        name: file.modified
-        pathPattern: ".dome/config.yaml"
-      - kind: signal
-        name: file.created
-        pathPattern: ".dome/model-provider.ts"
-      - kind: signal
-        name: file.modified
-        pathPattern: ".dome/model-provider.ts"
     capabilities:
       - kind: read
         paths:
-          - ".dome/config.yaml"
-          - ".dome/model-provider.ts"
-          - "inbox/raw/*.md"
-          - "inbox/processed/*.md"
-          - "wiki/generated/intake/*.md"
+          - "wiki/**/*.md"
+          - "notes/**/*.md"
+          - "inbox/**/*.md"
+          - "index.md"
+          - "log.md"
       - kind: patch.auto
         paths:
-          - "wiki/generated/intake/*.md"
+          - "wiki/**/*.md"
+          - "notes/**/*.md"
+          - "index.md"
+          - "log.md"
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
@@ -264,9 +232,9 @@ processors:
       class: llm
       timeoutMs: 600000
       modelCallTimeoutMs: 180000
-    module: processors/extract-capture.ts
+    module: processors/ingest.ts
 
-  - id: dome.intake.inbox-stale-check
+  - id: dome.agent.inbox-stale-check
     version: 0.1.0
     phase: garden
     triggers:
@@ -285,46 +253,6 @@ processors:
       - kind: read
         paths: ["inbox/**/*.md"]
     module: processors/inbox-stale-check.ts
-
-  - id: dome.intake.synthesize-capture
-    version: 0.1.1
-    phase: garden
-    triggers:
-      - kind: signal
-        name: file.created
-        pathPattern: "wiki/generated/intake/*.md"
-      - kind: signal
-        name: document.changed
-        pathPattern: "wiki/generated/intake/*.md"
-    capabilities:
-      - kind: read
-        paths:
-          - "wiki/generated/intake/*.md"
-          - "wiki/syntheses/intake-*.md"
-      - kind: patch.auto
-        paths: ["wiki/syntheses/intake-*.md"]
-      - kind: model.invoke
-        maxDailyCostUsd: 5
-    execution:
-      class: llm
-      timeoutMs: 600000
-      modelCallTimeoutMs: 180000
-    module: processors/synthesize-capture.ts
-
-  - id: dome.intake.low-confidence-answer
-    version: 0.2.2
-    phase: garden
-    triggers:
-      - kind: answer
-        idempotencyKeyPrefix: "dome.intake.low-confidence:"
-    capabilities:
-      - kind: read
-        paths:
-          - "inbox/raw/*.md"
-          - "wiki/generated/intake/*.md"
-      - kind: patch.auto
-        paths: ["wiki/generated/intake/*.md"]
-    module: processors/low-confidence-answer.ts
 ```
 
 The schema is validated by Zod at bundle load. Invalid manifests fail the load with `bundle-load-failed` (see §"Bundle-loader error taxonomy" below). The manifest is the reviewable source of truth for static processor metadata: id, version, phase, triggers, capabilities, execution policy, and inspection scope are bound from the manifest onto the loaded processor. New modules supply only the `run` implementation via `defineProcessorImplementation({ run })`; implementation exports with stray manifest-owned metadata fail the load. Legacy modules that export full `Processor` objects are still accepted for migration compatibility, but manifest values win for triggers, capabilities, execution, and inspection, and the legacy id/version/phase must agree with the manifest.
@@ -382,7 +310,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.health` | garden: recovery question emitters and answer handlers | Surfaces and recovers failed outbox rows, quarantined processors, and orphaned runs through metadata-annotated questions. |
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, seeds and refreshes a source-backed `## Start Here` context block from yesterday's daily note, seeds and refreshes a filtered source-backed open-loop surface in today's daily note, targets scheduled/current daily surfaces rather than changed historical daily notes, ranks daily-note source loops by the configured daily date instead of the file's maintenance commit timestamp, folds repeated and near-duplicate open-loop rows in rendered daily surfaces while retaining representative source refs, renders compact evidence labels that show both daily surface rows and backing source locations, preserves settled generated rows as resolved (`[x]`) or dismissed (`[-]`) daily evidence so source-backed loops stop resurfacing without hidden state, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, frontmatter metadata, and blockquoted evidence, gives extracted open loops stable SourceRef identities across line moves, marks ambiguous follow-up questions as agent-safe, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
-| `dome.intake` | adoption: capture-index; garden: extract-capture, inbox-stale-check, low-confidence-answer, synthesize-capture, synthesize-rollup | Compiles raw captures into source-hash-addressed generated pages and processed archives, scans pending raw captures when intake config/provider activation changes and on scheduled pending-capture backstops, records extractor schema provenance in generated/archive frontmatter, persists pending low-confidence candidates in generated frontmatter, clears duplicate raw captures without model churn when matching digest/archive state already exists for the current extractor schema, routes low-confidence items through rebuildable agent-safe questions, emits durable source-backed questions for explicit generated capture questions, writes input-hash-settled source-backed synthesis pages and the cross-capture rollup from generated captures, warns on stale inbox files, and indexes confidence-carrying `dome.intake.*` facts. |
+| `dome.agent` | garden: ingest, inbox-stale-check | Runs autonomous-agent processors via a tool-use loop backed by `ctx.modelInvoke.step`; `dome.agent.ingest` handles `inbox/raw/*.md` — integrates raw captures into wiki (source page + entity/concept pages + bidirectional wikilinks + index/log updates + task routing + archive), all as one `PatchEffect` within the capability grant boundary; `dome.agent.inbox-stale-check` emits `inbox.stale` warnings for captures lingering past 168 hours. See [[wiki/specs/autonomous-agents]]. |
 | `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests with read-first packet overviews that surface topic-relevant open loops, decisions, questions, diagnostics, source refs, and projection recall signals for topic-matched memory that FTS alone would miss. Daily-intent packets also recall date-named daily surfaces from the adopted snapshot and parse their current hand-authored and generated source-backed open-loop rows into the packet overview, keeping daily surface refs and generated-row backing refs intact. Embeddings remain future work. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
