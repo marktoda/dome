@@ -84,14 +84,15 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 
 | Tool | Kind |
 |---|---|
-| `listPages(globOrType?)` | read |
+| `listPages()` | read (all readable markdown paths) |
 | `readPage(path)` | read |
-| `searchVault(query)` | read |
+| `searchVault(query)` | read (content substring match) |
 | `writePage(path, content)` | write (accumulate create/replace) |
-| `patchPage(path, edit)` | write (accumulate targeted edit) |
-| `routeTask({surface, line, link?})` | write (accumulate edit to daily or entity) |
-| `archiveSource(rawPath)` | write (accumulate move `inbox/raw/x` → `inbox/processed/x`) |
+| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads`) |
+| `archiveSource(rawPath)` | write (accumulate move `inbox/raw/x` → `inbox/processed/x` + delete the raw) |
 | `askOwner(question)` | question (`QuestionEffect`) |
+
+Task-routing has no dedicated tool: the agent reads the target (daily note or entity page) and `appendToPage`s a `#task` line, guided by the charter. Targeted in-place edits likewise go through read-then-`writePage`. (`patchPage` / `routeTask` were considered and dropped — `writePage` + `appendToPage` cover the cases without a diff-apply tool.)
 
 **Default capability grant (`.dome/config.yaml`):**
 
@@ -116,7 +117,7 @@ Dome separates two things:
 
 **Two hard floors that are not pure policy:**
 
-1. **`raw/` immutability.** `wiki/sources/` pages cite `[[raw/...]]` as provenance; rewriting raw destroys "what was actually ingested." `raw/**` is not grantable write territory — the broker hard-denies it independent of any grant (per [[wiki/invariants/RAW_IS_IMMUTABLE]]).
+1. **Top-level `raw/` immutability.** `wiki/sources/` pages cite `[[raw/...]]` as provenance; rewriting raw destroys "what was actually ingested." The **top-level `raw/`** tree is not grantable write territory — the broker hard-denies it independent of any grant (per [[wiki/invariants/RAW_IS_IMMUTABLE]]). This is a distinct namespace from the **`inbox/raw/`** drop-zone, which the agent *does* consume under its grant (read, then archive-to-`inbox/processed/` + delete). `inbox/raw/*.md` in the `patch.auto` grant is therefore consistent with this floor.
 2. **`isObsidianTasksDashboard` skip.** Files with a fenced ` ```tasks ` query block are Obsidian Tasks plugin dashboards; injecting `^anchor` breaks the plugin. The exclusion lives in processor logic because positive-glob grants cannot subtract one path.
 
 Everything else is grant-defined: `templates/`, `notes/`, historical files — writable if and only if granted.
