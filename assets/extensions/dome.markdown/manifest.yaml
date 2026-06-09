@@ -18,6 +18,23 @@ processors:
         namespaces: ["dome.page.*"]
     module: processors/page-status.ts
 
+  - id: dome.markdown.lint-supersession
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+      - kind: signal
+        name: file.created
+      - kind: signal
+        name: file.deleted
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+    inspection:
+      kind: all-readable-markdown
+    module: processors/lint-supersession.ts
+
   - id: dome.markdown.validate-wikilinks
     version: 0.4.1
     phase: adoption
