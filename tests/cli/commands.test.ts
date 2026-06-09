@@ -3468,6 +3468,28 @@ process.exit(1);
     expect(parsed.summary.modelProviderUnreachable).toBe(0);
     expect(parsed.summary.modelProviderKeyMissing).toBe(0);
   });
+
+  test("probe: pre-probe provider is visible as a muted info line in text output", async () => {
+    // No finding (the documented classification stays), but text output must
+    // not hide a non-zero-exit provider behind a clean report: a crashed
+    // provider script answers exactly like a pre-probe one.
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorProviderConfig(f, `
+await Bun.stdin.text();
+console.error("unsupported Dome model provider request schema");
+process.exit(1);
+`);
+
+    const code = await runDoctor({ vault: f.vaultPath });
+    expect(code).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("MODEL PROVIDER");
+    expect(out).toContain("unsupported (provider treated as alive; no finding)");
+    // The stderr excerpt travels along so a crash is diagnosable in place.
+    expect(out).toContain("exited 1");
+    expect(out).toContain("unsupported Dome model provider request schema");
+  });
 });
 
 type DoctorProbeJson = {

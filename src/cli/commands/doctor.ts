@@ -123,7 +123,7 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(report));
     } else {
-      printDoctorText(report, vaultPath);
+      printDoctorText(report, vaultPath, modelProviderProbe);
     }
     return 0;
   } finally {
@@ -131,7 +131,11 @@ export async function runDoctor(
   }
 }
 
-function printDoctorText(report: HealthReport, vaultPath: string): void {
+function printDoctorText(
+  report: HealthReport,
+  vaultPath: string,
+  modelProviderProbe?: ModelProviderProbeInput,
+): void {
   const caps = resolveCaps();
   const headStatus: Status = report.status === "ok"
     ? { tone: "ok", label: "ok" }
@@ -178,6 +182,34 @@ function printDoctorText(report: HealthReport, vaultPath: string): void {
                 `model ${report.summary.modelProviderMissing} missing · ` +
                 `${report.summary.modelProviderUnreachable} unreachable · ` +
                 `${report.summary.modelProviderKeyMissing} keyless`,
+            },
+          ],
+          caps,
+        ),
+        caps,
+      ),
+    );
+  }
+
+  // probe-unsupported is documented as "alive; no finding" (see
+  // docs/wiki/specs/cli.md §"dome doctor"), but invisibility hides a
+  // genuinely crashed provider behind a healthy-looking report. Render a
+  // muted info line — classification unchanged, just visible.
+  if (
+    modelProviderProbe !== undefined &&
+    modelProviderProbe.result.status === "probe-unsupported"
+  ) {
+    lines.push(
+      ...section(
+        "Model provider",
+        kv(
+          [
+            {
+              label: "probe",
+              value:
+                "unsupported (provider treated as alive; no finding) — " +
+                modelProviderProbe.result.detail,
+              tone: "muted",
             },
           ],
           caps,
