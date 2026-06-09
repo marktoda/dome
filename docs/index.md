@@ -23,7 +23,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
 - [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, and the phone/voice ingress recipe (what ships vs. what the user assembles).
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
-- [[wiki/specs/mcp-surface]] — MCP server: Recall-oriented protocol adapter over `AbstractSurface`; non-primary in v1.
+- [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/status/check/resolve/tasks/brief tools over the same handlers the CLI uses.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; no-op without a model).
 - [[wiki/specs/autonomous-agents]] — Autonomous-agent capability: agent-as-processor model (no new primitive); `ctx.modelInvoke.step` provider-neutral tool-calling seam; `AgentDefinition` loop harness; `dome.agent.ingest` (inbox-triggered full ingest workflow, single PatchEffect + questions); grant-as-boundary + two hard floors.
@@ -107,7 +107,7 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 - [[wiki/entities/claude-code]] — Anthropic's CLI; Dome v1's first official harness.
 - [[wiki/entities/git]] — The version control system underpinning Dome's adoption, undo, and sync.
 - [[wiki/entities/isomorphic-git]] — Pure-JS git implementation; the Dome SDK's git engine.
-- [[wiki/entities/mcp-protocol]] — Model Context Protocol; target Recall/view protocol adapter for harnesses that mount the future MCP server.
+- [[wiki/entities/mcp-protocol]] — Model Context Protocol; the wire format `dome mcp` speaks for harnesses that mount the Dome MCP server.
 - [[wiki/entities/obsidian]] — Markdown editor; Dome's recommended browse surface.
 - [[wiki/entities/typescript]] — Dome SDK's implementation language.
 

@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-09
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 severity: high
 coverage: off-matrix
@@ -27,9 +27,11 @@ first_observed: 2026-05-26 (closed at v0.5+phase1+phase3; pin maintained in v1)
      adopted-ref read helpers, bundle-loader helpers, and pure engine
      commit-trailer helpers. It does not export a public submit API or protocol
      adapters.
-   - Future companion entrypoints such as `@dome/sdk/mcp`, `@dome/sdk/http`, or
-     provider packages may depend on protocol/model libraries explicitly. They
-     are not imported from the package root.
+   - Companion entrypoints depend on protocol/model libraries explicitly and
+     are not imported from the package root. `@dome/sdk/mcp` (`src/mcp/`) is
+     the first shipped one: it depends on `@modelcontextprotocol/sdk` and is
+     reached only via the `dome mcp` verb's dynamic import. `@dome/sdk/http`
+     and provider packages remain future shapes.
 
    The target `Vault` wrapper exposes Recall (`query`, `readDocument`,
    `resolveWikilink`) plus engine control (`sync`, `rebuild`,
@@ -48,6 +50,11 @@ first_observed: 2026-05-26 (closed at v0.5+phase1+phase3; pin maintained in v1)
 
 - The `bundle-deps.test.ts` regression test introspects the import graph from `src/index.ts` and asserts none of the forbidden packages appear. It runs on every PR; CI blocks regressions before merge.
 - Bundlers that tree-shake (esbuild, Rollup, Bun's bundler) won't actually pull dead code from `@dome/sdk` if the consumer doesn't reach it — but tree-shaking is a runtime optimization, not a contract. The invariant + test pin the contract; tree-shaking is a happy side effect.
+- `package.json` listing `@modelcontextprotocol/sdk` is **not** a regression:
+  the manifest entry serves the `src/mcp/` companion entrypoint, and the
+  bundle-deps walk from `src/index.ts` proves consumers of the core never pull
+  it. The fence is the entrypoint graph, not the manifest (per the invariant's
+  2026-06-09 scoping).
 - First-party `dome.*` extension bundles ship processor TypeScript inside
   `assets/extensions/dome.*/processors/`; model-capable processors receive
   `ctx.modelInvoke` only when their manifest capabilities and runtime provider

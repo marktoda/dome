@@ -467,9 +467,13 @@ agreeing.
 ## Consumer surfaces
 
 Every consumer shell that builds against Dome should aggregate four kinds of
-things from the SDK. The CLI is the shipped v1 surface today; `AbstractSurface`,
-MCP, HTTP, mobile, desktop, and voice adapters are target shapes for the
-multi-surface roadmap and are not v1 acceptance gates.
+things from the SDK. The CLI and the MCP stdio server (`dome mcp`, wedge
+Phase 5) are the shipped surfaces today; `AbstractSurface` and the HTTP,
+mobile, desktop, and voice adapters are target shapes for the multi-surface
+roadmap and are not v1 acceptance gates. The shipped MCP adapter wraps the
+CLI command handlers rather than `AbstractSurface` (which does not exist
+yet); it should converge on `renderMcp(surface)` when the aggregation
+boundary lands.
 
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
@@ -508,7 +512,7 @@ Each future consumer protocol adapts `AbstractSurface` to its wire format:
 
 | Adapter | Entry point | Wire format |
 |---|---|---|
-| MCP (planned) | `renderMcp(surface): McpSurface` in planned `@dome/sdk/mcp` | MCP protocol — read/query tools, resources, prompts |
+| MCP (shipped, CLI-handler adapter today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
 | CLI (shipped, direct runtime today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
 | HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Recall + future native-surface write controls |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
@@ -548,12 +552,12 @@ ai (Vercel AI SDK; for model.invoke in garden-LLM processors)
 @ai-sdk/anthropic
 ```
 
-The planned MCP adapter adds:
+The shipped MCP adapter (`src/mcp/`, the `dome mcp` verb — see [[wiki/specs/mcp-surface]]) adds:
 ```
 @modelcontextprotocol/sdk
 ```
 
-The `@dome/sdk` core has no transitive dependency on `ai`, `@ai-sdk/anthropic`, or `@modelcontextprotocol/sdk`. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] and enforced by `tests/integration/bundle-deps.test.ts`.
+The `@dome/sdk` core has no transitive dependency on `ai`, `@ai-sdk/anthropic`, or `@modelcontextprotocol/sdk`: the MCP package ships in `package.json` for the companion entrypoint, but it is never reachable from the static import graph of `src/index.ts`. Pinned by [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] and enforced by `tests/integration/bundle-deps.test.ts`.
 
 ## Related
 
