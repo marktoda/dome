@@ -424,11 +424,15 @@ export type ModelInvokeFn = {
  * query API", processors do NOT touch the SQLite handle directly —
  * they consume this typed surface.
  *
- * Adoption-phase processors typically read state from `ctx.snapshot`
- * (markdown content at the candidate commit) and the field stays
- * undefined on their context. View-phase processors require the
- * projection field — they answer queries by joining facts, diagnostics,
- * and committed markdown content.
+ * Adoption-phase processors read state from `ctx.snapshot` (markdown
+ * content at the candidate commit) and the field stays undefined on their
+ * context — the fixed-point loop must not depend on derived state.
+ * View-phase processors require the projection field — they answer queries
+ * by joining facts, diagnostics, and committed markdown content.
+ * Garden-phase processors receive the same scoped read-only view when the
+ * runtime has an open projection (garden runs over adopted state, so
+ * reading adopted-state projections is safe — e.g. `dome.agent.brief`
+ * reads the open-question batch).
  *
  * v1.0 scope is minimal and typed: table-shaped accessors with light filters.
  * Richer aggregate queries land only as view-phase processors demand them.

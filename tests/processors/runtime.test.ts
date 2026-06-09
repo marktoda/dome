@@ -18,6 +18,7 @@ import {
   type OperationalOutboxRow,
   type OperationalQuarantineRow,
   type OperationalQueryView,
+  type ProjectionQueryView,
   type Processor,
   type ProcessorContext,
   type ProcessorPhase,
@@ -93,6 +94,7 @@ function buildRuntimeFor(
     resolveTree?: (commit: CommitOid) => Promise<typeof TREE>;
     modelProvider?: ModelProvider;
     operational?: OperationalQueryView;
+    projection?: ProjectionQueryView;
   },
 ) {
   const reg = buildRegistry(processors);
@@ -107,6 +109,9 @@ function buildRuntimeFor(
       : {}),
     ...(overrides?.operational !== undefined
       ? { operational: overrides.operational }
+      : {}),
+    ...(overrides?.projection !== undefined
+      ? { projection: overrides.projection }
       : {}),
   });
 }
@@ -1029,5 +1034,85 @@ describe("gardenRunner — onProcessorStart callback", () => {
     });
 
     expect(order).toEqual(["start", "run"]);
+  });
+});
+
+describe("projection query view phase gating", () => {
+  const STUB_PROJECTION: ProjectionQueryView = Object.freeze({
+    facts: () => Object.freeze([]),
+    diagnostics: () => Object.freeze([]),
+    questions: () =>
+      Object.freeze([
+        {
+          kind: "question" as const,
+          question: "open?",
+          sourceRefs: Object.freeze([
+            { path: "wiki/a.md", commit: CANDIDATE },
+          ]) as never,
+          idempotencyKey: "k1",
+          id: 7,
+          processorId: "test.someone",
+          adoptedCommit: CANDIDATE,
+          askedAt: "2026-06-09T05:00:00.000Z",
+          answeredAt: null,
+          answer: null,
+        },
+      ]),
+    searchDocuments: () => Object.freeze([]),
+    documentsByPath: () => Object.freeze([]),
+  });
+
+  test("garden-phase contexts receive the scoped projection view", async () => {
+    let seen: ProjectionQueryView | undefined;
+    const p = makeFixtureProcessor({
+      id: "test.garden.projection",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async (ctx) => {
+        seen = ctx.projection;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], { projection: STUB_PROJECTION });
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(seen).toBeDefined();
+    // The view is read-grant-scoped: wiki/** refs survive, others are filtered.
+    expect(seen?.questions().map((q) => q.id)).toEqual([7]);
+  });
+
+  test("adoption-phase contexts never receive the projection view", async () => {
+    let sawProjection: ProjectionQueryView | undefined;
+    let ran = false;
+    const p = makeFixtureProcessor({
+      id: "test.adoption.no-projection",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async (ctx) => {
+        ran = true;
+        sawProjection = ctx.projection;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p], { projection: STUB_PROJECTION });
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    expect(ran).toBe(true);
+    expect(sawProjection).toBeUndefined();
   });
 });
