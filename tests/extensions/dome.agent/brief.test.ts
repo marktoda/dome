@@ -161,6 +161,25 @@ describe("dome.agent.brief", () => {
     ).toEqual([]);
   });
 
+  test("text-only provider fails loudly: the engine's throwing step lands as brief-failed", async () => {
+    // The engine attaches a THROWING step when a provider exists without
+    // tool-step support (tests/engine/model-step.test.ts pins that seam).
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      stepFn: async () => {
+        throw new Error(
+          "dome.agent.brief: the configured model provider does not support tool-step invocation; wire a step provider (dome.model-provider.step/v1) to run agent processors.",
+        );
+      },
+    });
+    const effects = await brief.run(ctx);
+    expect(effects).toHaveLength(1);
+    const diag = effects[0] as DiagnosticEffect;
+    expect(diag.kind).toBe("diagnostic");
+    expect(diag.code).toBe("dome.agent.brief-failed");
+    expect(diag.message).toContain("does not support tool-step");
+  });
+
   test("no-op on a non-schedule trigger input", async () => {
     const ctx = makeCtx({
       files: {},

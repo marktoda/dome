@@ -69,8 +69,11 @@ type ScheduleInput = {
 
 const brief = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    // step is undefined only when NO model provider is wired (doctor's
+    // model.provider-missing carries that signal); a text-only provider gets
+    // a throwing step from the engine, surfaced below as brief-failed.
     const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]); // clean no-op without a model
+    if (step === undefined) return Object.freeze([]);
 
     const input = parseScheduleInput(ctx.input);
     if (input === null) return Object.freeze([]);

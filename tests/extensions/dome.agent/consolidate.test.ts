@@ -49,6 +49,25 @@ describe("dome.agent.consolidate", () => {
     expect(await consolidate.run(makeCtx({ files: { "index.md": "x" } }))).toEqual([]);
   });
 
+  test("text-only provider fails loudly: the engine's throwing step lands as consolidate-failed", async () => {
+    // The engine attaches a THROWING step when a provider exists without
+    // tool-step support (tests/engine/model-step.test.ts pins that seam).
+    const ctx = makeCtx({
+      files: { "index.md": "x" },
+      stepFn: async () => {
+        throw new Error(
+          "dome.agent.consolidate: the configured model provider does not support tool-step invocation; wire a step provider (dome.model-provider.step/v1) to run agent processors.",
+        );
+      },
+    });
+    const effects = await consolidate.run(ctx);
+    expect(effects).toHaveLength(1);
+    const diag = effects[0] as DiagnosticEffect;
+    expect(diag.kind).toBe("diagnostic");
+    expect(diag.code).toBe("dome.agent.consolidate-failed");
+    expect(diag.message).toContain("does not support tool-step");
+  });
+
   test("merges a duplicate into one PatchEffect: canonical write + absorbed delete + link rewrite", async () => {
     const files = {
       "index.md": "## Concepts\n- [[wiki/concepts/a]] — A\n- [[wiki/concepts/b]] — B (dup)\n",

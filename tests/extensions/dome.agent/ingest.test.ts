@@ -61,6 +61,27 @@ describe("dome.agent.ingest", () => {
     expect(await ingest.run(ctx)).toEqual([]);
   });
 
+  test("text-only provider fails loudly: the engine's throwing step lands as source-failed", async () => {
+    // The engine attaches a THROWING step when a provider exists without
+    // tool-step support (tests/engine/model-step.test.ts pins that seam);
+    // the processor's per-source catch must surface it, not swallow it.
+    const ctx = makeCtx({
+      files: { "inbox/raw/x.md": "body" },
+      changedPaths: ["inbox/raw/x.md"],
+      stepFn: async () => {
+        throw new Error(
+          "dome.agent.ingest: the configured model provider does not support tool-step invocation; wire a step provider (dome.model-provider.step/v1) to run agent processors.",
+        );
+      },
+    });
+    const effects = await ingest.run(ctx);
+    expect(effects).toHaveLength(1);
+    const diag = effects[0] as DiagnosticEffect;
+    expect(diag.kind).toBe("diagnostic");
+    expect(diag.code).toBe("dome.agent.source-failed");
+    expect(diag.message).toContain("does not support tool-step");
+  });
+
   test("no-op when no raw captures changed", async () => {
     const ctx = makeCtx({
       files: { "wiki/a.md": "x" },

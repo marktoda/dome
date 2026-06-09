@@ -14,11 +14,15 @@ const MAX_STEPS = 25;
 
 const ingest = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    // step is undefined only when NO model provider is wired (doctor's
+    // model.provider-missing carries that signal); a text-only provider gets
+    // a throwing step from the engine, which fails loudly per source below.
     const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]); // clean no-op without a model
+    if (step === undefined) return Object.freeze([]);
 
     const rawPaths = ctx.changedPaths.filter(isRawCapturePath);
     if (rawPaths.length === 0) return Object.freeze([]);
+    const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
 
     const tools = makeIngestTools({
       reader: {
@@ -63,7 +67,6 @@ const ingest = defineProcessorImplementation({
       }
     }
 
-    const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
     effects.push(
       ...finishAgentRun({
         state,

@@ -223,6 +223,30 @@ export function modelInvokeForProcessor(opts: {
       });
     };
     Object.defineProperty(fn, "step", { value: invokeStep, enumerable: true });
+  } else if (opts.provider !== undefined) {
+    // Text-only wiring: a provider exists but no step provider (only
+    // in-process hosts can produce this — vault-config command providers
+    // always wire both). Leaving `step` undefined would make agent
+    // processors silently no-op forever with nothing reporting it; a
+    // throwing step fails loudly through their existing error paths.
+    // With NO provider at all, `step` stays undefined and the processors'
+    // silent no-op is intended — doctor's model.provider-missing finding
+    // carries that signal.
+    const stepUnsupported = async (): Promise<ModelStepResult> => {
+      recordModelCapabilityUse(opts.onCapabilityUse, {
+        resource: null,
+        outcome: "denied",
+      });
+      throw modelError(
+        "model.invoke.denied",
+        `${opts.processorId}: the configured model provider does not support tool-step invocation; wire a step provider (dome.model-provider.step/v1) to run agent processors.`,
+        false,
+      );
+    };
+    Object.defineProperty(fn, "step", {
+      value: stepUnsupported,
+      enumerable: true,
+    });
   }
 
   return Object.freeze(fn);
