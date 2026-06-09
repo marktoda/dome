@@ -309,6 +309,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.stale-dates",
         "dome.markdown.refresh-updated",
         "dome.markdown.raw-immutable",
+        "dome.markdown.core-size",
         "dome.markdown.orphan-pages",
         "dome.graph.links",
         "dome.graph.tag-index",

@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.4.8
+version: 0.5.0
 processors:
   - id: dome.markdown.validate-wikilinks
     version: 0.4.1
@@ -160,6 +160,21 @@ processors:
       - kind: patch.auto
         paths: ["**/*.md"]
     module: processors/refresh-updated.ts
+
+  - id: dome.markdown.core-size
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "core.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "core.md"
+    capabilities:
+      - kind: read
+        paths: ["core.md"]
+    module: processors/core-size.ts
 
   - id: dome.markdown.raw-immutable
     version: 0.1.0
