@@ -77,6 +77,7 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
     }),
     pageTypeDeclaration("source", "dome.default", {
       author: "optional",
+      captured: "optional",
       description: "optional",
       external: "optional",
       metadata: "optional",

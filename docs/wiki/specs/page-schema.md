@@ -101,6 +101,7 @@ created: 2026-05-15
 updated: 2026-05-15
 sources: []
 url: "https://..."             # optional but recommended for external sources
+captured: 2026-06-09           # optional; when the raw source was captured (the ingest charter writes it)
 author: "Andrej Karpathy"      # optional
 description: "Reference summary" # optional
 name: "Karpathy gist"            # optional

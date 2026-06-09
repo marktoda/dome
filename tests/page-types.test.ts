@@ -20,6 +20,7 @@ describe("default page-type registry", () => {
     ]);
     expectOptionalFields("source", [
       "author",
+      "captured",
       "description",
       "external",
       "metadata",
