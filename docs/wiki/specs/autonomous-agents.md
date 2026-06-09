@@ -126,6 +126,17 @@ Everything else is grant-defined: `templates/`, `notes/`, historical files — w
 
 The stale-inbox diagnostic processor (`inbox.stale` warning after 168 h) was previously `dome.intake.inbox-stale-check`. It is re-homed in `dome.agent` as `dome.agent.inbox-stale-check`. Behavior and trigger are unchanged. See [[wiki/invariants/INBOX_IS_EPHEMERAL]].
 
+## `dome.agent.consolidate` — the second agent
+
+The consolidator is the **contractive counterweight** to ingest: a weekly vault-janitor that keeps the knowledge graph from sprawling. It is a second `AgentDefinition` on the same framework — no new primitive.
+
+- **Trigger:** `schedule` only (`0 4 * * 1`). It runs **one agent loop per tick** over the whole vault (no per-source iteration). There is intentionally **no `command` trigger** — command triggers are view-phase/read-only, and the consolidator is a writing garden processor; on-demand garden invocation is future work.
+- **Scope (contractive):** (1) merge duplicate / near-duplicate pages into one canonical page (hard-delete the absorbed page + rewrite every inbound `[[wikilink]]`), and (2) tidy within-page append-drift into one coherent page. It does **not** reorganize, split, or re-home content.
+- **Posture:** auto-merge + commit, with one guardrail — merges are **lossless for source-grounded facts** (fuse, never drop), and a **genuinely ambiguous** merge raises a `QuestionEffect` (`askOwner`) instead of guessing. Confident cases are automatic; only the rare ambiguous one asks.
+- **Navigation, not whole-vault reads:** the agent's "map" is the vault's own `index.md` (catalog) + `log.md` (history); it `searchVault`s for suspects and `readPage`s only the finalist cluster. There is no bespoke candidate-finder — judgment is the agent's, the tools are general primitives (`readPage`, `listPages`, `searchVault`, `writePage`, the new `deletePage`, `askOwner`).
+- **Cross-run memory:** a top-level `consolidation-ledger.md` (sibling of `log.md`, outside `wiki/`) records merges done, pairs judged *not* duplicates (so they're never re-litigated), and a coverage cursor — turning vault coverage from a context problem into a *time* problem (convergence over weekly passes). Bounded per run (`maxSteps: 50`, `maxDailyCostUsd: 10`); a single cumulative `PatchEffect` per run.
+- **Grant:** `read` + `patch.auto` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`; `model.invoke`; `question.ask`. **Not `graph.write`.**
+
 ## Related
 
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — vendor SDK in `.dome/model-provider.ts`; `ctx.modelInvoke.step` is provider-neutral
