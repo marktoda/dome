@@ -37,7 +37,10 @@ import { runQuery } from "../../src/cli/commands/query";
 import { runResolve } from "../../src/cli/commands/resolve";
 import { runStatus } from "../../src/cli/commands/status";
 import { runSync } from "../../src/cli/commands/sync";
-import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
+import {
+  resolveShippedBundlesRoot,
+  resolveShippedModelProvidersRoot,
+} from "../../src/cli/commands/sync-shared";
 import {
   defaultModelProviderConfig,
   defaultConfigRecord,
@@ -457,8 +460,18 @@ describe("runInit", () => {
       const providerBody = await readFile(providerPath, "utf8");
       expect(providerBody.startsWith("#!/usr/bin/env bun")).toBe(true);
       expect(providerBody).toContain("ANTHROPIC_API_KEY");
-      expect(providerBody).toContain("claude-haiku-4-5-20251001");
+      expect(providerBody).toContain("claude-sonnet-4-6");
       expect(providerBody).toContain("dome.model-provider.request/v1");
+      expect(providerBody).toContain("dome.model-provider.step/v1");
+      expect(providerBody).toContain("dome.model-provider.probe/v1");
+
+      // The written provider is a byte-for-byte copy of the shipped asset
+      // template — init copies data, it does not generate code.
+      const assetBody = await readFile(
+        join(resolveShippedModelProvidersRoot(), "anthropic.ts"),
+        "utf8",
+      );
+      expect(providerBody).toBe(assetBody);
 
       const head = await currentSha(target);
       expect(head).not.toBeNull();

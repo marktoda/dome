@@ -90,6 +90,7 @@ import {
   resolveCaps,
   section,
 } from "../presenter";
+import { resolveShippedModelProvidersRoot } from "./sync-shared";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -359,10 +360,12 @@ async function ensureModelProvider(opts: {
   if (opts.provider === undefined) return "skipped (not requested)";
 
   const providerPath = join(opts.vaultPath, ".dome", "model-provider.ts");
-  const fileOutcome = await writeIfMissing(
-    providerPath,
-    modelProviderTemplate(opts.provider),
-  );
+  const fileOutcome = existsSync(providerPath)
+    ? "skipped (already present)"
+    : await writeIfMissing(
+        providerPath,
+        await readModelProviderTemplate(opts.provider),
+      );
   const configOutcome = await ensureModelProviderConfig({
     path: opts.configPath,
     provider: opts.provider,
@@ -507,13 +510,18 @@ function cloneYamlValue(value: unknown): unknown {
   return structuredClone(value);
 }
 
-function modelProviderTemplate(provider: DefaultModelProvider): string {
-  switch (provider) {
-    case "anthropic":
-      return ANTHROPIC_MODEL_PROVIDER_TEMPLATE;
-  }
-  const _exhaustive: never = provider;
-  return _exhaustive;
+/**
+ * Read the shipped provider template from
+ * `<SDK>/assets/model-providers/<provider>.ts`. The template is shipped
+ * data resolved at runtime (like the `assets/extensions/` bundles) — it is
+ * copied into the vault as `.dome/model-provider.ts` and is never imported
+ * by any `src/` module, keeping ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY intact.
+ */
+async function readModelProviderTemplate(
+  provider: DefaultModelProvider,
+): Promise<string> {
+  const path = join(resolveShippedModelProvidersRoot(), `${provider}.ts`);
+  return readFile(path, "utf8");
 }
 
 function summarizeProviderOutcomes(
@@ -646,10 +654,14 @@ function summaryToJson(s: InitSummary): InitJsonResult {
 // ----- Templates ------------------------------------------------------------
 //
 // The default `.gitignore`, `.dome/config.yaml`, `AGENTS.md`, and
-// `CLAUDE.md` content shipped into every new vault. Templates live in
+// `CLAUDE.md` content shipped into every new vault. These templates live in
 // code (not under assets/) so the binary is self-contained and a future
 // `bun build`-produced single-file CLI doesn't need to bundle a templates
-// directory.
+// directory. The model-provider template is the exception: it is executable
+// vault-side data (a full Bun script speaking the model-provider stdio
+// protocol) shipped at `<SDK>/assets/model-providers/` and resolved at
+// runtime exactly like the `assets/extensions/` bundles — see
+// `readModelProviderTemplate` above.
 
 // The default `.gitignore` shipped into every new vault. Ignores
 // `.dome/state/` per [[wiki/specs/vault-layout]] §"Derived operational
@@ -847,276 +859,6 @@ The normal command path is \`dome status --json\` -> \`next_actions\` ->
 \`dome check --json\`), or \`dome resolve <id> <value>\`. Resolve
 \`agent-safe\` / \`model-safe\` questions only when the answer is grounded in
 source refs; surface \`owner-needed\` questions instead of guessing.
-`;
-
-const ANTHROPIC_MODEL_PROVIDER_TEMPLATE = `#!/usr/bin/env bun
-//
-// Dome command model provider for Anthropic Messages API.
-//
-// Dome invokes this script with a JSON request on stdin:
-// { "schema": "dome.model-provider.request/v1", "prompt": "...", ... }
-// The script writes JSON on stdout:
-// { "text": "...", "model": "...", "costUsd"?: number }
-//
-// Required environment:
-// - ANTHROPIC_API_KEY
-//
-// Optional environment:
-// - ANTHROPIC_MODEL (default: claude-haiku-4-5-20251001)
-// - ANTHROPIC_MAX_TOKENS (default: 4096)
-// - ANTHROPIC_INPUT_COST_PER_MTOK / ANTHROPIC_OUTPUT_COST_PER_MTOK
-//   If both prices are set, Dome receives costUsd for budget accounting.
-
-type ProviderRequest = {
-  readonly schema: "dome.model-provider.request/v1";
-  readonly prompt: string;
-  readonly model?: string;
-  readonly temperature?: number;
-};
-
-type AnthropicTextBlock = {
-  readonly type: "text";
-  readonly text: string;
-};
-
-type AnthropicResponse = {
-  readonly content?: ReadonlyArray<AnthropicTextBlock | { readonly type: string }>;
-  readonly model?: string;
-  readonly usage?: {
-    readonly input_tokens?: number;
-    readonly output_tokens?: number;
-  };
-};
-
-const API_KEY = process.env.ANTHROPIC_API_KEY;
-const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001";
-const MAX_TOKENS = positiveIntegerEnv("ANTHROPIC_MAX_TOKENS", 4096);
-
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
-
-async function main(): Promise<void> {
-  if (API_KEY === undefined || API_KEY.trim().length === 0) {
-    throw new Error("ANTHROPIC_API_KEY is required");
-  }
-  const raw = JSON.parse(await Bun.stdin.text());
-  if (raw.schema === "dome.model-provider.step/v1") {
-    process.stdout.write(JSON.stringify(await runStep(raw)));
-    return;
-  }
-  if (raw.schema === "dome.model-provider.request/v1") {
-    process.stdout.write(JSON.stringify(await runText(raw)));
-    return;
-  }
-  throw new Error("unsupported Dome model provider request schema");
-}
-
-async function runText(
-  raw: unknown,
-): Promise<{ text: string; model: string; costUsd?: number }> {
-  const request = parseRequest(raw);
-  const model = request.model ?? DEFAULT_MODEL;
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: MAX_TOKENS,
-      temperature: request.temperature ?? 0,
-      messages: [{ role: "user", content: request.prompt }],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      \`Anthropic request failed \${response.status}: \${body.slice(0, 1000)}\`,
-    );
-  }
-
-  const parsed = (await response.json()) as AnthropicResponse;
-  const text = textFromAnthropicResponse(parsed);
-  if (text.length === 0) {
-    throw new Error("Anthropic response did not include a text block");
-  }
-
-  const costUsd = costFromUsage(parsed.usage);
-  return {
-    text,
-    model: parsed.model ?? model,
-    ...(costUsd === undefined ? {} : { costUsd }),
-  };
-}
-
-async function runStep(req: {
-  messages: Array<
-    | { role: "system"; content: string }
-    | { role: "user"; content: string }
-    | { role: "assistant"; content: string; toolCalls?: Array<{ id: string; name: string; input: unknown }> }
-    | { role: "tool"; toolCallId: string; toolName: string; content: string }
-  >;
-  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
-  model?: string;
-}): Promise<{ toolCalls?: Array<{ id: string; name: string; input: unknown }>; text?: string; model?: string; costUsd?: number }> {
-  const model = req.model ?? DEFAULT_MODEL;
-  const system = req.messages
-    .filter((m) => m.role === "system")
-    .map((m) => (m as { content: string }).content)
-    .join("\\n\\n");
-  const messages = req.messages
-    .filter((m) => m.role !== "system")
-    .map((m) => toAnthropicMessage(m));
-  const body: Record<string, unknown> = {
-    model,
-    max_tokens: MAX_TOKENS,
-    messages,
-    tools: req.tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.inputSchema,
-    })),
-  };
-  if (system.length > 0) body.system = system;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(
-      \`Anthropic step request failed \${response.status}: \${errBody.slice(0, 1000)}\`,
-    );
-  }
-  const parsed = await response.json();
-  const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }> =
-    parsed.content ?? [];
-  const toolCalls = blocks
-    .filter((b) => b.type === "tool_use")
-    .map((b) => ({ id: String(b.id), name: String(b.name), input: b.input }));
-  const text = blocks
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("\\n")
-    .trim();
-  const costUsd = costFromUsage(parsed.usage);
-  return {
-    ...(toolCalls.length > 0 ? { toolCalls } : {}),
-    ...(text.length > 0 ? { text } : {}),
-    model: parsed.model ?? model,
-    ...(costUsd === undefined ? {} : { costUsd }),
-  };
-}
-
-function toAnthropicMessage(m: {
-  role: string;
-  content: string;
-  toolCalls?: Array<{ id: string; name: string; input: unknown }>;
-  toolCallId?: string;
-  toolName?: string;
-}): unknown {
-  if (m.role === "assistant") {
-    const content: unknown[] = [];
-    if (m.content.length > 0) content.push({ type: "text", text: m.content });
-    for (const c of m.toolCalls ?? []) {
-      content.push({ type: "tool_use", id: c.id, name: c.name, input: c.input });
-    }
-    return { role: "assistant", content };
-  }
-  if (m.role === "tool") {
-    return {
-      role: "user",
-      content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: m.content }],
-    };
-  }
-  return { role: "user", content: m.content };
-}
-
-function parseRequest(raw: unknown): ProviderRequest {
-  const parsed = raw as Partial<ProviderRequest>;
-  if (parsed.schema !== "dome.model-provider.request/v1") {
-    throw new Error("unsupported Dome model provider request schema");
-  }
-  if (typeof parsed.prompt !== "string" || parsed.prompt.trim().length === 0) {
-    throw new Error("request.prompt must be a non-empty string");
-  }
-  if (parsed.model !== undefined && typeof parsed.model !== "string") {
-    throw new Error("request.model must be a string when present");
-  }
-  if (
-    parsed.temperature !== undefined &&
-    (typeof parsed.temperature !== "number" || !Number.isFinite(parsed.temperature))
-  ) {
-    throw new Error("request.temperature must be a finite number when present");
-  }
-  return {
-    schema: parsed.schema,
-    prompt: parsed.prompt,
-    ...(parsed.model !== undefined ? { model: parsed.model } : {}),
-    ...(parsed.temperature !== undefined
-      ? { temperature: parsed.temperature }
-      : {}),
-  };
-}
-
-function textFromAnthropicResponse(response: AnthropicResponse): string {
-  return (response.content ?? [])
-    .filter((block): block is AnthropicTextBlock => block.type === "text")
-    .map((block) => block.text)
-    .join("\\n")
-    .trim();
-}
-
-function costFromUsage(
-  usage: AnthropicResponse["usage"],
-): number | undefined {
-  const inputCost = numberEnv("ANTHROPIC_INPUT_COST_PER_MTOK");
-  const outputCost = numberEnv("ANTHROPIC_OUTPUT_COST_PER_MTOK");
-  if (
-    usage === undefined ||
-    inputCost === undefined ||
-    outputCost === undefined ||
-    usage.input_tokens === undefined ||
-    usage.output_tokens === undefined
-  ) {
-    return undefined;
-  }
-  return (
-    (usage.input_tokens / 1_000_000) * inputCost +
-    (usage.output_tokens / 1_000_000) * outputCost
-  );
-}
-
-function numberEnv(name: string): number | undefined {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim().length === 0) return undefined;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(\`\${name} must be a non-negative number\`);
-  }
-  return parsed;
-}
-
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim().length === 0) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(\`\${name} must be a positive integer\`);
-  }
-  return parsed;
-}
 `;
 
 const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold

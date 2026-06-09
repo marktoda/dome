@@ -46,6 +46,19 @@ export function resolveShippedBundlesRoot(): string {
   return fileURLToPath(url);
 }
 
+/**
+ * Returns the absolute path to the SDK's shipped first-party model-provider
+ * templates directory (`<SDK>/assets/model-providers/`). Same resolution
+ * story as `resolveShippedBundlesRoot`. The templates are shipped data —
+ * `dome init --with-model-provider <provider>` copies one into the vault as
+ * `.dome/model-provider.ts` — and are never imported by any `src/` module,
+ * so the ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY fence stays intact.
+ */
+export function resolveShippedModelProvidersRoot(): string {
+  const url = new URL("../../../assets/model-providers", import.meta.url);
+  return fileURLToPath(url);
+}
+
 export function resolveVaultLocalBundlesRoot(vaultPath: string): string {
   return join(vaultPath, ".dome", "extensions");
 }
