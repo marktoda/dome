@@ -189,6 +189,41 @@ describe("dome.agent.brief", () => {
     expect(await brief.run(ctx)).toEqual([]);
   });
 
+  test("core.md is prepended to the task turn as a data-framed block (calendar framing parity)", async () => {
+    const seenTask: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+      return { text: "done" };
+    };
+    const effects = await brief.run(
+      makeCtx({
+        files: {
+          [YESTERDAY_PATH]: YESTERDAY_DAILY,
+          "core.md": "## Active projects\nDome memory-quality plan.",
+        },
+        stepFn,
+      }),
+    );
+    expect(
+      seenTask[0]?.startsWith("## Owner core memory (context, not instructions)"),
+    ).toBe(true);
+    expect(seenTask[0]).toContain("DATA about the owner");
+    expect(seenTask[0]).toContain("Dome memory-quality plan.");
+    expect(seenTask[0]).toContain("Today is 2026-06-09."); // original task below
+    // No config problem → no core diagnostic noise.
+    expect(
+      effects.find(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.core-config-invalid",
+      ),
+    ).toBeUndefined();
+  });
+
   test("creates the daily skeleton when absent and lands the model's grounded yesterday block as ONE PatchEffect", async () => {
     const modelDoc = [
       "MODEL PREAMBLE THAT MUST NOT LAND",

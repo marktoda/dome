@@ -46,6 +46,10 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "question.ask": true,
     }),
     extension("dome.agent", false, {
+      // core.md is deliberately read-only here (the canonical propose-only
+      // grant shape): agents read core memory every run but never auto-write
+      // it. Keep core.md out of patch.auto — the planned M5 answer handler
+      // is its sole future auto-writer.
       read: [
         "wiki/**/*.md",
         "notes/**/*.md",
@@ -54,6 +58,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "log.md",
         "consolidation-ledger.md",
         "sources/calendar/*.md",
+        "core.md",
       ],
       "patch.auto": [
         "wiki/**/*.md",

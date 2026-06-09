@@ -71,6 +71,31 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(brief?.module).toBe("processors/brief.ts");
   });
 
+  test("core.md is readable by every agent processor and writable by NONE (propose-only)", async () => {
+    const manifest = await loadManifest();
+    const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
+    for (const id of agents) {
+      const processor = manifest.processors.find((p) => p.id === id);
+      const read = processor?.capabilities.find((c) => c.kind === "read");
+      expect(
+        read?.kind === "read" ? read.paths : [],
+        `${id} must declare read over core.md`,
+      ).toContain("core.md");
+    }
+    // The propose-only pin: core.md appears in NO patch.auto declaration in
+    // the whole bundle (decision 4 of the memory plan — the only future
+    // auto-writer is M5's answer-mediated handler).
+    for (const processor of manifest.processors) {
+      for (const capability of processor.capabilities) {
+        if (capability.kind !== "patch.auto") continue;
+        expect(
+          capability.paths,
+          `${processor.id} must not auto-write core.md`,
+        ).not.toContain("core.md");
+      }
+    }
+  });
+
   test("brief's write grant is bounded to the daily-note targets and reads the calendar source", async () => {
     const manifest = await loadManifest();
     const brief = manifest.processors.find((p) => p.id === "dome.agent.brief");

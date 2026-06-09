@@ -12,6 +12,7 @@ import {
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finishAgentRun } from "../lib/agent-run-effects";
+import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
 
@@ -101,17 +102,33 @@ const consolidate = defineProcessorImplementation({
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
     const sourceRefs = [ctx.sourceRef(ledgerPath)];
-    const configDiagnostics: Effect[] =
-      ledger.problem === null
-        ? []
-        : [
-            diagnosticEffect({
-              severity: "warning",
-              code: "dome.agent.consolidate-config-invalid",
-              message: ledger.problem,
-              sourceRefs,
-            }),
-          ];
+    // Owner core memory: prepended to the task turn as DATA (never
+    // instructions). Absent/empty page → no-op.
+    const core = await coreMemorySection({
+      readFile: (p) => ctx.snapshot.readFile(p),
+      config: ctx.extensionConfig,
+    });
+    const configDiagnostics: Effect[] = [];
+    if (ledger.problem !== null) {
+      configDiagnostics.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.consolidate-config-invalid",
+          message: ledger.problem,
+          sourceRefs,
+        }),
+      );
+    }
+    if (core.problem !== null) {
+      configDiagnostics.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.core-config-invalid",
+          message: core.problem,
+          sourceRefs,
+        }),
+      );
+    }
 
     let result;
     try {
@@ -120,7 +137,7 @@ const consolidate = defineProcessorImplementation({
           ledgerPath,
           maxChangedFiles: MAX_CHANGED_FILES,
         }),
-        task: taskTurn(ctx.now(), ledgerPath),
+        task: withCoreMemory(core.section, taskTurn(ctx.now(), ledgerPath)),
         tools,
         step,
         maxSteps: MAX_STEPS,

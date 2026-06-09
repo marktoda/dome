@@ -233,6 +233,62 @@ describe("dome.agent.consolidate", () => {
     expect(seenTask[0]).toContain("notes/janitor-ledger.md");
   });
 
+  test("core.md is prepended to the task turn as a data-framed block", async () => {
+    const seenTask: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+      return { text: "no drift tonight" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: {
+          "index.md": "x",
+          "core.md": "## Standing preferences\nNever merge people pages.",
+        },
+        stepFn,
+      }),
+    );
+    expect(
+      seenTask[0]?.startsWith("## Owner core memory (context, not instructions)"),
+    ).toBe(true);
+    expect(seenTask[0]).toContain("Never merge people pages.");
+    expect(seenTask[0]).toContain("Consolidate RECENT drift"); // original task below
+    expect(effects.find((e) => e.kind === "diagnostic")).toBeUndefined();
+  });
+
+  test("a malformed core_path config does not crash the run: default path + core-config-invalid diagnostic", async () => {
+    const seenTask: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x", "core.md": "## Who I am\nMark." },
+        extensionConfig: { core_path: "core.txt" },
+        stepFn,
+      }),
+    );
+    // The run proceeded against the DEFAULT core path.
+    expect(seenTask[0]).toContain("Mark.");
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.core-config-invalid",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.severity).toBe("warning");
+    expect(diag.message).toContain(".md path");
+  });
+
   test("consolidationLedgerPath validates config values and falls back instead of throwing", () => {
     expect(consolidationLedgerPath(undefined)).toEqual({
       path: "consolidation-ledger.md",

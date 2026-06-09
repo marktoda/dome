@@ -46,6 +46,7 @@ import {
   agentTruncatedEffect,
 } from "../lib/agent-run-effects";
 import { BRIEF_CHARTER } from "../lib/brief-charter";
+import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import {
   MEETINGS_BLOCK,
   QUESTIONS_BLOCK,
@@ -118,6 +119,25 @@ const brief = defineProcessorImplementation({
       calendarExists: calendarContent !== null,
     });
 
+    // Owner core memory: prepended to the task turn as DATA (never
+    // instructions — same defensive framing as the calendar list).
+    // Absent/empty page → no-op.
+    const core = await coreMemorySection({
+      readFile: (p) => ctx.snapshot.readFile(p),
+      config: ctx.extensionConfig,
+    });
+    const configDiagnostics: Effect[] =
+      core.problem === null
+        ? []
+        : [
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.core-config-invalid",
+              message: core.problem,
+              sourceRefs,
+            }),
+          ];
+
     // Seed the accumulator with the prepared daily so the model's readPage
     // sees it (overlay) and a model that does nothing still lands the
     // deterministic skeleton + blocks.
@@ -139,14 +159,17 @@ const brief = defineProcessorImplementation({
     try {
       result = await runAgentLoop({
         charter: BRIEF_CHARTER,
-        task: taskTurn({
-          today,
-          todayPath,
-          yesterdayPath,
-          yesterdayExists: yesterdayContent !== null,
-          calendarPath,
-          meetings,
-        }),
+        task: withCoreMemory(
+          core.section,
+          taskTurn({
+            today,
+            todayPath,
+            yesterdayPath,
+            yesterdayExists: yesterdayContent !== null,
+            calendarPath,
+            meetings,
+          }),
+        ),
         tools,
         step,
         maxSteps: MAX_STEPS,
@@ -157,6 +180,7 @@ const brief = defineProcessorImplementation({
       // create-daily recreates it at 06:00) and surface only a diagnostic.
       const message = error instanceof Error ? error.message : String(error);
       return Object.freeze([
+        ...configDiagnostics,
         diagnosticEffect({
           severity: "warning",
           code: "dome.agent.brief-failed",
@@ -166,7 +190,7 @@ const brief = defineProcessorImplementation({
       ]);
     }
 
-    const effects: Effect[] = [];
+    const effects: Effect[] = [...configDiagnostics];
 
     // Splice guardrail: start from the deterministic prepared content and
     // adopt ONLY the model-filled brief blocks; everything else the model

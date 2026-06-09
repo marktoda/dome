@@ -1,8 +1,8 @@
 id: dome.agent
-version: 0.2.0
+version: 0.3.0
 processors:
   - id: dome.agent.ingest
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: signal
@@ -19,6 +19,10 @@ processors:
           - "inbox/**/*.md"
           - "index.md"
           - "log.md"
+          # Owner core memory — read-only by design (propose-only page):
+          # core.md appears in NO patch.auto declaration. A custom core_path
+          # needs a matching vault read grant (same rule as the ledger path).
+          - "core.md"
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
@@ -60,7 +64,7 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.agent.consolidate
-    version: 0.2.0
+    version: 0.2.1
     phase: garden
     triggers:
       # Nightly (was weekly 0 4 * * 1): the charter bounds each run to recent
@@ -74,6 +78,8 @@ processors:
           - "index.md"
           - "log.md"
           - "consolidation-ledger.md"
+          # Owner core memory — read-only by design (propose-only page).
+          - "core.md"
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
@@ -90,7 +96,7 @@ processors:
     module: processors/consolidate.ts
 
   - id: dome.agent.brief
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
@@ -114,6 +120,8 @@ processors:
           # needs a matching grant (same rule as consolidate's own grant).
           - "inbox/**/*.md"
           - "consolidation-ledger.md"
+          # Owner core memory — read-only by design (propose-only page).
+          - "core.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
       # note (wiki/dailies default template or a notes/ daily_path override).
       - kind: patch.auto
