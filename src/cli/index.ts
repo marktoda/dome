@@ -448,6 +448,16 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("install")
     .description("Install dome serve as a macOS launchd service for the vault.")
     .option("--status", "Report installed/loaded service state without changes.")
+    .option(
+      "--env <KEY=VALUE>",
+      "Add a service EnvironmentVariables entry (repeatable; rebuilt on each install).",
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
+    )
+    .option(
+      "--env-file <path>",
+      "Read KEY=VALUE service environment entries from a file.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .action(async (options: InstallCliOptions) => {
@@ -455,6 +465,8 @@ function buildProgram(setExitCode: (code: number) => void): Command {
         await runInstall({
           vault: options.vault,
           status: options.status,
+          env: options.env,
+          envFile: options.envFile,
           json: options.json,
         }),
       );
@@ -542,6 +554,8 @@ type CaptureCliOptions = {
 
 type InstallCliOptions = {
   readonly status?: boolean;
+  readonly env?: string[];
+  readonly envFile?: string;
   readonly json?: boolean;
   readonly vault?: string;
 };

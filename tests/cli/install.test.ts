@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,11 +18,13 @@ import {
   runInstall,
   runUninstall,
   serviceLabelForVault,
+  servicePath,
   vaultServiceSlug,
   type LaunchctlResult,
   type LaunchctlRunner,
   type ServiceDeps,
 } from "../../src/cli/commands/install";
+import { initRepo } from "../../src/git";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -58,6 +60,19 @@ let tempDirs: string[] = [];
 function tempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
+  return dir;
+}
+
+/**
+ * Minimal initialized vault: a git repo with `.dome/config.yaml`. `dome
+ * install` gates on this precondition (a KeepAlive service against a
+ * non-vault dir would crashloop forever).
+ */
+async function vaultDir(): Promise<string> {
+  const dir = tempDir("dome-install-vault-");
+  await initRepo(dir);
+  await mkdir(join(dir, ".dome"), { recursive: true });
+  await writeFile(join(dir, ".dome", "config.yaml"), "extensions: {}\n", "utf8");
   return dir;
 }
 
@@ -128,7 +143,7 @@ describe("service label derivation", () => {
 
 describe("runInstall", () => {
   test("fresh install writes the plist, boots out first, then bootstraps", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = join(tempDir("dome-install-agents-"), "LaunchAgents");
     const launchctl = fakeLaunchctl();
 
@@ -165,8 +180,122 @@ describe("runInstall", () => {
     ]);
   });
 
+  test("plist carries EnvironmentVariables with a PATH that can resolve bun", async () => {
+    // launchd gui agents get PATH=/usr/bin:/bin:/usr/sbin:/sbin, which can't
+    // resolve a Homebrew/~/.bun bun — and the serve host must spawn provider
+    // commands like ["bun", ".dome/model-provider.ts"].
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    expect(
+      await runInstall({ vault }, depsFor(agents, launchctl.runner)),
+    ).toBe(0);
+    const plist = await readFile(
+      join(agents, `${serviceLabelForVault(vault)}.plist`),
+      "utf8",
+    );
+    expect(plist).toContain("<key>EnvironmentVariables</key>");
+    expect(plist).toContain("<key>PATH</key>");
+    expect(plist).toContain(
+      `<string>/opt/bun/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>`,
+    );
+  });
+
+  test("--env and --env-file entries land in EnvironmentVariables (flags win), XML-escaped", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+    const envFile = join(tempDir("dome-install-envfile-"), "creds.env");
+    await writeFile(
+      envFile,
+      [
+        "# provider credentials",
+        "",
+        "ANTHROPIC_API_KEY=sk-from-file",
+        "OTHER_TOKEN=abc&<def>",
+      ].join("\n"),
+      "utf8",
+    );
+
+    expect(
+      await runInstall(
+        {
+          vault,
+          envFile,
+          env: ["ANTHROPIC_API_KEY=sk-from-flag", "EXTRA=1"],
+        },
+        depsFor(agents, launchctl.runner),
+      ),
+    ).toBe(0);
+
+    const plist = await readFile(
+      join(agents, `${serviceLabelForVault(vault)}.plist`),
+      "utf8",
+    );
+    expect(plist).toContain("<key>ANTHROPIC_API_KEY</key>");
+    // --env overrides the same key from --env-file.
+    expect(plist).toContain("<string>sk-from-flag</string>");
+    expect(plist).not.toContain("sk-from-file");
+    expect(plist).toContain("<key>EXTRA</key>");
+    // XML-significant characters in values are escaped.
+    expect(plist).toContain("<key>OTHER_TOKEN</key>");
+    expect(plist).toContain("<string>abc&amp;&lt;def&gt;</string>");
+    expect(plist).not.toContain("abc&<def>");
+  });
+
+  test("malformed --env entries are usage errors (exit 64) and touch nothing", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    expect(
+      await runInstall(
+        { vault, env: ["NOT_A_PAIR"] },
+        depsFor(agents, launchctl.runner),
+      ),
+    ).toBe(64);
+    expect(errors.join("\n")).toContain("KEY=VALUE");
+    expect(launchctl.calls).toEqual([]);
+    expect(existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)))
+      .toBe(false);
+  });
+
+  test("a non-vault directory is refused with exit 64 before any scaffolding", async () => {
+    // Without the gate, install would create .dome/state in an arbitrary
+    // directory and load a KeepAlive service that crashloops forever.
+    const dir = tempDir("dome-install-novault-");
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    const code = await runInstall(
+      { vault: dir },
+      depsFor(agents, launchctl.runner),
+    );
+    expect(code).toBe(64);
+    expect(errors.join("\n")).toContain("not an initialized Dome vault");
+    expect(errors.join("\n")).toContain("dome init");
+    expect(launchctl.calls).toEqual([]);
+    expect(existsSync(join(dir, ".dome"))).toBe(false);
+    expect(existsSync(join(agents, `${serviceLabelForVault(dir)}.plist`)))
+      .toBe(false);
+  });
+
+  test("a git repo without .dome/config.yaml is refused with exit 64", async () => {
+    const dir = tempDir("dome-install-noconfig-");
+    await initRepo(dir);
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    expect(
+      await runInstall({ vault: dir }, depsFor(agents, launchctl.runner)),
+    ).toBe(64);
+    expect(errors.join("\n")).toContain(".dome/config.yaml");
+    expect(launchctl.calls).toEqual([]);
+  });
+
   test("re-running install cleanly replaces: bootout before each bootstrap, exit 0", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
     const deps = depsFor(agents, launchctl.runner);
@@ -187,7 +316,7 @@ describe("runInstall", () => {
   });
 
   test("bootstrap failure exits 1, surfaces stderr, and leaves the plist for inspection", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl({
       bootstrap: {
@@ -208,7 +337,7 @@ describe("runInstall", () => {
   });
 
   test("--json emits the dome.install/v1 payload", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
 
@@ -249,7 +378,7 @@ describe("runInstall", () => {
   });
 
   test("--status reports installed/loaded via launchctl print, read-only", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
 
     // Not installed, not loaded.
@@ -293,7 +422,7 @@ describe("runInstall", () => {
 
 describe("runUninstall", () => {
   test("boots the service out and removes the plist", async () => {
-    const vault = tempDir("dome-install-vault-");
+    const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
     const deps = depsFor(agents, launchctl.runner);
@@ -356,5 +485,14 @@ describe("renderServePlist", () => {
     });
     expect(plist).toContain("<string>/tmp/a&amp;b &lt;vault&gt;</string>");
     expect(plist).not.toContain("a&b <vault>");
+  });
+
+  test("servicePath dedupes a bun dir that is already a standard dir", () => {
+    expect(servicePath("/usr/local/bin/bun")).toBe(
+      "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    );
+    expect(servicePath("/Users/me/.bun/bin/bun")).toBe(
+      "/Users/me/.bun/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    );
   });
 });

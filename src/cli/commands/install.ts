@@ -40,10 +40,11 @@
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
+import { findGitRoot } from "../../git";
 import { formatJson } from "../format";
 import {
   footer,
@@ -58,6 +59,25 @@ import {
 // ----- Constants ------------------------------------------------------------
 
 const SERVICE_LABEL_PREFIX = "com.dome.serve.";
+
+const EX_USAGE = 64;
+
+/**
+ * Standard PATH entries for the launchd service environment. launchd gui
+ * agents get a bare `/usr/bin:/bin:/usr/sbin:/sbin`, which cannot resolve a
+ * Homebrew/`~/.bun` `bun` — and the scaffolded model provider command is
+ * `["bun", ".dome/model-provider.ts"]`, so the serve host would be unable to
+ * spawn it. The rendered plist prepends the directory of the bun runtime
+ * that performed the install.
+ */
+const SERVICE_PATH_STANDARD_DIRS = [
+  "/usr/local/bin",
+  "/opt/homebrew/bin",
+  "/usr/bin",
+  "/bin",
+  "/usr/sbin",
+  "/sbin",
+] as const;
 
 /** Same SDK-entry resolution as `dome serve --daemon` (see serve.ts). */
 const DOME_BIN = resolve(import.meta.dir, "../../../bin/dome");
@@ -99,6 +119,10 @@ export type ServiceDeps = {
 export type RunInstallOptions = {
   readonly vault?: string | undefined;
   readonly status?: boolean | undefined;
+  /** Repeatable `--env KEY=VALUE` entries for the service environment. */
+  readonly env?: ReadonlyArray<string> | undefined;
+  /** `--env-file <path>`: KEY=VALUE lines (blank lines and `#` comments skipped). */
+  readonly envFile?: string | undefined;
   readonly json?: boolean | undefined;
 };
 
@@ -131,9 +155,23 @@ export function serviceLabelForVault(vaultPath: string): string {
 }
 
 /**
+ * The launchd service PATH: the directory of the installing bun runtime
+ * first (launchd's default PATH cannot resolve Homebrew/`~/.bun` binaries,
+ * and the serve host must spawn provider commands like `["bun",
+ * ".dome/model-provider.ts"]`), then the standard dirs.
+ */
+export function servicePath(bunPath: string): string {
+  const bunDir = dirname(bunPath);
+  const dirs = [bunDir, ...SERVICE_PATH_STANDARD_DIRS.filter((d) => d !== bunDir)];
+  return dirs.join(":");
+}
+
+/**
  * Render the LaunchAgent plist. RunAtLoad starts the host at login;
  * KeepAlive restarts it after crashes; WorkingDirectory pins the vault;
- * stdout/stderr both land in the gitignored `.dome/state/serve.log`.
+ * stdout/stderr both land in the gitignored `.dome/state/serve.log`;
+ * EnvironmentVariables always carries a usable PATH (see `servicePath`)
+ * plus any caller-supplied credential entries (`--env` / `--env-file`).
  */
 export function renderServePlist(input: {
   readonly label: string;
@@ -141,10 +179,21 @@ export function renderServePlist(input: {
   readonly domeBin: string;
   readonly vaultPath: string;
   readonly logPath: string;
+  readonly environment?: ReadonlyMap<string, string>;
 }): string {
   const args = [input.bunPath, input.domeBin, "serve", "--vault", input.vaultPath];
   const argXml = args
     .map((arg) => `    <string>${xmlEscape(arg)}</string>`)
+    .join("\n");
+  const environment = new Map<string, string>([
+    ["PATH", servicePath(input.bunPath)],
+    ...(input.environment ?? []),
+  ]);
+  const envXml = [...environment]
+    .map(
+      ([key, value]) =>
+        `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`,
+    )
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -156,6 +205,10 @@ export function renderServePlist(input: {
   <array>
 ${argXml}
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+${envXml}
+  </dict>
   <key>WorkingDirectory</key>
   <string>${xmlEscape(input.vaultPath)}</string>
   <key>RunAtLoad</key>
@@ -176,8 +229,10 @@ ${argXml}
 /**
  * Execute `dome install` (or `dome install --status`). Returns the exit
  * code: 0 on success (including idempotent re-install and clean status
- * reads); 1 on non-macOS platform, undeterminable uid, launchctl bootstrap
- * failure, or unexpected I/O failure.
+ * reads); 64 (EX_USAGE) when the target is not an initialized Dome vault or
+ * an `--env`/`--env-file` entry is malformed; 1 on non-macOS platform,
+ * undeterminable uid, launchctl bootstrap failure, or unexpected I/O
+ * failure.
  */
 export async function runInstall(
   options: RunInstallOptions = {},
@@ -205,6 +260,31 @@ export async function runInstall(
     });
   }
 
+  // Vault precondition (same refusal style as `dome capture`): installing a
+  // KeepAlive serve service against a non-vault directory would scaffold
+  // `.dome/state/` there and crashloop forever.
+  const gitRoot = await findGitRoot(vaultPath);
+  if (gitRoot === null || !existsSync(join(vaultPath, ".dome", "config.yaml"))) {
+    return reportUsageError({
+      vaultPath,
+      json,
+      error: `not an initialized Dome vault (missing ${
+        gitRoot === null ? "git repository" : ".dome/config.yaml"
+      }); run \`dome init\` first`,
+    });
+  }
+
+  let environment: ReadonlyMap<string, string>;
+  try {
+    environment = await resolveServiceEnvironment(options);
+  } catch (e) {
+    return reportUsageError({
+      vaultPath,
+      json,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
   const logPath = join(vaultPath, ".dome", "state", "serve.log");
   try {
     // The log dir is the vault's gitignored derived-state dir; launchd
@@ -225,6 +305,7 @@ export async function runInstall(
         domeBin: d.domeBin,
         vaultPath,
         logPath,
+        environment,
       }),
       "utf8",
     );
@@ -358,6 +439,76 @@ async function spawnLaunchctl(
     proc.exited,
   ]);
   return { exitCode, stdout, stderr };
+}
+
+/**
+ * Resolve the extra EnvironmentVariables entries from `--env-file` then
+ * `--env` (flags win over file entries on the same key). Each entry is
+ * `KEY=VALUE`; env-file lines may be blank or `#` comments. Malformed
+ * entries throw — the caller surfaces them as usage errors (exit 64).
+ *
+ * Note: launchd persists these values in the plist in plain text under
+ * `~/Library/LaunchAgents/`, and re-running `dome install` rebuilds the
+ * plist from the flags passed *that* run — entries are not remembered
+ * across re-installs. `launchctl setenv` is the alternative for values
+ * that should live outside the plist.
+ */
+async function resolveServiceEnvironment(
+  options: RunInstallOptions,
+): Promise<ReadonlyMap<string, string>> {
+  const environment = new Map<string, string>();
+  if (options.envFile !== undefined) {
+    let body: string;
+    try {
+      body = await readFile(resolve(options.envFile), "utf8");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`cannot read --env-file ${options.envFile}: ${msg}`);
+    }
+    for (const rawLine of body.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (line.length === 0 || line.startsWith("#")) continue;
+      const [key, value] = parseEnvEntry(line, `--env-file ${options.envFile}`);
+      environment.set(key, value);
+    }
+  }
+  for (const entry of options.env ?? []) {
+    const [key, value] = parseEnvEntry(entry, "--env");
+    environment.set(key, value);
+  }
+  return environment;
+}
+
+function parseEnvEntry(
+  entry: string,
+  source: string,
+): readonly [string, string] {
+  const eq = entry.indexOf("=");
+  const key = eq === -1 ? entry : entry.slice(0, eq);
+  if (eq === -1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new Error(
+      `${source}: expected KEY=VALUE with a valid variable name, got ${JSON.stringify(entry)}`,
+    );
+  }
+  return [key, entry.slice(eq + 1)] as const;
+}
+
+function reportUsageError(input: {
+  readonly vaultPath: string;
+  readonly json: boolean;
+  readonly error: string;
+}): number {
+  if (input.json) {
+    console.log(formatJson({
+      schema: "dome.install/v1",
+      status: "error",
+      vault: input.vaultPath,
+      error: input.error,
+    }));
+  } else {
+    console.error(`dome install: ${input.error}`);
+  }
+  return EX_USAGE;
 }
 
 /**
