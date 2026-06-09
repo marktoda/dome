@@ -137,6 +137,8 @@ type SearchDocumentEffect =
       readonly kind: "search-document";
       readonly operation: "upsert";
       readonly path: string;
+      readonly sectionId?: string;    // stable heading-section id (heading slug + ordinal)
+      readonly breadcrumb?: string;   // "<page title> › <heading path>" display breadcrumb
       readonly category: string;      // wiki | notes | inbox | raw | other
       readonly type?: string;         // page type/frontmatter type when present
       readonly title: string;
@@ -158,8 +160,22 @@ first-class effect/capability rather than direct SQLite access by
 and third-party search-like bundles can request their own path-scoped authority
 without escaping the broker.
 
-**Idempotency requirement:** upsert replaces the row for `path`; delete removes
-the row. A rebuild replays SearchDocumentEffects from adopted markdown and
+**Section granularity:** `dome.search.index-text` emits one upsert per heading
+section of a page (split at H2; the content before the first H2 is the `intro`
+section; sections longer than ~512 tokens are sub-split). A section upsert
+carries `sectionId` + `breadcrumb` and identifies the row by the
+`(path, sectionId)` composite key. An upsert without `sectionId` keeps the
+legacy page-level semantics (replaces every row for `path`). Section
+`sourceRefs` carry the section's line range so query results anchor to the
+matched section, not just the page.
+
+**Idempotency requirement:** a sectioned upsert replaces the row for
+`(path, sectionId)` (plus any stale page-level row for `path`); a page-level
+upsert and a delete replace/remove every row for `path`. The indexer emits a
+`delete` for the page followed by its section upserts so removed sections do
+not linger; effects from one run are applied in emission order. Re-indexing
+unchanged content emits the same effect sequence and converges to identical
+rows. A rebuild replays SearchDocumentEffects from adopted markdown and
 reconstructs the same FTS state.
 
 ## QuestionEffect

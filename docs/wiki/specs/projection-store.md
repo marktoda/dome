@@ -124,6 +124,8 @@ Full-text search over markdown bodies, maintained by `dome.search`'s `index-text
 ```sql
 CREATE VIRTUAL TABLE fts_documents USING fts5(
   path UNINDEXED,
+  section_id UNINDEXED,   -- heading-section id; NULL for legacy page-level rows
+  breadcrumb UNINDEXED,   -- "<page title> › <heading path>" display breadcrumb
   category UNINDEXED,
   type UNINDEXED,
   title,
@@ -134,10 +136,23 @@ CREATE VIRTUAL TABLE fts_documents USING fts5(
 );
 ```
 
+Rows are heading-section granular: `index-text` splits each page at H2
+headings (content before the first H2 is the `intro` section, long sections
+are sub-split at roughly 512 tokens) and emits one SearchDocumentEffect upsert
+per section. The breadcrumb is prepended to the indexed `body` so heading
+terms match, and stored UNINDEXED for display. The logical row identity is the
+`(path, section_id)` composite key, maintained by the projection sink (FTS5
+has no UNIQUE constraints): a sectioned upsert deletes its `(path,
+section_id)` row before inserting; a page-level upsert (no `sectionId`) and a
+delete clear every row for `path`. The indexer emits a page delete before its
+section upserts so removed sections cannot linger across re-index.
+
 Updated incrementally by SearchDocumentEffect on `document.changed`,
-`file.created`, and `file.deleted` signals during adoption. Upsert replaces
-the row for `path`; delete removes it. `source_refs` is JSON provenance used by
-`dome query` results.
+`file.created`, and `file.deleted` signals during adoption. `source_refs` is
+JSON provenance used by `dome query` results and carries the section's line
+range. The section columns landed as a schema change; per §"Schema
+migrations", the schema-hash bump wipes and rebuilds the projection — the
+rebuild *is* the migration.
 
 ### `diagnostics`
 

@@ -909,6 +909,7 @@ processor-version hash is stale. Output (text mode):
 4 adopted-state match(es) for "platform ownership"
 
 1. Platform Team Ownership (wiki/syntheses/platform-team-ownership.md)
+   section: Platform Team Ownership › Decisions
    Atlas owns runtime; platform owns infrastructure boundaries...
    why: project page; 2 open loops; decision (score 17, fts -2.41)
    SourceRefs:
@@ -929,9 +930,22 @@ processor-version hash is stale. Output (text mode):
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the search-document rows are written from
-SearchDocumentEffect. The processor fetches an expanded FTS candidate set and
+SearchDocumentEffect. FTS rows are heading-section granular (per
+[[wiki/specs/projection-store]] §"fts_documents"); the processor collapses
+section hits to the best section per page and each match carries that
+section's `sectionId` and `breadcrumb` (`<page title> › <heading path>`) plus
+section-ranged SourceRefs. Text mode prints the breadcrumb as the `section:`
+line when the best hit is a non-intro section. The processor fetches an
+expanded FTS candidate set and
 also recalls exact-path documents when projection memory has a topic-matched
 open loop, decision, unresolved question, or active diagnostic for that page.
+It also expands one hop over `dome.graph.links_to` facts from the top FTS
+pages (pages linked from or linking to those hits, ordered by the rank of the
+linking hit) and fuses the FTS and link-expansion channels with reciprocal-
+rank fusion (k=60, link channel at half weight). The fused contribution lands
+as `fusion`-kind ranking signals ("text match", "linked from matches"), so a
+page that never matched FTS can enter the candidate set through links but
+cannot outrank a direct strong hit for an exact-term query on fusion alone.
 Daily-intent queries such as "today", "daily", "yesterday", "tomorrow", or an
 explicit `YYYY-MM-DD` also recall existing date-named markdown files for that
 day from the adopted snapshot. This makes the current daily note available as a
@@ -943,10 +957,17 @@ unless they are the target daily. This prevents old daily notes that merely say
 "today" from crowding out the current daily surface and its backing context.
 It then ranks the combined candidate set before slicing to `--limit` with
 source-backed signals: page type, graph facts, open-loop facts, decisions,
-unresolved questions, active diagnostics, and projection recall signals. The
+unresolved questions, active diagnostics, projection recall signals, and the
+RRF fusion signals described above. The
 legacy `rank` field remains the raw FTS rank for FTS matches; recalled
 documents use a deliberately weak FTS rank and are promoted only by recall and
-related-state signals. The `ranking` object carries `score`, `ftsRank`,
+related-state signals. After ranking, a recency decay pass multiplies the
+composite score of the top ~25 candidates by
+`max(0.35, 0.995^hoursSince(lastHumanChangedAt))` — old-but-relevant pages
+are dampened toward the floor, never buried, and Dome-authored engine commits
+do not refresh recency because the basis is `lastHumanChangedAt` (pages whose
+history is entirely Dome-authored are not decayed). The `ranking` object
+carries `score`, `ftsRank`, `recencyFactor`,
 human-readable `reasons`, and structured `signals` so agents can explain why a
 result was promoted. Matches also include related page facts and unresolved
 diagnostics/questions whose SourceRefs point at the matched path. Open
@@ -1019,7 +1040,11 @@ exhaustive fact dump. Consumers that need all evidence should use
 Daily task facts use the same display convention as the daily action view:
 parsed `📅` due-date and priority glyph markers are rendered as bracketed
 `due` / `priority` metadata instead of duplicated inside the task text.
-Search-match entries use the same expanded candidate ranking as `dome query`.
+Search-match entries use the same expanded candidate ranking as `dome query`:
+section-granular FTS hits collapsed to the best section per page (entries
+carry `sectionId` + `breadcrumb`, and the rendered packet prints the
+breadcrumb as a `Section:` line), one-hop `dome.graph.links_to` expansion
+fused via reciprocal-rank fusion (k=60), and the top-N recency decay pass.
 The packet can
 also recall exact-path documents when projection memory has a topic-matched
 open loop, decision, unresolved question, or active diagnostic for that page,
