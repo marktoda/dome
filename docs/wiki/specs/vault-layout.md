@@ -27,6 +27,7 @@ A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) contain
   inbox/              # ephemeral drop-zones for intake (per INBOX_IS_EPHEMERAL)
   log.md              # append-only projection of the run ledger (per LOG_IS_APPEND_ONLY)
   index.md            # projection of wiki/ catalogue
+  core.md             # always-loaded core memory page (see §"core.md" below)
 ```
 
 `wiki/`, `raw/`, `notes/`, and `inbox/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below).
@@ -149,6 +150,54 @@ mkdir -p sources/calendar
 } > "$f"
 git add "$f" && git commit -m "calendar: agenda for $d"
 ```
+
+## `core.md` — the core memory page (convention)
+
+`core.md` is a top-level markdown page carrying the owner's **always-loaded
+core memory**: identity, active projects, and standing preferences. By the
+category table above it is `external` — like `consolidation-ledger.md`, it is
+a documented convention, not a new category. Every `dome.agent` run (ingest,
+consolidate, brief) reads it at run start and prepends it to the agent's task
+context as data (see [[wiki/specs/autonomous-agents]] §"Core-memory injection
+(`core.md`)").
+
+File shape — plain markdown, no required frontmatter:
+
+```markdown
+# Core memory
+
+## Who I am
+
+## Active projects
+
+## Standing preferences
+```
+
+An optional **generated block** is reserved for the planned preference-
+promotion answer handler (memory-quality plan M5), which will maintain a
+marker-delimited promoted-preferences region inside this page. Until that
+ships, the whole page is human prose.
+
+**Size budget.** Core memory must stay small enough to load everywhere — it
+is prepended to every agent run, so it is a context line-item, not a junk
+drawer. `dome.markdown.core-size` emits a deterministic warning diagnostic
+when `core.md` exceeds **6,000 characters**: split details into wiki pages
+and keep only the always-relevant summary here. The lint checks the literal
+top-level `core.md` path only; a vault configuring a custom
+`extensions.dome.agent.config.core_path` forgoes the size lint (the simplest
+honest contract — `dome.markdown` does not read `dome.agent`'s config).
+
+**The canonical grant shape (propose-only).** Interactive bundles read
+`core.md` but never auto-write it: include `core.md` in the bundle's `read`
+grant and **exclude it from every `patch.auto` grant**. Agents that want to
+change core memory propose — a review patch or a `QuestionEffect` — and the
+owner edits the page or accepts the proposal. The only planned auto-writer is
+M5's answer-mediated promotion handler (the question *was* the review); until
+it ships, nothing auto-writes `core.md`. This is decision 4 of the
+[[memory]] plan ledger.
+
+`dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
+overwritten on re-run) — see [[wiki/specs/cli]] §"dome init".
 
 ## `log.md` — append-only run-projection
 
@@ -313,6 +362,7 @@ The capability broker enforces ownership. Default rules:
 | `index.md` | planned `dome.index` (via `owns.path`) |
 | `log.md` | planned `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
+| `core.md` | nobody (propose-only) — agents read it, no `patch.auto` grants it; the planned M5 answer handler is the sole auto-writer (§"`core.md`") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

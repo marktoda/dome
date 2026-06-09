@@ -166,7 +166,15 @@ The shipped initialization steps:
    provider or stanza.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
-6. Writes `<vault>/AGENTS.md` from the shipped orientation template
+6. Writes `<vault>/core.md`, the always-loaded core memory page (per
+   [[wiki/specs/vault-layout]] §"`core.md` — the core memory page"), as a
+   commented skeleton: `# Core memory` plus `## Who I am`,
+   `## Active projects`, and `## Standing preferences` sections, with an
+   HTML comment explaining the propose-only convention (Dome agents read it
+   every run but never auto-write it) and the ~6,000-character size budget
+   the `dome.markdown.core-size` lint enforces. First-write-only — re-runs
+   never overwrite the user's core memory.
+7. Writes `<vault>/AGENTS.md` from the shipped orientation template
    (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
@@ -181,8 +189,8 @@ The shipped initialization steps:
    an older AGENTS file has no delimiters, its previous content is moved into
    the new user-prose block. The same flag prepends the `@AGENTS.md` shim to
    CLAUDE.md when missing, preserving existing file content below it.
-7. Creates an initial scaffold commit (`dome init: initial scaffold`)
-   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
+8. Creates an initial scaffold commit (`dome init: initial scaffold`)
+   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`, and
    `.dome/config.yaml`, plus `.dome/model-provider.ts` when the provider
    scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
    with commits is a no-op for this step).
