@@ -33,10 +33,11 @@ const consolidate = defineProcessorImplementation({
     });
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
-    const effects: Effect[] = [];
-    let truncated = false;
+    const sourceRefs = [ctx.sourceRef(LEDGER_PATH)];
+
+    let result;
     try {
-      const result = await runAgentLoop({
+      result = await runAgentLoop({
         charter: CONSOLIDATE_CHARTER,
         task: taskTurn(ctx.now()),
         tools,
@@ -44,20 +45,23 @@ const consolidate = defineProcessorImplementation({
         maxSteps: MAX_STEPS,
         state,
       });
-      if (result.stopReason === "budget") truncated = true;
     } catch (error) {
+      // A mid-run throw leaves the merge half-done (e.g. a page deleted before
+      // its links were rewritten), so the consolidator is atomic per run: drop
+      // the partial edits and surface only a diagnostic. (Budget truncation is
+      // NOT a throw — it returns normally and its partial work is intended.)
       const message = error instanceof Error ? error.message : String(error);
-      effects.push(
+      return Object.freeze([
         diagnosticEffect({
           severity: "warning",
           code: "dome.agent.consolidate-failed",
-          message: `dome.agent.consolidate failed (${message}); no edits applied.`,
-          sourceRefs: [ctx.sourceRef(LEDGER_PATH)],
+          message: `dome.agent.consolidate failed (${message}); run rolled back, no edits applied.`,
+          sourceRefs,
         }),
-      );
+      ]);
     }
 
-    const sourceRefs = [ctx.sourceRef(LEDGER_PATH)];
+    const effects: Effect[] = [];
     const changes = [...state.edits.values()].map((e) =>
       e.kind === "write"
         ? ({ kind: "write", path: e.path, content: e.content } as const)
@@ -78,7 +82,7 @@ const consolidate = defineProcessorImplementation({
         questionEffect({ question: q.question, idempotencyKey: q.idempotencyKey, sourceRefs }),
       );
     }
-    if (truncated) {
+    if (result.stopReason === "budget") {
       effects.push(
         diagnosticEffect({
           severity: "warning",
