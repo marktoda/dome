@@ -7,7 +7,11 @@
 // sum in `rankSearchCandidate`, and `applyRecencyDecay` multiplies the top-N
 // composite scores by a floored `0.995^hoursSince(lastHumanChangedAt)`
 // factor (Dome-authored commits never refresh recency — that is why the
-// basis is `lastHumanChangedAt`, not `lastChangedAt`).
+// basis is `lastHumanChangedAt`, not `lastChangedAt`). Superseded pages
+// (per [[wiki/specs/page-schema]] §"Supersession (ADR pattern)") are
+// multiplicatively downranked ×0.3 by reading the `dome.page.status` facts
+// emitted by dome.markdown.page-status, with an explainable
+// "superseded by X" signal — downranked, never filtered.
 
 import type {
   DiagnosticEffect,
@@ -37,6 +41,19 @@ const LINK_CHANNEL_WEIGHT = 0.5;
 const MAX_LINK_EXPANSION_SEEDS = 10;
 /** Bound on expansion-only pages pulled into the candidate set. */
 export const MAX_LINK_EXPANSION_PATHS = 8;
+
+// ----- Supersession downrank constants ------------------------------------------
+//
+// The multiplicative factor applied to a superseded page's composite score.
+// 0.3 keeps a strongly-matching superseded page findable (history questions
+// must still surface it) while reliably ranking the forward target above it
+// for current-context queries. Applied as a negative-weight signal so
+// "score = sum of signal weights" stays true and the downrank is
+// explainable in `reasons`.
+const SUPERSEDED_RANK_FACTOR = 0.3;
+export const SEARCH_PAGE_STATUS_PREDICATE = "dome.page.status";
+export const SEARCH_SUPERSEDED_BY_PREDICATE = "dome.page.superseded_by";
+const SUPERSEDED_STATUS_VALUE = "superseded";
 
 // ----- Recency decay constants ------------------------------------------------
 
@@ -81,7 +98,8 @@ export type SearchRankingSignal = {
     | "decision"
     | "question"
     | "diagnostic"
-    | "graph";
+    | "graph"
+    | "superseded";
   readonly label: string;
   readonly weight: number;
   readonly count?: number;
@@ -123,9 +141,19 @@ export type SearchRankingFusion = {
   readonly linkedVia?: number;
 };
 
+/**
+ * The fact shape the ranker consumes: predicate always, object only when
+ * the caller has it (the supersession signals read `dome.page.status` /
+ * `dome.page.superseded_by` string objects; every other signal keys on the
+ * predicate alone).
+ */
+export type SearchRankingFact = Pick<FactEffect, "predicate"> & {
+  readonly object?: FactEffect["object"];
+};
+
 export type SearchRankingInput = {
   readonly match: SearchDocumentResult;
-  readonly facts: ReadonlyArray<Pick<FactEffect, "predicate">>;
+  readonly facts: ReadonlyArray<SearchRankingFact>;
   readonly diagnostics: ReadonlyArray<Pick<DiagnosticEffect, "severity">>;
   readonly questions: ReadonlyArray<SearchRankingQuestion>;
   readonly recallSignals?: ReadonlyArray<SearchRankingRecallSignal>;
@@ -186,8 +214,16 @@ export function rankSearchCandidate(input: SearchRankingInput): SearchRanking {
       maxWeight: 3,
     }),
   ].filter((signal): signal is SearchRankingSignal => signal !== null);
-  const score = roundScore(
+  const baseScore = roundScore(
     signals.reduce((sum, signal) => sum + signal.weight, 0),
+  );
+  // Multiplicative ×0.3 supersession downrank, carried as a negative-weight
+  // signal so the score stays the sum of its signals and the downrank is
+  // explainable ("superseded by X"). Downranked, never filtered.
+  const superseded = supersededRankingSignal(input.facts, baseScore);
+  if (superseded !== null) signals.push(superseded);
+  const score = roundScore(
+    superseded === null ? baseScore : baseScore + superseded.weight,
   );
   return Object.freeze({
     score,
@@ -474,6 +510,40 @@ function recencyFactor(info: SnapshotFileInfo | null, now: Date): number {
 
 function roundScore(score: number): number {
   return Math.round(score * 100) / 100;
+}
+
+/**
+ * The supersession downrank signal, or null for non-superseded pages.
+ * Reads the rebuildable `dome.page.status` / `dome.page.superseded_by`
+ * facts emitted by dome.markdown.page-status. Weight is the (negative)
+ * delta that takes the composite base score to `base × 0.3`.
+ */
+function supersededRankingSignal(
+  facts: ReadonlyArray<SearchRankingFact>,
+  baseScore: number,
+): SearchRankingSignal | null {
+  const isSuperseded = facts.some(
+    (fact) =>
+      fact.predicate === SEARCH_PAGE_STATUS_PREDICATE &&
+      factStringObject(fact)?.toLowerCase() === SUPERSEDED_STATUS_VALUE,
+  );
+  if (!isSuperseded) return null;
+  const forward = facts
+    .filter((fact) => fact.predicate === SEARCH_SUPERSEDED_BY_PREDICATE)
+    .map(factStringObject)
+    .find((value): value is string => value !== null);
+  const downranked = roundScore(baseScore * SUPERSEDED_RANK_FACTOR);
+  return Object.freeze({
+    kind: "superseded" as const,
+    label: forward !== undefined ? `superseded by ${forward}` : "superseded",
+    weight: roundScore(downranked - baseScore),
+  });
+}
+
+function factStringObject(fact: SearchRankingFact): string | null {
+  if (fact.object === undefined) return null;
+  if (fact.object.kind !== "string") return null;
+  return typeof fact.object.value === "string" ? fact.object.value : null;
 }
 
 export function isSearchOpenLoopFact(
