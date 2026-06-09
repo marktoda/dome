@@ -60,11 +60,13 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.agent.consolidate
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
+      # Nightly (was weekly 0 4 * * 1): the charter bounds each run to recent
+      # drift since the ledger's last run + a hard per-run patch cap.
       - kind: schedule
-        cron: "0 4 * * 1"
+        cron: "0 2 * * *"
     capabilities:
       - kind: read
         paths:
@@ -86,3 +88,4 @@ processors:
       timeoutMs: 1800000
       modelCallTimeoutMs: 180000
     module: processors/consolidate.ts
+
