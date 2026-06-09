@@ -1,16 +1,12 @@
 // dome.agent.ingest — autonomous knowledge-integration agent for inbox sources.
 
-import {
-  diagnosticEffect,
-  patchEffect,
-  questionEffect,
-  type Effect,
-} from "../../../../src/core/effect";
+import { diagnosticEffect, type Effect } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
+import { finishAgentRun } from "../lib/agent-run-effects";
 import { makeIngestTools } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
 
@@ -68,40 +64,15 @@ const ingest = defineProcessorImplementation({
     }
 
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
-    const changes = [...state.edits.values()].map((e) =>
-      e.kind === "write"
-        ? ({ kind: "write", path: e.path, content: e.content } as const)
-        : ({ kind: "delete", path: e.path } as const),
+    effects.push(
+      ...finishAgentRun({
+        state,
+        stopReason: truncated ? "budget" : "final",
+        sourceRefs,
+        patchReason: `dome.agent: ingest ${rawPaths.length} source${rawPaths.length === 1 ? "" : "s"}`,
+        truncatedMessage: `dome.agent: ingest hit the ${MAX_STEPS}-step budget before finishing; partial edits were applied.`,
+      }),
     );
-    if (changes.length > 0) {
-      effects.push(
-        patchEffect({
-          mode: "auto",
-          changes,
-          reason: `dome.agent: ingest ${rawPaths.length} source${rawPaths.length === 1 ? "" : "s"}`,
-          sourceRefs,
-        }),
-      );
-    }
-    for (const q of state.questions) {
-      effects.push(
-        questionEffect({
-          question: q.question,
-          idempotencyKey: q.idempotencyKey,
-          sourceRefs,
-        }),
-      );
-    }
-    if (truncated) {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.truncated",
-          message: `dome.agent: ingest hit the ${MAX_STEPS}-step budget before finishing; partial edits were applied.`,
-          sourceRefs,
-        }),
-      );
-    }
     return Object.freeze(effects);
   },
 });

@@ -41,6 +41,10 @@ import {
 } from "../../dome.daily/processors/daily-shared";
 
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
+import {
+  agentQuestionEffects,
+  agentTruncatedEffect,
+} from "../lib/agent-run-effects";
 import { BRIEF_CHARTER } from "../lib/brief-charter";
 import {
   MEETINGS_BLOCK,
@@ -227,15 +231,7 @@ const brief = defineProcessorImplementation({
       );
     }
 
-    for (const q of state.questions) {
-      effects.push(
-        questionEffect({
-          question: q.question,
-          idempotencyKey: q.idempotencyKey,
-          sourceRefs,
-        }),
-      );
-    }
+    effects.push(...agentQuestionEffects(state, sourceRefs));
     for (const line of ungrounded) {
       effects.push(
         questionEffect({
@@ -245,16 +241,12 @@ const brief = defineProcessorImplementation({
         }),
       );
     }
-    if (result.stopReason === "budget") {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.truncated",
-          message: `dome.agent.brief hit the ${MAX_STEPS}-step budget; partial brief applied.`,
-          sourceRefs,
-        }),
-      );
-    }
+    const truncated = agentTruncatedEffect({
+      stopReason: result.stopReason,
+      message: `dome.agent.brief hit the ${MAX_STEPS}-step budget; partial brief applied.`,
+      sourceRefs,
+    });
+    if (truncated !== null) effects.push(truncated);
     return Object.freeze(effects);
   },
 });

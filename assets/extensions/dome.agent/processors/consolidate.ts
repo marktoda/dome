@@ -5,17 +5,13 @@
 // and land as a single cumulative PatchEffect, hard-capped at
 // MAX_CHANGED_FILES per run (nightly cadence multiplies blast radius).
 
-import {
-  diagnosticEffect,
-  patchEffect,
-  questionEffect,
-  type Effect,
-} from "../../../../src/core/effect";
+import { diagnosticEffect, type Effect } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
+import { finishAgentRun } from "../lib/agent-run-effects";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
 
@@ -97,6 +93,7 @@ const consolidate = defineProcessorImplementation({
         readFile: (p) => ctx.snapshot.readFile(p),
         listMarkdownFiles: () => ctx.snapshot.listMarkdownFiles(),
       },
+      ledgerPath,
     });
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
@@ -143,51 +140,26 @@ const consolidate = defineProcessorImplementation({
       ]);
     }
 
-    const effects: Effect[] = [...configDiagnostics];
-    const changes = [...state.edits.values()].map((e) =>
-      e.kind === "write"
-        ? ({ kind: "write", path: e.path, content: e.content } as const)
-        : ({ kind: "delete", path: e.path } as const),
-    );
-    if (changes.length > MAX_CHANGED_FILES) {
-      // Per-run patch cap (nightly blast-radius bound). Partial application
+    return Object.freeze([
+      ...configDiagnostics,
+      // Per-run patch cap (nightly blast-radius bound): partial application
       // would break merge atomicity (a delete could land without its link
       // rewrites), so an overreaching run is rolled back entirely; the
       // agent's questions still surface.
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
+      ...finishAgentRun({
+        state,
+        stopReason: result.stopReason,
+        sourceRefs,
+        patchReason: "dome.agent: consolidate vault",
+        truncatedMessage: `dome.agent.consolidate hit the ${MAX_STEPS}-step budget; partial cleanup applied, resume next run.`,
+        cap: {
+          maxChangedFiles: MAX_CHANGED_FILES,
           code: "dome.agent.consolidate-overreach",
-          message: `dome.agent.consolidate touched ${changes.length} files (cap ${MAX_CHANGED_FILES}); run rolled back, no edits applied.`,
-          sourceRefs,
-        }),
-      );
-    } else if (changes.length > 0) {
-      effects.push(
-        patchEffect({
-          mode: "auto",
-          changes,
-          reason: "dome.agent: consolidate vault",
-          sourceRefs,
-        }),
-      );
-    }
-    for (const q of state.questions) {
-      effects.push(
-        questionEffect({ question: q.question, idempotencyKey: q.idempotencyKey, sourceRefs }),
-      );
-    }
-    if (result.stopReason === "budget") {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.truncated",
-          message: `dome.agent.consolidate hit the ${MAX_STEPS}-step budget; partial cleanup applied, resume next run.`,
-          sourceRefs,
-        }),
-      );
-    }
-    return Object.freeze(effects);
+          message: (count) =>
+            `dome.agent.consolidate touched ${count} files (cap ${MAX_CHANGED_FILES}); run rolled back, no edits applied.`,
+        },
+      }),
+    ]);
   },
 });
 
