@@ -211,6 +211,19 @@ export type ViewPhaseRunner = (input: {
  * scheduler owns due cron dispatch. Answer triggers likewise fire through
  * the answer dispatcher after `dome resolve` / `dome answer` records a row.
  */
+/**
+ * Observability callback fired immediately before each garden-phase processor
+ * is dispatched. The CLI's `onGardenProcessorStart` handler receives this and
+ * prints a live "▶ running <processorId>" line so operators can see long-running
+ * agents (llm-class) start rather than waiting for the after-the-fact summary.
+ *
+ * Engine code must not console.log — only CLI surfaces wire this callback.
+ */
+export type GardenProcessorStart = {
+  readonly processorId: string;
+  readonly executionClass?: string;
+};
+
 export type GardenPhaseRunner = (input: {
   readonly vault: EngineVault;
   readonly adopted: CommitOid;
@@ -219,6 +232,7 @@ export type GardenPhaseRunner = (input: {
   readonly proposal: Proposal;
   readonly now?: () => Date;
   readonly signal?: AbortSignal;
+  readonly onProcessorStart?: (info: GardenProcessorStart) => void;
 }) => Promise<ReadonlyArray<RunnerResult>>;
 
 /**

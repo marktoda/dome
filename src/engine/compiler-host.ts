@@ -43,6 +43,7 @@ import {
   type AdoptSubProposalFn,
   type GardenPhaseResult,
 } from "./garden";
+import type { GardenProcessorStart } from "./runner-contract";
 import {
   runOperationalWork,
   type OperationalWorkResult,
@@ -178,6 +179,7 @@ type CompilerHostTickCommonOptions = {
   readonly runOperationalWhenInSync?: boolean;
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: AdoptEvent) => void;
+  readonly onGardenProcessorStart?: (info: GardenProcessorStart) => void;
 };
 
 // ----- detectDrift ----------------------------------------------------------
@@ -363,6 +365,9 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
     now,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+    ...(opts.onGardenProcessorStart !== undefined
+      ? { onGardenProcessorStart: opts.onGardenProcessorStart }
+      : {}),
   });
 
   const kind = cycle.adoption.adopted ? "adopted" as const : "blocked" as const;
@@ -399,6 +404,9 @@ function commonTickOptions(
       : {}),
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+    ...(opts.onGardenProcessorStart !== undefined
+      ? { onGardenProcessorStart: opts.onGardenProcessorStart }
+      : {}),
   };
 }
 
@@ -460,6 +468,7 @@ async function runAdoptionCycle(opts: {
   readonly now?: () => Date;
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: AdoptEvent) => void;
+  readonly onGardenProcessorStart?: (info: GardenProcessorStart) => void;
 }): Promise<CompilerHostAdoptionCycleResult> {
   const { runtime, drift, onEvent } = opts;
   const now = opts.now ?? ((): Date => new Date());
@@ -523,6 +532,9 @@ async function runAdoptionCycle(opts: {
       cursor,
       now,
       ...(onEvent !== undefined ? { onEvent } : {}),
+      ...(opts.onGardenProcessorStart !== undefined
+        ? { onGardenProcessorStart: opts.onGardenProcessorStart }
+        : {}),
     });
     garden = await runGardenPhase({
       vault: adoptOpts.vault,
@@ -538,6 +550,9 @@ async function runAdoptionCycle(opts: {
       extensionIdFor: runtime.extensionIdFor,
       cascadeDepth: 0,
       now,
+      ...(opts.onGardenProcessorStart !== undefined
+        ? { onProcessorStart: opts.onGardenProcessorStart }
+        : {}),
     });
 
     operational = await runOperationalWorkForAdoptedUnlocked({
@@ -1039,6 +1054,7 @@ function makeAdoptSubProposal(opts: {
   readonly cursor?: AdoptedCursor;
   readonly now?: () => Date;
   readonly onEvent?: (event: AdoptEvent) => void;
+  readonly onGardenProcessorStart?: (info: GardenProcessorStart) => void;
 }): AdoptSubProposalFn {
   const adoptSubProposal: AdoptSubProposalFn = async (
     subProposal,
@@ -1099,6 +1115,9 @@ function makeAdoptSubProposal(opts: {
         extensionIdFor: opts.runtime.extensionIdFor,
         cascadeDepth,
         ...(opts.now !== undefined ? { now: opts.now } : {}),
+        ...(opts.onGardenProcessorStart !== undefined
+          ? { onProcessorStart: opts.onGardenProcessorStart }
+          : {}),
       });
     }
     return subResult;

@@ -755,6 +755,14 @@ async function runCompilerHostTickWithErrorHandling(input: {
           if (line !== null) console.error(line);
         }
       },
+      onGardenProcessorStart: (info) => {
+        if (quiet) return;
+        if (info.executionClass === "llm" || verbose) {
+          console.error(
+            `dome serve: ▶ running ${info.processorId}${info.executionClass === "llm" ? " (agent)" : ""}…`,
+          );
+        }
+      },
     });
     if (tick.kind === "busy" && suppressBusyLine) return tick;
     printTickLine(tick, { verbose, quiet, activeProcessorIds });

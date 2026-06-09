@@ -930,3 +930,104 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
     expect(observed.deniedSourceRefError).toContain("effective read grants");
   });
 });
+
+describe("gardenRunner — onProcessorStart callback", () => {
+  test("fires onProcessorStart with processorId when a matching garden processor is dispatched", async () => {
+    const p = makeFixtureProcessor({
+      id: "test.garden.start-callback",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const started: Array<{ processorId: string; executionClass?: string }> = [];
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+      onProcessorStart: (info) => {
+        started.push({ ...info });
+      },
+    });
+
+    expect(started).toEqual([{ processorId: "test.garden.start-callback" }]);
+  });
+
+  test("fires onProcessorStart with executionClass when processor declares one", async () => {
+    const p = makeFixtureProcessor({
+      id: "test.garden.llm-agent",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      execution: { class: "llm" },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const started: Array<{ processorId: string; executionClass?: string }> = [];
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+      onProcessorStart: (info) => {
+        started.push({ ...info });
+      },
+    });
+
+    expect(started).toEqual([
+      { processorId: "test.garden.llm-agent", executionClass: "llm" },
+    ]);
+  });
+
+  test("does NOT fire onProcessorStart for a non-matching garden processor", async () => {
+    const p = makeFixtureProcessor({
+      id: "test.garden.no-match",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "link.added" }],
+    });
+    const rt = buildRuntimeFor([p]);
+
+    const started: Array<{ processorId: string; executionClass?: string }> = [];
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+      onProcessorStart: (info) => {
+        started.push({ ...info });
+      },
+    });
+
+    expect(started).toEqual([]);
+  });
+
+  test("fires onProcessorStart before the processor run (callback precedes result)", async () => {
+    const order: string[] = [];
+    const p = makeFixtureProcessor({
+      id: "test.garden.order",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        order.push("run");
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([p]);
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+      onProcessorStart: () => {
+        order.push("start");
+      },
+    });
+
+    expect(order).toEqual(["start", "run"]);
+  });
+});

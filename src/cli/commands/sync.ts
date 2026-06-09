@@ -215,6 +215,17 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
             },
           }
         : {}),
+      ...(!quiet
+        ? {
+            onGardenProcessorStart: (info) => {
+              if (info.executionClass === "llm" || verbose) {
+                console.error(
+                  `dome sync: ▶ running ${info.processorId}${info.executionClass === "llm" ? " (agent)" : ""}…`,
+                );
+              }
+            },
+          }
+        : {}),
     });
     const result = tickResultJson(tick, collectSyncHealth(runtime));
     if (jsonMode) {

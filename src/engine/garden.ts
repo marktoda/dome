@@ -57,7 +57,7 @@ import type { LedgerDb } from "../ledger/db";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import { spawnGardenSubProposal } from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "./effect-capability-use";
-import type { GardenPhaseRunner, RunId } from "./runner-contract";
+import type { GardenPhaseRunner, GardenProcessorStart, RunId } from "./runner-contract";
 import type { EngineVault } from "./vault-shape";
 
 // ----- DEFAULT_MAX_CASCADE_DEPTH --------------------------------------------
@@ -230,6 +230,13 @@ export async function runGardenPhase(opts: {
   /** Cap on cascade recursion. Defaults to `DEFAULT_MAX_CASCADE_DEPTH`. */
   readonly maxCascadeDepth?: number;
   readonly now?: () => Date;
+  /**
+   * Optional observability callback forwarded to the `GardenPhaseRunner`.
+   * Fires immediately before each garden processor is dispatched so CLI
+   * surfaces can print a live "▶ running <processorId>" line. Engine code
+   * must not log; only CLI surfaces wire this callback.
+   */
+  readonly onProcessorStart?: (info: GardenProcessorStart) => void;
 }): Promise<GardenPhaseResult> {
   const cascadeDepth = opts.cascadeDepth ?? 0;
   try {
@@ -296,6 +303,7 @@ async function runGardenPhaseInner(opts: {
   readonly cascadeDepth?: number;
   readonly maxCascadeDepth?: number;
   readonly now?: () => Date;
+  readonly onProcessorStart?: (info: GardenProcessorStart) => void;
 }): Promise<GardenPhaseResult> {
   const {
     vault,
@@ -321,6 +329,9 @@ async function runGardenPhaseInner(opts: {
     signals,
     proposal,
     ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.onProcessorStart !== undefined
+      ? { onProcessorStart: opts.onProcessorStart }
+      : {}),
   });
 
   if (runnerResults.length === 0) {

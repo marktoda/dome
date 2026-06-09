@@ -427,6 +427,13 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         const matches = matchTriggers(processor.triggers, readableSignals);
         if (matches.length === 0) continue;
 
+        input.onProcessorStart?.({
+          processorId: processor.id,
+          ...(processor.execution?.class !== undefined
+            ? { executionClass: processor.execution.class }
+            : {}),
+        });
+
         const result = await dispatchOneProcessor({
           processor,
           phase: "garden",
