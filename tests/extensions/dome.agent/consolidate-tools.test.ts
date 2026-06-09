@@ -8,7 +8,10 @@ const reader = () => ({
 
 describe("makeConsolidatorTools", () => {
   test("provides the consolidator tool set incl. deletePage, excl. inbox tools", async () => {
-    const names = makeConsolidatorTools({ reader: reader() })
+    const names = makeConsolidatorTools({
+      reader: reader(),
+      ledgerPath: "consolidation-ledger.md",
+    })
       .map((t) => t.schema.name)
       .sort();
     expect(names).toEqual([

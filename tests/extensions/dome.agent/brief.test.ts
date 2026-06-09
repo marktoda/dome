@@ -281,7 +281,39 @@ describe("dome.agent.brief", () => {
     expect(q.question).toContain("You probably promised Bob a demo");
   });
 
-  test("edits outside the daily note are dropped with an out-of-scope diagnostic", async () => {
+  test("in-grant edits beyond today's note are dropped with an out-of-scope diagnostic", async () => {
+    // wiki/dailies/* is inside the manifest grant, so the write survives the
+    // tool boundary; the splice guard's post-hoc filter must still drop it.
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            {
+              id: "1",
+              name: "writePage",
+              input: { path: "wiki/dailies/2026-01-01.md", content: "tampered" },
+            },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const patch = patchOf(effects);
+    expect(patch?.changes.map((c) => String(c.path))).toEqual([TODAY_PATH]);
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
+    ) as DiagnosticEffect;
+    expect(diag.message).toContain("wiki/dailies/2026-01-01.md");
+  });
+
+  test("out-of-grant edits are rejected at the tool boundary and never reach the run state", async () => {
+    // wiki/entities/* is outside the brief's patch.auto grant; the grant-aware
+    // writePage rejects it mid-loop, so no out-of-scope diagnostic is needed —
+    // the edit never landed in the accumulator at all.
     const ctx = makeCtx({
       files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
       steps: [
@@ -300,12 +332,13 @@ describe("dome.agent.brief", () => {
     const effects = await brief.run(ctx);
     const patch = patchOf(effects);
     expect(patch?.changes.map((c) => String(c.path))).toEqual([TODAY_PATH]);
-    const diag = effects.find(
-      (e) =>
-        e.kind === "diagnostic" &&
-        (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
-    ) as DiagnosticEffect;
-    expect(diag.message).toContain("wiki/entities/bob.md");
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
+      ),
+    ).toBe(false);
   });
 
   test("mid-run throw rolls back atomically: no patch (not even the skeleton), only a diagnostic", async () => {

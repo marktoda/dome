@@ -12,7 +12,7 @@ const reader = (files: Record<string, string>) => ({
 
 describe("deletePageTool", () => {
   test("accumulates a delete edit", async () => {
-    const t = deletePageTool();
+    const t = deletePageTool(["wiki/**/*.md"]);
     const state = freshState();
     await t.execute({ path: "wiki/concepts/dupe.md" }, state);
     expect(state.edits.get("wiki/concepts/dupe.md")).toEqual({
@@ -22,7 +22,7 @@ describe("deletePageTool", () => {
   });
 
   test("a deleted page reads back as absent within the run", async () => {
-    const del = deletePageTool();
+    const del = deletePageTool(["wiki/**/*.md"]);
     const read = readPageTool(reader({ "wiki/concepts/dupe.md": "old" }));
     const state = freshState();
     await del.execute({ path: "wiki/concepts/dupe.md" }, state);

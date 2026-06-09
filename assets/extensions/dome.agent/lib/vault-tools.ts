@@ -1,8 +1,30 @@
 // Shared vault tool library for dome.agent agents. Each factory returns an
 // AgentTool bound to an injected VaultReader (the test/snapshot seam). The
 // read helpers overlay the in-run AgentRunState so successive edits compose.
+//
+// Write-capable tools take the processor's writable path globs (a bundle-
+// local mirror of its manifest patch.auto grant, pinned by the
+// grant-aware-tools manifest-sync test) and reject out-of-grant paths at
+// tool time. The model sees the rejection as an ordinary tool error and can
+// self-correct mid-loop; without this, the first out-of-grant path surfaces
+// only after the run, when the broker downgrades the ENTIRE batched
+// PatchEffect to patch.propose (the capability-downgrade-surprise gotcha).
+// `globMatch` is the broker's own matcher, so tool-time and broker
+// semantics cannot drift.
 
+import { globMatch } from "../../../../src/engine/glob-cache";
 import type { AgentRunState, AgentTool } from "./agent-loop";
+
+export type WritablePaths = ReadonlyArray<string>;
+
+/** Rejection message for an out-of-grant write, or null when writable. */
+export function writeDenial(
+  path: string,
+  writable: WritablePaths,
+): string | null {
+  if (writable.some((pattern) => globMatch(pattern, path))) return null;
+  return `error: ${path} is outside this agent's writable paths (${writable.join(", ")}); pick a path matching one of those globs.`;
+}
 
 export type VaultReader = {
   readonly readFile: (path: string) => Promise<string | null>;
@@ -96,7 +118,7 @@ export function searchVaultTool(reader: VaultReader): AgentTool {
   };
 }
 
-export function writePageTool(): AgentTool {
+export function writePageTool(writable: WritablePaths): AgentTool {
   return {
     schema: {
       name: "writePage",
@@ -105,13 +127,18 @@ export function writePageTool(): AgentTool {
     },
     execute: async (input, state) => {
       const { path, content } = input as { path: string; content: string };
+      const denial = writeDenial(path, writable);
+      if (denial !== null) return denial;
       state.edits.set(path, { kind: "write", path, content });
       return `wrote ${path}`;
     },
   };
 }
 
-export function appendToPageTool(reader: VaultReader): AgentTool {
+export function appendToPageTool(
+  reader: VaultReader,
+  writable: WritablePaths,
+): AgentTool {
   return {
     schema: {
       name: "appendToPage",
@@ -120,6 +147,8 @@ export function appendToPageTool(reader: VaultReader): AgentTool {
     },
     execute: async (input, state) => {
       const { path, content } = input as { path: string; content: string };
+      const denial = writeDenial(path, writable);
+      if (denial !== null) return denial;
       const existing = await currentContent(path, state, reader);
       const next =
         existing === null || existing.trim() === ""
@@ -131,7 +160,10 @@ export function appendToPageTool(reader: VaultReader): AgentTool {
   };
 }
 
-export function archiveSourceTool(reader: VaultReader): AgentTool {
+export function archiveSourceTool(
+  reader: VaultReader,
+  writable: WritablePaths,
+): AgentTool {
   return {
     schema: {
       name: "archiveSource",
@@ -140,8 +172,16 @@ export function archiveSourceTool(reader: VaultReader): AgentTool {
     },
     execute: async (input, state) => {
       const { rawPath } = input as { rawPath: string };
-      const body = (await currentContent(rawPath, state, reader)) ?? "";
+      // Outside inbox/raw/ the processed-path rewrite is a no-op and the
+      // write+delete on the SAME key would net out to deleting the source.
+      if (!rawPath.startsWith("inbox/raw/")) {
+        return `error: archiveSource only archives inbox/raw/ sources; got ${rawPath}.`;
+      }
       const processedPath = rawPath.replace(/^inbox\/raw\//, "inbox/processed/");
+      const denial =
+        writeDenial(processedPath, writable) ?? writeDenial(rawPath, writable);
+      if (denial !== null) return denial;
+      const body = (await currentContent(rawPath, state, reader)) ?? "";
       state.edits.set(processedPath, { kind: "write", path: processedPath, content: body });
       state.edits.set(rawPath, { kind: "delete", path: rawPath });
       return `archived ${rawPath} -> ${processedPath}`;
@@ -149,7 +189,7 @@ export function archiveSourceTool(reader: VaultReader): AgentTool {
   };
 }
 
-export function deletePageTool(): AgentTool {
+export function deletePageTool(writable: WritablePaths): AgentTool {
   return {
     schema: {
       name: "deletePage",
@@ -158,6 +198,8 @@ export function deletePageTool(): AgentTool {
     },
     execute: async (input, state) => {
       const { path } = input as { path: string };
+      const denial = writeDenial(path, writable);
+      if (denial !== null) return denial;
       state.edits.set(path, { kind: "delete", path });
       return `deleted ${path}`;
     },
