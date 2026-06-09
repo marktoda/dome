@@ -36,6 +36,13 @@ export type AgentTool = {
 
 export type ModelStepFn = (input: ModelStepInput) => Promise<ModelStepResult>;
 
+// Default context budget for the message history handed to each step, in
+// characters (~4 chars/token → ~125K tokens), a safe margin under the common
+// 200K-token provider input ceiling. Tool schemas + model output live outside
+// this budget, so the margin absorbs them. The harness trims oldest tool-turns
+// to stay under it — see `trimToFit`.
+const DEFAULT_MAX_CONTEXT_CHARS = 500_000;
+
 export type AgentRunResult = {
   readonly state: AgentRunState;
   readonly stopReason: "final" | "budget";
@@ -49,7 +56,9 @@ export async function runAgentLoop(opts: {
   readonly tools: ReadonlyArray<AgentTool>;
   readonly step: ModelStepFn;
   readonly maxSteps: number;
+  readonly maxContextChars?: number;
 }): Promise<AgentRunResult> {
+  const maxContextChars = opts.maxContextChars ?? DEFAULT_MAX_CONTEXT_CHARS;
   const messages: ModelMessage[] = [
     { role: "system", content: opts.charter },
     { role: "user", content: opts.task },
@@ -61,6 +70,7 @@ export async function runAgentLoop(opts: {
   let steps = 0;
   while (steps < opts.maxSteps) {
     steps += 1;
+    trimToFit(messages, maxContextChars);
     const resp = await opts.step({ messages, tools: schemas });
     const calls = resp.toolCalls ?? [];
     if (calls.length === 0) {
@@ -91,6 +101,31 @@ export async function runAgentLoop(opts: {
     }
   }
   return { state, stopReason: "budget", steps, finalText: null };
+}
+
+function messageSize(m: ModelMessage): number {
+  let n = m.content.length;
+  if (m.role === "assistant" && m.toolCalls !== undefined) {
+    for (const c of m.toolCalls) {
+      n += c.name.length + JSON.stringify(c.input ?? null).length;
+    }
+  }
+  return n;
+}
+
+// Keep the system message (index 0) + the initial user task (index 1); drop the
+// oldest complete tool-turns — an assistant-with-toolCalls message and the tool
+// results that follow it — until the history fits the budget. Dropping whole
+// turns preserves tool_use/tool_result pairing. The EditAccumulator lives
+// outside the message history, so trimming costs conversational memory, not
+// work in progress (writes are idempotent by path).
+function trimToFit(messages: ModelMessage[], maxChars: number): void {
+  const total = (): number => messages.reduce((n, m) => n + messageSize(m), 0);
+  while (total() > maxChars && messages.length > 2) {
+    let end = 3; // drop at least the message at index 2 (the oldest assistant turn)
+    while (end < messages.length && messages[end]?.role === "tool") end += 1;
+    messages.splice(2, end - 2);
+  }
 }
 
 async function runTool(

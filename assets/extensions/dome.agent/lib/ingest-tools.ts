@@ -11,6 +11,16 @@ export type VaultReader = {
 
 const STRING = { type: "string" } as const;
 
+// Cap a single readPage result so one large page cannot blow the agent's
+// context budget. The harness also trims accumulated history (see agent-loop),
+// but bounding each read keeps any single step small.
+const MAX_READ_CHARS = 20_000;
+
+function capRead(content: string): string {
+  if (content.length <= MAX_READ_CHARS) return content;
+  return `${content.slice(0, MAX_READ_CHARS)}\n…[truncated ${content.length - MAX_READ_CHARS} chars — read a more specific section if needed]`;
+}
+
 function objectSchema(
   props: Record<string, unknown>,
   required: ReadonlyArray<string>,
@@ -43,7 +53,7 @@ export function makeIngestTools(opts: {
       execute: async (input, state) => {
         const { path } = input as { path: string };
         const content = await currentContent(path, state, reader);
-        return content ?? `(no file at ${path})`;
+        return content === null ? `(no file at ${path})` : capRead(content);
       },
     },
     {

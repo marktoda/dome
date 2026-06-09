@@ -43,6 +43,15 @@ describe("ingest tools", () => {
     expect(processed?.kind).toBe("write");
   });
 
+  test("readPage truncates a very large page to bound context", async () => {
+    const huge = "y".repeat(50_000);
+    const tools = makeIngestTools({ reader: reader({ "wiki/big.md": huge }) });
+    const t = tools.find((x) => x.schema.name === "readPage")!;
+    const out = await t.execute({ path: "wiki/big.md" }, freshState());
+    expect(out.length).toBeLessThan(huge.length);
+    expect(out).toContain("[truncated");
+  });
+
   test("askOwner records a question", async () => {
     const tools = makeIngestTools({ reader: reader({}) });
     const t = tools.find((x) => x.schema.name === "askOwner")!;

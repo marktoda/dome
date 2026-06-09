@@ -86,4 +86,39 @@ describe("runAgentLoop", () => {
     });
     expect(result.stopReason).toBe("final");
   });
+
+  test("trims old tool exchanges to stay under the context budget", async () => {
+    const seenSizes: number[] = [];
+    const big = "x".repeat(10_000);
+    const bigTool: AgentTool = {
+      schema: { name: "read", description: "", inputSchema: {} },
+      execute: async () => big,
+    };
+    const step: ModelStepFn = async ({ messages }) => {
+      const size = messages.reduce(
+        (n, m) =>
+          n +
+          (typeof (m as { content?: unknown }).content === "string"
+            ? (m as { content: string }).content.length
+            : 0),
+        0,
+      );
+      seenSizes.push(size);
+      expect(messages[0]?.role).toBe("system"); // system survives trimming
+      return {
+        toolCalls: [{ id: String(seenSizes.length), name: "read", input: {} }],
+      };
+    };
+    const result = await runAgentLoop({
+      charter: "system charter",
+      task: "the task",
+      tools: [bigTool],
+      step,
+      maxSteps: 30,
+      maxContextChars: 25_000,
+    });
+    expect(result.stopReason).toBe("budget");
+    // Unbounded, 30 steps × 10k ≈ 300k chars. Trimming keeps each step bounded.
+    expect(Math.max(...seenSizes)).toBeLessThan(60_000);
+  });
 });
