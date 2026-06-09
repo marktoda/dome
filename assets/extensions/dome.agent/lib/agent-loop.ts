@@ -57,13 +57,19 @@ export async function runAgentLoop(opts: {
   readonly step: ModelStepFn;
   readonly maxSteps: number;
   readonly maxContextChars?: number;
+  /**
+   * Edit/question accumulator. Pass a shared instance to run several sources
+   * through one run so each loop reads the prior loops' in-run edits (via the
+   * overlay-aware tools) instead of clobbering them. Defaults to a fresh state.
+   */
+  readonly state?: AgentRunState;
 }): Promise<AgentRunResult> {
   const maxContextChars = opts.maxContextChars ?? DEFAULT_MAX_CONTEXT_CHARS;
   const messages: ModelMessage[] = [
     { role: "system", content: opts.charter },
     { role: "user", content: opts.task },
   ];
-  const state: AgentRunState = { edits: new Map(), questions: [] };
+  const state: AgentRunState = opts.state ?? { edits: new Map(), questions: [] };
   const schemas = opts.tools.map((t) => t.schema);
   const toolByName = new Map(opts.tools.map((t) => [t.schema.name, t] as const));
 

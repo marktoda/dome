@@ -10,7 +10,9 @@ function makeCtx(opts: {
   files: Record<string, string>;
   changedPaths: ReadonlyArray<string>;
   steps?: ReadonlyArray<ModelStepResult>;
-  stepFn?: () => Promise<ModelStepResult>;
+  stepFn?: (input: {
+    readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+  }) => Promise<ModelStepResult>;
 }): ProcessorContext {
   let i = 0;
   const stepImpl =
@@ -121,5 +123,69 @@ describe("dome.agent.ingest", () => {
     const diag = effects.find((e) => e.kind === "diagnostic") as DiagnosticEffect;
     expect(diag.code).toBe("dome.agent.truncated");
     expect(diag.severity).toBe("warning");
+  });
+
+  test("multiple sources accumulate into ONE PatchEffect without clobbering a shared page", async () => {
+    const shared = "wiki/concepts/shared.md";
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const task = messages.find((m) => m.role === "user")?.content ?? "";
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      const lastTool =
+        [...messages].reverse().find((m) => m.role === "tool")?.content ?? "";
+      if (task.includes("inbox/raw/a.md")) {
+        if (turns === 0)
+          return { toolCalls: [{ id: "a1", name: "writePage", input: { path: shared, content: "A" } }] };
+        return { text: "done a" };
+      }
+      // source b reads the shared page (sees A's edit via the shared overlay), then appends
+      if (turns === 0)
+        return { toolCalls: [{ id: "b1", name: "readPage", input: { path: shared } }] };
+      if (turns === 1)
+        return { toolCalls: [{ id: "b2", name: "writePage", input: { path: shared, content: `${lastTool}B` } }] };
+      return { text: "done b" };
+    };
+    const ctx = makeCtx({
+      files: { "inbox/raw/a.md": "source A", "inbox/raw/b.md": "source B" },
+      changedPaths: ["inbox/raw/a.md", "inbox/raw/b.md"],
+      stepFn,
+    });
+    const effects = await ingest.run(ctx);
+    const patches = effects.filter((e) => e.kind === "patch") as PatchEffect[];
+    expect(patches.length).toBe(1); // one cumulative PatchEffect for the batch
+    const change = patches[0]!.changes.find((c) => String(c.path) === shared);
+    expect(change?.kind).toBe("write");
+    expect(change && change.kind === "write" ? change.content : "").toBe("AB"); // accumulated, not clobbered
+    expect(patches[0]!.sourceRefs.length).toBe(2); // both sources cited
+  });
+
+  test("a failing source does not roll back the others", async () => {
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const task = messages.find((m) => m.role === "user")?.content ?? "";
+      if (task.includes("inbox/raw/b.md")) throw new Error("boom");
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns === 0)
+        return { toolCalls: [{ id: "a1", name: "writePage", input: { path: "wiki/sources/a.md", content: "A" } }] };
+      return { text: "done a" };
+    };
+    const ctx = makeCtx({
+      files: { "inbox/raw/a.md": "A", "inbox/raw/b.md": "B" },
+      changedPaths: ["inbox/raw/a.md", "inbox/raw/b.md"],
+      stepFn,
+    });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    expect(patch.changes.some((c) => String(c.path) === "wiki/sources/a.md")).toBe(true); // A survived
+    const diag = effects.find(
+      (e) => e.kind === "diagnostic" && (e as DiagnosticEffect).code === "dome.agent.source-failed",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
   });
 });

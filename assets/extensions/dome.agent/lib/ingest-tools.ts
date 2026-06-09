@@ -39,6 +39,21 @@ async function currentContent(
   return reader.readFile(path);
 }
 
+// The in-run view of the vault: snapshot paths plus pages written this run,
+// minus pages deleted this run. Lets list/search see edits made by earlier
+// sources in the same batch run (so they're merged, not duplicated).
+async function overlayPaths(
+  state: AgentRunState,
+  reader: VaultReader,
+): Promise<ReadonlyArray<string>> {
+  const set = new Set(await reader.listMarkdownFiles());
+  for (const [path, edit] of state.edits) {
+    if (edit.kind === "write") set.add(path);
+    else set.delete(path);
+  }
+  return [...set].sort();
+}
+
 export function makeIngestTools(opts: {
   readonly reader: VaultReader;
 }): ReadonlyArray<AgentTool> {
@@ -62,7 +77,8 @@ export function makeIngestTools(opts: {
         description: "List all readable markdown paths in the vault.",
         inputSchema: objectSchema({}, []),
       },
-      execute: async () => (await reader.listMarkdownFiles()).join("\n"),
+      execute: async (_input, state) =>
+        (await overlayPaths(state, reader)).join("\n"),
     },
     {
       schema: {
@@ -70,12 +86,12 @@ export function makeIngestTools(opts: {
         description: "Find readable markdown paths whose content contains the query (case-insensitive).",
         inputSchema: objectSchema({ query: STRING }, ["query"]),
       },
-      execute: async (input) => {
+      execute: async (input, state) => {
         const { query } = input as { query: string };
         const needle = query.toLowerCase();
         const hits: string[] = [];
-        for (const path of await reader.listMarkdownFiles()) {
-          const content = await reader.readFile(path);
+        for (const path of await overlayPaths(state, reader)) {
+          const content = await currentContent(path, state, reader);
           if (content !== null && content.toLowerCase().includes(needle)) {
             hits.push(path);
           }

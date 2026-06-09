@@ -43,6 +43,23 @@ describe("ingest tools", () => {
     expect(processed?.kind).toBe("write");
   });
 
+  test("listPages and searchVault overlay pages written earlier in the same run", async () => {
+    const tools = makeIngestTools({ reader: reader({ "wiki/existing.md": "old" }) });
+    const state = freshState();
+    // an earlier source wrote a new page into the shared accumulator
+    state.edits.set("wiki/new.md", {
+      kind: "write",
+      path: "wiki/new.md",
+      content: "fresh notes about pandas",
+    });
+    const list = await tools.find((x) => x.schema.name === "listPages")!.execute({}, state);
+    expect(list).toContain("wiki/new.md");
+    const search = await tools
+      .find((x) => x.schema.name === "searchVault")!
+      .execute({ query: "pandas" }, state);
+    expect(search).toContain("wiki/new.md");
+  });
+
   test("readPage truncates a very large page to bound context", async () => {
     const huge = "y".repeat(50_000);
     const tools = makeIngestTools({ reader: reader({ "wiki/big.md": huge }) });

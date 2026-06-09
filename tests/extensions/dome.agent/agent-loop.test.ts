@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   runAgentLoop,
+  type AgentRunState,
   type AgentTool,
   type ModelStepFn,
 } from "../../../assets/extensions/dome.agent/lib/agent-loop";
@@ -85,6 +86,27 @@ describe("runAgentLoop", () => {
       charter: "c", task: "t", tools: [writePage], step, maxSteps: 5,
     });
     expect(result.stopReason).toBe("final");
+  });
+
+  test("an injected shared state accumulates edits across successive runs", async () => {
+    const shared: AgentRunState = { edits: new Map(), questions: [] };
+    const writeOnce = (path: string, content: string): ModelStepFn => {
+      let n = 0;
+      return async () => {
+        n += 1;
+        return n === 1
+          ? { toolCalls: [{ id: "1", name: "writePage", input: { path, content } }] }
+          : { text: "done" };
+      };
+    };
+    await runAgentLoop({
+      charter: "c", task: "t", tools: [writePage], step: writeOnce("x.md", "X"), maxSteps: 5, state: shared,
+    });
+    await runAgentLoop({
+      charter: "c", task: "t", tools: [writePage], step: writeOnce("y.md", "Y"), maxSteps: 5, state: shared,
+    });
+    expect(shared.edits.get("x.md")).toBeDefined();
+    expect(shared.edits.get("y.md")).toBeDefined(); // both runs accumulated into the shared state
   });
 
   test("trims old tool exchanges to stay under the context budget", async () => {
