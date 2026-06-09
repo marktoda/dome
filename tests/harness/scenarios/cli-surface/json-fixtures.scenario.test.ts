@@ -83,6 +83,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "modelProviderMissing",
   "modelProviderUnreachable",
   "modelProviderKeyMissing",
+  "dailyPathMismatch",
 ]);
 
 const QUERY_KEYS = Object.freeze([
