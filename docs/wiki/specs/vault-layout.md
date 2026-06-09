@@ -1,10 +1,11 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+  - "[[wedge]]"
 ---
 
 # Vault layout
@@ -28,7 +29,7 @@ A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) contain
   index.md            # projection of wiki/ catalogue
 ```
 
-`wiki/`, `raw/`, `notes/`, and `inbox/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine.
+`wiki/`, `raw/`, `notes/`, and `inbox/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below).
 
 ## Category derivation
 
@@ -100,6 +101,54 @@ inbox/
 Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's ingest processor via `signal:file.created` + a bucket path pattern. The shipped `dome.agent.ingest` processor handles `inbox/raw/*.md` — it runs a tool-use loop to read the raw source, create/update wiki pages (source, entities, concepts) with bidirectional wikilinks, update `index.md` and `log.md`, route action-items to the daily note or entity pages, and archive the raw file to `inbox/processed/`. All edits land as one `PatchEffect`. The shipped `dome.agent.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox files are expected to move out or surface a recoverable diagnostic. See [[wiki/specs/autonomous-agents]] for the full agent framework and ingest workflow.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
+
+## `sources/` — committed external feeds (convention)
+
+`sources/` is a top-level directory for **machine-fetched external data committed as ordinary source files** — distinct from `wiki/sources/` (durable citation pages the ingest agent writes) and from `raw/` (immutable human captures). By the category table above it is `external`: the engine never writes it, never gains a dependency on what produces it, and treats every file in it as an ordinary commit. Granted processors may read it.
+
+The first convention is the calendar feed consumed by `dome.agent.brief` (per [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`"):
+
+### `sources/calendar/YYYY-MM-DD.md` — one day's agenda
+
+```markdown
+---
+type: calendar-day
+date: 2026-06-09
+---
+
+# Calendar 2026-06-09
+
+- 09:00–09:30 — Team standup (attendees: Alice, Bob)
+- 11:00–12:00 — Quarterly roadmap review (attendees: Carol)
+- 15:00 — 1:1 with Danny
+```
+
+Shape rules (loose by design — the file is produced by user-assembled tooling):
+
+- Frontmatter is optional; when present, `type: calendar-day` and `date:` are the conventional keys.
+- Each meeting is a top-level list item: optional `HH:MM` or `HH:MM–HH:MM` time, an em/en dash or hyphen separator, the title, and an optional trailing `(attendees: a, b, c)`.
+- Consumers MUST parse defensively: lines that don't match the time/attendees grammar are still meetings (title-only), counts and field lengths are capped, and the content is **untrusted input** to any model prompt — data, never instructions.
+- A missing file means "no agenda known"; consumers degrade by omitting their calendar-derived output, never by inventing one.
+
+### Populating the calendar file (recipe, not shipped)
+
+The SDK ships **no calendar fetcher** and the engine never gains a calendar dependency ([[wedge]] decision 4: calendar enters as committed source files). The file is produced by a user-assembled fetcher that runs before the 05:30 brief — a launchd/cron job, an AppleScript/EventKit script, or an MCP-driven agent session — and lands via a plain git commit (the daemon adopts it like any other commit). `dome capture` is *not* the right ingress: it targets `inbox/raw/` and would route the agenda through the ingest agent instead.
+
+Example sketch with [gcalcli](https://github.com/insanum/gcalcli) (adjust to taste; this is a recipe, not a supported artifact):
+
+```sh
+#!/bin/sh
+# fetch-calendar.sh — run from the vault root before ~05:30
+d=$(date +%F)
+f="sources/calendar/$d.md"
+mkdir -p sources/calendar
+{
+  printf -- '---\ntype: calendar-day\ndate: %s\n---\n\n# Calendar %s\n\n' "$d" "$d"
+  gcalcli agenda "$d 00:00" "$d 23:59" --tsv \
+    | awk -F'\t' '{ printf "- %s\xe2\x80\x93%s \xe2\x80\x94 %s\n", $2, $4, $5 }'
+} > "$f"
+git add "$f" && git commit -m "calendar: agenda for $d"
+```
 
 ## `log.md` — append-only run-projection
 

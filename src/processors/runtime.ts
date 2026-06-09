@@ -265,11 +265,13 @@ export type BuildRuntimeOptions = {
   readonly ledger?: LedgerDb;
   /**
    * Optional read-only projection query surface. When present, view-phase
-   * processor invocations populate `ctx.projection` so command-triggered
-   * views can read `dome.graph.links_to` facts, diagnostics, and questions
-   * out of the projection store. Adoption-phase and garden-phase
-   * invocations never receive the handle — those processors read state
-   * via `ctx.snapshot` from the candidate / adopted tree.
+   * and garden-phase processor invocations populate `ctx.projection` so
+   * command-triggered views and adopted-state garden processors (e.g.
+   * `dome.agent.brief` reading the open-question batch) can read facts,
+   * diagnostics, and questions out of the projection store. Adoption-phase
+   * invocations never receive the handle — the fixed-point loop reads state
+   * via `ctx.snapshot` from the candidate tree and must not depend on
+   * derived state.
    *
    * Optional because tests that exercise only the adoption / garden runners
    * (e.g., `tests/processors/runtime.test.ts`) don't need to wire a
@@ -464,6 +466,11 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(pageTypes !== undefined ? { pageTypes } : {}),
           ...(modelProvider !== undefined ? { modelProvider } : {}),
           ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
+          // Garden processors run over ADOPTED state, so reading the
+          // adopted-state projection (questions, facts, diagnostics) is
+          // safe; the context builder scopes the view by the processor's
+          // effective read grant. Adoption dispatch never passes this.
+          ...(projection !== undefined ? { projection } : {}),
         });
         results.push(result);
       }
@@ -559,8 +566,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
         // View-phase processors receive the projection query view so they
         // can read facts / diagnostics / questions out of the projection
-        // store via `ctx.projection`. Adoption + garden phases do NOT pass
-        // the handle — those processors read state from `ctx.snapshot`.
+        // store via `ctx.projection` (garden dispatch passes it too;
+        // adoption never does — see DispatchOptions.projection).
         // Conditional spread keeps the call site exactOptionalPropertyTypes-
         // clean when no projection is wired (e.g., test harnesses that build
         // a runtime without projection).
@@ -740,15 +747,16 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly pageTypes?: PageTypeRegistry;
   readonly operational?: OperationalQueryView;
   /**
-   * The projection query view to thread onto `ctx.projection`. Only the
-   * view-phase caller passes this; adoption + garden callers leave it
-   * undefined so their processors see `ctx.projection === undefined` (they
-   * read state from `ctx.snapshot`, not from the projection store).
+   * The projection query view to thread onto `ctx.projection`. The view-
+   * and garden-phase callers pass this (both run over adopted state);
+   * adoption callers leave it undefined so adoption processors see
+   * `ctx.projection === undefined` (the fixed-point loop reads state from
+   * `ctx.snapshot`, never from derived state).
    *
-   * Defensively, even when the caller mistakenly passes a projection on
-   * an adoption / garden dispatch, the body below gates the assignment
-   * on `phase === "view"` so the projection handle only ever lands on
-   * view-phase contexts.
+   * Defensively, even when a caller mistakenly passes a projection on an
+   * adoption dispatch, the body below gates the assignment on
+   * `phase === "view" || phase === "garden"` so the projection handle
+   * never lands on an adoption context.
    */
   readonly projection?: ProjectionQueryView;
 };
@@ -1054,7 +1062,8 @@ function buildExecutionContext<TEnvelope>(
         ...(opts.extensionConfigFor !== undefined
           ? { extensionConfig: opts.extensionConfigFor(frame.extensionId) }
           : {}),
-        ...(frame.phase === "view" && opts.projection !== undefined
+        ...((frame.phase === "view" || frame.phase === "garden") &&
+        opts.projection !== undefined
           ? {
               projection: scopeProjectionQueryView(
                 opts.projection,

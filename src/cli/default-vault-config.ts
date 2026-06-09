@@ -53,6 +53,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "index.md",
         "log.md",
         "consolidation-ledger.md",
+        "sources/calendar/*.md",
       ],
       "patch.auto": [
         "wiki/**/*.md",

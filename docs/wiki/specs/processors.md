@@ -43,7 +43,7 @@ interface ProcessorContext<TInput = unknown> {
   readonly capabilities: CapabilityToken; // opaque token; the broker resolves on effect emission
   readonly extensionConfig: ExtensionConfig; // opaque config from extensions.<id>.config
   readonly modelInvoke?: ModelInvokeFn;   // present iff non-adoption run has effective `model.invoke`; supports text + structured JSON
-  readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it)
+  readonly projection?: ProjectionQueryView; // present iff the runtime wired one (view-phase contexts require it; garden contexts receive a scoped read-only view; adoption never does)
   readonly operational?: OperationalQueryView; // present iff the processor has operational read grants
   readonly pageTypes?: PageTypeRegistry; // default + bundle page-type declarations; vault-local schemas stay in ctx.snapshot
   readonly sourceRef(path: string, range?: TextRange, stableId?: string): SourceRef;  // helper for SourceRef construction
@@ -62,11 +62,15 @@ interface SnapshotFileInfo {
   readonly lastChangedAt: string; // ISO timestamp from the git commit that last changed the path
 }
 
-// The read surface view-phase processors consume to query the projection store.
-// Adoption-phase processors typically read from `ctx.snapshot` (markdown
-// content at the candidate commit) and the field stays undefined; view-phase
+// The read surface view-phase and garden-phase processors consume to query
+// the projection store. Adoption-phase processors read from `ctx.snapshot`
+// (markdown content at the candidate commit) and the field stays undefined —
+// the fixed-point loop must not depend on derived state. View-phase
 // processors require the field — they answer queries by joining facts,
-// diagnostics, and committed markdown content.
+// diagnostics, and committed markdown content. Garden-phase processors
+// receive the same scoped read-only view when the runtime has an open
+// projection (e.g. `dome.agent.brief` reads the open-question batch); garden
+// runs over adopted state, so reading adopted-state projections is safe.
 interface ProjectionQueryView {
   facts(filter?: {
     predicate?: string;

@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 ---
@@ -42,7 +42,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 | **`dome.index`** *(first-party)* | `anticipated` | — | — | `update-index.ts` | — | `read: wiki/**`; `owns.path: ["index.md"]`; `patch.auto: ["index.md"]` |
 | **`dome.log`** *(first-party)* | `anticipated` | — | — | `append-log.ts` | — | `owns.path: ["log.md"]`; `patch.auto: ["log.md"]` |
 | **`dome.links`** *(first-party)* | `anticipated` | — | `preamble.md` | `cross-reference.ts` | — | `read: wiki/**`; `patch.propose: ["wiki/**"]` |
-| **`dome.agent`** *(first-party)* | `shipped` | — | —; future: `preamble.md` | `ingest.ts`, `inbox-stale-check.ts`, `consolidate.ts` | — | `read: ["wiki/**/*.md", "notes/**/*.md", "inbox/**/*.md", "index.md", "log.md", "consolidation-ledger.md"]`; `patch.auto: ["wiki/**/*.md", "notes/**/*.md", "index.md", "log.md", "inbox/processed/*.md", "inbox/raw/*.md", "consolidation-ledger.md"]`; `model.invoke: { maxDailyCostUsd: 10 }`; `question.ask: true` for owner clarifications during ingest; NO `graph.write` |
+| **`dome.agent`** *(first-party)* | `shipped` | — | —; future: `preamble.md` | `ingest.ts`, `inbox-stale-check.ts`, `consolidate.ts`, `brief.ts` | — | `read: ["wiki/**/*.md", "notes/**/*.md", "inbox/**/*.md", "index.md", "log.md", "consolidation-ledger.md", "sources/calendar/*.md"]`; `patch.auto: ["wiki/**/*.md", "notes/**/*.md", "index.md", "log.md", "inbox/processed/*.md", "inbox/raw/*.md", "consolidation-ledger.md"]` (the `brief` processor declares only the daily-note targets `wiki/dailies/*.md` + `notes/*.md`); `model.invoke: { maxDailyCostUsd: 10 }`; `question.ask: true` for owner clarifications during ingest; NO `graph.write` |
 | **`dome.daily`** *(first-party)* | `shipped` | `daily`; future: `weekly` | — | `agenda-with.ts`, `ambiguous-followup-answer.ts`, `carry-forward.ts`, `create-daily.ts`, `normalize-task-syntax.ts`, `prep.ts`, `reconcile-tasks.ts`, `stamp-block-id.ts`, `task-index.ts`, `today.ts`; future: `create-weekly.ts`, `week-review.ts`, `append-followup.ts` | — | `read: ["wiki/**/*.md"]`; `patch.auto: ["wiki/**/*.md"]`; `graph.write: ["dome.daily.*"]`; `question.ask: true` |
 | **`dome.lint`** *(first-party)* | `shipped` | — | — | `report.ts`; future: `apply-finding.ts` | — | `read: ["**/*.md"]`; future: `patch.propose: ["**"]` |
 | **`dome.warden`** *(first-party)* | `shipped` | — | — | `integrity.ts`, `integrity-answer.ts` | — | `read: ["wiki/**/*.md"]`; `model.invoke: { maxDailyCostUsd: 10 }`; `question.ask: true` |

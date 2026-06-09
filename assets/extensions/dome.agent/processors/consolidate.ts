@@ -1,7 +1,9 @@
-// dome.agent.consolidate — weekly vault-janitor agent: merge duplicate pages
-// + tidy within-page append-drift. One agent loop per scheduled tick; its
-// edits accumulate in one AgentRunState (overlay reads compose successive
-// merges + link rewrites) and land as a single cumulative PatchEffect.
+// dome.agent.consolidate — nightly vault-janitor agent: merge duplicate pages
+// + tidy within-page append-drift among RECENT drift (since the ledger's last
+// recorded run). One agent loop per scheduled tick; its edits accumulate in
+// one AgentRunState (overlay reads compose successive merges + link rewrites)
+// and land as a single cumulative PatchEffect, hard-capped at
+// MAX_CHANGED_FILES per run (nightly cadence multiplies blast radius).
 
 import {
   diagnosticEffect,
@@ -15,15 +17,56 @@ import {
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
-import { CONSOLIDATE_CHARTER } from "../lib/consolidate-charter";
+import { consolidateCharter } from "../lib/consolidate-charter";
 
 const MAX_STEPS = 50;
-const LEDGER_PATH = "consolidation-ledger.md";
+const MAX_CHANGED_FILES = 30;
+const DEFAULT_LEDGER_PATH = "consolidation-ledger.md";
+
+/**
+ * Resolve the consolidation ledger path from the extension config
+ * (`extensions.dome.agent.config.consolidation_ledger_path`), defaulting to
+ * the top-level `consolidation-ledger.md`. The path must be a relative vault
+ * `.md` path; a custom path additionally requires matching `read` +
+ * `patch.auto` grant entries in `.dome/config.yaml` — grants are static
+ * globs, so config cannot widen the processor's write boundary.
+ */
+export function consolidationLedgerPath(
+  config?: Readonly<Record<string, unknown>>,
+): string {
+  const raw = config?.consolidation_ledger_path;
+  if (raw === undefined) return DEFAULT_LEDGER_PATH;
+  if (typeof raw !== "string") {
+    throw new Error(
+      "dome.agent config consolidation_ledger_path must be a string",
+    );
+  }
+  if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
+    throw new Error(
+      "dome.agent config consolidation_ledger_path must be a non-empty .md path",
+    );
+  }
+  if (
+    raw.startsWith("/") ||
+    raw.includes("\\") ||
+    raw.split("/").some(
+      (segment) =>
+        segment.length === 0 || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(
+      "dome.agent config consolidation_ledger_path must be a relative vault markdown path",
+    );
+  }
+  return raw;
+}
 
 const consolidate = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const step = ctx.modelInvoke?.step;
     if (step === undefined) return Object.freeze([]); // clean no-op without a model
+
+    const ledgerPath = consolidationLedgerPath(ctx.extensionConfig);
 
     const tools = makeConsolidatorTools({
       reader: {
@@ -33,13 +76,16 @@ const consolidate = defineProcessorImplementation({
     });
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
-    const sourceRefs = [ctx.sourceRef(LEDGER_PATH)];
+    const sourceRefs = [ctx.sourceRef(ledgerPath)];
 
     let result;
     try {
       result = await runAgentLoop({
-        charter: CONSOLIDATE_CHARTER,
-        task: taskTurn(ctx.now()),
+        charter: consolidateCharter({
+          ledgerPath,
+          maxChangedFiles: MAX_CHANGED_FILES,
+        }),
+        task: taskTurn(ctx.now(), ledgerPath),
         tools,
         step,
         maxSteps: MAX_STEPS,
@@ -67,7 +113,20 @@ const consolidate = defineProcessorImplementation({
         ? ({ kind: "write", path: e.path, content: e.content } as const)
         : ({ kind: "delete", path: e.path } as const),
     );
-    if (changes.length > 0) {
+    if (changes.length > MAX_CHANGED_FILES) {
+      // Per-run patch cap (nightly blast-radius bound). Partial application
+      // would break merge atomicity (a delete could land without its link
+      // rewrites), so an overreaching run is rolled back entirely; the
+      // agent's questions still surface.
+      effects.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.consolidate-overreach",
+          message: `dome.agent.consolidate touched ${changes.length} files (cap ${MAX_CHANGED_FILES}); run rolled back, no edits applied.`,
+          sourceRefs,
+        }),
+      );
+    } else if (changes.length > 0) {
       effects.push(
         patchEffect({
           mode: "auto",
@@ -98,11 +157,11 @@ const consolidate = defineProcessorImplementation({
 
 export default consolidate;
 
-function taskTurn(now: Date): string {
+function taskTurn(now: Date, ledgerPath: string): string {
   const today = now.toISOString().slice(0, 10);
   return [
-    `Today is ${today}. Consolidate the vault per your charter.`,
-    "Start by reading index.md, log.md, and consolidation-ledger.md.",
-    "Do a bounded batch of merges + within-page tidies, then update the ledger.",
+    `Tonight is ${today}. Consolidate RECENT drift per your charter.`,
+    `Start by reading ${ledgerPath}, then log.md and index.md.`,
+    "Do a small bounded batch of merges + within-page tidies among recently-touched pages, then update the ledger with tonight's date.",
   ].join("\n");
 }

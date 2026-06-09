@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import consolidate from "../../../assets/extensions/dome.agent/processors/consolidate";
+import consolidate, {
+  consolidationLedgerPath,
+} from "../../../assets/extensions/dome.agent/processors/consolidate";
 import type { ProcessorContext, ModelStepResult } from "../../../src/core/processor";
-import type { PatchEffect, QuestionEffect } from "../../../src/core/effect";
+import type {
+  DiagnosticEffect,
+  PatchEffect,
+  QuestionEffect,
+} from "../../../src/core/effect";
 
 function makeCtx(opts: {
   files: Record<string, string>;
+  extensionConfig?: Record<string, unknown>;
   stepFn?: (input: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
   }) => Promise<ModelStepResult>;
@@ -31,7 +38,7 @@ function makeCtx(opts: {
     now: () => new Date("2026-06-09T04:00:00Z"),
     signal: new AbortController().signal,
     capabilities: {} as never,
-    extensionConfig: {},
+    extensionConfig: opts.extensionConfig ?? {},
     ...(modelInvoke !== undefined ? { modelInvoke } : {}),
     sourceRef: (path: string) => ({ path }) as never,
   } as ProcessorContext;
@@ -88,5 +95,109 @@ describe("dome.agent.consolidate", () => {
     expect(effects.find((e) => e.kind === "patch")).toBeUndefined();
     const q = effects.find((e) => e.kind === "question") as QuestionEffect;
     expect(q.question).toContain("Merge X");
+  });
+
+  test("mid-run throw rolls back atomically: no patch, only a diagnostic", async () => {
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns === 0)
+        return { toolCalls: [{ id: "1", name: "deletePage", input: { path: "wiki/concepts/b.md" } }] };
+      throw new Error("provider died mid-merge");
+    };
+    const effects = await consolidate.run(
+      makeCtx({ files: { "index.md": "x", "wiki/concepts/b.md": "B" }, stepFn }),
+    );
+    expect(effects.length).toBe(1);
+    const diag = effects[0] as DiagnosticEffect;
+    expect(diag.kind).toBe("diagnostic");
+    expect(diag.code).toBe("dome.agent.consolidate-failed");
+    expect(diag.message).toContain("rolled back");
+  });
+
+  test("a run exceeding the per-run patch cap is rolled back with an overreach diagnostic", async () => {
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns < 31) {
+        return {
+          toolCalls: [
+            {
+              id: String(turns),
+              name: "writePage",
+              input: { path: `wiki/concepts/p${turns}.md`, content: "x" },
+            },
+          ],
+        };
+      }
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(makeCtx({ files: { "index.md": "x" }, stepFn }));
+    expect(effects.find((e) => e.kind === "patch")).toBeUndefined();
+    const diag = effects.find((e) => e.kind === "diagnostic") as DiagnosticEffect;
+    expect(diag.code).toBe("dome.agent.consolidate-overreach");
+    expect(diag.message).toContain("31 files");
+  });
+
+  test("ledger path is configurable via extensionConfig and anchors the run's source refs", async () => {
+    const seenSystem: string[] = [];
+    const seenTask: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns === 0)
+        return {
+          toolCalls: [
+            {
+              id: "1",
+              name: "writePage",
+              input: { path: "notes/janitor-ledger.md", content: "# Consolidation ledger\n2026-06-09" },
+            },
+          ],
+        };
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { consolidation_ledger_path: "notes/janitor-ledger.md" },
+        stepFn,
+      }),
+    );
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    expect(patch.sourceRefs).toEqual([{ path: "notes/janitor-ledger.md" } as never]);
+    expect(seenSystem[0]).toContain("notes/janitor-ledger.md");
+    expect(seenTask[0]).toContain("notes/janitor-ledger.md");
+  });
+
+  test("consolidationLedgerPath validates config values", () => {
+    expect(consolidationLedgerPath(undefined)).toBe("consolidation-ledger.md");
+    expect(consolidationLedgerPath({})).toBe("consolidation-ledger.md");
+    expect(
+      consolidationLedgerPath({ consolidation_ledger_path: "notes/x.md" }),
+    ).toBe("notes/x.md");
+    expect(() =>
+      consolidationLedgerPath({ consolidation_ledger_path: 7 }),
+    ).toThrow("must be a string");
+    expect(() =>
+      consolidationLedgerPath({ consolidation_ledger_path: "ledger.txt" }),
+    ).toThrow(".md path");
+    expect(() =>
+      consolidationLedgerPath({ consolidation_ledger_path: "/abs/ledger.md" }),
+    ).toThrow("relative vault markdown path");
+    expect(() =>
+      consolidationLedgerPath({ consolidation_ledger_path: "../up/ledger.md" }),
+    ).toThrow("relative vault markdown path");
   });
 });

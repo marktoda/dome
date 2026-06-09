@@ -1,5 +1,5 @@
 id: dome.agent
-version: 0.1.0
+version: 0.2.0
 processors:
   - id: dome.agent.ingest
     version: 0.1.0
@@ -60,11 +60,13 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.agent.consolidate
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
+      # Nightly (was weekly 0 4 * * 1): the charter bounds each run to recent
+      # drift since the ledger's last run + a hard per-run patch cap.
       - kind: schedule
-        cron: "0 4 * * 1"
+        cron: "0 2 * * *"
     capabilities:
       - kind: read
         paths:
@@ -86,3 +88,35 @@ processors:
       timeoutMs: 1800000
       modelCallTimeoutMs: 180000
     module: processors/consolidate.ts
+
+  - id: dome.agent.brief
+    version: 0.1.0
+    phase: garden
+    triggers:
+      # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
+      # the daily skeleton itself when absent (same shared helper), so
+      # create-daily later no-ops and carry-forward raises the open loops.
+      - kind: schedule
+        cron: "30 5 * * *"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "notes/**/*.md"
+          - "index.md"
+          - "log.md"
+          - "sources/calendar/*.md"
+      # Deliberately narrower than ingest: the brief writes ONLY the daily
+      # note (wiki/dailies default template or a notes/ daily_path override).
+      - kind: patch.auto
+        paths:
+          - "wiki/dailies/*.md"
+          - "notes/*.md"
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+      - kind: question.ask
+    execution:
+      class: llm
+      timeoutMs: 1800000
+      modelCallTimeoutMs: 180000
+    module: processors/brief.ts
