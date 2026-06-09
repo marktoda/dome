@@ -310,6 +310,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.orphan-pages",
         "dome.graph.links",
         "dome.graph.tag-index",
+        "dome.agent.consolidate",
       ],
       surfaces: [
         { kind: "path", pattern: "**/*.md" },
