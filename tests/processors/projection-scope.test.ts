@@ -93,6 +93,8 @@ const projection: ProjectionQueryView = Object.freeze({
     Object.freeze([
       {
         path: "public/a.md",
+        sectionId: null,
+        breadcrumb: null,
         category: "page",
         type: null,
         title: "public",
@@ -102,6 +104,8 @@ const projection: ProjectionQueryView = Object.freeze({
       },
       {
         path: "secret/a.md",
+        sectionId: null,
+        breadcrumb: null,
         category: "page",
         type: null,
         title: "secret",
@@ -114,6 +118,8 @@ const projection: ProjectionQueryView = Object.freeze({
     Object.freeze([
       {
         path: "public/a.md",
+        sectionId: null,
+        breadcrumb: null,
         category: "page",
         type: null,
         title: "public",
@@ -123,6 +129,8 @@ const projection: ProjectionQueryView = Object.freeze({
       },
       {
         path: "secret/a.md",
+        sectionId: null,
+        breadcrumb: null,
         category: "page",
         type: null,
         title: "secret",

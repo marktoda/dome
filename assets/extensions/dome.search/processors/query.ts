@@ -29,11 +29,16 @@ import {
   recallSignalsForTopic,
 } from "./recall";
 import {
+  applyRecencyDecay,
   compareRankedSearchEntries,
+  dedupeBestSectionPerPage,
   expandedSearchLimit,
+  fuseSearchChannelsRrf,
+  linkExpansionChannel,
   rankSearchCandidate,
   isSearchDecisionFact,
   isSearchOpenLoopFact,
+  MAX_LINK_EXPANSION_PATHS,
 } from "./ranking";
 import { boundedTopicRows } from "./topic-relevance";
 
@@ -76,10 +81,14 @@ const searchQuery = defineProcessorImplementation({
       topicRecallSignalsByPath,
       dailyRecallSignalsByPath,
     ]);
-    const filteredSearchMatches = filterDailyIntentSearchMatches({
-      matches: searchMatches,
-      dailyRecallSignalsByPath,
-    });
+    // FTS rows are section-granular; collapse to the best section per page
+    // before the path-keyed joins and channel fusion.
+    const filteredSearchMatches = dedupeBestSectionPerPage(
+      filterDailyIntentSearchMatches({
+        matches: searchMatches,
+        dailyRecallSignalsByPath,
+      }),
+    );
     const searchMatchPaths = new Set(
       filteredSearchMatches.map((match) => match.path),
     );
@@ -93,18 +102,42 @@ const searchQuery = defineProcessorImplementation({
         .filter((match) => matchSatisfiesFilters(match, input)),
       dailyRecallSignalsByPath,
     });
+    // One-hop link expansion over dome.graph.links_to facts from the top
+    // FTS hits, fused with the FTS channel via reciprocal-rank fusion.
+    const ftsPaths = filteredSearchMatches.map((match) => match.path);
+    const expansion = linkExpansionChannel({
+      ftsPaths,
+      linksToFacts: ctx.projection.facts({
+        predicate: "dome.graph.links_to",
+      }),
+      allMarkdownPaths: await ctx.snapshot.listMarkdownFiles(),
+    });
+    const fusionByPath = fuseSearchChannelsRrf({ ftsPaths, expansion });
+    const recalledPathSet = new Set(recalledMatches.map((match) => match.path));
+    const expansionPaths = expansion
+      .map((entry) => entry.path)
+      .filter((path) => !recalledPathSet.has(path))
+      .slice(0, MAX_LINK_EXPANSION_PATHS);
+    const expansionMatches = filterDailyIntentSearchMatches({
+      matches: ctx.projection
+        .documentsByPath(expansionPaths)
+        .filter((match) => matchSatisfiesFilters(match, input)),
+      dailyRecallSignalsByPath,
+    });
     const candidateMatches = Object.freeze([
       ...filteredSearchMatches,
       ...recalledMatches,
+      ...expansionMatches,
     ]);
     const factsByPath = factsForMatches(ctx, candidateMatches);
     const matchPaths = new Set(candidateMatches.map((match) => match.path));
     const diagnosticsByPath = groupByMatchingPath(allDiagnostics, matchPaths);
     const questionsByPath = groupByMatchingPath(allQuestions, matchPaths);
-    const rankedMatches = Object.freeze(
-      candidateMatches
-        .map((match) =>
-          Object.freeze({
+    const rankedMatches = await applyRecencyDecay({
+      entries: candidateMatches
+        .map((match) => {
+          const fusion = fusionByPath.get(match.path);
+          return Object.freeze({
             ...match,
             ranking: rankSearchCandidate({
               match,
@@ -114,11 +147,14 @@ const searchQuery = defineProcessorImplementation({
               questions: questionsByPath.get(match.path) ?? Object.freeze([]),
               recallSignals: recallSignalsByPath.get(match.path) ??
                 Object.freeze([]),
+              ...(fusion !== undefined ? { fusion } : {}),
             }),
-          })
-        )
+          });
+        })
         .sort(compareRankedSearchEntries),
-    );
+      getFileInfo: ctx.snapshot.getFileInfo,
+      now: ctx.now(),
+    });
     const matches = Object.freeze(rankedMatches.slice(0, input.limit));
     const outputFactsByPath = boundedFactsByPath(input.text, matches, factsByPath);
     const outputDiagnosticsByPath = boundedRowsByPath({
@@ -155,6 +191,8 @@ const searchQuery = defineProcessorImplementation({
             title: match.title,
             category: match.category,
             type: match.type,
+            sectionId: match.sectionId,
+            breadcrumb: match.breadcrumb,
             snippet: match.snippet,
             rank: match.rank,
             ranking: match.ranking,

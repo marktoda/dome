@@ -497,6 +497,113 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome query returns section hits and link-expanded pages without regressing exact-name queries",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+      { kind: "route", route: "view-command" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.graph", "dome.search"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/entities/danny-rosen.md":
+          "---\n" +
+          "type: person\n" +
+          "---\n" +
+          "# Danny Rosen\n\n" +
+          "Danny Rosen owns the rollout. See [[platform-hub]].\n\n" +
+          "## Rollout Notes\n\n" +
+          "Danny Rosen reviews the launch checklist weekly.\n",
+        // Never matches "danny rosen" in FTS — reachable only through the
+        // wikilink from the direct hit (one-hop expansion channel).
+        "wiki/platform-hub.md":
+          "---\n" +
+          "type: project\n" +
+          "---\n" +
+          "# Platform Hub\n\n" +
+          "Infrastructure boundaries and shared runtime ownership.\n",
+      },
+      message: "add entity page linking to hub",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    // Exact entity-name query: the direct hit stays #1; the linked hub joins
+    // the candidate set through the expansion channel but cannot outrank it
+    // (acceptance per docs/memory.md §M1).
+    const cli = await h.runCli(["query", "danny rosen", "--json"]);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stderr).toBe("");
+    const payload = JSON.parse(cli.stdout) as {
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly sectionId: string | null;
+        readonly breadcrumb: string | null;
+        readonly ranking: {
+          readonly recencyFactor: number;
+          readonly reasons: ReadonlyArray<string>;
+          readonly signals: ReadonlyArray<{ readonly kind: string }>;
+        };
+        readonly sourceRefs: ReadonlyArray<{
+          readonly path: string;
+          readonly range?: { readonly startLine: number };
+        }>;
+      }>;
+    };
+    expect(payload.matches[0]?.path).toBe("wiki/entities/danny-rosen.md");
+    expect(payload.matches[0]?.sectionId).not.toBeNull();
+    expect(payload.matches[0]?.breadcrumb).toContain("Danny Rosen");
+    expect(payload.matches[0]?.ranking.signals).toContainEqual(
+      expect.objectContaining({ kind: "fusion", label: "text match" }),
+    );
+    expect(typeof payload.matches[0]?.ranking.recencyFactor).toBe("number");
+    expect(payload.matches[0]?.sourceRefs[0]?.range?.startLine)
+      .toBeGreaterThan(0);
+
+    const hub = payload.matches.find((m) => m.path === "wiki/platform-hub.md");
+    expect(hub).toBeDefined();
+    expect(hub?.ranking.reasons).toContain("linked from matches");
+
+    // A query matching only H2-section content surfaces the section
+    // breadcrumb in text output.
+    const sectionText = await h.runCli(["query", "launch checklist"]);
+    expect(sectionText.exitCode).toBe(0);
+    expect(sectionText.stderr).toBe("");
+    expect(sectionText.stdout).toContain(
+      "section: Danny Rosen › Rollout Notes",
+    );
+
+    const sectionJson = await h.runCli(["query", "launch checklist", "--json"]);
+    const sectionPayload = JSON.parse(sectionJson.stdout) as {
+      readonly matches: ReadonlyArray<{
+        readonly path: string;
+        readonly sectionId: string | null;
+        readonly breadcrumb: string | null;
+      }>;
+    };
+    const sectionMatch = sectionPayload.matches.find(
+      (m) => m.path === "wiki/entities/danny-rosen.md",
+    );
+    expect(sectionMatch?.sectionId).toBe("rollout-notes");
+    expect(sectionMatch?.breadcrumb).toBe("Danny Rosen › Rollout Notes");
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: first sync bootstraps adopted-state search for existing vaults",
     tags: [
       { kind: "group", group: "cli-surface" },

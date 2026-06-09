@@ -43,11 +43,16 @@ import {
   type SearchRecallSignal,
 } from "./recall";
 import {
+  applyRecencyDecay,
   compareRankedSearchEntries,
+  dedupeBestSectionPerPage,
   expandedSearchLimit,
+  fuseSearchChannelsRrf,
   isSearchDecisionFact,
   isSearchOpenLoopFact,
+  linkExpansionChannel,
   rankSearchCandidate,
+  MAX_LINK_EXPANSION_PATHS,
   type SearchRanking,
 } from "./ranking";
 import {
@@ -94,10 +99,14 @@ const exportContext = defineProcessorImplementation({
       topicRecallSignalsByPath,
       dailyRecallSignalsByPath,
     ]);
-    const filteredSearchMatches = filterDailyIntentSearchMatches({
-      matches: searchMatches,
-      dailyRecallSignalsByPath,
-    });
+    // FTS rows are section-granular; collapse to the best section per page
+    // before the path-keyed joins and channel fusion.
+    const filteredSearchMatches = dedupeBestSectionPerPage(
+      filterDailyIntentSearchMatches({
+        matches: searchMatches,
+        dailyRecallSignalsByPath,
+      }),
+    );
     const searchMatchPaths = new Set(
       filteredSearchMatches.map((match) => match.path),
     );
@@ -109,9 +118,29 @@ const exportContext = defineProcessorImplementation({
       matches: projection.documentsByPath(recalledPaths),
       dailyRecallSignalsByPath,
     });
+    // One-hop link expansion over dome.graph.links_to facts from the top
+    // FTS hits, fused with the FTS channel via reciprocal-rank fusion —
+    // same retrieval substrate as `dome query`.
+    const ftsPaths = filteredSearchMatches.map((match) => match.path);
+    const expansion = linkExpansionChannel({
+      ftsPaths,
+      linksToFacts: projection.facts({ predicate: "dome.graph.links_to" }),
+      allMarkdownPaths: await ctx.snapshot.listMarkdownFiles(),
+    });
+    const fusionByPath = fuseSearchChannelsRrf({ ftsPaths, expansion });
+    const recalledPathSet = new Set(recalledMatches.map((match) => match.path));
+    const expansionPaths = expansion
+      .map((entry) => entry.path)
+      .filter((path) => !recalledPathSet.has(path))
+      .slice(0, MAX_LINK_EXPANSION_PATHS);
+    const expansionMatches = filterDailyIntentSearchMatches({
+      matches: projection.documentsByPath(expansionPaths),
+      dailyRecallSignalsByPath,
+    });
     const candidateMatches = Object.freeze([
       ...filteredSearchMatches,
       ...recalledMatches,
+      ...expansionMatches,
     ]);
     const matchPaths = new Set(candidateMatches.map((match) => match.path));
     const factsByPath = new Map(
@@ -131,10 +160,11 @@ const exportContext = defineProcessorImplementation({
       allQuestions,
       matchPaths,
     );
-    const rankedMatches = Object.freeze(
-      candidateMatches
-        .map((match) =>
-          Object.freeze({
+    const rankedMatches = await applyRecencyDecay({
+      entries: candidateMatches
+        .map((match) => {
+          const fusion = fusionByPath.get(match.path);
+          return Object.freeze({
             ...match,
             ranking: rankSearchCandidate({
               match,
@@ -144,14 +174,17 @@ const exportContext = defineProcessorImplementation({
               questions: questionsByPath.get(match.path) ?? Object.freeze([]),
               recallSignals: recallSignalsByPath.get(match.path) ??
                 Object.freeze([]),
+              ...(fusion !== undefined ? { fusion } : {}),
             }),
             facts: factsByPath.get(match.path) ?? Object.freeze([]),
             diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),
             questions: questionsByPath.get(match.path) ?? Object.freeze([]),
-          })
-        )
+          });
+        })
         .sort(compareRankedSearchEntries),
-    );
+      getFileInfo: ctx.snapshot.getFileInfo,
+      now: ctx.now(),
+    });
     const matches = Object.freeze(rankedMatches.slice(0, input.limit));
     const hasMoreEntries = rankedMatches.length > matches.length;
     const entries = matches.map((match) =>
@@ -230,6 +263,8 @@ type ContextEntry = {
   readonly title: string;
   readonly category: string;
   readonly type: string | null;
+  readonly sectionId: string | null;
+  readonly breadcrumb: string | null;
   readonly snippet: string;
   readonly rank: number;
   readonly ranking: SearchRanking;
@@ -395,6 +430,8 @@ function contextEntryFromMatch(
     title: match.title,
     category: match.category,
     type: match.type,
+    sectionId: match.sectionId,
+    breadcrumb: match.breadcrumb,
     snippet,
     rank: match.rank,
     ranking,
@@ -425,6 +462,8 @@ function publicContextEntry(entry: ContextEntry): PublicContextEntry {
     title: entry.title,
     category: entry.category,
     type: entry.type,
+    sectionId: entry.sectionId,
+    breadcrumb: entry.breadcrumb,
     snippet: entry.snippet,
     rank: entry.rank,
     ranking: entry.ranking,
@@ -742,6 +781,9 @@ function renderMarkdown(
     lines.push("");
     lines.push(`### ${index + 1}. ${entry.title}`);
     lines.push(`- Path: \`${entry.path}\``);
+    if (entry.breadcrumb !== null && entry.breadcrumb !== entry.title) {
+      lines.push(`- Section: ${entry.breadcrumb}`);
+    }
     lines.push(`- Category: \`${entry.category}\``);
     if (entry.type !== null) lines.push(`- Type: \`${entry.type}\``);
     if (entry.ranking.reasons.length > 0) {

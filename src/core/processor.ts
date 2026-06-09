@@ -494,6 +494,13 @@ export type ProjectionQueryView = {
 
 export type SearchDocumentResult = {
   readonly path: string;
+  /**
+   * Heading-section id when the matched FTS row is section-granular
+   * (`intro` for pre-first-H2 content); `null` for legacy page-level rows.
+   */
+  readonly sectionId: string | null;
+  /** Display breadcrumb `<page title> › <heading path>`; `null` for intro/page rows without one. */
+  readonly breadcrumb: string | null;
   readonly category: string;
   readonly type: string | null;
   readonly title: string;
