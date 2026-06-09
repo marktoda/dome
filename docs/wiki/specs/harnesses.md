@@ -25,7 +25,7 @@ Dome doesn't dictate which tools an agentic harness reaches for. Claude Code wit
 See [[wiki/specs/foreground-compiler-workflow]] for the operational day-to-day
 Claude Code loop built on this contract.
 
-These four surfaces are the *load-bearing* contract. The MCP server ([[wiki/specs/mcp-surface]]) is preserved as a fifth, non-primary surface — available for future harnesses that benefit from explicitly-typed MCP-routed operations, but not load-bearing for v1 value delivery.
+These four surfaces are the *load-bearing* contract. The MCP server ([[wiki/specs/mcp-surface]], shipped as `dome mcp` in wedge Phase 5) is a fifth, non-primary surface — for harnesses that benefit from explicitly-typed MCP-routed operations or cannot shell out — but not load-bearing for v1 value delivery.
 
 ## How a harness writes into the vault
 
@@ -84,7 +84,7 @@ The default v1 agentic harness. Configured by:
 2. The user runs a compiler host for continuous compilation: initially `dome serve --vault <path>` in a foreground terminal or under launchd / systemd. Out-of-band writes the agent makes via `Write` / `Edit` are committed normally; the host observes branch movement; the engine adopts; the projection store updates; the log grows.
 3. The agent invokes named operations via `Bash` when explicit structured ops are wanted. The normal operational path is `dome status --json` followed by its `next_actions` (`dome sync --json`, a `dome check ...` command, or `dome resolve <id> <value>`). Recall/context examples are `dome query "..."` and `dome export-context "platform ownership"`; advanced/debug examples include `dome inspect diagnostics`, `dome lint`, and `dome run orphan-pages`.
 
-**MCP mounting is optional future work.** A user who wants the future MCP surface available can mount the dedicated MCP entrypoint once it exists. That entrypoint is not `dome serve`: `serve` is the compiler host, while MCP is a read/query protocol adapter over the same runtime. Once implemented and configured, Dome's MCP read/query tools and prompts are available — but the agent is not expected to reach for them when native tools suffice. See [[wiki/specs/mcp-surface]] for the target technical contract when MCP *is* mounted.
+**MCP mounting is optional.** A user who wants the MCP surface mounts the dedicated entrypoint: `claude mcp add dome -- dome mcp --vault <path>`. That entrypoint is not `dome serve`: `serve` is the compiler host, while `dome mcp` is a read/capture protocol adapter over the same runtime — run both. Once mounted, Dome's typed tools (capture/query/export_context/status/check/resolve/tasks/brief) are available — but a shell-capable agent is not expected to reach for them when native tools suffice. See [[wiki/specs/mcp-surface]] for the technical contract when MCP *is* mounted.
 
 ### Headless SDK processor invocation (for scheduled-cron, intake, view-phase commands)
 

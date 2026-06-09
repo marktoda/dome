@@ -45,6 +45,10 @@ dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>
                                 LaunchAgent (ambient compiler host; survives reboots).
 dome uninstall [--vault <path>] [--json]
                                 Boot out and remove the vault's launchd LaunchAgent.
+dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
+                                read/capture tools (capture, query, export_context,
+                                status, check, resolve, tasks, brief) for MCP
+                                harnesses. The daemon still owns compilation.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -61,6 +65,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Protocol adapter:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"). A read/capture protocol adapter over the same command handlers; see [[wiki/specs/mcp-surface]].
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -1558,7 +1563,7 @@ observability output; it never changes which processors run.
 
 The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is simpler than `fs.watch` on `.git/refs/heads/<branch>`, requires no extra dependencies, and 500ms latency is invisible to a user committing markdown. The v0.5 chokidar-over-`wiki/` watcher was retired with the v1.0 substrate migration — adoption is keyed off git commits, not raw file writes, so the watch target is a ref (one file) rather than the whole vault subtree.
 
-The scheduled-trigger dispatcher for garden processors is wired through the same runtime grant resolver as adoption. View processors are command-driven in v1 because scheduled views have no caller-owned delivery surface. There is no separate `serve --exclusive` flag in v1 because branch-level locking is always on. The `--mcp` toggle remains deferred to v1.1.
+The scheduled-trigger dispatcher for garden processors is wired through the same runtime grant resolver as adoption. View processors are command-driven in v1 because scheduled views have no caller-owned delivery surface. There is no separate `serve --exclusive` flag in v1 because branch-level locking is always on. There is no `serve --mcp` toggle: the MCP server is its own verb (`dome mcp`) because serve is the compiler host while MCP is a read/capture protocol adapter — they compose by running both.
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 
@@ -1670,6 +1675,41 @@ Non-macOS platforms get the same macOS-only refusal as `dome install`.
 Exit codes: 0 on success or already-not-installed; 1 on non-macOS platform,
 undeterminable uid, or unexpected I/O failure.
 
+### `dome mcp [--vault <path>] [--bundles-root <path>]`
+
+Runs the Dome MCP server over stdio for one vault — the shipped protocol
+adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
+The server exposes eight typed tools (`capture`, `query`, `export_context`,
+`status`, `check`, `resolve`, `tasks`, `brief`) whose results are the same
+JSON documents the corresponding CLI verbs emit under `--json`; the adapter
+invokes the same command handlers rather than re-implementing them.
+
+Boundary discipline:
+
+- **stdout is the protocol channel.** The adapter captures handler
+  `console.log` output per tool call (serialized behind a mutex) so command
+  JSON becomes the tool result instead of corrupting the wire. Server-side
+  notices go to stderr.
+- **No compilation.** The MCP server runs no adoption loop or scheduler;
+  `dome serve` (kept alive by `dome install`) owns that. `capture` and
+  `resolve` are the only write-shaped tools and reuse the existing
+  non-engine write channels (ordinary human commit; `answers.db`).
+- **Static-graph hygiene.** The Commander action loads
+  `src/cli/commands/mcp.ts` via dynamic import, so
+  `@modelcontextprotocol/sdk` stays out of the CLI's static import graph
+  (and is never reachable from `src/index.ts`, per
+  [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]).
+
+Registration from Claude Code:
+
+```bash
+claude mcp add dome -- dome mcp --vault /path/to/vault
+```
+
+The process serves until the client disconnects (stdin closes). Exit codes:
+0 on clean shutdown; 64 when the target is not an initialized Dome vault
+(missing git repo or `.dome/config.yaml`); 1 on transport failure.
+
 ### Planned dedicated view aliases
 
 `dome stats` and `dome migrate` are roadmap commands, not current Commander
@@ -1719,7 +1759,7 @@ graduate to dedicated aliases once their workflow deserves first-class help
 text, flags, and text rendering. This keeps the primary loop small while
 leaving a clean path to richer named commands.
 
-The planned MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; command-style views would be reachable through `dome.run_command`. Adoption catch-up remains CLI/git-native in v1.0.
+The MCP server (`dome mcp`, per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed read/query routing; it exposes the same command handlers as typed tools. Adoption catch-up remains CLI/git-native in v1.0.
 
 ## Related
 

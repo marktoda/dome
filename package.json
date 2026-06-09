@@ -13,6 +13,10 @@
     "./cli": {
       "types": "./src/cli/index.ts",
       "default": "./src/cli/index.ts"
+    },
+    "./mcp": {
+      "types": "./src/mcp/server.ts",
+      "default": "./src/mcp/server.ts"
     }
   },
   "bin": {
@@ -31,6 +35,7 @@
     "v1:release-check": "bun scripts/v1-release-check.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^14.0.3",
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",

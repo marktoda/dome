@@ -487,6 +487,24 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("mcp")
+    .description("Run the stdio MCP server over this vault (read/capture protocol adapter).")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: McpCliOptions) => {
+      // Dynamic import keeps @modelcontextprotocol/sdk out of the CLI's
+      // static import graph — the companion-entrypoint discipline pinned by
+      // ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY (see src/cli/commands/mcp.ts).
+      const { runMcp } = await import("./commands/mcp");
+      setExitCode(
+        await runMcp({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("status")
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
@@ -563,6 +581,11 @@ type InstallCliOptions = {
 type UninstallCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
+};
+
+type McpCliOptions = {
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
 };
 
 type CheckCliOptions = {

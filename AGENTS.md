@@ -4,7 +4,7 @@ Orientation for agents and human contributors landing on `dome/`. This is the **
 
 ## What this repo is
 
-A TypeScript SDK on Bun — the four-concept Dome core (**Vault, Proposal, Processor, Effect**), the fixed-point adoption engine, the Bun.sqlite-backed projection store + run ledger + outbox, the capability broker, the first-party `dome.*` extension bundles, and a Commander-based CLI. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate. MCP / HTTP / mobile adapters remain planned protocol surfaces, not shipped v1 dependencies.
+A TypeScript SDK on Bun — the four-concept Dome core (**Vault, Proposal, Processor, Effect**), the fixed-point adoption engine, the Bun.sqlite-backed projection store + run ledger + outbox, the capability broker, the first-party `dome.*` extension bundles, and a Commander-based CLI. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate. An MCP stdio adapter ships as a companion entrypoint (`dome mcp`, `src/mcp/`) outside the core import graph; HTTP / mobile adapters remain planned protocol surfaces.
 
 The canonical substrate map is `docs/index.md`. Every spec, invariant, matrix, and gotcha is linked from there. **Read the substrate before changing code.**
 
