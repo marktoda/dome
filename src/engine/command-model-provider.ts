@@ -20,6 +20,14 @@ const PROBE_SCHEMA = "dome.model-provider.probe/v1";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 8_000;
 
+/**
+ * Grace between the probe deadline's SIGTERM and the SIGKILL escalation.
+ * The prober awaits `proc.exited`, so a SIGTERM-trapping provider script
+ * would otherwise hang `dome doctor` forever. This is a probe — there is
+ * nothing worth a long graceful shutdown.
+ */
+const PROBE_KILL_GRACE_MS = 500;
+
 type CommandModelStepRequest = {
   readonly schema: typeof STEP_REQUEST_SCHEMA;
   readonly messages: ModelStepRequest["messages"];
@@ -109,9 +117,15 @@ export async function probeCommandModelProvider(
   }
 
   let timedOut = false;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = setTimeout(() => {
     timedOut = true;
     proc.kill();
+    // SIGTERM is advisory; a trapping/ignoring script would leave us awaiting
+    // `proc.exited` forever. Escalate to SIGKILL after a short grace.
+    killTimer = setTimeout(() => {
+      proc.kill("SIGKILL");
+    }, PROBE_KILL_GRACE_MS);
   }, timeoutMs);
 
   try {
@@ -144,6 +158,7 @@ export async function probeCommandModelProvider(
     });
   } finally {
     clearTimeout(timeout);
+    if (killTimer !== undefined) clearTimeout(killTimer);
   }
 }
 

@@ -146,6 +146,29 @@ setTimeout(() => {}, 60_000); // keep the event loop alive, never answer
       expect(result.detail).toContain("250ms");
     }
   });
+
+  test("timed-out: a SIGTERM-trapping command is SIGKILLed instead of hanging the probe", async () => {
+    // A provider that ignores SIGTERM and never answers. Without the
+    // SIGKILL escalation, `await proc.exited` would never resolve and
+    // `dome doctor` would hang forever.
+    const providerPath = writeProvider(`
+process.on("SIGTERM", () => {});
+await Bun.stdin.text();
+setInterval(() => {}, 1_000); // keep alive indefinitely
+`);
+    const started = Date.now();
+    const result = await probeCommandModelProvider(
+      {
+        kind: "command",
+        command: [process.execPath, providerPath],
+      },
+      { timeoutMs: 250 },
+    );
+    expect(result.status).toBe("timed-out");
+    // 250ms deadline + 500ms SIGKILL grace, with slack for a slow runner —
+    // the load-bearing assertion is that this resolves at all, promptly.
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
 });
 
 function writeProvider(source: string): string {
