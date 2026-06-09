@@ -11,12 +11,14 @@ describe("default page-type registry", () => {
       "metadata",
       "name",
       "status",
+      "superseded_by",
     ]);
     expectOptionalFields("concept", [
       "description",
       "metadata",
       "name",
       "status",
+      "superseded_by",
     ]);
     expectOptionalFields("source", [
       "author",
@@ -26,6 +28,8 @@ describe("default page-type registry", () => {
       "metadata",
       "name",
       "published",
+      "status",
+      "superseded_by",
       "url",
     ]);
     expectOptionalFields("synthesis", [
@@ -36,6 +40,7 @@ describe("default page-type registry", () => {
       "name",
       "processor",
       "status",
+      "superseded_by",
     ]);
   });
 });

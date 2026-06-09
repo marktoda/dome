@@ -68,12 +68,14 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       metadata: "optional",
       name: "optional",
       status: "optional",
+      superseded_by: "optional",
     }),
     pageTypeDeclaration("concept", "dome.default", {
       description: "optional",
       metadata: "optional",
       name: "optional",
       status: "optional",
+      superseded_by: "optional",
     }),
     pageTypeDeclaration("source", "dome.default", {
       author: "optional",
@@ -83,6 +85,8 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       metadata: "optional",
       name: "optional",
       published: "optional",
+      status: "optional",
+      superseded_by: "optional",
       url: "optional",
     }),
     pageTypeDeclaration("synthesis", "dome.default", {
@@ -93,6 +97,7 @@ export const DEFAULT_PAGE_TYPE_DECLARATIONS: ReadonlyArray<PageTypeDeclaration> 
       name: "optional",
       processor: "optional",
       status: "optional",
+      superseded_by: "optional",
     }),
   ]);
 
