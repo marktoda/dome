@@ -446,8 +446,12 @@ three envelopes of the command-provider protocol:
 
 Cost accounting: the template reports `costUsd` computed from the response's
 token usage via a built-in per-MTok price table for the known Claude model
-families, overridable with `ANTHROPIC_INPUT_COST_PER_MTOK` /
-`ANTHROPIC_OUTPUT_COST_PER_MTOK`. Reporting cost by default is what makes the
+families (explicit per-version prefixes — pricing differs *within* a family,
+e.g. opus 4.0/4.1 vs 4.5+ — and unknown models honestly omit `costUsd`
+rather than guessing), overridable with `ANTHROPIC_INPUT_COST_PER_MTOK` /
+`ANTHROPIC_OUTPUT_COST_PER_MTOK`. The template forwards `temperature` only
+when the request envelope supplied one — it never invents a sampling default
+(some models reject sampling parameters). Reporting cost by default is what makes the
 engine-side `maxDailyCostUsd` capability caps ([[wiki/specs/capabilities]]
 §"model.invoke") effective out of the box. Abort semantics need no
 template-side handling: the engine kills the spawned command when the

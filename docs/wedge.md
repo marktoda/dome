@@ -112,6 +112,10 @@ The daemon must survive reboots and require zero babysitting.
   `.dome/state/serve.log` (gitignored).
 - `dome status` reports service state (installed / running / stale) and the
   scheduler's last-fired cursor so a dead daemon is visible, not silent.
+  Shipped as `dome install --status` (installed/loaded probe; a loaded
+  service also writes the serve heartbeat `dome status` already reads);
+  surfacing installed-but-dead state directly inside `dome status` is
+  deferred as a Phase 1 follow-up.
 - Spec: [[wiki/specs/cli]] gains the command section; daemon lifecycle
   documented in [[wiki/specs/harnesses]] or a new `service` spec page.
 - Acceptance: after `dome install`, a reboot later, the 06:00 daily-note

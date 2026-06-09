@@ -1,7 +1,7 @@
 ---
 type: linter
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-09
 status: v1 (proposed; lockstep check ships in Phase 1 of implementation)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
@@ -46,10 +46,15 @@ The check is a regex sweep over `src/**/*.ts` outside `src/engine/`, `src/projec
 - The whitelisted `src/watcher.ts` (which calls `fs.stat` and `fs.watch`, both read-only).
 - Host-level CLI scaffolding at the compiler boundary, whitelisted as
   `ALLOWED_FILES` in the shipped check: `src/cli/commands/init.ts` (vault
-  construction) and `src/cli/commands/install.ts` (launchd LaunchAgent plist
-  under `~/Library/LaunchAgents/` + the gitignored `.dome/state/` log dir).
-  These write host/vault scaffolding, never adopted vault content — engine
-  writes still flow through Proposals.
+  construction), `src/cli/commands/install.ts` (launchd LaunchAgent plist
+  under `~/Library/LaunchAgents/` + the gitignored `.dome/state/` log dir),
+  and `src/cli/commands/capture.ts` (the human-side write path: `dome
+  capture` writes one raw capture file and lands it as an ordinary
+  trailer-less commit, exactly like a text editor + `git commit`; not an
+  engine write path — the daemon constructs the Proposal from the resulting
+  branch drift). These write host/vault scaffolding or human-side captures,
+  never engine-applied vault content — engine writes still flow through
+  Proposals.
 - Files annotated with `// @engine-internal: <justification>` at the top.
 
 ## Why this exists

@@ -40,7 +40,7 @@ dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
-dome install [--vault <path>] [--status] [--json]
+dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]
                                 Install `dome serve` for this vault as a macOS launchd
                                 LaunchAgent (ambient compiler host; survives reboots).
 dome uninstall [--vault <path>] [--json]
@@ -234,26 +234,37 @@ The target path is `inbox/raw/<YYYY-MM-DD-HHmm>-<slug>.md`:
 - `<slug>` is derived from `--title` when given, else from the capture's first
   line (skipping any leading frontmatter block and `#` heading markers): up to
   six words, lowercased, non-`[a-z0-9]` runs collapsed to `-`, capped at 48
-  chars, falling back to `capture` when nothing survives sanitization.
+  chars, falling back to `capture` when nothing survives sanitization. An
+  explicit `--title` gets the same single-line normalization as a derived
+  title before any use: whitespace runs (including newlines) collapse to
+  single spaces and the result is capped at 80 chars, so a title cannot
+  inject extra lines — including `Dome-*` trailer-shaped ones — into the
+  commit message.
 - Collisions disambiguate deterministically: if the target path already exists
   in the working tree, `-2` is appended, then `-3`, and so on.
 
 The written file is the documented raw-capture shape (normative in
 [[wiki/specs/capture]] §"Raw capture file shape"): a frontmatter block with
 `captured:` (ISO-8601 UTC instant) and `source: cli` (plus `title:` when
-`--title` was given), then the capture body verbatim. No `type:` field —
+`--title` was given), then the capture body trimmed of surrounding
+whitespace. No `type:` field —
 `inbox/` roots may omit frontmatter typing per [[wiki/specs/page-schema]], and
 the file is ephemeral (ingest archives it to `inbox/processed/`).
 
 The commit is a **human write**, not an engine write: an ordinary commit with
 message `capture: <title>` and **no `Dome-*` trailers** (per
 [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]], the daemon constructs
-the Proposal from branch drift — capture never talks to the engine). Exactly
+the Proposal from branch drift — capture never talks to the engine). The
+commit author is `dome capture <dome-capture@local>`. Exactly
 one path changes in the commit: a dirty working tree, including
 already-staged-but-uncommitted changes, is **not** swept into the capture
 commit. The commit is built against the HEAD tree plus the single capture
 blob through the `src/git.ts` isomorphic-git boundary, so other staged work
-stays staged and other dirty files stay dirty.
+stays staged and other dirty files stay dirty. The branch ref advance is
+compare-and-swap: when a running serve host adopts (and moves the branch)
+between capture's HEAD read and its ref write, the capture commit is rebuilt
+on the new head and retried (bounded), instead of force-moving the branch
+backwards past the engine's closure commit.
 
 `dome capture` returns as soon as the commit lands — it does not wait for
 adoption. Text output prints the vault-relative path, the commit, and a hint
@@ -291,6 +302,11 @@ Preconditions: the vault must be an initialized Dome vault — a git repository
 with `.dome/config.yaml` present — with at least one commit and a non-detached
 HEAD (the adopted-ref substrate needs a branch). Each violation is a usage
 error (exit 64) with a pointer at `dome init` or `dome sync`.
+
+`--bundles-root <path>` is accepted for harness compatibility (test harnesses
+and agent wrappers append it to every CLI invocation, like the runtime-opening
+commands' shared flag) and ignored: capture never loads bundles or opens the
+runtime.
 
 Exit codes: 0 on success; 64 (EX_USAGE) on empty input, text+`--file`
 conflict, TTY-with-no-input, uninitialized vault, no commits, or detached
@@ -1356,7 +1372,10 @@ distinguishes five outcomes:
   reported separately from reachability.
 - **probe-unsupported** — the command started, read the envelope, and exited
   non-zero (e.g. a hand-written pre-probe provider rejecting an unknown
-  schema). Treated as alive; no finding.
+  schema). Treated as alive; no finding. Text output still renders a muted
+  "Model provider" info line with the exit code and stderr excerpt — a
+  crashed provider answers exactly like a pre-probe one, so the outcome must
+  be visible even though it is not classified as a failure.
 - **spawn-failed** — the command could not be started at all. Raises a
   `model.provider-unreachable` error finding.
 - **invalid-response** — exit 0 but stdout was not a valid probe response.
@@ -1543,7 +1562,7 @@ The scheduled-trigger dispatcher for garden processors is wired through the same
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 
-### `dome install [--vault <path>] [--status] [--json]`
+### `dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]`
 
 Makes the local compiler host **ambient** on macOS: generates a launchd
 LaunchAgent that runs `dome serve` for the vault at login, keeps it alive
@@ -1562,18 +1581,39 @@ Composition (v1.0):
 2. On non-macOS platforms, refuse with exit 1 and the message "launchd service
    install is macOS-only; run `dome serve` under your service manager". No
    plist is written and no service manager is touched.
-3. Ensure `<vault>/.dome/state/` exists — the service log directory, already
+3. Precondition: the target must be an initialized Dome vault — a git
+   repository with `.dome/config.yaml` present (same refusal style as `dome
+   capture`, exit 64). Without the gate, installing against an arbitrary
+   directory would scaffold `.dome/state/` there and load a KeepAlive
+   service that crashloops forever.
+4. Ensure `<vault>/.dome/state/` exists — the service log directory, already
    gitignored by the `dome init` scaffold.
-4. Write `~/Library/LaunchAgents/<label>.plist` with:
+5. Write `~/Library/LaunchAgents/<label>.plist` with:
    - `Label` — the service label;
    - `ProgramArguments` — `[<bun>, <SDK>/bin/dome, "serve", "--vault",
      <vaultPath>]`, where `<bun>` is the absolute bun runtime executing the
      install (`process.execPath`) and the dome entry script is resolved from
      the installed SDK, mirroring how `dome serve --daemon` re-invokes itself;
+   - `EnvironmentVariables` — always a `PATH` whose first entry is the
+     directory of the installing bun runtime, followed by the standard dirs
+     (`/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`).
+     launchd gui agents otherwise get a bare
+     `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, which cannot resolve a
+     Homebrew/`~/.bun` bun — and the serve host must spawn provider commands
+     like `["bun", ".dome/model-provider.ts"]`. Additional entries come from
+     `--env-file <path>` (KEY=VALUE lines; blank lines and `#` comments
+     skipped) then repeatable `--env KEY=VALUE` flags (flags win on the same
+     key), e.g. credentials such as `ANTHROPIC_API_KEY`. All keys and values
+     are XML-escaped into the plist. Malformed entries are usage errors
+     (exit 64). Note that re-running `dome install` rebuilds the plist from
+     the flags passed *that* run — env entries are not remembered across
+     re-installs — and values live in plain text in the plist; `launchctl
+     setenv` is the alternative for environment that should live outside the
+     plist;
    - `WorkingDirectory` — the vault path;
    - `RunAtLoad` and `KeepAlive` — `true`;
    - `StandardOutPath` / `StandardErrorPath` — `<vault>/.dome/state/serve.log`.
-5. `launchctl bootout gui/<uid>/<label>` first (failure ignored when the
+6. `launchctl bootout gui/<uid>/<label>` first (failure ignored when the
    service is not currently loaded), then `launchctl bootstrap gui/<uid>
    <plist>`. The bootout-first shape makes re-runs replace the loaded service
    definition cleanly: re-running `dome install` after moving the SDK or
@@ -1608,8 +1648,10 @@ and a recording fake runner; they never touch `~/Library` or invoke real
 `launchctl`.
 
 Exit codes: 0 on success (including idempotent re-install and clean
-`--status` reads); 1 on non-macOS platform, undeterminable uid, `launchctl
-bootstrap` failure, or unexpected I/O failure.
+`--status` reads); 64 (EX_USAGE) on an uninitialized vault (missing git repo
+or `.dome/config.yaml`) or a malformed `--env`/`--env-file` entry; 1 on
+non-macOS platform, undeterminable uid, `launchctl bootstrap` failure, or
+unexpected I/O failure.
 
 ### `dome uninstall [--vault <path>] [--json]`
 
