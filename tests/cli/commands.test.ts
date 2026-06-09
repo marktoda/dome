@@ -3366,7 +3366,163 @@ describe("runDoctor", () => {
       "--orphan-threshold-ms must be a non-negative integer",
     );
   });
+
+  // ----- model-provider probe ------------------------------------------------
+  //
+  // Per docs/wiki/specs/cli.md §"dome doctor": when .dome/config.yaml carries
+  // a model_provider command stanza, doctor probes it with a cheap
+  // dome.model-provider.probe/v1 envelope and reports reachability and
+  // key-presence as separate findings.
+
+  test("probe: configured and responsive provider with key present reports ok", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorProviderConfig(f, `
+const request = JSON.parse(await Bun.stdin.text());
+if (request.schema !== "dome.model-provider.probe/v1") {
+  console.error("unexpected schema");
+  process.exit(2);
+}
+console.log(JSON.stringify({
+  schema: "dome.model-provider.probe/v1",
+  ok: true,
+  provider: "anthropic",
+  keyPresent: true,
+}));
+`);
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const parsed = doctorJson();
+    expect(parsed.status).toBe("ok");
+    expect(parsed.summary.modelProviderUnreachable).toBe(0);
+    expect(parsed.summary.modelProviderKeyMissing).toBe(0);
+  });
+
+  test("probe: responsive provider without a key raises model.provider-key-missing", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorProviderConfig(f, `
+const key = process.env.DOME_TEST_DOCTOR_PROBE_KEY;
+console.log(JSON.stringify({
+  schema: "dome.model-provider.probe/v1",
+  ok: true,
+  provider: "anthropic",
+  keyPresent: key !== undefined && key.length > 0,
+}));
+`);
+    delete process.env.DOME_TEST_DOCTOR_PROBE_KEY;
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const parsed = doctorJson();
+    expect(parsed.status).toBe("unhealthy");
+    expect(parsed.summary.modelProviderKeyMissing).toBe(1);
+    expect(parsed.summary.modelProviderUnreachable).toBe(0);
+    const finding = parsed.findings.find(
+      (row) => row.code === "model.provider-key-missing",
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.message).toContain("credential");
+    expect(finding?.recovery).toContain("ANTHROPIC_API_KEY");
+  });
+
+  test("probe: unspawnable provider command raises model.provider-unreachable", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(f, [
+      "model_provider:",
+      "  kind: command",
+      "  command: [\"/nonexistent/dome-test-provider\"]",
+      "extensions: {}",
+      "",
+    ].join("\n"));
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const parsed = doctorJson();
+    expect(parsed.status).toBe("unhealthy");
+    expect(parsed.summary.modelProviderUnreachable).toBe(1);
+    const finding = parsed.findings.find(
+      (row) => row.code === "model.provider-unreachable",
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe("error");
+    expect(finding?.message).toContain("spawn-failed");
+    expect(finding?.recovery).toContain("dome.model-provider.probe/v1");
+  });
+
+  test("probe: pre-probe provider (non-zero exit) is treated as alive — no finding", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorProviderConfig(f, `
+await Bun.stdin.text();
+console.error("unsupported Dome model provider request schema");
+process.exit(1);
+`);
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const parsed = doctorJson();
+    expect(parsed.summary.modelProviderUnreachable).toBe(0);
+    expect(parsed.summary.modelProviderKeyMissing).toBe(0);
+  });
 });
+
+type DoctorProbeJson = {
+  readonly status: string;
+  readonly summary: {
+    readonly modelProviderMissing: number;
+    readonly modelProviderUnreachable: number;
+    readonly modelProviderKeyMissing: number;
+  };
+  readonly findings: ReadonlyArray<{
+    readonly code: string;
+    readonly severity: string;
+    readonly message: string;
+    readonly recovery: string;
+  }>;
+};
+
+function doctorJson(): DoctorProbeJson {
+  const blob = captured.out.find((line) => line.includes("\"status\""));
+  if (blob === undefined) throw new Error("expected doctor --json output");
+  return JSON.parse(blob) as DoctorProbeJson;
+}
+
+/** Doctor fixture with a model_provider command stanza pointing at a
+ * vault-local scripted provider (run via the test runtime's bun binary). */
+async function writeDoctorProviderConfig(
+  f: Fixture,
+  providerSource: string,
+): Promise<void> {
+  const providerPath = join(f.vaultPath, ".dome", "provider.js");
+  await writeFile(providerPath, providerSource, "utf8");
+  await writeDoctorConfigBody(f, [
+    "model_provider:",
+    "  kind: command",
+    `  command: [${JSON.stringify(process.execPath)}, ".dome/provider.js"]`,
+    "extensions: {}",
+    "",
+  ].join("\n"));
+}
+
+async function writeDoctorConfigBody(f: Fixture, body: string): Promise<void> {
+  await writeFile(join(f.vaultPath, ".dome", "config.yaml"), body, "utf8");
+  await writeFile(
+    join(f.vaultPath, "AGENTS.md"),
+    [
+      "# This is a Dome vault.",
+      "",
+      "<!-- BEGIN user-prose -->",
+      "<!-- END user-prose -->",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(join(f.vaultPath, "CLAUDE.md"), "@AGENTS.md\n", "utf8");
+}
 
 async function writeDoctorConfig(f: Fixture): Promise<void> {
   await writeFile(

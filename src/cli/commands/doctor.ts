@@ -8,11 +8,13 @@
 
 import { basename, resolve } from "node:path";
 
+import { probeCommandModelProvider } from "../../engine/command-model-provider";
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
   type HealthReport,
+  type ModelProviderProbeInput,
 } from "../../engine/health";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
@@ -88,6 +90,21 @@ export async function runDoctor(
   const runtime = runtimeResult.value;
 
   try {
+    // Probe the configured command model provider with a cheap
+    // dome.model-provider.probe/v1 envelope (no network / paid API call on a
+    // conforming provider). Doctor is the probe verb — `dome check` reuses
+    // the same HealthReport machinery without spawning the provider.
+    const providerConfig = runtime.config.modelProvider;
+    let modelProviderProbe: ModelProviderProbeInput | undefined;
+    if (providerConfig !== undefined) {
+      modelProviderProbe = {
+        command: providerConfig.command,
+        result: await probeCommandModelProvider(providerConfig, {
+          cwd: runtime.path,
+        }),
+      };
+    }
+
     const report = await collectHealthReport({
       vaultPath: runtime.path,
       projection: runtime.projectionDb,
@@ -100,6 +117,7 @@ export async function runDoctor(
       registry: runtime.registry,
       resolveGrants: runtime.resolveGrants,
       modelProviderConfigured: runtime.modelProvider !== undefined,
+      ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {
@@ -157,7 +175,9 @@ function printDoctorText(report: HealthReport, vaultPath: string): void {
                 `instructions ${report.summary.instructionDrift} · ` +
                 `storage ${report.summary.operationalSchemaMismatch} · ` +
                 `grants ${report.summary.capabilityGrantGaps} · ` +
-                `model ${report.summary.modelProviderMissing}`,
+                `model ${report.summary.modelProviderMissing} missing · ` +
+                `${report.summary.modelProviderUnreachable} unreachable · ` +
+                `${report.summary.modelProviderKeyMissing} keyless`,
             },
           ],
           caps,

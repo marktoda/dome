@@ -26,6 +26,7 @@ import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha, isAncestor } from "../git";
 import type { Capability } from "../core/processor";
 import type { ProcessorRegistry } from "../processors/registry";
+import type { ModelProviderProbeResult } from "./command-model-provider";
 
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
 export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
@@ -182,6 +183,31 @@ export type HealthFinding =
       readonly model: {
         readonly processorIds: ReadonlyArray<string>;
       };
+    }
+  | {
+      readonly code: "model.provider-unreachable";
+      readonly severity: "error";
+      readonly subject: "config";
+      readonly id: "model_provider";
+      readonly message: string;
+      readonly recovery: string;
+      readonly model: {
+        readonly command: ReadonlyArray<string>;
+        readonly probeStatus: "spawn-failed" | "invalid-response" | "timed-out";
+        readonly detail: string;
+      };
+    }
+  | {
+      readonly code: "model.provider-key-missing";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: "model_provider";
+      readonly message: string;
+      readonly recovery: string;
+      readonly model: {
+        readonly command: ReadonlyArray<string>;
+        readonly provider?: string;
+      };
     };
 
 export type HealthSummary = {
@@ -199,6 +225,18 @@ export type HealthSummary = {
   readonly operationalSchemaMismatch: number;
   readonly capabilityGrantGaps: number;
   readonly modelProviderMissing: number;
+  readonly modelProviderUnreachable: number;
+  readonly modelProviderKeyMissing: number;
+};
+
+/**
+ * Result of the doctor-side model provider probe, supplied by the caller
+ * (the probe spawns the configured provider command, so it lives at the
+ * `dome doctor` boundary, not inside this read-only module).
+ */
+export type ModelProviderProbeInput = {
+  readonly command: ReadonlyArray<string>;
+  readonly result: ModelProviderProbeResult;
 };
 
 export type HealthReport = {
@@ -228,6 +266,7 @@ export async function collectHealthReport(opts: {
     processorId: string,
   ) => ReadonlyArray<Capability>;
   readonly modelProviderConfigured?: boolean;
+  readonly modelProviderProbe?: ModelProviderProbeInput;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -268,11 +307,16 @@ export async function collectHealthReport(opts: {
           resolveGrants: opts.resolveGrants,
           modelProviderConfigured: opts.modelProviderConfigured === true,
         });
+  const modelProviderProbe =
+    opts.modelProviderProbe === undefined
+      ? []
+      : modelProviderProbeFindings(opts.modelProviderProbe);
 
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
     ...modelProvider,
+    ...modelProviderProbe,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -322,6 +366,8 @@ function buildHealthReport(
       operationalSchemaMismatch: count("operational.schema-mismatch"),
       capabilityGrantGaps: count("capability.grant-missing"),
       modelProviderMissing: count("model.provider-missing"),
+      modelProviderUnreachable: count("model.provider-unreachable"),
+      modelProviderKeyMissing: count("model.provider-key-missing"),
     }),
     findings: Object.freeze([...findings]),
   });
@@ -405,6 +451,83 @@ function modelProviderFindings(opts: {
       }),
     }),
   ]);
+}
+
+/**
+ * Translate a doctor-side provider probe into findings. Per
+ * docs/wiki/specs/cli.md §"dome doctor":
+ *
+ * - `responsive` with `keyPresent: false` → `model.provider-key-missing`
+ *   (warning) — reachability and credential presence are reported
+ *   separately.
+ * - `spawn-failed` / `invalid-response` / `timed-out` →
+ *   `model.provider-unreachable` (error).
+ * - `responsive` with key present and `probe-unsupported` (a pre-probe
+ *   provider that started, read the envelope, and returned a well-formed
+ *   error) → no finding.
+ */
+function modelProviderProbeFindings(
+  probe: ModelProviderProbeInput,
+): ReadonlyArray<HealthFinding> {
+  const command = Object.freeze([...probe.command]);
+  const result = probe.result;
+  if (
+    result.status === "spawn-failed" ||
+    result.status === "invalid-response" ||
+    result.status === "timed-out"
+  ) {
+    return Object.freeze([
+      Object.freeze({
+        code: "model.provider-unreachable" as const,
+        severity: "error" as const,
+        subject: "config" as const,
+        id: "model_provider" as const,
+        message:
+          `The configured model provider command (${command.join(" ")}) ` +
+          `failed the dome.model-provider.probe/v1 probe: ` +
+          `${result.status} — ${result.detail}`,
+        recovery:
+          "Run the command manually from the vault root with a probe " +
+          'envelope (echo \'{"schema":"dome.model-provider.probe/v1"}\' | ' +
+          "<command>) to reproduce, fix the script or the model_provider " +
+          "command in .dome/config.yaml, then re-run `dome doctor`.",
+        model: Object.freeze({
+          command,
+          probeStatus: result.status,
+          detail: result.detail,
+        }),
+      }),
+    ]);
+  }
+  if (result.status === "responsive" && result.keyPresent === false) {
+    return Object.freeze([
+      Object.freeze({
+        code: "model.provider-key-missing" as const,
+        severity: "warning" as const,
+        subject: "config" as const,
+        id: "model_provider" as const,
+        message:
+          `The configured model provider command (${command.join(" ")}) is ` +
+          "spawnable and probe-responsive, but reports its credential " +
+          "environment variable is not set" +
+          (result.provider === undefined
+            ? "."
+            : ` (provider: ${result.provider}).`),
+        recovery:
+          "Export the provider's API key (ANTHROPIC_API_KEY for the shipped " +
+          "anthropic template) in the environment that runs `dome serve` / " +
+          "`dome sync` — for a `dome install`ed daemon that means the " +
+          "launchd service environment — then re-run `dome doctor`.",
+        model: Object.freeze({
+          command,
+          ...(result.provider !== undefined
+            ? { provider: result.provider }
+            : {}),
+        }),
+      }),
+    ]);
+  }
+  return Object.freeze([]);
 }
 
 function formatList(values: ReadonlyArray<string>): string {
