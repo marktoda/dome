@@ -337,6 +337,7 @@ scenario(
         id: "model_provider",
         model: {
           processorIds: [
+            "dome.agent.consolidate",
             "dome.agent.ingest",
           ],
         },

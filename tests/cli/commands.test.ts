@@ -1097,11 +1097,11 @@ describe("runInspect", () => {
     const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
     expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 2,
+        processors: 3,
         adoption: 0,
-        garden: 2,
+        garden: 3,
         view: 0,
-        model_processors: 1,
+        model_processors: 2,
         model: "granted-no-provider",
       }),
     );
@@ -1213,8 +1213,9 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(2);
+    expect(modelProcessors.length).toBe(3);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
+      "dome.agent.consolidate",
       "dome.agent.ingest",
       "dome.warden.integrity",
     ]);
@@ -1394,9 +1395,9 @@ describe("runInspect", () => {
         loaded: false,
         inventory: "manifest",
         version: "0.1.0",
-        processors: 2,
-        garden: 2,
-        model_processors: 1,
+        processors: 3,
+        garden: 3,
+        model_processors: 2,
         model: "disabled-no-provider",
       }),
     );
@@ -1456,7 +1457,7 @@ describe("runInspect", () => {
         bundle: "dome.agent",
         status: "disabled",
         loaded: false,
-        model_processors: 1,
+        model_processors: 2,
         model: "disabled-no-provider",
       }),
       expect.objectContaining({
