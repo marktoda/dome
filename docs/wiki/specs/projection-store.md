@@ -380,9 +380,9 @@ the projection as stale so the host/CLI can rebuild from adopted markdown.
 
 This is what [[wiki/gotchas/projection-schema-skew]] documents — and the automatic rebuild is the mitigation. The user never edits schemas; they just see a "rebuilding..." message after a SDK upgrade.
 
-## Query API (the view-phase reading surface)
+## Query API (the view-phase and garden-phase reading surface)
 
-View-phase processors read from the projection store via the query API exposed in `ProcessorContext`:
+View-phase processors (and, since the morning-brief work, garden-phase processors — both run over adopted state) read from the projection store via the query API exposed in `ProcessorContext`; adoption-phase processors never receive it:
 
 ```ts
 interface ProjectionQueryView {

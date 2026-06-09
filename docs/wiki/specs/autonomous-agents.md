@@ -1,16 +1,17 @@
 ---
 type: spec
 created: 2026-06-08
-updated: 2026-06-08
+updated: 2026-06-09
 sources:
   - "[[superpowers/specs/2026-06-08-autonomous-agents-ingest-design]]"
+  - "[[wedge]]"
   - "[[wiki/specs/processors]]"
   - "[[wiki/specs/capabilities]]"
 ---
 
 # Autonomous agents
 
-This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the first agent (`dome.agent.ingest`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
+This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
 ## The agent-as-processor model
 
@@ -128,14 +129,41 @@ The stale-inbox diagnostic processor (`inbox.stale` warning after 168 h) was pre
 
 ## `dome.agent.consolidate` — the second agent
 
-The consolidator is the **contractive counterweight** to ingest: a weekly vault-janitor that keeps the knowledge graph from sprawling. It is a second `AgentDefinition` on the same framework — no new primitive.
+The consolidator is the **contractive counterweight** to ingest: a nightly vault-janitor that keeps the knowledge graph from sprawling. It is a second `AgentDefinition` on the same framework — no new primitive.
 
-- **Trigger:** `schedule` only (`0 4 * * 1`). It runs **one agent loop per tick** over the whole vault (no per-source iteration). There is intentionally **no `command` trigger** — command triggers are view-phase/read-only, and the consolidator is a writing garden processor; on-demand garden invocation is future work.
+- **Trigger:** `schedule` only (`0 2 * * *`, nightly — promoted from the original weekly `0 4 * * 1` cadence by the [[wedge]] phase-4 sleep-time-compute loop). It runs **one agent loop per tick** (no per-source iteration). There is intentionally **no `command` trigger** — command triggers are view-phase/read-only, and the consolidator is a writing garden processor; on-demand garden invocation is future work.
+- **Charter scope: recent drift, not whole-vault sweeps.** Nightly cadence multiplies the janitor's blast radius, so the charter bounds each run to what drifted since the ledger's last recorded run: recently-touched pages (via `log.md` and the ledger's last-run date) plus newly ingested captures. The original weekly coverage-cursor crawl over the whole vault is retired; a run that finds no recent drift converges as a no-op.
 - **Scope (contractive):** (1) merge duplicate / near-duplicate pages into one canonical page (hard-delete the absorbed page + rewrite every inbound `[[wikilink]]`), and (2) tidy within-page append-drift into one coherent page. It does **not** reorganize, split, or re-home content.
 - **Posture:** auto-merge + commit, with one guardrail — merges are **lossless for source-grounded facts** (fuse, never drop), and a **genuinely ambiguous** merge raises a `QuestionEffect` (`askOwner`) instead of guessing. Confident cases are automatic; only the rare ambiguous one asks.
 - **Navigation, not whole-vault reads:** the agent's "map" is the vault's own `index.md` (catalog) + `log.md` (history); it `searchVault`s for suspects and `readPage`s only the finalist cluster. There is no bespoke candidate-finder — judgment is the agent's, the tools are general primitives (`readPage`, `listPages`, `searchVault`, `writePage`, the new `deletePage`, `askOwner`).
-- **Cross-run memory:** a top-level `consolidation-ledger.md` (sibling of `log.md`, outside `wiki/`) records merges done, pairs judged *not* duplicates (so they're never re-litigated), and a coverage cursor — turning vault coverage from a context problem into a *time* problem (convergence over weekly passes). Bounded per run (`maxSteps: 50`, `maxDailyCostUsd: 10`); a single cumulative `PatchEffect` per run.
+- **Cross-run memory:** a ledger file (default top-level `consolidation-ledger.md`, sibling of `log.md`, outside `wiki/`) records each run's date (the recency cutoff for the next run), merges done, and pairs judged *not* duplicates (so they're never re-litigated). The path is configurable via `extensions.dome.agent.config.consolidation_ledger_path` (a relative vault `.md` path; default `consolidation-ledger.md`). A custom path requires matching `read` + `patch.auto` grant entries in `.dome/config.yaml` — grants are static globs, so the processor cannot widen its own write boundary by config.
+- **Per-run caps (hard):** `maxSteps: 50`, `maxDailyCostUsd: 10`, and a hard patch cap of **30 changed files per run** enforced in processor code — a run whose accumulated edits exceed the cap is rolled back entirely (questions survive; a `dome.agent.consolidate-overreach` warning diagnostic is emitted). A single cumulative `PatchEffect` per run.
+- **Atomic per run:** a mid-run throw can leave a half-done merge (page deleted before its inbound links were rewritten), so the consolidator drops all partial edits on throw and emits only a `dome.agent.consolidate-failed` diagnostic. Budget truncation is not a throw — its partial work is intended and lands with a truncation diagnostic.
 - **Grant:** `read` + `patch.auto` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`; `model.invoke`; `question.ask`. **Not `graph.write`.**
+
+## `dome.agent.brief` — the third agent (morning brief)
+
+The brief composer is the [[wedge]] phase-4 push surface: sleep-time compute aimed at the one perfectly predictable query. It composes the morning brief **into today's daily note as small generated blocks** — never a separate document (extends [[v1]] decision 1 and wedge decision 3).
+
+- **Phase / kind:** garden, `kind: llm`. **Trigger:** `schedule` only (`30 5 * * *`).
+- **Ordering with `dome.daily`:** the brief fires at 05:30; `dome.daily.create-daily` fires at 06:00. The brief does not depend on the daily existing — when today's note is absent it creates the same skeleton through `dome.daily`'s shared `renderDailySkeleton` + start-context helpers, so `create-daily` later finds the file and no-ops. The brief's adopted patch emits `file.created`/`document.changed` signals, which trigger `dome.daily.carry-forward` to raise the **ranked open-loops surface** — the brief deliberately does not re-derive open-loop ranking; that block stays owned by carry-forward.
+- **Block ownership is disjoint:** `dome.daily` owns its marker blocks (`dome.daily:start-context`, `dome.daily:open-loops`, `dome.daily:carried-forward`); the brief owns three `dome.agent.brief:*` marker blocks. No two processors write the same region.
+
+**The three brief blocks** (plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks):
+
+| Block | Placement | Content | Writer |
+|---|---|---|---|
+| `dome.agent.brief:yesterday` | under `## Start Here` | outcomes, decisions, unfinished threads from yesterday's daily + recently adopted pages; every bullet cites `(from [[path]])` | model (spliced) |
+| `dome.agent.brief:meetings` | under `## Meetings` | one bullet per meeting from `sources/calendar/<today>.md` (time — title) with a one-line context digest from vault recall (people, projects, prior decisions), citing the calendar file and the recalled pages | model (spliced) |
+| `dome.agent.brief:questions` | under `## Start Here`, after the yesterday block | the open Dome questions batch from `ctx.projection.questions({ resolved: false })`, rendered with durable row ids and `dome resolve <id> <value>` hints | processor (deterministic — the model never writes question ids) |
+
+- **Grounding rule (hard, enforced in code):** after the loop, the processor splices **only the model-filled brief blocks** back into the deterministic pre-run content — model writes outside the markers (or to any file other than the daily note) never land (out-of-scope edits are dropped with a `dome.agent.brief-out-of-scope` warning). Inside the spliced blocks, any bullet carrying no `[[wikilink]]` source ref is stripped and re-emitted as a `QuestionEffect`. **Anything the model cannot ground becomes a question, not brief text.**
+- **Calendar degradation:** when `sources/calendar/<today>.md` is absent, the meetings block is omitted entirely — no empty section, no hallucinated agenda. The calendar file is **untrusted input**: the processor parses it defensively (shape per [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds") and hands the parsed meeting list to the model as data, never as instructions.
+- **Output shape:** ONE `PatchEffect(mode:"auto")` writing the daily note, plus `QuestionEffect`s (from `askOwner` and from ungrounded-bullet strips), plus a truncation diagnostic on budget exhaustion. **Atomic per run:** a mid-run throw drops all edits — including the skeleton, which `create-daily` recreates at 06:00 — and emits only a `dome.agent.brief-failed` diagnostic.
+- **Tool surface:** the ingest read tools plus the daily-note write — `readPage`, `listPages`, `searchVault`, `writePage`, `appendToPage`, `askOwner`. No `deletePage`, no `archiveSource`.
+- **Garden projection read:** the brief reads open questions through `ctx.projection`. The processor runtime threads the scoped read-only projection query view into **garden** contexts as well as view contexts (adoption stays snapshot-only for fixed-point determinism); see [[wiki/specs/processors]].
+- **Daily path:** resolved from `extensions.dome.agent.config.daily_path` with the same template rules as `dome.daily` (default `wiki/dailies/{date}.md`). A vault overriding `dome.daily`'s `daily_path` must mirror the key in `dome.agent`'s config.
+- **Grant:** `read` over `wiki/**/*.md`, `notes/**/*.md`, `index.md`, `log.md`, `sources/calendar/*.md`; `patch.auto` over `wiki/dailies/*.md` + `notes/*.md` only (the daily-path targets — the brief's write blast radius is deliberately narrower than ingest's); `model.invoke` `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25`; `question.ask`. **Not `graph.write`.**
 
 ## Related
 
@@ -150,3 +178,5 @@ The consolidator is the **contractive counterweight** to ingest: a weekly vault-
 - [[wiki/specs/capabilities]] — `model.invoke`, `patch.auto`, `question.ask`, `graph.write`
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
+- [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds" — the calendar source-file shape the brief parses
+- [[wedge]] — phase 4: nightly consolidation + morning brief as the flagship push surface
