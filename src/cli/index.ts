@@ -17,6 +17,7 @@ import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
+import { runInstall, runUninstall } from "./commands/install";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
@@ -420,6 +421,36 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("install")
+    .description("Install dome serve as a macOS launchd service for the vault.")
+    .option("--status", "Report installed/loaded service state without changes.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: InstallCliOptions) => {
+      setExitCode(
+        await runInstall({
+          vault: options.vault,
+          status: options.status,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
+    .command("uninstall")
+    .description("Boot out and remove the vault's launchd service.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: UninstallCliOptions) => {
+      setExitCode(
+        await runUninstall({
+          vault: options.vault,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("status")
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
@@ -476,6 +507,17 @@ type InitCliOptions = {
   readonly refreshInstructions?: boolean;
   readonly withModelProvider?: "anthropic";
   readonly json?: boolean;
+};
+
+type InstallCliOptions = {
+  readonly status?: boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type UninstallCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
 };
 
 type CheckCliOptions = {

@@ -45,6 +45,8 @@ describe("runCli", () => {
         "query",
         "export-context",
         "serve",
+        "install",
+        "uninstall",
       ]
     ) {
       expect(out).toContain(command);

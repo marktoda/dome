@@ -14,6 +14,9 @@ const ALLOWED_FILES = new Set([
   "src/engine-commit.ts",
   "src/git.ts",
   "src/cli/commands/init.ts",
+  // Host-level service scaffolding (launchd plist + gitignored log dir),
+  // not an engine write path — same boundary class as init.ts.
+  "src/cli/commands/install.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{
