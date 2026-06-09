@@ -8,6 +8,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
 - [[wedge]] — Product wedge plan (2026-06-09): surface-in re-sequencing of remaining work; five phases (ambient daemon, shipped model provider, capture loop, nightly consolidation + morning brief, MCP server); evolve-don't-rebuild decision of record.
+- [[memory]] — Memory-quality plan (2026-06-09): five mechanisms (BM25++ retrieval, page supersession, core.md, dismissal discounting, preference promotion) as conventions + deterministic rebuildable facts; embeddings banked as a recomputable-cache spec, miss-log gated.
 
 ## Specs
 
