@@ -106,6 +106,14 @@ processors:
           - "index.md"
           - "log.md"
           - "sources/calendar/*.md"
+          # The questions batch is scope-filtered by this read grant: a
+          # question whose sourceRefs include an unreadable path is dropped
+          # from ctx.projection.questions. Ingest's askOwner questions ref
+          # inbox/raw/*.md and consolidate's ref the consolidation ledger, so
+          # both must be readable here. A custom consolidation_ledger_path
+          # needs a matching grant (same rule as consolidate's own grant).
+          - "inbox/**/*.md"
+          - "consolidation-ledger.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
       # note (wiki/dailies default template or a notes/ daily_path override).
       - kind: patch.auto

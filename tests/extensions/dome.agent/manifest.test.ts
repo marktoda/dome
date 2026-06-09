@@ -80,9 +80,13 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(kinds).not.toContain("graph.write"); // MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS
 
     const read = brief?.capabilities.find((c) => c.kind === "read");
-    expect(read?.kind === "read" ? read.paths : []).toContain(
-      "sources/calendar/*.md",
-    );
+    const readPaths = read?.kind === "read" ? read.paths : [];
+    expect(readPaths).toContain("sources/calendar/*.md");
+    // The questions batch is scope-filtered by this grant: ingest's askOwner
+    // questions ref inbox/raw/*.md and consolidate's ref the ledger, so both
+    // must be readable or the brief silently drops agent-raised questions.
+    expect(readPaths).toContain("inbox/**/*.md");
+    expect(readPaths).toContain("consolidation-ledger.md");
     const patch = brief?.capabilities.find((c) => c.kind === "patch.auto");
     expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual(
       ["notes/*.md", "wiki/dailies/*.md"],

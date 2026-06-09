@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
+
 import brief from "../../../assets/extensions/dome.agent/processors/brief";
 import {
   groundBriefBlockBody,
   parseCalendarDay,
 } from "../../../assets/extensions/dome.agent/lib/brief-shared";
+import { FIRST_PARTY_EXTENSION_DEFAULTS } from "../../../src/cli/default-vault-config";
+import { readablePath } from "../../../src/engine/path-capabilities";
+import { parseManifest } from "../../../src/extensions/manifest-schema";
+import { scopeProjectionQueryView } from "../../../src/processors/projection-scope";
 import type {
+  Capability,
   ModelStepResult,
   ProcessorContext,
   ProjectionQueryView,
@@ -39,6 +49,7 @@ function makeCtx(opts: {
     question: string;
     options?: ReadonlyArray<string>;
   }>;
+  projectionView?: ProjectionQueryView;
 }): ProcessorContext {
   let i = 0;
   const stepImpl =
@@ -58,7 +69,8 @@ function makeCtx(opts: {
           step: stepImpl,
         }) as never);
   const projection: ProjectionQueryView | undefined =
-    opts.questions === undefined
+    opts.projectionView ??
+    (opts.questions === undefined
       ? undefined
       : ({
           facts: () => [],
@@ -79,7 +91,7 @@ function makeCtx(opts: {
             })),
           searchDocuments: () => [],
           documentsByPath: () => [],
-        } as never);
+        } as never));
   return {
     snapshot: {
       commit: "c" as never,
@@ -327,6 +339,76 @@ describe("dome.agent.brief", () => {
     );
     // Plain bullets — the questions block must not create checkbox tasks.
     expect(content).not.toContain("- [ ] Q7");
+  });
+
+  test("agent-raised questions (inbox + ledger sourceRefs) survive the brief's read-grant scope and render in the questions block", async () => {
+    // Build the SAME scoped projection view the runtime threads into garden
+    // contexts: declared := the brief's manifest read capability, granted :=
+    // the default vault grant for dome.agent. Ingest's askOwner questions ref
+    // inbox/raw/*.md and consolidate's ref the consolidation ledger — if
+    // either path falls outside declared ∩ granted, the question silently
+    // vanishes from the brief.
+    const manifestPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..", "..", "..",
+      "assets", "extensions", "dome.agent", "manifest.yaml",
+    );
+    const parsed = parseManifest(
+      parseYaml(await readFile(manifestPath, "utf8")),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.error.kind);
+    const declared = parsed.value.processors.find(
+      (p) => p.id === "dome.agent.brief",
+    )?.capabilities ?? [];
+    const defaultGrant = FIRST_PARTY_EXTENSION_DEFAULTS.find(
+      (e) => e.id === "dome.agent",
+    )?.grant.read;
+    expect(Array.isArray(defaultGrant)).toBe(true);
+    const granted: ReadonlyArray<Capability> = [
+      { kind: "read", paths: defaultGrant as ReadonlyArray<string> },
+    ];
+    const canRead = (path: string): boolean =>
+      readablePath(path, declared, granted) !== null;
+
+    const rawQuestion = (
+      id: number,
+      question: string,
+      refPath: string,
+    ): Record<string, unknown> => ({
+      kind: "question",
+      question,
+      sourceRefs: [{ commit: "c", path: refPath }],
+      idempotencyKey: `k${id}`,
+      id,
+      processorId: "test",
+      adoptedCommit: "c",
+      askedAt: "2026-06-09T05:00:00.000Z",
+      answeredAt: null,
+      answer: null,
+    });
+    const rawProjection = {
+      facts: () => [],
+      diagnostics: () => [],
+      questions: () => [
+        rawQuestion(11, "Ingest: which entity owns this capture?", "inbox/raw/x.md"),
+        rawQuestion(12, "Consolidate: merge a into b?", "consolidation-ledger.md"),
+        rawQuestion(13, "Hidden: refs an unreadable path", ".dome/state/secret.md"),
+      ],
+      searchDocuments: () => [],
+      documentsByPath: () => [],
+    } as never as ProjectionQueryView;
+
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "nothing to add" }],
+      projectionView: scopeProjectionQueryView(rawProjection, canRead),
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain("Q11: Ingest: which entity owns this capture?");
+    expect(content).toContain("Q12: Consolidate: merge a into b?");
+    // The scope filter still applies: unreadable refs stay invisible.
+    expect(content).not.toContain("Hidden: refs an unreadable path");
   });
 
   test("no open questions → no questions block", async () => {
