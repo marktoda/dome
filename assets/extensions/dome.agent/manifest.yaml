@@ -32,7 +32,10 @@ processors:
       - kind: question.ask
     execution:
       class: llm
-      timeoutMs: 900000
+      # 30 min total: the processor loops over every changed inbox/raw/*.md in
+      # one run, so a multi-source commit (several articles at once) shares this
+      # budget across all of them.
+      timeoutMs: 1800000
       modelCallTimeoutMs: 180000
     module: processors/ingest.ts
 
