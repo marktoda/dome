@@ -127,6 +127,23 @@ export function deriveCaptureTitle(content: string): string | null {
 }
 
 /**
+ * Normalize an explicit `--title` the same way derived titles are bounded:
+ * whitespace runs (including newlines) collapse to single spaces, then the
+ * single line is capped at the display length. Without the collapse, a
+ * newline-containing title would inject extra lines into the `capture:
+ * <title>` commit message — including lines shaped like `Dome-*` trailers,
+ * which engine commits use as an authenticity signal. Returns null when
+ * nothing survives (caller falls back to the derived title).
+ */
+export function normalizeCaptureTitle(raw: string): string | null {
+  const line = raw.replace(/\s+/g, " ").trim();
+  if (line.length === 0) return null;
+  return line.length > TITLE_MAX_CHARS
+    ? line.slice(0, TITLE_MAX_CHARS).trimEnd()
+    : line;
+}
+
+/**
  * Kebab-case slug from a title: up to six words, lowercased, diacritics
  * stripped, non-`[a-z0-9]` runs collapsed to `-`, capped at 48 chars.
  * Falls back to `capture` when nothing survives sanitization.
@@ -160,8 +177,9 @@ export function captureTimestampSegment(now: Date): string {
 /**
  * Render the raw-capture document per docs/wiki/specs/capture.md §"Raw
  * capture file shape": `captured:` (ISO-8601 UTC) + `source: cli` (+
- * `title:` when explicitly supplied), then the body verbatim. No `type:`
- * field — inbox/ roots are untyped and the file is ephemeral.
+ * `title:` when explicitly supplied), then the body trimmed of surrounding
+ * whitespace. No `type:` field — inbox/ roots are untyped and the file is
+ * ephemeral.
  */
 export function renderCaptureDocument(input: {
   readonly capturedAt: string;
@@ -272,8 +290,11 @@ export async function runCapture(
 
   // --- Write + commit ----------------------------------------------------------
   try {
-    const title = options.title ?? deriveCaptureTitle(body) ?? "capture";
-    const slug = captureSlug(options.title ?? deriveCaptureTitle(body));
+    const explicitTitle =
+      options.title === undefined ? null : normalizeCaptureTitle(options.title);
+    const derivedTitle = explicitTitle === null ? deriveCaptureTitle(body) : null;
+    const title = explicitTitle ?? derivedTitle ?? "capture";
+    const slug = captureSlug(explicitTitle ?? derivedTitle);
     const relPath = resolveTargetPath(
       vaultPath,
       captureTimestampSegment(now),
@@ -282,7 +303,7 @@ export async function runCapture(
     const capturedAt = now.toISOString();
     const document = renderCaptureDocument({
       capturedAt,
-      ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(explicitTitle !== null ? { title: explicitTitle } : {}),
       body,
     });
 

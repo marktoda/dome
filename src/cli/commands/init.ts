@@ -360,12 +360,10 @@ async function ensureModelProvider(opts: {
   if (opts.provider === undefined) return "skipped (not requested)";
 
   const providerPath = join(opts.vaultPath, ".dome", "model-provider.ts");
-  const fileOutcome = existsSync(providerPath)
-    ? "skipped (already present)"
-    : await writeIfMissing(
-        providerPath,
-        await readModelProviderTemplate(opts.provider),
-      );
+  const fileOutcome = await writeIfMissing(
+    providerPath,
+    await readModelProviderTemplate(opts.provider),
+  );
   const configOutcome = await ensureModelProviderConfig({
     path: opts.configPath,
     provider: opts.provider,

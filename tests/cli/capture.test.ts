@@ -17,6 +17,7 @@ import {
   captureSlug,
   captureTimestampSegment,
   deriveCaptureTitle,
+  normalizeCaptureTitle,
   renderCaptureDocument,
   runCapture,
   type CaptureStdin,
@@ -126,6 +127,15 @@ describe("capture helpers", () => {
     ).toBe("real first line");
     expect(deriveCaptureTitle("   \n\n")).toBe(null);
     expect(deriveCaptureTitle(`${"x".repeat(120)}`)?.length).toBe(80);
+  });
+
+  test("normalizeCaptureTitle collapses whitespace and caps like derived titles", () => {
+    expect(normalizeCaptureTitle("plain title")).toBe("plain title");
+    expect(normalizeCaptureTitle("line one\nDome-Run: fake\ttabs")).toBe(
+      "line one Dome-Run: fake tabs",
+    );
+    expect(normalizeCaptureTitle("  \n \t ")).toBe(null);
+    expect(normalizeCaptureTitle("x".repeat(120))?.length).toBe(80);
   });
 
   test("renderCaptureDocument writes the documented raw-capture shape", () => {
@@ -247,6 +257,47 @@ describe("runCapture inputs", () => {
     );
   });
 
+  test("a newline-containing --title cannot inject trailer-shaped lines into the commit message", async () => {
+    // Engine commits are recognized by Dome-* trailer lines; an unsanitized
+    // explicit title could fabricate them. Explicit titles get the same
+    // single-line + 80-char normalization as derived ones.
+    const vault = await initVault();
+    const code = await runCapture(
+      {
+        vault,
+        text: "body",
+        title: "innocent\nDome-Run: forged-run-id\nDome-Base: forged",
+      },
+      clock,
+    );
+    expect(code).toBe(0);
+
+    const message = (await headCommit(vault)).commit.message;
+    const [subject, ...rest] = message.split("\n");
+    expect(subject).toBe(
+      "capture: innocent Dome-Run: forged-run-id Dome-Base: forged",
+    );
+    expect(rest.join("\n")).not.toContain("Dome-");
+
+    // The frontmatter carries the normalized title too.
+    const relPath = `inbox/raw/${STAMP}-innocent-dome-run-forged-run-id.md`;
+    const content = await readFile(join(vault, relPath), "utf8");
+    expect(content).toContain(
+      'title: "innocent Dome-Run: forged-run-id Dome-Base: forged"',
+    );
+  });
+
+  test("an over-long explicit --title is capped at 80 chars like derived titles", async () => {
+    const vault = await initVault();
+    const code = await runCapture(
+      { vault, text: "body", title: `${"t".repeat(200)}` },
+      clock,
+    );
+    expect(code).toBe(0);
+    const message = (await headCommit(vault)).commit.message;
+    expect(message.split("\n")[0]).toBe(`capture: ${"t".repeat(80)}`);
+  });
+
   test("collisions disambiguate deterministically with -2, -3 suffixes", async () => {
     const vault = await initVault();
     for (let i = 0; i < 3; i += 1) {
@@ -347,6 +398,34 @@ describe("runCapture errors", () => {
     await initRepo(dir);
     expect(await runCapture({ vault: dir, text: "x" }, clock)).toBe(64);
     expect(errors.join("\n")).toContain(".dome/config.yaml");
+  });
+
+  test("a config-present vault with zero commits is refused with a dome init pointer", async () => {
+    // The adopted-ref substrate needs HEAD to resolve; capture refuses
+    // before writing anything (capture.ts vault-precondition block).
+    const dir = tempDir("dome-capture-nocommits-");
+    const { initRepo } = await import("../../src/git");
+    await initRepo(dir);
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(dir, ".dome"), { recursive: true });
+    await writeFile(join(dir, ".dome", "config.yaml"), "extensions: {}\n", "utf8");
+
+    expect(await runCapture({ vault: dir, text: "x" }, clock)).toBe(64);
+    expect(errors.join("\n")).toContain("no commits yet");
+    expect(errors.join("\n")).toContain("dome init");
+    expect(existsSync(join(dir, "inbox"))).toBe(false);
+  });
+
+  test("a detached HEAD is refused — the capture loop needs a branch", async () => {
+    const vault = await initVault();
+    const head = (await headCommit(vault)).oid;
+    // Detach HEAD by pointing it directly at the commit OID.
+    await writeFile(join(vault, ".git", "HEAD"), `${head}\n`, "utf8");
+
+    expect(await runCapture({ vault, text: "x" }, clock)).toBe(64);
+    expect(errors.join("\n")).toContain("detached HEAD");
+    // Nothing was committed: HEAD still resolves to the same commit.
+    expect((await headCommit(vault)).oid).toBe(head);
   });
 
   test("error cases emit the dome.capture/v1 error payload under --json", async () => {
