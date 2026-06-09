@@ -58,3 +58,31 @@ processors:
       - kind: read
         paths: ["inbox/**/*.md"]
     module: processors/inbox-stale-check.ts
+
+  - id: dome.agent.consolidate
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 4 * * 1"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "index.md"
+          - "log.md"
+          - "consolidation-ledger.md"
+      - kind: patch.auto
+        paths:
+          - "wiki/**/*.md"
+          - "index.md"
+          - "log.md"
+          - "consolidation-ledger.md"
+      - kind: model.invoke
+        maxDailyCostUsd: 10
+      - kind: question.ask
+    execution:
+      class: llm
+      timeoutMs: 1800000
+      modelCallTimeoutMs: 180000
+    module: processors/consolidate.ts
