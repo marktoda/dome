@@ -1357,8 +1357,11 @@ rows, quarantined processor triggers, projection cache drift, adopted-ref
 divergence, instruction drift, operational schema mismatches, and enabled
 processor capability kinds that are declared but not granted. It also reports
 enabled/granted model-capable processors when the vault has no configured or
-host-injected model provider. The implementation lives in
-`src/engine/health.ts`.
+host-injected model provider, and — when both `dome.daily` and `dome.agent`
+are enabled — a `config.daily-path-mismatch` warning when the two bundles'
+`daily_path` config keys diverge (the morning brief and create-daily would
+target different files; see [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`").
+The implementation lives in `src/engine/health.ts`.
 
 **Model-provider probe.** When `.dome/config.yaml` carries a
 `model_provider: { kind: "command", ... }` stanza, `dome doctor` additionally

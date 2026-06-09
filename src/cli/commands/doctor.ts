@@ -116,6 +116,7 @@ export async function runDoctor(
       capabilityPolicyHash: runtime.capabilityPolicyHash,
       registry: runtime.registry,
       resolveGrants: runtime.resolveGrants,
+      extensionConfigFor: runtime.extensionConfigFor,
       modelProviderConfigured: runtime.modelProvider !== undefined,
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
@@ -179,6 +180,7 @@ function printDoctorText(
                 `instructions ${report.summary.instructionDrift} · ` +
                 `storage ${report.summary.operationalSchemaMismatch} · ` +
                 `grants ${report.summary.capabilityGrantGaps} · ` +
+                `daily_path ${report.summary.dailyPathMismatch} · ` +
                 `model ${report.summary.modelProviderMissing} missing · ` +
                 `${report.summary.modelProviderUnreachable} unreachable · ` +
                 `${report.summary.modelProviderKeyMissing} keyless`,

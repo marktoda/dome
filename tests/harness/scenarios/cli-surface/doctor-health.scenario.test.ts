@@ -271,6 +271,91 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome doctor reports a daily_path mirror mismatch between dome.daily and dome.agent",
+    tags: [{ kind: "group", group: "cli-surface" }],
+    harness: {
+      bundles: ["dome.daily", "dome.agent"],
+      initialFiles: {
+        // dome.daily overrides daily_path; dome.agent does not — the brief
+        // would write the default path while create-daily writes notes/.
+        ".dome/config.yaml": [
+          "extensions:",
+          "  dome.daily:",
+          "    enabled: true",
+          "    config:",
+          "      daily_path: \"notes/{date}.md\"",
+          "    grant:",
+          "      read: [\"wiki/**/*.md\", \"notes/*.md\"]",
+          "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
+          "      graph.write: [\"dome.daily.*\"]",
+          "      question.ask: true",
+          "  dome.agent:",
+          "    enabled: true",
+          "    grant:",
+          "      read:",
+          "        - \"wiki/**/*.md\"",
+          "        - \"notes/**/*.md\"",
+          "        - \"inbox/**/*.md\"",
+          "        - \"index.md\"",
+          "        - \"log.md\"",
+          "        - \"consolidation-ledger.md\"",
+          "        - \"sources/calendar/*.md\"",
+          "      patch.auto:",
+          "        - \"wiki/**/*.md\"",
+          "        - \"notes/**/*.md\"",
+          "        - \"index.md\"",
+          "        - \"log.md\"",
+          "        - \"consolidation-ledger.md\"",
+          "        - \"inbox/processed/*.md\"",
+          "        - \"inbox/raw/*.md\"",
+          "      model.invoke:",
+          "        maxDailyCostUsd: 5",
+          "      question.ask: true",
+        ].join("\n"),
+        "AGENTS.md":
+          "# This is a Dome vault.\n\n" +
+          "<!-- BEGIN user-prose -->\n" +
+          "<!-- END user-prose -->\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+      },
+    },
+  },
+  async (h) => {
+    const doctor = await h.runCli(["doctor", "--json"]);
+    expect(doctor.exitCode).toBe(0);
+    expect(doctor.stderr).toBe("");
+    const report = JSON.parse(doctor.stdout) as {
+      readonly status: string;
+      readonly summary: { readonly dailyPathMismatch: number };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly id: string;
+        readonly severity: string;
+        readonly config?: {
+          readonly dailyDailyPath: string | null;
+          readonly agentDailyPath: string | null;
+        };
+      }>;
+    };
+
+    expect(report.status).toBe("unhealthy");
+    expect(report.summary.dailyPathMismatch).toBe(1);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "config.daily-path-mismatch",
+        id: "daily_path",
+        severity: "warning",
+        config: {
+          dailyDailyPath: "notes/{date}.md",
+          agentDailyPath: null,
+        },
+      }),
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome doctor reports missing model provider preflight",
     tags: [
       { kind: "group", group: "cli-surface" },

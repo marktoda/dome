@@ -259,6 +259,7 @@ export async function runCheck(
           capabilityPolicyHash: runtime.capabilityPolicyHash,
           registry: runtime.registry,
           resolveGrants: runtime.resolveGrants,
+          extensionConfigFor: runtime.extensionConfigFor,
           modelProviderConfigured: runtime.modelProvider !== undefined,
           orphanRunThresholdMs: orphanThresholdMs,
         })

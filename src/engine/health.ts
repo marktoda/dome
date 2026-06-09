@@ -208,6 +208,18 @@ export type HealthFinding =
         readonly command: ReadonlyArray<string>;
         readonly provider?: string;
       };
+    }
+  | {
+      readonly code: "config.daily-path-mismatch";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: "daily_path";
+      readonly message: string;
+      readonly recovery: string;
+      readonly config: {
+        readonly dailyDailyPath: string | null;
+        readonly agentDailyPath: string | null;
+      };
     };
 
 export type HealthSummary = {
@@ -227,6 +239,7 @@ export type HealthSummary = {
   readonly modelProviderMissing: number;
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
+  readonly dailyPathMismatch: number;
 };
 
 /**
@@ -265,6 +278,9 @@ export async function collectHealthReport(opts: {
   readonly resolveGrants?: (
     processorId: string,
   ) => ReadonlyArray<Capability>;
+  readonly extensionConfigFor?: (
+    extensionId: string,
+  ) => Readonly<Record<string, unknown>>;
   readonly modelProviderConfigured?: boolean;
   readonly modelProviderProbe?: ModelProviderProbeInput;
   readonly now?: Date;
@@ -311,12 +327,20 @@ export async function collectHealthReport(opts: {
     opts.modelProviderProbe === undefined
       ? []
       : modelProviderProbeFindings(opts.modelProviderProbe);
+  const dailyPathMismatch =
+    opts.extensionConfigFor === undefined
+      ? []
+      : dailyPathMismatchFindings({
+          extensions: opts.extensions,
+          extensionConfigFor: opts.extensionConfigFor,
+        });
 
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
     ...modelProvider,
     ...modelProviderProbe,
+    ...dailyPathMismatch,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -368,6 +392,7 @@ function buildHealthReport(
       modelProviderMissing: count("model.provider-missing"),
       modelProviderUnreachable: count("model.provider-unreachable"),
       modelProviderKeyMissing: count("model.provider-key-missing"),
+      dailyPathMismatch: count("config.daily-path-mismatch"),
     }),
     findings: Object.freeze([...findings]),
   });
@@ -528,6 +553,64 @@ function modelProviderProbeFindings(
     ]);
   }
   return Object.freeze([]);
+}
+
+/**
+ * Mirrored-config check for the daily note path. `dome.agent.brief` resolves
+ * the daily note from `extensions.dome.agent.config.daily_path` while
+ * `dome.daily.create-daily` reads `extensions.dome.daily.config.daily_path`
+ * — a vault overriding only one gets a wrong-path morning brief plus a
+ * duplicate skeleton at 06:00. When both bundles are enabled, the two keys
+ * must agree (both unset = both on the shared default = fine). The engine
+ * compares the raw config values — it deliberately does not know the
+ * bundles' default template, only that divergent keys diverge.
+ */
+export function dailyPathMismatchFindings(opts: {
+  readonly extensions: ReadonlyArray<{ readonly name: string }>;
+  readonly extensionConfigFor: (
+    extensionId: string,
+  ) => Readonly<Record<string, unknown>>;
+}): ReadonlyArray<HealthFinding> {
+  const enabled = new Set(opts.extensions.map((extension) => extension.name));
+  if (!enabled.has("dome.daily") || !enabled.has("dome.agent")) {
+    return Object.freeze([]);
+  }
+  const dailyDailyPath = dailyPathConfigValue(
+    opts.extensionConfigFor("dome.daily"),
+  );
+  const agentDailyPath = dailyPathConfigValue(
+    opts.extensionConfigFor("dome.agent"),
+  );
+  if (dailyDailyPath === agentDailyPath) return Object.freeze([]);
+  const render = (value: string | null): string =>
+    value === null ? "(unset — bundle default)" : `"${value}"`;
+  return Object.freeze([
+    Object.freeze({
+      code: "config.daily-path-mismatch" as const,
+      severity: "warning" as const,
+      subject: "config" as const,
+      id: "daily_path" as const,
+      message:
+        "dome.daily and dome.agent resolve the daily note from different " +
+        `daily_path values (dome.daily: ${render(dailyDailyPath)}, ` +
+        `dome.agent: ${render(agentDailyPath)}); the morning brief would ` +
+        "write a different file than create-daily, leaving a wrong-path " +
+        "brief plus a duplicate daily skeleton.",
+      recovery:
+        "Mirror the daily_path key: set " +
+        "extensions.dome.daily.config.daily_path and " +
+        "extensions.dome.agent.config.daily_path to the same template in " +
+        ".dome/config.yaml (or remove both to use the shared default).",
+      config: Object.freeze({ dailyDailyPath, agentDailyPath }),
+    }),
+  ]);
+}
+
+function dailyPathConfigValue(
+  config: Readonly<Record<string, unknown>>,
+): string | null {
+  const raw = config.daily_path;
+  return typeof raw === "string" ? raw : null;
 }
 
 function formatList(values: ReadonlyArray<string>): string {
