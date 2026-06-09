@@ -185,18 +185,39 @@ export type GroundedBlockBody = {
 };
 
 /**
+ * Marker-injection guard. Dome's HTML comments are exclusively generated
+ * block markers (`<!-- dome.daily:* -->`, `<!-- dome.agent.brief:* -->`), so
+ * no legitimate model-written body line ever carries one. A model body that
+ * smuggles marker lines could fabricate a second copy of another block
+ * (`replaceBriefBlock` replaces only the first occurrence, so the smuggled
+ * copy would survive the deterministic pass verbatim) or corrupt
+ * `dome.daily`'s carry-forward regions — and calendar files are untrusted
+ * input that flows into the model, so this is a live prompt-injection path.
+ */
+const DOME_MARKER_COMMENT = /<!--\s*dome\./;
+
+/** Backtick code spans don't ground a bullet — `[[x]]` in code is not a link. */
+function stripCodeSpans(line: string): string {
+  return line.replace(/`[^`]*`/g, "");
+}
+
+/**
  * Enforce the grounding rule on a model-written block body: every bullet
- * line must carry at least one `[[wikilink]]` source ref. Ungrounded bullets
- * are stripped from the body and returned separately so the caller can
- * re-emit each as a QuestionEffect — ungrounded content becomes a question,
- * not brief text. Non-bullet lines (headings, blanks) pass through.
+ * line must carry at least one `[[wikilink]]` source ref (code spans are
+ * stripped first, so a backticked `[[x]]` does not count). Ungrounded
+ * bullets are stripped from the body and returned separately so the caller
+ * can re-emit each as a QuestionEffect — ungrounded content becomes a
+ * question, not brief text. Non-bullet lines (headings, blanks) pass
+ * through, except lines carrying a `<!-- dome.* -->` marker comment, which
+ * are dropped entirely (see DOME_MARKER_COMMENT).
  */
 export function groundBriefBlockBody(body: string): GroundedBlockBody {
   const kept: string[] = [];
   const ungrounded: string[] = [];
   for (const line of body.split(/\r?\n/)) {
+    if (DOME_MARKER_COMMENT.test(line)) continue;
     const isBullet = /^\s*[-*]\s+\S/.test(line);
-    if (isBullet && !line.includes("[[")) {
+    if (isBullet && !stripCodeSpans(line).includes("[[")) {
       ungrounded.push(line.trim());
       continue;
     }
