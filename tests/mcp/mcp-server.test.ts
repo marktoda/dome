@@ -362,6 +362,50 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(call.json.status).toBe("error");
     expect(call.json.error).toBe("question-not-found");
   }, TEST_TIMEOUT_MS);
+
+  test("overlapping tool calls serialize through the mutex; both results parse cleanly", async () => {
+    // The MCP SDK does NOT serialize tool calls; the captured-console mutex
+    // is the only fence keeping one call's stdout out of the other's result.
+    // Fire two calls without awaiting the first and assert both produce
+    // clean, well-formed JSON payloads (callTool JSON.parses each).
+    const { client } = await fixture();
+    const [status, query] = await Promise.all([
+      callTool(client, "status"),
+      callTool(client, "query", { text: "omega launch" }),
+    ]);
+    expect(status.isError).toBe(false);
+    expect(typeof status.json.branch).toBe("string");
+    expect(query.isError).toBe(false);
+    expect(query.json.query).toBe("omega launch");
+    const matches = query.json.matches as Array<Record<string, unknown>>;
+    expect(matches.map((m) => m.path)).toContain("wiki/project-omega.md");
+  }, TEST_TIMEOUT_MS);
+
+  test("query against a vault with no adopted ref returns a graceful JSON error, not a crash", async () => {
+    // A vault straight out of `dome init` (no sync) has no adopted ref and
+    // an empty projection index. The tool must return the CLI's structured
+    // error payload — never a thrown protocol error.
+    const vault = mkdtempSync(join(tmpdir(), "dome-mcp-empty-vault-"));
+    const server = createDomeMcpServer({ vaultPath: vault });
+    const client = new Client({ name: "dome-mcp-empty-test", version: "0.0.0" });
+    try {
+      expect(await runInit({ path: vault })).toBe(0);
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        client.connect(clientTransport),
+        server.connect(serverTransport),
+      ]);
+      const call = await callTool(client, "query", { text: "anything" });
+      expect(call.isError).toBe(true);
+      expect(call.json.status).toBe("error");
+      expect(String(call.json.message)).toContain("no adopted ref");
+    } finally {
+      await client.close();
+      await server.close();
+      await rm(vault, { recursive: true, force: true });
+    }
+  }, TEST_TIMEOUT_MS);
 });
 
 // ----- The stdio smoke session ----------------------------------------------------
@@ -392,6 +436,24 @@ describe("dome mcp server (stdio transport)", () => {
     } finally {
       await client.close();
     }
+  }, TEST_TIMEOUT_MS);
+
+  test("dome mcp exits cleanly when the client disconnects immediately (no shutdown hang)", async () => {
+    // The onclose handler must be registered BEFORE connect: an instant
+    // disconnect (stdin EOF during/right after the handshake) would
+    // otherwise fire onclose before the handler exists and hang forever.
+    const { vault } = await fixture();
+    const proc = Bun.spawn(
+      ["bun", join(REPO_ROOT, "bin", "dome"), "mcp", "--vault", vault],
+      { stdout: "pipe", stderr: "pipe", stdin: "pipe" },
+    );
+    proc.stdin.end(); // immediate EOF — no handshake at all
+    const exited = await Promise.race([
+      proc.exited,
+      new Promise<"hang">((done) => setTimeout(() => done("hang"), 30_000)),
+    ]);
+    if (exited === "hang") proc.kill();
+    expect(exited).toBe(0);
   }, TEST_TIMEOUT_MS);
 
   test("dome mcp refuses an uninitialized vault", async () => {

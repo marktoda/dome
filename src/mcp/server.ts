@@ -95,20 +95,25 @@ export type CapturedCliRun = {
 };
 
 /**
- * The tool-execution mutex. Tool handlers chain onto this promise so calls
- * run one at a time: console capture is global state, and serializing also
- * guarantees at most one VaultRuntime is open against the vault's SQLite
- * files at any moment.
+ * Build the tool-execution mutex for one server. Tool handlers chain onto a
+ * shared promise so calls run one at a time: console capture is global
+ * state, and serializing also guarantees at most one VaultRuntime is open
+ * against the vault's SQLite files at any moment. The chain lives in the
+ * server closure (one mutex per createDomeMcpServer call), though note the
+ * console capture itself is process-global, so two servers in one process
+ * still must not interleave captured runs — each server's chain serializes
+ * its own calls, and the capture swap/restore is confined to each run.
  */
-let toolChain: Promise<unknown> = Promise.resolve();
-
-function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const next = toolChain.then(fn, fn);
-  toolChain = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
+function makeToolMutex(): <T>(fn: () => Promise<T>) => Promise<T> {
+  let toolChain: Promise<unknown> = Promise.resolve();
+  return function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const next = toolChain.then(fn, fn);
+    toolChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
 }
 
 /**
@@ -196,6 +201,7 @@ function errorToolResult(messages: ReadonlyArray<string>): ToolResult {
 export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   const vault = opts.vaultPath;
   const bundlesRoot = opts.bundlesRoot;
+  const enqueue = makeToolMutex();
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },

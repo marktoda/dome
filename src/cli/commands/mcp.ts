@@ -65,15 +65,24 @@ export async function runMcp(options: RunMcpOptions = {}): Promise<number> {
         : {}),
     });
     const transport = new StdioServerTransport();
+    // Hold the process open until the client disconnects. Two subtleties:
+    //
+    //   1. The SDK's StdioServerTransport never watches stdin for EOF — it
+    //      only fires onclose from an explicit close() call — so a client
+    //      that simply closes our stdin would leave the process hanging
+    //      forever. Listen for stdin 'end'/'close' ourselves.
+    //   2. Register the handlers BEFORE connect: a client that disconnects
+    //      during/immediately after the handshake would otherwise race the
+    //      handler assignment and hang the process.
+    const closed = new Promise<void>((done) => {
+      server.server.onclose = () => done();
+      process.stdin.once("end", () => done());
+      process.stdin.once("close", () => done());
+    });
     await server.connect(transport);
     console.error(`dome mcp: serving vault ${vaultPath} over stdio`);
-
-    // Hold the process open until the transport closes (client disconnect /
-    // stdin EOF). The protocol layer rewires transport.onclose, so listen on
-    // the server's own onclose hook.
-    await new Promise<void>((done) => {
-      server.server.onclose = () => done();
-    });
+    await closed;
+    await server.close().catch(() => {});
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

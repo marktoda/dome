@@ -108,7 +108,7 @@ An earlier draft of this spec said "no write tools." Wedge Phase 5 deliberately 
 
 **Composition with `dome serve`:** run both. The MCP server gives an agent typed read/capture access; the daemon compiles what the agent captures. Captures and resolutions made over MCP are durable immediately and compile on the daemon's next tick (or the next `dome sync`). The MCP server stays correct with no daemon running — reads serve the last-adopted state and `capture` reports `compile_pending: true` — it just goes stale.
 
-**Mount lifecycle:** `dome mcp` validates the vault (git repo + `.dome/config.yaml`), builds the server, and serves stdio until the client disconnects. Per tool call, the underlying handler opens and closes its own runtime; shutdown therefore needs no drain. Single-vault per process — multi-vault setups run one `dome mcp` per vault.
+**Mount lifecycle:** `dome mcp` validates the vault (git repo + `.dome/config.yaml`), builds the server, and serves stdio until the client disconnects. Disconnect detection watches stdin `end`/`close` directly — the SDK's `StdioServerTransport` fires `onclose` only from an explicit `close()`, never from stdin EOF — and the shutdown handlers are registered before `connect()` so an instant disconnect cannot race them and hang the process. Per tool call, the underlying handler opens and closes its own runtime; shutdown therefore needs no drain. Single-vault per process — multi-vault setups run one `dome mcp` per vault. The tool-execution mutex (the captured-console fence that serializes overlapping tool calls; the MCP SDK does not serialize) is per-server closure state, not module state, so two servers in one process don't share it.
 
 ## Registration recipe (Claude Code)
 
