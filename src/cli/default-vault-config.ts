@@ -33,6 +33,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "raw/**",
       ],
       "patch.auto": ["**/*.md"],
+      "graph.write": ["dome.page.*"],
       "question.ask": true,
     }),
     extension("dome.graph", true, {
