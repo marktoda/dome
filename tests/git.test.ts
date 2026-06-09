@@ -6,10 +6,15 @@ import { dirname, join } from "node:path";
 
 import {
   commit,
+  commitSingleFileOnHead,
   countCommitsSince,
   fileInfoAtCommit,
   initRepo,
+  isAncestor,
+  log,
+  readBlob,
   readTree,
+  resolveRef,
   statusMatrix,
 } from "../src/git";
 
@@ -248,6 +253,94 @@ describe("git boundary", () => {
       const paths = (await statusMatrix(path)).map(([filepath]) => filepath);
       expect(paths).toContain(".dome/config.yaml");
       expect(paths).not.toContain(".dome/state/locks/main.compiler-host.lock");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  // Pins the daemon-race contract on commitSingleFileOnHead: the branch ref
+  // advance is compare-and-swap, so a concurrent advance of
+  // refs/heads/<branch> (the serve host adopting between the HEAD read and
+  // the ref write) triggers a rebuild-and-retry on the new head instead of
+  // force-moving the branch backwards past the engine's closure commit.
+  test("commitSingleFileOnHead retries onto a concurrently-advanced branch head", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-single-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "base\n");
+      await commit({ path, message: "base", files: ["wiki/a.md"] });
+
+      // The concurrent writer: between the capture's commit-object write and
+      // its ref advance, land an unrelated commit on the branch (what the
+      // engine's Phase 12c branch advance does during adoption).
+      let concurrent: string | null = null;
+      await write(path, "inbox/raw/x.md", "the capture\n");
+      const captureOid = await commitSingleFileOnHead({
+        path,
+        filepath: "inbox/raw/x.md",
+        content: "the capture\n",
+        message: "capture: x",
+        beforeRefAdvance: async (attempt) => {
+          if (attempt === 1) {
+            await write(path, "wiki/b.md", "engine work\n");
+            concurrent = await commit({
+              path,
+              message: "engine: concurrent advance",
+              files: ["wiki/b.md"],
+            });
+          }
+        },
+      });
+      if (concurrent === null) throw new Error("expected a concurrent commit");
+
+      // The branch landed on the capture commit, whose parent is the
+      // concurrent commit — nothing was force-moved backwards or lost.
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(captureOid);
+      const entries = await log({ path, depth: 3 });
+      expect(entries[0]?.oid).toBe(captureOid);
+      expect(entries[0]?.commit.parent).toEqual([concurrent]);
+      expect(
+        await isAncestor({ path, ancestor: concurrent, descendant: captureOid }),
+      ).toBe(true);
+      // Both the concurrent commit's file and the capture survive in the tree.
+      expect(
+        await readBlob({ path, commit: captureOid, filepath: "wiki/b.md" }),
+      ).toBe("engine work\n");
+      expect(
+        await readBlob({ path, commit: captureOid, filepath: "inbox/raw/x.md" }),
+      ).toBe("the capture\n");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitSingleFileOnHead gives up with a clear error when the branch keeps moving", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-single-race-loop-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "base\n");
+      await commit({ path, message: "base", files: ["wiki/a.md"] });
+
+      let advances = 0;
+      await write(path, "inbox/raw/x.md", "the capture\n");
+      await expect(
+        commitSingleFileOnHead({
+          path,
+          filepath: "inbox/raw/x.md",
+          content: "the capture\n",
+          message: "capture: x",
+          beforeRefAdvance: async () => {
+            advances += 1;
+            await write(path, `wiki/c${advances}.md`, "more\n");
+            await commit({
+              path,
+              message: `concurrent ${advances}`,
+              files: [`wiki/c${advances}.md`],
+            });
+          },
+        }),
+      ).rejects.toThrow(/kept advancing concurrently.*5 attempts/);
+      expect(advances).toBe(5);
     } finally {
       await rm(path, { recursive: true, force: true });
     }

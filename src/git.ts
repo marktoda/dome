@@ -250,48 +250,96 @@ export async function commit(opts: {
  *   - The caller must already have written `content` to the working tree at
  *     `filepath`; this helper stages that one path (so the index matches the
  *     new HEAD for it) and never touches any other index entry.
- *   - HEAD must resolve (at least one commit) — callers gate on that.
- *   - The current branch ref advances to the new commit (isomorphic-git's
- *     default ref behavior); other staged work stays staged, dirty files stay
- *     dirty.
+ *   - HEAD must resolve (at least one commit) and must be on a branch —
+ *     callers gate on both.
+ *   - The current branch ref advances to the new commit via compare-and-swap;
+ *     other staged work stays staged, dirty files stay dirty.
+ *
+ * Concurrency: a `dome serve` host may adopt between this helper's HEAD read
+ * and its ref advance — the engine moves `refs/heads/<branch>` forward to a
+ * closure commit (see src/engine/adopt.ts Phase 12c). An unconditional branch
+ * write here would force the branch *backwards* past that closure commit,
+ * leaving the adopted ref a non-ancestor of HEAD and putting the engine in a
+ * hard error loop ("adopted ref ... is not an ancestor"). So the commit is
+ * built with `noUpdateBranch` and the branch advances through the same CAS
+ * `writeRef({expectedOld})` shape the engine uses; on CAS failure the splice
+ * is rebuilt on the new head and retried (bounded).
  *
  * Dogfood-mode safe: `filepath` is vault-relative and translated through the
  * vault prefix like every other helper here.
  */
+const COMMIT_SINGLE_FILE_MAX_ATTEMPTS = 5;
+
 export async function commitSingleFileOnHead(opts: {
   path: string;
   filepath: string;
   content: string;
   message: string;
   author?: CommitIdentity;
+  /**
+   * Test seam: awaited after the candidate commit object is written but
+   * before the branch ref CAS, once per attempt. Lets tests advance the
+   * branch concurrently to exercise the retry path deterministically.
+   */
+  beforeRefAdvance?: (attempt: number) => Promise<void>;
 }): Promise<string> {
   const { root, prefix } = await resolveGitContext(opts.path);
   const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
-  const head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
-  const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
-  const blobOid = await git.writeBlob({
-    fs,
-    dir: root,
-    blob: new TextEncoder().encode(opts.content),
-  });
-  const treeOid = await spliceBlobIntoTree({
-    root,
-    treeOid: headCommit.tree,
-    segments: fullpath.split("/").filter((s) => s.length > 0),
-    blobOid,
-  });
-  // Keep the index in sync for the new path so the working tree reads clean
-  // after the commit; the caller already wrote `content` to disk.
-  await git.add({ fs, dir: root, filepath: fullpath });
+  const branch = await git.currentBranch({ fs, dir: root, fullname: true });
+  if (branch === undefined) {
+    throw new Error("commitSingleFileOnHead: HEAD is detached; callers gate on a branch");
+  }
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
-  return git.commit({
-    fs,
-    dir: root,
-    message: opts.message,
-    author,
-    tree: treeOid,
-    parent: [head],
-  });
+
+  let head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+  for (let attempt = 1; attempt <= COMMIT_SINGLE_FILE_MAX_ATTEMPTS; attempt += 1) {
+    const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
+    const blobOid = await git.writeBlob({
+      fs,
+      dir: root,
+      blob: new TextEncoder().encode(opts.content),
+    });
+    const treeOid = await spliceBlobIntoTree({
+      root,
+      treeOid: headCommit.tree,
+      segments: fullpath.split("/").filter((s) => s.length > 0),
+      blobOid,
+    });
+    // Write the commit object without touching the branch; the ref advance
+    // below is the only branch mutation, and it is compare-and-swap.
+    const commitOid = await git.commit({
+      fs,
+      dir: root,
+      message: opts.message,
+      author,
+      tree: treeOid,
+      parent: [head],
+      noUpdateBranch: true,
+    });
+    if (opts.beforeRefAdvance !== undefined) {
+      await opts.beforeRefAdvance(attempt);
+    }
+    try {
+      await writeRef({ path: opts.path, ref: branch, value: commitOid, expectedOld: head });
+    } catch (e) {
+      // CAS lost: someone (typically the serve host's adoption) moved the
+      // branch since `head` was read. Re-resolve and rebuild the splice on
+      // the new head; the orphaned candidate commit is unreferenced and gets
+      // GC'd. A failure with an unmoved head is a real error — rethrow.
+      const current = await git.resolveRef({ fs, dir: root, ref: branch });
+      if (current === head) throw e;
+      head = current;
+      continue;
+    }
+    // Keep the index in sync for the new path so the working tree reads
+    // clean after the commit; the caller already wrote `content` to disk.
+    await git.add({ fs, dir: root, filepath: fullpath });
+    return commitOid;
+  }
+  throw new Error(
+    `commitSingleFileOnHead: ${branch} kept advancing concurrently; ` +
+      `gave up after ${COMMIT_SINGLE_FILE_MAX_ATTEMPTS} attempts`,
+  );
 }
 
 /**
