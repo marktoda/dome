@@ -23,28 +23,37 @@ const MAX_STEPS = 50;
 const MAX_CHANGED_FILES = 30;
 const DEFAULT_LEDGER_PATH = "consolidation-ledger.md";
 
+export type ConsolidationLedgerResolution = {
+  readonly path: string;
+  /**
+   * Non-null when a malformed config value was ignored in favor of the
+   * default — the caller surfaces it as a warning diagnostic. Malformed
+   * config must degrade, not crash the nightly run with a raw processor
+   * throw.
+   */
+  readonly problem: string | null;
+};
+
 /**
  * Resolve the consolidation ledger path from the extension config
  * (`extensions.dome.agent.config.consolidation_ledger_path`), defaulting to
  * the top-level `consolidation-ledger.md`. The path must be a relative vault
- * `.md` path; a custom path additionally requires matching `read` +
- * `patch.auto` grant entries in `.dome/config.yaml` — grants are static
- * globs, so config cannot widen the processor's write boundary.
+ * `.md` path; a malformed value falls back to the default with a `problem`
+ * the processor emits as a diagnostic. A custom path additionally requires
+ * matching `read` + `patch.auto` grant entries in `.dome/config.yaml` —
+ * grants are static globs, so config cannot widen the processor's write
+ * boundary.
  */
 export function consolidationLedgerPath(
   config?: Readonly<Record<string, unknown>>,
-): string {
+): ConsolidationLedgerResolution {
   const raw = config?.consolidation_ledger_path;
-  if (raw === undefined) return DEFAULT_LEDGER_PATH;
+  if (raw === undefined) return resolution(DEFAULT_LEDGER_PATH, null);
   if (typeof raw !== "string") {
-    throw new Error(
-      "dome.agent config consolidation_ledger_path must be a string",
-    );
+    return fallback("consolidation_ledger_path must be a string");
   }
   if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
-    throw new Error(
-      "dome.agent config consolidation_ledger_path must be a non-empty .md path",
-    );
+    return fallback("consolidation_ledger_path must be a non-empty .md path");
   }
   if (
     raw.startsWith("/") ||
@@ -54,11 +63,25 @@ export function consolidationLedgerPath(
         segment.length === 0 || segment === "." || segment === "..",
     )
   ) {
-    throw new Error(
-      "dome.agent config consolidation_ledger_path must be a relative vault markdown path",
+    return fallback(
+      "consolidation_ledger_path must be a relative vault markdown path",
     );
   }
-  return raw;
+  return resolution(raw, null);
+}
+
+function resolution(
+  path: string,
+  problem: string | null,
+): ConsolidationLedgerResolution {
+  return Object.freeze({ path, problem });
+}
+
+function fallback(problem: string): ConsolidationLedgerResolution {
+  return resolution(
+    DEFAULT_LEDGER_PATH,
+    `dome.agent config ${problem}; falling back to ${DEFAULT_LEDGER_PATH}`,
+  );
 }
 
 const consolidate = defineProcessorImplementation({
@@ -66,7 +89,8 @@ const consolidate = defineProcessorImplementation({
     const step = ctx.modelInvoke?.step;
     if (step === undefined) return Object.freeze([]); // clean no-op without a model
 
-    const ledgerPath = consolidationLedgerPath(ctx.extensionConfig);
+    const ledger = consolidationLedgerPath(ctx.extensionConfig);
+    const ledgerPath = ledger.path;
 
     const tools = makeConsolidatorTools({
       reader: {
@@ -77,6 +101,17 @@ const consolidate = defineProcessorImplementation({
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
     const sourceRefs = [ctx.sourceRef(ledgerPath)];
+    const configDiagnostics: Effect[] =
+      ledger.problem === null
+        ? []
+        : [
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.consolidate-config-invalid",
+              message: ledger.problem,
+              sourceRefs,
+            }),
+          ];
 
     let result;
     try {
@@ -98,6 +133,7 @@ const consolidate = defineProcessorImplementation({
       // NOT a throw — it returns normally and its partial work is intended.)
       const message = error instanceof Error ? error.message : String(error);
       return Object.freeze([
+        ...configDiagnostics,
         diagnosticEffect({
           severity: "warning",
           code: "dome.agent.consolidate-failed",
@@ -107,7 +143,7 @@ const consolidate = defineProcessorImplementation({
       ]);
     }
 
-    const effects: Effect[] = [];
+    const effects: Effect[] = [...configDiagnostics];
     const changes = [...state.edits.values()].map((e) =>
       e.kind === "write"
         ? ({ kind: "write", path: e.path, content: e.content } as const)

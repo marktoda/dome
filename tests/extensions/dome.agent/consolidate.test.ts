@@ -145,6 +145,39 @@ describe("dome.agent.consolidate", () => {
     expect(diag.message).toContain("31 files");
   });
 
+  test("a run touching exactly the 30-file cap lands as one PatchEffect (boundary)", async () => {
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns < 30) {
+        return {
+          toolCalls: [
+            {
+              id: String(turns),
+              name: "writePage",
+              input: { path: `wiki/concepts/p${turns}.md`, content: "x" },
+            },
+          ],
+        };
+      }
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(makeCtx({ files: { "index.md": "x" }, stepFn }));
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    expect(patch).toBeDefined();
+    expect(patch.changes.length).toBe(30);
+    expect(
+      effects.find(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.consolidate-overreach",
+      ),
+    ).toBeUndefined();
+  });
+
   test("ledger path is configurable via extensionConfig and anchors the run's source refs", async () => {
     const seenSystem: string[] = [];
     const seenTask: string[] = [];
@@ -181,23 +214,78 @@ describe("dome.agent.consolidate", () => {
     expect(seenTask[0]).toContain("notes/janitor-ledger.md");
   });
 
-  test("consolidationLedgerPath validates config values", () => {
-    expect(consolidationLedgerPath(undefined)).toBe("consolidation-ledger.md");
-    expect(consolidationLedgerPath({})).toBe("consolidation-ledger.md");
+  test("consolidationLedgerPath validates config values and falls back instead of throwing", () => {
+    expect(consolidationLedgerPath(undefined)).toEqual({
+      path: "consolidation-ledger.md",
+      problem: null,
+    });
+    expect(consolidationLedgerPath({})).toEqual({
+      path: "consolidation-ledger.md",
+      problem: null,
+    });
     expect(
       consolidationLedgerPath({ consolidation_ledger_path: "notes/x.md" }),
-    ).toBe("notes/x.md");
-    expect(() =>
-      consolidationLedgerPath({ consolidation_ledger_path: 7 }),
-    ).toThrow("must be a string");
-    expect(() =>
-      consolidationLedgerPath({ consolidation_ledger_path: "ledger.txt" }),
-    ).toThrow(".md path");
-    expect(() =>
-      consolidationLedgerPath({ consolidation_ledger_path: "/abs/ledger.md" }),
-    ).toThrow("relative vault markdown path");
-    expect(() =>
-      consolidationLedgerPath({ consolidation_ledger_path: "../up/ledger.md" }),
-    ).toThrow("relative vault markdown path");
+    ).toEqual({ path: "notes/x.md", problem: null });
+
+    // Malformed config degrades to the default with a diagnostic message —
+    // a raw throw here would crash the nightly run.
+    const cases: ReadonlyArray<[unknown, string]> = [
+      [7, "must be a string"],
+      ["ledger.txt", ".md path"],
+      ["/abs/ledger.md", "relative vault markdown path"],
+      ["../up/ledger.md", "relative vault markdown path"],
+    ];
+    for (const [value, fragment] of cases) {
+      const resolved = consolidationLedgerPath({
+        consolidation_ledger_path: value,
+      });
+      expect(resolved.path).toBe("consolidation-ledger.md");
+      expect(resolved.problem).toContain(fragment);
+      expect(resolved.problem).toContain("falling back to consolidation-ledger.md");
+    }
+  });
+
+  test("a malformed ledger-path config does not crash the run: default path + config diagnostic", async () => {
+    const seenTask: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns === 0)
+        return {
+          toolCalls: [
+            {
+              id: "1",
+              name: "writePage",
+              input: { path: "consolidation-ledger.md", content: "# Ledger\n2026-06-09" },
+            },
+          ],
+        };
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { consolidation_ledger_path: 7 },
+        stepFn,
+      }),
+    );
+    // The run proceeded against the DEFAULT ledger path.
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    expect(patch).toBeDefined();
+    expect(patch.sourceRefs).toEqual([{ path: "consolidation-ledger.md" } as never]);
+    expect(seenTask[0]).toContain("consolidation-ledger.md");
+    // The malformed config surfaced as a warning diagnostic.
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.severity).toBe("warning");
+    expect(diag.message).toContain("must be a string");
   });
 });
