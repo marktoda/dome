@@ -28,7 +28,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
-| **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`), `consolidate` (cron `0 2 * * *`, nightly recent-drift janitor) | — |
+| **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`), `consolidate` (cron `0 2 * * *`, nightly recent-drift janitor), `brief` (cron `30 5 * * *`, morning-brief composer) | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts

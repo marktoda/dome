@@ -252,6 +252,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       evidence: [
         { kind: "path", pattern: "wiki/**/*.md" },
         { kind: "path", pattern: "notes/*.md" },
+        { kind: "path", pattern: "sources/calendar/*.md" },
         { kind: "projection", name: "facts:dome.daily.*" },
         { kind: "operational", name: "questions" },
       ],
@@ -266,6 +267,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.prep",
         "dome.daily.agenda-with",
         "dome.daily.carry-forward",
+        "dome.agent.brief",
       ],
       surfaces: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
