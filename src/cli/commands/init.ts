@@ -527,7 +527,16 @@ function summarizeProviderOutcomes(
 function initialCommitFiles(
   provider: DefaultModelProvider | undefined,
 ): ReadonlyArray<string> {
-  const files = [".gitignore", "AGENTS.md", "CLAUDE.md", ".dome/config.yaml"];
+  const files = [
+    ".gitignore",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".dome/config.yaml",
+    // Commit the inbox keepers so a freshly-initialized vault has a clean
+    // working tree (untracked files would read as dirty in `dome status`).
+    "inbox/raw/.gitkeep",
+    "inbox/processed/.gitkeep",
+  ];
   if (provider !== undefined) files.push(".dome/model-provider.ts");
   return files;
 }
