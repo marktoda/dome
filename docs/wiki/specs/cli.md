@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-02
+updated: 2026-06-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -20,6 +20,10 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 ```text
 dome init [path] [--with-model-provider anthropic]
                                 Initialize a new vault.
+dome capture [text] [--file <path>] [--title <t>] [--json]
+                                Frictionless capture: write a timestamped raw
+                                source into inbox/raw/ and commit it on the
+                                current branch. Returns immediately.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--loops] [--json]  Vault health + content dashboard.
@@ -55,6 +59,7 @@ mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
+- **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -197,6 +202,99 @@ Each step prints a one-line outcome (`created`, `updated`, or `skipped
 
 Exit codes: 0 on success (including idempotent re-runs); 1 on
 unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
+
+### `dome capture [text] [--file <path>] [--title <t>] [--vault <path>] [--json]`
+
+Frictionless capture into the inbox — the Phase 3 wedge command ([[wedge]]
+§"Phase 3 — Capture loop"). It takes a thought from anywhere (argument, file,
+or stdin), writes it as a timestamped raw source under `inbox/raw/`, commits
+that one file on the current branch, and returns immediately. Everything after
+the commit boundary is the existing capture loop: the compiler host adopts the
+commit, `dome.agent.ingest` integrates it (when `dome.agent` is enabled and
+model-ready), and `dome.agent.inbox-stale-check` warns when raw captures sit
+unprocessed. The broader loop and the phone/voice ingress recipe live in
+[[wiki/specs/capture]].
+
+Input resolution, in precedence order:
+
+1. The positional `[text]` argument.
+2. `--file <path>` — the capture body is read from that file (any text file;
+   the path may live outside the vault). Combining positional text with
+   `--file` is a usage error (exit 64).
+3. Otherwise stdin is read to EOF (`echo idea | dome capture`). An interactive
+   TTY with no piped input is a usage error rather than a hang.
+
+Input that is empty after trimming is a usage error (exit 64); no file is
+written and no commit is made.
+
+The target path is `inbox/raw/<YYYY-MM-DD-HHmm>-<slug>.md`:
+
+- The timestamp is the capture moment in **local time** (captures are human
+  moments; an 11pm thought files under that evening's date).
+- `<slug>` is derived from `--title` when given, else from the capture's first
+  line (skipping any leading frontmatter block and `#` heading markers): up to
+  six words, lowercased, non-`[a-z0-9]` runs collapsed to `-`, capped at 48
+  chars, falling back to `capture` when nothing survives sanitization.
+- Collisions disambiguate deterministically: if the target path already exists
+  in the working tree, `-2` is appended, then `-3`, and so on.
+
+The written file is the documented raw-capture shape (normative in
+[[wiki/specs/capture]] §"Raw capture file shape"): a frontmatter block with
+`captured:` (ISO-8601 UTC instant) and `source: cli` (plus `title:` when
+`--title` was given), then the capture body verbatim. No `type:` field —
+`inbox/` roots may omit frontmatter typing per [[wiki/specs/page-schema]], and
+the file is ephemeral (ingest archives it to `inbox/processed/`).
+
+The commit is a **human write**, not an engine write: an ordinary commit with
+message `capture: <title>` and **no `Dome-*` trailers** (per
+[[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]], the daemon constructs
+the Proposal from branch drift — capture never talks to the engine). Exactly
+one path changes in the commit: a dirty working tree, including
+already-staged-but-uncommitted changes, is **not** swept into the capture
+commit. The commit is built against the HEAD tree plus the single capture
+blob through the `src/git.ts` isomorphic-git boundary, so other staged work
+stays staged and other dirty files stay dirty.
+
+`dome capture` returns as soon as the commit lands — it does not wait for
+adoption. Text output prints the vault-relative path, the commit, and a hint
+about what happens next. The hint is status-aware using only cheap reads (the
+serve heartbeat file and `refs/dome/adopted/<branch>`): when a running serve
+host is visible and the adopted ref exists, it says the host will ingest the
+capture on its next tick; otherwise it says compilation is pending and points
+at `dome sync` / `dome serve`.
+
+`--json` emits `dome.capture/v1`:
+
+```json
+{
+  "schema": "dome.capture/v1",
+  "status": "captured",
+  "vault": "/Users/mark/vaults/work",
+  "path": "inbox/raw/2026-06-09-2311-call-the-landlord.md",
+  "title": "call the landlord",
+  "captured_at": "2026-06-10T06:11:00.000Z",
+  "source": "cli",
+  "branch": "main",
+  "commit": "41a98c2...",
+  "serve_status": "running",
+  "adopted_initialized": true,
+  "compile_pending": false
+}
+```
+
+`serve_status` mirrors the heartbeat read `dome status` uses (`running` /
+`stale` / `off`); `compile_pending` is true when no running host is visible or
+the adopted ref for the branch is uninitialized. Error cases emit
+`{ schema, status: "error", vault, error }`.
+
+Preconditions: the vault must be an initialized Dome vault — a git repository
+with `.dome/config.yaml` present — with at least one commit and a non-detached
+HEAD (the adopted-ref substrate needs a branch). Each violation is a usage
+error (exit 64) with a pointer at `dome init` or `dome sync`.
+
+Exit codes: 0 on success; 64 (EX_USAGE) on empty input, text+`--file`
+conflict, TTY-with-no-input, uninitialized vault, no commits, or detached
+HEAD; 1 on an unreadable `--file` path or unexpected I/O failure.
 
 ### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]`
 
@@ -1583,6 +1681,7 @@ The planned MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for h
 
 ## Related
 
+- [[wiki/specs/capture]] — the capture loop end-to-end + the phone/voice ingress recipe behind `dome capture`.
 - [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter should converge with.
 - [[wiki/specs/harnesses]] — when the CLI vs MCP earns its keep.
 - [[wiki/specs/adoption]] — what `dome sync` / `dome status` consult.
