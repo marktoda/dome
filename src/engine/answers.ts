@@ -36,7 +36,7 @@ import {
 } from "./apply-patch";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import { routeGardenRunEffects } from "./garden-run-routing";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import type {
   RunId,
   RunnerError,
@@ -88,6 +88,7 @@ export async function runAnswerHandlers(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
@@ -149,6 +150,7 @@ async function runAnswerHandlersInner(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
@@ -218,6 +220,9 @@ async function runAnswerHandlersInner(opts: {
         : {}),
       ...(opts.modelProvider !== undefined
         ? { modelProvider: opts.modelProvider }
+        : {}),
+      ...(opts.modelStepProvider !== undefined
+        ? { modelStepProvider: opts.modelStepProvider }
         : {}),
       ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     });

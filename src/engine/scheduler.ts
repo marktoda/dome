@@ -86,7 +86,7 @@ import {
 } from "../processors/runtime";
 import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 
@@ -148,6 +148,7 @@ export async function runScheduler(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
@@ -209,6 +210,7 @@ async function runSchedulerInner(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
@@ -232,6 +234,7 @@ async function runSchedulerInner(opts: {
     executionState,
     executionCap,
     modelProvider,
+    modelStepProvider,
     operational,
     resolveGrants,
     extensionIdFor,
@@ -371,6 +374,7 @@ async function runSchedulerInner(opts: {
         ...(executionState !== undefined ? { executionState } : {}),
         ...(executionCap !== undefined ? { executionCap } : {}),
         ...(modelProvider !== undefined ? { modelProvider } : {}),
+        ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
         ...(operational !== undefined ? { operational } : {}),
       });
 

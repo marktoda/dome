@@ -14,6 +14,7 @@ import {
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { noopSinks } from "../../src/engine/apply-effect";
 import type { ApplyPatchInput } from "../../src/engine/apply-patch";
+import type { ModelStepProvider } from "../../src/engine/model-invoke";
 import { runScheduler } from "../../src/engine/scheduler";
 import type { EngineVault } from "../../src/engine/vault-shape";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
@@ -474,6 +475,57 @@ describe("runScheduler — executor-result telemetry", () => {
     expect(applyPatchCalls).toBe(0);
     expect(adoptionCalls).toBe(0);
   });
+
+  test("scheduled llm processor receives a defined, callable ctx.modelInvoke.step", async () => {
+    const modelCap: Capability = { kind: "model.invoke", maxDailyCostUsd: 5 };
+    let stepCalled = 0;
+    const modelStepProvider: ModelStepProvider = async (request) => {
+      stepCalled += 1;
+      // Echo back a deterministic tool call so the processor can assert it
+      // received the injected provider's result.
+      expect(request.messages[0]?.content).toBe("go");
+      return { toolCalls: [{ id: "c1", name: "echo", input: {} }] };
+    };
+
+    let stepWasDefined = false;
+    let resultName: string | undefined;
+    const processor = defineProcessor({
+      id: "test.scheduler.llm-step",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [modelCap],
+      run: async (ctx) => {
+        stepWasDefined = ctx.modelInvoke?.step !== undefined;
+        if (ctx.modelInvoke?.step !== undefined) {
+          const out = await ctx.modelInvoke.step({
+            messages: [{ role: "user", content: "go" }],
+            tools: [{ name: "echo", description: "", inputSchema: {} }],
+          });
+          resultName = out.toolCalls?.[0]?.name;
+        }
+        return [];
+      },
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+
+    const result = await runWithProcessor(
+      fixture,
+      processor,
+      {},
+      {
+        resolveGrants: () => [modelCap],
+        modelStepProvider,
+      },
+    );
+
+    expect(result.fired.length).toBe(1);
+    expect(result.fired[0]?.success).toBe(true);
+    expect(stepWasDefined).toBe(true);
+    expect(stepCalled).toBe(1);
+    expect(resultName).toBe("echo");
+  });
 });
 
 async function makeFixture(): Promise<Fixture> {
@@ -513,6 +565,7 @@ async function runWithProcessor(
     readonly applyGardenPatchToCandidate?: (
       opts: ApplyPatchInput,
     ) => Promise<CommitOid | null>;
+    readonly modelStepProvider?: ModelStepProvider;
   } = {},
 ) {
   const registryResult = buildRegistry([processor]);
@@ -529,6 +582,9 @@ async function runWithProcessor(
     now: () => NOW,
     resolveGrants: schedulerOverrides.resolveGrants ?? (() => []),
     extensionIdFor: (id: string) => id,
+    ...(schedulerOverrides.modelStepProvider !== undefined
+      ? { modelStepProvider: schedulerOverrides.modelStepProvider }
+      : {}),
     ...(schedulerOverrides.signal !== undefined
       ? { signal: schedulerOverrides.signal }
       : {}),

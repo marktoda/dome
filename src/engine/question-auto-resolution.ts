@@ -35,7 +35,7 @@ import { makeSnapshot } from "../processors/runtime";
 import type { ApplyEffectSinks } from "./apply-effect";
 import type { ApplyPatchInput } from "./apply-patch";
 import { runAnswerHandlers, type AnswerHandlerResult } from "./answers";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import { answerQuestionDurably } from "./question-answer-recording";
 import type { EngineVault } from "./vault-shape";
 
@@ -70,6 +70,7 @@ export async function runQuestionAutoResolution(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly adoptSubProposal?: AdoptAutoAnswerSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
   readonly signal?: AbortSignal;
@@ -189,6 +190,7 @@ async function dispatchAutoAnswerHandlers(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly adoptSubProposal?: AdoptAutoAnswerSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
   readonly applyGardenPatchToCandidate?: (
@@ -223,6 +225,9 @@ async function dispatchAutoAnswerHandlers(opts: {
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
+      : {}),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
       : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }

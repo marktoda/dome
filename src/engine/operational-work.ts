@@ -30,7 +30,7 @@ import type { ProjectionDb } from "../projections/db";
 import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
 import type { ProcessorRegistry } from "../processors/registry";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import type { ApplyEffectSinks } from "./apply-effect";
 import type { ApplyPatchInput } from "./apply-patch";
 import type { RuntimeQuestionAutoResolveConfig } from "./capability-policy";
@@ -70,6 +70,7 @@ export async function runOperationalWork(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly adoptSubProposal?: (
     proposal: Proposal,
     cascadeDepth: number,
@@ -106,6 +107,9 @@ export async function runOperationalWork(opts: {
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
       : {}),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
+      : {}),
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
@@ -141,6 +145,9 @@ export async function runOperationalWork(opts: {
       : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
+      : {}),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
       : {}),
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
     ...(opts.adoptSubProposal !== undefined
@@ -189,6 +196,9 @@ export async function runOperationalWork(opts: {
             : {}),
           ...(opts.modelProvider !== undefined
             ? { modelProvider: opts.modelProvider }
+            : {}),
+          ...(opts.modelStepProvider !== undefined
+            ? { modelStepProvider: opts.modelStepProvider }
             : {}),
           ...(opts.adoptSubProposal !== undefined
             ? { adoptSubProposal: opts.adoptSubProposal }

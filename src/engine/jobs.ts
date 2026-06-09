@@ -36,7 +36,7 @@ import {
 } from "../processors/runtime";
 import type { ExecutionPolicyCap } from "../processors/execution-policy";
 import type { ProcessorExecutionState } from "../processors/execution-state";
-import type { ModelProvider } from "./model-invoke";
+import type { ModelProvider, ModelStepProvider } from "./model-invoke";
 import type { TriggerMatch } from "../processors/triggers";
 import type { ApplyEffectSinks } from "./apply-effect";
 import {
@@ -83,6 +83,7 @@ export async function runQueuedJobs(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
@@ -175,6 +176,7 @@ async function runOneJob(opts: {
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly operational?: OperationalQueryView;
   readonly adoptSubProposal?: AdoptJobSubProposalFn;
   readonly currentAdopted?: () => CommitOid;
@@ -224,6 +226,9 @@ async function runOneJob(opts: {
       : {}),
     ...(opts.modelProvider !== undefined
       ? { modelProvider: opts.modelProvider }
+      : {}),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
       : {}),
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
   });

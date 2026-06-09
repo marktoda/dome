@@ -672,6 +672,9 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     ...(opts.runtime.modelProvider !== undefined
       ? { modelProvider: opts.runtime.modelProvider }
       : {}),
+    ...(opts.runtime.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.runtime.modelStepProvider }
+      : {}),
     resolveGrants: opts.runtime.resolveGrants,
     extensionIdFor: opts.runtime.extensionIdFor,
     extensionConfigFor: opts.runtime.extensionConfigFor,
@@ -786,6 +789,9 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     operational: opts.runtime.operationalQueryView,
     ...(opts.runtime.modelProvider !== undefined
       ? { modelProvider: opts.runtime.modelProvider }
+      : {}),
+    ...(opts.runtime.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.runtime.modelStepProvider }
       : {}),
     adoptSubProposal,
     currentAdopted: () => cursor.current,
