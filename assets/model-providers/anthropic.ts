@@ -109,17 +109,25 @@ const BASE_URL = (process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com")
   .replace(/\/+$/, "");
 
 // Built-in per-MTok USD prices for known model families (longest prefix
-// wins). Env overrides take precedence; unknown models without env prices
-// simply omit costUsd.
+// wins). Every prefix is explicit — no family catch-all, because pricing
+// differs within a family (opus 4.0/4.1 cost 3x opus 4.5+). Env overrides
+// take precedence; unknown models without env prices honestly omit costUsd
+// rather than guessing.
 const PRICE_TABLE: ReadonlyArray<{
   readonly prefix: string;
   readonly inputPerMtok: number;
   readonly outputPerMtok: number;
 }> = [
+  { prefix: "claude-fable-5", inputPerMtok: 10, outputPerMtok: 50 },
   { prefix: "claude-sonnet-4-6", inputPerMtok: 3, outputPerMtok: 15 },
   { prefix: "claude-sonnet-4-5", inputPerMtok: 3, outputPerMtok: 15 },
   { prefix: "claude-haiku-4-5", inputPerMtok: 1, outputPerMtok: 5 },
-  { prefix: "claude-opus-4", inputPerMtok: 5, outputPerMtok: 25 },
+  { prefix: "claude-opus-4-8", inputPerMtok: 5, outputPerMtok: 25 },
+  { prefix: "claude-opus-4-7", inputPerMtok: 5, outputPerMtok: 25 },
+  { prefix: "claude-opus-4-6", inputPerMtok: 5, outputPerMtok: 25 },
+  { prefix: "claude-opus-4-5", inputPerMtok: 5, outputPerMtok: 25 },
+  { prefix: "claude-opus-4-1", inputPerMtok: 15, outputPerMtok: 75 },
+  { prefix: "claude-opus-4-0", inputPerMtok: 15, outputPerMtok: 75 },
 ];
 
 main().catch((error) => {
@@ -167,10 +175,15 @@ async function runText(
   request: ProviderRequest,
 ): Promise<{ text: string; model: string; costUsd?: number }> {
   const model = request.model ?? DEFAULT_MODEL;
+  // `temperature` is sent only when the envelope supplied one: some models
+  // reject sampling parameters outright, so defaulting one in would break
+  // them. Absent means "the API's default", not 0.
   const parsed = await callMessages({
     model,
     max_tokens: MAX_TOKENS,
-    temperature: request.temperature ?? 0,
+    ...(request.temperature !== undefined
+      ? { temperature: request.temperature }
+      : {}),
     messages: [{ role: "user", content: request.prompt }],
   });
 

@@ -11,10 +11,23 @@
 // the SDK-side contract agreeing.
 //
 // Hermetic by construction: the Anthropic Messages API is faked with a local
-// Bun.serve and injected via ANTHROPIC_BASE_URL. The real API is never
-// called.
+// Bun.serve and injected via ANTHROPIC_BASE_URL, and three independent
+// fences keep a developer machine's real credentials out of every spawned
+// template:
+//
+//   1. The child cwd is an empty temp dir, so Bun's automatic .env loading
+//      (which happens in the spawned bun regardless of the `env` option and
+//      would inject a repo-root ANTHROPIC_API_KEY) finds nothing to load.
+//   2. ANTHROPIC_API_KEY defaults to "" — explicitly set, so even a loaded
+//      .env could not override it, and the template's keyPresent() treats
+//      empty-after-trim as absent.
+//   3. ANTHROPIC_BASE_URL defaults to an unroutable address, so a test that
+//      forgets to point at the fake server fails fast instead of ever
+//      reaching the real endpoint.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveShippedModelProvidersRoot } from "../../src/cli/commands/sync-shared";
@@ -43,10 +56,20 @@ type FakeAnthropic = {
 
 const servers: FakeAnthropic[] = [];
 
+/** Empty temp dir used as every child's cwd so no repo .env is auto-loaded. */
+const HERMETIC_CWD = mkdtempSync(join(tmpdir(), "dome-anthropic-template-"));
+
+/** Unroutable base URL: any unfaked request fails fast, never reaches the API. */
+const UNROUTABLE_BASE_URL = "http://127.0.0.1:1";
+
 afterEach(() => {
   while (servers.length > 0) {
     servers.pop()?.stop();
   }
+});
+
+afterAll(() => {
+  rmSync(HERMETIC_CWD, { recursive: true, force: true });
 });
 
 function fakeAnthropic(
@@ -86,16 +109,21 @@ async function runTemplate(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
-    // Deterministic baseline: no inherited key/model/pricing leakage.
-    ANTHROPIC_API_KEY: undefined,
+    // Deterministic baseline: no inherited key/model/pricing leakage. The
+    // key is "" (not undefined) so it is explicitly present in the child
+    // environment — a dropped entry could be re-supplied by Bun's automatic
+    // .env loading; an explicit empty one cannot, and keyPresent() treats
+    // empty-after-trim as absent.
+    ANTHROPIC_API_KEY: "",
     ANTHROPIC_MODEL: undefined,
     ANTHROPIC_MAX_TOKENS: undefined,
-    ANTHROPIC_BASE_URL: undefined,
+    ANTHROPIC_BASE_URL: UNROUTABLE_BASE_URL,
     ANTHROPIC_INPUT_COST_PER_MTOK: undefined,
     ANTHROPIC_OUTPUT_COST_PER_MTOK: undefined,
     ...env,
   };
   const proc = Bun.spawn([process.execPath, TEMPLATE_PATH], {
+    cwd: HERMETIC_CWD,
     env: childEnv,
     stdin: "pipe",
     stdout: "pipe",
@@ -148,7 +176,9 @@ describe("assets/model-providers/anthropic.ts", () => {
     expect(sent.headers["anthropic-version"]).toBe("2023-06-01");
     expect(sent.body.model).toBe("claude-sonnet-4-6");
     expect(sent.body.max_tokens).toBe(8192);
-    expect(sent.body.temperature).toBe(0);
+    // No envelope temperature → none sent: some models reject sampling
+    // params, so the template must not invent a default.
+    expect("temperature" in sent.body).toBe(false);
     expect(sent.body.messages).toEqual([
       { role: "user", content: "Summarize the vault" },
     ]);
@@ -178,6 +208,37 @@ describe("assets/model-providers/anthropic.ts", () => {
     expect(response.costUsd).toBeCloseTo(6, 10);
     expect(fake.requests[0]?.body.model).toBe("claude-haiku-4-5");
     expect(fake.requests[0]?.body.temperature).toBe(0.7);
+  });
+
+  test("request/v1: built-in price table has one explicit row per family", async () => {
+    // One pin per price family: opus 4.5+ ($5/$25), opus 4.0/4.1 ($15/$75),
+    // fable 5 ($10/$50). Sonnet ($3/$15) and haiku ($1/$5) are pinned by the
+    // tests above. Explicit prefixes — a bare "claude-opus-4" catch-all
+    // would price opus-4-0/4-1 at the 4.5+ rate.
+    const cases: ReadonlyArray<{ model: string; expected: number }> = [
+      // 1 MTok in + 1 MTok out at each family's rates.
+      { model: "claude-opus-4-5", expected: 30 },
+      { model: "claude-opus-4-1", expected: 90 },
+      { model: "claude-opus-4-0", expected: 90 },
+      { model: "claude-fable-5", expected: 60 },
+    ];
+    for (const { model, expected } of cases) {
+      const fake = fakeAnthropic(() =>
+        messagesResponse({
+          content: [{ type: "text", text: "ok" }],
+          model,
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        }),
+      );
+      const run = await runTemplate(
+        { schema: "dome.model-provider.request/v1", prompt: "hi", model },
+        { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: fake.url },
+      );
+      expect(run.exitCode).toBe(0);
+      expect(
+        parseModelProviderResponse(JSON.parse(run.stdout)).costUsd,
+      ).toBeCloseTo(expected, 10);
+    }
   });
 
   test("request/v1: unknown model omits costUsd unless env prices are set", async () => {
@@ -335,6 +396,7 @@ describe("assets/model-providers/anthropic.ts", () => {
     const result = await probeCommandModelProvider(
       { kind: "command", command: [process.execPath, TEMPLATE_PATH] },
       {
+        cwd: HERMETIC_CWD,
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: "sk-test",
@@ -356,9 +418,13 @@ describe("assets/model-providers/anthropic.ts", () => {
     const result = await probeCommandModelProvider(
       { kind: "command", command: [process.execPath, TEMPLATE_PATH] },
       {
+        cwd: HERMETIC_CWD,
         env: {
           ...process.env,
-          ANTHROPIC_API_KEY: undefined,
+          // "" (explicitly set), not undefined (droppable): a repo .env with
+          // a real developer key must not leak in and flip keyPresent.
+          ANTHROPIC_API_KEY: "",
+          ANTHROPIC_BASE_URL: UNROUTABLE_BASE_URL,
           ANTHROPIC_MODEL: undefined,
         },
       },
