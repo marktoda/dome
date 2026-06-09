@@ -38,6 +38,7 @@ describe("bin/dome process boundary", () => {
       "serve",
       "install",
       "uninstall",
+      "mcp",
       "status",
       "sync",
       "help",
