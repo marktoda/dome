@@ -125,14 +125,35 @@ The shipped initialization steps:
    and third-party bundle config. When it changes the file, it rewrites the YAML
    into normalized form so stale comments from older generated configs do not
    contradict the active grants.
-4. When `--with-model-provider anthropic` is supplied, writes
+4. When `--with-model-provider anthropic` is supplied, copies the shipped
+   first-party provider template from
+   `<SDK>/assets/model-providers/anthropic.ts` to
    `<vault>/.dome/model-provider.ts` and adds a command-provider stanza to
    `.dome/config.yaml`:
    `model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`.
-   The scaffold expects `ANTHROPIC_API_KEY` at runtime, keeps the vendor SDK
-   outside `@dome/sdk`, and does not enable `dome.agent` or any other
-   model-capable bundle. Enabling model-backed loops remains an explicit
-   config choice.
+   The template is shipped data (resolved like the `assets/extensions/`
+   bundles, never imported by any `src/` module — the
+   [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] fence stays
+   intact). It is a self-contained Bun script speaking the full
+   JSON-over-stdio protocol — `dome.model-provider.request/v1` (one-shot
+   text), `dome.model-provider.step/v1` (tool-use step), and
+   `dome.model-provider.probe/v1` (cheap liveness probe, no API call) —
+   against the Anthropic Messages API using plain `fetch` (no new
+   dependency). It expects `ANTHROPIC_API_KEY` at runtime; the default
+   model is `claude-sonnet-4-6`, overridable per-request via the envelope's
+   `model` field or globally via `ANTHROPIC_MODEL`. `ANTHROPIC_BASE_URL`,
+   `ANTHROPIC_MAX_TOKENS`, and `ANTHROPIC_INPUT_COST_PER_MTOK` /
+   `ANTHROPIC_OUTPUT_COST_PER_MTOK` are further env overrides. The template
+   reports `costUsd` from token usage for known model families (built-in
+   price table, env-overridable), which is what makes the engine's
+   `maxDailyCostUsd` caps effective by default. It does not enable
+   `dome.agent` or any other model-capable bundle. Enabling model-backed
+   loops remains an explicit config choice. Re-running
+   `dome init --with-model-provider anthropic` on an existing vault is the
+   supported wiring path for an already-initialized vault: the provider file
+   and the `model_provider` stanza are each first-write-only, so the re-run
+   adds whichever piece is missing and never overwrites a hand-edited
+   provider or stanza.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 6. Writes `<vault>/AGENTS.md` from the shipped orientation template
@@ -1220,9 +1241,42 @@ enabled/granted model-capable processors when the vault has no configured or
 host-injected model provider. The implementation lives in
 `src/engine/health.ts`.
 
+**Model-provider probe.** When `.dome/config.yaml` carries a
+`model_provider: { kind: "command", ... }` stanza, `dome doctor` additionally
+probes the provider command by spawning it from the vault root and writing a
+`dome.model-provider.probe/v1` envelope on stdin (see [[wiki/specs/capabilities]]
+§"model.invoke" for the envelope contract; the probe is cheap by construction —
+a conforming provider answers without any network or paid API call). The prober
+(`probeCommandModelProvider` in `src/engine/command-model-provider.ts`)
+distinguishes five outcomes:
+
+- **responsive** — exit 0 with a valid probe response. Healthy; additionally,
+  when the response carries `keyPresent: false`, doctor raises a
+  `model.provider-key-missing` warning (configured and spawnable, but the
+  provider's credential env var — `ANTHROPIC_API_KEY` for the shipped
+  template — is not set in the daemon's environment). Key presence is
+  reported separately from reachability.
+- **probe-unsupported** — the command started, read the envelope, and exited
+  non-zero (e.g. a hand-written pre-probe provider rejecting an unknown
+  schema). Treated as alive; no finding.
+- **spawn-failed** — the command could not be started at all. Raises a
+  `model.provider-unreachable` error finding.
+- **invalid-response** — exit 0 but stdout was not a valid probe response.
+  Raises `model.provider-unreachable`.
+- **timed-out** — no exit within the probe timeout (default 8s). Raises
+  `model.provider-unreachable`.
+
+The probe runs only in `dome doctor` (the probe verb); `dome check` reuses the
+same `HealthReport` machinery but does not spawn the provider. Together with
+the existing `model.provider-missing` finding this makes the historical silent
+no-op loud: unconfigured, configured-but-dead, and configured-but-keyless
+vaults each get a distinct, actionable diagnostic line.
+
 **Current behavior.** `dome doctor` opens the runtime, collects a
 `HealthReport`, prints a compact text report, and exits 0. `--json` emits the
-same report with `status`, `summary`, and `findings`. `--repair` exits 64
+same report with `status`, `summary`, and `findings` (summary counters include
+`modelProviderMissing`, `modelProviderUnreachable`, and
+`modelProviderKeyMissing`). `--repair` exits 64
 because recovery mutations still belong to the answer-handler loop. The report
 is not yet persisted as DiagnosticEffects.
 

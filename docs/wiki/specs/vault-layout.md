@@ -175,11 +175,17 @@ git:
 ```
 
 `model_provider` is optional. `dome init --with-model-provider anthropic`
-writes a vault-local `.dome/model-provider.ts` command adapter and the stanza
-above. The command runs from the vault root, receives
-`dome.model-provider.request/v1` JSON on stdin, and writes provider-neutral JSON
-on stdout (`text`, optional `model`, optional `costUsd`). The scaffold expects
-`ANTHROPIC_API_KEY` at runtime and keeps vendor API wiring outside the SDK core.
+copies the shipped template (`<SDK>/assets/model-providers/anthropic.ts`) to a
+vault-local `.dome/model-provider.ts` command adapter and adds the stanza
+above. The command runs from the vault root, receives one JSON envelope on
+stdin — `dome.model-provider.request/v1` (one-shot text),
+`dome.model-provider.step/v1` (tool-use step), or
+`dome.model-provider.probe/v1` (cheap liveness probe; see
+[[wiki/specs/capabilities]] §"model.invoke") — and writes provider-neutral
+JSON on stdout (for request/v1: `text`, optional `model`, optional `costUsd`).
+The scaffold expects `ANTHROPIC_API_KEY` at runtime (default model
+`claude-sonnet-4-6`, overridable via the envelope or `ANTHROPIC_MODEL`) and
+keeps vendor API wiring outside the SDK core.
 It does not enable `dome.agent`; model-capable bundles still require explicit
 `extensions.<bundle>.enabled: true` plus effective `model.invoke` grants.
 

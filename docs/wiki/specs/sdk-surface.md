@@ -422,6 +422,48 @@ The SDK ships features across three tiers:
 
 The shipped default config lives in `src/cli/default-vault-config.ts`, and `dome init` renders / refreshes `.dome/config.yaml` from that typed source. Integration coverage checks that enabled shipped-default bundles grant every declared capability kind.
 
+## Model provider scaffold and probe
+
+The SDK ships a batteries-included first-party model provider template at
+`<SDK>/assets/model-providers/anthropic.ts`. Like the `assets/extensions/`
+bundles, it is **shipped data, not SDK code**: no `src/` module imports it
+(the [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] fence is
+untouched), and `dome init --with-model-provider anthropic` copies it into the
+vault as `.dome/model-provider.ts` and wires the
+`model_provider: { kind: "command", command: ["bun", ".dome/model-provider.ts"] }`
+stanza ([[wiki/specs/cli]] §"dome init" carries the full flag contract,
+including the idempotent re-run path for existing vaults).
+
+The template is a self-contained Bun script over plain `fetch` — no
+`@anthropic-ai/sdk`, no `ai`, no new `package.json` dependency — speaking all
+three envelopes of the command-provider protocol:
+
+| Envelope | Behavior |
+|---|---|
+| `dome.model-provider.request/v1` | One-shot text against the Anthropic Messages API. Default model `claude-sonnet-4-6` (request `model` field wins, then `ANTHROPIC_MODEL`, then the default). |
+| `dome.model-provider.step/v1` | One tool-use step: provider-neutral `messages`/`tools` are mapped to Anthropic `tool_use` / `tool_result` blocks and back ([[wiki/specs/autonomous-agents]] §"The `ctx.modelInvoke.step` seam"). |
+| `dome.model-provider.probe/v1` | Cheap liveness answer — `ok`, `provider`, `keyPresent`, `defaultModel` — with **no network call**. Succeeds even without a key so `dome doctor` can report key-presence separately from reachability. |
+
+Cost accounting: the template reports `costUsd` computed from the response's
+token usage via a built-in per-MTok price table for the known Claude model
+families, overridable with `ANTHROPIC_INPUT_COST_PER_MTOK` /
+`ANTHROPIC_OUTPUT_COST_PER_MTOK`. Reporting cost by default is what makes the
+engine-side `maxDailyCostUsd` capability caps ([[wiki/specs/capabilities]]
+§"model.invoke") effective out of the box. Abort semantics need no
+template-side handling: the engine kills the spawned command when the
+processor's signal aborts.
+
+The SDK side of the probe is `probeCommandModelProvider` in
+`src/engine/command-model-provider.ts`; `dome doctor` consumes it and renders
+the outcome taxonomy (responsive / probe-unsupported / spawn-failed /
+invalid-response / timed-out) documented in [[wiki/specs/cli]] §"dome doctor".
+
+Test lockstep: `tests/assets/anthropic-model-provider.test.ts` round-trips the
+shipped template against the SDK-side Zod response schemas
+(`parseModelProviderResponse`, `parseModelStepResponse`) with a local fake
+Anthropic API — the template never changes shape without the SDK-side contract
+agreeing.
+
 ## Consumer surfaces
 
 Every consumer shell that builds against Dome should aggregate four kinds of
