@@ -17,6 +17,11 @@ const ALLOWED_FILES = new Set([
   // Host-level service scaffolding (launchd plist + gitignored log dir),
   // not an engine write path — same boundary class as init.ts.
   "src/cli/commands/install.ts",
+  // The human-side write path: `dome capture` writes one raw capture file
+  // and lands it as an ordinary (trailer-less) commit, exactly like a text
+  // editor + `git commit`. Not an engine write path — the daemon constructs
+  // the Proposal from the resulting branch drift.
+  "src/cli/commands/capture.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

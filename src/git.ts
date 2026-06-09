@@ -234,6 +234,104 @@ export async function commit(opts: {
   });
 }
 
+/**
+ * Commit exactly one file change on top of HEAD without consulting the index.
+ *
+ * `commit({files})` above commits the whole index, so a caller that wants to
+ * land one new file while the user has *other staged-but-uncommitted* changes
+ * would sweep that staged work into its commit. This helper builds the commit
+ * tree directly — HEAD's tree plus the single spliced blob — so nothing else
+ * can ride along, staged or not. Used by `dome capture` per
+ * docs/wiki/specs/cli.md §"dome capture" ("a dirty working tree, including
+ * already-staged-but-uncommitted changes, is not swept into the capture
+ * commit").
+ *
+ * Contract:
+ *   - The caller must already have written `content` to the working tree at
+ *     `filepath`; this helper stages that one path (so the index matches the
+ *     new HEAD for it) and never touches any other index entry.
+ *   - HEAD must resolve (at least one commit) — callers gate on that.
+ *   - The current branch ref advances to the new commit (isomorphic-git's
+ *     default ref behavior); other staged work stays staged, dirty files stay
+ *     dirty.
+ *
+ * Dogfood-mode safe: `filepath` is vault-relative and translated through the
+ * vault prefix like every other helper here.
+ */
+export async function commitSingleFileOnHead(opts: {
+  path: string;
+  filepath: string;
+  content: string;
+  message: string;
+  author?: CommitIdentity;
+}): Promise<string> {
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  const head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+  const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
+  const blobOid = await git.writeBlob({
+    fs,
+    dir: root,
+    blob: new TextEncoder().encode(opts.content),
+  });
+  const treeOid = await spliceBlobIntoTree({
+    root,
+    treeOid: headCommit.tree,
+    segments: fullpath.split("/").filter((s) => s.length > 0),
+    blobOid,
+  });
+  // Keep the index in sync for the new path so the working tree reads clean
+  // after the commit; the caller already wrote `content` to disk.
+  await git.add({ fs, dir: root, filepath: fullpath });
+  const author = opts.author ?? { name: "Dome", email: "dome@local" };
+  return git.commit({
+    fs,
+    dir: root,
+    message: opts.message,
+    author,
+    tree: treeOid,
+    parent: [head],
+  });
+}
+
+/**
+ * Return the OID of `treeOid` with the blob spliced in at the nested path
+ * `segments`, writing every intermediate tree object. Missing intermediate
+ * directories are created; an existing entry at any segment is replaced.
+ * isomorphic-git's `writeTree` sorts entries into git's canonical tree order
+ * on serialization, so insertion order here is irrelevant.
+ */
+async function spliceBlobIntoTree(opts: {
+  readonly root: string;
+  readonly treeOid: string;
+  readonly segments: ReadonlyArray<string>;
+  readonly blobOid: string;
+}): Promise<string> {
+  const [segment, ...rest] = opts.segments;
+  if (segment === undefined) {
+    throw new Error("commitSingleFileOnHead: empty filepath");
+  }
+  const { tree } = await git.readTree({ fs, dir: opts.root, oid: opts.treeOid });
+  const entries = tree.filter((entry) => entry.path !== segment);
+  if (rest.length === 0) {
+    entries.push({ mode: "100644", path: segment, oid: opts.blobOid, type: "blob" });
+  } else {
+    const existing = tree.find(
+      (entry) => entry.path === segment && entry.type === "tree",
+    );
+    const childOid =
+      existing?.oid ?? (await git.writeTree({ fs, dir: opts.root, tree: [] }));
+    const newChild = await spliceBlobIntoTree({
+      root: opts.root,
+      treeOid: childOid,
+      segments: rest,
+      blobOid: opts.blobOid,
+    });
+    entries.push({ mode: "040000", path: segment, oid: newChild, type: "tree" });
+  }
+  return git.writeTree({ fs, dir: opts.root, tree: entries });
+}
+
 export async function readTree(opts: { path: string; oid: string }): Promise<Awaited<ReturnType<typeof git.readTree>>> {
   const { root, prefix } = await resolveGitContext(opts.path);
   const commitTree = await treeOidIfCommit(root, opts.oid);

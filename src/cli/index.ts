@@ -13,6 +13,7 @@ import {
   Option,
 } from "commander";
 
+import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
@@ -125,6 +126,29 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           refreshConfig: options.refreshConfig,
           refreshInstructions: options.refreshInstructions,
           modelProvider: options.withModelProvider,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
+    .command("capture")
+    .description("Capture text into inbox/raw/ and commit it on the current branch.")
+    .argument("[text]", "Capture text (omit to read stdin or use --file).")
+    .option("--file <path>", "Read the capture body from a file.")
+    .option("--title <title>", "Explicit capture title (drives the slug and heading).")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    // Accepted for surface uniformity (callers append it to every command);
+    // capture never loads bundles or opens the runtime, so it is unused.
+    .option("--bundles-root <path>", "Ignored; capture does not open the runtime.")
+    .action(async (text: string | undefined, options: CaptureCliOptions) => {
+      setExitCode(
+        await runCapture({
+          text,
+          file: options.file,
+          title: options.title,
+          vault: options.vault,
           json: options.json,
         }),
       );
@@ -507,6 +531,13 @@ type InitCliOptions = {
   readonly refreshInstructions?: boolean;
   readonly withModelProvider?: "anthropic";
   readonly json?: boolean;
+};
+
+type CaptureCliOptions = {
+  readonly file?: string;
+  readonly title?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
 };
 
 type InstallCliOptions = {

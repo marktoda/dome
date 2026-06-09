@@ -30,6 +30,7 @@ describe("bin/dome process boundary", () => {
     expect(help.stderr).toBe("");
     expect(topLevelCommandNames(help.stdout)).toEqual([
       "init",
+      "capture",
       "check",
       "resolve",
       "query",

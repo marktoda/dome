@@ -38,6 +38,7 @@ describe("runCli", () => {
     for (
       const command of [
         "init",
+        "capture",
         "sync",
         "status",
         "check",
