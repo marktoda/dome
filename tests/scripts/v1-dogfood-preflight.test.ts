@@ -337,6 +337,30 @@ async function makeInitializedVault(): Promise<string> {
   return vaultPath;
 }
 
+// Deterministic stand-in for the vault's `.dome/model-provider.ts`. The
+// first sync after enabling dome.agent fires consolidate + brief by design
+// (scheduler new-cursor catch-up), and the real anthropic template would
+// make LIVE API calls whenever an ANTHROPIC_API_KEY leaks in from the
+// developer environment (the repo-root .env is auto-loaded by bun and
+// inherited through runProcess). The stub answers every envelope locally:
+// step replies with no tool calls, so agent loops end on their first step.
+const STUB_MODEL_PROVIDER = `
+const raw = JSON.parse(await Bun.stdin.text());
+if (raw.schema === "dome.model-provider.probe/v1") {
+  process.stdout.write(JSON.stringify({
+    schema: "dome.model-provider.probe/v1",
+    ok: true,
+    provider: "stub",
+    keyPresent: true,
+    defaultModel: "stub-model",
+  }));
+} else if (raw.schema === "dome.model-provider.step/v1") {
+  process.stdout.write(JSON.stringify({ text: "done", model: "stub-model" }));
+} else {
+  process.stdout.write(JSON.stringify({ text: "{}", model: "stub-model" }));
+}
+`.trimStart();
+
 async function makeIntakeReadyVault(): Promise<string> {
   const vaultPath = await makeInitializedVault();
   const configPath = join(vaultPath, ".dome", "config.yaml");
@@ -347,10 +371,15 @@ async function makeIntakeReadyVault(): Promise<string> {
   );
   expect(updated).not.toBe(configBody);
   await writeFile(configPath, updated, "utf8");
+  await writeFile(
+    join(vaultPath, ".dome", "model-provider.ts"),
+    STUB_MODEL_PROVIDER,
+    "utf8",
+  );
   await commit({
     path: vaultPath,
     message: "enable agent for preflight\n",
-    files: [".dome/config.yaml"],
+    files: [".dome/config.yaml", ".dome/model-provider.ts"],
   });
   const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
   expect(sync.exitCode).toBe(0);
@@ -406,6 +435,12 @@ async function runProcess(cmd: ReadonlyArray<string>): Promise<ProcessResult> {
   const proc = Bun.spawn({
     cmd: [...cmd],
     cwd: REPO_ROOT,
+    // Defense-in-depth alongside the stub provider: an explicitly-empty key
+    // wins over bun's auto-loaded repo-root .env in this process AND in the
+    // spawned bun children, so no test in this file can ever reach the real
+    // Anthropic API. A residual live-model path fails loudly (key-missing
+    // run failure) instead of silently spending money.
+    env: { ...process.env, ANTHROPIC_API_KEY: "" },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 20_000,
