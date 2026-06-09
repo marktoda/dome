@@ -36,6 +36,11 @@ dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
+dome install [--vault <path>] [--status] [--json]
+                                Install `dome serve` for this vault as a macOS launchd
+                                LaunchAgent (ambient compiler host; survives reboots).
+dome uninstall [--vault <path>] [--json]
+                                Boot out and remove the vault's launchd LaunchAgent.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -50,7 +55,7 @@ mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
-- **Lifecycle:** `dome init` — vault construction. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -1385,6 +1390,91 @@ The watcher mechanism is **poll-based** (not filesystem-event-based). Poll is si
 The scheduled-trigger dispatcher for garden processors is wired through the same runtime grant resolver as adoption. View processors are command-driven in v1 because scheduled views have no caller-owned delivery surface. There is no separate `serve --exclusive` flag in v1 because branch-level locking is always on. The `--mcp` toggle remains deferred to v1.1.
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
+
+### `dome install [--vault <path>] [--status] [--json]`
+
+Makes the local compiler host **ambient** on macOS: generates a launchd
+LaunchAgent that runs `dome serve` for the vault at login, keeps it alive
+across crashes and reboots, and loads it immediately via `launchctl`. This is
+the Phase 1 wedge enabler ([[wedge]] §"Phase 1 — Ambient daemon"): scheduled
+garden processors fire without a human keeping a terminal or tmux pane open.
+
+Composition (v1.0):
+
+1. Resolve `vaultPath` (default cwd) and the deterministic service label
+   `com.dome.serve.<slug>`. `<slug>` is the lowercased vault basename with
+   non-`[a-z0-9-]` runs collapsed to `-`, plus the first 8 hex chars of the
+   SHA-256 of the resolved vault path. The same vault path always yields the
+   same label; distinct vaults never collide, so one machine can run one
+   ambient host per vault.
+2. On non-macOS platforms, refuse with exit 1 and the message "launchd service
+   install is macOS-only; run `dome serve` under your service manager". No
+   plist is written and no service manager is touched.
+3. Ensure `<vault>/.dome/state/` exists — the service log directory, already
+   gitignored by the `dome init` scaffold.
+4. Write `~/Library/LaunchAgents/<label>.plist` with:
+   - `Label` — the service label;
+   - `ProgramArguments` — `[<bun>, <SDK>/bin/dome, "serve", "--vault",
+     <vaultPath>]`, where `<bun>` is the absolute bun runtime executing the
+     install (`process.execPath`) and the dome entry script is resolved from
+     the installed SDK, mirroring how `dome serve --daemon` re-invokes itself;
+   - `WorkingDirectory` — the vault path;
+   - `RunAtLoad` and `KeepAlive` — `true`;
+   - `StandardOutPath` / `StandardErrorPath` — `<vault>/.dome/state/serve.log`.
+5. `launchctl bootout gui/<uid>/<label>` first (failure ignored when the
+   service is not currently loaded), then `launchctl bootstrap gui/<uid>
+   <plist>`. The bootout-first shape makes re-runs replace the loaded service
+   definition cleanly: re-running `dome install` after moving the SDK or
+   changing the bun runtime is the supported upgrade path.
+
+Idempotency: re-running `dome install` rewrites the plist and replaces the
+loaded service; it exits 0. A failed `bootstrap` leaves the plist in place for
+inspection, prints launchctl's stderr, and exits 1.
+
+`--status` is the read-only service probe: it reports the label, plist path,
+`installed` (plist present in the LaunchAgents dir), and `loaded` (whether
+`launchctl print gui/<uid>/<label>` resolves) without mutating anything. A
+loaded service also writes the normal serve heartbeat, so `dome status`
+already shows `serve running` / `stale` while the agent is alive; surfacing
+installed-but-dead state directly inside `dome status` is a Phase 1 follow-up
+(use `dome install --status` until it lands).
+
+`--json` emits `dome.install/v1`: `{ schema, status:
+"installed" | "status" | "error", vault, label, plist, log?, installed?,
+loaded?, error? }`.
+
+Concurrency: the launchd-managed host acquires the same branch-level
+compiler-host lock as every other host, so an installed service plus a
+foreground `dome serve` or one-shot `dome sync` do not race — one reports
+busy and retries.
+
+Testability is part of the contract: `runInstall` / `runUninstall` accept an
+injected deps object (`platform`, `uid`, `launchAgentsDir`, a `launchctl`
+runner, and the bun/dome executable paths) defaulting to the real home
+directory and a real `Bun.spawn` runner. Tests pass a temp LaunchAgents dir
+and a recording fake runner; they never touch `~/Library` or invoke real
+`launchctl`.
+
+Exit codes: 0 on success (including idempotent re-install and clean
+`--status` reads); 1 on non-macOS platform, undeterminable uid, `launchctl
+bootstrap` failure, or unexpected I/O failure.
+
+### `dome uninstall [--vault <path>] [--json]`
+
+Removes the vault's ambient service: `launchctl bootout gui/<uid>/<label>`
+(failure ignored when the service is not loaded), then deletes the plist from
+`~/Library/LaunchAgents/`. Idempotent — when no plist is present it still
+attempts the bootout (covering a deleted-plist-but-loaded edge), reports "not
+installed", and exits 0. The serve log at `.dome/state/serve.log` is
+preserved; it is operator evidence, not service state.
+
+Non-macOS platforms get the same macOS-only refusal as `dome install`.
+
+`--json` emits `dome.uninstall/v1`: `{ schema, status:
+"uninstalled" | "not-installed" | "error", vault, label, plist, error? }`.
+
+Exit codes: 0 on success or already-not-installed; 1 on non-macOS platform,
+undeterminable uid, or unexpected I/O failure.
 
 ### Planned dedicated view aliases
 

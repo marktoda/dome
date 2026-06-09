@@ -44,6 +44,12 @@ The check is a regex sweep over `src/**/*.ts` outside `src/engine/`, `src/projec
 
 - Test files (`tests/**`).
 - The whitelisted `src/watcher.ts` (which calls `fs.stat` and `fs.watch`, both read-only).
+- Host-level CLI scaffolding at the compiler boundary, whitelisted as
+  `ALLOWED_FILES` in the shipped check: `src/cli/commands/init.ts` (vault
+  construction) and `src/cli/commands/install.ts` (launchd LaunchAgent plist
+  under `~/Library/LaunchAgents/` + the gitignored `.dome/state/` log dir).
+  These write host/vault scaffolding, never adopted vault content — engine
+  writes still flow through Proposals.
 - Files annotated with `// @engine-internal: <justification>` at the top.
 
 ## Why this exists
