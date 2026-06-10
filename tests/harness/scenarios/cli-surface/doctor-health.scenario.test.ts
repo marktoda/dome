@@ -593,6 +593,7 @@ scenario(
             "dome.agent.brief",
             "dome.agent.consolidate",
             "dome.agent.ingest",
+            "dome.agent.sweep",
           ],
         },
       }),

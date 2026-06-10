@@ -25,6 +25,28 @@ sources:
 > applies to `wiki/**/*.md` + `notes/*.md` (not "any page outside `raw/`"),
 > and the stamper runs in **garden** phase per the `dome.daily.stamp-block-id`
 > precedent. [[wiki/specs/claims]] is the normative spec.
+>
+> **As-built note (2026-06-10 — sweeper deltas):** the shipped sweep processor
+> deviates from this doc in three deliberate ways forced by verified engine
+> constraints:
+>
+> 1. **`dome.agent.sweep-queue` is a pure library, not a processor.** Scheduled
+>    garden processors receive empty `changedPaths` and there is no
+>    inter-processor data channel beyond projections; the deterministic spine
+>    lives as `lib/sweep-queue.ts` called inside the sweep processor.
+> 2. **No `.dome/state` sweep store — settlement lives in markdown.** Processors
+>    can only persist state through the eleven effect kinds; nothing writes
+>    arbitrary durable operational state; patches are whole-content writes so N
+>    per-item ledger appends would clobber. Settlement = destination `sources:`
+>    wikilink (atomic with the integration patch); the ledger is advisory
+>    (cursor, no-op lines, run summary), written once per run.
+> 3. **v1 material = `wiki/dailies/*.md` + `inbox/processed/*.md`; destinations
+>    = existing pages only.** Both material roots are append-only/immutable by
+>    convention once the day closes, which makes hash-free sources-link
+>    settlement sound. `notes/**` + `wiki/sources/**` as material, and
+>    new-stub-page creation, are deferred.
+>
+> [[wiki/specs/sweep]] is the normative spec for the shipped sweeper.
 
 Approved design from the 2026-06-09 brainstorm session. This is the first
 post-wedge work item: aim the nightly loop at *meaning*, not hygiene. It

@@ -58,10 +58,10 @@ extracts the facts from adopted pages, preserving
 
 ## Anticipated consumers
 
-The nightly sweeper (`dome.agent.sweep`, planned) supersedes claim values
-in place; `dome explain <page>#^c…` (planned) renders a claim's timeline
-from block git history; the warden contradiction pre-filter shortlists
-same-key/different-value claims across pages.
+The nightly sweeper (`dome.agent.sweep`, shipped — see [[wiki/specs/sweep]])
+supersedes claim values in place; `dome explain <page>#^c…` (planned) renders
+a claim's timeline from block git history; the warden contradiction pre-filter
+shortlists same-key/different-value claims across pages.
 
 ## Deferred
 

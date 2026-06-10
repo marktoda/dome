@@ -471,6 +471,39 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "Signal lines are free-text markdown; malformed lines must degrade to an info diagnostic, never block adoption or crash the counter.",
       ],
     }),
+    freezeLoop({
+      id: "dome.meaning.integration",
+      goal:
+        "Every daily and processed capture is integrated into the wiki pages it concerns — no capture left behind.",
+      evidence: [
+        { kind: "path", pattern: "wiki/dailies/*.md" },
+        { kind: "path", pattern: "inbox/processed/*.md" },
+        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "operational", name: "questions" },
+        { kind: "operational", name: "diagnostics" },
+        { kind: "operational", name: "runs" },
+      ],
+      processors: [
+        "dome.agent.sweep",
+        "dome.agent.sweep-answer",
+      ],
+      surfaces: [
+        { kind: "path", pattern: "wiki/entities/*.md" },
+        { kind: "path", pattern: "wiki/concepts/*.md" },
+        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "status", name: "check" },
+      ],
+      settlement: {
+        key: "(material path, destination path) pair",
+        noOpWhen:
+          "every in-window (material, destination) pair is settled by a sources-link wikilink in the destination's frontmatter or by an advisory ledger integrated/no-op/questioned row",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "Model-generated integrations are bounded to one page per queue item; a bad integration is isolated to that page and revertable via git history.",
+        "Advisory ledger loss (e.g., a failed ledger patch) only costs re-judging already-settled pairs on the next run; settlement-by-sources in destination frontmatter is authoritative.",
+      ],
+    }),
   ]);
 
 export function validateMaintenanceLoops(opts: {
