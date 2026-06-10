@@ -81,4 +81,34 @@ describe("renderSweepRun / upsertCursor", () => {
     expect(parseSweepLedger(replaced).cursor).toBe("2026-06-10");
     expect(replaced.match(/^cursor::/gm)).toHaveLength(1);
   });
+
+  // --- new hardening tests ---
+
+  test("upsertCursor collapses duplicate cursor lines to exactly one with the new date", () => {
+    const twoLines = [
+      "# Sweep ledger",
+      "",
+      "cursor:: 2026-06-01",
+      "",
+      "cursor:: 2026-06-08",
+      "",
+      "## Run 2026-06-08",
+      "",
+    ].join("\n");
+    const result = upsertCursor(twoLines, "2026-06-10");
+    expect(result.match(/^cursor::/gm)).toHaveLength(1);
+    expect(parseSweepLedger(result).cursor).toBe("2026-06-10");
+  });
+
+  test("parseSweepLedger treats an impossible date as a problem, not a cursor", () => {
+    const parsed = parseSweepLedger("cursor:: 2026-13-45\n");
+    expect(parsed.cursor).toBeNull();
+    expect(parsed.problems).toHaveLength(1);
+  });
+
+  test("upsertCursor append path produces exactly one blank line before cursor::", () => {
+    const result = upsertCursor("# L\n\nprose\n", "2026-06-10");
+    expect(result).toContain("prose\n\ncursor::");
+    expect(result).not.toContain("prose\n\n\ncursor::");
+  });
 });

@@ -22,6 +22,12 @@ export type ParsedSweepLedger = {
   readonly problems: ReadonlyArray<string>;
 };
 
+function isValidDate(date: string): boolean {
+  const ms = Date.parse(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(ms)) return false;
+  return new Date(ms).toISOString().slice(0, 10) === date;
+}
+
 const CURSOR_RE = /^cursor::\s*(\d{4}-\d{2}-\d{2})\s*$/;
 const CURSOR_LINE_RE = /^cursor::/;
 const SETTLEMENT_RE =
@@ -36,7 +42,7 @@ export function parseSweepLedger(content: string): ParsedSweepLedger {
     if (line.length === 0 || line.startsWith("#")) continue;
     if (CURSOR_LINE_RE.test(line)) {
       const match = CURSOR_RE.exec(line);
-      if (match?.[1] !== undefined) cursor = match[1];
+      if (match?.[1] !== undefined && isValidDate(match[1])) cursor = match[1];
       else problems.push(`line ${i + 1}: malformed cursor line`);
       continue;
     }
@@ -77,10 +83,13 @@ export function upsertCursor(content: string, date: string): string {
   const idx = lines.findIndex((l) => CURSOR_LINE_RE.test(l));
   if (idx >= 0) {
     lines[idx] = `cursor:: ${date}`;
-    return lines.join("\n");
+    return lines.filter((l, i) => i === idx || !CURSOR_LINE_RE.test(l)).join("\n");
   }
   if (content.trim().length === 0) {
     return ["# Sweep ledger", "", `cursor:: ${date}`, ""].join("\n");
   }
-  return [...lines, "", `cursor:: ${date}`, ""].join("\n");
+  // Trim trailing blank lines so we always append with exactly one blank before cursor::
+  let end = lines.length;
+  while (end > 0 && lines[end - 1]?.trim() === "") end--;
+  return [...lines.slice(0, end), "", `cursor:: ${date}`, ""].join("\n");
 }
