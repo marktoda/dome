@@ -59,6 +59,7 @@ import {
   type Status,
 } from "../presenter";
 
+import { resolveVaultPath } from "../resolve-vault";
 // ----- Constants ------------------------------------------------------------
 
 const SERVICE_LABEL_PREFIX = "com.dome.serve.";
@@ -246,7 +247,7 @@ export async function runInstall(
   options: RunInstallOptions = {},
   deps: ServiceDeps = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const d = resolveDeps(deps);
   const json = options.json === true;
 
@@ -369,7 +370,7 @@ export async function runUninstall(
   options: RunUninstallOptions = {},
   deps: ServiceDeps = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const d = resolveDeps(deps);
   const json = options.json === true;
 
@@ -466,7 +467,7 @@ export async function runRestart(
   options: RunRestartOptions = {},
   deps: ServiceDeps = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const d = resolveDeps(deps);
   const json = options.json === true;
 

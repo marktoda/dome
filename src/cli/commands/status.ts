@@ -112,7 +112,7 @@
 //   - `--json` emits the snapshot as a JSON object. Text mode renders
 //     a compact dashboard intended for humans and agent transcripts.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import { homedir } from "node:os";
 
 import { commitOid } from "../../core/source-ref";
@@ -152,6 +152,7 @@ import {
   projectionRequiresRebuild,
 } from "../../projections/db";
 import { queryQuestionRecords } from "../../projections/questions";
+import { resolveVaultPath } from "../resolve-vault";
 
 import { probeServiceState, type ServiceDeps } from "./install";
 import { resolveBundleRoots } from "./sync-shared";
@@ -304,7 +305,7 @@ export async function runStatus(
   options: RunStatusOptions = {},
   deps: ServiceDeps = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
 
   // Read the git-side state first. These accessors return null on missing
   // / detached HEAD / uninitialized adopted ref — all valid states.

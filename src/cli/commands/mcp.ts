@@ -25,12 +25,13 @@
 //     after the client disconnects.
 
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { findGitRoot } from "../../git";
 import { createDomeMcpServer } from "../../mcp/server";
+import { resolveVaultPath } from "../resolve-vault";
 
 const EX_USAGE = 64;
 
@@ -45,7 +46,7 @@ export type RunMcpOptions = {
  * when the target is not an initialized Dome vault; 1 on transport failure.
  */
 export async function runMcp(options: RunMcpOptions = {}): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
 
   const gitRoot = await findGitRoot(vaultPath);
   if (gitRoot === null || !existsSync(join(vaultPath, ".dome", "config.yaml"))) {

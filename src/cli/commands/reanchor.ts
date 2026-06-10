@@ -21,7 +21,7 @@
 //   - The handler returns the exit code; the dispatcher calls `process.exit`.
 //   - `--json` emits a single `dome.reanchor/v1` object on stdout.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import {
   getAdoptedRef,
@@ -50,6 +50,7 @@ import {
 } from "../presenter";
 import { resolveBundleRoots } from "./sync-shared";
 
+import { resolveVaultPath } from "../resolve-vault";
 const SCHEMA = "dome.reanchor/v1";
 const EX_USAGE = 64;
 
@@ -97,7 +98,7 @@ type ReanchorJsonResult =
 export async function runReanchor(
   options: RunReanchorOptions = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const json = options.json === true;
 
   const branch = await getCurrentBranch(vaultPath);

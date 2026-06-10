@@ -4,7 +4,7 @@
 // view-phase processor named `query`. The processor owns retrieval behavior;
 // this file owns CLI ergonomics and rendering.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import {
   firstPartyViewNotFoundMessage,
@@ -32,6 +32,7 @@ import {
   resolveQuestionCommand,
 } from "../../question-resolution";
 
+import { resolveVaultPath } from "../resolve-vault";
 export type QueryCommandOptions = {
   readonly text?: string | undefined;
   readonly vault?: string | undefined;
@@ -45,7 +46,7 @@ export type QueryCommandOptions = {
 export async function runQuery(
   options: QueryCommandOptions = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const text = options.text?.trim() ?? "";
   if (text.length === 0) {
     printViewCommandError({

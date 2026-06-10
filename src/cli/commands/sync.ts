@@ -34,7 +34,7 @@
 //     (`src/cli/index.ts`) calls `process.exit(code)`.
 //   - Console output goes through `console.log` / `console.error`.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
@@ -80,6 +80,7 @@ import {
   type Status,
 } from "../presenter";
 
+import { resolveVaultPath } from "../resolve-vault";
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -170,7 +171,7 @@ export type RunSyncOptions = {
  */
 export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
 
   const bundleRoots = resolveBundleRoots({
     vaultPath,

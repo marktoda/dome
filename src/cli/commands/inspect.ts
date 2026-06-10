@@ -42,7 +42,7 @@
 // `dome doctor` namespace is reserved for the v1.x health-check verb;
 // this surface is the read half.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import type {
   DiagnosticEffect,
@@ -74,6 +74,7 @@ import {
 } from "../../projections/facts";
 import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
+import { resolveVaultPath } from "../resolve-vault";
 
 import { resolveBundleRoots, type ResolvedBundleRoots } from "./sync-shared";
 
@@ -164,7 +165,7 @@ export async function runInspect(
     return 64;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
 
   const limit = parseLimit(options.limit, defaultLimitForSubject(subject));
   if (limit === null) {

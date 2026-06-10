@@ -46,6 +46,7 @@ import {
 import type { OperationalWorkResult } from "../../engine/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
 import { compileRange } from "../../engine/compile-range";
+import { resolveVaultPath } from "../resolve-vault";
 
 import {
   detectDrift,
@@ -154,7 +155,7 @@ export async function runServe(
   opts: RunServeRuntimeOptions = {},
 ): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
 
   const pollIntervalMs = parsePollInterval(options.pollIntervalMs);
   if (pollIntervalMs === null) {

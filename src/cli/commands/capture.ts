@@ -63,6 +63,7 @@ import {
   type Status,
 } from "../presenter";
 
+import { resolveVaultPath } from "../resolve-vault";
 // ----- Constants ------------------------------------------------------------
 
 const EX_USAGE = 64;
@@ -206,7 +207,7 @@ export async function runCapture(
   options: RunCaptureOptions = {},
   deps: CaptureDeps = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const json = options.json === true;
   const now = (deps.now ?? (() => new Date()))();
 

@@ -1,6 +1,6 @@
 // cli/commands/lint: first-class wrapper for the dome.lint report view.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import { formatJson } from "../format";
 import { formatSeverity } from "../human-output";
@@ -22,6 +22,7 @@ import {
   structuredViewBrokerMessages,
 } from "./view-shared";
 
+import { resolveVaultPath } from "../resolve-vault";
 export type LintFailOn = "info" | "warning" | "error" | "block" | "never";
 
 export type LintCommandOptions = {
@@ -83,7 +84,7 @@ export async function runLint(
     if (options.json === true) {
       console.log(formatJson(run.data));
     } else {
-      const vaultPath = resolve(options.vault ?? process.cwd());
+      const vaultPath = resolveVaultPath(options.vault);
       console.log(renderLintText(data, vaultPath));
     }
     return data.status === "fail" ? 1 : 0;

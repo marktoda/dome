@@ -1,6 +1,6 @@
 // cli/commands/rebuild: rebuild projection.db from the adopted commit.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { commitOid } from "../../core/source-ref";
@@ -16,6 +16,7 @@ import {
 } from "../presenter";
 import { resolveBundleRoots } from "./sync-shared";
 
+import { resolveVaultPath } from "../resolve-vault";
 export type RunRebuildOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
@@ -43,7 +44,7 @@ type RebuildJsonResult =
 export async function runRebuild(
   options: RunRebuildOptions = {},
 ): Promise<number> {
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const bundleRoots = resolveBundleRoots({
     vaultPath,
     bundlesRoot: options.bundlesRoot,

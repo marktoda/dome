@@ -5,7 +5,7 @@
 // It owns CLI parsing/printing only; the projection accessor owns row
 // lookup, multiple-choice validation, and mutation semantics.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import {
   answerQuestionDurably,
@@ -31,6 +31,7 @@ import {
   section,
 } from "../presenter";
 
+import { resolveVaultPath } from "../resolve-vault";
 const ANSWER_SCHEMA = "dome.answer/v1";
 
 export type RunAnswerOptions = {
@@ -59,7 +60,7 @@ export async function runAnswer(
     return 64;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const bundleRoots = resolveBundleRoots({
     vaultPath,
     bundlesRoot: options.bundlesRoot,

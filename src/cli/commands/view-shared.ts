@@ -5,7 +5,7 @@
 // Runtime opening and view dispatch live in `src/engine/view-command.ts` so
 // future non-CLI surfaces can reuse the same command boundary.
 
-import { resolve } from "node:path";
+
 
 import type {
   DiagnosticEffect,
@@ -15,6 +15,7 @@ import type {
 import type { CommitOid } from "../../core/source-ref";
 import type { RunCommandResult } from "../../engine/commands";
 import { runRuntimeViewCommand } from "../../engine/view-command";
+import { resolveVaultPath } from "../resolve-vault";
 
 import { formatJson } from "../format";
 import { resolveBundleRoots } from "./sync-shared";
@@ -81,7 +82,7 @@ export function firstPartyViewNotFoundMessage(opts: {
 export async function runSharedViewCommand(
   opts: ViewCommandOptions,
 ): Promise<ViewCommandRunResult> {
-  const vaultPath = resolve(opts.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(opts.vault);
   const bundleRoots = resolveBundleRoots({
     vaultPath,
     bundlesRoot: opts.bundlesRoot,

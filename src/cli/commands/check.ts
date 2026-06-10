@@ -5,7 +5,7 @@
 // without creating a new mutation path. Recovery still flows through
 // QuestionEffect rows and `dome resolve`.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import type { SourceRef } from "../../core/source-ref";
@@ -87,6 +87,7 @@ import {
 } from "../parse-options";
 import { resolveBundleRoots } from "./sync-shared";
 
+import { resolveVaultPath } from "../resolve-vault";
 const SCHEMA = "dome.check/v1";
 const DEFAULT_LIMIT = 10;
 const LOOP_RECENT_RUN_LIMIT = 25;
@@ -206,7 +207,7 @@ export async function runCheck(
     return EX_USAGE;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const scopes = resolveScopes(options);
   const storageReport = collectOperationalSchemaReport({ vaultPath });
   if (storageReport.status === "unhealthy") {

@@ -6,7 +6,7 @@
 // questions, the user resolves them with `dome resolve`, and answer handlers apply
 // the mutation.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 
 import { probeCommandModelProvider } from "../../engine/command-model-provider";
 import {
@@ -33,6 +33,7 @@ import {
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
+import { resolveVaultPath } from "../resolve-vault";
 const EX_USAGE = 64;
 
 export type RunDoctorOptions = {
@@ -66,7 +67,7 @@ export async function runDoctor(
     return EX_USAGE;
   }
 
-  const vaultPath = resolve(options.vault ?? process.cwd());
+  const vaultPath = resolveVaultPath(options.vault);
   const bundleRoots = resolveBundleRoots({
     vaultPath,
     bundlesRoot: options.bundlesRoot,
