@@ -12,6 +12,8 @@
 // is timezone- and config-agnostic. Probe and plain-text request envelopes
 // are answered cheaply so doctor/text callers can't wedge the scenario.
 
+export {};
+
 type Message = {
   readonly role: string;
   readonly content: string;
