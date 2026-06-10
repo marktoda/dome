@@ -1148,9 +1148,9 @@ describe("runInspect", () => {
     const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
     expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 4,
+        processors: 7,
         adoption: 0,
-        garden: 4,
+        garden: 7,
         view: 0,
         model_processors: 3,
         model: "granted-no-provider",
@@ -1191,7 +1191,7 @@ describe("runInspect", () => {
     expect(ingest).toEqual(
       expect.objectContaining({
         bundle: "dome.agent",
-        version: "0.2.0",
+        version: "0.2.1",
         phase: "garden",
         triggers: "signal",
         execution: "llm",
@@ -1214,6 +1214,7 @@ describe("runInspect", () => {
         "index.md",
         "log.md",
         "notes/**/*.md",
+        "preferences/signals.md",
         "wiki/**/*.md",
       ],
     });
@@ -1448,9 +1449,9 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.3.1",
-        processors: 4,
-        garden: 4,
+        version: "0.4.0",
+        processors: 7,
+        garden: 7,
         model_processors: 3,
         model: "disabled-no-provider",
       }),
@@ -2265,7 +2266,7 @@ describe("runCheck", () => {
     expect(out).toMatch(/engine\s+.*ok/);
     expect(out).toContain("0 diagnostics");
     expect(out).toContain("0 open questions");
-    expect(out).toContain("5 known");
+    expect(out).toContain("6 known");
     expect(out).not.toContain("  LOOPS\n");
   });
 
@@ -2276,7 +2277,7 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("5 known");
+    expect(out).toContain("6 known");
     expect(out).toContain("  LOOPS\n");
     expect(out).toContain("[inactive] dome.capture.digest");
     expect(out).toContain("surfaces: path:wiki/sources/*.md");
@@ -2366,7 +2367,7 @@ describe("runCheck", () => {
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     const maintenanceLoops =
       parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
-    expect(maintenanceLoops).toHaveLength(5);
+    expect(maintenanceLoops).toHaveLength(6);
     expect(maintenanceLoops.find((loop) =>
       loop["id"] === "dome.question.continuity"
     )).toEqual(expect.objectContaining({
@@ -2377,6 +2378,7 @@ describe("runCheck", () => {
       optional_processor_ids: [
         "dome.warden.integrity",
         "dome.warden.integrity-answer",
+        "dome.agent.preference-promotion-answer",
       ],
       questions: 1,
       agent_safe_questions: 0,
@@ -3687,7 +3689,7 @@ describe("runStatus", () => {
     expect(out).toContain("content"); expect(out).toContain("2 pages"); // content summary
     expect(out).toContain("links 0"); // wikilinks in content
     expect(out).toContain("projection"); expect(out).toContain("√ fresh"); // projection row
-    expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("6 known"); // loops summary
     expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
@@ -3704,7 +3706,7 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("loops"); expect(out).toContain("5 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("6 known"); // loops summary
     expect(out).toContain("\n  LOOPS\n"); // loop detail section header (ALLCAPS, indent 2)
     // Tree connectors present (ASCII form — tests run without UTF locale)
     expect(out).toMatch(/[|`][-]/); // |- or `- tree connectors
@@ -3757,7 +3759,7 @@ describe("runStatus", () => {
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     const loops =
       parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
-    expect(loops).toHaveLength(5);
+    expect(loops).toHaveLength(6);
     expect(loops[0]).toEqual(expect.objectContaining({
       questions: 0,
       agent_safe_questions: 0,

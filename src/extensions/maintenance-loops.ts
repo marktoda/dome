@@ -390,6 +390,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       optionalProcessors: [
         "dome.warden.integrity",
         "dome.warden.integrity-answer",
+        "dome.agent.preference-promotion-answer",
       ],
       questionScope: "all",
       surfaces: [
@@ -407,6 +408,38 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       risks: [
         "Open questions can become user chores if safe agent-resolution metadata is missing.",
         "Answer handlers must keep routing patches through garden and adoption.",
+      ],
+    }),
+    freezeLoop({
+      id: "dome.preference.promotion",
+      goal:
+        "Recurring owner corrections become standing preferences in core memory, with owner consent.",
+      evidence: [
+        { kind: "path", pattern: "preferences/signals.md" },
+        { kind: "path", pattern: "core.md" },
+        { kind: "projection", name: "facts:dome.preference.*" },
+        { kind: "operational", name: "questions" },
+        { kind: "operational", name: "diagnostics" },
+      ],
+      processors: [
+        "dome.agent.preference-signals",
+        "dome.agent.preference-promotion",
+        "dome.agent.preference-promotion-answer",
+      ],
+      surfaces: [
+        { kind: "path", pattern: "core.md" },
+        { kind: "path", pattern: "preferences/signals.md" },
+        { kind: "status", name: "check" },
+      ],
+      settlement: {
+        key: "topic slug + candidate-rule hash",
+        noOpWhen:
+          "every candidate topic has exactly one open promotion question, every answered one is promoted into core.md's generated block or tombstoned in the signals page, and counter facts match the signals page",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "Auto-promotion would let agents rewrite their own standing instructions; only the answer handler writes core.md, and only after an owner-needed question.",
+        "Signal lines are free-text markdown; malformed lines must degrade to an info diagnostic, never block adoption or crash the counter.",
       ],
     }),
   ]);
