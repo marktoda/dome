@@ -8,7 +8,7 @@ sources:
 
 # Task lifecycle
 
-This spec is normative for Dome's task-lifecycle substrate — the `^block-anchor` line-identity primitive, the three deterministic `dome.daily` task processors (stamp / reconcile / normalize), the `lastHumanChangedAt` freshness rule, and the **warden** pattern (model-gated garden processors). It explains why each piece sits where it does and what contract it holds.
+This spec is normative for Dome's task-lifecycle substrate — the `^block-anchor` line-identity primitive, the three deterministic `dome.daily` task processors (stamp / reconcile / normalize), the `lastHumanChangedAt` freshness rule, **attention discounting** (dismissal-derived impression discounting), and the **warden** pattern (model-gated garden processors). It explains why each piece sits where it does and what contract it holds.
 
 The task-lifecycle layer is the machinery behind "close a task in one place, close it everywhere." It introduces no new primitive: a "warden" is a [[wiki/specs/processors|Processor]] (`kind: llm`, garden phase), not a new concept beside Vault / Proposal / Processor / Effect. The four-concept core stays sealed.
 
@@ -36,6 +36,43 @@ Daily open-loop recency ranking must reflect *human* edit recency, not engine ch
 
 `src/git.ts` exposes `lastHumanChangedAt` alongside `lastChangedAt`: it is the timestamp of the latest commit touching the line that does **not** carry a `Dome-Run:` trailer — i.e. the latest *human* (non-engine) change. Daily open-loop recency ranking uses `lastHumanChangedAt`, so an engine rewrite such as anchor stamping cannot reset a task's human-edit recency. This depends on the trailer convention pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]: engine commits carry `Dome-Run`, human out-of-band commits do not, which makes the human/engine split structurally queryable.
 
+## Attention discounting
+
+Items surfaced day after day without action stop earning their prominence. The attention-discount layer (memory-quality M4) derives an **implicit dismissal signal** from what the vault already records — which dailies showed an item, and when a human last touched its origin — and demotes accordingly. Per the memory plan's decision ledger (entry 5): dismissal is implicit, derived from git + markdown; demotion self-heals; due-dated and top-priority items are exempt. There is no explicit "dismiss" primitive (one may layer on later).
+
+### The deterministic substrate: `dome.daily.attention-discount`
+
+A garden-phase processor (`execution.class: deterministic`, capabilities `read` + `graph.write` over `dome.attention.*` only, `inspection: all-readable-markdown`) emits one `dome.attention.discount` fact per discounted open-loop item. Because it is deterministic, signal-triggered, and confined to the rebuild-safe capability set, it is **rebuild-eligible** (`isRebuildEligibleGardenProcessor` in `src/engine/projection-rebuild.ts`): `dome rebuild` re-derives every discount fact from adopted markdown + git history alone, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+
+Inputs, all derivable from the adopted tree and its git history — **no wall clock**:
+
+- **Impressions** — the number of distinct daily notes (the configured `daily_path` glob, bounded to the most recent **30** dailies for cost) whose generated open-loops block carries an open copy of the item. Matching is by open-loop identity `(origin path, normalized body)` — the same identity carry-forward uses — because the generated copy carries no `^anchor`. A body edit changes the identity and naturally restarts the impression trail; an edit is action anyway.
+- **Action signal** — `lastHumanChangedAt` of the item's origin file (the `Dome-Run` trailer split, §"The `lastHumanChangedAt` freshness rule"). Only impressions in dailies dated **strictly after** the last-human-touch date count: any human edit to the origin file resets the impression count to the dailies since.
+- **Reference date** — the newest scanned daily's date, *not* the wall clock. "Days since last shown" is `newestDailyDate − lastShownDate`. This keeps the fact a pure function of the adopted tree: same content → same facts.
+- **Scope** — only items whose origin line carries a stamped `^block-anchor` participate (anchored identity is the durable one; `stamp-block-id` anchors new items within a tick). Settled items (resolved `[x]` / dismissed `[-]` anywhere) get **no facts** — settling is the cleanup.
+
+### The formula
+
+```
+discount = min(0.6, 0.1 × max(0, impressionsSinceLastHumanTouch − 2)) × 0.9^daysSinceLastShown
+```
+
+- **First 2 impressions are free** — being surfaced twice is the system doing its job, not evidence of dismissal.
+- Each further actionless impression adds **0.1**, hard-capped at **0.6** — a discount never buries an item outright.
+- The whole value decays by **0.9 per day since the item was last shown** (LinkedIn-style ImpCount × LastSeen decay).
+- **Hard exemptions:** an item carrying a due date (`📅 YYYY-MM-DD`) or top priority (`🔺`) has discount 0, always. Deadlines and explicit top priority outrank inferred boredom.
+
+The fact's value records `{ anchor, body, discount, impressions, lastShown }` (subject = the origin page; sourceRef pins the origin line + stable id). A fact is emitted only while `impressions ≥ 1`; it converges (re-runs over unchanged content emit identical facts, and the projection sink's per-path fact resolution clears stale rows).
+
+**Recovery is built in — demotion self-heals.** An item that stops being shown decays at 0.9^days and climbs back on its own; a human edit to the origin file zeroes the impression count instantly. Nothing needs to be un-dismissed.
+
+### Consumers: demote, compress — never delete
+
+- **Open-loop ranking** (carry-forward, `today`, `prep`) demotes multiplicatively: where ranking compares recency, the effective score is `0.995^hoursSinceLastHumanChange × (1 − discount)` — implemented as an equivalent recency penalty of `log(1 − discount)/log(0.995)` hours (≈ 3 days at discount 0.3, ≈ 7.6 days at the 0.6 cap). Demotion **reorders within the same list and never drops an item**: the only truncation is the surface's pre-existing item cap. `today`/`prep` JSON rows carry an explainable `attention: { discount, impressions, lastShown }` field (`null` when undiscounted).
+- **The morning brief** receives heavily-discounted items (discount ≥ 0.4) as deterministic pre-run DATA — "surfaced Nx without action" — and its charter compresses them into a single stale-loops line or one question instead of repeating them at full prominence. See [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`".
+
+The asymmetry is by construction, mirroring the Gmail lesson ("buried something important" must be the rare error): discounting compresses and reorders presentation; it never resolves, dismisses, or deletes the underlying task line. Markdown stays the source of truth; the discount is presentation-layer judgment derived from it.
+
 ## Wardens
 
 A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: garden`, granted `model.invoke`). It is not a new primitive — it is the model-gated shape of the existing Processor concept. The `dome.warden` bundle is **model-gated** and ships `enabled: false` by default. Two wardens ship:
@@ -57,7 +94,8 @@ The integrity warden **degrades to a clean no-op** when no model provider is con
 ## Related
 
 - [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] — the hard rule wardens hold: no garden `model.invoke` processor declares `graph.write`
-- [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — why model judgment must not become a durable fact
+- [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — why model judgment must not become a durable fact, and why attention-discount facts are clock-free
+- [[memory]] — the memory-quality plan; M4 is attention discounting (decision ledger entry 5: implicit dismissal, self-healing, 📅/🔺 exempt)
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — anchors live in markdown; answers live in `answers.db`
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — the `Dome-Run` split behind `lastHumanChangedAt`
 - [[wiki/specs/capabilities]] — `model.invoke`, `graph.write`, `patch.auto`, `question.ask` tiers
