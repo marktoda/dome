@@ -19,6 +19,7 @@ import {
   type HealthReport,
 } from "../../engine/health";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import { emitRuntimeOpenFailure } from "../command-error";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import { queryRunSummaries } from "../../ledger/runs";
 import {
@@ -231,10 +232,11 @@ export async function runCheck(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    console.error(
-      `dome check: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
-    );
-    return 1;
+    return emitRuntimeOpenFailure({
+      command: "check",
+      json: options.json === true,
+      errorKind: runtimeResult.error.kind,
+    });
   }
   const runtime = runtimeResult.value;
 

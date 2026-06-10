@@ -168,6 +168,7 @@ import {
   type DiagnosticMessageSummary,
   type DiagnosticSummary,
 } from "../diagnostic-summary";
+import { emitRuntimeOpenFailure } from "../command-error";
 import { formatJson } from "../format";
 import { formatSeverity } from "../human-output";
 import {
@@ -328,10 +329,11 @@ export async function runStatus(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    console.error(
-      `dome status: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`,
-    );
-    return 1;
+    return emitRuntimeOpenFailure({
+      command: "status",
+      json: options.json === true,
+      errorKind: runtimeResult.error.kind,
+    });
   }
   const runtime = runtimeResult.value;
 

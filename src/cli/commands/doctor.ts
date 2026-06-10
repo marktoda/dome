@@ -18,6 +18,7 @@ import {
 } from "../../engine/health";
 import { writeModelProviderProbeCache } from "../../engine/model-provider-probe-cache";
 import { openVaultRuntime } from "../../engine/vault-runtime";
+import { emitRuntimeOpenFailure } from "../command-error";
 import { formatJson } from "../format";
 import { formatSeverity } from "../human-output";
 import {
@@ -83,10 +84,11 @@ export async function runDoctor(
 
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    console.error(
-      `dome doctor: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
-    );
-    return 1;
+    return emitRuntimeOpenFailure({
+      command: "doctor",
+      json: options.json === true,
+      errorKind: runtimeResult.error.kind,
+    });
   }
   const runtime = runtimeResult.value;
 

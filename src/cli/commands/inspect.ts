@@ -56,6 +56,7 @@ import type {
   Trigger,
 } from "../../core/processor";
 import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import { emitRuntimeOpenFailure } from "../command-error";
 import {
   loadBundleManifestSummaryFromRoots,
   type BundleManifestSummary,
@@ -210,10 +211,11 @@ export async function runInspect(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    console.error(
-      `dome inspect: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` first to initialize the vault.`,
-    );
-    return 1;
+    return emitRuntimeOpenFailure({
+      command: "inspect",
+      json: options.json === true,
+      errorKind: runtimeResult.error.kind,
+    });
   }
   const runtime = runtimeResult.value;
 
