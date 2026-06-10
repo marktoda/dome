@@ -1,6 +1,6 @@
 // Phase 6 polish — `runs.output_commit` back-fill from the adoption loop.
 //
-// Exercises the seam added in `src/engine/adopt.ts`: when the loop converges
+// Exercises the seam added in `src/engine/core/adopt.ts`: when the loop converges
 // and `makeClosureCommit` returns a non-null OID, every contributing run's
 // `output_commit` column is updated via `updateOutputCommit`. Pinned by
 // [[wiki/specs/run-ledger]] §"Tables — runs" — `output_commit` joins to the
@@ -16,16 +16,16 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { adopt } from "../../src/engine/adopt";
+import { adopt } from "../../src/engine/core/adopt";
 import type {
   AdoptionPhaseRunner,
   RunId,
-} from "../../src/engine/runner-contract";
-import { noopSinks } from "../../src/engine/apply-effect";
+} from "../../src/engine/core/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import {

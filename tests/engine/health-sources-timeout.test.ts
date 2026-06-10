@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { sourcesHandlerTimeoutFindings } from "../../src/engine/health";
+import { sourcesHandlerTimeoutFindings } from "../../src/engine/host/health";
 
 function findingsFor(opts: {
   readonly enabled: ReadonlyArray<string>;

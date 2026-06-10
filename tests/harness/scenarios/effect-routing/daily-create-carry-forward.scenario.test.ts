@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
-import type { RunId } from "../../../../src/engine/runner-contract";
+import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { TestClock, scenario } from "../../index";
 
 scenario(

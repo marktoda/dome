@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { probeCommandModelProvider } from "../../src/engine/command-model-provider";
+import { probeCommandModelProvider } from "../../src/engine/host/command-model-provider";
 
 const roots: string[] = [];
 

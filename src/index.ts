@@ -106,7 +106,7 @@ export type { VaultPath } from "./core/vault-path";
 // an EngineVault outside the daemon (advanced harnesses, integration tests)
 // can name the shape; the constructor / submission paths are not exposed.
 
-export type { EngineVault } from "./engine/vault-shape";
+export type { EngineVault } from "./engine/core/vault-shape";
 
 // ----- Extension bundle loader ---------------------------------------------
 

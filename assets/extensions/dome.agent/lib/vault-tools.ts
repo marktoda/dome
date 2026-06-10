@@ -12,7 +12,7 @@
 // `globMatch` is the broker's own matcher, so tool-time and broker
 // semantics cannot drift.
 
-import { globMatch } from "../../../../src/engine/glob-cache";
+import { globMatch } from "../../../../src/engine/core/glob-cache";
 import type { AgentRunState, AgentTool } from "./agent-loop";
 import {
   isValidSignalsAppend,

@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { diagnosticEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { noopSinks } from "../../src/engine/apply-effect";
-import { runGardenPhase } from "../../src/engine/garden";
-import type { RunId } from "../../src/engine/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
+import { runGardenPhase } from "../../src/engine/garden/garden";
+import type { RunId } from "../../src/engine/core/runner-contract";
 
 describe("runGardenPhase", () => {
   test("successful garden runs resolve stale diagnostics for inspected paths", async () => {

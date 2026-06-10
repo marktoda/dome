@@ -19,7 +19,7 @@
 //     commit (rare) import the `sourceRef(...)` helper from
 //     `../core/source-ref` directly.
 //   - The `CapabilityToken` is minted here as a single shared frozen sentinel.
-//     The broker (`../engine/capability-broker`) reads grants from the
+//     The broker (`../engine/core/capability-broker`) reads grants from the
 //     processor registry, not from the token; the token's purpose at v1 is
 //     solely to make `ProcessorContext.capabilities` unambiguous in the type
 //     system so processors cannot synthesize one. The sentinel is

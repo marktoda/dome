@@ -1,4 +1,4 @@
-// Smoke tests for src/engine/compile-range.ts. Exercises tree-diff +
+// Smoke tests for src/engine/core/compile-range.ts. Exercises tree-diff +
 // signal-synthesis against a real fixture vault with two commits.
 
 import { describe, test, expect, afterEach } from "bun:test";
@@ -9,7 +9,7 @@ import { join } from "node:path";
 import * as git from "isomorphic-git";
 import fs from "node:fs";
 import { commit, currentSha, initRepo } from "../../src/git";
-import { compileRange } from "../../src/engine/compile-range";
+import { compileRange } from "../../src/engine/core/compile-range";
 import { commitOid } from "../../src/core/source-ref";
 
 type Fixture = {

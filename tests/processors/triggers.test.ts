@@ -5,7 +5,7 @@
 import { describe, test, expect } from "bun:test";
 import { matchTriggers } from "../../src/processors/triggers";
 import type { Trigger } from "../../src/core/processor";
-import type { SignalEvent } from "../../src/engine/compile-range";
+import type { SignalEvent } from "../../src/engine/core/compile-range";
 
 const events: ReadonlyArray<SignalEvent> = Object.freeze([
   Object.freeze<SignalEvent>({ signal: "file.created", path: "wiki/a.md" }),

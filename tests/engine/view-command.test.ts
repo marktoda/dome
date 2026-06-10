@@ -6,8 +6,8 @@ import { join } from "node:path";
 
 import { setAdoptedRef } from "../../src/adopted-ref";
 import { commitOid } from "../../src/core/source-ref";
-import { openVaultRuntime, type VaultRuntime } from "../../src/engine/vault-runtime";
-import { runViewCommandWithRuntime } from "../../src/engine/view-command";
+import { openVaultRuntime, type VaultRuntime } from "../../src/engine/host/vault-runtime";
+import { runViewCommandWithRuntime } from "../../src/engine/host/view-command";
 import { commit, initRepo } from "../../src/git";
 
 type Fixture = {

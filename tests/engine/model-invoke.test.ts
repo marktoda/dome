@@ -4,7 +4,7 @@ import {
   modelInvokeForProcessor,
   type ModelInvokeCapabilityUse,
   type ModelProvider,
-} from "../../src/engine/model-invoke";
+} from "../../src/engine/core/model-invoke";
 import type { Capability } from "../../src/core/processor";
 import type { ResolvedExecutionPolicy } from "../../src/processors/execution-policy";
 

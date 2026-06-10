@@ -7,8 +7,8 @@ import {
 } from "../core/effect";
 import { isTransientProcessorError } from "../core/processor-error";
 import type { ProcessorContext, ProcessorPhase } from "../core/processor";
-import { isModelExecutionError } from "../engine/model-invoke";
-import type { RunId } from "../engine/runner-contract";
+import { isModelExecutionError } from "../engine/core/model-invoke";
+import type { RunId } from "../engine/core/runner-contract";
 import type { ResolvedExecutionPolicy } from "./execution-policy";
 import {
   diagnosticForExecutionError,

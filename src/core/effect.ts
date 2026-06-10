@@ -35,7 +35,7 @@ import {
 /**
  * A single file-level mutation a PatchEffect proposes. Whole-content writes
  * and outright deletes — no in-place diffing at the value layer. The engine's
- * applier (`src/engine/apply-patch.ts`) overlays each change onto the
+ * applier (`src/engine/core/apply-patch.ts`) overlays each change onto the
  * candidate's tree without consulting a diff library.
  *
  * v1 chose whole-content over unified-diff because the engine's apply-side

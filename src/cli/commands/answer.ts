@@ -7,7 +7,7 @@
 
 import { basename } from "node:path";
 
-import type { AnswerHandlerDispatchResult } from "../../engine/question-answering";
+import type { AnswerHandlerDispatchResult } from "../../engine/host/question-answering";
 import type { QuestionRecord } from "../../projections/questions";
 import { openVault, type ResolveOutcome } from "../../vault";
 

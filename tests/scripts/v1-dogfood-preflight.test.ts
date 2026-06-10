@@ -8,7 +8,7 @@ import { commit } from "../../src/git";
 import {
   createServeHeartbeatHandle,
   writeServeHeartbeat,
-} from "../../src/engine/compiler-host-heartbeat";
+} from "../../src/engine/host/compiler-host-heartbeat";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 const DOME_BIN = join(REPO_ROOT, "bin", "dome");

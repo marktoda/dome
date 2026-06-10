@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { externalActionEffect } from "../../../../src/core/effect";
 import { sourceRef } from "../../../../src/core/source-ref";
-import { openQuarantineStore } from "../../../../src/engine/quarantine-store";
+import { openQuarantineStore } from "../../../../src/engine/operational/quarantine-store";
 import {
   insertQueued,
   markRunning,

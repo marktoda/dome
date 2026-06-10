@@ -64,12 +64,12 @@ import {
   createServeHeartbeatHandle,
   serveHeartbeatPath,
   writeServeHeartbeat,
-} from "../../src/engine/compiler-host-heartbeat";
-import { openQuarantineStore } from "../../src/engine/quarantine-store";
+} from "../../src/engine/host/compiler-host-heartbeat";
+import { openQuarantineStore } from "../../src/engine/operational/quarantine-store";
 import {
   readModelProviderProbeCache,
   writeModelProviderProbeCache,
-} from "../../src/engine/model-provider-probe-cache";
+} from "../../src/engine/host/model-provider-probe-cache";
 import { openLedgerDb } from "../../src/ledger/db";
 import {
   insertQueued,

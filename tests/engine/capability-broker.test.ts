@@ -1,10 +1,10 @@
-// Smoke tests for src/engine/capability-broker.ts: the per-effect-kind cells
+// Smoke tests for src/engine/core/capability-broker.ts: the per-effect-kind cells
 // of docs/wiki/matrices/effect-x-capability.md. Constructs effects via the
 // public constructor helpers in src/core/effect.ts and asserts the broker's
 // allow/downgrade/deny verdicts.
 
 import { describe, test, expect } from "bun:test";
-import { enforceCapability } from "../../src/engine/capability-broker";
+import { enforceCapability } from "../../src/engine/core/capability-broker";
 import {
   diagnosticEffect,
   externalActionEffect,

@@ -1,10 +1,10 @@
-// Smoke tests for src/engine/closure-commit.ts: the two `null`-return paths
+// Smoke tests for src/engine/core/closure-commit.ts: the two `null`-return paths
 // in Phase 2 (empty touched paths; auto_commit_workflows disabled). The
 // actual commit-creation path is exercised end-to-end in Phase 3+ vault tests.
 
 import { describe, test, expect } from "bun:test";
-import { makeClosureCommit } from "../../src/engine/closure-commit";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import { makeClosureCommit } from "../../src/engine/core/closure-commit";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commitOid } from "../../src/core/source-ref";
 
 // Minimal `EngineVault` — `makeClosureCommit` only reads

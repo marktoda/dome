@@ -1,4 +1,4 @@
-// tests/engine/cron.test.ts — unit tests for the minimal cron evaluator.
+// tests/engine/operational/cron.test.ts — unit tests for the minimal cron evaluator.
 //
 // Covers parseCron + matchesCron + nextFire across the syntax surface
 // the evaluator supports: *, single values, ranges, steps, lists, and
@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { matchesCron, nextFire, parseCron } from "../../src/engine/cron";
+import { matchesCron, nextFire, parseCron } from "../../src/engine/operational/cron";
 
 describe("parseCron — happy paths", () => {
   test("all-asterisks parses every minute", () => {

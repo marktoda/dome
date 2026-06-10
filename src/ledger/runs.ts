@@ -67,7 +67,7 @@
 //   - `./db` for the `LedgerDb` handle.
 //   - `../core/processor` for the `ProcessorPhase` type.
 //   - `../core/source-ref` for the `CommitOid` brand + `commitOid` helper.
-//   - `../engine/runner-contract` for the shared RunId and structured
+//   - `../engine/core/runner-contract` for the shared RunId and structured
 //     execution-error type contracts.
 //
 // House-style notes (mirrors src/outbox/dispatch.ts, src/projections/jobs.ts):
@@ -93,14 +93,14 @@ import {
   type ProcessorFailedExecutionError,
   type ProcessorTimeoutExecutionError,
   type RunId,
-} from "../engine/runner-contract";
+} from "../engine/core/runner-contract";
 import { parseJsonColumn } from "../sqlite/row-json";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
 
 // ----- Branded RunId --------------------------------------------------------
 //
-// The `RunId` brand is owned by `../engine/runner-contract` (the engine ↔
+// The `RunId` brand is owned by `../engine/core/runner-contract` (the engine ↔
 // runtime contract that the ledger consumes). Re-exported here so existing
 // callers — `src/processors/runtime.ts`, the ledger accessors below — can
 // keep importing it from the ledger surface unchanged.
@@ -244,7 +244,7 @@ export type FailRunIfCurrentOpts = {
 
 /**
  * Bulk-update `output_commit` for the named successful runs. Called by the
- * engine's adoption loop (`src/engine/adopt.ts`) once `makeClosureCommit`
+ * engine's adoption loop (`src/engine/core/adopt.ts`) once `makeClosureCommit`
  * returns a non-null OID — `markSucceeded` writes NULL into the column at
  * processor-run-terminal time (because the closure commit doesn't exist
  * yet), and this accessor lands the OID after the fact.
@@ -648,7 +648,7 @@ export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
 
 /**
  * Land the closure-commit OID on the `output_commit` column of every named
- * successful run. Called by `src/engine/adopt.ts` after `makeClosureCommit`
+ * successful run. Called by `src/engine/core/adopt.ts` after `makeClosureCommit`
  * returns a non-null OID for the iteration.
  *
  * The UPDATE filters by `status = 'succeeded' AND output_commit IS NULL`:

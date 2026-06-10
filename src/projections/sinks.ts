@@ -2,7 +2,7 @@
 // the projection database, the outbox database, and engine-layer injections
 // (`applyPatch`, `captureView`, `recoverQuarantine`, `recoverRun`). This is the
 // Phase 4 wiring layer
-// that replaces `noopSinks()` from `src/engine/apply-effect.ts` once the
+// that replaces `noopSinks()` from `src/engine/core/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
 // Nine sinks are owned here (delegating to the per-table accessors):
@@ -46,7 +46,7 @@
 //   - docs/wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX.md — pins
 //     `dispatchExternal` to the outbox dispatcher exclusively.
 //
-// House-style notes (matches src/projections/facts.ts, src/engine/apply-effect.ts):
+// House-style notes (matches src/projections/facts.ts, src/engine/core/apply-effect.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - `Object.freeze` on the returned sinks object so misbehaving callers
 //     fail loudly at runtime rather than silently swap a sink out from
@@ -62,7 +62,7 @@
 //     supplied outbox handlers, so network-capable behavior is injected at
 //     this boundary rather than hidden in processors.
 
-import type { ApplyEffectSinks } from "../engine/apply-effect";
+import type { ApplyEffectSinks } from "../engine/core/apply-effect";
 import type { CommitOid } from "../core/source-ref";
 import type { ProjectionDb } from "./db";
 import type { OutboxDb } from "../outbox/db";

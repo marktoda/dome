@@ -27,7 +27,7 @@ import { runSync } from "../../src/cli/commands/sync";
 import { resolveBundleRoots } from "../../src/cli/commands/sync-shared";
 import { questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { openVaultRuntime } from "../../src/engine/vault-runtime";
+import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import { add, commit, log } from "../../src/git";
 import { createDomeMcpServer } from "../../src/mcp/server";
 import {

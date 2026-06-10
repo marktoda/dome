@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { patchEffect } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { enforceCapability } from "../../src/engine/capability-broker";
+import { enforceCapability } from "../../src/engine/core/capability-broker";
 import { HarnessImpl } from "../harness";
 
 const read: Capability = { kind: "read", paths: ["**"] };

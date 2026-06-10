@@ -11,7 +11,7 @@
 //     - Emits exactly one diagnostic per unresolved target (the resolved
 //       targets in the same file produce no false positives).
 //
-// Uses the same git-repo fixture pattern as `tests/engine/adopt.test.ts`:
+// Uses the same git-repo fixture pattern as `tests/engine/core/adopt.test.ts`:
 // `initRepo` + `writeFile` + `commit` produces a real commit OID that
 // `readTree` / `readBlob` resolve against.
 

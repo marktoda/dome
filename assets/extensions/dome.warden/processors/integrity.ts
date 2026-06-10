@@ -6,7 +6,7 @@
 // obey: they emit QuestionEffect only — never FactEffect, never a knowledge
 // PatchEffect.
 //
-// Why: `src/engine/projection-rebuild.ts` REBUILD_SAFE_GARDEN_CAPABILITIES is
+// Why: `src/engine/host/projection-rebuild.ts` REBUILD_SAFE_GARDEN_CAPABILITIES is
 // {read, graph.write, search.write, question.ask}. A garden processor holding
 // `model.invoke` is NOT re-run on rebuild, so any FactEffect it emitted would
 // vanish on `dome rebuild`. The durable artifact is the human/agent

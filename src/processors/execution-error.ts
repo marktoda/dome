@@ -1,5 +1,5 @@
 import { diagnosticEffect, type DiagnosticEffect } from "../core/effect";
-import type { ProcessorExecutionError } from "../engine/runner-contract";
+import type { ProcessorExecutionError } from "../engine/core/runner-contract";
 
 export type {
   ProcessorCancelledExecutionError,
@@ -8,7 +8,7 @@ export type {
   ProcessorExecutionErrorForCode,
   ProcessorFailedExecutionError,
   ProcessorTimeoutExecutionError,
-} from "../engine/runner-contract";
+} from "../engine/core/runner-contract";
 
 export function makeExecutionError<T extends ProcessorExecutionError>(
   input: T,

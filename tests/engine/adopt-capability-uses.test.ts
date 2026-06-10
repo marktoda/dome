@@ -1,6 +1,6 @@
 // Phase 6 — engine adoption-loop capability-use recording.
 //
-// Exercises the seam added in `src/engine/adopt.ts`: when a `LedgerDb` is
+// Exercises the seam added in `src/engine/core/adopt.ts`: when a `LedgerDb` is
 // wired, every `applyEffect` invocation whose verdict carries a structured
 // `capabilityUse` record produces one row in `capability_uses` joined to
 // the runtime-allocated `RunRecord.id`. Pinned by
@@ -17,13 +17,13 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { adopt } from "../../src/engine/adopt";
-import type { AdoptionPhaseRunner } from "../../src/engine/runner-contract";
-import { noopSinks } from "../../src/engine/apply-effect";
+import { adopt } from "../../src/engine/core/adopt";
+import type { AdoptionPhaseRunner } from "../../src/engine/core/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
 import { patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, initRepo, currentSha } from "../../src/git";
 import type { Capability } from "../../src/core/processor";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";

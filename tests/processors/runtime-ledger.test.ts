@@ -33,9 +33,9 @@ import {
   type Effect,
 } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { SignalEvent } from "../../src/engine/compile-range";
-import type { EngineVault } from "../../src/engine/vault-shape";
-import type { ModelProvider } from "../../src/engine/model-invoke";
+import type { SignalEvent } from "../../src/engine/core/compile-range";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
 import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { capabilityUsesByRun } from "../../src/ledger/capability-uses";

@@ -1,7 +1,7 @@
 // Hermetic tests for dome.agent.sweep-answer — the deterministic answer handler
 // for owner-gated sweep integrations. No model, no network, no filesystem.
 //
-// Input envelope shape: AnswerRunInput (src/engine/answers.ts:47):
+// Input envelope shape: AnswerRunInput (src/engine/operational/answers.ts:47):
 //   { kind: "answer", questionId, question: { idempotencyKey, sourceRefs,
 //     metadata? }, answer, answeredAt, matchedTriggers }
 

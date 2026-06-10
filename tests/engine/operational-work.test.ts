@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { defineProcessor, treeOid } from "../../src/core/processor";
-import { runOperationalWork } from "../../src/engine/operational-work";
+import { runOperationalWork } from "../../src/engine/operational/operational-work";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";

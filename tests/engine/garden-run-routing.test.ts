@@ -1,5 +1,5 @@
 // Projection-maintenance hooks on the shared non-signal garden routing path
-// (src/engine/garden-run-routing.ts).
+// (src/engine/garden/garden-run-routing.ts).
 //
 // Schedule fires, queued jobs, and answer handlers all route through
 // `routeGardenRunEffects`. Before this contract was pinned, the shared path
@@ -13,16 +13,16 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { routeGardenRunEffects } from "../../src/engine/garden-run-routing";
-import { noopSinks, type ApplyEffectSinks } from "../../src/engine/apply-effect";
+import { routeGardenRunEffects } from "../../src/engine/garden/garden-run-routing";
+import { noopSinks, type ApplyEffectSinks } from "../../src/engine/core/apply-effect";
 import {
   diagnosticEffect,
   factEffect,
   questionEffect,
 } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import type { RunnerResult, RunId } from "../../src/engine/runner-contract";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import type { RunnerResult, RunId } from "../../src/engine/core/runner-contract";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { Effect } from "../../src/core/effect";
 
 const ADOPTED = commitOid("a".repeat(40));

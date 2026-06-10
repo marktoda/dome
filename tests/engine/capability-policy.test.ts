@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   computeCapabilityPolicyHash,
   loadCapabilityPolicy,
-} from "../../src/engine/capability-policy";
+} from "../../src/engine/core/capability-policy";
 
 const roots: string[] = [];
 

@@ -10,7 +10,7 @@
 // direction — entering a hard error loop because `setAdoptedRef`'s
 // fast-forward check refused to advance to a sibling.
 //
-// Fix (Phase 12c, in `src/engine/adopt.ts`): advance `refs/heads/<branch>`
+// Fix (Phase 12c, in `src/engine/core/adopt.ts`): advance `refs/heads/<branch>`
 // to the closure commit BEFORE advancing the adopted ref. Both refs land
 // at the same closure commit; the next tick is a no-op.
 //

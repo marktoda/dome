@@ -13,7 +13,7 @@
 // 500ms latency is invisible to a user editing + committing markdown.
 // The interval is configurable via `--poll-interval-ms <n>`.
 //
-// Drift detection + adoption-invocation live in `src/engine/compiler-host.ts`,
+// Drift detection + adoption-invocation live in `src/engine/host/compiler-host.ts`,
 // so `dome serve` (Phase 11b) and `dome sync` (Phase 11c) share the same
 // underlying per-tick body. The daemon wraps it in a poll loop with
 // cancellation, error tolerance (one bad commit shouldn't crash a
@@ -42,10 +42,10 @@ import {
   type OpenVaultRuntimeError,
   type OpenVaultRuntimeWithBundlesOpts,
   type VaultRuntime,
-} from "../../engine/vault-runtime";
-import type { OperationalWorkResult } from "../../engine/operational-work";
+} from "../../engine/host/vault-runtime";
+import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
-import { compileRange } from "../../engine/compile-range";
+import { compileRange } from "../../engine/core/compile-range";
 import { resolveVaultPath } from "../resolve-vault";
 
 import {
@@ -53,14 +53,14 @@ import {
   runCompilerHostTick,
   type CompilerHostTickResult,
   type DriftResult,
-} from "../../engine/compiler-host";
+} from "../../engine/host/compiler-host";
 import {
   clearServeHeartbeat,
   createServeHeartbeatHandle,
   readServeHeartbeatStatus,
   writeServeHeartbeat,
   type ServeHeartbeatHandle,
-} from "../../engine/compiler-host-heartbeat";
+} from "../../engine/host/compiler-host-heartbeat";
 import {
   resolveBundleRoots,
   formatAdoptedSummaryLine,

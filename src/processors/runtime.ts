@@ -7,7 +7,7 @@
 // See docs/wiki/specs/processors.md §"The three phases" + §"Triggers and
 // signals" + §"Run ledger" for the operational contract this runtime
 // implements, and docs/wiki/specs/adoption.md §"The fixed-point adoption
-// loop" for the call site (`src/engine/adopt.ts`'s `runAdoptionProcessors`
+// loop" for the call site (`src/engine/core/adopt.ts`'s `runAdoptionProcessors`
 // injection point).
 //
 // v1 runtime scope (intentional simplifications, documented per the phase
@@ -47,7 +47,7 @@
 //   - Imports limited to: `../core/effect` (`diagnosticEffect` helper),
 //     `../core/processor` (Processor +
 //     Capability + Snapshot + TreeOid types), `../core/source-ref`
-//     (CommitOid), `../engine/runner-contract` (AdoptionPhaseRunner +
+//     (CommitOid), `../engine/core/runner-contract` (AdoptionPhaseRunner +
 //     RunnerResult — the neutral home for the engine's outbound runner
 //     contract that this runtime implements), `../ledger/db` (LedgerDb
 //     handle type), `../ledger/runs` (insertQueued / markRunning /
@@ -93,8 +93,8 @@ import type {
   ProcessorSkippedExecutionError,
   RunnerResult,
   ViewPhaseRunner,
-} from "../engine/runner-contract";
-import type { SignalEvent } from "../engine/compile-range";
+} from "../engine/core/runner-contract";
+import type { SignalEvent } from "../engine/core/compile-range";
 import type { LedgerDb } from "../ledger/db";
 import { recordCapabilityUse } from "../ledger/capability-uses";
 import {
@@ -138,11 +138,11 @@ import {
   modelInvokeForProcessor,
   type ModelProvider,
   type ModelStepProvider,
-} from "../engine/model-invoke";
+} from "../engine/core/model-invoke";
 import {
   filterReadablePaths,
   readablePath,
-} from "../engine/path-capabilities";
+} from "../engine/core/path-capabilities";
 import { scopeProjectionQueryView } from "./projection-scope";
 
 // ----- AdoptionRunInput -----------------------------------------------------
@@ -178,7 +178,7 @@ export type AdoptionRunInput = {
  * they handle both adoption and garden invocations (rare; most processors
  * declare a single phase).
  *
- * The orchestrator at `src/engine/garden.ts` constructs the envelope from
+ * The orchestrator at `src/engine/garden/garden.ts` constructs the envelope from
  * the gardenRunner's matched-triggers output; processors that care about
  * which trigger fired inspect `ctx.input.matchedTriggers`.
  */
@@ -238,7 +238,7 @@ export type ProcessorRuntime = {
  *
  * `resolveTree` is injected (rather than imported from `../git`) so this
  * runtime file stays I/O-free at the type layer. Whoever calls
- * `buildRuntime` (today: `src/engine/vault-runtime.ts` or test harnesses)
+ * `buildRuntime` (today: `src/engine/host/vault-runtime.ts` or test harnesses)
  * wires the resolver against the live git boundary.
  */
 export type BuildRuntimeOptions = {
@@ -276,7 +276,7 @@ export type BuildRuntimeOptions = {
    * Optional because tests that exercise only the adoption / garden runners
    * (e.g., `tests/processors/runtime.test.ts`) don't need to wire a
    * projection view. The composed runtime built by
-   * `src/engine/vault-runtime.ts` populates this against the open
+   * `src/engine/host/vault-runtime.ts` populates this against the open
    * `ProjectionDb`.
    */
   readonly projection?: ProjectionQueryView;
@@ -1501,7 +1501,7 @@ function triggerPayloadOf(
  * candidate snapshot.
  *
  * Path strings are POSIX-joined (matches the convention in
- * `src/engine/compile-range.ts`'s walker). Non-blob entries (subtrees) are
+ * `src/engine/core/compile-range.ts`'s walker). Non-blob entries (subtrees) are
  * recursed into; the recursion is bounded by the tree's natural depth.
  */
 async function listMarkdownPathsInTree(

@@ -10,7 +10,7 @@
 //     before the last dot — the spec's worked example `dome.tasks.dueDate`
 //     → namespace `dome.tasks` resolves the ambiguity in the wording)
 //
-// House-style notes (matches src/projections/db.ts, src/engine/closure-commit.ts):
+// House-style notes (matches src/projections/db.ts, src/engine/core/closure-commit.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - JSON columns (`object_json`, `source_refs`) serialized via
 //     `JSON.stringify`; symmetric `JSON.parse` on read.

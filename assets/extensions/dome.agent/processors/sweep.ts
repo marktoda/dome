@@ -62,8 +62,8 @@ function capMaterialRead(content: string): string {
   if (content.length <= MATERIAL_READ_CHARS) return content;
   return `${content.slice(0, MATERIAL_READ_CHARS)}\n…[truncated ${content.length - MATERIAL_READ_CHARS} chars — read a more specific section if needed]`;
 }
-import { globMatch } from "../../../../src/engine/glob-cache";
-import { isModelExecutionError } from "../../../../src/engine/model-invoke";
+import { globMatch } from "../../../../src/engine/core/glob-cache";
+import { isModelExecutionError } from "../../../../src/engine/core/model-invoke";
 import {
   formatDate,
   localDateParts,

@@ -31,11 +31,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveShippedModelProvidersRoot } from "../../src/cli/commands/sync-shared";
-import { probeCommandModelProvider } from "../../src/engine/command-model-provider";
+import { probeCommandModelProvider } from "../../src/engine/host/command-model-provider";
 import {
   parseModelProviderResponse,
   parseModelStepResponse,
-} from "../../src/engine/model-invoke";
+} from "../../src/engine/core/model-invoke";
 
 const TEMPLATE_PATH = join(
   resolveShippedModelProvidersRoot(),

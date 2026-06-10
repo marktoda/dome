@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
-import { noopSinks } from "../../src/engine/apply-effect";
-import { runViewCommand } from "../../src/engine/commands";
+import { noopSinks } from "../../src/engine/core/apply-effect";
+import { runViewCommand } from "../../src/engine/core/commands";
 import type {
   RunId,
   RunnerError,
   ViewPhaseRunner,
-} from "../../src/engine/runner-contract";
+} from "../../src/engine/core/runner-contract";
 
 describe("runViewCommand", () => {
   test("view processor execution failure returns failed instead of empty success", async () => {

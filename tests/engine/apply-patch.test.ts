@@ -1,6 +1,6 @@
 // Phase 12a — `applyPatchToCandidate` candidate-tree mutator tests.
 //
-// Exercises the `src/engine/apply-patch.ts` plumbing primitive against a
+// Exercises the `src/engine/core/apply-patch.ts` plumbing primitive against a
 // real git repo: build a candidate commit, hand it to the function with a
 // PatchEffect carrying a list of FileChange entries (whole-content writes /
 // deletes), assert the returned new-candidate OID's tree carries the
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import fs from "node:fs";
 import git from "isomorphic-git";
 
-import { applyPatchToCandidate } from "../../src/engine/apply-patch";
+import { applyPatchToCandidate } from "../../src/engine/core/apply-patch";
 import {
   PatchEffectSchema,
   patchEffect,

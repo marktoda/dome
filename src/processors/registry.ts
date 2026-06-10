@@ -34,8 +34,8 @@
 //     union.
 //
 // House-style notes (matches src/core/source-ref.ts, src/core/effect.ts,
-// src/engine/capability-broker.ts, src/engine/compile-range.ts,
-// src/engine/apply-effect.ts):
+// src/engine/core/capability-broker.ts, src/engine/core/compile-range.ts,
+// src/engine/core/apply-effect.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - Optional fields use `field?: T` (not `T | undefined`) for
 //     `exactOptionalPropertyTypes` cleanliness.

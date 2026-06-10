@@ -7,8 +7,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { loadCapabilityPolicy } from "../../src/engine/capability-policy";
-import { pathCapabilityMatches } from "../../src/engine/path-capabilities";
+import { loadCapabilityPolicy } from "../../src/engine/core/capability-policy";
+import { pathCapabilityMatches } from "../../src/engine/core/path-capabilities";
 import { requireVaultPath } from "../../src/core/vault-path";
 import type { Capability } from "../../src/core/processor";
 

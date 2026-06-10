@@ -52,7 +52,7 @@ type ScheduleInput = {
  * The evening gate: the close fires only within its evening window
  * ([21:30, midnight) vault-local; the start matches the manifest cron
  * `30 21 * * *`). The scheduler collapses misfires to one immediate fire
- * (src/engine/scheduler.ts) — without the gate, the first tick after
+ * (src/engine/operational/scheduler.ts) — without the gate, the first tick after
  * enabling the bundle, or a host that slept through the evening and woke
  * the next morning, would scaffold a premature close at whatever time it
  * happens to be, freezing a wrong snapshot that the presence gate then

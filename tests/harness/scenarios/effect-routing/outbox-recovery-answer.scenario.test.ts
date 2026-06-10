@@ -14,7 +14,7 @@ import {
   questionEffect,
 } from "../../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../../src/core/source-ref";
-import type { RunId } from "../../../../src/engine/runner-contract";
+import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import {
   insertPending,

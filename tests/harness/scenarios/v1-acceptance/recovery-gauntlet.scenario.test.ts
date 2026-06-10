@@ -9,8 +9,8 @@ import { join } from "node:path";
 
 import { externalActionEffect } from "../../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../../src/core/source-ref";
-import { openQuarantineStore } from "../../../../src/engine/quarantine-store";
-import type { RunId } from "../../../../src/engine/runner-contract";
+import { openQuarantineStore } from "../../../../src/engine/operational/quarantine-store";
+import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import {
   getRun,

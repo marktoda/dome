@@ -8,16 +8,16 @@
 
 import { basename } from "node:path";
 
-import { probeCommandModelProvider } from "../../engine/command-model-provider";
+import { probeCommandModelProvider } from "../../engine/host/command-model-provider";
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
   type HealthReport,
   type ModelProviderProbeInput,
-} from "../../engine/health";
-import { writeModelProviderProbeCache } from "../../engine/model-provider-probe-cache";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+} from "../../engine/host/health";
+import { writeModelProviderProbeCache } from "../../engine/host/model-provider-probe-cache";
+import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
 import { formatJson } from "../format";
 import { formatSeverity } from "../human-output";

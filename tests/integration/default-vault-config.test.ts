@@ -12,7 +12,7 @@ import {
   FIRST_PARTY_EXTENSION_DEFAULTS,
 } from "../../src/cli/default-vault-config";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
-import { loadCapabilityPolicy } from "../../src/engine/capability-policy";
+import { loadCapabilityPolicy } from "../../src/engine/core/capability-policy";
 import { loadBundles } from "../../src/extensions/loader";
 
 describe("default vault config", () => {

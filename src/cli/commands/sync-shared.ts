@@ -1,13 +1,13 @@
 // cli/commands/sync-shared: CLI-local helpers shared by sync/serve/etc.
 //
-// Engine host operations live in `src/engine/compiler-host.ts`; this module
+// Engine host operations live in `src/engine/host/compiler-host.ts`; this module
 // intentionally owns only command-surface helpers: resolving the SDK-shipped
 // bundle directory, composing the default vault-local extension root, and
 // formatting verbose adoption events for stdout.
 
-import type { AdoptEvent } from "../../engine/compiler-host";
-import type { GardenPhaseResult } from "../../engine/garden";
-import type { OperationalWorkResult } from "../../engine/operational-work";
+import type { AdoptEvent } from "../../engine/host/compiler-host";
+import type { GardenPhaseResult } from "../../engine/garden/garden";
+import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import type { DiagnosticEffect } from "../../core/effect";
 import {
   type Caps,

@@ -13,7 +13,7 @@ import {
   type VaultReader,
 } from "./vault-tools";
 import { objectSchema } from "./vault-tools";
-import { globMatch } from "../../../../src/engine/glob-cache";
+import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 /**
  * Bundle-local mirror of the `dome.agent.sweep` manifest `patch.auto` grant.

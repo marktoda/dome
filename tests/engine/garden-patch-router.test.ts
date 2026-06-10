@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { patchEffect } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { noopSinks } from "../../src/engine/apply-effect";
-import { routeGardenPatchForSubProposal } from "../../src/engine/garden-patch-router";
-import type { RunId } from "../../src/engine/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
+import { routeGardenPatchForSubProposal } from "../../src/engine/garden/garden-patch-router";
+import type { RunId } from "../../src/engine/core/runner-contract";
 
 const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
 const runId = "run-1" as RunId;

@@ -6,7 +6,7 @@ import {
 } from "../../src/cli/commands/sync-shared";
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import type { GardenPhaseResult } from "../../src/engine/garden";
+import type { GardenPhaseResult } from "../../src/engine/garden/garden";
 import type { RunId } from "../../src/ledger/runs";
 
 const UNICODE_CAPS = Object.freeze({ color: false, unicode: true, width: 120 });

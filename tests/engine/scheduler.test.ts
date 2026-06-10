@@ -12,11 +12,11 @@ import {
   type Processor,
 } from "../../src/core/processor";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
-import { noopSinks } from "../../src/engine/apply-effect";
-import type { ApplyPatchInput } from "../../src/engine/apply-patch";
-import type { ModelStepProvider } from "../../src/engine/model-invoke";
-import { runScheduler } from "../../src/engine/scheduler";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import { noopSinks } from "../../src/engine/core/apply-effect";
+import type { ApplyPatchInput } from "../../src/engine/core/apply-patch";
+import type { ModelStepProvider } from "../../src/engine/core/model-invoke";
+import { runScheduler } from "../../src/engine/operational/scheduler";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import {
   getCursor,
