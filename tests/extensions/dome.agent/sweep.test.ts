@@ -794,8 +794,8 @@ describe("dome.agent.sweep", () => {
     expect([...tail].length).toBeLessThanOrEqual(200);
   });
 
-  test("C2c: oversized material (>20000 chars) skips the agent run, emits escalate question and questioned ledger row, no patch on dest", async () => {
-    const hugeMaterial = `Met [[wiki/entities/alice-henshaw]] today.\n${"x".repeat(21_000)}`;
+  test("C2c: oversized material (>100000 chars) skips the agent run, emits escalate question and questioned ledger row, no patch on dest", async () => {
+    const hugeMaterial = `Met [[wiki/entities/alice-henshaw]] today.\n${"x".repeat(101_000)}`;
     const ctx = makeCtx({
       files: { ...BASE_FILES, [MATERIAL]: hugeMaterial },
       stepFn: THROWING_STEP, // the oversized-material guard must never reach the model
@@ -824,6 +824,50 @@ describe("dome.agent.sweep", () => {
     expect(ledger).toContain(
       "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
     );
+  });
+
+  test("C2c-companion: a 25k material (above old 20k cap, below new 100k cap) reaches the model and integrates normally", async () => {
+    // Real dailies run ~21k chars. This ensures the new 100k budget doesn't
+    // escalate valid pairs that were incorrectly caught by the old 20k cap.
+    const realisticMaterial = `Met [[wiki/entities/alice-henshaw]] about hooks.\n${"x".repeat(25_000)}`;
+    const updated = [
+      "---",
+      "type: entity",
+      "sources:",
+      '  - "[[wiki/dailies/2026-06-09]]"',
+      "---",
+      "",
+      "# Alice Henshaw",
+      "",
+      "## 2026-05-20 — first met",
+      "Background chat.",
+      "",
+      "## 2026-06-09 — hooks discussion",
+      "Talked through the capture-hook design.",
+      "",
+    ].join("\n");
+    let modelCalled = false;
+    const stepFn: StepFn = async () => {
+      modelCalled = true;
+      return {
+        toolCalls: [
+          { id: "1", name: "editDestination", input: { path: DEST, content: updated } },
+        ],
+      };
+    };
+    const ctx = makeCtx({
+      files: { ...BASE_FILES, [MATERIAL]: realisticMaterial },
+      stepFn,
+    });
+    const effects = await sweep.run(ctx);
+
+    // The 25k material must NOT trigger the oversized-material guard.
+    expect(questions(effects)).toHaveLength(0);
+    expect(modelCalled).toBe(true);
+    // The integration patch must land.
+    const dossier = patchFor(effects, DEST);
+    expect(dossier).not.toBeNull();
+    expect(dossier).toContain('- "[[wiki/dailies/2026-06-09]]"');
   });
 
   test("M6: night-2 ledger composition — prior run preserved, cursor replaced not duplicated, new run appended", async () => {
