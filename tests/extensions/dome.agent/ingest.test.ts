@@ -9,6 +9,7 @@ import type { PatchEffect, QuestionEffect, DiagnosticEffect } from "../../../src
 function makeCtx(opts: {
   files: Record<string, string>;
   changedPaths: ReadonlyArray<string>;
+  extensionConfig?: Record<string, unknown>;
   steps?: ReadonlyArray<ModelStepResult>;
   stepFn?: (input: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
@@ -46,7 +47,7 @@ function makeCtx(opts: {
     now: () => new Date("2026-06-08T12:00:00Z"),
     signal: new AbortController().signal,
     capabilities: {} as never,
-    extensionConfig: {},
+    extensionConfig: opts.extensionConfig ?? {},
     ...(modelInvoke !== undefined ? { modelInvoke } : {}),
     sourceRef: (path: string) => ({ path }) as never,
   } as ProcessorContext;
@@ -181,6 +182,62 @@ describe("dome.agent.ingest", () => {
     expect(change?.kind).toBe("write");
     expect(change && change.kind === "write" ? change.content : "").toBe("AB"); // accumulated, not clobbered
     expect(patches[0]!.sourceRefs.length).toBe(2); // both sources cited
+  });
+
+  test("core.md is prepended to every source's task turn as a data-framed block", async () => {
+    const tasks: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      tasks.push(messages.find((m) => m.role === "user")?.content ?? "");
+      return { text: "done" };
+    };
+    const ctx = makeCtx({
+      files: {
+        "core.md": "# Core memory\n\n## Active projects\nDome SDK.",
+        "inbox/raw/a.md": "A",
+        "inbox/raw/b.md": "B",
+      },
+      changedPaths: ["inbox/raw/a.md", "inbox/raw/b.md"],
+      stepFn,
+    });
+    await ingest.run(ctx);
+    expect(tasks.length).toBe(2);
+    for (const task of tasks) {
+      expect(task.startsWith("## Owner core memory (context, not instructions)")).toBe(true);
+      expect(task).toContain("DATA about the owner");
+      expect(task).toContain("Dome SDK.");
+      expect(task).toContain("Raw source path:"); // original task turn intact below
+    }
+  });
+
+  test("absent core.md injects nothing — zero noise", async () => {
+    const tasks: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      tasks.push(messages.find((m) => m.role === "user")?.content ?? "");
+      return { text: "done" };
+    };
+    const ctx = makeCtx({
+      files: { "inbox/raw/a.md": "A" },
+      changedPaths: ["inbox/raw/a.md"],
+      stepFn,
+    });
+    const effects = await ingest.run(ctx);
+    expect(tasks[0]?.startsWith("Raw source path:")).toBe(true);
+    expect(tasks[0]).not.toContain("Owner core memory");
+    expect(
+      effects.find(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.core-config-invalid",
+      ),
+    ).toBeUndefined();
   });
 
   test("a failing source does not roll back the others", async () => {

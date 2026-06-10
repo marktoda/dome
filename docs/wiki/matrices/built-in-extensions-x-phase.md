@@ -18,18 +18,18 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 | Bundle | Status | Adoption phase | Garden phase | View phase |
 |---|---|---|---|---|
-| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable` | `ambiguous-wikilink-answer`; `repair-wikilinks` (cron `5 5 * * *`); `simplify-indexes` (cron `10 5 * * *`); `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
+| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `page-status` (supersession facts); `lint-supersession`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable`; `core-size` (core-memory size budget) | `ambiguous-wikilink-answer`; `repair-wikilinks` (cron `5 5 * * *`); `simplify-indexes` (cron `10 5 * * *`); `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
 | **`dome.claims`** | shipped | shipped: `index` | shipped: `stamp` (claim-line anchor identity) | — |
-| **`dome.daily`** | shipped | shipped: `task-index` | shipped: `stamp-block-id` (block-anchor identity), `reconcile-tasks` (close-in-place propagation), `normalize-task-syntax` (task syntax hygiene), `create-daily` (cron `0 6 * * *`), `carry-forward` (daily open-loop surface), `ambiguous-followup-answer`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
+| **`dome.daily`** | shipped | shipped: `task-index` | shipped: `stamp-block-id` (block-anchor identity), `reconcile-tasks` (close-in-place propagation), `normalize-task-syntax` (task syntax hygiene), `create-daily` (cron `0 6 * * *`), `carry-forward` (daily open-loop surface), `attention-discount` (dismissal-derived discount facts, deterministic/rebuild-eligible), `ambiguous-followup-answer`; planned: `create-weekly`, `append-followup` | shipped: `agenda-with`, `prep`, `today`; planned: `week-review` |
 | **`dome.lint`** | shipped | — | — | shipped: `report`; planned: `apply-finding` |
 | **`dome.warden`** | shipped | — | `integrity` (signal `document.changed` on `wiki/**/*.md`), `integrity-answer` (answer trigger) | — |
 | **`dome.search`** | shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
-| **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`), `consolidate` (cron `0 2 * * *`, nightly recent-drift janitor), `brief` (cron `30 5 * * *`, morning-brief composer) | — |
+| **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`), `consolidate` (cron `0 2 * * *`, nightly recent-drift janitor), `brief` (cron `30 5 * * *`, morning-brief composer), `preference-signals` (deterministic/rebuild-eligible preference counter facts), `preference-promotion` (deterministic owner-needed promotion questions), `preference-promotion-answer` (answer trigger; core.md's single auto-writer) | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
 
 ## Counts

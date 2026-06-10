@@ -17,11 +17,16 @@ import {
 } from "../../../../src/core/processor";
 
 import {
+  attentionAdjustedRecencyIso,
+  collectAttentionDiscounts,
+} from "./attention-shared";
+import {
   dailyPathSettings,
   dailyPath,
   dailyStartContextSection,
   localDateParts,
   openLoopFreshnessKey,
+  openLoopIdentity,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   previousLocalDate,
@@ -109,6 +114,13 @@ async function collectOpenLoopSourcesForNewDaily(input: {
   readonly settings: DailyPathSettings;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
   const candidates: DailyOpenLoopCandidate[] = [];
+  // Attention discounting (task-lifecycle §"Attention discounting"): the new
+  // daily's seeded surface applies the same (1 − discount) demotion as
+  // carry-forward — the seed order is what retained-merge preserves all day.
+  const discounts = await collectAttentionDiscounts({
+    snapshot: input.ctx.snapshot,
+    settings: input.settings,
+  });
   for (const path of await input.ctx.snapshot.listMarkdownFiles()) {
     if (path === input.targetPath) continue;
     const content = await input.ctx.snapshot.readFile(path);
@@ -123,12 +135,15 @@ async function collectOpenLoopSourcesForNewDaily(input: {
     ) {
       candidates.push({
         ...item,
-        lastChangedAt: openLoopFreshnessKey({
-          path,
-          settings: input.settings,
-          // Prefer the human-authored timestamp so an engine rewrite (e.g.
-          // ^block-anchor stamping) cannot reset open-loop recency.
-          lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
+        lastChangedAt: attentionAdjustedRecencyIso({
+          lastChangedAt: openLoopFreshnessKey({
+            path,
+            settings: input.settings,
+            // Prefer the human-authored timestamp so an engine rewrite (e.g.
+            // ^block-anchor stamping) cannot reset open-loop recency.
+            lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
+          }),
+          discount: discounts.get(openLoopIdentity(item))?.discount ?? 0,
         }),
       });
     }

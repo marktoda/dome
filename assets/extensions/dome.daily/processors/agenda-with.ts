@@ -43,10 +43,14 @@ const agendaWith = defineProcessorImplementation({
     );
     const allAgendaItems = agendaItemsFor(actionState, input.topic);
     const agendaItems = Object.freeze(allAgendaItems.slice(0, limit));
-    const contextMatches = ctx.projection.searchDocuments({
-      query: input.topic,
-      limit: limit + 1,
-    });
+    // FTS rows are section-granular; keep the best (first, best-bm25)
+    // section per page so the agenda context list stays one entry per page.
+    const contextMatches = firstMatchPerPath(
+      ctx.projection.searchDocuments({
+        query: input.topic,
+        limit: limit + 1,
+      }),
+    );
     const context = Object.freeze(
       contextMatches.slice(0, limit).map(contextFromMatch),
     );
@@ -218,6 +222,19 @@ function pushQuestionItem(
     evidenceLabel: question.evidenceLabel,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));
+}
+
+function firstMatchPerPath(
+  matches: ReadonlyArray<SearchDocumentResult>,
+): ReadonlyArray<SearchDocumentResult> {
+  const seen = new Set<string>();
+  return Object.freeze(
+    matches.filter((match) => {
+      if (seen.has(match.path)) return false;
+      seen.add(match.path);
+      return true;
+    }),
+  );
 }
 
 function contextFromMatch(match: SearchDocumentResult): AgendaContextEntry {

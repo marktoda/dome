@@ -126,12 +126,18 @@ const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE INDEX IF NOT EXISTS facts_by_predicate ON facts(namespace, predicate)",
 
   // 3. fts_documents — FTS5 virtual table for markdown body search.
-  //    `path`, `category`, `type`, `adopted_commit` are UNINDEXED metadata;
-  //    `source_refs` is UNINDEXED provenance JSON for result evidence;
-  //    `title` and `body` carry the full-text content with porter+unicode61
-  //    tokenization.
+  //    Rows are heading-section granular (one row per H2 section, plus the
+  //    `intro` section); logical identity is the (path, section_id)
+  //    composite key, maintained by the projection sink (FTS5 has no UNIQUE
+  //    constraints). `path`, `section_id`, `breadcrumb`, `category`, `type`,
+  //    `adopted_commit` are UNINDEXED metadata (the breadcrumb is already
+  //    prepended to `body` for matching); `source_refs` is UNINDEXED
+  //    provenance JSON for result evidence; `title` and `body` carry the
+  //    full-text content with porter+unicode61 tokenization.
   "CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5("
     + "path UNINDEXED,"
+    + "section_id UNINDEXED,"
+    + "breadcrumb UNINDEXED,"
     + "category UNINDEXED,"
     + "type UNINDEXED,"
     + "title,"
@@ -274,6 +280,8 @@ const REQUIRED_TABLE_COLUMNS: ReadonlyArray<{
     table: "fts_documents",
     columns: [
       "path",
+      "section_id",
+      "breadcrumb",
       "category",
       "type",
       "title",

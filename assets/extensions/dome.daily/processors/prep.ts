@@ -22,6 +22,7 @@ import {
   type DailyActionState,
   type DailyDueCounts,
   type DailyQuestionItem,
+  type DailyTaskAttention,
   type DailyTaskItem,
   type DailyTaskPriority,
 } from "./action-state";
@@ -118,6 +119,7 @@ type PrepPlanningItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
+  readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -165,6 +167,7 @@ function pushTaskItem(
     dueDate: task.dueDate,
     priority: task.priority,
     lastChangedAt: task.lastChangedAt,
+    attention: task.attention,
     evidenceLabel: task.evidenceLabel,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
@@ -191,6 +194,7 @@ function pushQuestionItem(
     dueDate: null,
     priority: null,
     lastChangedAt: question.lastChangedAt,
+    attention: null,
     evidenceLabel: question.evidenceLabel,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));

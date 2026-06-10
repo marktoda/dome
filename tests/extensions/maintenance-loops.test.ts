@@ -25,7 +25,7 @@ const EXEMPT_FIRST_PARTY_PROCESSORS = new Set([
 ]);
 
 describe("first-party maintenance loops", () => {
-  test("declare the V1 loop design units", () => {
+  test("declare the seven first-party loop design units", () => {
     expect(FIRST_PARTY_MAINTENANCE_LOOPS.map((loop) => loop.id)).toEqual([
       "dome.capture.digest",
       "dome.open-loop.continuity",
@@ -33,6 +33,7 @@ describe("first-party maintenance loops", () => {
       "dome.context.packet",
       "dome.claim.coherence",
       "dome.question.continuity",
+      "dome.preference.promotion",
     ]);
 
     for (const loop of FIRST_PARTY_MAINTENANCE_LOOPS) {

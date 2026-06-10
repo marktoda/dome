@@ -15,11 +15,16 @@ extensions:
     grant:
       read:
         - "wiki/**/*.md"
+        # core.md feeds the dome.markdown.core-size lint; without this entry
+        # the lint's effective read scope is empty and it never fires.
+        - "core.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
         - "raw/**"
       patch.auto:
         - "wiki/**/*.md"
+      graph.write:
+        - "dome.page.*"
       question.ask: true
     processors:
       dome.markdown.validate-wikilinks:
@@ -29,6 +34,15 @@ extensions:
           patch.auto:
             - "**/*.md"
           question.ask: true
+      # Mirror of validate-wikilinks' read widening: supersession forward
+      # targets can live at the vault root (e.g. memory.md), and rule 1
+      # resolves them against this processor's READABLE set — without the
+      # override a root-level target raises a false missing-forward-link
+      # warning.
+      dome.markdown.lint-supersession:
+        grant:
+          read:
+            - "**/*.md"
 
   dome.graph:
     enabled: true
@@ -47,6 +61,7 @@ extensions:
         - "wiki/**/*.md"
       graph.write:
         - "dome.daily.*"
+        - "dome.attention.*"
       question.ask: true
 
   dome.search:

@@ -190,6 +190,16 @@ export type SearchDocumentEffect =
       readonly kind: "search-document";
       readonly operation: "upsert";
       readonly path: VaultPath;
+      /**
+       * Stable heading-section id (heading slug + ordinal for duplicates,
+       * `~N` suffix for sub-split parts; `intro` for pre-first-H2 content).
+       * When present, the row identity is the `(path, sectionId)` composite
+       * key; absent keeps legacy page-level semantics (replace every row
+       * for `path`). See [[wiki/specs/effects]] §SearchDocumentEffect.
+       */
+      readonly sectionId?: string;
+      /** Display breadcrumb: `<page title> › <heading path>`. */
+      readonly breadcrumb?: string;
       readonly category: string;
       readonly type?: string;
       readonly title: string;
@@ -207,6 +217,8 @@ export type SearchDocumentEffectInput =
   | {
       readonly operation: "upsert";
       readonly path: string | VaultPath;
+      readonly sectionId?: string;
+      readonly breadcrumb?: string;
       readonly category: string;
       readonly type?: string;
       readonly title: string;
@@ -516,6 +528,8 @@ const SearchDocumentEffectObjectSchema = z
     kind: z.literal("search-document"),
     operation: z.enum(["upsert", "delete"]),
     path: VaultPathSchema,
+    sectionId: z.string().min(1).optional(),
+    breadcrumb: z.string().min(1).optional(),
     category: z.string().min(1).optional(),
     type: z.string().min(1).optional(),
     title: z.string().min(1).optional(),
@@ -527,6 +541,8 @@ const SearchDocumentEffectObjectSchema = z
 function searchDocumentEffectRefinements(
   v: {
     readonly operation: "upsert" | "delete";
+    readonly sectionId?: string | undefined;
+    readonly breadcrumb?: string | undefined;
     readonly category?: string | undefined;
     readonly title?: string | undefined;
     readonly body?: string | undefined;
@@ -534,6 +550,21 @@ function searchDocumentEffectRefinements(
   },
   ctx: z.RefinementCtx,
 ): void {
+  if (v.operation === "delete" && v.sectionId !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "SearchDocumentEffect.sectionId is only valid for upsert (delete clears every row for path)",
+      path: ["sectionId"],
+    });
+  }
+  if (v.operation === "delete" && v.breadcrumb !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "SearchDocumentEffect.breadcrumb is only valid for upsert",
+      path: ["breadcrumb"],
+    });
+  }
   if (v.sourceRefs.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -760,6 +791,8 @@ export function searchDocumentEffect(
       body: input.body,
       sourceRefs: input.sourceRefs,
     };
+    if (input.sectionId !== undefined) e.sectionId = input.sectionId;
+    if (input.breadcrumb !== undefined) e.breadcrumb = input.breadcrumb;
     if (input.type !== undefined) e.type = input.type;
     return Object.freeze(e);
   }

@@ -1,10 +1,11 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+  - "[[memory]]"
 ---
 
 # Page schema
@@ -69,6 +70,7 @@ last_interaction: 2026-05-27             # optional; bumped by dome.intake
 description: "Team lead for..."          # optional
 name: "Danny Tan"                        # optional
 status: "active"                         # optional; lifecycle/state label
+superseded_by: "[[wiki/entities/...]]"   # optional; forward link when status: superseded
 metadata: { ... }                        # optional
 ---
 ```
@@ -86,6 +88,8 @@ sources: ["[[wiki/dailies/2026-05-15]]"]
 tags: ["architecture", "platform-ownership"]   # optional
 description: "Why this concept matters"        # optional
 name: "Platform ownership"                     # optional
+status: "active"                               # optional; lifecycle/state label
+superseded_by: "[[wiki/concepts/...]]"         # optional; forward link when status: superseded
 metadata: { ... }                              # optional
 ---
 ```
@@ -105,6 +109,8 @@ captured: 2026-06-09           # optional; when the raw source was captured (the
 author: "Andrej Karpathy"      # optional
 description: "Reference summary" # optional
 name: "Karpathy gist"            # optional
+status: "active"                 # optional; lifecycle/state label
+superseded_by: "[[wiki/sources/...]]" # optional; forward link when status: superseded
 metadata: { ... }                # optional
 published: 2025-11-01          # optional
 ---
@@ -121,6 +127,7 @@ created: 2026-05-20
 updated: 2026-05-27
 sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
 status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
+superseded_by: "[[wiki/syntheses/...]]"       # optional; forward link when status: superseded
 description: "Synthesis summary"              # optional
 generated_from: "wiki/generated/intake/example.md" # optional; generated synthesis provenance
 input_hash: "sha256..."                         # optional; generated-input settlement hash
@@ -131,6 +138,33 @@ processor: dome.intake.synthesize-capture       # optional; generating processor
 ```
 
 Syntheses are higher-order claims built from other pages — positioning documents, build plans, strategic threads.
+
+## Supersession (ADR pattern)
+
+A page is retired the way an Architecture Decision Record is retired: **one status flip plus one forward link**, and the prose stays put.
+
+```yaml
+---
+type: concept
+status: superseded
+superseded_by: "[[wiki/concepts/platform-ownership-v2]]"
+---
+```
+
+That is the *whole* writer burden. The superseded page's body is never rewritten, trimmed, or deleted — it is history, and history stays readable in place (and in git). The replacement page does not need a back-link; backlinks are derivable. This is page-level only: block-level supersession is deliberately deferred (per [[memory]] decision 3 — no shipped prior art, ceremony risk; frontmatter schemas beyond a handful of fields get abandoned).
+
+All four default page types (and any extension type that opts in) carry `status: optional` and `superseded_by: optional`. `status:` is a free-form lifecycle label; `superseded` is the load-bearing value the substrate reacts to. `superseded_by:` carries a single wikilink to the page that replaces this one.
+
+**Mixed pages — the `## Superseded` section-move convention.** When only part of a page is outdated (the page lives on, one claim died), move the outdated content under a `## Superseded` heading with a forward wikilink to where the current claim lives. Links inside a `## Superseded` section are recognized as history context by the supersession lint and stay diagnostic-free. Heading lines inside fenced code blocks are not headings for this purpose: a fenced `## Superseded` example neither opens an exemption range nor closes a real one (the section scanner tracks fences, mirroring the search indexer's fence rule).
+
+The convention is enforced and consumed deterministically:
+
+- **Facts** — the `dome.markdown.page-status` adoption processor emits `dome.page.status` (the `status:` value) and `dome.page.superseded_by` (the forward target, recorded as written) facts from frontmatter for managed `wiki/` pages. Rebuildable by construction: derived from adopted markdown only, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+- **Lint** — `dome.markdown.lint-supersession` emits a **warning** (`dome.markdown.superseded-missing-forward-link`) when a `status: superseded` page has no `superseded_by:` wikilink that resolves to a vault page, and an **info** diagnostic (`dome.markdown.link-to-superseded`) when a non-superseded page wikilinks a superseded page — with the forward target as the hint — except for links inside a `## Superseded` section or on a frontmatter `superseded_by:` line (the supersession chain itself is never flagged).
+- **Ranking** — the `dome.search` composite ranker multiplicatively downranks superseded pages (×0.3) by reading the status facts, and explains itself with a "superseded by X" signal. Superseded pages are **downranked, never filtered** — they remain findable for history questions.
+- **Agents** — the consolidate charter proposes status flips + forward links instead of rewriting or deleting outdated/duplicated prose; the brief and ingest charters treat superseded pages as history and follow the forward link for current context. The warden's stale-claim flags gain a durable resolution: flip the status (see [[wiki/specs/task-lifecycle]] §"Wardens").
+
+**Why this design:** the ADR convention is the only markdown supersession pattern with a proven maintenance record. One flip + one forward link keeps the writer cost near zero, keeps git history honest (no destructive rewrites), and gives every deterministic consumer (lint, facts, ranking) a single unambiguous signal to key on.
 
 ## Extension types (from bundles)
 
@@ -191,3 +225,5 @@ Three properties make page schemas substrate-friendly:
 - [[wiki/specs/processors]] — `dome.markdown` is the adoption-phase validator.
 - [[wiki/specs/effects]] §"DiagnosticEffect" — validation failures become diagnostics.
 - [[wiki/gotchas/boundary-validation-via-zod]] — the Zod boundary at frontmatter parse.
+- [[wiki/specs/task-lifecycle]] §"Wardens" — warden stale-claim flags resolve via the supersession status flip.
+- [[memory]] §"M2" — the memory-quality plan that landed supersession.

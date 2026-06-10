@@ -40,12 +40,15 @@ import {
   replaceDailyStartContextSection,
 } from "../../dome.daily/processors/daily-shared";
 
+import { ATTENTION_DISCOUNT_PREDICATE } from "../../dome.daily/processors/attention-shared";
+
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import {
   agentQuestionEffects,
   agentTruncatedEffect,
 } from "../lib/agent-run-effects";
 import { BRIEF_CHARTER } from "../lib/brief-charter";
+import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import {
   MEETINGS_BLOCK,
   QUESTIONS_BLOCK,
@@ -55,9 +58,16 @@ import {
   parseCalendarDay,
   questionsBriefSection,
   replaceBriefBlock,
+  staleLoopsFromFacts,
+  staleLoopsTaskLines,
+  type BriefStaleLoop,
   type CalendarMeeting,
 } from "../lib/brief-shared";
 import { makeBriefTools } from "../lib/brief-tools";
+import {
+  isValidSignalsAppend,
+  PREFERENCE_SIGNALS_PATH,
+} from "../lib/preferences-shared";
 
 const MAX_STEPS = 25;
 
@@ -118,6 +128,25 @@ const brief = defineProcessorImplementation({
       calendarExists: calendarContent !== null,
     });
 
+    // Owner core memory: prepended to the task turn as DATA (never
+    // instructions — same defensive framing as the calendar list).
+    // Absent/empty page → no-op.
+    const core = await coreMemorySection({
+      readFile: (p) => ctx.snapshot.readFile(p),
+      config: ctx.extensionConfig,
+    });
+    const configDiagnostics: Effect[] =
+      core.problem === null
+        ? []
+        : [
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.core-config-invalid",
+              message: core.problem,
+              sourceRefs,
+            }),
+          ];
+
     // Seed the accumulator with the prepared daily so the model's readPage
     // sees it (overlay) and a model that does nothing still lands the
     // deterministic skeleton + blocks.
@@ -135,18 +164,29 @@ const brief = defineProcessorImplementation({
       },
     });
 
+    // Stale-loops pre-run context: heavily-discounted open loops from the
+    // deterministic dome.attention.discount facts (task-lifecycle §"Attention
+    // discounting"). Read-only projection data — never model-derived.
+    const staleLoops = staleLoopsFromFacts(
+      ctx.projection?.facts({ predicate: ATTENTION_DISCOUNT_PREDICATE }) ?? [],
+    );
+
     let result;
     try {
       result = await runAgentLoop({
         charter: BRIEF_CHARTER,
-        task: taskTurn({
-          today,
-          todayPath,
-          yesterdayPath,
-          yesterdayExists: yesterdayContent !== null,
-          calendarPath,
-          meetings,
-        }),
+        task: withCoreMemory(
+          core.section,
+          taskTurn({
+            today,
+            todayPath,
+            yesterdayPath,
+            yesterdayExists: yesterdayContent !== null,
+            calendarPath,
+            meetings,
+            staleLoops,
+          }),
+        ),
         tools,
         step,
         maxSteps: MAX_STEPS,
@@ -157,6 +197,7 @@ const brief = defineProcessorImplementation({
       // create-daily recreates it at 06:00) and surface only a diagnostic.
       const message = error instanceof Error ? error.message : String(error);
       return Object.freeze([
+        ...configDiagnostics,
         diagnosticEffect({
           severity: "warning",
           code: "dome.agent.brief-failed",
@@ -166,7 +207,7 @@ const brief = defineProcessorImplementation({
       ]);
     }
 
-    const effects: Effect[] = [];
+    const effects: Effect[] = [...configDiagnostics];
 
     // Splice guardrail: start from the deterministic prepared content and
     // adopt ONLY the model-filled brief blocks; everything else the model
@@ -195,7 +236,31 @@ const brief = defineProcessorImplementation({
       });
     }
 
-    const outOfScope = [...state.edits.keys()].filter((p) => p !== todayPath);
+    // The one allowed edit outside the daily note: an append of well-formed
+    // preference-signal lines (wiki/specs/preferences.md — the charter's
+    // signal convention). Anything else on the signals page — a rewrite, a
+    // malformed line, smuggled prose — is dropped as out-of-scope.
+    const signalsEdit = state.edits.get(PREFERENCE_SIGNALS_PATH);
+    let signalsAppend: string | null = null;
+    if (signalsEdit?.kind === "write") {
+      const signalsBefore = await ctx.snapshot.readFile(
+        PREFERENCE_SIGNALS_PATH,
+      );
+      if (
+        isValidSignalsAppend({
+          before: signalsBefore,
+          after: signalsEdit.content,
+        })
+      ) {
+        signalsAppend = signalsEdit.content;
+      }
+    }
+
+    const outOfScope = [...state.edits.keys()].filter(
+      (p) =>
+        p !== todayPath &&
+        !(p === PREFERENCE_SIGNALS_PATH && signalsAppend !== null),
+    );
     if (outOfScope.length > 0) {
       effects.push(
         diagnosticEffect({
@@ -223,12 +288,26 @@ const brief = defineProcessorImplementation({
       afterBlock: YESTERDAY_BLOCK,
     });
 
-    if (existing === null || composed !== existing) {
+    if (existing === null || composed !== existing || signalsAppend !== null) {
       effects.push(
         patchEffect({
           mode: "auto",
-          changes: [{ kind: "write", path: todayPath, content: composed }],
-          reason: `dome.agent: compose morning brief into ${todayPath}`,
+          changes: [
+            { kind: "write", path: todayPath, content: composed },
+            ...(signalsAppend !== null
+              ? [
+                  {
+                    kind: "write" as const,
+                    path: PREFERENCE_SIGNALS_PATH,
+                    content: signalsAppend,
+                  },
+                ]
+              : []),
+          ],
+          reason:
+            signalsAppend !== null
+              ? `dome.agent: compose morning brief into ${todayPath} + append preference signals to ${PREFERENCE_SIGNALS_PATH}`
+              : `dome.agent: compose morning brief into ${todayPath}`,
           sourceRefs,
         }),
       );
@@ -340,6 +419,7 @@ function taskTurn(input: {
   readonly yesterdayExists: boolean;
   readonly calendarPath: string;
   readonly meetings: ReadonlyArray<CalendarMeeting> | null;
+  readonly staleLoops: ReadonlyArray<BriefStaleLoop>;
 }): string {
   const date = formatDate(input.today);
   const lines = [
@@ -371,6 +451,7 @@ function taskTurn(input: {
       }),
     );
   }
+  lines.push(...staleLoopsTaskLines(input.staleLoops));
   lines.push(
     "",
     "Fill the yesterday block" +

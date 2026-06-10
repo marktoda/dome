@@ -62,6 +62,8 @@ export type DailyOpenLoopSource = {
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
+  /** The origin line's stamped `^block-anchor` id, when it carries one. */
+  readonly anchor?: string;
 };
 
 export type DailyOpenLoopCandidate = DailyOpenLoopSource & {
@@ -515,6 +517,7 @@ export function openLoopSurfaceSources(input: {
         body: item.body,
         followup: item.followup,
         sourcePath: input.path,
+        ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
       }),
     );
   }

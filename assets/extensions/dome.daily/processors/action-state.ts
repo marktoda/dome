@@ -13,11 +13,17 @@ import {
 } from "../../../../src/question-resolution";
 
 import {
+  attentionAdjustedRecencyMs,
+  collectAttentionDiscounts,
+  type AttentionDiscount,
+} from "./attention-shared";
+import {
   dailyPathSettings,
   dailyPath,
   formatDate,
   isValidDailyDate,
   localDateParts,
+  openLoopIdentity,
   openSourceBackedOpenLoopsFromMarkdown,
   openLoopSurfaceKey,
   parseDailyPath,
@@ -83,8 +89,21 @@ export type DailyTaskItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
+  /**
+   * Explainable attention-discount note (task-lifecycle §"Attention
+   * discounting"): present when the item carries a dome.attention.discount
+   * derivation, `null` otherwise. Ranking demotes by `(1 − discount)`
+   * multiplicatively; it never drops the item.
+   */
+  readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export type DailyTaskAttention = {
+  readonly discount: number;
+  readonly impressions: number;
+  readonly lastShown: string;
 };
 
 export type DailyTaskPriority =
@@ -132,6 +151,14 @@ export async function collectDailyActionState(
       content: dailyContent,
     });
 
+  // Attention discounting: derived from the snapshot (same deterministic
+  // inputs the dome.daily.attention-discount facts record), so the view
+  // agrees with the markdown it reads regardless of projection freshness.
+  const attentionDiscounts = await collectAttentionDiscounts({
+    snapshot: ctx.snapshot,
+    settings,
+  });
+
   const openFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: OPEN_TASK_PREDICATE,
   }));
@@ -154,6 +181,7 @@ export async function collectDailyActionState(
       dailyPath: path,
       item,
       sourceLastChangedAt,
+      attentionDiscounts,
     })
   );
   const openTasks = [
@@ -164,6 +192,7 @@ export async function collectDailyActionState(
         followup: followupKeys.has(factKey(fact)),
         dailyPath: path,
         sourceLastChangedAt,
+        attentionDiscounts,
       })
     ),
   ].sort(compareTaskItemsForDaily(path, settings));
@@ -175,6 +204,7 @@ export async function collectDailyActionState(
         followup: true,
         dailyPath: path,
         sourceLastChangedAt,
+        attentionDiscounts,
       })
     ),
   ].sort(compareTaskItemsForDaily(path, settings));
@@ -328,6 +358,7 @@ function taskItemFromFact(input: {
   readonly followup: boolean;
   readonly dailyPath: string;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
+  readonly attentionDiscounts: ReadonlyMap<string, AttentionDiscount>;
 }): DailyTaskItem {
   const { fact } = input;
   const ref = fact.sourceRefs[0];
@@ -345,6 +376,10 @@ function taskItemFromFact(input: {
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
+    attention: taskAttention(input.attentionDiscounts, {
+      sourcePath: path,
+      body: rawText,
+    }),
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
   });
@@ -355,6 +390,7 @@ function taskItemFromDailySurface(input: {
   readonly dailyPath: string;
   readonly item: DailyOpenLoopSource;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
+  readonly attentionDiscounts: ReadonlyMap<string, AttentionDiscount>;
 }): DailyTaskItem {
   const metadata = taskMetadata(input.item.body);
   const surfaceRef = input.ctx.sourceRef(
@@ -377,12 +413,29 @@ function taskItemFromDailySurface(input: {
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(input.dailyPath) ?? null,
+    attention: taskAttention(input.attentionDiscounts, {
+      sourcePath: input.item.sourcePath,
+      body: input.item.body,
+    }),
     evidenceLabel: actionEvidenceLabel({
       path: input.dailyPath,
       line: input.item.line,
       sourceRefs,
     }),
     sourceRefs,
+  });
+}
+
+function taskAttention(
+  discounts: ReadonlyMap<string, AttentionDiscount>,
+  item: { readonly sourcePath: string; readonly body: string },
+): DailyTaskAttention | null {
+  const entry = discounts.get(openLoopIdentity(item));
+  if (entry === undefined) return null;
+  return Object.freeze({
+    discount: entry.discount,
+    impressions: entry.impressions,
+    lastShown: entry.lastShown,
   });
 }
 
@@ -777,7 +830,7 @@ function compareTaskActionPriority(
   if (bucketCmp !== 0) return bucketCmp;
 
   const priorityCmp = taskPriorityRank(a.priority) - taskPriorityRank(b.priority);
-  const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
+  const changedCmp = compareDiscountedRecencyDesc(a, b);
 
   if (bucketA === 0) {
     const dueCmp = compareOptionalDateDesc(a.dueDate, b.dueDate);
@@ -807,6 +860,33 @@ function taskActionBucket(task: DailyTaskItem, date: string | null): number {
   if (task.priority !== null) return 1;
   if (task.dueDate !== null) return 2;
   return 3;
+}
+
+/**
+ * Recency comparison with attention demotion (task-lifecycle §"Attention
+ * discounting"): a discounted item compares as if its last human change were
+ * `log(1 − discount)/log(0.995)` hours older — the order-equivalent of
+ * multiplying the recency score by `(1 − discount)`. With discount 0 this is
+ * exactly the plain `lastChangedAt` descending comparison. Demotion reorders;
+ * it never removes an item from the list.
+ */
+function compareDiscountedRecencyDesc(
+  a: DailyTaskItem,
+  b: DailyTaskItem,
+): number {
+  if (a.lastChangedAt === null || b.lastChangedAt === null) {
+    return compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
+  }
+  const aMs = attentionAdjustedRecencyMs({
+    lastChangedAt: a.lastChangedAt,
+    discount: a.attention?.discount ?? 0,
+  });
+  const bMs = attentionAdjustedRecencyMs({
+    lastChangedAt: b.lastChangedAt,
+    discount: b.attention?.discount ?? 0,
+  });
+  if (aMs === bMs) return 0;
+  return bMs > aMs ? 1 : -1;
 }
 
 function compareOptionalDate(a: string | null, b: string | null): number {

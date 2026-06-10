@@ -7,6 +7,7 @@ import {
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finishAgentRun } from "../lib/agent-run-effects";
+import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeIngestTools } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
 
@@ -31,12 +32,29 @@ const ingest = defineProcessorImplementation({
       },
     });
 
+    // Owner core memory: read once per run, prepended to every source's task
+    // turn as DATA (never instructions). Absent/empty page → no-op.
+    const core = await coreMemorySection({
+      readFile: (p) => ctx.snapshot.readFile(p),
+      config: ctx.extensionConfig,
+    });
+
     // One accumulator shared across every source in this run. Each source's
     // loop reads prior sources' in-run edits (via the overlay-aware tools) and
     // builds on them, and the whole batch lands as a SINGLE PatchEffect — so
     // there are no racing per-source sub-proposals to clobber a shared page.
     const state: AgentRunState = { edits: new Map(), questions: [] };
     const effects: Effect[] = [];
+    if (core.problem !== null) {
+      effects.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.core-config-invalid",
+          message: core.problem,
+          sourceRefs,
+        }),
+      );
+    }
     let truncated = false;
 
     for (const sourcePath of rawPaths) {
@@ -45,7 +63,10 @@ const ingest = defineProcessorImplementation({
       try {
         const result = await runAgentLoop({
           charter: INGEST_CHARTER,
-          task: taskTurn(sourcePath, source, ctx.now()),
+          task: withCoreMemory(
+            core.section,
+            taskTurn(sourcePath, source, ctx.now()),
+          ),
           tools,
           step,
           maxSteps: MAX_STEPS,

@@ -158,6 +158,11 @@ is markdown in a commit, like everything else.
 - **Inbox file-watcher** — a daemon-side watcher that auto-commits files
   dropped into `inbox/raw/` (would dissolve the manual step in recipe B).
   Today the commit boundary is the contract.
+- **Auto-updating sources** — when a captured source is a living document
+  (e.g. an article that changes upstream), detect the update and re-ingest /
+  re-index the derived pages. Today a source is consumed once at ingest;
+  re-capturing the new version as a fresh `inbox/raw/` file is the manual
+  path.
 - **Shipped transcription** — voice/audio handling stays user-assembled.
 - **Open-loop guarantee hardening** — "every ingested capture with an
   actionable item leaves a trace in the daily note's open-loop section" is

@@ -1,8 +1,8 @@
 id: dome.agent
-version: 0.2.0
+version: 0.4.0
 processors:
   - id: dome.agent.ingest
-    version: 0.1.0
+    version: 0.2.1
     phase: garden
     triggers:
       - kind: signal
@@ -19,6 +19,15 @@ processors:
           - "inbox/**/*.md"
           - "index.md"
           - "log.md"
+          # Owner core memory — read-only by design (propose-only page):
+          # core.md appears in NO agent patch.auto declaration; the single
+          # auto-writer is the preference-promotion answer handler below. A
+          # custom core_path needs a matching vault read grant (same rule as
+          # the ledger path).
+          - "core.md"
+          # Preference signals (M5): appended within the normal grant when
+          # the owner's content corrects agent behavior.
+          - "preferences/signals.md"
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
@@ -27,6 +36,7 @@ processors:
           - "log.md"
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
+          - "preferences/signals.md"
       - kind: model.invoke
         maxDailyCostUsd: 5
       - kind: question.ask
@@ -60,7 +70,7 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.agent.consolidate
-    version: 0.2.0
+    version: 0.2.2
     phase: garden
     triggers:
       # Nightly (was weekly 0 4 * * 1): the charter bounds each run to recent
@@ -74,12 +84,16 @@ processors:
           - "index.md"
           - "log.md"
           - "consolidation-ledger.md"
+          # Owner core memory — read-only by design (propose-only page).
+          - "core.md"
+          - "preferences/signals.md"
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
           - "index.md"
           - "log.md"
           - "consolidation-ledger.md"
+          - "preferences/signals.md"
       - kind: model.invoke
         maxDailyCostUsd: 10
       - kind: question.ask
@@ -90,7 +104,7 @@ processors:
     module: processors/consolidate.ts
 
   - id: dome.agent.brief
-    version: 0.1.0
+    version: 0.1.3
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
@@ -114,12 +128,20 @@ processors:
           # needs a matching grant (same rule as consolidate's own grant).
           - "inbox/**/*.md"
           - "consolidation-ledger.md"
+          # Owner core memory — read-only by design (propose-only page).
+          - "core.md"
+          # Preference-promotion questions ref signal lines, so the brief's
+          # scoped questions batch needs this readable too.
+          - "preferences/signals.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
-      # note (wiki/dailies default template or a notes/ daily_path override).
+      # note (wiki/dailies default template or a notes/ daily_path override)
+      # plus validated signal-line appends (the splice guard drops any
+      # signals-page edit that is not an append of well-formed signal lines).
       - kind: patch.auto
         paths:
           - "wiki/dailies/*.md"
           - "notes/*.md"
+          - "preferences/signals.md"
       - kind: model.invoke
         maxDailyCostUsd: 5
       - kind: question.ask
@@ -128,3 +150,92 @@ processors:
       timeoutMs: 1800000
       modelCallTimeoutMs: 180000
     module: processors/brief.ts
+
+  # ----- Preference promotion (memory-quality M5) ----------------------------
+  # docs/wiki/specs/preferences.md. Three deterministic processors — no model.
+
+  - id: dome.agent.preference-signals
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "preferences/signals.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "preferences/signals.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "preferences/signals.md"
+      # core.md flips topic state to/from `promoted`, so the counter re-runs
+      # when the core page changes.
+      - kind: signal
+        name: file.created
+        pathPattern: "core.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "core.md"
+    capabilities:
+      - kind: read
+        paths:
+          - "preferences/signals.md"
+          - "core.md"
+      - kind: graph.write
+        namespaces: ["dome.preference.*"]
+    # Deterministic + read/graph.write-only keeps this in the rebuild-safe
+    # garden set (isRebuildEligibleGardenProcessor); all-readable-markdown
+    # inspection lets vanished topics' stale facts clear on any run.
+    execution:
+      class: deterministic
+    inspection:
+      kind: all-readable-markdown
+    module: processors/preference-signals.ts
+
+  - id: dome.agent.preference-promotion
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "preferences/signals.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "preferences/signals.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "core.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "core.md"
+    capabilities:
+      - kind: read
+        paths:
+          - "preferences/signals.md"
+          - "core.md"
+      - kind: question.ask
+    execution:
+      class: deterministic
+    module: processors/preference-promotion.ts
+
+  - id: dome.agent.preference-promotion-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.agent.preference-promotion
+        idempotencyKeyPrefix: "dome.agent.preference-promotion:"
+    capabilities:
+      # THE single auto-writer to core.md (memory decision 4; preferences.md
+      # §"The single-auto-writer exception"): the promotion question WAS the
+      # owner review. Narrow by construction — exactly the core page and the
+      # signals page (rejection tombstones); the vault config mirrors this
+      # with a per-processor replacement grant.
+      - kind: read
+        paths:
+          - "core.md"
+          - "preferences/signals.md"
+      - kind: patch.auto
+        paths:
+          - "core.md"
+          - "preferences/signals.md"
+    module: processors/preference-promotion-answer.ts

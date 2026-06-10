@@ -254,6 +254,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "path", pattern: "notes/*.md" },
         { kind: "path", pattern: "sources/calendar/*.md" },
         { kind: "projection", name: "facts:dome.daily.*" },
+        { kind: "projection", name: "facts:dome.attention.*" },
         { kind: "operational", name: "questions" },
       ],
       processors: [
@@ -262,6 +263,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.stamp-block-id",
         "dome.daily.reconcile-tasks",
         "dome.daily.normalize-task-syntax",
+        "dome.daily.attention-discount",
         "dome.daily.ambiguous-followup-answer",
         "dome.daily.today",
         "dome.daily.prep",
@@ -293,6 +295,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       evidence: [
         { kind: "path", pattern: "**/*.md" },
         { kind: "projection", name: "facts:dome.graph.*" },
+        { kind: "projection", name: "facts:dome.page.*" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "questions" },
       ],
@@ -303,12 +306,15 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.simplify-indexes",
         "dome.markdown.normalize-frontmatter",
         "dome.markdown.lint-frontmatter",
+        "dome.markdown.page-status",
+        "dome.markdown.lint-supersession",
         "dome.markdown.broken-images",
         "dome.markdown.duplicate-detection",
         "dome.markdown.duplicate-detection-answer",
         "dome.markdown.stale-dates",
         "dome.markdown.refresh-updated",
         "dome.markdown.raw-immutable",
+        "dome.markdown.core-size",
         "dome.markdown.orphan-pages",
         "dome.graph.links",
         "dome.graph.tag-index",
@@ -327,7 +333,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
-        "Duplicate consolidation must preserve source material before deletion.",
+        "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
+        "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
       ],
     }),
     freezeLoop({
@@ -412,6 +419,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       optionalProcessors: [
         "dome.warden.integrity",
         "dome.warden.integrity-answer",
+        "dome.agent.preference-promotion-answer",
       ],
       questionScope: "all",
       surfaces: [
@@ -429,6 +437,38 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       risks: [
         "Open questions can become user chores if safe agent-resolution metadata is missing.",
         "Answer handlers must keep routing patches through garden and adoption.",
+      ],
+    }),
+    freezeLoop({
+      id: "dome.preference.promotion",
+      goal:
+        "Recurring owner corrections become standing preferences in core memory, with owner consent.",
+      evidence: [
+        { kind: "path", pattern: "preferences/signals.md" },
+        { kind: "path", pattern: "core.md" },
+        { kind: "projection", name: "facts:dome.preference.*" },
+        { kind: "operational", name: "questions" },
+        { kind: "operational", name: "diagnostics" },
+      ],
+      processors: [
+        "dome.agent.preference-signals",
+        "dome.agent.preference-promotion",
+        "dome.agent.preference-promotion-answer",
+      ],
+      surfaces: [
+        { kind: "path", pattern: "core.md" },
+        { kind: "path", pattern: "preferences/signals.md" },
+        { kind: "status", name: "check" },
+      ],
+      settlement: {
+        key: "topic slug + candidate-rule hash",
+        noOpWhen:
+          "every candidate topic has exactly one open promotion question, every answered one is promoted into core.md's generated block or tombstoned in the signals page, and counter facts match the signals page",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "Auto-promotion would let agents rewrite their own standing instructions; only the answer handler writes core.md, and only after an owner-needed question.",
+        "Signal lines are free-text markdown; malformed lines must degrade to an info diagnostic, never block adoption or crash the counter.",
       ],
     }),
   ]);

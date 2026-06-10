@@ -8,6 +8,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
 - [[wedge]] — Product wedge plan (2026-06-09): surface-in re-sequencing of remaining work; five phases (ambient daemon, shipped model provider, capture loop, nightly consolidation + morning brief, MCP server); evolve-don't-rebuild decision of record.
+- [[memory]] — Memory-quality plan (2026-06-09): five mechanisms (BM25++ retrieval, page supersession, core.md, dismissal discounting, preference promotion) as conventions + deterministic rebuildable facts; embeddings banked as a recomputable-cache spec, miss-log gated.
 
 ## Specs
 
@@ -18,6 +19,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/effects]] — The eleven-kind Effect taxonomy (Patch / Diagnostic / Fact / SearchDocument / Question / Job / ExternalAction / OutboxRecovery / QuarantineRecovery / RunRecovery / View); SourceRef shape; exhaustive routing.
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
+- [[wiki/specs/embeddings]] — Banked dense-retrieval design (not implemented): `dome.model-provider.embed/v1` envelope; `model.embed` capability; `embeddings.db` as the recomputable-cache store class; brute-force-cosine third RRF channel; gated on the `retrieval-misses.md` log.
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
@@ -28,6 +30,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; no-op without a model).
 - [[wiki/specs/claims]] — The vault-general claim-line grammar (`**Key:** value *(as of date)* ^c…`); `dome.claims.stamp` (garden anchor stamper) and `dome.claims.index` (adoption fact emitter); the `dome.claim.coherence` maintenance loop; bi-temporal supersession model; anticipated consumers (nightly sweeper, `dome explain`, warden pre-filter).
 - [[wiki/specs/autonomous-agents]] — Autonomous-agent capability: agent-as-processor model (no new primitive); `ctx.modelInvoke.step` provider-neutral tool-calling seam; `AgentDefinition` loop harness; `dome.agent.ingest` (inbox-triggered full ingest workflow, single PatchEffect + questions); grant-as-boundary + two hard floors.
+- [[wiki/specs/preferences]] — Preference promotion (memory-quality M5): the `preferences/signals.md` append-only signal convention; deterministic counter facts (`dome.preference.*`, rebuildable); Wilson 95% lower bound × 90-day freshness confidence; owner-needed promotion questions; the answer-mediated handler as `core.md`'s single auto-writer; OSB applied/violated lifecycle banked as follow-up.
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/vault-layout]] — Directory structure; category from path; ownership rules; git repository structure; derived operational state under `.dome/state/`.
 
@@ -38,6 +41,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest fully-adopted commit; advanced only after a clean fixed-point sync. Fast-forward-only.
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; richer templated-section refresh remains planned.
 - [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — *(axiom)* Every vault state change — agent native write, vim save, garden-emitted patch, scheduled job — eventually flows through the engine's adoption loop.
+- [[wiki/invariants/EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE]] — *(deferred)* Vectors in `embeddings.db` never hold truth, only acceleration; the cache may be deleted at any time with no correctness impact; no processor may read embeddings as facts.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
 - [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] — *(axiom)* Mutation happens in exactly one module: `src/engine/apply-effect.ts`. Every Effect routes through this chokepoint.

@@ -171,6 +171,11 @@ function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
   for (const [index, match] of result.matches.entries()) {
     matchLines.push(`${index + 1}. ${paint(match.title, "plain", caps)}`);
     matchLines.push(`   ${paint("path:", "muted", caps)} ${match.path}`);
+    if (match.breadcrumb !== null && match.breadcrumb !== match.title) {
+      matchLines.push(
+        `   ${paint("section:", "muted", caps)} ${match.breadcrumb}`,
+      );
+    }
     if (match.snippet.length > 0) {
       matchLines.push(
         `   ${paint("text:", "muted", caps)} ${stripFtsMarkers(match.snippet)}`,
@@ -252,6 +257,7 @@ type QueryResultData = {
   readonly matches: ReadonlyArray<{
     readonly path: string;
     readonly title: string;
+    readonly breadcrumb: string | null;
     readonly snippet: string;
     readonly ranking: QueryRanking | null;
     readonly sourceRefs: ReadonlyArray<QuerySourceRef>;
@@ -330,6 +336,10 @@ function parseQueryResult(data: unknown): QueryResultData {
         return Object.freeze({
           path: stringOrEmpty(match.path),
           title: stringOrEmpty(match.title),
+          breadcrumb: typeof match.breadcrumb === "string" &&
+              match.breadcrumb.length > 0
+            ? match.breadcrumb
+            : null,
           snippet: stringOrEmpty(match.snippet),
           ranking: parseRanking(match.ranking),
           sourceRefs: Object.freeze(parseSourceRefs(match.sourceRefs)),

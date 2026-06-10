@@ -179,7 +179,8 @@ function printDoctorText(
                 `git ${report.summary.adoptedRefDivergence} · ` +
                 `instructions ${report.summary.instructionDrift} · ` +
                 `storage ${report.summary.operationalSchemaMismatch} · ` +
-                `grants ${report.summary.capabilityGrantGaps} · ` +
+                `grants ${report.summary.capabilityGrantGaps} kind · ` +
+                `${report.summary.capabilityGrantEntryGaps} entry · ` +
                 `daily_path ${report.summary.dailyPathMismatch} · ` +
                 `model ${report.summary.modelProviderMissing} missing · ` +
                 `${report.summary.modelProviderUnreachable} unreachable · ` +

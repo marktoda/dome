@@ -134,7 +134,12 @@ The shipped initialization steps:
    bundles while preserving existing grant values, explicitly disabled bundles,
    and third-party bundle config. When it changes the file, it rewrites the YAML
    into normalized form so stale comments from older generated configs do not
-   contradict the active grants.
+   contradict the active grants. It deliberately does NOT merge new entries
+   into grant lists the vault already carries — grant lists are user-owned
+   config and auto-merging is too risky. The detection half lives in
+   `dome doctor`'s `capability.grant-entry-missing` probe, which names the
+   exact YAML each missing first-party rollout entry needs (see
+   `docs/memory.md` §"Vault rollout").
 4. When `--with-model-provider anthropic` is supplied, copies the shipped
    first-party provider template from
    `<SDK>/assets/model-providers/anthropic.ts` to
@@ -166,7 +171,15 @@ The shipped initialization steps:
    provider or stanza.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
-6. Writes `<vault>/AGENTS.md` from the shipped orientation template
+6. Writes `<vault>/core.md`, the always-loaded core memory page (per
+   [[wiki/specs/vault-layout]] §"`core.md` — the core memory page"), as a
+   commented skeleton: `# Core memory` plus `## Who I am`,
+   `## Active projects`, and `## Standing preferences` sections, with an
+   HTML comment explaining the propose-only convention (Dome agents read it
+   every run but never auto-write it) and the ~6,000-character size budget
+   the `dome.markdown.core-size` lint enforces. First-write-only — re-runs
+   never overwrite the user's core memory.
+7. Writes `<vault>/AGENTS.md` from the shipped orientation template
    (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
@@ -181,8 +194,8 @@ The shipped initialization steps:
    an older AGENTS file has no delimiters, its previous content is moved into
    the new user-prose block. The same flag prepends the `@AGENTS.md` shim to
    CLAUDE.md when missing, preserving existing file content below it.
-7. Creates an initial scaffold commit (`dome init: initial scaffold`)
-   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
+8. Creates an initial scaffold commit (`dome init: initial scaffold`)
+   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`, and
    `.dome/config.yaml`, plus `.dome/model-provider.ts` when the provider
    scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
    with commits is a no-op for this step).
@@ -909,6 +922,7 @@ processor-version hash is stale. Output (text mode):
 4 adopted-state match(es) for "platform ownership"
 
 1. Platform Team Ownership (wiki/syntheses/platform-team-ownership.md)
+   section: Platform Team Ownership › Decisions
    Atlas owns runtime; platform owns infrastructure boundaries...
    why: project page; 2 open loops; decision (score 17, fts -2.41)
    SourceRefs:
@@ -929,9 +943,26 @@ processor-version hash is stale. Output (text mode):
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
 carries SourceRefs because the search-document rows are written from
-SearchDocumentEffect. The processor fetches an expanded FTS candidate set and
+SearchDocumentEffect. FTS rows are heading-section granular (per
+[[wiki/specs/projection-store]] §"fts_documents"); the processor collapses
+section hits to the best section per page and each match carries that
+section's `sectionId` and `breadcrumb` (`<page title> › <heading path>`) plus
+section-ranged SourceRefs. Text mode prints the breadcrumb as the `section:`
+line when the best hit is a non-intro section. The processor fetches an
+expanded FTS candidate set and
 also recalls exact-path documents when projection memory has a topic-matched
 open loop, decision, unresolved question, or active diagnostic for that page.
+It also expands one hop over `dome.graph.links_to` facts from the top FTS
+pages (pages linked from or linking to those hits, ordered by the rank of the
+linking hit) and fuses the FTS and link-expansion channels with reciprocal-
+rank fusion (k=60, link channel at half weight). The fused contribution lands
+as `fusion`-kind ranking signals ("text match", "linked from matches"), so a
+page that never matched FTS can enter the candidate set through links but
+cannot outrank a direct strong hit for an exact-term query on fusion alone.
+The three candidate channels (FTS, projection recall, link expansion) are
+disjoint by construction — a page already present as an FTS or recall
+candidate is excluded from the expansion channel's candidate list, so no page
+can render as a duplicate result row.
 Daily-intent queries such as "today", "daily", "yesterday", "tomorrow", or an
 explicit `YYYY-MM-DD` also recall existing date-named markdown files for that
 day from the adopted snapshot. This makes the current daily note available as a
@@ -943,10 +974,21 @@ unless they are the target daily. This prevents old daily notes that merely say
 "today" from crowding out the current daily surface and its backing context.
 It then ranks the combined candidate set before slicing to `--limit` with
 source-backed signals: page type, graph facts, open-loop facts, decisions,
-unresolved questions, active diagnostics, and projection recall signals. The
+unresolved questions, active diagnostics, projection recall signals, and the
+RRF fusion signals described above. Pages whose `dome.page.status` fact says
+`superseded` (per [[wiki/specs/page-schema]] §"Supersession (ADR pattern)")
+have their composite score multiplied by ×0.3 and carry an explainable
+`superseded`-kind signal ("superseded by <forward target>") — downranked,
+never filtered, so superseded pages stay findable for history questions. The
 legacy `rank` field remains the raw FTS rank for FTS matches; recalled
 documents use a deliberately weak FTS rank and are promoted only by recall and
-related-state signals. The `ranking` object carries `score`, `ftsRank`,
+related-state signals. After ranking, a recency decay pass multiplies the
+composite score of the top ~25 candidates by
+`max(0.35, 0.995^hoursSince(lastHumanChangedAt))` — old-but-relevant pages
+are dampened toward the floor, never buried, and Dome-authored engine commits
+do not refresh recency because the basis is `lastHumanChangedAt` (pages whose
+history is entirely Dome-authored are not decayed). The `ranking` object
+carries `score`, `ftsRank`, `recencyFactor`,
 human-readable `reasons`, and structured `signals` so agents can explain why a
 result was promoted. Matches also include related page facts and unresolved
 diagnostics/questions whose SourceRefs point at the matched path. Open
@@ -1019,7 +1061,11 @@ exhaustive fact dump. Consumers that need all evidence should use
 Daily task facts use the same display convention as the daily action view:
 parsed `📅` due-date and priority glyph markers are rendered as bracketed
 `due` / `priority` metadata instead of duplicated inside the task text.
-Search-match entries use the same expanded candidate ranking as `dome query`.
+Search-match entries use the same expanded candidate ranking as `dome query`:
+section-granular FTS hits collapsed to the best section per page (entries
+carry `sectionId` + `breadcrumb`, and the rendered packet prints the
+breadcrumb as a `Section:` line), one-hop `dome.graph.links_to` expansion
+fused via reciprocal-rank fusion (k=60), and the top-N recency decay pass.
 The packet can
 also recall exact-path documents when projection memory has a topic-matched
 open loop, decision, unresolved question, or active diagnostic for that page,
@@ -1355,7 +1401,17 @@ Engine-substrate **health check** verb. The current implementation is
 probe-only and read-only: it reports failed/stuck outbox rows, orphan running
 rows, quarantined processor triggers, projection cache drift, adopted-ref
 divergence, instruction drift, operational schema mismatches, and enabled
-processor capability kinds that are declared but not granted. It also reports
+processor capability kinds that are declared but not granted. For granted
+kinds it additionally probes the first-party memory-quality rollout entries:
+when an enabled processor's manifest declares a specific path or fact
+namespace that the vault's grant patterns miss (e.g. `dome.daily` without
+`"dome.attention.*"`, `dome.agent` without `"core.md"` read, the
+preference-promotion answer handler without its per-processor replacement
+grant), doctor raises a `capability.grant-entry-missing` warning whose
+recovery text names the exact YAML to add — `dome init --refresh-config`
+fills only missing keys and never merges entries into existing grant lists,
+so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+It also reports
 enabled/granted model-capable processors when the vault has no configured or
 host-injected model provider, and — when both `dome.daily` and `dome.agent`
 are enabled — a `config.daily-path-mismatch` warning when the two bundles'

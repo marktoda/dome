@@ -187,7 +187,7 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(8);
+    expect(report.summary.capabilityGrantGaps).toBe(9);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
@@ -197,6 +197,7 @@ scenario(
       "dome.markdown.duplicate-detection",
       "dome.markdown.duplicate-detection-answer",
       "dome.markdown.normalize-frontmatter",
+      "dome.markdown.page-status",
       "dome.markdown.refresh-updated",
       "dome.markdown.repair-wikilinks",
       "dome.markdown.simplify-indexes",
@@ -271,6 +272,152 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome doctor reports first-party grant-entry gaps for pre-rollout vaults",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "patch.auto" },
+    ],
+    harness: {
+      bundles: ["dome.daily", "dome.agent", "dome.markdown"],
+      initialFiles: {
+        // The pre-memory-quality grant shape: every capability KIND is
+        // granted (so kind-level capability.grant-missing stays quiet) but
+        // the rollout entries (docs/memory.md §"Vault rollout") are absent.
+        // `dome init --refresh-config` fills only missing keys, so an
+        // existing vault stays in this shape until the owner edits YAML.
+        ".dome/config.yaml": [
+          "extensions:",
+          "  dome.daily:",
+          "    enabled: true",
+          "    grant:",
+          "      read: [\"wiki/**/*.md\", \"notes/*.md\"]",
+          "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
+          "      graph.write: [\"dome.daily.*\"]",
+          "      question.ask: true",
+          "  dome.agent:",
+          "    enabled: true",
+          "    grant:",
+          "      read:",
+          "        - \"wiki/**/*.md\"",
+          "        - \"notes/**/*.md\"",
+          "        - \"inbox/**/*.md\"",
+          "        - \"index.md\"",
+          "        - \"log.md\"",
+          "        - \"consolidation-ledger.md\"",
+          "        - \"sources/calendar/*.md\"",
+          "      patch.auto:",
+          "        - \"wiki/**/*.md\"",
+          "        - \"notes/**/*.md\"",
+          "        - \"index.md\"",
+          "        - \"log.md\"",
+          "        - \"consolidation-ledger.md\"",
+          "        - \"inbox/processed/*.md\"",
+          "        - \"inbox/raw/*.md\"",
+          "      graph.write: [\"dome.daily.*\"]",
+          "      model.invoke:",
+          "        maxDailyCostUsd: 5",
+          "      question.ask: true",
+          "  dome.markdown:",
+          "    enabled: true",
+          "    grant:",
+          "      read: [\"wiki/**/*.md\", \".dome/page-types.yaml\"]",
+          "      patch.auto: [\"wiki/**/*.md\"]",
+          "      graph.write: [\"dome.daily.*\"]",
+          "      question.ask: true",
+        ].join("\n"),
+        "AGENTS.md":
+          "# This is a Dome vault.\n\n" +
+          "<!-- BEGIN user-prose -->\n" +
+          "<!-- END user-prose -->\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+      },
+    },
+  },
+  async (h) => {
+    const doctor = await h.runCli(["doctor", "--json"]);
+    expect(doctor.exitCode).toBe(0);
+    expect(doctor.stderr).toBe("");
+    const report = JSON.parse(doctor.stdout) as {
+      readonly status: string;
+      readonly summary: {
+        readonly capabilityGrantGaps: number;
+        readonly capabilityGrantEntryGaps: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly id: string;
+        readonly severity: string;
+        readonly recovery: string;
+        readonly capability?: {
+          readonly processorId: string;
+          readonly missingEntries?: ReadonlyArray<{
+            readonly kind: string;
+            readonly target: string;
+          }>;
+        };
+      }>;
+    };
+
+    expect(report.status).toBe("unhealthy");
+    // Every capability kind is granted — the kind-level probe stays quiet.
+    expect(report.summary.capabilityGrantGaps).toBe(0);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(7);
+
+    const entryGaps = report.findings.filter(
+      (finding) => finding.code === "capability.grant-entry-missing",
+    );
+    expect(
+      entryGaps.map((finding) => finding.capability?.processorId).sort(),
+    ).toEqual([
+      "dome.agent.brief",
+      "dome.agent.brief",
+      "dome.agent.preference-promotion-answer",
+      "dome.agent.preference-signals",
+      "dome.daily.attention-discount",
+      "dome.markdown.core-size",
+      "dome.markdown.page-status",
+    ]);
+    expect(entryGaps.every((finding) => finding.severity === "warning")).toBe(
+      true,
+    );
+
+    // Each finding names the exact YAML to add.
+    const attention = entryGaps.find(
+      (finding) =>
+        finding.capability?.processorId === "dome.daily.attention-discount",
+    );
+    expect(attention?.recovery).toContain('"dome.attention.*"');
+    expect(attention?.recovery).toContain(
+      "extensions.dome.daily.grant.graph.write",
+    );
+    expect(attention?.capability?.missingEntries).toEqual([
+      { kind: "graph.write", target: "dome.attention.discount" },
+    ]);
+
+    const answer = entryGaps.find(
+      (finding) =>
+        finding.capability?.processorId ===
+          "dome.agent.preference-promotion-answer",
+    );
+    expect(answer?.recovery).toContain("extensions.dome.agent.processors");
+    expect(answer?.capability?.missingEntries).toContainEqual({
+      kind: "patch.auto",
+      target: "core.md",
+    });
+
+    const coreSize = entryGaps.find(
+      (finding) =>
+        finding.capability?.processorId === "dome.markdown.core-size",
+    );
+    expect(coreSize?.recovery).toContain(
+      'Add "core.md" to extensions.dome.markdown.grant.read',
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome doctor reports a daily_path mirror mismatch between dome.daily and dome.agent",
     tags: [{ kind: "group", group: "cli-surface" }],
     harness: {
@@ -287,7 +434,7 @@ scenario(
           "    grant:",
           "      read: [\"wiki/**/*.md\", \"notes/*.md\"]",
           "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
-          "      graph.write: [\"dome.daily.*\"]",
+          "      graph.write: [\"dome.daily.*\", \"dome.attention.*\"]",
           "      question.ask: true",
           "  dome.agent:",
           "    enabled: true",
@@ -375,6 +522,8 @@ scenario(
           "        - \"inbox/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
+          "        - \"preferences/signals.md\"",
+          "        - \"core.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
@@ -382,9 +531,28 @@ scenario(
           "        - \"log.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
+          "        - \"preferences/signals.md\"",
+          // The deterministic preference counter declares graph.write
+          // (dome.preference.*); granting the kind keeps this scenario's
+          // capabilityGrantGaps at 0 so the model-provider finding is the
+          // only one.
+          "      graph.write:",
+          "        - \"dome.preference.*\"",
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
           "      question.ask: true",
+          // The single-auto-writer replacement grant: without it the
+          // answer handler's effective patch.auto misses core.md and the
+          // capability.grant-entry-missing probe would (correctly) fire.
+          "    processors:",
+          "      dome.agent.preference-promotion-answer:",
+          "        grant:",
+          "          read:",
+          "            - \"core.md\"",
+          "            - \"preferences/signals.md\"",
+          "          patch.auto:",
+          "            - \"core.md\"",
+          "            - \"preferences/signals.md\"",
         ].join("\n"),
         "AGENTS.md":
           "# This is a Dome vault.\n\n" +

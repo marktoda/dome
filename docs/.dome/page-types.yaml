@@ -21,7 +21,7 @@ extensions:
       status: draft | review | normative
   - name: invariant  # named invariants the engine and processors enforce
     frontmatter_extras:
-      tier: axiom | shipped-default | opt-in
+      tier: axiom | shipped-default | opt-in | deferred
       severity: required | recommended
       coverage: off-matrix | matrix | deferred
       enforced_at: <path>

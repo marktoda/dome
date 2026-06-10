@@ -80,6 +80,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "instructionDrift",
   "operationalSchemaMismatch",
   "capabilityGrantGaps",
+  "capabilityGrantEntryGaps",
   "modelProviderMissing",
   "modelProviderUnreachable",
   "modelProviderKeyMissing",
@@ -100,6 +101,8 @@ const QUERY_MATCH_KEYS = Object.freeze([
   "title",
   "category",
   "type",
+  "sectionId",
+  "breadcrumb",
   "snippet",
   "rank",
   "ranking",
@@ -124,6 +127,8 @@ const EXPORT_ENTRY_KEYS = Object.freeze([
   "title",
   "category",
   "type",
+  "sectionId",
+  "breadcrumb",
   "snippet",
   "rank",
   "ranking",
@@ -219,6 +224,7 @@ scenario(
     expect(Object.keys(record(queryMatch["ranking"]))).toEqual([
       "score",
       "ftsRank",
+      "recencyFactor",
       "reasons",
       "signals",
     ]);
@@ -243,6 +249,7 @@ scenario(
     expect(Object.keys(record(exportEntry["ranking"]))).toEqual([
       "score",
       "ftsRank",
+      "recencyFactor",
       "reasons",
       "signals",
     ]);

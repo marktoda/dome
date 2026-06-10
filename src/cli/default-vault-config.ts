@@ -16,6 +16,16 @@ export type FirstPartyExtensionDefault = {
   readonly id: string;
   readonly enabled: boolean;
   readonly grant: Readonly<Record<string, DefaultGrantValue>>;
+  /**
+   * Optional per-processor REPLACEMENT grants
+   * (`extensions.<bundle>.processors.<id>.grant`). Used where one processor's
+   * effective grant must differ from the bundle's — e.g. the
+   * preference-promotion answer handler is the single processor allowed to
+   * auto-write `core.md` (memory decision 4; wiki/specs/preferences.md).
+   */
+  readonly processors?: Readonly<
+    Record<string, Readonly<Record<string, DefaultGrantValue>>>
+  >;
 };
 
 export type DefaultModelProvider = "anthropic";
@@ -28,11 +38,17 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     extension("dome.markdown", true, {
       read: [
         "**/*.md",
+        // core.md is named explicitly (not left to "**/*.md" matching) so
+        // the dome.markdown.core-size lint's read grant survives vaults
+        // that narrow the markdown read scope (e.g. to wiki/**) — see
+        // docs/memory.md §"Vault rollout".
+        "core.md",
         ".dome/page-types.yaml",
         "**/*.{png,jpg,jpeg,gif,webp,svg,avif}",
         "raw/**",
       ],
       "patch.auto": ["**/*.md"],
+      "graph.write": ["dome.page.*"],
       "question.ask": true,
     }),
     extension("dome.graph", true, {
@@ -42,7 +58,9 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     extension("dome.daily", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
-      "graph.write": ["dome.daily.*"],
+      // dome.attention.* carries the attention-discount facts (task-lifecycle
+      // §"Attention discounting") emitted by dome.daily.attention-discount.
+      "graph.write": ["dome.daily.*", "dome.attention.*"],
       "question.ask": true,
     }),
     extension("dome.claims", true, {
@@ -50,28 +68,55 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
       "graph.write": ["dome.claims.*"],
     }),
-    extension("dome.agent", false, {
-      read: [
-        "wiki/**/*.md",
-        "notes/**/*.md",
-        "inbox/**/*.md",
-        "index.md",
-        "log.md",
-        "consolidation-ledger.md",
-        "sources/calendar/*.md",
-      ],
-      "patch.auto": [
-        "wiki/**/*.md",
-        "notes/**/*.md",
-        "index.md",
-        "log.md",
-        "consolidation-ledger.md",
-        "inbox/processed/*.md",
-        "inbox/raw/*.md",
-      ],
-      "model.invoke": Object.freeze({ maxDailyCostUsd: 5 }),
-      "question.ask": true,
-    }),
+    extension(
+      "dome.agent",
+      false,
+      {
+        // core.md is deliberately read-only here (the canonical propose-only
+        // grant shape): agents read core memory every run but never
+        // auto-write it. Keep core.md out of the bundle patch.auto — the M5
+        // preference-promotion answer handler is its sole auto-writer via
+        // the narrow per-processor replacement grant below.
+        read: [
+          "wiki/**/*.md",
+          "notes/**/*.md",
+          "inbox/**/*.md",
+          "index.md",
+          "log.md",
+          "consolidation-ledger.md",
+          "sources/calendar/*.md",
+          "core.md",
+          "preferences/signals.md",
+        ],
+        "patch.auto": [
+          "wiki/**/*.md",
+          "notes/**/*.md",
+          "index.md",
+          "log.md",
+          "consolidation-ledger.md",
+          "inbox/processed/*.md",
+          "inbox/raw/*.md",
+          "preferences/signals.md",
+        ],
+        // dome.preference.* carries the deterministic preference counter
+        // facts (wiki/specs/preferences.md) emitted by
+        // dome.agent.preference-signals; the model processors declare no
+        // graph.write (MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS).
+        "graph.write": ["dome.preference.*"],
+        "model.invoke": Object.freeze({ maxDailyCostUsd: 5 }),
+        "question.ask": true,
+      },
+      {
+        // The single-auto-writer exception (memory decision 4): the
+        // promotion question WAS the owner review, so the answer handler —
+        // and only it — may auto-write core.md. Replacement grant: exactly
+        // the core page + the signals page (rejection tombstones).
+        "dome.agent.preference-promotion-answer": Object.freeze({
+          read: ["core.md", "preferences/signals.md"],
+          "patch.auto": ["core.md", "preferences/signals.md"],
+        }),
+      },
+    ),
     extension("dome.search", true, {
       read: ["**/*.md"],
       "search.write": ["**/*.md"],
@@ -103,6 +148,18 @@ export function defaultConfigRecord(opts: {
         {
           enabled: entry.enabled,
           grant: cloneGrant(entry.grant),
+          ...(entry.processors !== undefined
+            ? {
+                processors: Object.fromEntries(
+                  Object.entries(entry.processors).map(
+                    ([processorId, grant]) => [
+                      processorId,
+                      { grant: cloneGrant(grant) },
+                    ],
+                  ),
+                ),
+              }
+            : {}),
         },
       ]),
     ),
@@ -137,11 +194,17 @@ function extension(
   id: string,
   enabled: boolean,
   grant: Readonly<Record<string, DefaultGrantValue>>,
+  processors?: Readonly<
+    Record<string, Readonly<Record<string, DefaultGrantValue>>>
+  >,
 ): FirstPartyExtensionDefault {
   return Object.freeze({
     id,
     enabled,
     grant: Object.freeze(grant),
+    ...(processors !== undefined
+      ? { processors: Object.freeze(processors) }
+      : {}),
   });
 }
 
@@ -161,6 +224,20 @@ function renderExtension(entry: FirstPartyExtensionDefault): string {
     ...Object.entries(entry.grant).flatMap(([key, value]) =>
       renderGrantValue(key, value, 6),
     ),
+    ...(entry.processors !== undefined
+      ? [
+          "    processors:",
+          ...Object.entries(entry.processors).flatMap(
+            ([processorId, grant]) => [
+              `      ${processorId}:`,
+              "        grant:",
+              ...Object.entries(grant).flatMap(([key, value]) =>
+                renderGrantValue(key, value, 10),
+              ),
+            ],
+          ),
+        ]
+      : []),
     "",
   ].join("\n");
 }

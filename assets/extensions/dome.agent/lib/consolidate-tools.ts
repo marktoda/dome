@@ -6,6 +6,7 @@ import {
   listPagesTool,
   readPageTool,
   searchVaultTool,
+  signalsAppendOnlyGuard,
   writePageTool,
   type VaultReader,
 } from "./vault-tools";
@@ -20,6 +21,7 @@ export const CONSOLIDATE_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "index.md",
   "log.md",
   "consolidation-ledger.md",
+  "preferences/signals.md",
 ]);
 
 export function makeConsolidatorTools(opts: {
@@ -36,12 +38,16 @@ export function makeConsolidatorTools(opts: {
   const writable = CONSOLIDATE_WRITABLE_PATHS.includes(ledgerPath)
     ? CONSOLIDATE_WRITABLE_PATHS
     : [...CONSOLIDATE_WRITABLE_PATHS, ledgerPath];
+  // preferences/signals.md is writable but append-only: the guard rejects
+  // rewrites/deletions at tool time so the model cannot touch the owner's
+  // rejection tombstones (same rule the brief enforces at splice time).
+  const guard = signalsAppendOnlyGuard(reader);
   return [
     readPageTool(reader),
     listPagesTool(reader),
     searchVaultTool(reader),
-    writePageTool(writable),
-    deletePageTool(writable),
+    writePageTool(writable, guard),
+    deletePageTool(writable, guard),
     askOwnerTool("dome.agent.consolidate:"),
   ];
 }
