@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.2.1
+version: 0.3.1
 processors:
   - id: dome.daily.normalize-task-syntax
     version: 0.2.0
@@ -203,6 +203,23 @@ processors:
     inspection:
       kind: all-readable-markdown
     module: processors/attention-discount.ts
+
+  # The evening close (daily-surface D4). Schedule-only BY DESIGN — no file
+  # trigger: the close is a ritual moment, not a live surface; it snapshots
+  # the day once, and a commit-triggered rewrite would fight the human's
+  # keep/delete edits inside the presence-gated dome.daily:close block.
+  - id: dome.daily.close-scaffold
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "30 21 * * *"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/dailies/*.md", "notes/*.md"]
+    module: processors/close-scaffold.ts
 
   - id: dome.daily.reconcile-tasks
     version: 0.1.0

@@ -14,6 +14,7 @@ sources:
 This spec is normative for the daily note as a *product surface* — the one file where the system and the owner meet. The mechanism layer (block grammar, splice guard, anchors, agents) is specified elsewhere and pointed at, not duplicated: [[wiki/specs/task-lifecycle]] owns block-anchor identity and the deterministic task processors, [[wiki/specs/autonomous-agents]] owns the brief's agent contract, [[wiki/specs/sweep]] owns the overnight integration whose digest the edition renders. This spec owns the *package*: which sections exist, who writes which block, the overnight choreography, and how the morning edition degrades.
 
 Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 delta (one yesterday block) and D3 (Captured today, owned) landed as shipped behavior; the D4 delta is marked inline where it will land.
+Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 (one yesterday block) and D4 (the close scaffold) deltas landed; the D3 delta is marked inline where it will land.
 
 ## The three acts
 
@@ -21,7 +22,7 @@ The daily has exactly three jobs:
 
 1. **Morning Edition (02:00–06:00, compiled).** One overnight pipeline — consolidate → sweep → calendar → edition compile — producing one package in today's daily note, with an explicit degradation ladder (§"The degradation ladder").
 2. **Live Surface (daytime).** Capture lands in owned regions; hygiene (anchors, normalization, reconcile, discounting) is invisible; `today` / `prep` / `agenda-with` are read-only projections, never writers.
-3. **Close (evening).** Currently unowned — `## Done`, `## Decisions`, `## Story of the Day` fill only if a vault-side ritual runs, and skipping silently thins tomorrow's edition. D4 makes the close first-class (`dome.daily.close-scaffold`, deterministic scaffold + human story; see [[daily]] §"D4 — The Close"). Until D4 lands, the close sections are human-owned and their emptiness is a known, visible degradation (the next morning's yesterday digest is simply thin).
+3. **Close (evening, 21:30, scaffolded).** First-class since D4: `dome.daily.close-scaffold` drafts the deterministic `dome.daily:close` block under `## Done` — done candidates from today's settled surface, the still-open line-up, and a story pointer. The human's job shrinks to keep/delete plus the story; `## Story of the Day` stays purely human, never model- or machine-written ([[daily]] decision ledger 3). The close's outputs are the next edition's inputs (§"The close block"): tomorrow's mechanical yesterday fallback prefers the close over raw section scraping, and a written-but-emptied close degrades to an explicit "yesterday's close was empty" line instead of silent thinness.
 
 ## The 24-hour choreography
 
@@ -38,9 +39,9 @@ All times are vault-local; cron triggers fire only while the compiler host (`dom
 | on-commit (capture) | `dome.agent.ingest` | dome.agent | Routes a capture's tactical tasks into today's daily — task-shaped lines spliced into the `dome.daily:captured` block by the tool seam (the model never positions). |
 | on-commit (daytime) | `dome.daily.stamp-block-id`, `normalize-task-syntax`, `reconcile-tasks`, `attention-discount`, `task-index` | dome.daily | The hygiene set: anchor stamping, cosmetic normalization, close-in-one-place reconcile, dismissal-derived discount facts, task facts. Normative at [[wiki/specs/task-lifecycle]]. |
 | on-demand | `today`, `prep`, `agenda-with` | dome.daily | View-phase read-only projections of the live surface. |
-| ~21:30 *(future, D4)* | `dome.daily.close-scaffold` | dome.daily | The Close: deterministic Done/unfinished scaffold under `## Done`; `Story of the Day` stays purely human. |
+| 21:30 | `dome.daily.close-scaffold` | dome.daily | The Close: writes the deterministic `dome.daily:close` scaffold under `## Done` (§"The close block"). **Schedule-only by design — no file trigger.** The close is a ritual moment, not a live surface: it snapshots the day once at close time, and a commit-triggered rewrite would fight the human's keep/delete edits inside the block. |
 
-The edition pipeline is registered as the **`dome.daily.edition` maintenance loop** (`src/extensions/maintenance-loops.ts`): required processors `dome.agent.brief` + `dome.daily.create-daily` + `dome.daily.carry-forward`, with the calendar source named as path evidence (the loop schema has no free-text notes field; the calendar's external, vault-assembled nature is recorded in the loop's risks). The 02:00/03:00 stages stay owned by their own loops (`dome.link-concept.coherence`, `dome.meaning.integration`) — the edition loop covers the *compile*, not the whole night.
+The edition pipeline is registered as the **`dome.daily.edition` maintenance loop** (`src/extensions/maintenance-loops.ts`): required processors `dome.agent.brief` + `dome.daily.create-daily` + `dome.daily.carry-forward` + `dome.daily.close-scaffold`, with the calendar source named as path evidence (the loop schema has no free-text notes field; the calendar's external, vault-assembled nature is recorded in the loop's risks). The 02:00/03:00 stages stay owned by their own loops (`dome.link-concept.coherence`, `dome.meaning.integration`) — the edition loop covers the *compile*, not the whole night. The close joins the edition loop rather than getting a tenth loop of its own: the daily package is one design unit (the three acts of one console), the close's sole machine purpose is to feed the next morning's compile, and a separate `dome.daily.close` loop would duplicate the edition's evidence and surfaces while answering the same question ("did my day's package happen") in two places.
 
 ## The section contract
 
@@ -56,7 +57,7 @@ The skeleton (`renderDailySkeleton` in `assets/extensions/dome.daily/processors/
 | `Open Loops` | The ranked, source-backed open-loop surface. | Machine. | `dome.daily:open-loops`. | `dome.daily.reconcile-tasks` reads settled `[x]`/`[-]` copies inside the block and closes the origin line; task extractors skip the block (the copies are projections, not sources). |
 | `Notes` | Free-form human capture. | Human. | None. (Ingest/capture-routed task lines land in `## Captured today`, not here.) | The task extractors: any checkbox/directive line outside generated blocks, fences, and frontmatter feeds `task-index` / `stamp-block-id` / carry-forward ranking. |
 | `Decisions` | Decisions made today, one bullet each. | Human. | None. | `previousDailyDigest` (the mechanical yesterday extraction) and the brief's yesterday composition read it the next morning. |
-| `Done` | What got finished today. | Human (D4 adds the deterministic `dome.daily:close` scaffold here). | None today. | Same next-morning readers as `Decisions`. |
+| `Done` | What got finished today. | Shared: the deterministic `dome.daily:close` scaffold (D4) + human bullets/edits. | `dome.daily:close` (§"The close block"). | `previousDailyDigest` the next morning — when the close block exists, its kept done-candidates and still-open count are preferred over raw section scraping (§"The close block"). |
 | `Story of the Day` | The narrative close. | Human, always — never model-written ([[daily]] decision ledger 3). | None, ever. | `previousDailyDigest` compresses the first paragraph into the next morning's story summary line. |
 
 Sections are insertion-anchored, not positional: every splice helper inserts under its named heading and falls back to creating the heading rather than assuming an offset, so human reordering and prose between sections never break the writers.
@@ -75,6 +76,7 @@ Every generated block that may appear in a daily note, with its writer, reader, 
 | `dome.agent.brief:meetings` | `## Meetings` | `dome.agent.brief` | model (from the untrusted calendar file, handed to the model as data) | 05:30 | Shipping; omitted entirely when `sources/calendar/<today>.md` is absent. |
 | `dome.agent.brief:questions` | `## Start Here`, after the yesterday block | `dome.agent.brief` | deterministic (the model never writes question ids) | 05:30 | Shipping. |
 | `dome.agent.brief:integrated` | `## Start Here`, after the questions block | `dome.agent.brief` | deterministic — rendered from the sweep ledger's run sections for today, never model-written ([[wiki/specs/sweep]] §"Brief digest block") | 05:30 | Shipping; omitted when the ledger is absent or today's run has no `integrated`/`questioned` rows. |
+| `dome.daily:close` | `## Done` | `close-scaffold` (presence-gated: written ONLY when the block is absent) | deterministic (done candidates from today's settled surface + still-open count + story pointer — never model prose, [[daily]] decision ledger 3) | 21:30 (schedule-only) | Shipping. The Close — §"The close block". |
 
 Brief blocks render plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks.
 
@@ -135,8 +137,57 @@ Real pre-D3 vaults accumulated duplicate `# Captured today` / `## Captured today
 `dome.daily:carried-forward` has rendering and splice helpers in `daily-shared.ts` (`carriedForwardSection`, `replaceCarriedForwardSection`) but **no shipped call site writes it** — the carry-forward processor evolved into the ranked `dome.daily:open-loops` surface, which fully absorbed the block's job (surface yesterday's unfinished work with `(from [[origin]])` provenance). The verdict is **retire as a writer concept, keep the marker recognized**:
 
 - *Why not delete recognition:* real dailies written by earlier versions may carry the block. The grammar keeps it in `DAILY_GENERATED_BLOCKS`, so its contents stay excluded from task extraction (a legacy block's generated copies must not re-ingest as fresh tasks) and smuggled/mangled markers still surface as anomalies.
-- *Why not reserve for future use:* the open-loops surface owns the carried-forward semantics, and D4's close gets its own `dome.daily:close` block. A reserved-but-unwritten marker is exactly the kind of ambient accretion this spec exists to prevent.
+- *Why not reserve for future use:* the open-loops surface owns the carried-forward semantics, and the close owns its own `dome.daily:close` block (§"The close block"). A reserved-but-unwritten marker is exactly the kind of ambient accretion this spec exists to prevent.
 - *Consequence:* no processor may adopt this marker for new output. The unused render helpers may be deleted whenever convenient; the recognition entries stay.
+
+### The close block (D4)
+
+`dome.daily:close` is the evening act's machine half: a deterministic scaffold the human confirms by deleting, not by writing. `dome.daily.close-scaffold` (cron `30 21 * * *`, schedule-only — the choreography table records why there is no file trigger) writes it under `## Done` in TODAY's daily. **When today's daily does not exist the run is a clean no-op** — the close needs a day to close; it never creates the skeleton.
+
+**The evening window gate.** The processor fires only when `firedAt` falls in the evening window ([21:30, midnight) vault-local — the start matches the cron). The scheduler collapses missed fires to one immediate fire (`src/engine/scheduler.ts`, "misfires collapse to one fire now"), so without the gate the first tick after enabling the bundle — or a host that slept through the evening and woke the next morning — would scaffold a premature close at whatever time it happens to be, freezing a wrong snapshot the presence gate then protects all day. A host down at 21:30 that returns later the same evening still closes; one that returns the next morning skips yesterday's close entirely, which the absent-close fallback row covers.
+
+**Body shape** (deterministic, rendered by `closeScaffoldSection` in `daily-shared.ts`):
+
+```
+### Done today
+Candidates from today's settles — keep what counts, delete the rest.
+- <body> (from [[origin]])
+- Dismissed: <body> (from [[origin]])
+### Still open
+- <N> loops still open — top: <body>; <body>; <body>
+### Story of the Day
+The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.
+```
+
+- **Done candidates** are plain `-` bullets (never checkboxes — the block is also in the task-extraction excluded set). With zero candidates, the `### Done today` part is the heading plus a single non-bullet `Nothing recorded as settled today.` line — zero bullets is what "empty close" means to tomorrow's reader.
+- **Still open** compresses to one bullet: the count plus the top 3 bodies in surface order; `- No loops still open.` when the surface is clear.
+- **Story pointer** is a non-bullet reminder line. The close NEVER writes story content — `## Story of the Day` is human-only forever ([[daily]] decision ledger 3).
+
+**Done-candidate derivation (the cheap one, recorded).** "Settled today" is derived from today's daily alone — no git history walk, no run-ledger read, no clock beyond the schedule's `firedAt` date:
+
+1. Settled source-backed copies in today's daily (`- [x]`/`- [-]` … `(from [[origin]])` — `settledSourceBackedOpenLoopsFromMarkdown`). These are settled-today by construction: carry-forward renders only today's settles into today's `Resolved Today` / `Dismissed Today` subsections.
+2. Settled plain checkbox lines written directly in today's daily outside generated blocks, fences, and frontmatter (`settledActionItemsFromMarkdown`) — tasks captured and finished in the note itself.
+
+Candidates are deduped by normalized body across both sources. The honest limitation: an origin line settled directly in a *non-daily* file today never becomes a candidate unless it passed through today's surface — reconcile's settle flow means the surface copy is the normal path, and the cheap derivation accepts missing the bypass case rather than scanning file mtimes (file-level timestamps would false-positive every old settled line in a freshly touched file).
+
+**Idempotency: presence-gated, like the yesterday fallback.** The scaffold writes the block ONLY when it is absent; an existing block — confirmed, edited, or emptied by the human — is left alone entirely. Consequences, all deliberate:
+
+- Same day, same state → re-runs are byte-identical no-ops.
+- A human-deleted candidate is NEVER resurrected — nothing inside the block is ever rewritten.
+- Settles that land after the close are not appended; they appear in tomorrow's open-loops settled subsections and in tomorrow's close.
+- To regenerate today's scaffold, delete the whole block (markers included) and re-run the processor.
+
+**Tomorrow reads the close.** `previousDailyDigest` extracts the close digest (`closeDigestFromDailyContent`: the kept `### Done today` bullets + the parsed still-open count) from yesterday's daily and the mechanical yesterday fallback prefers it:
+
+| Yesterday's close block | Fallback behavior |
+|---|---|
+| Present with kept bullets | `- Done yesterday: <kept compress>` from the block (raw `## Done` section scraping is skipped — the close is the authoritative done record) + `- Still open at close: N loops carried.` |
+| Present but empty (zero kept bullets — written empty, or human deleted every candidate) | Explicit `- Yesterday's close was empty.` line (visible degradation, never silent thinness); the still-open count line still renders when parseable. |
+| Absent (close skipped — host down at 21:30, or pre-D4 daily) | Raw section scraping, exactly as before D4. |
+
+Decisions and Story compression are unaffected in every row — the close does not own those sections. The brief's pre-pass seed shares this upgrade automatically (it renders through the same `previousDailyDigest` + `yesterdayFallbackSection` pair).
+
+**Task-extraction exclusion + anomaly attribution.** The block joins `DAILY_GENERATED_BLOCKS`: its contents never re-ingest as tasks, and both carry-forward (on every adopted commit) and close-scaffold (at its own splice site) surface mangled markers as `dome.daily.generated-block-anomaly` info diagnostics, deduped at the sink.
 
 ## The degradation ladder
 
@@ -150,7 +201,10 @@ Each rung is normative behavior, not best-effort. The edition never half-renders
 | Nothing happened overnight | The integrated block is omitted (ledger absent or no renderable rows — signal, not log), and the mechanical yesterday fallback degrades to its quiet minimum: the previous-daily pointer line with no fabricated activity. | `dome.agent.brief` (integrated omission), `create-daily`/`carry-forward` (mechanical minimum) |
 | No previous daily at all | The yesterday block still exists — its body is the heading plus a single "no record of yesterday" line. Never an absent block, never a fabricated digest. | `create-daily`/`carry-forward` (fallback), `dome.agent.brief` (pre-pass seed; the model may replace it with log.md-grounded bullets per its charter) |
 | Daily absent at 06:00 | `create-daily` writes the full skeleton; the brief already creates the same skeleton at 05:30 when it runs, so this rung only fires when the brief didn't (no model, host down at 05:30, brief failed-and-rolled-back). One skeleton shape, two writers, last-writer no-ops. | `dome.daily.create-daily` |
-| Close skipped (evening) | Tomorrow's yesterday digest is thin but explicit — empty Done/Decisions compress to nothing rather than inventing content. D4 upgrades this to an explicit "yesterday's close was empty" line. | `create-daily`/`carry-forward` today; `dome.daily.close-scaffold` at D4 |
+| Close skipped entirely (no block — host down at 21:30, or a pre-D4 daily) | Tomorrow's yesterday digest falls back to raw section scraping — thin but honest; empty Done/Decisions compress to nothing rather than inventing content. | `create-daily`/`carry-forward`/`dome.agent.brief` (the shared fallback path) |
+| Close written but emptied (block present, zero kept candidates) | Tomorrow's yesterday digest carries an explicit `- Yesterday's close was empty.` line — visible degradation, never silent thinness (§"The close block"). | `create-daily`/`carry-forward`/`dome.agent.brief` (the shared fallback path) |
+| No daily at close time (21:30) | `close-scaffold` is a clean no-op — the close needs a day to close; it never creates the skeleton. | `dome.daily.close-scaffold` |
+| Close fire collapsed outside the evening window (first-enable tick, host woke mid-day) | `close-scaffold` is a clean no-op — the evening window gate (§"The close block") refuses to freeze a premature snapshot; the next in-window fire closes normally. | `dome.daily.close-scaffold` |
 
 ## Doctor choreography findings
 

@@ -31,6 +31,11 @@ const CARRIED_FORWARD_BLOCK = "carried-forward";
 const START_CONTEXT_BLOCK = "start-context";
 const OPEN_LOOPS_BLOCK = "open-loops";
 const CAPTURED_BLOCK = "captured";
+// The evening close scaffold (D4): done candidates + still-open line-up +
+// story pointer under ## Done, written by dome.daily.close-scaffold ONLY when
+// absent (presence-gated — human keep/delete edits are never rewritten).
+// Normative at [[wiki/specs/daily-surface]] §"The close block".
+const CLOSE_BLOCK = "close";
 
 // The unified yesterday block (D2): owned by the brief's namespace — the
 // edition compile is its steady-state writer — but its `(owner, block)`
@@ -69,6 +74,7 @@ const START_CONTEXT_MARKERS = generatedBlockMarkers(
 );
 const OPEN_LOOPS_MARKERS = generatedBlockMarkers(DAILY_OWNER, OPEN_LOOPS_BLOCK);
 const CAPTURED_MARKERS = generatedBlockMarkers(DAILY_OWNER, CAPTURED_BLOCK);
+const CLOSE_MARKERS = generatedBlockMarkers(DAILY_OWNER, CLOSE_BLOCK);
 
 export const CARRIED_FORWARD_START = CARRIED_FORWARD_MARKERS.start;
 export const CARRIED_FORWARD_END = CARRIED_FORWARD_MARKERS.end;
@@ -88,6 +94,8 @@ export const CAPTURED_HEADING = "## Captured today";
  */
 const CAPTURED_HINT =
   "<!-- tasks captured during the day land here (`dome capture` -> ingest) -->";
+export const CLOSE_START = CLOSE_MARKERS.start;
+export const CLOSE_END = CLOSE_MARKERS.end;
 
 /**
  * The generated blocks a daily note may carry, as `(owner, block)`
@@ -114,6 +122,7 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: CLOSE_BLOCK }),
   Object.freeze({
     owner: EDITION_YESTERDAY_OWNER,
     block: EDITION_YESTERDAY_BLOCK_NAME,
@@ -185,6 +194,39 @@ export type PreviousDailyDigest = {
   readonly done: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
   readonly story: string | null;
+  /**
+   * The previous daily's close digest (D4); null when no `dome.daily:close`
+   * block exists (close skipped, or a pre-D4 daily). When present, `done`
+   * above is the close's kept candidates — raw `## Done` section scraping is
+   * skipped because the close is the authoritative done record.
+   * Normative at [[wiki/specs/daily-surface]] §"The close block".
+   */
+  readonly close: DailyCloseDigest | null;
+};
+
+/** What tomorrow's mechanical yesterday fallback reads out of a close block. */
+export type DailyCloseDigest = {
+  /** Bullets the human kept under `### Done today` (cleaned; may be empty). */
+  readonly kept: ReadonlyArray<string>;
+  /** Parsed `### Still open` count; null when missing or unparseable. */
+  readonly stillOpenCount: number | null;
+};
+
+/** A done candidate rendered into the close scaffold's `### Done today`. */
+export type DailyCloseDoneCandidate = {
+  /** 1-based line of the settled line in today's daily (sourceRef anchor). */
+  readonly line: number;
+  readonly body: string;
+  readonly status: DailyOpenLoopSettlementStatus;
+  /** Origin file for source-backed copies; null when settled directly in today's daily. */
+  readonly originPath: string | null;
+};
+
+/** A settled `[x]`/`[-]` checkbox line authored directly in a note (no `(from [[…]])` suffix). */
+export type SettledActionItem = {
+  readonly line: number;
+  readonly body: string;
+  readonly status: DailyOpenLoopSettlementStatus;
 };
 
 export type DailyOpenLoopSettlementStatus = "resolved" | "dismissed";
@@ -555,11 +597,22 @@ export function previousDailyDigest(input: {
   readonly previousPath: string;
   readonly previousContent: string;
 }): PreviousDailyDigest {
+  // Prefer the close block (D4): when the previous daily carries a
+  // dome.daily:close block, its kept candidates ARE the done record and the
+  // raw ## Done section scrape is skipped (the block lives under ## Done, so
+  // scraping would also re-ingest its hint lines). Absent block → scraping,
+  // exactly the pre-D4 behavior. Decisions/Story scraping is unaffected in
+  // both cases — the close does not own those sections.
+  const close = closeDigestFromDailyContent(input.previousContent);
   return Object.freeze({
     previousPath: input.previousPath,
-    done: extractSectionItems(input.previousContent, "Done"),
+    done:
+      close === null
+        ? extractSectionItems(input.previousContent, "Done")
+        : close.kept,
     decisions: extractSectionItems(input.previousContent, "Decisions"),
     story: extractStorySummary(input.previousContent),
+    close,
   });
 }
 
@@ -581,8 +634,19 @@ export function yesterdayFallbackSection(
     lines.push(
       `- Previous daily: [[${digest.previousPath.replace(/\.md$/, "")}]]`,
     );
-    if (digest.done.length > 0) {
+    if (digest.close !== null && digest.done.length === 0) {
+      // The close ran but holds zero kept candidates (written empty, or the
+      // human deleted every one): explicit, visible degradation — never
+      // silent thinness. Daily-surface §"The close block".
+      lines.push("- Yesterday's close was empty.");
+    } else if (digest.done.length > 0) {
       lines.push(`- Done yesterday: ${renderCompactList(digest.done)}`);
+    }
+    if (digest.close !== null && digest.close.stillOpenCount !== null) {
+      const count = digest.close.stillOpenCount;
+      lines.push(
+        `- Still open at close: ${count} ${count === 1 ? "loop" : "loops"} carried.`,
+      );
     }
     if (digest.decisions.length > 0) {
       lines.push(
@@ -636,6 +700,153 @@ export function removeLegacyStartContextSection(content: string): string {
   if (before.length === 0) return after;
   if (after.length === 0) return `${before}\n`;
   return `${before}\n\n${after}`;
+}
+
+/**
+ * Settled (`[x]`/`[-]`) checkbox lines authored directly in a note — outside
+ * generated blocks, fences, and frontmatter, and excluding source-backed
+ * `(from [[origin]])` copies (those are derived separately and carry their
+ * origin). The direct half of the close's done-candidate derivation
+ * ([[wiki/specs/daily-surface]] §"The close block").
+ */
+export function settledActionItemsFromMarkdown(
+  content: string,
+): ReadonlyArray<SettledActionItem> {
+  const items: SettledActionItem[] = [];
+  const lines = content.split(/\r?\n/);
+  const ignoredRanges = actionExtractionLineRanges(content);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lineIsInsideRanges(i + 1, ignoredRanges)) continue;
+    const line = lines[i] ?? "";
+    const base = parseBlockAnchor(line)?.withoutAnchor ?? line;
+    if (sourceBackedCheckboxFromLine(base, i + 1) !== null) continue;
+    const match = /^\s*[-*]\s+\[([xX-])\]\s+(\S.*?)\s*$/.exec(base);
+    if (match === null) continue;
+    const body = semanticActionBody((match[2] ?? "").trim());
+    if (body.length === 0) continue;
+    items.push(
+      Object.freeze({
+        line: i + 1,
+        body,
+        status: match[1] === "-" ? ("dismissed" as const) : ("resolved" as const),
+      }),
+    );
+  }
+  return Object.freeze(items);
+}
+
+/**
+ * Render the close scaffold block (`dome.daily:close`) — the deterministic
+ * half of the evening act. Done candidates are plain `-` bullets the human
+ * keeps or deletes (the hint line says so); zero candidates renders a single
+ * non-bullet "Nothing recorded as settled today." line (zero bullets is what
+ * "empty close" means to tomorrow's reader); the still-open line-up
+ * compresses to a count + top 3 in surface order; the story pointer is a
+ * non-bullet reminder — the close NEVER writes story prose ([[daily]]
+ * decision ledger 3). Normative at [[wiki/specs/daily-surface]] §"The close
+ * block".
+ */
+export function closeScaffoldSection(input: {
+  readonly doneCandidates: ReadonlyArray<DailyCloseDoneCandidate>;
+  readonly stillOpen: ReadonlyArray<DailyOpenLoopSource>;
+}): string {
+  const lines = [CLOSE_START, "### Done today"];
+  if (input.doneCandidates.length === 0) {
+    lines.push("Nothing recorded as settled today.");
+  } else {
+    lines.push(
+      "Candidates from today's settles — keep what counts, delete the rest.",
+    );
+    for (const candidate of input.doneCandidates) {
+      const prefix = candidate.status === "dismissed" ? "Dismissed: " : "";
+      const origin =
+        candidate.originPath === null
+          ? ""
+          : ` (from [[${candidate.originPath.replace(/\.md$/, "")}]])`;
+      lines.push(`- ${prefix}${candidate.body}${origin}`);
+    }
+  }
+  lines.push("### Still open");
+  if (input.stillOpen.length === 0) {
+    lines.push("- No loops still open.");
+  } else {
+    const top = input.stillOpen.slice(0, 3).map((item) => item.body);
+    const noun = input.stillOpen.length === 1 ? "loop" : "loops";
+    lines.push(
+      `- ${input.stillOpen.length} ${noun} still open — top: ${top.join("; ")}`,
+    );
+  }
+  lines.push(
+    "### Story of the Day",
+    "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+    CLOSE_END,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Ensure the close block exists: insert `section` (a full close block
+ * including markers) under `## Done` when the block is absent, and leave an
+ * existing block — confirmed, edited, or emptied by the human — alone
+ * ENTIRELY. The presence gate is the close's whole idempotency story: re-runs
+ * are byte-identical no-ops and a human-deleted candidate is never
+ * resurrected ([[wiki/specs/daily-surface]] §"The close block").
+ */
+export function ensureCloseScaffoldSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const existing = dailyBlockRange(input.content, CLOSE_BLOCK);
+  if (existing !== null) return input.content;
+  return insertCloseScaffoldSection(input);
+}
+
+/**
+ * Extract what tomorrow's mechanical yesterday fallback reads out of a close
+ * block: the kept `### Done today` bullets (hint lines and non-bullet text
+ * are not kept content) and the parsed `### Still open` count. Returns null
+ * when the content carries no close block.
+ */
+export function closeDigestFromDailyContent(
+  content: string,
+): DailyCloseDigest | null {
+  const { range } = findGeneratedBlock(content, DAILY_OWNER, CLOSE_BLOCK);
+  if (range === null) return null;
+  const body = content.slice(range.bodyStart, range.bodyEnd);
+  const kept: string[] = [];
+  let stillOpenCount: number | null = null;
+  let section: "done" | "still-open" | "other" = "other";
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
+    if (heading !== null) {
+      const title = (heading[1] ?? "").toLowerCase();
+      section =
+        title === "done today"
+          ? "done"
+          : title === "still open"
+            ? "still-open"
+            : "other";
+      continue;
+    }
+    if (section === "done" && /^[-*]\s+\S/.test(line)) {
+      const cleaned = cleanContextLine(line);
+      if (cleaned !== null) kept.push(cleaned);
+      continue;
+    }
+    if (section === "still-open" && stillOpenCount === null) {
+      const counted = /^[-*]\s+(\d+)\s+loops?\s+still\s+open\b/.exec(line);
+      if (counted !== null) {
+        stillOpenCount = Number(counted[1]);
+        continue;
+      }
+      if (/^[-*]\s+No loops still open\b/i.test(line)) stillOpenCount = 0;
+    }
+  }
+  return Object.freeze({
+    kept: Object.freeze(kept),
+    stillOpenCount,
+  });
 }
 
 export function openLoopSurfaceSources(input: {
@@ -1739,6 +1950,36 @@ function startContextBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
   return dailyBlockRange(content, START_CONTEXT_BLOCK);
+}
+
+/**
+ * Insert the close block under `## Done` — insertion-anchored, never
+ * positional (daily-surface §"The section contract"): a missing heading is
+ * created (before `## Story of the Day` when present, appended otherwise)
+ * rather than assumed at an offset.
+ */
+function insertCloseScaffoldSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const done = /^## Done[ \t]*$/m.exec(input.content);
+  if (done !== null && done.index !== undefined) {
+    const insertAt = done.index + done[0].length;
+    const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
+    return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+
+  const story = /^## Story of the Day[ \t]*$/m.exec(input.content);
+  if (story !== null && story.index !== undefined) {
+    return (
+      `${input.content.slice(0, story.index)}` +
+      `## Done\n\n${input.section}\n\n` +
+      input.content.slice(story.index)
+    );
+  }
+
+  const suffix = input.content.endsWith("\n") ? "" : "\n";
+  return `${input.content}${suffix}\n## Done\n\n${input.section}\n`;
 }
 
 function extractSectionItems(
