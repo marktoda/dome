@@ -111,9 +111,12 @@ export async function dailySurfaceRecallSignalsForTopic(input: {
   readonly snapshot: Snapshot;
   readonly topic: string;
   readonly sourceRef: (path: string) => SourceRef;
-  readonly now?: Date;
+  // Required so "today/yesterday/tomorrow" recall resolves against the
+  // invocation clock (ctx.now()), never the host wall clock — omitting it
+  // was an easy determinism leak, so omission is now a type error.
+  readonly now: Date;
 }): Promise<ReadonlyMap<string, ReadonlyArray<SearchRecallSignal>>> {
-  const dates = dailyRecallDates(input.topic, input.now ?? new Date());
+  const dates = dailyRecallDates(input.topic, input.now);
   if (dates.length === 0) return Object.freeze(new Map());
 
   const dateByFilename = new Map(

@@ -35,7 +35,7 @@ const prep = defineProcessorImplementation({
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(
       ctx,
-      inputDateOrLocalToday(ctx.input),
+      inputDateOrLocalToday(ctx.input, ctx.now()),
     );
     const allPlanningItems = prioritizedPlanningItems(
       actionState,

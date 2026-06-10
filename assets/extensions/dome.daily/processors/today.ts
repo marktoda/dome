@@ -26,7 +26,7 @@ const today = defineProcessorImplementation({
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(
       ctx,
-      inputDateOrLocalToday(ctx.input),
+      inputDateOrLocalToday(ctx.input, ctx.now()),
     );
     const openTasks = selectDailyActionRows(actionState.openTasks, limit);
     const followups = selectDailyActionRows(actionState.followups, limit);

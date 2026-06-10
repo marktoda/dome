@@ -16,7 +16,7 @@ const MS_PER_HOUR = 60 * 60 * 1000;
 
 const inboxStaleCheck = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    const now = nowFromInput(ctx.input) ?? new Date();
+    const now = nowFromInput(ctx.input) ?? ctx.now();
     const paths =
       isScheduleInput(ctx.input)
         ? await ctx.snapshot.listMarkdownFiles()

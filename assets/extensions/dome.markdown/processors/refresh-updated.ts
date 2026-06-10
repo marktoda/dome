@@ -30,7 +30,7 @@ const MAX_REFRESHED_FILES_PER_RUN = 500;
 
 const refreshUpdated = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    const targetDate = targetDateFromInput(ctx.input);
+    const targetDate = targetDateFromInput(ctx.input, ctx.now());
     if (targetDate === null) return [];
 
     const changes: FileChangeInput[] = [];
@@ -79,7 +79,7 @@ const refreshUpdated = defineProcessorImplementation({
 
 export default refreshUpdated;
 
-function targetDateFromInput(input: unknown): string | null {
+function targetDateFromInput(input: unknown, now: Date): string | null {
   if (
     input !== null &&
     typeof input === "object" &&
@@ -90,5 +90,8 @@ function targetDateFromInput(input: unknown): string | null {
     return dateOnly(firedAt);
   }
 
-  return dateOnly(new Date());
+  // Non-schedule envelopes refresh against the invocation clock — this date
+  // lands in PatchEffect content, so it must come from ctx.now(), never the
+  // host wall clock.
+  return dateOnly(now);
 }

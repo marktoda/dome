@@ -40,7 +40,7 @@ const agendaWith = defineProcessorImplementation({
     const limit = parseInputLimit(ctx.input, DEFAULT_LIMIT);
     const actionState = await collectDailyActionState(
       ctx,
-      inputDateOrLocalToday(ctx.input),
+      inputDateOrLocalToday(ctx.input, ctx.now()),
     );
     const allAgendaItems = agendaItemsFor(actionState, input.topic);
     const agendaItems = Object.freeze(allAgendaItems.slice(0, limit));

@@ -265,8 +265,8 @@ export function parseInputDate(input: unknown): DailyDate | null {
   return parseDateString(stringValue(record.date) ?? stringValue(flags.date));
 }
 
-export function inputDateOrLocalToday(input: unknown): DailyDate {
-  return parseInputDate(input) ?? localDateParts(new Date());
+export function inputDateOrLocalToday(input: unknown, now: Date): DailyDate {
+  return parseInputDate(input) ?? localDateParts(now);
 }
 
 export function parseInputLimit(input: unknown, fallback: number): number {

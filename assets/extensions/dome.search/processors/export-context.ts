@@ -96,6 +96,7 @@ const exportContext = defineProcessorImplementation({
       snapshot: ctx.snapshot,
       topic: input.topic,
       sourceRef: ctx.sourceRef,
+      now: ctx.now(),
     });
     const recallSignalsByPath = mergeRecallSignalMaps([
       topicRecallSignalsByPath,
