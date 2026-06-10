@@ -23,7 +23,7 @@ tier: axiom
 **Structural enforcement:**
 
 1. **The capability broker only allows `ExternalActionEffect` when `external:<capability>` is granted.** A processor that emits an ExternalAction without the matching grant is denied at the broker.
-2. **The applier in `src/engine/apply-effect.ts` routes `external` effects to `src/outbox/dispatch.ts` exclusively.** No other module reaches the registered external-handler set.
+2. **The applier in `src/engine/core/apply-effect.ts` routes `external` effects to `src/outbox/dispatch.ts` exclusively.** No other module reaches the registered external-handler set.
 3. **Dispatch always inserts before calling.** `src/outbox/dispatch.ts` performs `INSERT INTO outbox ...` synchronously, claims the row, then calls the handler. A handler-direct call without an outbox row is a bug; `tests/outbox/dispatch.test.ts` catches the insert-before-handler and idempotency behavior.
 4. **The handler interface returns `{ externalId, recovered? }`.** Handlers may indicate that a retry detected an already-completed call via `recovered: true`; the engine marks the row as sent without re-attempting.
 

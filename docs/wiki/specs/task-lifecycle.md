@@ -57,7 +57,7 @@ Items surfaced day after day without action stop earning their prominence. The a
 
 ### The deterministic substrate: `dome.daily.attention-discount`
 
-A garden-phase processor (`execution.class: deterministic`, capabilities `read` + `graph.write` over `dome.attention.*` only, `inspection: all-readable-markdown`) emits one `dome.attention.discount` fact per discounted open-loop item. Because it is deterministic, signal-triggered, and confined to the rebuild-safe capability set, it is **rebuild-eligible** (`isRebuildEligibleGardenProcessor` in `src/engine/projection-rebuild.ts`): `dome rebuild` re-derives every discount fact from adopted markdown + git history alone, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+A garden-phase processor (`execution.class: deterministic`, capabilities `read` + `graph.write` over `dome.attention.*` only, `inspection: all-readable-markdown`) emits one `dome.attention.discount` fact per discounted open-loop item. Because it is deterministic, signal-triggered, and confined to the rebuild-safe capability set, it is **rebuild-eligible** (`isRebuildEligibleGardenProcessor` in `src/engine/host/projection-rebuild.ts`): `dome rebuild` re-derives every discount fact from adopted markdown + git history alone, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 
 Inputs, all derivable from the adopted tree and its git history — **no wall clock**:
 

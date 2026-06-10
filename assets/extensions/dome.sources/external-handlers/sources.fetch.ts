@@ -31,7 +31,7 @@
 //   5. The engine's dispatch AbortSignal (timeout / shutdown) SIGTERMs the
 //      process group, then escalates to SIGKILL after a short grace — so a
 //      TERM-trapping script or a `sh → claude` grandchild tree dies too
-//      (mirrors src/engine/command-model-provider.ts's probe escalation).
+//      (mirrors src/engine/host/command-model-provider.ts's probe escalation).
 //   6. Non-zero exit → throw (ordinary outbox retry semantics).
 //   7. Exit 0 but the file absent from HEAD → throw. Written-but-
 //      uncommitted gets its own message — the retry re-spawns the command,
@@ -44,7 +44,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
 
-import { loadCapabilityPolicy } from "../../../../src/engine/capability-policy";
+import { loadCapabilityPolicy } from "../../../../src/engine/core/capability-policy";
 import { readBlob, resolveRef } from "../../../../src/git";
 import type {
   ExternalHandler,
@@ -63,7 +63,7 @@ const EXTENSION_ID = "dome.sources";
  * Grace between the abort's SIGTERM and the SIGKILL escalation. SIGTERM is
  * advisory; a trapping/ignoring fetch script would otherwise leave the
  * attempt awaiting `proc.exited` past the dispatch timeout. Mirrors
- * PROBE_KILL_GRACE_MS in src/engine/command-model-provider.ts.
+ * PROBE_KILL_GRACE_MS in src/engine/host/command-model-provider.ts.
  */
 const KILL_GRACE_MS = 500;
 

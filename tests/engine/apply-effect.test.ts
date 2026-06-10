@@ -1,4 +1,4 @@
-// Smoke tests for src/engine/apply-effect.ts: phase-compatibility rejections,
+// Smoke tests for src/engine/core/apply-effect.ts: phase-compatibility rejections,
 // successful routes, and capability-denial flow per
 // docs/wiki/matrices/effect-router-targets.md.
 
@@ -7,7 +7,7 @@ import {
   EFFECT_PHASE_COMPATIBILITY,
   applyEffect,
   noopSinks,
-} from "../../src/engine/apply-effect";
+} from "../../src/engine/core/apply-effect";
 import {
   diagnosticEffect,
   externalActionEffect,
@@ -23,7 +23,7 @@ import {
 } from "../../src/core/effect";
 import type { Capability } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import type { RunId } from "../../src/engine/runner-contract";
+import type { RunId } from "../../src/engine/core/runner-contract";
 
 const ref = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
 const read: Capability = { kind: "read", paths: ["wiki/**"] };

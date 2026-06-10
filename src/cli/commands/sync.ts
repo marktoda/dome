@@ -14,7 +14,7 @@
 //   - Exit.
 //
 // Drift detection + adoption-invocation are shared with `dome serve` via
-// `src/engine/compiler-host.ts`; this command is the host's per-tick body invoked
+// `src/engine/host/compiler-host.ts`; this command is the host's per-tick body invoked
 // exactly once and surfaced with a CLI-shaped output / exit code.
 //
 // Exit codes:
@@ -36,14 +36,14 @@
 
 import { basename } from "node:path";
 
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/host/vault-runtime";
 import type { AdoptionResult } from "../../core/proposal";
 import {
   runCompilerHostTick,
   type CompilerHostTickResult,
-} from "../../engine/compiler-host";
-import type { GardenPhaseResult } from "../../engine/garden";
-import type { OperationalWorkResult } from "../../engine/operational-work";
+} from "../../engine/host/compiler-host";
+import type { GardenPhaseResult } from "../../engine/garden/garden";
+import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import {
   resolveBundleRoots,
   formatFilteredAdoptEvent,
@@ -56,7 +56,7 @@ import {
   orphanRuns as ledgerOrphanRuns,
   type RunStatus,
 } from "../../ledger/runs";
-import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/host/health";
 import { queryOutbox } from "../../outbox/dispatch";
 import { queryDiagnostics } from "../../projections/diagnostics";
 import { queryQuestions } from "../../projections/questions";

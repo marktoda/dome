@@ -44,7 +44,7 @@ import { basename, join, resolve } from "node:path";
 import { getAdoptedRef } from "../../adopted-ref";
 import {
   readServeHeartbeatStatus,
-} from "../../engine/compiler-host-heartbeat";
+} from "../../engine/host/compiler-host-heartbeat";
 import {
   commitSingleFileOnHead,
   currentBranch,

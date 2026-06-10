@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCommandModelStepProvider } from "../../src/engine/command-model-provider";
+import { buildCommandModelStepProvider } from "../../src/engine/host/command-model-provider";
 
 function fakeProviderScript(): string {
   const dir = mkdtempSync(join(tmpdir(), "dome-step-"));

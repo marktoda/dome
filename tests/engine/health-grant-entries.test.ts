@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { capabilityGrantEntryFindings } from "../../src/engine/health";
+import { capabilityGrantEntryFindings } from "../../src/engine/host/health";
 import type { Capability } from "../../src/core/processor";
 import type { ProcessorRegistry } from "../../src/processors/registry";
 

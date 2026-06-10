@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { dailyPathMismatchFindings } from "../../src/engine/health";
+import { dailyPathMismatchFindings } from "../../src/engine/host/health";
 
 function findingsFor(opts: {
   readonly enabled: ReadonlyArray<string>;

@@ -502,7 +502,7 @@ template-side handling: the engine kills the spawned command when the
 processor's signal aborts.
 
 The SDK side of the probe is `probeCommandModelProvider` in
-`src/engine/command-model-provider.ts`; `dome doctor` consumes it and renders
+`src/engine/host/command-model-provider.ts`; `dome doctor` consumes it and renders
 the outcome taxonomy (responsive / probe-unsupported / spawn-failed /
 invalid-response / timed-out) documented in [[wiki/specs/cli]] §"dome doctor".
 

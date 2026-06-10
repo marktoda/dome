@@ -42,7 +42,7 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
             `  refs/dome/adopted/${h.branch} = ${adopted}\n` +
             `  isAncestor(adopted -> head) = false (likely siblings)\n` +
             `  => A closure commit landed on the adopted ref but not on the source branch.\n` +
-            `    See src/engine/adopt.ts "Phase 12c -- advance main alongside adopted ref".`,
+            `    See src/engine/core/adopt.ts "Phase 12c -- advance main alongside adopted ref".`,
         ).toBe(true);
       },
     },
@@ -169,7 +169,7 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
             `LEDGER_ROW_OUTPUT_COMMITS_ARE_REACHABLE violated:\n` +
               `  ledger row ${r.id} references output_commit ${r.outputCommit.slice(0, 7)} but git doesn't have it.\n` +
               `  => The engine wrote an output_commit OID that doesn't resolve to a real object.\n` +
-              `    See src/engine/closure-commit.ts and docs/wiki/gotchas/run-succeeded-before-closure.md.`,
+              `    See src/engine/core/closure-commit.ts and docs/wiki/gotchas/run-succeeded-before-closure.md.`,
           ).toBe(true);
         }
       },

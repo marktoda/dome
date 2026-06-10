@@ -4,7 +4,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { withExclusiveFileLock } from "../../src/engine/file-lock";
+import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 
 const tempDirs: string[] = [];
 

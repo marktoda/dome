@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { dailyEditionFindings } from "../../src/engine/health";
+import { dailyEditionFindings } from "../../src/engine/host/health";
 
 const BRIEF_CRON = "30 5 * * *";
 

@@ -34,8 +34,8 @@ import { queryDiagnostics } from "../../src/projections/diagnostics";
 import { queryQuestions } from "../../src/projections/questions";
 import { nextEligibleJob } from "../../src/projections/jobs";
 import { insertPending, markFailed, queryOutbox } from "../../src/outbox/dispatch";
-import type { ApplyEffectSinks } from "../../src/engine/apply-effect";
-import type { RunId } from "../../src/engine/runner-contract";
+import type { ApplyEffectSinks } from "../../src/engine/core/apply-effect";
+import type { RunId } from "../../src/engine/core/runner-contract";
 
 const ADOPTED = commitOid("abcdef0000000000000000000000000000000000");
 const REF = sourceRef({ commit: ADOPTED, path: "wiki/x.md" });

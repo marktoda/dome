@@ -1,4 +1,4 @@
-// Crash-safety tests for adoption finalization (src/engine/finalize-journal.ts).
+// Crash-safety tests for adoption finalization (src/engine/core/finalize-journal.ts).
 //
 // The crash window: `adopt()` advances `refs/heads/<branch>` to the engine
 // target, then materializes changed paths into the working tree. A process
@@ -23,21 +23,21 @@ import {
   finalizeJournalPath,
   replayFinalizeJournal,
   writeFinalizeJournal,
-} from "../../src/engine/finalize-journal";
-import { adopt } from "../../src/engine/adopt";
-import { applyPatchToCandidate } from "../../src/engine/apply-patch";
+} from "../../src/engine/core/finalize-journal";
+import { adopt } from "../../src/engine/core/adopt";
+import { applyPatchToCandidate } from "../../src/engine/core/apply-patch";
 import type {
   AdoptionPhaseRunner,
   RunId,
-} from "../../src/engine/runner-contract";
-import { noopSinks } from "../../src/engine/apply-effect";
+} from "../../src/engine/core/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
 import { patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, currentSha, initRepo, readRef, writeRef } from "../../src/git";
-import { openVaultRuntime } from "../../src/engine/vault-runtime";
-import { runCompilerHostTick } from "../../src/engine/compiler-host";
+import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
+import { runCompilerHostTick } from "../../src/engine/host/compiler-host";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");

@@ -19,7 +19,7 @@ import type {
   ModelStepResult,
   ProcessorContext,
 } from "../../../src/core/processor";
-import { modelInvokeForProcessor } from "../../../src/engine/model-invoke";
+import { modelInvokeForProcessor } from "../../../src/engine/core/model-invoke";
 
 // 03:00 local time on the run date → today (local date) is 2026-06-10, so
 // yesterday's daily 2026-06-09 is in the sweep window. Local-time constructor

@@ -10,14 +10,14 @@
 // The wrapper composes engine-internal boundaries and adds nothing of its
 // own:
 //
-//   getAdoptionStatus → src/engine/adoption-status.ts (cheap git reads)
-//   sync              → src/engine/compiler-host.ts `runCompilerHostTick`
-//   runView           → src/engine/view-command.ts `runViewCommandWithRuntime`
+//   getAdoptionStatus → src/engine/core/adoption-status.ts (cheap git reads)
+//   sync              → src/engine/host/compiler-host.ts `runCompilerHostTick`
+//   runView           → src/engine/host/view-command.ts `runViewCommandWithRuntime`
 //   query             → src/projections/* read accessors (adopted-state recall)
 //   readDocument      → adopted-ref blob read via the git boundary
 //   listQuestions / getQuestion / resolve
 //                     → src/projections/questions.ts +
-//                       src/engine/question-answering.ts (durable answers)
+//                       src/engine/host/question-answering.ts (durable answers)
 //
 // Recall semantics: projection reads reflect the **last adopted sync** —
 // never HEAD, never mid-sync drafts ([[wiki/specs/sdk-surface]] §"Recall
@@ -53,23 +53,23 @@ import { commitOid } from "./core/source-ref";
 import {
   collectAdoptionStatus,
   type AdoptionStatus,
-} from "./engine/adoption-status";
+} from "./engine/core/adoption-status";
 import {
   runCompilerHostTick,
   type CompilerHostTickResult,
-} from "./engine/compiler-host";
-import { rebuildProjection } from "./engine/projection-rebuild";
+} from "./engine/host/compiler-host";
+import { rebuildProjection } from "./engine/host/projection-rebuild";
 import {
   answerQuestionDurably,
   dispatchAnswerHandlersIfNeeded,
   type AnswerHandlerDispatchResult,
-} from "./engine/question-answering";
+} from "./engine/host/question-answering";
 import {
   openVaultRuntime,
   type OpenVaultRuntimeError,
   type VaultRuntime,
-} from "./engine/vault-runtime";
-import { runViewCommandWithRuntime } from "./engine/view-command";
+} from "./engine/host/vault-runtime";
+import { runViewCommandWithRuntime } from "./engine/host/view-command";
 import { resolveBundleRoots } from "./extensions/bundle-roots";
 import { findGitRoot, readBlob } from "./git";
 import { queryDiagnostics } from "./projections/diagnostics";
@@ -250,7 +250,7 @@ export async function openVault(
   }
   // `.dome/` presence is the vault marker. A `.dome/` without `config.yaml`
   // is the documented config-less compat mode (test/dev vaults load all
-  // bundles with declared grants — see src/engine/vault-runtime.ts), so the
+  // bundles with declared grants — see src/engine/host/vault-runtime.ts), so the
   // check is for the directory, not the config file.
   if (!existsSync(join(vaultPath, ".dome"))) {
     return err({
@@ -485,8 +485,8 @@ async function resolveQuestion(
 
 // ----- Re-exports for consumers ----------------------------------------------
 
-export type { AdoptionStatus } from "./engine/adoption-status";
-export type { CompilerHostTickResult } from "./engine/compiler-host";
-export type { AnswerHandlerDispatchResult } from "./engine/question-answering";
+export type { AdoptionStatus } from "./engine/core/adoption-status";
+export type { CompilerHostTickResult } from "./engine/host/compiler-host";
+export type { AnswerHandlerDispatchResult } from "./engine/host/question-answering";
 export type { QuestionRecord } from "./projections/questions";
 export type { SearchDocumentResult } from "./core/processor";

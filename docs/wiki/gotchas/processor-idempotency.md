@@ -4,7 +4,7 @@ created: 2026-05-27
 updated: 2026-05-27
 severity: high
 coverage: off-matrix
-enforced_at: src/engine/adopt.ts (fixed-point detection)
+enforced_at: src/engine/core/adopt.ts (fixed-point detection)
 enforced_at_status: deferred
 first_observed: 2026-05-27 (carried forward from v0.5's hook-non-idempotent)
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]

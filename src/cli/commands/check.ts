@@ -17,8 +17,8 @@ import {
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
   type HealthFinding,
   type HealthReport,
-} from "../../engine/health";
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+} from "../../engine/host/health";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import { queryRunSummaries } from "../../ledger/runs";

@@ -7,7 +7,7 @@ import { viewEffect } from "../../src/core/effect";
 import { defineProcessor } from "../../src/core/processor";
 import { pageTypeDeclaration } from "../../src/page-types";
 import { buildRegistry } from "../../src/processors/registry";
-import { openVaultRuntime } from "../../src/engine/vault-runtime";
+import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 
 const roots: string[] = [];
 

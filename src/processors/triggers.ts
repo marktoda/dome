@@ -31,21 +31,21 @@
 // Pure — no I/O. Same `(triggers, signals)` → same result. The matcher does
 // not mutate either input array; all returned arrays and objects are frozen.
 //
-// House-style notes (matches src/engine/compile-range.ts,
-// src/engine/capability-broker.ts):
+// House-style notes (matches src/engine/core/compile-range.ts,
+// src/engine/core/capability-broker.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - Optional fields use `field?: T` (not `T | undefined`) for
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - `Object.freeze` chosen over `as const` so misbehaving callers fail
 //     loudly at runtime rather than silently mutating matcher outputs.
 //   - Imports limited to pure types from `../core/processor`, the
-//     `SignalEvent` type from `../engine/compile-range`, and the shared
-//     `globMatch` helper from `../engine/glob-cache`. No runtime dependency
+//     `SignalEvent` type from `../engine/core/compile-range`, and the shared
+//     `globMatch` helper from `../engine/core/glob-cache`. No runtime dependency
 //     on filesystem, git, sqlite, or network.
 
 import type { Trigger } from "../core/processor";
-import type { SignalEvent } from "../engine/compile-range";
-import { globMatch } from "../engine/glob-cache";
+import type { SignalEvent } from "../engine/core/compile-range";
+import { globMatch } from "../engine/core/glob-cache";
 
 // ----- TriggerMatch ---------------------------------------------------------
 
@@ -164,6 +164,6 @@ function collectPathMatches(
 }
 
 // Path-glob matching uses the shared `globMatch` helper imported from
-// `../engine/glob-cache` — see that file for the cache and the
+// `../engine/core/glob-cache` — see that file for the cache and the
 // empty-pattern / exact-string fast-path semantics. Path strings are
 // POSIX-style vault-relative (matching `SignalEvent.path`).

@@ -11,13 +11,13 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Run-succeeded fires before closure-commit
 
-**Symptom:** A contributor notices that `runs.output_commit` is populated by a *separate* `UPDATE` (via `updateOutputCommit` in `src/ledger/runs.ts`, called from `src/engine/adopt.ts`) rather than as part of the `markSucceeded` `INSERT`/`UPDATE`. They reach for an apparent layering "fix": move `markSucceeded` to *after* `makeClosureCommit` returns, so the `output_commit` value is in hand at terminal-mark time. Tests in `tests/processors/runtime-ledger.test.ts` and `tests/ledger/runs.test.ts` start failing in subtle ways.
+**Symptom:** A contributor notices that `runs.output_commit` is populated by a *separate* `UPDATE` (via `updateOutputCommit` in `src/ledger/runs.ts`, called from `src/engine/core/adopt.ts`) rather than as part of the `markSucceeded` `INSERT`/`UPDATE`. They reach for an apparent layering "fix": move `markSucceeded` to *after* `makeClosureCommit` returns, so the `output_commit` value is in hand at terminal-mark time. Tests in `tests/processors/runtime-ledger.test.ts` and `tests/ledger/runs.test.ts` start failing in subtle ways.
 
 **Root cause:** Two distinct state machines coexist in the engine, and conflating them breaks the per-run lifecycle invariant.
 
 1. **Per-run state machine** (`queued → skipped` for not-invoked runs, or `queued → running → succeeded | failed | timed_out | cancelled` for invoked runs). Owned by the processor runtime and executor. Its terminal mark fires at the *end of the processor's unit of work* — the moment the executor returns a terminal result. Pinned by [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural enforcement": failed, timed-out, and cancelled processor runs still complete the ledger row with structured executor errors.
 
-2. **Per-iteration adoption cycle** (`compile → run-all-processors → apply-all-effects → check-fixed-point → close → advance`). Owned by `src/engine/adopt.ts`. Its closure step (`makeClosureCommit`) fires *once per iteration*, after every processor has terminated.
+2. **Per-iteration adoption cycle** (`compile → run-all-processors → apply-all-effects → check-fixed-point → close → advance`). Owned by `src/engine/core/adopt.ts`. Its closure step (`makeClosureCommit`) fires *once per iteration*, after every processor has terminated.
 
 These overlap in wall-clock time but are not the same machine. A run that emitted effects all of which were *rejected by the broker* (denied capability, phase-mismatch) contributed nothing to the closure commit — but the run itself absolutely reached `succeeded`. If `markSucceeded` only fired after `makeClosureCommit`, that run would be stuck in `running` forever, and `failOrphanedRuns` would eventually transition it to `failed` — a bogus failure attribution.
 
@@ -27,7 +27,7 @@ Symmetrically: a closure commit may never materialize (the convergence iteration
 
 1. The runtime (`src/processors/runtime.ts`) calls `markSucceeded` with `outputCommit: null` immediately after `executeProcessor` returns `status: "succeeded"`. This bounds the run's lifetime to the processor's unit of work. Other executor terminal states write `failed`, `timed_out`, or `cancelled`; pre-run policy denial writes `skipped`.
 
-2. The engine's adoption loop (`src/engine/adopt.ts`) accumulates the run ids that contributed to the iteration. After `makeClosureCommit` returns a non-null OID, it calls `updateOutputCommit(ledger, { runIds, outputCommit })`. The accessor filters by `status = 'succeeded' AND output_commit IS NULL` — so calling twice is a no-op, and runs that never reached `succeeded` (failed mid-flight) are untouched.
+2. The engine's adoption loop (`src/engine/core/adopt.ts`) accumulates the run ids that contributed to the iteration. After `makeClosureCommit` returns a non-null OID, it calls `updateOutputCommit(ledger, { runIds, outputCommit })`. The accessor filters by `status = 'succeeded' AND output_commit IS NULL` — so calling twice is a no-op, and runs that never reached `succeeded` (failed mid-flight) are untouched.
 
 The two-write pattern is intentional. Adding a "fix" that conflates them re-introduces the orphaned-`running`-row failure mode.
 

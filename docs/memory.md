@@ -178,7 +178,7 @@ already carries (grant lists are user-owned config; auto-merging is too
 risky). An existing vault therefore applies the grant edits below by hand in
 `.dome/config.yaml`. Until they land, `dome doctor` raises one
 `capability.grant-entry-missing` warning per gap, naming the exact YAML to
-add (`capabilityGrantEntryFindings` in `src/engine/health.ts` is the
+add (`capabilityGrantEntryFindings` in `src/engine/host/health.ts` is the
 canonical probe list — keep this section and that table in lockstep).
 
 **Exact grant edits:**

@@ -3,7 +3,7 @@
 // `dome sync` is the one-shot catch-up: detect drift between working-tree
 // HEAD and `refs/dome/adopted/<branch>`, run a single adoption cycle if
 // drift is present, print the result, exit. It reuses the shared drift
-// + adoption helpers in `src/engine/compiler-host.ts` with `dome serve`.
+// + adoption helpers in `src/engine/host/compiler-host.ts` with `dome serve`.
 //
 // Four tests cover the four outcome shapes:
 //
@@ -39,15 +39,15 @@ import { diagnosticEffect, externalActionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo, writeRef } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
-import { openVaultRuntime } from "../../src/engine/vault-runtime";
+import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import {
   detectDrift,
   runCompilerHostTick,
-} from "../../src/engine/compiler-host";
+} from "../../src/engine/host/compiler-host";
 import {
   compilerHostLockPath,
   withCompilerHostBranchLock,
-} from "../../src/engine/compiler-host-lock";
+} from "../../src/engine/host/compiler-host-lock";
 import { openLedgerDb } from "../../src/ledger/db";
 import { queryRuns } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";

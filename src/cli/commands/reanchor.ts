@@ -37,8 +37,8 @@ import {
 import {
   detectDrift,
   runCompilerHostTick,
-} from "../../engine/compiler-host";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+} from "../../engine/host/compiler-host";
+import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { formatJson } from "../format";
 import {
   footer,

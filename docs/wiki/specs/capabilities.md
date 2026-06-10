@@ -285,7 +285,7 @@ of letting broad read/write reach appear incidentally.
 The single function that enforces capabilities:
 
 ```ts
-// src/engine/capability-broker.ts
+// src/engine/core/capability-broker.ts
 function enforceCapability(
   effect: Effect,
   declared: Capability[],
@@ -298,7 +298,7 @@ type EnforcementResult =
   | { kind: "deny";     diagnostic: DiagnosticEffect };
 ```
 
-Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Adoption, view, and non-patch garden effects call it through `src/engine/apply-effect.ts`; garden PatchEffects call it through `src/engine/garden-patch-dispatch.ts` / `src/engine/garden-patch-router.ts` because their route target is sub-Proposal construction. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Adoption, view, and non-patch garden effects call it through `src/engine/core/apply-effect.ts`; garden PatchEffects call it through `src/engine/garden/garden-patch-dispatch.ts` / `src/engine/garden/garden-patch-router.ts` because their route target is sub-Proposal construction. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, and `tests/engine/garden-patch-router.test.ts` ship positive and negative cases across broker enforcement and routing. The matrix at [[wiki/matrices/effect-x-capability]] enumerates the pairs.
 

@@ -7,8 +7,8 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 
-import { openQuarantineStore } from "../../../../src/engine/quarantine-store";
-import type { RunId } from "../../../../src/engine/runner-contract";
+import { openQuarantineStore } from "../../../../src/engine/operational/quarantine-store";
+import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import { scenario } from "../../index";
 

@@ -1513,7 +1513,7 @@ When any `dome.sources` subscription is enabled while
 `config.sources-timeout-default` **info** finding suggesting `300000` for
 model-backed fetch commands (the timeout footgun;
 [[wiki/specs/sources]] §"Timeout").
-The implementation lives in `src/engine/health.ts`.
+The implementation lives in `src/engine/host/health.ts`.
 
 **Model-provider probe.** When `.dome/config.yaml` carries a
 `model_provider: { kind: "command", ... }` stanza, `dome doctor` additionally
@@ -1521,7 +1521,7 @@ probes the provider command by spawning it from the vault root and writing a
 `dome.model-provider.probe/v1` envelope on stdin (see [[wiki/specs/capabilities]]
 §"model.invoke" for the envelope contract; the probe is cheap by construction —
 a conforming provider answers without any network or paid API call). The prober
-(`probeCommandModelProvider` in `src/engine/command-model-provider.ts`)
+(`probeCommandModelProvider` in `src/engine/host/command-model-provider.ts`)
 distinguishes five outcomes:
 
 - **responsive** — exit 0 with a valid probe response. Healthy; additionally,

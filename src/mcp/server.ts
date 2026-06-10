@@ -57,7 +57,7 @@ import { buildStatusSnapshot } from "../cli/commands/status";
 import { firstPartyViewNotFoundMessage } from "../cli/commands/view-shared";
 import { COMMAND_ERROR_SCHEMA } from "../cli/command-error";
 import { formatJson } from "../cli/format";
-import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/health";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/host/health";
 import { readBlob } from "../git";
 import { openVault, type OpenVaultError, type Vault } from "../vault";
 

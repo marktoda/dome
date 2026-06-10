@@ -50,8 +50,8 @@
 // Effect serialization (FactEffect → row; DiagnosticEffect → row; etc.)
 // lives in the per-table accessor files that this module supports.
 //
-// House-style notes (matches src/engine/closure-commit.ts,
-// src/engine/glob-cache.ts, src/core/source-ref.ts, src/core/effect.ts):
+// House-style notes (matches src/engine/core/closure-commit.ts,
+// src/engine/core/glob-cache.ts, src/core/source-ref.ts, src/core/effect.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - `Object.freeze` on returned handles and result objects so misbehaving
 //     callers fail loudly at runtime rather than silently corrupting state.

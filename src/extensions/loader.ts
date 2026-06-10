@@ -40,7 +40,7 @@
 //   - Per-bundle preamble loading — Phase 9+ adds that. Bundle page types
 //     are loaded today via `page-types.yaml`.
 //
-// House-style notes (matches src/engine/vault-runtime.ts, src/git.ts):
+// House-style notes (matches src/engine/host/vault-runtime.ts, src/git.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - Errors surface via `Result<T, E>`; never throws on expected I/O.
 //   - Imports limited to v1 substrate + `node:fs/promises` + `node:path` +

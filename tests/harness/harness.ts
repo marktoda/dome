@@ -43,7 +43,7 @@ import {
   detectDrift,
   runCompilerHostTick,
   runOperationalWorkForAdopted,
-} from "../../src/engine/compiler-host";
+} from "../../src/engine/host/compiler-host";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import {
   commit as gitCommit,
@@ -57,7 +57,7 @@ import {
 import {
   openVaultRuntime,
   type VaultRuntime,
-} from "../../src/engine/vault-runtime";
+} from "../../src/engine/host/vault-runtime";
 
 import { CommitMatcherImpl, _parseTrailers } from "./assertions/commits";
 import { FileMatcherImpl } from "./assertions/files";
@@ -88,8 +88,8 @@ import type { LedgerDb } from "../../src/ledger/db";
 import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { AnswersDb } from "../../src/answers/db";
-import type { ModelProvider } from "../../src/engine/model-invoke";
-import type { OperationalWorkResult } from "../../src/engine/operational-work";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
+import type { OperationalWorkResult } from "../../src/engine/operational/operational-work";
 
 const DEFAULT_BRANCH = "main";
 const DEFAULT_AUTHOR = {

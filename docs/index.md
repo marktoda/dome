@@ -48,7 +48,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE]] — *(deferred)* Vectors in `embeddings.db` never hold truth, only acceleration; the cache may be deleted at any time with no correctness impact; no processor may read embeddings as facts.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
-- [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] — *(axiom)* Mutation happens in exactly one module: `src/engine/apply-effect.ts`. Every Effect routes through this chokepoint.
+- [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]] — *(axiom)* Mutation happens in exactly one module: `src/engine/core/apply-effect.ts`. Every Effect routes through this chokepoint.
 - [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] — *(axiom)* Every Effect passes through the broker before application; capability intersection determines allow / downgrade / deny.
 - [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]] — *(shipped default)* Every Effect produces an audit record (run ledger row, projection table row, outbox row, or git trailer).
 - [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] — *(shipped default)* Every processor invocation writes one RunRecord row, regardless of phase or outcome.
@@ -68,6 +68,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/matrices/built-in-extensions-x-phase]] — First-party `dome.*` bundles × adoption/garden/view × shipped processors.
 - [[wiki/matrices/effect-router-targets]] — Effect kind × processor phase → engine routing destination.
 - [[wiki/matrices/effect-x-capability]] — Per-Effect-kind capability requirements at the broker.
+- [[wiki/matrices/engine-module-map]] — `src/engine/`'s four internal layers (core / garden / operational / host); module → layer assignment; downward-only import rule; lockstep with `tests/integration/engine-import-direction.test.ts`.
 - [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; five contribution kinds (page-types, preamble, processors, external-handlers, capability-grants).
 - [[wiki/matrices/intent-prompt-processors]] — User intent × prompt source × processor that handles them × effects emitted.
 - [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
@@ -103,6 +104,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 Named semantic linter specs. Each names the rule, what it checks, and the target version.
 
+- [[wiki/linters/engine-import-direction]] — *(v1)* Every `src/engine/` module lives in its [[wiki/matrices/engine-module-map]] layer directory and imports only same- or lower-ranked layers (core < garden < operational < host).
 - [[wiki/linters/engine-is-sole-applier]] — *(v1)* `src/` outside `src/engine/`, `src/projections/`, `src/ledger/`, `src/outbox/` must not import mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git` write functions).
 - [[wiki/linters/generated-block-splice-guard]] — *(v1)* Every non-test file under `src/` and `assets/extensions/` whose source constructs a generated-block marker (`:start -->`/`:end -->` or a `dome.`-prefixed comment) must import the grammar primitive `src/core/generated-block.ts`.
 - [[wiki/linters/no-direct-mutation-outside-engine]] — *(v1)* Greps `src/` for mutation calls outside the engine boundary; complement to `engine-is-sole-applier`.

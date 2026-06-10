@@ -29,7 +29,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import { nextFire, parseCron } from "../../../../src/engine/cron";
+import { nextFire, parseCron } from "../../../../src/engine/operational/cron";
 
 const CONFIG_PATH = ".dome/config.yaml";
 const KIND_RE = /^[a-z0-9][a-z0-9._-]*$/;

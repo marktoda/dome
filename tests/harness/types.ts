@@ -30,8 +30,8 @@ import type { OutboxDb } from "../../src/outbox/db";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { Capability, ProcessorPhase, Trigger } from "../../src/core/processor";
 import type { Effect } from "../../src/core/effect";
-import type { ModelProvider } from "../../src/engine/model-invoke";
-import type { OperationalWorkResult } from "../../src/engine/operational-work";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
+import type { OperationalWorkResult } from "../../src/engine/operational/operational-work";
 
 // ============================================================================
 // ----- Harness setup --------------------------------------------------------

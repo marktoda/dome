@@ -17,10 +17,10 @@ import {
 } from "../../src/core/processor";
 import { transientProcessorError } from "../../src/core/processor-error";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
-import { noopSinks } from "../../src/engine/apply-effect";
-import type { ApplyPatchInput } from "../../src/engine/apply-patch";
-import { runQueuedJobs } from "../../src/engine/jobs";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import { noopSinks } from "../../src/engine/core/apply-effect";
+import type { ApplyPatchInput } from "../../src/engine/core/apply-patch";
+import { runQueuedJobs } from "../../src/engine/operational/jobs";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { claimNextEligibleJob, enqueueJob } from "../../src/projections/jobs";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import { buildRegistry } from "../../src/processors/registry";

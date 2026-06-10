@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { runInit } from "../../src/cli/commands/init";
 import { questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { openVaultRuntime } from "../../src/engine/vault-runtime";
+import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import { resolveBundleRoots } from "../../src/cli/commands/sync-shared";
 import { add, commit } from "../../src/git";
 import { insertQuestion } from "../../src/projections/questions";

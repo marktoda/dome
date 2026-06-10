@@ -121,23 +121,23 @@ import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import {
   countPendingCommits,
   isAdoptedDiverged,
-} from "../../engine/adoption-status";
+} from "../../engine/core/adoption-status";
 import {
   readServeHeartbeatStatus,
   type ServeHeartbeatStatus,
-} from "../../engine/compiler-host-heartbeat";
-import { probeCommandModelProvider } from "../../engine/command-model-provider";
-import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
+} from "../../engine/host/compiler-host-heartbeat";
+import { probeCommandModelProvider } from "../../engine/host/command-model-provider";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/host/health";
 import {
   probeCacheMatchesCommand,
   probeResultUnreachable,
   readModelProviderProbeCache,
   writeModelProviderProbeCache,
-} from "../../engine/model-provider-probe-cache";
+} from "../../engine/host/model-provider-probe-cache";
 import {
   openVaultRuntime,
   type VaultRuntime,
-} from "../../engine/vault-runtime";
+} from "../../engine/host/vault-runtime";
 import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../../extensions/maintenance-loops";
 import type { LedgerDb } from "../../ledger/db";
 import {

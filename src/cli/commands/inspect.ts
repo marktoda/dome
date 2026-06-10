@@ -55,7 +55,7 @@ import type {
   ProcessorPhase,
   Trigger,
 } from "../../core/processor";
-import { openVaultRuntime, type VaultRuntime } from "../../engine/vault-runtime";
+import { openVaultRuntime, type VaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
 import {
   loadBundleManifestSummaryFromRoots,

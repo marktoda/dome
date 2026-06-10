@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildCommandModelProvider } from "../../src/engine/command-model-provider";
+import { buildCommandModelProvider } from "../../src/engine/host/command-model-provider";
 
 const roots: string[] = [];
 

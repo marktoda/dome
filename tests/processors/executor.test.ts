@@ -10,11 +10,11 @@ import type { Effect } from "../../src/core/effect";
 import { transientProcessorError } from "../../src/core/processor-error";
 import type { ProcessorContext } from "../../src/core/processor";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
-import type { RunId } from "../../src/engine/runner-contract";
+import type { RunId } from "../../src/engine/core/runner-contract";
 import {
   modelInvokeForProcessor,
   type ModelProvider,
-} from "../../src/engine/model-invoke";
+} from "../../src/engine/core/model-invoke";
 import {
   MAX_EFFECTS_PER_INVOCATION,
   executeProcessor,

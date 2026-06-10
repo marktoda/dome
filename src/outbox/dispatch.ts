@@ -12,7 +12,7 @@
 // Structural fences this file upholds:
 //   - docs/wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX.md — this
 //     file is the named structural enforcement point ("The applier in
-//     `src/engine/apply-effect.ts` routes `external` effects to
+//     `src/engine/core/apply-effect.ts` routes `external` effects to
 //     `src/outbox/dispatch.ts` exclusively"). Every ExternalActionEffect
 //     emitted by a processor flows through `dispatchExternalEffect` here:
 //     it inserts via `insertPending` before any external call is attempted.

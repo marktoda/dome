@@ -264,7 +264,7 @@ export function makeManualProposal(opts: {
 
 /**
  * Build a `Proposal` with `source.kind: "garden"`. Internal helper — the
- * garden orchestrator at `src/engine/garden.ts` calls this to wrap a
+ * garden orchestrator at `src/engine/garden/garden.ts` calls this to wrap a
  * garden-emitted PatchEffect into a sub-Proposal the adoption loop can
  * consume.
  */

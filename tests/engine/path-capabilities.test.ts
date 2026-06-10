@@ -5,7 +5,7 @@ import {
   filterReadablePaths,
   pathCapabilityEffectiveFor,
   readablePath,
-} from "../../src/engine/path-capabilities";
+} from "../../src/engine/core/path-capabilities";
 
 const declared: ReadonlyArray<Capability> = Object.freeze([
   { kind: "read", paths: ["wiki/**"] },

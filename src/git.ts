@@ -257,7 +257,7 @@ export async function commit(opts: {
  *
  * Concurrency: a `dome serve` host may adopt between this helper's HEAD read
  * and its ref advance — the engine moves `refs/heads/<branch>` forward to a
- * closure commit (see src/engine/adopt.ts Phase 12c). An unconditional branch
+ * closure commit (see src/engine/core/adopt.ts Phase 12c). An unconditional branch
  * write here would force the branch *backwards* past that closure commit,
  * leaving the adopted ref a non-ancestor of HEAD and putting the engine in a
  * hard error loop ("adopted ref ... is not an ancestor"). So the commit is

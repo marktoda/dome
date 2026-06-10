@@ -5,7 +5,7 @@ updated: 2026-06-01
 sources:
   - "[[v1]]"
 coverage: off-matrix
-enforced_at: src/engine/garden.ts
+enforced_at: src/engine/garden/garden.ts
 first_observed: 2026-05-28 (Phase 4a' implementation)
 severity: medium
 ---

@@ -35,8 +35,8 @@ engine adoption commits, and do not carry `Dome-*` trailers.
 **Structural enforcement:**
 
 1. **Engine semantic commits use the trailer composer.** Closure commits flow
-   through `src/engine/closure-commit.ts` and PatchEffect commits flow through
-   `src/engine/apply-patch.ts`; both require a `runContext` and call the shared
+   through `src/engine/core/closure-commit.ts` and PatchEffect commits flow through
+   `src/engine/core/apply-patch.ts`; both require a `runContext` and call the shared
    `composeCommitMessage` helper from `src/engine-commit.ts`.
 2. **The four-trailer format is enforced by `composeCommitMessage`.** The
    function takes the `runContext` and produces the message; the trailers are

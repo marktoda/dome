@@ -1,4 +1,4 @@
-// Smoke tests for src/engine/adopt.ts: the fixed-point adoption loop with a
+// Smoke tests for src/engine/core/adopt.ts: the fixed-point adoption loop with a
 // stub `AdoptionPhaseRunner`. Uses a minimal real git repo (one commit) so
 // `currentBranch` / `currentSha` / `setAdoptedRef` work; bypasses
 // `makeTestVault` since the bootstrap chain is heavy and Phase 3 will wire
@@ -9,17 +9,17 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adopt } from "../../src/engine/adopt";
-import { applyPatchToCandidate } from "../../src/engine/apply-patch";
+import { adopt } from "../../src/engine/core/adopt";
+import { applyPatchToCandidate } from "../../src/engine/core/apply-patch";
 import type {
   AdoptionPhaseRunner,
   RunId,
-} from "../../src/engine/runner-contract";
-import { noopSinks } from "../../src/engine/apply-effect";
+} from "../../src/engine/core/runner-contract";
+import { noopSinks } from "../../src/engine/core/apply-effect";
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { EngineVault } from "../../src/engine/vault-shape";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
 import {
   checkoutPathsAtRef,
   commit,

@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openQuarantineStore } from "../../src/engine/quarantine-store";
+import { openQuarantineStore } from "../../src/engine/operational/quarantine-store";
 import type { ProcessorExecutionKey } from "../../src/processors/execution-state";
 
 describe("quarantine store", () => {

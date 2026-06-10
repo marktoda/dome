@@ -10,7 +10,7 @@ import {
   parseCalendarDay,
 } from "../../../assets/extensions/dome.agent/lib/brief-shared";
 import { FIRST_PARTY_EXTENSION_DEFAULTS } from "../../../src/cli/default-vault-config";
-import { readablePath } from "../../../src/engine/path-capabilities";
+import { readablePath } from "../../../src/engine/core/path-capabilities";
 import { parseManifest } from "../../../src/extensions/manifest-schema";
 import { scopeProjectionQueryView } from "../../../src/processors/projection-scope";
 import type {

@@ -266,7 +266,7 @@ const sweepAnswer = defineProcessorImplementation({
     // Retry-idempotent presence guard: if the proposed section (trimmed) is
     // already present in the destination, skip the append and only guarantee
     // the sources link. This handles the at-least-once retry window
-    // (src/engine/question-answering.ts:34-37, 67-70) without double-appending.
+    // (src/engine/host/question-answering.ts:34-37, 67-70) without double-appending.
     const trimmedProposed = meta.proposedSection.trim();
     if (existingContent.includes(trimmedProposed)) {
       const relinked = ensureSourcesLink(existingContent, meta.material);

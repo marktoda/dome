@@ -29,14 +29,14 @@ tier: axiom
 
 - Structurally true now:
   - `src/core/effect.ts` carries the closed eleven-kind Effect union — the only legal write-side payload shape a processor can emit.
-  - The engine route layer is the sole router for Effects; `src/engine/apply-effect.ts:routeToSink` is an exhaustive switch on generic sink routes, and garden PatchEffects route through `src/engine/garden-patch-router.ts` into sub-Proposals.
-  - `src/engine/capability-broker.ts:enforceCapability` is the single enforcement function, called only from engine route modules.
-  - `src/engine/adopt.ts:adopt()` is the only function that mutates trusted state. There is no public submit-style API in `src/index.ts`; Proposals are constructed internally by engine code and routed through `adopt()`.
+  - The engine route layer is the sole router for Effects; `src/engine/core/apply-effect.ts:routeToSink` is an exhaustive switch on generic sink routes, and garden PatchEffects route through `src/engine/garden/garden-patch-router.ts` into sub-Proposals.
+  - `src/engine/core/capability-broker.ts:enforceCapability` is the single enforcement function, called only from engine route modules.
+  - `src/engine/core/adopt.ts:adopt()` is the only function that mutates trusted state. There is no public submit-style API in `src/index.ts`; Proposals are constructed internally by engine code and routed through `adopt()`.
   - `src/index.ts` does NOT export `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog`, or the privileged-writer surface — those v0.5 paths were retired entirely.
   - `src/index.ts` does NOT export `submitProposal`, the Proposal source-constructors, or `openVaultRuntime` — the engine-internal write path is not reachable from SDK consumers in v1.0. The retired `submitProposal({runtime, proposal})` ceremony (Phase 11a demolition) was the wrong shape; the canonical v1.0 write path is `git commit` + the engine's adoption-on-new-commit run.
   - The `Proposal` type carries a 2-way internal `ProposalSource` union (`manual` + `garden`); `makeManualProposal` in `src/core/proposal.ts` is the single internal constructor used by the compiler host/sync path when it observes branch/adopted drift.
   - **The local compiler host (`dome serve`)** is the long-running process that calls `adopt()` against client-driven Proposals. It watches `refs/heads/<branch>`, compares against `refs/dome/adopted/<branch>`, constructs a `manual`-source Proposal via `makeManualProposal`, and routes it through the engine. `dome sync` uses the same internal construction path for one-shot catch-up.
-  - **`PatchEffect` application is shipped.** Adoption-phase PatchEffects mutate the candidate tree through `src/engine/apply-patch.ts`; garden PatchEffects become internal garden-source Proposals and re-enter `adopt()`.
+  - **`PatchEffect` application is shipped.** Adoption-phase PatchEffects mutate the candidate tree through `src/engine/core/apply-patch.ts`; garden PatchEffects become internal garden-source Proposals and re-enter `adopt()`.
   - **The semantic linter `no-direct-mutation-outside-engine`** is active as `tests/integration/no-direct-mutation-outside-boundaries.test.ts`.
 
 **Related:**

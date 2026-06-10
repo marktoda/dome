@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { modelInvokeForProcessor } from "../../src/engine/model-invoke";
+import { modelInvokeForProcessor } from "../../src/engine/core/model-invoke";
 import type {
   ModelStepProvider,
-} from "../../src/engine/model-invoke";
+} from "../../src/engine/core/model-invoke";
 import type { Capability } from "../../src/core/processor";
 
 // A ResolvedExecutionPolicy fixture. Mirror the one in the existing

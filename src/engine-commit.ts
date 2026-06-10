@@ -1,4 +1,4 @@
-import type { EngineVault } from "./engine/vault-shape";
+import type { EngineVault } from "./engine/core/vault-shape";
 import { commit } from "./git";
 import type { RunContext } from "./run-context";
 

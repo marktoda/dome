@@ -33,9 +33,9 @@ import {
   type Effect,
 } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
-import type { SignalEvent } from "../../src/engine/compile-range";
-import type { EngineVault } from "../../src/engine/vault-shape";
-import type { ModelProvider } from "../../src/engine/model-invoke";
+import type { SignalEvent } from "../../src/engine/core/compile-range";
+import type { EngineVault } from "../../src/engine/core/vault-shape";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
 
 // Stub EngineVault — the runtime never touches it (only passed through the
 // AdoptionPhaseRunner input contract).
