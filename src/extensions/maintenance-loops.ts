@@ -385,8 +385,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
-        "Anchor ids are content-hash-derived; inserting same-key claims above existing ones can shift occurrence indices across idempotency boundaries.",
-        "Claim values may encode wikilinks; callers rendering fact objects must HTML-decode them rather than treating the raw JSON as plain text.",
+        "Anchor ids are key/occurrence-derived (path + normalized key + occurrence index, never the value); inserting same-key claims above not-yet-stamped ones shifts occurrence indices across idempotency boundaries.",
+        "Claim values may contain wikilinks and markdown; callers consuming fact objects must JSON-parse the canonical {key, value, asOf?} encoding rather than treating it as plain text.",
       ],
     }),
     freezeLoop({
