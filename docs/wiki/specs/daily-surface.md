@@ -13,7 +13,7 @@ sources:
 
 This spec is normative for the daily note as a *product surface* — the one file where the system and the owner meet. The mechanism layer (block grammar, splice guard, anchors, agents) is specified elsewhere and pointed at, not duplicated: [[wiki/specs/task-lifecycle]] owns block-anchor identity and the deterministic task processors, [[wiki/specs/autonomous-agents]] owns the brief's agent contract, [[wiki/specs/sweep]] owns the overnight integration whose digest the edition renders. This spec owns the *package*: which sections exist, who writes which block, the overnight choreography, and how the morning edition degrades.
 
-Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract; D2–D4 deltas are marked inline where they will land.
+Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 delta (one yesterday block) landed; D3–D4 deltas are marked inline where they will land.
 
 ## The three acts
 
@@ -32,9 +32,9 @@ All times are vault-local; cron triggers fire only while the compiler host (`dom
 | 02:00 | `dome.agent.consolidate` | dome.agent | Contractive janitor over recent drift — the graph the edition reads is already tidied. |
 | 03:00 | `dome.agent.sweep` | dome.agent | Meaning integration ("no capture left behind"); writes tonight's `## Run <date>` section into the sweep ledger, which the edition digests. |
 | ~05:10 | calendar fetcher — **vault-side, external, not shipped** | — | Commits `sources/calendar/<today>.md` before the brief. Recipe (launchd/cron + script or agent session) at [[wiki/specs/vault-layout]] §"Populating the calendar file (recipe, not shipped)". A missing file means "no agenda known". |
-| 05:30 | `dome.agent.brief` | dome.agent | **The edition compile.** Composes the brief blocks into today's daily (creating the shared skeleton when absent, so create-daily later no-ops): yesterday digest, meetings, open-questions batch, integrated-overnight digest. |
-| 06:00 | `dome.daily.create-daily` | dome.daily | Skeleton fallback: creates today's daily when nothing else did; writes the mechanical `dome.daily:start-context` digest (D2 retires this block — see §"Block ownership"). |
-| 06:00 + on-commit | `dome.daily.carry-forward` | dome.daily | Raises the ranked `dome.daily:open-loops` surface; re-fires on every adopted commit so the surface tracks the live vault. |
+| 05:30 | `dome.agent.brief` | dome.agent | **The edition compile.** Composes the brief blocks into today's daily (creating the shared skeleton when absent, so create-daily later no-ops): yesterday digest (replacing the mechanical fallback body wholesale), meetings, open-questions batch, integrated-overnight digest. |
+| 06:00 | `dome.daily.create-daily` | dome.daily | Skeleton fallback: creates today's daily when nothing else did; seeds the unified `dome.agent.brief:yesterday` block with the mechanical fallback body (§"The one yesterday block"). |
+| 06:00 + on-commit | `dome.daily.carry-forward` | dome.daily | Raises the ranked `dome.daily:open-loops` surface; re-fires on every adopted commit so the surface tracks the live vault. Seeds the yesterday fallback block when (and only when) it is absent. |
 | on-commit (daytime) | `dome.daily.stamp-block-id`, `normalize-task-syntax`, `reconcile-tasks`, `attention-discount`, `task-index` | dome.daily | The hygiene set: anchor stamping, cosmetic normalization, close-in-one-place reconcile, dismissal-derived discount facts, task facts. Normative at [[wiki/specs/task-lifecycle]]. |
 | on-demand | `today`, `prep`, `agenda-with` | dome.daily | View-phase read-only projections of the live surface. |
 | ~21:30 *(future, D4)* | `dome.daily.close-scaffold` | dome.daily | The Close: deterministic Done/unfinished scaffold under `## Done`; `Story of the Day` stays purely human. |
@@ -49,31 +49,60 @@ The skeleton (`renderDailySkeleton` in `assets/extensions/dome.daily/processors/
 
 | `##` heading | Job | Owner | Generated blocks hosted | Machine readers |
 |---|---|---|---|---|
-| `Start Here` | The first read of the morning — the edition's front page. | Shared: edition blocks + optional human prose. | `dome.agent.brief:yesterday`, `dome.agent.brief:questions`, `dome.agent.brief:integrated`; `dome.daily:start-context` (legacy — D2 retires it). | None — generated blocks are excluded from task extraction. |
+| `Start Here` | The first read of the morning — the edition's front page. | Shared: edition blocks + optional human prose. | `dome.agent.brief:yesterday` (the ONE yesterday surface — dual-writer, §"The one yesterday block"), `dome.agent.brief:questions`, `dome.agent.brief:integrated`; `dome.daily:start-context` (retired-legacy — recognized, never written; D2 verdict below). | None — the yesterday block and the `dome.daily` blocks are excluded from task extraction (`dailyGeneratedBlockLineRanges`); the questions/integrated blocks render plain bullets only. |
 | `Meetings` | Today's agenda with vault-recall context. | Shared: brief block + human additions (the `/morning` vault ritual overlap is a known accretion; D5 folds it). | `dome.agent.brief:meetings`. | None. |
 | `Open Loops` | The ranked, source-backed open-loop surface. | Machine. | `dome.daily:open-loops`. | `dome.daily.reconcile-tasks` reads settled `[x]`/`[-]` copies inside the block and closes the origin line; task extractors skip the block (the copies are projections, not sources). |
 | `Notes` | Free-form human capture. | Human. | None. (D3 adds a sibling `## Captured today` section with an owned `dome.daily:captured` block for ingest/capture-routed task lines.) | The task extractors: any checkbox/directive line outside generated blocks, fences, and frontmatter feeds `task-index` / `stamp-block-id` / carry-forward ranking. |
-| `Decisions` | Decisions made today, one bullet each. | Human. | None. | `previousDailyStartContext` (the mechanical yesterday digest) and the brief's yesterday composition read it the next morning. |
+| `Decisions` | Decisions made today, one bullet each. | Human. | None. | `previousDailyDigest` (the mechanical yesterday extraction) and the brief's yesterday composition read it the next morning. |
 | `Done` | What got finished today. | Human (D4 adds the deterministic `dome.daily:close` scaffold here). | None today. | Same next-morning readers as `Decisions`. |
-| `Story of the Day` | The narrative close. | Human, always — never model-written ([[daily]] decision ledger 3). | None, ever. | `previousDailyStartContext` compresses the first paragraph into the next morning's story summary line. |
+| `Story of the Day` | The narrative close. | Human, always — never model-written ([[daily]] decision ledger 3). | None, ever. | `previousDailyDigest` compresses the first paragraph into the next morning's story summary line. |
 
 Sections are insertion-anchored, not positional: every splice helper inserts under its named heading and falls back to creating the heading rather than assuming an offset, so human reordering and prose between sections never break the writers.
 
 ## Block ownership
 
-Every generated block that may appear in a daily note, with its writer, reader, and timing. Block ownership is **disjoint** — no two processors write the same region — and every block uses the core marker grammar (`src/core/generated-block.ts`) with the splice-guard + anomaly-diagnostic contract from [[wiki/specs/task-lifecycle]] §"Generated-block markers (the splice-guard primitive)".
+Every generated block that may appear in a daily note, with its writer, reader, and timing. Block ownership is **disjoint with one named exception** — no two processors write the same region, except `dome.agent.brief:yesterday`, the deliberate dual-writer block whose safety argument is §"The one yesterday block" — and every block uses the core marker grammar (`src/core/generated-block.ts`) with the splice-guard + anomaly-diagnostic contract from [[wiki/specs/task-lifecycle]] §"Generated-block markers (the splice-guard primitive)".
 
 | Block | Hosted under | Writer | Content class | Timing | Status |
 |---|---|---|---|---|---|
-| `dome.daily:start-context` | `## Start Here` | `create-daily` + `carry-forward` (shared helper) | deterministic ("Since Yesterday": prev-daily link, done/decisions/story compress) | 06:00 + on-commit | Shipping. **D2 retires the marker**: the mechanical digest becomes the no-model fallback *body* of `dome.agent.brief:yesterday` (one yesterday-block, [[daily]] decision ledger 2), and brief/create-daily treat an existing start-context block as the thing to replace once. |
+| `dome.daily:start-context` | — | **None — retired-legacy (D2).** | — | — | **Retired-legacy: recognized, never written.** The mechanical digest became the no-model fallback *body* of `dome.agent.brief:yesterday` (one yesterday-block, [[daily]] decision ledger 2). Migration: see §"The one yesterday block". |
 | `dome.daily:open-loops` | `## Open Loops` | `carry-forward` (seeded by `create-daily`) | deterministic (ranked source-backed copies + resolved/dismissed-today subsections) | 06:00 + every adopted commit | Shipping. |
 | `dome.daily:carried-forward` | — | **None — retired-legacy.** | — | — | **Retired-legacy: recognized, never written.** See verdict below. |
-| `dome.agent.brief:yesterday` | `## Start Here` | `dome.agent.brief` | model (spliced + grounded; every bullet cites `(from [[path]])`) | 05:30 | Shipping. D2 absorbs `start-context` as its fallback body. |
+| `dome.agent.brief:yesterday` | `## Start Here` | **Dual-writer:** `dome.agent.brief` (curated body, wholesale replace) + `create-daily`/`carry-forward` (mechanical fallback body, written ONLY when the block is absent) | model (spliced + grounded; every bullet cites `(from [[path]])`) over a deterministic fallback (prev-daily link, done/decisions/story compress; "no record of yesterday" line when no previous daily exists) | 05:30 (brief) · 06:00 + on-commit (presence-gated fallback) | Shipping. The ONE yesterday surface — §"The one yesterday block". |
 | `dome.agent.brief:meetings` | `## Meetings` | `dome.agent.brief` | model (from the untrusted calendar file, handed to the model as data) | 05:30 | Shipping; omitted entirely when `sources/calendar/<today>.md` is absent. |
 | `dome.agent.brief:questions` | `## Start Here`, after the yesterday block | `dome.agent.brief` | deterministic (the model never writes question ids) | 05:30 | Shipping. |
 | `dome.agent.brief:integrated` | `## Start Here`, after the questions block | `dome.agent.brief` | deterministic — rendered from the sweep ledger's run sections for today, never model-written ([[wiki/specs/sweep]] §"Brief digest block") | 05:30 | Shipping; omitted when the ledger is absent or today's run has no `integrated`/`questioned` rows. |
 
 Brief blocks render plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks.
+
+### The one yesterday block (D2)
+
+`dome.agent.brief:yesterday` is the only yesterday surface in a daily note. There is exactly one block, one heading (`### Yesterday`), and never two yesterday summaries. Its body rides the degradation ladder: curated (model) → mechanical (deterministic fallback) → "no record of yesterday" (single line when no previous daily exists).
+
+**Ownership.** The block keeps the brief's namespace — the edition compile is its steady-state, highest-fidelity writer, and renaming it (`dome.daily:yesterday`) would have orphaned every live brief block in existing vaults behind a second migration. `dome.daily`'s processors crossing into the `dome.agent.brief:*` namespace is the deliberate, recorded exception to disjoint ownership, made safe by two structural rules:
+
+1. **The fallback write is presence-gated.** `create-daily` and `carry-forward` write the mechanical fallback body ONLY when the block is absent (`ensureYesterdayFallbackSection` in `daily-shared.ts`); when the block exists — whether it carries the brief's curated body or a previously seeded fallback — they leave it alone entirely. The brief, conversely, replaces the body wholesale (existing grounding + sanitize path unchanged). The writers are presence/replace-partitioned, so no interleaved partial writes are possible.
+2. **One canonical block identity.** The `(owner, block)` pair is defined once, in `dome.daily`'s `daily-shared.ts` (`EDITION_YESTERDAY_BLOCK`, rendered through the core grammar primitive), and `dome.agent`'s `brief-shared.ts` imports it — the bundle dependency direction stays dome.agent → dome.daily, and the marker strings cannot drift apart.
+
+**Fallback body shape** (deterministic, plain bullets, no checkboxes):
+
+```
+### Yesterday
+- Previous daily: [[<prev daily>]]
+- Done yesterday: <compress>        (omitted when empty)
+- Decisions yesterday: <compress>   (omitted when empty)
+- Story: <first-paragraph compress> (omitted when empty)
+```
+
+When no previous daily exists, the body is the heading plus a single `- No record of yesterday — no previous daily note.` line.
+
+**Grounding boundary.** The brief's grounding rule applies only to a body the *model* wrote: the splice compares the model's block body against the deterministic prepared body and skips the block when they are identical, so the mechanical fallback's bullets (which carry no `[[wikilink]]` beyond the prev-daily pointer) are never stripped as ungrounded.
+
+**Task-extraction exclusion.** The block is in `dailyGeneratedBlockLineRanges`' excluded set alongside the `dome.daily` blocks: the mechanical fallback compresses human prose (Done/Decisions/Story) that may contain directive-shaped text ("follow up with…"), and generated copies must never re-ingest as tasks.
+
+**Anomaly attribution.** Both writers scan the block at their own splice site: `carry-forward` reports anomalies under `dome.daily.generated-block-anomaly` (the block is in `DAILY_GENERATED_BLOCKS`), the brief under `dome.agent.generated-block-anomaly`. A hand-mangled marker may therefore surface under both codes — two reporters, one per splice site, each deduped at the diagnostics sink.
+
+**Migration (`dome.daily:start-context` retirement).** No processor writes `start-context` anymore. When `create-daily`/`carry-forward`/`brief` touch today's daily and find an existing `dome.daily:start-context` block, they remove it in the same patch that ensures the unified block — one-time and idempotent (once removed, nothing recreates it). **Historical dailies keep theirs untouched**: they are closed records, and the daily writers only ever patch today's note. The marker stays in the recognized-block list (`DAILY_GENERATED_BLOCKS`) for anomaly detection and legacy non-reingestion, exactly as `carried-forward` is treated below.
 
 ### The `carried-forward` verdict: retired-legacy
 
@@ -89,9 +118,11 @@ Each rung is normative behavior, not best-effort. The edition never half-renders
 
 | Missing input | Normative behavior | Implementing processor |
 |---|---|---|
-| No model provider | The edition degrades to mechanical: the brief is a clean no-op (no error, no failed run — the warden no-op contract), `create-daily` writes the skeleton + mechanical start-context digest at 06:00, and `carry-forward` raises the open-loops surface. The day still starts with a complete deterministic daily. | `dome.agent.brief` (no-op), `dome.daily.create-daily`, `dome.daily.carry-forward` |
+| No model provider | The edition degrades to mechanical: the brief is a clean no-op (no error, no failed run — the warden no-op contract), `create-daily` writes the skeleton at 06:00 with the mechanical fallback body inside the unified `dome.agent.brief:yesterday` block (exactly one yesterday block, exactly once), and `carry-forward` raises the open-loops surface. The day still starts with a complete deterministic daily. | `dome.agent.brief` (no-op), `dome.daily.create-daily`, `dome.daily.carry-forward` |
+| Model present, writes nothing useful | The brief's deterministic pre-pass seeds the yesterday block with the mechanical fallback body before the model runs; a model that leaves the block untouched lands the fallback (the splice skips unchanged bodies — no grounding strip of deterministic bullets). | `dome.agent.brief` |
 | No `sources/calendar/<today>.md` | The meetings block is omitted entirely — no empty section, no hallucinated agenda. The calendar file is untrusted input; absence means "no agenda known". | `dome.agent.brief` |
-| Nothing happened overnight | The integrated block is omitted (ledger absent or no renderable rows — signal, not log), and the yesterday digest degrades to its quiet minimum: the previous-daily pointer line with no fabricated activity. | `dome.agent.brief` (integrated omission), `create-daily`/`carry-forward` (mechanical minimum) |
+| Nothing happened overnight | The integrated block is omitted (ledger absent or no renderable rows — signal, not log), and the mechanical yesterday fallback degrades to its quiet minimum: the previous-daily pointer line with no fabricated activity. | `dome.agent.brief` (integrated omission), `create-daily`/`carry-forward` (mechanical minimum) |
+| No previous daily at all | The yesterday block still exists — its body is the heading plus a single "no record of yesterday" line. Never an absent block, never a fabricated digest. | `create-daily`/`carry-forward` (fallback), `dome.agent.brief` (pre-pass seed; the model may replace it with log.md-grounded bullets per its charter) |
 | Daily absent at 06:00 | `create-daily` writes the full skeleton; the brief already creates the same skeleton at 05:30 when it runs, so this rung only fires when the brief didn't (no model, host down at 05:30, brief failed-and-rolled-back). One skeleton shape, two writers, last-writer no-ops. | `dome.daily.create-daily` |
 | Close skipped (evening) | Tomorrow's yesterday digest is thin but explicit — empty Done/Decisions compress to nothing rather than inventing content. D4 upgrades this to an explicit "yesterday's close was empty" line. | `create-daily`/`carry-forward` today; `dome.daily.close-scaffold` at D4 |
 
