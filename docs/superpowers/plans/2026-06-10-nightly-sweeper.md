@@ -453,7 +453,7 @@ for (item of queue.items):
   state = { edits: new Map(), questions: [] };  pendingQuestion = null
   try:
     result = await runAgentLoop({
-      charter: sweepCharter({ destination: item.destination, material: item.material }),
+      charter: sweepCharter({ destination: item.destination, material: item.material, materialDate: item.materialDate }),
       task: withCoreMemory(core.section, itemTask(item, destContent, materialContent)),
       tools: makeSweepTools({ reader, destination: item.destination,
                               onQuestion: (q) => { pendingQuestion = q } }),

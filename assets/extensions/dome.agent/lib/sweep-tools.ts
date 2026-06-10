@@ -10,10 +10,10 @@ import {
   listPagesTool,
   readPageTool,
   searchVaultTool,
-  writeDenial,
   type VaultReader,
 } from "./vault-tools";
 import { objectSchema } from "./vault-tools";
+import { globMatch } from "../../../../src/engine/glob-cache";
 
 /**
  * Bundle-local mirror of the `dome.agent.sweep` manifest `patch.auto` grant.
@@ -34,8 +34,10 @@ export const SWEEP_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
  * @param opts.reader       - VaultReader (snapshot + overlay seam).
  * @param opts.destination  - The ONE writable path for this run (e.g.
  *                            "wiki/entities/alice-henshaw.md"). Any write
- *                            attempt to a different path returns the standard
- *                            denial string and records no edit.
+ *                            attempt to a different path returns a denial
+ *                            string and records no edit. Must match one of
+ *                            SWEEP_WRITABLE_PATHS — throws at build time if
+ *                            not (programming-error guard).
  * @param opts.onQuestion   - Called by recordUncertainIntegration when the
  *                            model cannot confidently integrate. The processor
  *                            uses this to build a rich QuestionEffect with
@@ -50,10 +52,20 @@ export function makeSweepTools(opts: {
   }) => void;
 }): ReadonlyArray<AgentTool> {
   const { reader, destination, onQuestion } = opts;
-  // The writable list for tool-time denial is a singleton. writeDenial does
-  // exact-path matching when no glob characters are present, which is correct
-  // for concrete destination paths.
-  const writableList: ReadonlyArray<string> = [destination];
+
+  // Item 8: programming-error guard — destination must be in the grant at
+  // build time. The processor should never construct tools for an out-of-grant
+  // path; catching this at construction time surfaces the bug immediately.
+  const destinationInGrant = SWEEP_WRITABLE_PATHS.some((pattern) =>
+    globMatch(pattern, destination),
+  );
+  if (!destinationInGrant) {
+    throw new Error(
+      `makeSweepTools: destination "${destination}" matches none of SWEEP_WRITABLE_PATHS ` +
+        `(${SWEEP_WRITABLE_PATHS.join(", ")}). ` +
+        `This is a programming error — the processor must only target grant-listed paths.`,
+    );
+  }
 
   const editDestinationTool: AgentTool = {
     schema: {
@@ -72,8 +84,23 @@ export function makeSweepTools(opts: {
     },
     execute: async (input, state) => {
       const { path, content } = input as { path: string; content: string };
-      const denial = writeDenial(path, writableList);
-      if (denial !== null) return denial;
+
+      // Item 2: input validation — non-empty strings required, no state mutation on failure
+      if (typeof path !== "string" || path.length === 0) {
+        return "error: path must be a non-empty string";
+      }
+      if (typeof content !== "string" || content.length === 0) {
+        return "error: content must be a non-empty string";
+      }
+
+      // Item 1: strict path equality — no glob matching. The destination is a
+      // known singleton; vault filenames can contain glob metachars (e.g.
+      // "acme-[v2].md") which would admit writes to unintended siblings if we
+      // used glob matching here. Strict equality is the only safe check.
+      if (path !== destination) {
+        return `error: ${path} is not this run's destination (${destination}); editDestination writes only that one page.`;
+      }
+
       state.edits.set(path, { kind: "write", path, content });
       return `wrote ${path}`;
     },
@@ -100,6 +127,15 @@ export function makeSweepTools(opts: {
         summary: string;
         proposedSection: string;
       };
+
+      // Item 2: input validation — non-empty strings required, callback NOT invoked on failure
+      if (typeof summary !== "string" || summary.length === 0) {
+        return "error: summary must be a non-empty string";
+      }
+      if (typeof proposedSection !== "string" || proposedSection.length === 0) {
+        return "error: proposedSection must be a non-empty string";
+      }
+
       onQuestion({ summary, proposedSection });
       // No edit recorded — state is not touched.
       return "recorded — the owner will decide";
