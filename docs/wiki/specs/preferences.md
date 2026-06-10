@@ -54,7 +54,12 @@ Grammar (one line, no wrapping):
 Parsing is defensive: blank lines, headings, and HTML comments are ignored; a
 `- ` list line that fails the grammar is **malformed** — the counter processor
 reports all malformed lines in one `info` diagnostic and never crashes
-(config-fallback temperament, same as the consolidator).
+(config-fallback temperament, same as the consolidator). A `- ` list line
+containing an HTML comment delimiter (`<!--` or `-->`) is malformed
+regardless of the rest of its grammar: rule text is otherwise free-form, and
+a crafted correction could smuggle the promoted-block markers through owner
+promotion into `core.md` and mis-bound the generated block (the
+marker-injection gotcha).
 
 **Who writes signals:**
 
@@ -201,6 +206,12 @@ the question key still matches; a stale question (signals moved on) yields an
   replaces its line. Confidence is recomputed at answer time.
 - Idempotent: when the spliced content equals the current page, no effect is
   emitted (answer-handler retries are harmless).
+- **Marker hygiene** (defense in depth behind the parse-time delimiter ban):
+  the splice strips the block markers and any leftover `<!--`/`-->`
+  delimiters from the rule before rendering, and locates the existing block
+  by a *line-anchored* marker scan — a marker counts only when it is the
+  entire (trimmed) line, so prose or fenced mentions of the marker text are
+  never mistaken for the block bounds.
 
 **On `reject`** — one `PatchEffect (mode: "auto")` appending a tombstone
 signal line to `preferences/signals.md`:

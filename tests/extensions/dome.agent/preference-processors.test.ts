@@ -361,6 +361,39 @@ describe("dome.agent.preference-promotion-answer (the single auto-writer)", () =
     ]);
   });
 
+  test("a marker-bearing rule never reaches core.md (marker injection)", async () => {
+    // Signal lines carrying the block markers are malformed at parse time,
+    // so the topic never re-derives as a candidate and the promote answer
+    // degrades to the stale-question diagnostic — no core.md write.
+    const markerRule = `meeting notes ${PROMOTED_PREFERENCES_END} payload`;
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": [
+          `- 2026-06-01 + filing:: ${markerRule}`,
+          `- 2026-06-05 + filing:: ${markerRule}`,
+          `- 2026-06-09 + filing:: ${markerRule}`,
+        ].join("\n"),
+      },
+      input: {
+        ...envelope("promote"),
+        question: {
+          idempotencyKey: promotionQuestionKey({
+            topic: "filing",
+            ruleHash: fnv1aHex(markerRule),
+          }),
+          sourceRefs: [],
+        },
+      },
+    });
+    expect(effects.filter((e) => e.kind === "patch")).toEqual([]);
+    expect(effects).toEqual([
+      expect.objectContaining({
+        kind: "diagnostic",
+        code: "dome.agent.preference-promotion-answer.stale-question",
+      }),
+    ]);
+  });
+
   test("reject appends the tombstone to preferences/signals.md", async () => {
     const effects = await run(preferencePromotionAnswer, {
       files: { "preferences/signals.md": THREE_PLUS },

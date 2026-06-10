@@ -81,6 +81,20 @@ const SIGNAL_LINE_RE =
 const SOURCE_SUFFIX_RE = /\s*\(source:\s*\[\[([^\]]+)\]\]\)\s*$/;
 
 /**
+ * HTML-comment delimiters are banned in signal lines: rule text is `(.+)`,
+ * so a crafted correction could otherwise smuggle the promoted-preferences
+ * block markers through owner promotion into core.md and mis-bound the
+ * generated block (the marker-injection gotcha). Checked at parse time here
+ * and again, defense in depth, at splice time in `splicePromotedPreference`.
+ */
+const HTML_COMMENT_DELIMITER_RE = /<!--|-->/;
+
+/** True when `text` carries an HTML comment opener/closer. */
+export function containsHtmlCommentDelimiter(text: string): boolean {
+  return HTML_COMMENT_DELIMITER_RE.test(text);
+}
+
+/**
  * Parse preferences/signals.md. Blank lines, headings, and HTML comments are
  * ignored; a `- ` list line that fails the grammar is reported as a problem
  * (malformed lines degrade to one info diagnostic — config-fallback
@@ -96,6 +110,12 @@ export function parsePreferenceSignals(content: string): ParsedSignals {
     const trimmed = raw.trim();
     if (trimmed.length === 0) continue;
     if (!trimmed.startsWith("- ")) continue; // headings, prose, comments
+    if (containsHtmlCommentDelimiter(trimmed)) {
+      // Marker-injection guard: a signal line carrying `<!--` / `-->` is
+      // malformed regardless of the rest of its grammar.
+      problems.push(Object.freeze({ line: i + 1, text: trimmed }));
+      continue;
+    }
     const match = SIGNAL_LINE_RE.exec(trimmed);
     if (match === null) {
       problems.push(Object.freeze({ line: i + 1, text: trimmed }));
@@ -208,19 +228,45 @@ export function promotedTopics(
   return out;
 }
 
+type PromotedBlockBounds = {
+  /** Line index of the start-marker line. */
+  readonly startIndex: number;
+  /** Line index of the end-marker line. */
+  readonly endIndex: number;
+};
+
+/**
+ * Locate the promoted-preferences block by a line-anchored marker scan: a
+ * marker counts only when it is the entire (trimmed) line. A raw indexOf
+ * would also match prose or fenced *mentions* of the marker text — or, before
+ * the parse/splice guards existed, marker text smuggled through a promoted
+ * rule — and mis-bound the block, leaking rule text outside it.
+ */
+function promotedBlockBounds(
+  lines: ReadonlyArray<string>,
+): PromotedBlockBounds | null {
+  const startIndex = lines.findIndex(
+    (line) => line.trim() === PROMOTED_PREFERENCES_START,
+  );
+  if (startIndex === -1) return null;
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
+    if ((lines[i] ?? "").trim() === PROMOTED_PREFERENCES_END) {
+      return Object.freeze({ startIndex, endIndex: i });
+    }
+  }
+  return null;
+}
+
 function promotedBlockLines(
   coreContent: string | null,
 ): ReadonlyArray<string> {
   if (coreContent === null) return Object.freeze([]);
-  const start = coreContent.indexOf(PROMOTED_PREFERENCES_START);
-  if (start === -1) return Object.freeze([]);
-  const bodyStart = start + PROMOTED_PREFERENCES_START.length;
-  const end = coreContent.indexOf(PROMOTED_PREFERENCES_END, bodyStart);
-  if (end === -1) return Object.freeze([]);
+  const lines = coreContent.split("\n");
+  const bounds = promotedBlockBounds(lines);
+  if (bounds === null) return Object.freeze([]);
   return Object.freeze(
-    coreContent
-      .slice(bodyStart, end)
-      .split("\n")
+    lines
+      .slice(bounds.startIndex + 1, bounds.endIndex)
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
   );
@@ -245,6 +291,12 @@ const STANDING_PREFERENCES_HEADING_RE = /^## Standing preferences[ \t]*$/m;
  * otherwise), and create the page itself when `coreContent` is null.
  * Idempotent: promoting the same (topic, rule, confidence) twice returns
  * byte-identical content.
+ *
+ * Marker-injection defense in depth (behind the parse-time ban in
+ * `parsePreferenceSignals`): HTML-comment delimiters are stripped from the
+ * rule before rendering, so rule text can never carry the block markers into
+ * core.md; and the existing block is bounded by the line-anchored scan in
+ * `promotedBlockBounds`, never a raw indexOf.
  */
 export function splicePromotedPreference(input: {
   readonly coreContent: string | null;
@@ -253,40 +305,55 @@ export function splicePromotedPreference(input: {
   readonly confidence: number;
 }): string {
   const content = input.coreContent ?? CORE_SKELETON;
-  const entry = renderPromotedLine(input);
+  const rule = stripHtmlCommentDelimiters(input.rule);
+  const entry = renderPromotedLine({
+    topic: input.topic,
+    rule,
+    confidence: input.confidence,
+  });
 
-  const existing = promotedBlockLines(content);
-  const hasBlock =
-    content.includes(PROMOTED_PREFERENCES_START) &&
-    content.indexOf(
-      PROMOTED_PREFERENCES_END,
-      content.indexOf(PROMOTED_PREFERENCES_START),
-    ) !== -1;
+  const contentLines = content.split("\n");
+  const bounds = promotedBlockBounds(contentLines);
 
-  const kept = existing.filter(
+  const kept = promotedBlockLines(content).filter(
     (line) => PROMOTED_LINE_RE.exec(line)?.[1] !== input.topic,
   );
-  const lines = [...kept, entry].sort((a, b) => a.localeCompare(b));
-  const block = [
+  const blockLines = [
     PROMOTED_PREFERENCES_START,
-    ...lines,
+    ...[...kept, entry].sort((a, b) => a.localeCompare(b)),
     PROMOTED_PREFERENCES_END,
-  ].join("\n");
+  ];
 
-  if (hasBlock) {
-    const start = content.indexOf(PROMOTED_PREFERENCES_START);
-    const end =
-      content.indexOf(PROMOTED_PREFERENCES_END, start) +
-      PROMOTED_PREFERENCES_END.length;
-    return `${content.slice(0, start)}${block}${content.slice(end)}`;
+  if (bounds !== null) {
+    return [
+      ...contentLines.slice(0, bounds.startIndex),
+      ...blockLines,
+      ...contentLines.slice(bounds.endIndex + 1),
+    ].join("\n");
   }
 
+  const block = blockLines.join("\n");
   const heading = STANDING_PREFERENCES_HEADING_RE.exec(content);
   if (heading !== null && heading.index !== undefined) {
     const insertAt = heading.index + heading[0].length;
     return `${content.slice(0, insertAt)}\n\n${block}${content.slice(insertAt)}`;
   }
   return `${content.replace(/\s+$/, "")}\n\n${block}\n`;
+}
+
+/**
+ * Strip the block markers and any leftover `<!--` / `-->` delimiters from
+ * rule text, re-collapsing the whitespace. Pure sanitization — the rendered
+ * entry can never carry comment syntax.
+ */
+function stripHtmlCommentDelimiters(text: string): string {
+  if (!containsHtmlCommentDelimiter(text)) return text;
+  return text
+    .replaceAll(PROMOTED_PREFERENCES_START, " ")
+    .replaceAll(PROMOTED_PREFERENCES_END, " ")
+    .replace(/<!--|-->/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ----- Topic aggregation (the counter + the promotion gate) -----------------
