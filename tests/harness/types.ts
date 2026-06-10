@@ -450,6 +450,19 @@ export interface Harness {
   userDelete(paths: ReadonlyArray<string>): Promise<void>;
   /** Checkout a ref. */
   userCheckout(ref: string): Promise<void>;
+  /**
+   * Rewrite the current branch ref to `to` without engine involvement —
+   * the harness equivalent of a user running `git reset --hard <to>` (or
+   * mirroring a force-push). Marks the scenario as having an expected
+   * user-initiated divergence so the `ADOPTED_REF_IS_ANCESTOR_OF_HEAD`
+   * always-true invariant tolerates the diverged window; the engine must
+   * still refuse to follow the rewrite (that refusal is what
+   * divergence scenarios assert).
+   */
+  userRewriteBranch(to: string): Promise<void>;
+  /** True once `userRewriteBranch` ran in this scenario. Consumed by the
+   *  always-true runner to scope expected divergence. */
+  readonly userRewroteHistory: boolean;
 
   // ----- Daemon / engine moves -----
   /** One drift-detect + adopt cycle. Equivalent to `dome sync` once. */

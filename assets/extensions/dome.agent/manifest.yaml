@@ -104,7 +104,7 @@ processors:
     module: processors/consolidate.ts
 
   - id: dome.agent.brief
-    version: 0.1.3
+    version: 0.1.4
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
@@ -253,7 +253,7 @@ processors:
     module: processors/preference-promotion.ts
 
   - id: dome.agent.preference-promotion-answer
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: answer

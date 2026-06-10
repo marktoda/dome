@@ -22,7 +22,7 @@ refs/heads/main                  user/client/agent source branch
 refs/dome/adopted/main           latest fully adopted semantic state for `main`
 ```
 
-One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses. In v1.0 the operator resolves manually after inspecting both sides of the rewritten history; a first-class force-advance recovery flow is deferred. See [[wiki/gotchas/adopted-ref-divergence]].
+One ref per source branch. Fast-forward-only advance: if HEAD's ancestry no longer contains the current adopted commit (force-push, hard-reset, rebase), `dome sync` refuses and `dome serve` pauses adoption (one transition log, then quiet re-checks each poll). The `adopted-ref.diverged` health finding carries both SHAs plus the orphaned-commit count and names the recovery verb: `dome reanchor` explicitly accepts the rewritten HEAD after backing up the old adopted SHA under `refs/dome/backup/`. See [[wiki/gotchas/adopted-ref-divergence]] and [[wiki/specs/cli]] §"`dome reanchor`".
 
 Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
 
@@ -191,7 +191,7 @@ Output (`--json`):
 
 Garden-phase scheduled-trigger processors run after a successful top-level adoption attempt. Scheduled garden PatchEffects must re-enter adoption as garden sub-Proposals; they do not mutate the adopted candidate directly. View processors are command-driven in v1.
 
-The `--force-advance` flag is **designed-for, not shipped in v1.0**. The adopted-ref's fast-forward-only check is in place both at drift detection and at `setAdoptedRef`, but the user-facing bypass lands only when the adopted-ref-divergence recovery flow is wired end to end. Until then, a divergent HEAD surfaces as an early compiler-host refusal and the operator resolves manually: inspect both sides of the rewrite, then either restore the intended branch history (for example with `git reset --hard <adopted-ref>`) or intentionally move the adopted ref only after confirming the new HEAD is the intended trunk.
+There is no `--force-advance` flag on `dome sync`. The adopted-ref's fast-forward-only check is in place both at drift detection and at `setAdoptedRef`; a divergent HEAD surfaces as an early compiler-host refusal. The user-facing bypass is the dedicated recovery verb `dome reanchor` ([[wiki/specs/cli]] §"`dome reanchor`"): inspect both sides of the rewrite, then either restore the intended branch history (`git reflog` / `git reset --hard`) or run `dome reanchor` to accept the new HEAD — it refuses when the vault is not diverged and records the old adopted SHA under `refs/dome/backup/` before moving.
 
 The CLI `dome reconcile` shipped in v0.5+phase1+phase3 as a deprecated alias for `dome sync`. **The alias is retired in v1.** Callers that still invoke `dome reconcile` see "unknown command" and a one-line pointer to `dome sync`.
 

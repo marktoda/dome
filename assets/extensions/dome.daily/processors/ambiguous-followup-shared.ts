@@ -1,12 +1,21 @@
+import {
+  findGeneratedBlock,
+  generatedBlockMarkers,
+} from "../../../../src/core/generated-block";
+
 export const AMBIGUOUS_FOLLOWUP_QUESTION_PREFIX =
   "dome.daily.ambiguous-followup:";
 
 export const AMBIGUOUS_FOLLOWUP_OPTIONS = Object.freeze(["track", "ignore"]);
 
-export const TRACKED_FOLLOWUPS_START =
-  "<!-- dome.daily:tracked-followups:start -->";
-export const TRACKED_FOLLOWUPS_END =
-  "<!-- dome.daily:tracked-followups:end -->";
+const TRACKED_FOLLOWUPS_OWNER = "dome.daily";
+const TRACKED_FOLLOWUPS_BLOCK = "tracked-followups";
+const TRACKED_FOLLOWUPS_MARKERS = generatedBlockMarkers(
+  TRACKED_FOLLOWUPS_OWNER,
+  TRACKED_FOLLOWUPS_BLOCK,
+);
+export const TRACKED_FOLLOWUPS_START = TRACKED_FOLLOWUPS_MARKERS.start;
+export const TRACKED_FOLLOWUPS_END = TRACKED_FOLLOWUPS_MARKERS.end;
 
 export type AmbiguousFollowupAnswer = "track" | "ignore";
 
@@ -59,14 +68,19 @@ export function insertTrackedFollowup(input: {
     return input.content;
   }
 
-  const lines = input.content.split(/\r?\n/);
-  const start = lines.indexOf(TRACKED_FOLLOWUPS_START);
-  const end = lines.indexOf(TRACKED_FOLLOWUPS_END);
-  if (start >= 0 && end > start) {
+  // Line-anchored bound via the core grammar primitive: the new follow-up
+  // line is inserted just above the block's end-marker line.
+  const { range } = findGeneratedBlock(
+    input.content,
+    TRACKED_FOLLOWUPS_OWNER,
+    TRACKED_FOLLOWUPS_BLOCK,
+  );
+  if (range !== null) {
+    const lines = input.content.split(/\r?\n/);
     const next = [
-      ...lines.slice(0, end),
+      ...lines.slice(0, range.endLine - 1),
       line,
-      ...lines.slice(end),
+      ...lines.slice(range.endLine - 1),
     ];
     return next.join("\n");
   }

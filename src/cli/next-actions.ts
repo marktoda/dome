@@ -23,7 +23,6 @@ const SYNC_REASONS = Object.freeze([
   "outbox_pending",
 ]);
 const CHECK_REASONS = Object.freeze([
-  "adopted_ref_diverged",
   "pending_runs",
   "failed_runs",
   "diagnostics",
@@ -84,10 +83,33 @@ export function nextActionsForStatus(
       "or not model-ready; inspect dome.agent, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
   });
+  pushAction(out, attention, ["adopted_ref_diverged"], {
+    command: "dome reanchor",
+    description:
+      "The branch history was rewritten under the adopted ref. Inspect " +
+      "both sides (git log --oneline HEAD..<adopted>), then run dome " +
+      "reanchor to accept the rewritten HEAD (the old adopted SHA is " +
+      "backed up under refs/dome/backup/), or restore the prior history " +
+      "via git reflog.",
+  });
   pushAction(out, attention, ["serve_stale"], {
     command: "dome serve",
     description:
       "Restart the foreground compiler host so it can refresh the stale serve heartbeat.",
+  });
+  pushAction(out, attention, ["service_not_loaded"], {
+    command: "dome restart",
+    description:
+      "The vault's launchd service plist is installed but the service is " +
+      "not loaded; restart it from the existing plist (bootout + bootstrap; " +
+      "--env entries preserved).",
+  });
+  pushAction(out, attention, ["model_provider_unreachable"], {
+    command: "dome doctor --json",
+    description:
+      "The last model-provider probe failed; re-probe and follow the " +
+      "model.provider-unreachable finding's recovery to fix the provider " +
+      "command or its environment.",
   });
   const syncReasons = SYNC_REASONS.filter((reason) =>
     attention.includes(reason),
@@ -228,7 +250,9 @@ export function nextActionsForSync(input: {
   pushAction(out, attention, ["adopted_ref_diverged"], {
     command: "git log --oneline --decorate --graph --all -20",
     description:
-      "Inspect rewritten branch history before choosing the adopted-ref recovery path.",
+      "Inspect the rewritten branch history, then run dome reanchor to " +
+      "accept the new HEAD (the old adopted SHA is backed up under " +
+      "refs/dome/backup/), or restore the prior history via git reflog.",
   });
 
   return Object.freeze(out);

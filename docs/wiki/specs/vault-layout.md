@@ -204,6 +204,25 @@ the review), which receives a narrow per-processor replacement grant — see
 [[wiki/specs/preferences]] §"The single-auto-writer exception". This is
 decision 4 of the [[memory]] plan ledger.
 
+**Known gap: `dome.markdown`'s default `patch.auto: ["**/*.md"]` still
+covers `core.md`** — deliberately, for now. Excluding it cannot produce the
+quiet "review proposal" the propose-only intent imagines, because no such
+surface exists in v1.0: the broker downgrade (auto→propose) requires an
+effective `patch.propose` grant dome.markdown does not declare, so a bare
+grant exclusion yields a *deny* — and in the adoption phase both a denied
+auto-patch and a downgraded propose-patch escalate to `severity: "block"`
+diagnostics (`capability-deny-patch` / `patch.propose.requires-review`) that
+refuse to adopt the human's own commit; worse, the broker verdict is
+per-effect while `normalize-frontmatter` batches every changed file into one
+PatchEffect, so a batch containing `core.md` would wedge the unrelated files
+too. In the garden phase the downgrade degrades the other way: the patch is
+*dropped* with only a diagnostic row (`garden.patch-propose-review-unavailable`
+— [[wiki/specs/effects]] §PatchEffect), leaving nothing reviewable or
+applyable. Since dome.markdown's writers are deterministic hygiene
+(frontmatter key order, date refresh, wikilink repair), not knowledge
+writers, the exclusion waits for the garden propose review queue — tracked
+as a follow-up in [[wiki/specs/preferences]] §"Follow-ups".
+
 `dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
 overwritten on re-run) — see [[wiki/specs/cli]] §"dome init".
 

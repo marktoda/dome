@@ -16,6 +16,7 @@ import {
   type HealthReport,
   type ModelProviderProbeInput,
 } from "../../engine/health";
+import { writeModelProviderProbeCache } from "../../engine/model-provider-probe-cache";
 import { openVaultRuntime } from "../../engine/vault-runtime";
 import { formatJson } from "../format";
 import { formatSeverity } from "../human-output";
@@ -103,6 +104,14 @@ export async function runDoctor(
           cwd: runtime.path,
         }),
       };
+      // Persist the outcome (derived state, gitignored) so `dome status`
+      // can report last-known provider reachability without spawning the
+      // provider. Best-effort — the live result above is authoritative.
+      writeModelProviderProbeCache(runtime.path, {
+        command: modelProviderProbe.command,
+        probedAt: new Date(),
+        result: modelProviderProbe.result,
+      });
     }
 
     const report = await collectHealthReport({

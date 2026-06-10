@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import simplifyIndexes from "../../assets/extensions/dome.markdown/processors/simplify-indexes";
-import type { PatchEffect } from "../../src/core/effect";
+import type { DiagnosticEffect, PatchEffect } from "../../src/core/effect";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { commitOid } from "../../src/core/source-ref";
 import { makeProcessorContext } from "../../src/processors/context";
@@ -92,6 +92,59 @@ describe("dome.markdown.simplify-indexes", () => {
     expect(change.content).toContain(
       "<!-- dome:index:end -->\n\n## Notes",
     );
+  });
+
+  test("surfaces marker anomalies as info diagnostics while splicing only the first pair", async () => {
+    const effects = await runSimplifyIndexes({
+      "wiki/projects/index.md": [
+        "# Projects",
+        "",
+        "## Pages",
+        "",
+        "<!-- dome:index:start -->",
+        "- [[wiki/projects/old-project|Old Project]]",
+        "<!-- dome:index:end -->",
+        "",
+        "<!-- dome:index:start -->",
+        "- smuggled duplicate pair",
+        "<!-- dome:index:end -->",
+        "",
+      ].join("\n"),
+      "wiki/projects/alpha.md": "# Alpha\n",
+      "wiki/projects/beta.md": "# Beta\n",
+    });
+
+    const diagnostics = effects.filter(
+      (effect): effect is DiagnosticEffect =>
+        typeof effect === "object" &&
+        effect !== null &&
+        (effect as { readonly kind?: string }).kind === "diagnostic",
+    );
+    expect(diagnostics).toHaveLength(2);
+    for (const diagnostic of diagnostics) {
+      expect(diagnostic.severity).toBe("info");
+      expect(diagnostic.code).toBe("dome.markdown.generated-block-anomaly");
+      expect(diagnostic.message).toContain("dome:index");
+      expect(diagnostic.message).toContain("wiki/projects/index.md");
+      expect(diagnostic.sourceRefs.map((ref) => String(ref.path))).toEqual([
+        "wiki/projects/index.md",
+      ]);
+    }
+    expect(diagnostics[0]?.message).toContain("extra-start");
+    expect(diagnostics[0]?.message).toContain("line 9");
+    expect(diagnostics[1]?.message).toContain("extra-end");
+    expect(diagnostics[1]?.message).toContain("line 11");
+    expect(diagnostics[0]?.sourceRefs[0]?.range).toEqual({
+      startLine: 9,
+      endLine: 9,
+    });
+
+    // The splice still lands, bounded by the first line-anchored pair; the
+    // smuggled pair stays verbatim (content, never a block).
+    const change = expectWriteChange(expectPatch(effects, 2), 0);
+    expect(change.content).toContain("- [[wiki/projects/alpha|Alpha]]");
+    expect(change.content).toContain("- smuggled duplicate pair");
+    expect(change.content).not.toContain("old-project");
   });
 
   test("skips generated areas, large indexes, and indexes without enough children", async () => {

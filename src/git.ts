@@ -883,6 +883,36 @@ export async function countCommitsSince(opts: {
 }
 
 /**
+ * Count commits reachable from `tip` but not from `exclude` — the native
+ * `git rev-list --count <exclude>..<tip>`. Unlike `countCommitsSince`, this
+ * works across divergent histories (neither side needs to be an ancestor of
+ * the other), which is exactly the adopted-ref-divergence case: the orphaned
+ * engine/human commits are `HEAD..adopted`. Returns null when the count
+ * cannot be derived (unknown OIDs, corrupt graph) — callers must treat null
+ * as "unknown", never as 0.
+ */
+export async function countCommitsOnlyIn(opts: {
+  path: string;
+  tip: string;
+  exclude: string;
+}): Promise<number | null> {
+  try {
+    const { root } = await resolveGitContext(opts.path);
+    const output = await runNativeGit([
+      "-C",
+      root,
+      "rev-list",
+      "--count",
+      `${opts.exclude}..${opts.tip}`,
+    ]);
+    const count = Number.parseInt(output.trim(), 10);
+    return Number.isFinite(count) && count >= 0 ? count : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the current branch name (the symbolic ref `HEAD` points to).
  * Returns null when HEAD is detached (commit-OID-only HEAD; no branch
  * association). Vaults with detached HEAD cannot use the adopted-ref

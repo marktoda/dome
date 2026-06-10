@@ -72,7 +72,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 ## Gotchas
 
-- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; sync refuses; recovery is currently manual via git history/reflog until the answer-mediated force-advance flow ships.
+- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; sync refuses, serve pauses, health raises one `adopted-ref.diverged` finding; recovery is `dome reanchor` (backs up the old SHA under refs/dome/backup/ first) or a git reflog restore.
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
 - [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Garden-LLM processors handle AI SDK v6 inference; revisit on next AI SDK major bump.
@@ -100,6 +100,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 Named semantic linter specs. Each names the rule, what it checks, and the target version.
 
 - [[wiki/linters/engine-is-sole-applier]] — *(v1)* `src/` outside `src/engine/`, `src/projections/`, `src/ledger/`, `src/outbox/` must not import mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git` write functions).
+- [[wiki/linters/generated-block-splice-guard]] — *(v1)* Every non-test file under `src/` and `assets/extensions/` whose source constructs a generated-block marker (`:start -->`/`:end -->` or a `dome.`-prefixed comment) must import the grammar primitive `src/core/generated-block.ts`.
 - [[wiki/linters/no-direct-mutation-outside-engine]] — *(v1)* Greps `src/` for mutation calls outside the engine boundary; complement to `engine-is-sole-applier`.
 - [[wiki/linters/no-retired-symbol-names]] — *(v1)* Every normative doc names no symbol in the retired-names allow-list (`Tool`, `Hook`, `Workflow`, `BoundToolSurface`, `runWorkflow`, `reconcile`, `wrapMutatingInvoke`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`, `HOOKS_CANNOT_BYPASS_TOOLS`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `PAGE_CREATION_REQUIRES_RECURRENCE`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, …).
 - [[wiki/linters/processor-purity]] — *(v1)* Files under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` must not import mutation modules.

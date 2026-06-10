@@ -81,7 +81,7 @@ processors:
     module: processors/repair-wikilinks.ts
 
   - id: dome.markdown.simplify-indexes
-    version: 0.1.0
+    version: 0.1.1
     phase: garden
     triggers:
       - kind: schedule

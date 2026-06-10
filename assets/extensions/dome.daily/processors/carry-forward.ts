@@ -11,6 +11,7 @@ import {
   type Effect,
   type FileChangeInput,
 } from "../../../../src/core/effect";
+import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -22,6 +23,7 @@ import {
   collectAttentionDiscounts,
 } from "./attention-shared";
 import {
+  DAILY_GENERATED_BLOCKS,
   dailyPathSettings,
   dailyPath,
   dailyStartContextSection,
@@ -54,6 +56,19 @@ const carryForward = defineProcessorImplementation({
     const targetPath = dailyPath(targetDate, settings);
     const content = await ctx.snapshot.readFile(targetPath);
     if (content === null) return [];
+
+    // Marker anomalies in the (human-editable) daily note — smuggled
+    // duplicate pairs, half-open markers — are ignored by the line-anchored
+    // splice below but surfaced as info diagnostics so the attempt is
+    // visible (dedup at the diagnostics sink keeps re-runs quiet).
+    const anomalyDiagnostics = generatedBlockAnomalyDiagnostics({
+      content,
+      path: targetPath,
+      code: "dome.daily.generated-block-anomaly",
+      blocks: DAILY_GENERATED_BLOCKS,
+      sourceRef: (path, range) => ctx.sourceRef(path, range),
+    });
+
     const startContext = await collectStartContext({
       ctx,
       targetDate,
@@ -95,7 +110,7 @@ const carryForward = defineProcessorImplementation({
         settledItems: targetSettledItems,
       }),
     });
-    if (nextContent === content) return [];
+    if (nextContent === content) return Object.freeze([...anomalyDiagnostics]);
 
     const change: FileChangeInput = {
       kind: "write",
@@ -104,6 +119,7 @@ const carryForward = defineProcessorImplementation({
     };
 
     return [
+      ...anomalyDiagnostics,
       patchEffect({
         mode: "auto",
         changes: [change],

@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-10
 sources:
   - "[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"
 coverage: off-matrix
@@ -11,7 +11,7 @@ severity: medium
 
 # adopted-ref-divergence
 
-**Symptom:** After a force-push, hard-reset, or rebase that rewrites the current branch's history, `refs/dome/adopted/<branch>` points at a commit no longer in HEAD's ancestry. `dome sync` refuses to advance with the error "adopted ref is not an ancestor of HEAD"; `dome status` surfaces the divergence with `sync diverged` and `adopted_diverged: true` in JSON.
+**Symptom:** After a force-push, hard-reset, or rebase that rewrites the current branch's history, `refs/dome/adopted/<branch>` points at a commit no longer in HEAD's ancestry. `dome sync` refuses to advance with the error "adopted ref is not an ancestor of HEAD"; `dome status` surfaces the divergence with `sync diverged`, `adopted_diverged: true` in JSON, and the `adopted_ref_diverged` attention reason; `dome doctor` / `dome check` raise one idempotent `adopted-ref.diverged` error finding carrying both SHAs and the count of orphaned (no-longer-reachable) adopted-side commits; `dome serve` logs the divergence once on the transition, pauses adoption, and keeps re-checking each poll without log spam.
 
 **Severity:** Medium. The vault is not corrupted — every markdown file is still readable, every git commit is still in place, every wikilink still resolves — but Dome's "what is the latest trusted state" cursor is now unreliable for queries until the user resolves the divergence. Until resolution, `dome status` reports divergence, `dome sync` refuses before constructing a Proposal, `dome serve` pauses adoption, and downstream tooling that queries the adopted ref sees stale data.
 
@@ -33,12 +33,21 @@ severity: medium
    ```
    The two-way diff shows the rewritten work. If the new HEAD is the intended trunk (the common case after a `git reset --hard origin/main` or `git pull --rebase`), proceed to step 2. If the rewrite was unintentional, proceed to step 3.
 
-2. **Accept the new HEAD as the adopted ref's new target.**
-
-   This is the intended v1.1 recovery flow, but the user-facing
-   `dome sync --force-advance` flag is not shipped in v1.0. Until it lands,
-   resolve manually by restoring the intended branch history or updating the
-   adopted ref only after confirming the new HEAD is the intended trunk.
+2. **Accept the new HEAD as the adopted ref's new target with `dome reanchor`.**
+   ```bash
+   cd ~/vaults/work
+   dome reanchor                            # re-anchor at the current HEAD
+   dome reanchor --to <sha>                 # or at an ancestor of HEAD
+   ```
+   `dome reanchor` ([[wiki/specs/cli]] §"`dome reanchor`") is the explicit
+   recovery verb: it **refuses when the vault is not diverged** (exit 64),
+   records the old adopted SHA in its output **and** in a backup ref
+   `refs/dome/backup/adopted-<timestamp>` before moving (so the orphaned
+   engine/human commits stay reachable and the move is reversible), then
+   advances the adopted ref and runs one normal compiler tick so adoption
+   resumes immediately. There is deliberately no `dome sync --force-advance`
+   flag — the routine catch-up command can never be scripted into silently
+   following a rewrite.
 
 3. **Restore the prior HEAD via `git reflog`.**
    ```bash
@@ -51,7 +60,7 @@ severity: medium
 
 **Why the structural fence:** Without the fast-forward check, a force-push could silently move adopted to a commit that no longer carries the engine-closure work the prior adopted commit had. Future `dome sync` runs would re-do work that was already done. Idempotency saves deterministic processors in practice, but the diagnostic saves the user from confusion and from running expensive model-backed processors redundantly. The structural fence exists twice: `detectDrift` refuses divergent histories before adoption/branch materialization can start, and `setAdoptedRef` keeps the write side fast-forward-only. The internal `forceAdvance: true` opt-out is explicit and named.
 
-**Why NOT silently force-advance:** A silent force-advance is wrong for the unintentional-rewrite case — the user wanted to keep their prior history, the force-advance would lose it. The opt-in flag makes the user assert "I know the rewrite was intentional; advance anyway." The default-refuse posture is safer.
+**Why NOT silently force-advance:** A silent force-advance is wrong for the unintentional-rewrite case — the user wanted to keep their prior history, the force-advance would lose it. The dedicated `dome reanchor` verb makes the user assert "I know the rewrite was intentional; advance anyway," refuses on a non-diverged vault so it cannot become a habit, and writes the `refs/dome/backup/` ref first so even an intentional move stays reversible. The default-refuse posture is safer.
 
 **Related:**
 

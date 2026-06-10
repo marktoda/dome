@@ -5,21 +5,54 @@ import {
   hasBlockAnchor,
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
+import {
+  findGeneratedBlock,
+  generatedBlockMarkers,
+} from "../../../../src/core/generated-block";
 
 const CARRY_FORWARD_RE =
   /\s+\(from \[\[([^\]\n]*\d{4}-\d{2}-\d{2})(?:\.md)?\]\]\)\s*$/;
 const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
 
-export const CARRIED_FORWARD_START =
-  "<!-- dome.daily:carried-forward:start -->";
-export const CARRIED_FORWARD_END =
-  "<!-- dome.daily:carried-forward:end -->";
-export const START_CONTEXT_START =
-  "<!-- dome.daily:start-context:start -->";
-export const START_CONTEXT_END =
-  "<!-- dome.daily:start-context:end -->";
-export const OPEN_LOOPS_START = "<!-- dome.daily:open-loops:start -->";
-export const OPEN_LOOPS_END = "<!-- dome.daily:open-loops:end -->";
+// dome.daily's generated blocks, rendered from the core grammar primitive —
+// the only sanctioned marker implementation (see
+// [[wiki/linters/generated-block-splice-guard]]).
+const DAILY_OWNER = "dome.daily";
+const CARRIED_FORWARD_BLOCK = "carried-forward";
+const START_CONTEXT_BLOCK = "start-context";
+const OPEN_LOOPS_BLOCK = "open-loops";
+
+const CARRIED_FORWARD_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  CARRIED_FORWARD_BLOCK,
+);
+const START_CONTEXT_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  START_CONTEXT_BLOCK,
+);
+const OPEN_LOOPS_MARKERS = generatedBlockMarkers(DAILY_OWNER, OPEN_LOOPS_BLOCK);
+
+export const CARRIED_FORWARD_START = CARRIED_FORWARD_MARKERS.start;
+export const CARRIED_FORWARD_END = CARRIED_FORWARD_MARKERS.end;
+export const START_CONTEXT_START = START_CONTEXT_MARKERS.start;
+export const START_CONTEXT_END = START_CONTEXT_MARKERS.end;
+export const OPEN_LOOPS_START = OPEN_LOOPS_MARKERS.start;
+export const OPEN_LOOPS_END = OPEN_LOOPS_MARKERS.end;
+
+/**
+ * The dome.daily generated blocks as `(owner, block)` anomaly-scan targets —
+ * what splice call sites feed `generatedBlockAnomalyDiagnostics` so smuggled
+ * duplicate pairs / half-open markers in a daily note surface as info
+ * diagnostics instead of staying invisible.
+ */
+export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
+  readonly owner: string;
+  readonly block: string;
+}> = Object.freeze([
+  Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+]);
 
 export type DailyDate = {
   readonly yyyy: string;
@@ -1101,30 +1134,32 @@ export function isValidDailyDate(date: DailyDate): boolean {
   );
 }
 
+/**
+ * Bound a dome.daily generated block via the core grammar primitive's
+ * line-anchored scan (a marker counts only when the entire trimmed line is
+ * the marker — prose/fence mentions and mid-line smuggles never bound a
+ * block; the historical indexOf bounding here was the weaker form of the
+ * marker-injection bug fixed in the brief and preferences splices).
+ */
+function dailyBlockRange(
+  content: string,
+  block: string,
+): { readonly start: number; readonly end: number } | null {
+  const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+  if (range === null) return null;
+  return Object.freeze({ start: range.start, end: range.end });
+}
+
 function carriedForwardBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
-  const start = content.indexOf(CARRIED_FORWARD_START);
-  if (start < 0) return null;
-  const endMarker = content.indexOf(CARRIED_FORWARD_END, start);
-  if (endMarker < 0) return null;
-  return Object.freeze({
-    start,
-    end: endMarker + CARRIED_FORWARD_END.length,
-  });
+  return dailyBlockRange(content, CARRIED_FORWARD_BLOCK);
 }
 
 function openLoopsBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
-  const start = content.indexOf(OPEN_LOOPS_START);
-  if (start < 0) return null;
-  const endMarker = content.indexOf(OPEN_LOOPS_END, start);
-  if (endMarker < 0) return null;
-  return Object.freeze({
-    start,
-    end: endMarker + OPEN_LOOPS_END.length,
-  });
+  return dailyBlockRange(content, OPEN_LOOPS_BLOCK);
 }
 
 function openLoopsBlockLineRange(
@@ -1233,20 +1268,15 @@ function dailyGeneratedBlockLineRanges(
 ): ReadonlyArray<{ readonly start: number; readonly end: number }> {
   const ranges: { start: number; end: number }[] = [];
   for (
-    const marker of [
-      [START_CONTEXT_START, START_CONTEXT_END],
-      [OPEN_LOOPS_START, OPEN_LOOPS_END],
-      [CARRIED_FORWARD_START, CARRIED_FORWARD_END],
+    const block of [
+      START_CONTEXT_BLOCK,
+      OPEN_LOOPS_BLOCK,
+      CARRIED_FORWARD_BLOCK,
     ] as const
   ) {
-    const start = content.indexOf(marker[0]);
-    if (start < 0) continue;
-    const endMarker = content.indexOf(marker[1], start);
-    if (endMarker < 0) continue;
-    ranges.push({
-      start: lineNumberAtOffset(content, start),
-      end: lineNumberAtOffset(content, endMarker + marker[1].length),
-    });
+    const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+    if (range === null) continue;
+    ranges.push({ start: range.startLine, end: range.endLine });
   }
   return Object.freeze(ranges.map((range) => Object.freeze(range)));
 }
@@ -1359,14 +1389,7 @@ function insertDailyStartContextSection(input: {
 function startContextBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
-  const start = content.indexOf(START_CONTEXT_START);
-  if (start < 0) return null;
-  const endMarker = content.indexOf(START_CONTEXT_END, start);
-  if (endMarker < 0) return null;
-  return Object.freeze({
-    start,
-    end: endMarker + START_CONTEXT_END.length,
-  });
+  return dailyBlockRange(content, START_CONTEXT_BLOCK);
 }
 
 function extractSectionItems(
