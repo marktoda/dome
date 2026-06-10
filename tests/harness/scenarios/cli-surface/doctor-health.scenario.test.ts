@@ -376,6 +376,8 @@ scenario(
           "        - \"inbox/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
+          "        - \"preferences/signals.md\"",
+          "        - \"core.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
@@ -383,6 +385,13 @@ scenario(
           "        - \"log.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
+          "        - \"preferences/signals.md\"",
+          // The deterministic preference counter declares graph.write
+          // (dome.preference.*); granting the kind keeps this scenario's
+          // capabilityGrantGaps at 0 so the model-provider finding is the
+          // only one.
+          "      graph.write:",
+          "        - \"dome.preference.*\"",
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
           "      question.ask: true",

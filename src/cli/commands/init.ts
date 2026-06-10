@@ -501,6 +501,15 @@ function refreshFirstPartyDefaultConfig(
       grant[key] = cloneYamlValue(defaultGrant[key]);
       changed = true;
     }
+
+    // Per-processor replacement grants (e.g. the preference-promotion
+    // answer handler's narrow core.md write) are filled wholesale when the
+    // vault has no processors block; an existing block is user-owned.
+    const defaultProcessors = recordFromYaml(defaultExtension.processors);
+    if (defaultProcessors !== null && !hasOwn(extension, "processors")) {
+      extension.processors = cloneYamlValue(defaultProcessors);
+      changed = true;
+    }
   }
   return changed;
 }
@@ -704,8 +713,10 @@ only the always-relevant summary here.
 
 This page is propose-only for Dome: agents read it but never auto-write
 it. Edit it yourself, or accept a Dome question that proposes a change.
-A machine-managed generated block for promoted preferences is planned;
-leave any marker-delimited block alone if one appears.
+One exception: when you answer "promote" to a preference-promotion
+question, Dome maintains a marker-delimited promoted-preferences block
+under Standing preferences. Leave that block's markers alone; everything
+outside them is yours.
 -->
 
 ## Who I am
@@ -865,6 +876,14 @@ fields.
   notes directly under \`wiki/\` or \`notes/\`.
 - \`inbox/processed/\` is where \`dome.agent\` archives captures it has
   ingested and integrated into generated wiki material.
+- \`preferences/signals.md\` records explicit owner corrections of agent
+  behavior (filing location, naming, formatting, scope) as append-only dated
+  lines: \`- YYYY-MM-DD + <topic-slug>:: <the corrected rule, one line>
+  (source: [[<page>]])\` (\`-\` for evidence against a previously-signaled
+  rule; reuse existing topic slugs). When the user corrects how the vault
+  should be maintained, append one signal line. Dome tallies signals and asks
+  the owner before promoting a rule into \`core.md\` — never write \`core.md\`
+  or its promoted-preferences block yourself.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
 - \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
   run ledger. Do not edit or commit it.
