@@ -14,6 +14,10 @@
 
 import { globMatch } from "../../../../src/engine/glob-cache";
 import type { AgentRunState, AgentTool } from "./agent-loop";
+import {
+  isValidSignalsAppend,
+  PREFERENCE_SIGNALS_PATH,
+} from "./preferences-shared";
 
 export type WritablePaths = ReadonlyArray<string>;
 
@@ -24,6 +28,47 @@ export function writeDenial(
 ): string | null {
   if (writable.some((pattern) => globMatch(pattern, path))) return null;
   return `error: ${path} is outside this agent's writable paths (${writable.join(", ")}); pick a path matching one of those globs.`;
+}
+
+/**
+ * A page-level write rule the write-capable tools consult AFTER the glob
+ * grant check. Returns a denial message (surfaced to the model as an
+ * ordinary tool error, self-correctable mid-loop) or null to allow.
+ * `nextContent === null` means the tool wants to delete the page.
+ */
+export type PageWriteGuard = (input: {
+  readonly path: string;
+  readonly nextContent: string | null;
+  readonly state: AgentRunState;
+}) => Promise<string | null>;
+
+/**
+ * The signals page is append-only at the tool seam: a write must keep the
+ * existing content byte-for-byte and append well-formed signal lines, and
+ * the page can never be deleted — otherwise a model could rewrite or drop
+ * the owner's rejection tombstones (wiki/specs/preferences.md §"Signal
+ * grammar"). Mirrors the brief processor's post-run splice guard so ingest
+ * and consolidate enforce the same rule at tool time.
+ */
+export function signalsAppendOnlyGuard(reader: VaultReader): PageWriteGuard {
+  return async ({ path, nextContent, state }) => {
+    if (path !== PREFERENCE_SIGNALS_PATH) return null;
+    if (nextContent === null) {
+      return `error: ${PREFERENCE_SIGNALS_PATH} is append-only (the owner's preference history and rejection tombstones live here); it cannot be deleted.`;
+    }
+    const before = await currentContent(path, state, reader);
+    // A byte-identical rewrite is a harmless no-op, not a violation.
+    if (before !== null && nextContent === before) return null;
+    if (!isValidSignalsAppend({ before, after: nextContent })) {
+      return (
+        `error: ${PREFERENCE_SIGNALS_PATH} is append-only; keep the existing ` +
+        "content unchanged and append well-formed signal lines " +
+        "(`- YYYY-MM-DD [+|-] <topic-slug>:: <rule text>`). Rewrites, " +
+        "deletions, and prose are rejected."
+      );
+    }
+    return null;
+  };
 }
 
 export type VaultReader = {
@@ -118,7 +163,10 @@ export function searchVaultTool(reader: VaultReader): AgentTool {
   };
 }
 
-export function writePageTool(writable: WritablePaths): AgentTool {
+export function writePageTool(
+  writable: WritablePaths,
+  guard?: PageWriteGuard,
+): AgentTool {
   return {
     schema: {
       name: "writePage",
@@ -129,6 +177,8 @@ export function writePageTool(writable: WritablePaths): AgentTool {
       const { path, content } = input as { path: string; content: string };
       const denial = writeDenial(path, writable);
       if (denial !== null) return denial;
+      const guardDenial = await guard?.({ path, nextContent: content, state });
+      if (guardDenial !== undefined && guardDenial !== null) return guardDenial;
       state.edits.set(path, { kind: "write", path, content });
       return `wrote ${path}`;
     },
@@ -138,6 +188,7 @@ export function writePageTool(writable: WritablePaths): AgentTool {
 export function appendToPageTool(
   reader: VaultReader,
   writable: WritablePaths,
+  guard?: PageWriteGuard,
 ): AgentTool {
   return {
     schema: {
@@ -154,6 +205,8 @@ export function appendToPageTool(
         existing === null || existing.trim() === ""
           ? content
           : `${existing.replace(/\s+$/, "")}\n${content}`;
+      const guardDenial = await guard?.({ path, nextContent: next, state });
+      if (guardDenial !== undefined && guardDenial !== null) return guardDenial;
       state.edits.set(path, { kind: "write", path, content: next });
       return `appended to ${path}`;
     },
@@ -189,7 +242,10 @@ export function archiveSourceTool(
   };
 }
 
-export function deletePageTool(writable: WritablePaths): AgentTool {
+export function deletePageTool(
+  writable: WritablePaths,
+  guard?: PageWriteGuard,
+): AgentTool {
   return {
     schema: {
       name: "deletePage",
@@ -200,6 +256,8 @@ export function deletePageTool(writable: WritablePaths): AgentTool {
       const { path } = input as { path: string };
       const denial = writeDenial(path, writable);
       if (denial !== null) return denial;
+      const guardDenial = await guard?.({ path, nextContent: null, state });
+      if (guardDenial !== undefined && guardDenial !== null) return guardDenial;
       state.edits.set(path, { kind: "delete", path });
       return `deleted ${path}`;
     },

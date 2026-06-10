@@ -68,9 +68,14 @@ marker-injection gotcha).
   agent behavior* (filing location, naming, formatting, scope), append a
   signal line. This is an ordinary write within the agent's grant
   (`preferences/signals.md` is in each agent's `read` + `patch.auto`
-  declaration). The brief is special-cased: its splice guard admits a
-  signals-file edit only when it is an **append of well-formed signal lines**
-  (anything else is dropped as out-of-scope).
+  declaration), but the page is **append-only at every model seam**: ingest
+  and consolidate enforce it at tool time (`signalsAppendOnlyGuard` in
+  `vault-tools.ts` rejects any signals-page write that is not an append of
+  well-formed signal lines, and refuses deletion outright — the model sees an
+  ordinary tool error and self-corrects mid-loop), and the brief enforces the
+  same rule post-run in its splice guard (a non-append signals edit is
+  dropped as out-of-scope). Owner rejection tombstones can therefore never be
+  rewritten or deleted by a model.
 - **Foreground agents** (Claude Code et al.): the vault `AGENTS.md` template
   documents the same convention — append a signal line when the owner corrects
   vault-maintenance behavior.
