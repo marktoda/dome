@@ -116,8 +116,12 @@ import { basename } from "node:path";
 import { homedir } from "node:os";
 
 import { commitOid } from "../../core/source-ref";
-import { countCommitsSince, currentSha, isAncestor } from "../../git";
+import { currentSha } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
+import {
+  countPendingCommits,
+  isAdoptedDiverged,
+} from "../../engine/adoption-status";
 import {
   readServeHeartbeatStatus,
   type ServeHeartbeatStatus,
@@ -952,34 +956,6 @@ function formatBytes(bytes: number): string {
   const mib = kib / 1024;
   if (mib < 1024) return `${mib.toFixed(1)} MB`;
   return `${(mib / 1024).toFixed(1)} GB`;
-}
-
-async function countPendingCommits(opts: {
-  readonly vaultPath: string;
-  readonly head: string | null;
-  readonly adopted: string | null;
-}): Promise<number | null> {
-  if (opts.head === null) return null;
-  if (opts.adopted === null) return null;
-  return countCommitsSince({
-    path: opts.vaultPath,
-    ancestor: opts.adopted,
-    descendant: opts.head,
-  });
-}
-
-async function isAdoptedDiverged(opts: {
-  readonly vaultPath: string;
-  readonly head: string | null;
-  readonly adopted: string | null;
-}): Promise<boolean> {
-  if (opts.head === null || opts.adopted === null) return false;
-  if (opts.head === opts.adopted) return false;
-  return !(await isAncestor({
-    path: opts.vaultPath,
-    ancestor: opts.adopted,
-    descendant: opts.head,
-  }));
 }
 
 function formatPendingCommits(count: number | null): string {

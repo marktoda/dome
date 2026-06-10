@@ -152,6 +152,33 @@ export {
   type RunContext,
 } from "./run-context";
 
+// ----- The public Vault wrapper ----------------------------------------------
+//
+// `openVault(opts)` per [[wiki/specs/sdk-surface]] §"Vault surface": read +
+// engine control over one vault — query / readDocument / runView recall,
+// sync / getAdoptionStatus engine control, listQuestions / resolve decisions.
+// No write method ships here; writes stay ordinary git commits adopted by
+// `sync()` (PROPOSALS_ARE_THE_ONLY_WRITE_PATH).
+
+export {
+  openVault,
+  type Vault,
+  type OpenVaultOptions,
+  type OpenVaultError,
+  type QueryInput,
+  type QueryResult,
+  type AdoptedDocument,
+  type StructuredView,
+  type VaultViewResult,
+  type ResolveOutcome,
+  type ListQuestionsFilter,
+  type VaultSyncOptions,
+  type AdoptionStatus,
+  type CompilerHostTickResult,
+  type QuestionRecord,
+  type SearchDocumentResult,
+} from "./vault";
+
 // ----- Adopted-ref read surface ---------------------------------------------
 //
 // Per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]], the adopted-ref

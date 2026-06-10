@@ -59,6 +59,11 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "getCurrentBranch",
   "adoptedRefName",
 
+  // The public Vault wrapper ([[wiki/specs/sdk-surface]] §"Vault surface").
+  // Read + engine control only — the handle has no write method, and the
+  // wrapper module is engine-deps-only so the bundle-deps fence covers it.
+  "openVault",
+
 ]);
 
 const FORBIDDEN_RUNTIME_EXPORTS = new Set<string>([
