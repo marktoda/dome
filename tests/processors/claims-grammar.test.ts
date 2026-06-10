@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { claimsFromMarkdown } from "../../assets/extensions/dome.claims/processors/claims-shared";
+import {
+  claimAnchorId,
+  claimsFromMarkdown,
+  stampClaimAnchors,
+} from "../../assets/extensions/dome.claims/processors/claims-shared";
+import { parseBlockAnchor } from "../../src/core/block-anchor";
 
 describe("claimsFromMarkdown", () => {
   test("parses a bulleted claim line with anchor, as-of date, and wikilinks", () => {
@@ -69,5 +74,45 @@ describe("claimsFromMarkdown", () => {
 
   test("bold emphasis without a trailing colon is not a claim", () => {
     expect(claimsFromMarkdown("**Important** this is just emphasis\n")).toHaveLength(0);
+  });
+});
+
+describe("stampClaimAnchors anchor dedup", () => {
+  const PATH = "wiki/entities/probe.md";
+
+  test("inserting a same-key claim above an anchored one never duplicates ids", () => {
+    const first = stampClaimAnchors({ path: PATH, content: "- **Status:** one\n" })!;
+    const inserted = `- **Status:** zero\n${first}`;
+    const restamped = stampClaimAnchors({ path: PATH, content: inserted })!;
+    const ids = restamped
+      .split("\n")
+      .map((l) => parseBlockAnchor(l)?.id)
+      .filter((id): id is string => id !== undefined);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    // The pre-existing line keeps its original id.
+    expect(ids).toContain(claimAnchorId({ path: PATH, key: "Status", occurrence: 0 }));
+  });
+
+  test("a hand-authored non-claim anchor id is never reused", () => {
+    const collidingId = claimAnchorId({ path: PATH, key: "Status", occurrence: 0 });
+    const content = `some prose ^${collidingId}\n- **Status:** new\n`;
+    const stamped = stampClaimAnchors({ path: PATH, content })!;
+    const claimLine = stamped.split("\n")[1]!;
+    const id = parseBlockAnchor(claimLine)?.id;
+    expect(id).toBeDefined();
+    expect(id).not.toBe(collidingId);
+  });
+});
+
+describe("excludedLineFlags fence-length contract (via claimsFromMarkdown)", () => {
+  test("a four-backtick fence is not closed by an inner three-backtick line", () => {
+    const content = [
+      "````md",
+      "```",
+      "- **Level:** still inside the outer fence",
+      "````",
+    ].join("\n");
+    expect(claimsFromMarkdown(content)).toHaveLength(0);
   });
 });

@@ -63,13 +63,15 @@ export function claimsFromMarkdown(
 
 /**
  * Per-line exclusion flags for YAML frontmatter and fenced code blocks.
- * Fence open/close lines are themselves excluded; ``` and ~~~ fences must
- * close with their own marker.
+ * Fence open/close lines are themselves excluded. A closer must use the same
+ * character (`` ` `` or `~`) as the opener AND its run length must be >= the
+ * opener's run length — so a ````md (4-backtick) opener is never closed by an
+ * inner ``` (3-backtick) line.
  */
 function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
   const flags = new Array<boolean>(lines.length).fill(false);
   let inFrontmatter = lines[0]?.trim() === "---";
-  let fence: string | null = null;
+  let fence: { char: string; minLen: number } | null = null;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     if (inFrontmatter) {
@@ -77,15 +79,22 @@ function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
       if (i > 0 && line.trim() === "---") inFrontmatter = false;
       continue;
     }
-    const fenceMatch = /^[ ]{0,3}(```|~~~)/.exec(line);
+    const fenceMatch = /^[ ]{0,3}(`{3,}|~{3,})/.exec(line);
     if (fence !== null) {
       flags[i] = true;
-      if (fenceMatch !== null && fenceMatch[1] === fence) fence = null;
+      if (
+        fenceMatch !== null &&
+        fenceMatch[1] !== undefined &&
+        fenceMatch[1][0] === fence.char &&
+        fenceMatch[1].length >= fence.minLen
+      ) {
+        fence = null;
+      }
       continue;
     }
-    if (fenceMatch !== null) {
+    if (fenceMatch !== null && fenceMatch[1] !== undefined) {
       flags[i] = true;
-      fence = fenceMatch[1] ?? null;
+      fence = { char: fenceMatch[1][0]!, minLen: fenceMatch[1].length };
     }
   }
   return flags;
@@ -126,26 +135,52 @@ export function claimAnchorId(input: {
  * returning the rewritten document — or `null` when nothing needs stamping
  * (the idempotent fixed point). Occurrence counting includes already-anchored
  * claims so a later re-run assigns the same ids it would have on first sight.
+ *
+ * Deduplication: before the loop, all existing trailing block-anchor ids in
+ * the document are collected into a used-id set (ALL anchors, not just `^c…`,
+ * since any duplicate breaks Obsidian block refs). For each unanchored claim,
+ * the per-key occurrence counter is advanced until a candidate id is not
+ * already in the set, preventing collisions when same-key claims are inserted
+ * above pre-existing anchored ones or when a hand-authored anchor happens to
+ * share a computed id.
  */
 export function stampClaimAnchors(input: {
   readonly path: string;
   readonly content: string;
 }): string | null {
-  const lines = input.content.split(/\r?\n/);
+  const allLines = input.content.split(/\r?\n/);
+
+  // Collect every existing anchor id in the document into the used set.
+  const usedIds = new Set<string>();
+  for (const line of allLines) {
+    const parsed = parseBlockAnchor(line);
+    if (parsed !== null) usedIds.add(parsed.id);
+  }
+
+  const lines = allLines;
   const occurrences = new Map<string, number>();
   let changed = false;
   for (const claim of claimsFromMarkdown(input.content)) {
     const keyNorm = normalizeClaimKey(claim.key);
     const occurrence = occurrences.get(keyNorm) ?? 0;
-    occurrences.set(keyNorm, occurrence + 1);
-    if (claim.anchor !== null) continue;
+    if (claim.anchor !== null) {
+      // Already anchored: advance counter and skip stamping.
+      occurrences.set(keyNorm, occurrence + 1);
+      continue;
+    }
+    // Find the first unused id for this key, starting at the current counter.
+    let occ = occurrence;
+    let candidate = claimAnchorId({ path: input.path, key: claim.key, occurrence: occ });
+    while (usedIds.has(candidate)) {
+      occ += 1;
+      candidate = claimAnchorId({ path: input.path, key: claim.key, occurrence: occ });
+    }
+    usedIds.add(candidate);
+    occurrences.set(keyNorm, occ + 1);
     const idx = claim.line - 1;
     const line = lines[idx];
     if (line === undefined) continue;
-    lines[idx] = appendBlockAnchor(
-      line,
-      claimAnchorId({ path: input.path, key: claim.key, occurrence }),
-    );
+    lines[idx] = appendBlockAnchor(line, candidate);
     changed = true;
   }
   return changed ? lines.join("\n") : null;
