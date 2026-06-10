@@ -133,6 +133,11 @@ processors:
           # Preference-promotion questions ref signal lines, so the brief's
           # scoped questions batch needs this readable too.
           - "preferences/signals.md"
+          # Sweep ledger: the brief reads today's run section for the
+          # "Integrated overnight" digest block (deterministic, never model-
+          # written). Default path is sweep-ledger.md; a custom sweep_ledger_path
+          # additionally needs a matching vault read grant in .dome/config.yaml.
+          - "sweep-ledger.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
       # note (wiki/dailies default template or a notes/ daily_path override)
       # plus validated signal-line appends (the splice guard drops any

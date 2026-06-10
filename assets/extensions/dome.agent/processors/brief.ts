@@ -51,11 +51,13 @@ import {
 import { BRIEF_CHARTER } from "../lib/brief-charter";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import {
+  INTEGRATED_BLOCK,
   MEETINGS_BLOCK,
   QUESTIONS_BLOCK,
   YESTERDAY_BLOCK,
   extractBriefBlockBody,
   groundBriefBlockBody,
+  integratedBriefSection,
   parseCalendarDay,
   questionsBriefSection,
   replaceBriefBlock,
@@ -64,6 +66,10 @@ import {
   type BriefStaleLoop,
   type CalendarMeeting,
 } from "../lib/brief-shared";
+import {
+  parseSweepLedger,
+} from "../lib/sweep-ledger";
+import { sweepLedgerPath } from "./sweep";
 import { makeBriefTools } from "../lib/brief-tools";
 import {
   isValidSignalsAppend,
@@ -101,6 +107,19 @@ const brief = defineProcessorImplementation({
     const calendarContent = await ctx.snapshot.readFile(calendarPath);
     const meetings =
       calendarContent === null ? null : parseCalendarDay(calendarContent);
+
+    // Sweep ledger: read the advisory ledger and pull today's run rows for the
+    // "Integrated overnight" digest block. The ledger path is resolved via the
+    // same resolver as the sweep processor (no duplication). The brief fires at
+    // 05:30 the morning AFTER the 03:00 sweep; both run on the same calendar
+    // date (today), so the brief looks for a run section dated `today`.
+    const ledgerPath = sweepLedgerPath(ctx.extensionConfig).path;
+    const ledgerContent = await ctx.snapshot.readFile(ledgerPath);
+    const sweepLedger =
+      ledgerContent === null ? null : parseSweepLedger(ledgerContent);
+    const todayDateStr = formatDate(today);
+    const todayRun =
+      sweepLedger?.runs.find((r) => r.date === todayDateStr) ?? null;
 
     // Deterministic pre-run content: the existing daily (or the same skeleton
     // create-daily would render), with empty brief blocks ensured so the
@@ -289,6 +308,21 @@ const brief = defineProcessorImplementation({
       afterBlock: YESTERDAY_BLOCK,
     });
 
+    // Integrated overnight digest — deterministic, never model-written.
+    // Renders the sweep ledger rows for today's run: integrated + questioned
+    // bullets (no-op / failed rows are signal, not log — omitted). Spliced
+    // after the questions block so the owner sees decisions first, then the
+    // overnight integration summary. Block is omitted entirely when the ledger
+    // is absent or today's run has no renderable rows.
+    const integratedRows = todayRun?.rows ?? [];
+    composed = replaceBriefBlock({
+      content: composed,
+      markers: INTEGRATED_BLOCK,
+      section: integratedBriefSection(integratedRows),
+      heading: "Start Here",
+      afterBlock: QUESTIONS_BLOCK,
+    });
+
     // Marker anomalies — a smuggled duplicate pair in the model's proposed
     // content, a half-open pair hand-edited into the existing daily — are
     // inert (the line-anchored splice and the body sanitizer already
@@ -296,7 +330,12 @@ const brief = defineProcessorImplementation({
     // info diagnostic. Scanning both the model content (the ATTEMPT) and
     // the composed result (what persists) keeps both sides auditable;
     // duplicates dedupe locally by message and at the diagnostics sink.
-    const briefBlocks = [YESTERDAY_BLOCK, MEETINGS_BLOCK, QUESTIONS_BLOCK].map(
+    const briefBlocks = [
+      YESTERDAY_BLOCK,
+      MEETINGS_BLOCK,
+      QUESTIONS_BLOCK,
+      INTEGRATED_BLOCK,
+    ].map(
       (markers) => ({ owner: markers.owner, block: markers.block }),
     );
     const anomalyDiagnostics = new Map<string, Effect>();

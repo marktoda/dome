@@ -16,6 +16,7 @@ import {
   sanitizeGeneratedBlockBody,
   extractGeneratedBlockBody as extractGeneratedBlockBodyCore,
 } from "../../../../src/core/generated-block";
+import type { SweepSettlement } from "./sweep-ledger";
 
 import {
   ATTENTION_DISCOUNT_PREDICATE,
@@ -50,6 +51,7 @@ function briefBlock(block: string): BriefBlockMarkers {
 export const YESTERDAY_BLOCK: BriefBlockMarkers = briefBlock("yesterday");
 export const MEETINGS_BLOCK: BriefBlockMarkers = briefBlock("meetings");
 export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
+export const INTEGRATED_BLOCK: BriefBlockMarkers = briefBlock("integrated");
 
 export const BRIEF_YESTERDAY_START = YESTERDAY_BLOCK.start;
 export const BRIEF_YESTERDAY_END = YESTERDAY_BLOCK.end;
@@ -57,6 +59,8 @@ export const BRIEF_MEETINGS_START = MEETINGS_BLOCK.start;
 export const BRIEF_MEETINGS_END = MEETINGS_BLOCK.end;
 export const BRIEF_QUESTIONS_START = QUESTIONS_BLOCK.start;
 export const BRIEF_QUESTIONS_END = QUESTIONS_BLOCK.end;
+export const BRIEF_INTEGRATED_START = INTEGRATED_BLOCK.start;
+export const BRIEF_INTEGRATED_END = INTEGRATED_BLOCK.end;
 
 // ----- Calendar parsing (defensive — the file is untrusted input) -----------
 
@@ -370,4 +374,44 @@ export function staleLoopsTaskLines(
     ),
     "These have been surfaced repeatedly without action: compress them into a single stale-loops summary bullet in the yesterday block (cite the origin pages) or raise ONE askOwner question — do not repeat them at full prominence.",
   ]);
+}
+
+// ----- Overnight integration digest (deterministic) --------------------------
+
+/**
+ * Render the "Integrated overnight" generated block from the sweep ledger rows
+ * for today's run. Deterministic — never model-written; the block renders facts
+ * about what the 03:00 sweep already did. Rows rendered:
+ *   - `integrated` → `- [[<destination>]] ← [[<material>]]`
+ *   - `questioned` → `- ⚠ pending your answer: [[<destination>]] ← [[<material>]]`
+ *   - `no-op` and `failed` → omitted (signal, not log)
+ *
+ * Paths are stored without `.md` in the ledger (see sweep.ts `withoutMd`).
+ *
+ * Returns null when rows is empty (no block rendered — omission, not an empty
+ * section). The brief processor passes this directly to replaceBriefBlock:
+ * `section: null` removes any existing stale block.
+ */
+export function integratedBriefSection(
+  rows: ReadonlyArray<SweepSettlement>,
+): string | null {
+  const bullets: string[] = [];
+  for (const row of rows) {
+    if (row.disposition === "integrated") {
+      bullets.push(`- [[${row.destination}]] ← [[${row.material}]]`);
+    } else if (row.disposition === "questioned") {
+      bullets.push(
+        `- ⚠ pending your answer: [[${row.destination}]] ← [[${row.material}]]`,
+      );
+    }
+    // no-op and failed: omitted (signal, not log)
+  }
+  if (bullets.length === 0) return null;
+  const lines = [
+    INTEGRATED_BLOCK.start,
+    "### Integrated Overnight",
+    ...bullets,
+    INTEGRATED_BLOCK.end,
+  ];
+  return lines.join("\n");
 }

@@ -877,8 +877,10 @@ describe("parseCalendarDay (defensive)", () => {
 // ----- Stale-loops pre-run context (memory-quality M4) ------------------------
 
 import {
+  integratedBriefSection,
   staleLoopsFromFacts,
   staleLoopsTaskLines,
+  INTEGRATED_BLOCK,
 } from "../../../assets/extensions/dome.agent/lib/brief-shared";
 import type { FactEffect } from "../../../src/core/effect";
 
@@ -1051,5 +1053,239 @@ describe("brief stale-loops context", () => {
       }),
     );
     expect(seenTask[0]).not.toContain("Stale open loops");
+  });
+});
+
+// ----- integratedBriefSection (pure unit) ------------------------------------
+
+describe("integratedBriefSection (pure render helper)", () => {
+  test("renders integrated and questioned bullets; omits no-op and failed rows", () => {
+    const section = integratedBriefSection([
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/alice", disposition: "integrated" },
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/bob", disposition: "questioned" },
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/carol", disposition: "no-op" },
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/dave", disposition: "failed" },
+    ]);
+    expect(section).not.toBeNull();
+    expect(section).toContain("[[wiki/entities/alice]] ← [[wiki/dailies/2026-06-09]]");
+    expect(section).toContain("⚠ pending your answer: [[wiki/entities/bob]] ← [[wiki/dailies/2026-06-09]]");
+    expect(section).not.toContain("carol");
+    expect(section).not.toContain("dave");
+  });
+
+  test("returns null when all rows are no-op or failed (nothing renderable)", () => {
+    expect(
+      integratedBriefSection([
+        { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/x", disposition: "no-op" },
+        { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/y", disposition: "failed" },
+      ]),
+    ).toBeNull();
+  });
+
+  test("returns null for an empty rows array", () => {
+    expect(integratedBriefSection([])).toBeNull();
+  });
+
+  test("section is fenced with the correct INTEGRATED_BLOCK markers", () => {
+    const section = integratedBriefSection([
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/x", disposition: "integrated" },
+    ]);
+    expect(section).not.toBeNull();
+    expect(section!.trimStart()).toStartWith(INTEGRATED_BLOCK.start);
+    expect(section!.trimEnd()).toEndWith(INTEGRATED_BLOCK.end);
+  });
+});
+
+// ----- Integrated overnight digest wired into brief.ts -----------------------
+
+// The brief fires at 05:30 on 2026-06-09; the sweep runs at 03:00 on the same
+// date. The sweep ledger for today's run is dated "2026-06-09".
+const SWEEP_LEDGER_TODAY = [
+  "# Sweep ledger",
+  "",
+  "cursor:: 2026-06-08",
+  "",
+  "## Run 2026-06-09",
+  "",
+  "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/alice-henshaw]] :: integrated",
+  "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/tokka]] :: questioned",
+  "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/skipped]] :: no-op",
+  "",
+].join("\n");
+
+const SWEEP_LEDGER_YESTERDAY_ONLY = [
+  "# Sweep ledger",
+  "",
+  "cursor:: 2026-06-07",
+  "",
+  "## Run 2026-06-08",
+  "",
+  "- [[wiki/dailies/2026-06-07]] -> [[wiki/entities/someone]] :: integrated",
+  "",
+].join("\n");
+
+describe("brief integrated overnight digest (wired)", () => {
+  test("sweep ledger with today's run → block present with integrated + questioned bullets; no-op absent", async () => {
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+      },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain("dome.agent.brief:integrated");
+    expect(content).toContain("### Integrated Overnight");
+    // integrated bullet
+    expect(content).toContain(
+      "- [[wiki/entities/alice-henshaw]] ← [[wiki/dailies/2026-06-08]]",
+    );
+    // questioned bullet
+    expect(content).toContain(
+      "- ⚠ pending your answer: [[wiki/entities/tokka]] ← [[wiki/dailies/2026-06-08]]",
+    );
+    // no-op row should NOT appear
+    expect(content).not.toContain("skipped");
+  });
+
+  test("no sweep ledger → integrated block absent entirely", async () => {
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).not.toContain("dome.agent.brief:integrated");
+    expect(content).not.toContain("Integrated Overnight");
+  });
+
+  test("sweep ledger exists but no run for today → integrated block absent", async () => {
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": SWEEP_LEDGER_YESTERDAY_ONLY,
+      },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).not.toContain("dome.agent.brief:integrated");
+  });
+
+  test("sweep ledger has today's run but all rows are no-op/failed → integrated block absent", async () => {
+    const ledger = [
+      "# Sweep ledger",
+      "",
+      "## Run 2026-06-09",
+      "",
+      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/x]] :: no-op",
+      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/y]] :: failed",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": ledger,
+      },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).not.toContain("dome.agent.brief:integrated");
+  });
+
+  test("integrated block is spliced after the questions block when both are present", async () => {
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+      },
+      steps: [{ text: "done" }],
+      questions: [
+        { id: 42, question: "Review the architecture?" },
+      ],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    const questionsIdx = content.indexOf("dome.agent.brief:questions:start");
+    const integratedIdx = content.indexOf("dome.agent.brief:integrated:start");
+    expect(questionsIdx).toBeGreaterThan(-1);
+    expect(integratedIdx).toBeGreaterThan(-1);
+    // integrated block must appear AFTER questions block
+    expect(integratedIdx).toBeGreaterThan(questionsIdx);
+  });
+
+  test("model attempt to write into the integrated block is stripped by groundBriefBlockBody", () => {
+    // The grounding splice strips any line carrying a <!-- dome. marker.
+    // A body that tries to smuggle an integrated block marker gets stripped.
+    const { kept, ungrounded } = groundBriefBlockBody([
+      "- Real item (from [[wiki/entities/x]])",
+      INTEGRATED_BLOCK.start,
+      "- Fake entry [[wiki/entities/injected]]",
+      INTEGRATED_BLOCK.end,
+    ].join("\n"));
+    // The marker lines are stripped — they carry <!-- dome.agent.brief:
+    expect(kept).not.toContain("dome.agent.brief:integrated");
+    // The real item passes through
+    expect(kept).toContain("- Real item (from [[wiki/entities/x]])");
+    // The fake entry is also stripped because its line (the marker lines
+    // surrounding it get sanitized, and it lacks a real [[wikilink]] source)
+    // — the grounding rule strips it as ungrounded:
+    // Actually the fake bullet DOES have a wikilink so it passes grounding,
+    // but the marker lines wrapping it are stripped. Verify the markers are gone.
+    expect(ungrounded).toEqual([]);
+  });
+
+  test("a model that tries to write integrated markers inside a body has those markers stripped (full round-trip via brief run)", async () => {
+    // The model writes its yesterday block and smuggles integrated block markers.
+    // The sanitizer (sanitizeGeneratedBlockBody) drops lines carrying
+    // <!-- dome. markers, so the marker lines are gone. The bullet between them
+    // has a wikilink so it passes the grounding check and stays in the yesterday
+    // body — that is correct behavior (the bullet is grounded content, not a
+    // marker). The critical invariant is that the smuggled marker lines do NOT
+    // fabricate a second integrated block: the deterministic splice runs after
+    // the model pass and the line-anchored scanner only sees the real ledger-
+    // derived block.
+    const modelDoc = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Real item (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:integrated:start -->",
+      "- Fake integration [[wiki/entities/injected]]",
+      "<!-- dome.agent.brief:integrated:end -->",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+      },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    // Real item survived in the yesterday block
+    expect(content).toContain("- Real item (from [[wiki/dailies/2026-06-08]])");
+    // The real deterministic integrated block is present (from the sweep ledger)
+    expect(content).toContain("dome.agent.brief:integrated");
+    expect(content).toContain("alice-henshaw");
+    // Smuggled marker lines are gone — the sanitizer stripped them from the
+    // yesterday body; no fragment of the integrated markers remains outside
+    // the single deterministic block.
+    // No duplicate integrated start markers: exactly ONE from the ledger splice.
+    const startCount = (content.match(/dome\.agent\.brief:integrated:start/g) ?? []).length;
+    expect(startCount).toBe(1);
+    // The "injected" wikilink — which appears in the yesterday body as a grounded
+    // bullet (the marker lines surrounding it were stripped, the bullet itself
+    // has a real [[wikilink]]) — is NOT in the integrated block section. It may
+    // appear in the yesterday block (that is acceptable: it is grounded content).
+    // The integrated block must only contain the ledger-derived rows.
+    const integratedStart = content.indexOf(INTEGRATED_BLOCK.start);
+    const integratedEnd = content.indexOf(INTEGRATED_BLOCK.end);
+    const integratedSection = content.slice(integratedStart, integratedEnd);
+    expect(integratedSection).not.toContain("injected");
+    expect(integratedSection).toContain("alice-henshaw");
   });
 });
