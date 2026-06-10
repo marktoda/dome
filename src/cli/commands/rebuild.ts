@@ -1,11 +1,12 @@
 // cli/commands/rebuild: rebuild projection.db from the adopted commit.
+//
+// Thin printer over the public wrapper: `openVault` + `vault.rebuild()`
+// own the precondition checks (branch, adopted ref) and the engine
+// delegation; this file owns argv → options and outcome → terminal.
 
 import { basename } from "node:path";
 
-import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
-import { commitOid } from "../../core/source-ref";
-import { rebuildProjection } from "../../engine/projection-rebuild";
-import { openVaultRuntime } from "../../engine/vault-runtime";
+import { openVault, type OpenVaultError } from "../../vault";
 import { formatJson } from "../format";
 import {
   footer,
@@ -14,7 +15,6 @@ import {
   resolveCaps,
   section,
 } from "../presenter";
-import { resolveBundleRoots } from "./sync-shared";
 
 import { resolveVaultPath } from "../resolve-vault";
 export type RunRebuildOptions = {
@@ -45,81 +45,80 @@ export async function runRebuild(
   options: RunRebuildOptions = {},
 ): Promise<number> {
   const vaultPath = resolveVaultPath(options.vault);
-  const bundleRoots = resolveBundleRoots({
-    vaultPath,
-    bundlesRoot: options.bundlesRoot,
-  });
   const jsonMode = options.json === true;
 
-  const branch = await getCurrentBranch(vaultPath);
-  if (branch === null) {
+  const opened = await openVault({
+    path: vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
+  if (!opened.ok) {
     return emitError({
       jsonMode,
       branch: null,
       adopted: null,
-      error: "detached-head",
+      error: openErrorKind(opened.error),
       message:
-        `dome rebuild: HEAD is detached at ${vaultPath}. ` +
-        "Check out a branch and retry.",
+        opened.error.kind === "not-a-vault"
+          ? `dome rebuild: ${opened.error.message}`
+          : `dome rebuild: openVaultRuntime failed (${opened.error.cause.kind}). ` +
+            "Run `dome init` to initialize the vault.",
     });
   }
 
-  const adopted = await getAdoptedRef(vaultPath, branch);
-  if (adopted === null) {
-    return emitError({
-      jsonMode,
-      branch,
-      adopted: null,
-      error: "adopted-ref-uninitialized",
-      message: `dome rebuild: adopted ref for ${branch} is uninitialized. Run \`dome sync\` first.`,
-    });
-  }
-
-  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
-  if (!runtimeResult.ok) {
-    return emitError({
-      jsonMode,
-      branch,
-      adopted,
-      error: runtimeResult.error.kind,
-      message:
-        `dome rebuild: openVaultRuntime failed (${runtimeResult.error.kind}). ` +
-        "Run `dome init` to initialize the vault.",
-    });
-  }
-
-  const runtime = runtimeResult.value;
+  const vault = opened.value;
   try {
-    const result = await rebuildProjection({
-      runtime,
-      adopted: commitOid(adopted),
-      branch,
-    });
-    if (jsonMode) {
-      const payload: RebuildJsonResult = {
-        schema: "dome.rebuild/v1",
-        status: "rebuilt",
-        branch,
-        adopted,
-        files: result.fileCount,
-        processors: result.processorCount,
-        effects: result.effectCount,
-      };
-      console.log(formatJson(payload));
-    } else {
-      printRebuildText({
-        vaultPath,
-        branch,
-        adopted,
-        files: result.fileCount,
-        processors: result.processorCount,
-        effects: result.effectCount,
-      });
+    const outcome = await vault.rebuild();
+    switch (outcome.kind) {
+      case "detached-head":
+        return emitError({
+          jsonMode,
+          branch: null,
+          adopted: null,
+          error: "detached-head",
+          message:
+            `dome rebuild: HEAD is detached at ${vaultPath}. ` +
+            "Check out a branch and retry.",
+        });
+      case "missing-adopted-ref":
+        return emitError({
+          jsonMode,
+          branch: outcome.branch,
+          adopted: null,
+          error: "adopted-ref-uninitialized",
+          message:
+            `dome rebuild: adopted ref for ${outcome.branch} is uninitialized. Run \`dome sync\` first.`,
+        });
+      case "ok":
+        if (jsonMode) {
+          const payload: RebuildJsonResult = {
+            schema: "dome.rebuild/v1",
+            status: "rebuilt",
+            branch: outcome.branch,
+            adopted: outcome.adopted,
+            files: outcome.files,
+            processors: outcome.processors,
+            effects: outcome.effects,
+          };
+          console.log(formatJson(payload));
+        } else {
+          printRebuildText({
+            vaultPath,
+            branch: outcome.branch,
+            adopted: outcome.adopted,
+            files: outcome.files,
+            processors: outcome.processors,
+            effects: outcome.effects,
+          });
+        }
+        return 0;
     }
-    return 0;
   } finally {
-    await runtime.close();
+    await vault.close();
   }
+}
+
+function openErrorKind(error: OpenVaultError): string {
+  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
 }
 
 function printRebuildText(result: {

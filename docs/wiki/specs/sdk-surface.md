@@ -16,13 +16,23 @@ types, effect constructors, processor authoring helpers, adopted-ref read
 helpers, the bundle loader, first-party maintenance-loop metadata, pure
 commit-trailer helpers, and the public `openVault` wrapper (`src/vault.ts`).
 The shipped `Vault` handle carries the read + engine-control subset —
-`query`, `readDocument`, `runView`, `sync`, `getAdoptionStatus`,
+`query`, `readDocument`, `runView`, `sync`, `rebuild`, `getAdoptionStatus`,
 `listQuestions`, `getQuestion`, `resolve`, `close` — over the internal
 `openVaultRuntime` boundary. Still target-shape, not shipped:
-`resolveWikilink`, `rebuild`, `drainProcessors`, the closed-state guard, and
-the composable-construction helpers. The Commander CLI remains the primary
-operational surface; the MCP adapter consumes the wrapper plus the CLI's
-data-returning collectors (see [[wiki/specs/mcp-surface]]).
+`resolveWikilink`, `drainProcessors`, the closed-state guard, and the
+composable-construction helpers.
+
+**`openVault` is the standard entry point.** Every surface consumes the
+wrapper: the CLI's view commands (`query`, `export-context`, `lint`,
+`run`, the daily wrappers — all via `cli/commands/view-shared.ts`),
+`resolve`/`answer`, `rebuild`, the MCP adapter, and future HTTP/voice
+shells. Direct `openVaultRuntime` use is reserved for the daemon and the
+operator internals that report on runtime guts the wrapper intentionally
+hides: `serve`, `sync` (tick events + health), the `status`/`check`
+collectors, `doctor`, `inspect`. A config-less vault (a `.dome/` directory
+without `config.yaml`) opens in the runtime's documented compat mode; a
+directory without `.dome/` or outside a git repository fails typed
+(`not-a-vault`).
 
 ## The four concepts
 
@@ -59,6 +69,7 @@ type Vault = {
 
   // Engine control
   sync(opts?: VaultSyncOptions): Promise<CompilerHostTickResult>;
+  rebuild(): Promise<RebuildOutcome>;
   getAdoptionStatus(): Promise<AdoptionStatus>;
 
   // Decisions — durable questions and answers
@@ -86,10 +97,13 @@ Method semantics:
   query` / `dome run <name>` / the MCP view tools.
 - `sync` runs one compiler-host tick (`runCompilerHostTick`) — the same
   semantic boundary `dome sync` and `dome serve` share.
+- `rebuild` wipes and rebuilds `projection.db` from the adopted commit
+  (`rebuildProjection` under the projection write lock) — the same path as
+  `dome rebuild`.
 - `resolve` records the answer durably (`answers.db`) and dispatches
   matching answer handlers — the same path as `dome resolve`.
 
-Target additions staged for later increments: `resolveWikilink`, `rebuild`,
+Target additions staged for later increments: `resolveWikilink`,
 `drainProcessors`, a closed-state guard (`vault-closed` errors after
 `close()`), and the `config` / `pageTypes` accessors.
 

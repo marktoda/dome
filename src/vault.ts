@@ -28,6 +28,15 @@
 // `src/cli/`, no LLM SDK, no MCP transport. It is re-exported from
 // `src/index.ts`, so the ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY fence
 // (tests/integration/bundle-deps.test.ts) covers it.
+//
+// Entry-point convention: `openVault` is the STANDARD entry point for every
+// surface — CLI verbs (resolve/answer, rebuild, and all view commands via
+// cli/commands/view-shared.ts), the MCP adapter, and future HTTP/voice
+// shells all consume this wrapper. Direct `openVaultRuntime` use is reserved
+// for the daemon and operator internals that report on runtime guts the
+// wrapper intentionally hides (serve, sync's tick events + health, the
+// status/check collectors, doctor, inspect). New consumers start here; reach
+// for the runtime only when a feature genuinely needs those internals.
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -40,6 +49,7 @@ import type {
 } from "./core/effect";
 import { nodeRef } from "./core/effect";
 import type { SearchDocumentResult } from "./core/processor";
+import { commitOid } from "./core/source-ref";
 import {
   collectAdoptionStatus,
   type AdoptionStatus,
@@ -48,6 +58,7 @@ import {
   runCompilerHostTick,
   type CompilerHostTickResult,
 } from "./engine/compiler-host";
+import { rebuildProjection } from "./engine/projection-rebuild";
 import {
   answerQuestionDurably,
   dispatchAnswerHandlersIfNeeded,
@@ -164,6 +175,19 @@ export type VaultSyncOptions = {
   readonly signal?: AbortSignal | undefined;
 };
 
+export type RebuildOutcome =
+  | {
+      readonly kind: "ok";
+      readonly branch: string;
+      /** The adopted commit the projection was rebuilt from. */
+      readonly adopted: string;
+      readonly files: number;
+      readonly processors: number;
+      readonly effects: number;
+    }
+  | { readonly kind: "detached-head" }
+  | { readonly kind: "missing-adopted-ref"; readonly branch: string };
+
 /**
  * The public vault handle. Read + engine control only; closed over an
  * engine-internal `VaultRuntime` that callers never see.
@@ -186,6 +210,7 @@ export type Vault = {
 
   // Engine control
   readonly sync: (opts?: VaultSyncOptions) => Promise<CompilerHostTickResult>;
+  readonly rebuild: () => Promise<RebuildOutcome>;
   readonly getAdoptionStatus: () => Promise<AdoptionStatus>;
 
   // Decisions — durable questions and answers
@@ -223,10 +248,14 @@ export async function openVault(
       message: `${vaultPath} is not inside a git repository; run \`dome init\` first`,
     });
   }
-  if (!existsSync(join(vaultPath, ".dome", "config.yaml"))) {
+  // `.dome/` presence is the vault marker. A `.dome/` without `config.yaml`
+  // is the documented config-less compat mode (test/dev vaults load all
+  // bundles with declared grants — see src/engine/vault-runtime.ts), so the
+  // check is for the directory, not the config file.
+  if (!existsSync(join(vaultPath, ".dome"))) {
     return err({
       kind: "not-a-vault",
-      message: `${vaultPath} has no .dome/config.yaml; run \`dome init\` first`,
+      message: `${vaultPath} has no .dome directory; run \`dome init\` first`,
     });
   }
 
@@ -258,6 +287,7 @@ function bindVault(runtime: VaultRuntime): Vault {
         runtime,
         ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       }),
+    rebuild: () => rebuildVaultProjection(runtime),
     getAdoptionStatus: () => collectAdoptionStatus(runtime.path),
 
     listQuestions: async (filter?: ListQuestionsFilter) =>
@@ -387,6 +417,33 @@ function deriveStructuredView(
     name: view.name,
     schema: view.content.schema,
     data: view.content.data,
+  });
+}
+
+async function rebuildVaultProjection(
+  runtime: VaultRuntime,
+): Promise<RebuildOutcome> {
+  const branch = await getCurrentBranch(runtime.path);
+  if (branch === null) {
+    return Object.freeze({ kind: "detached-head" as const });
+  }
+  const adopted = await getAdoptedRef(runtime.path, branch);
+  if (adopted === null) {
+    return Object.freeze({ kind: "missing-adopted-ref" as const, branch });
+  }
+
+  const result = await rebuildProjection({
+    runtime,
+    adopted: commitOid(adopted),
+    branch,
+  });
+  return Object.freeze({
+    kind: "ok" as const,
+    branch,
+    adopted,
+    files: result.fileCount,
+    processors: result.processorCount,
+    effects: result.effectCount,
   });
 }
 

@@ -137,10 +137,12 @@ describe("openVault", () => {
     }
   });
 
-  test("returns not-a-vault for a git repo without .dome config", async () => {
+  test("returns not-a-vault for a git repo without a .dome directory", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dome-bare-repo-"));
     tempDirs.push(dir);
-    // A git repo with commits but no `.dome/config.yaml` is not a Dome vault.
+    // A git repo without `.dome/` is not a Dome vault. (A `.dome/` without
+    // `config.yaml` IS one — the config-less compat mode the runtime
+    // documents for test/dev vaults.)
     const { initRepo } = await import("../../src/git");
     await initRepo(dir);
 
@@ -214,6 +216,34 @@ describe("adoption status and sync", () => {
       const tick = await vault.sync();
       expect(tick.kind).toBe("adopted");
       expect((await vault.getAdoptionStatus()).syncNeeded).toBe(false);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- Engine control: rebuild ----------------------------------------------------
+
+describe("rebuild", () => {
+  test(
+    "wipes and rebuilds the projection from the adopted commit",
+    async () => {
+      const { vault } = await fixture();
+
+      const before = await vault.getAdoptionStatus();
+      const outcome = await vault.rebuild();
+
+      expect(outcome.kind).toBe("ok");
+      if (outcome.kind === "ok") {
+        expect(outcome.adopted).toBe(before.adopted as string);
+        expect(outcome.files).toBeGreaterThan(0);
+        expect(outcome.processors).toBeGreaterThan(0);
+      }
+
+      // The rebuilt projection still serves Recall.
+      const result = await vault.query({ text: "omega launch" });
+      expect(result.matches.map((m) => m.path)).toContain(
+        "wiki/project-omega.md",
+      );
     },
     TEST_TIMEOUT_MS,
   );

@@ -7,19 +7,10 @@
 
 import { basename } from "node:path";
 
-import {
-  answerQuestionDurably,
-  dispatchAnswerHandlersIfNeeded,
-  type AnswerHandlerDispatchResult,
-} from "../../engine/question-answering";
-import { openVaultRuntime } from "../../engine/vault-runtime";
-import {
-  getQuestionRecord,
-  type AnswerQuestionResult,
-  type QuestionRecord,
-} from "../../projections/questions";
+import type { AnswerHandlerDispatchResult } from "../../engine/question-answering";
+import type { QuestionRecord } from "../../projections/questions";
+import { openVault, type ResolveOutcome } from "../../vault";
 
-import { resolveBundleRoots } from "./sync-shared";
 import { formatJson } from "../format";
 import { formatCommand } from "../human-output";
 import {
@@ -61,28 +52,31 @@ export async function runAnswer(
   }
 
   const vaultPath = resolveVaultPath(options.vault);
-  const bundleRoots = resolveBundleRoots({
-    vaultPath,
+  const opened = await openVault({
+    path: vaultPath,
     bundlesRoot: options.bundlesRoot,
   });
-  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
-  if (!runtimeResult.ok) {
+  if (!opened.ok) {
+    const errorKind = opened.error.kind === "runtime-open-failed"
+      ? opened.error.cause.kind
+      : opened.error.kind;
     printAnswerError({
       commandLabel,
       json: options.json === true,
-      error: runtimeResult.error.kind,
-      message:
-        `${commandLabel}: openVaultRuntime failed (${runtimeResult.error.kind}). ` +
-        "Run `dome init` first to initialize the vault.",
+      error: errorKind,
+      message: opened.error.kind === "not-a-vault"
+        ? `${commandLabel}: ${opened.error.message}`
+        : `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
+          "Run `dome init` first to initialize the vault.",
     });
     return 1;
   }
-  const runtime = runtimeResult.value;
+  const vault = opened.value;
 
   try {
     const rawValue = options.value?.trim();
     if (rawValue === undefined || rawValue.length === 0) {
-      const record = getQuestionRecord(runtime.projectionDb, id);
+      const record = await vault.getQuestion(id);
       if (record === null) {
         printAnswerError({
           commandLabel,
@@ -103,23 +97,10 @@ export async function runAnswer(
       return 0;
     }
 
-    const result = answerQuestionDurably({
-      projection: runtime.projectionDb,
-      answers: runtime.answersDb,
-      id,
-      answer: rawValue,
-    });
-    const handlerResult =
-      result.kind === "answered" || result.kind === "already-answered"
-        ? await dispatchAnswerHandlersIfNeeded({
-            runtime,
-            question: result.record,
-          })
-        : null;
+    const outcome = await vault.resolve(id, rawValue);
     return printAnswerResult(
-      result,
+      outcome,
       options.json === true,
-      handlerResult,
       commandLabel,
       vaultPath,
     );
@@ -133,17 +114,20 @@ export async function runAnswer(
     });
     return 1;
   } finally {
-    await runtime.close();
+    await vault.close();
   }
 }
 
 function printAnswerResult(
-  result: AnswerQuestionResult,
+  result: ResolveOutcome,
   json: boolean,
-  handlerResult: AnswerHandlerDispatchResult,
   commandLabel: string,
   vaultPath: string,
 ): number {
+  const handlerResult =
+    result.kind === "answered" || result.kind === "already-answered"
+      ? result.handlers
+      : null;
   switch (result.kind) {
     case "not-found":
       printAnswerError({

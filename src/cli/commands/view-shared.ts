@@ -2,23 +2,19 @@
 //
 // `dome run` and first-class view command wrappers such as `dome query` all
 // share error translation, structured-view validation, and message printing.
-// Runtime opening and view dispatch live in `src/engine/view-command.ts` so
-// future non-CLI surfaces can reuse the same command boundary.
+// View dispatch flows through the public `openVault` wrapper —
+// `vault.runView` is the same boundary the MCP adapter and future non-CLI
+// surfaces consume; this module owns only the CLI's message vocabulary.
 
-
-
-import type {
-  DiagnosticEffect,
-  ViewContent,
-  ViewEffect,
-} from "../../core/effect";
-import type { CommitOid } from "../../core/source-ref";
-import type { RunCommandResult } from "../../engine/commands";
-import { runRuntimeViewCommand } from "../../engine/view-command";
+import type { DiagnosticEffect, ViewEffect } from "../../core/effect";
+import {
+  openVault,
+  type StructuredView,
+  type VaultViewResult,
+} from "../../vault";
 import { resolveVaultPath } from "../resolve-vault";
 
 import { formatJson } from "../format";
-import { resolveBundleRoots } from "./sync-shared";
 
 export type ViewCommandOptions = {
   readonly commandLabel: string;
@@ -37,12 +33,20 @@ export type ViewCommandRunResult =
       readonly kind: "runtime-error";
       readonly message: string;
     }
+  | { readonly kind: "not-found" }
+  | {
+      readonly kind: "failed";
+      readonly processorId: string;
+      readonly executionStatus: string;
+      readonly executionError: { code: string; message: string } | null;
+      readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+    }
   | {
       readonly kind: "ok";
       readonly vaultPath: string;
-      readonly adopted: CommitOid;
-      readonly result: RunCommandResult;
-      readonly capturedViews: ReadonlyArray<ViewEffect>;
+      readonly views: ReadonlyArray<ViewEffect>;
+      readonly structured: StructuredView | null;
+      readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     };
 
 export type StructuredViewCommandOptions = ViewCommandOptions & {
@@ -56,7 +60,7 @@ export type StructuredViewCommandResult =
   | {
       readonly kind: "ok";
       readonly data: unknown;
-      readonly view: StructuredViewEffect;
+      readonly view: StructuredView;
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     }
   | {
@@ -83,54 +87,77 @@ export async function runSharedViewCommand(
   opts: ViewCommandOptions,
 ): Promise<ViewCommandRunResult> {
   const vaultPath = resolveVaultPath(opts.vault);
-  const bundleRoots = resolveBundleRoots({
-    vaultPath,
+
+  const opened = await openVault({
+    path: vaultPath,
     bundlesRoot: opts.bundlesRoot,
   });
-
-  const run = await runRuntimeViewCommand({
-    vaultPath,
-    ...bundleRoots,
-    commandName: opts.commandName,
-    commandArgs: opts.commandArgs ?? null,
-  });
-
-  if (run.kind === "detached-head") {
-    return Object.freeze({
-      kind: "usage-error" as const,
-      message:
-        `${opts.commandLabel}: HEAD is detached. Check out a branch and retry.`,
-    });
-  }
-  if (run.kind === "missing-adopted-ref") {
-    return Object.freeze({
-      kind: "usage-error" as const,
-      message:
-        `${opts.commandLabel}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`,
-    });
-  }
-  if (run.kind === "runtime-open-failed") {
+  if (!opened.ok) {
+    if (opened.error.kind === "not-a-vault") {
+      return Object.freeze({
+        kind: "usage-error" as const,
+        message: `${opts.commandLabel}: ${opened.error.message}`,
+      });
+    }
     return Object.freeze({
       kind: "runtime-error" as const,
       message:
-        `${opts.commandLabel}: openVaultRuntime failed (${run.errorKind}). Run \`dome init\` to initialize the vault.`,
-    });
-  }
-  if (run.kind === "adopted-ref-unstable") {
-    return Object.freeze({
-      kind: "runtime-error" as const,
-      message:
-        `${opts.commandLabel}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry the command after the current sync finishes.`,
+        `${opts.commandLabel}: openVaultRuntime failed (${opened.error.cause.kind}). Run \`dome init\` to initialize the vault.`,
     });
   }
 
-  return Object.freeze({
-    kind: "ok" as const,
-    vaultPath,
-    adopted: run.adopted,
-    result: run.result,
-    capturedViews: run.capturedViews,
-  });
+  const vault = opened.value;
+  try {
+    const run = await vault.runView(opts.commandName, opts.commandArgs ?? null);
+    return translateViewResult(opts.commandLabel, vaultPath, run);
+  } finally {
+    await vault.close();
+  }
+}
+
+function translateViewResult(
+  commandLabel: string,
+  vaultPath: string,
+  run: VaultViewResult,
+): ViewCommandRunResult {
+  switch (run.kind) {
+    case "detached-head":
+      return Object.freeze({
+        kind: "usage-error" as const,
+        message:
+          `${commandLabel}: HEAD is detached. Check out a branch and retry.`,
+      });
+    case "missing-adopted-ref":
+      return Object.freeze({
+        kind: "usage-error" as const,
+        message:
+          `${commandLabel}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`,
+      });
+    case "adopted-ref-unstable":
+      return Object.freeze({
+        kind: "runtime-error" as const,
+        message:
+          `${commandLabel}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry the command after the current sync finishes.`,
+      });
+    case "not-found":
+      return Object.freeze({ kind: "not-found" as const });
+    case "failed":
+      return Object.freeze({
+        kind: "failed" as const,
+        processorId: run.processorId,
+        executionStatus: run.executionStatus,
+        executionError: run.executionError,
+        diagnostics: run.diagnostics,
+      });
+    case "ok":
+      return Object.freeze({
+        kind: "ok" as const,
+        vaultPath,
+        views: run.views,
+        structured: run.structured,
+        brokerDiagnostics: run.brokerDiagnostics,
+      });
+  }
 }
 
 export async function runStructuredViewCommand(
@@ -144,21 +171,19 @@ export async function runStructuredViewCommand(
     if (run.kind === "runtime-error") {
       return structuredError(1, [run.message]);
     }
-
-    const result = run.result;
-    if (result.kind === "not-found") {
+    if (run.kind === "not-found") {
       return structuredError(64, [opts.notFoundMessage]);
     }
-    if (result.kind === "failed") {
+    if (run.kind === "failed") {
       const messages = [
-        `${opts.commandLabel}: processor '${result.processorId}' finished with ${result.executionStatus}.`,
+        `${opts.commandLabel}: processor '${run.processorId}' finished with ${run.executionStatus}.`,
       ];
-      if (result.executionError !== undefined) {
+      if (run.executionError !== null) {
         messages.push(
-          `${opts.commandLabel}: ${result.executionError.code}: ${result.executionError.message}`,
+          `${opts.commandLabel}: ${run.executionError.code}: ${run.executionError.message}`,
         );
       }
-      for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
+      for (const d of run.diagnostics) {
         messages.push(
           `${opts.commandLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
         );
@@ -166,20 +191,14 @@ export async function runStructuredViewCommand(
       return structuredError(1, messages);
     }
 
-    const viewResult = validateStructuredViewResult({
-      opts,
-      capturedViews: run.capturedViews,
-      result,
-    });
+    const viewResult = validateStructuredViewResult({ opts, run });
     if (viewResult.kind === "error") return viewResult;
-
-    const view = viewResult.view;
 
     return Object.freeze({
       kind: "ok" as const,
-      data: view.content.data,
-      view,
-      brokerDiagnostics: Object.freeze([...result.brokerDiagnostics]),
+      data: viewResult.view.data,
+      view: viewResult.view,
+      brokerDiagnostics: run.brokerDiagnostics,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -187,36 +206,28 @@ export async function runStructuredViewCommand(
   }
 }
 
-type StructuredViewEffect = ViewEffect & {
-  readonly content: Extract<ViewContent, { readonly kind: "structured" }>;
-};
-
 function validateStructuredViewResult(
   input: {
     readonly opts: StructuredViewCommandOptions;
-    readonly capturedViews: ReadonlyArray<ViewEffect>;
-    readonly result: Extract<RunCommandResult, { readonly kind: "found" }>;
+    readonly run: Extract<ViewCommandRunResult, { readonly kind: "ok" }>;
   },
 ):
   | {
       readonly kind: "ok";
-      readonly view: StructuredViewEffect;
+      readonly view: StructuredView;
     }
   | Extract<StructuredViewCommandResult, { readonly kind: "error" }> {
-  const { opts } = input;
-  const views = input.capturedViews.length > 0
-    ? input.capturedViews
-    : input.result.effects;
-  if (views.length === 0) {
+  const { opts, run } = input;
+  if (run.views.length === 0) {
     return structuredError(1, [opts.noStructuredResultMessage]);
   }
-  if (views.length !== 1) {
+  if (run.views.length !== 1) {
     return structuredError(1, [
-      `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${views.length}.`,
+      `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${run.views.length}.`,
     ]);
   }
 
-  const view = views[0];
+  const view = run.views[0];
   if (view === undefined) {
     return structuredError(1, [opts.noStructuredResultMessage]);
   }
@@ -225,21 +236,16 @@ function validateStructuredViewResult(
       `${opts.commandLabel}: expected view '${opts.expectedViewName}', got '${view.name}'.`,
     ]);
   }
-  const content = view.content;
-  if (content.kind !== "structured") {
+  if (run.structured === null) {
     return structuredError(1, [opts.noStructuredResultMessage]);
   }
-  if (content.schema !== opts.expectedSchema) {
+  if (run.structured.schema !== opts.expectedSchema) {
     return structuredError(1, [
-      `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${content.schema}'.`,
+      `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${run.structured.schema}'.`,
     ]);
   }
 
-  const structuredView: StructuredViewEffect = Object.freeze({
-    ...view,
-    content,
-  });
-  return Object.freeze({ kind: "ok" as const, view: structuredView });
+  return Object.freeze({ kind: "ok" as const, view: run.structured });
 }
 
 export function structuredViewBrokerMessages(

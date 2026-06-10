@@ -173,6 +173,7 @@ export {
   type ResolveOutcome,
   type ListQuestionsFilter,
   type VaultSyncOptions,
+  type RebuildOutcome,
   type AdoptionStatus,
   type CompilerHostTickResult,
   type QuestionRecord,

@@ -1,9 +1,8 @@
 // cli/commands/run: the `dome run <name> [--json]` CLI command — Phase 13a.
 //
-// Thin CLI wrapper around Phase 4b's `src/engine/commands.ts:runViewCommand`.
-// Parses argv, opens the vault runtime, resolves the adopted commit, calls
-// `runViewCommand` against the runtime's `viewRunner`, captures the
-// returned ViewEffects, and renders them as JSON on stdout.
+// Thin CLI wrapper over the public `openVault` wrapper's `vault.runView`
+// (via the shared view-command helpers). Parses argv, dispatches the named
+// view command, and renders the returned ViewEffects as JSON on stdout.
 //
 // Per [[wiki/specs/processors]] §"View phase":
 //   - View-phase processors are read-only. PatchEffect / DiagnosticEffect
@@ -132,25 +131,23 @@ export async function runRun(
     return 1;
   }
 
-  const result = run.result;
-
   // ----- 4. Handle not-found --------------------------------------------
-  if (result.kind === "not-found") {
+  if (run.kind === "not-found") {
     console.error(
-      `dome run: unknown command '${result.commandName}'. No view-phase processor declares a matching command trigger.`,
+      `dome run: unknown command '${commandName}'. No view-phase processor declares a matching command trigger.`,
     );
     return 64;
   }
-  if (result.kind === "failed") {
+  if (run.kind === "failed") {
     console.error(
-      `dome run: processor '${result.processorId}' finished with ${result.executionStatus}.`,
+      `dome run: processor '${run.processorId}' finished with ${run.executionStatus}.`,
     );
-    if (result.executionError !== undefined) {
+    if (run.executionError !== null) {
       console.error(
-        `dome run: ${result.executionError.code}: ${result.executionError.message}`,
+        `dome run: ${run.executionError.code}: ${run.executionError.message}`,
       );
     }
-    for (const d of [...result.diagnostics, ...result.brokerDiagnostics]) {
+    for (const d of run.diagnostics) {
       console.error(
         `dome run: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
       );
@@ -163,20 +160,16 @@ export async function runRun(
   // here. They indicate processor misbehavior (e.g., a view processor
   // emitting a FactEffect) — non-fatal but worth surfacing for the
   // operator's diagnostic surface.
-  for (const d of result.brokerDiagnostics) {
+  for (const d of run.brokerDiagnostics) {
     console.error(
       `dome run: broker diagnostic [${d.severity}] ${d.code}: ${d.message}`,
     );
   }
 
-  // ----- 6. Render the captured ViewEffects -----------------------------
-  // Prefer the captured-via-sink array (the sink is the canonical
-  // delivery surface per ApplyEffectSinks's contract). `runViewCommand`
-  // also returns `result.effects`; both should agree.
-  const viewEffects =
-    run.capturedViews.length > 0 ? run.capturedViews : [...result.effects];
-
-  const rendered = await Promise.all(viewEffects.map(renderView));
+  // ----- 6. Render the ViewEffects ---------------------------------------
+  // `vault.runView` already prefers the captured-via-sink array (the sink
+  // is the canonical delivery surface per ApplyEffectSinks's contract).
+  const rendered = await Promise.all(run.views.map(renderView));
   console.log(formatJson(rendered.length === 1 ? rendered[0] : rendered));
   return 0;
 }
