@@ -280,6 +280,18 @@ Banked as future pressure, in dependency order:
    the same question/answer machinery. Out of scope until (1) exists.
 3. **Git-derived signals.** Revert detection and post-ingest move detection
    as implicit `-`/`+` signals (see §"The signal convention").
+4. **Grant-level `core.md` exclusion from `dome.markdown`'s `patch.auto`.**
+   The propose-only intent (memory decision 4) is enforced for interactive
+   agents (`dome.agent`'s grant excludes `core.md`), but dome.markdown's
+   deterministic hygiene processors still auto-write it under the default
+   `**/*.md` grant. Excluding it today produces either an adoption-blocking
+   deny/downgrade or a silently-dropped garden patch — not a review
+   proposal (see [[wiki/specs/vault-layout]] §"`core.md`" for the full
+   analysis). Gate the exclusion on the garden propose review queue (the
+   `garden.patch-propose-review-unavailable` follow-up in
+   [[wiki/specs/effects]]), then pin it with a test that a
+   `normalize-frontmatter` patch against `core.md` lands on the visible
+   review path instead of vanishing.
 
 ## Related
 
