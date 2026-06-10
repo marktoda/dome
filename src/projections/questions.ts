@@ -195,6 +195,12 @@ const QuestionMetadataSchema = z
       .enum(["agent-safe", "model-safe", "owner-needed"])
       .optional(),
     ownerNeededReason: z.string().min(1).optional(),
+    // Answer-handler round-trip context (dome.agent.sweep) — must stay in
+    // lockstep with QuestionMetadata in src/core/effect.ts, or stored rows
+    // carrying these keys fail rehydration validation.
+    destination: z.string().min(1).optional(),
+    material: z.string().min(1).optional(),
+    proposedSection: z.string().min(1).max(4000).optional(),
   })
   .strict();
 
@@ -429,6 +435,9 @@ function questionMetadata(raw: {
   readonly recommendedAnswer?: string | undefined;
   readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed" | undefined;
   readonly ownerNeededReason?: string | undefined;
+  readonly destination?: string | undefined;
+  readonly material?: string | undefined;
+  readonly proposedSection?: string | undefined;
 }): QuestionMetadata {
   const metadata: {
     -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
@@ -443,6 +452,11 @@ function questionMetadata(raw: {
   }
   if (raw.ownerNeededReason !== undefined) {
     metadata.ownerNeededReason = raw.ownerNeededReason;
+  }
+  if (raw.destination !== undefined) metadata.destination = raw.destination;
+  if (raw.material !== undefined) metadata.material = raw.material;
+  if (raw.proposedSection !== undefined) {
+    metadata.proposedSection = raw.proposedSection;
   }
   return Object.freeze(metadata);
 }

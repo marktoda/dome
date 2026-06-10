@@ -1100,6 +1100,39 @@ describe("questions accessor", () => {
     });
   });
 
+  it("round-trips sweep answer-handler metadata through the row schema", () => {
+    // Lockstep pin: QuestionMetadata in src/core/effect.ts and the projection
+    // row schema in src/projections/questions.ts must accept the same keys —
+    // a key valid at emission but rejected at read breaks rehydration (the
+    // dome reanchor incident class).
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "Integrate into wiki/entities/probe.md?",
+        sourceRefs: [REF],
+        idempotencyKey: "dome.agent.sweep:uncertain:wiki/dailies/d.md->wiki/entities/probe.md",
+        options: ["integrate", "skip"],
+        metadata: {
+          automationPolicy: "owner-needed",
+          destination: "wiki/entities/probe.md",
+          material: "wiki/dailies/d.md",
+          proposedSection: "## 2026-06-09 — probe\n\nA proposed integration.",
+        },
+      }),
+      processorId: "dome.agent.sweep",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    const record = queryQuestionRecords(db).find(
+      (r) => r.processorId === "dome.agent.sweep",
+    );
+    expect(record?.effect.metadata).toEqual({
+      automationPolicy: "owner-needed",
+      destination: "wiki/entities/probe.md",
+      material: "wiki/dailies/d.md",
+      proposedSection: "## 2026-06-09 — probe\n\nA proposed integration.",
+    });
+  });
+
   it("question reads validate metadata JSON instead of casting", () => {
     insertQuestion(db, {
       effect: questionEffect({
