@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ProcessorPhase } from "../core/processor";
 import type { TriggerMatch } from "./triggers";
 
+import { compareStrings } from "../core/compare";
+
 export const DEFAULT_QUARANTINE_THRESHOLD = 3;
 
 export type ProcessorExecutionKey = {
@@ -291,7 +293,7 @@ function snapshotEntries(
       }),
     );
   }
-  out.sort((a, b) => keyId(a).localeCompare(keyId(b)));
+  out.sort((a, b) => compareStrings(keyId(a), keyId(b)));
   return Object.freeze(out);
 }
 

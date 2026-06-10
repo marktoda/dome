@@ -33,6 +33,8 @@ import {
   type DailyPathSettings,
 } from "./daily-shared";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 export const ATTENTION_DISCOUNT_PREDICATE = "dome.attention.discount";
 
 /** First impressions that cost nothing — surfacing twice is the system doing its job. */
@@ -187,7 +189,7 @@ export async function collectAttentionDiscounts(input: {
       return date === null ? null : { path, date: formatDate(date) };
     })
     .filter((entry): entry is { path: string; date: string } => entry !== null)
-    .sort((a, b) => b.date.localeCompare(a.date))
+    .sort((a, b) => compareStrings(b.date, a.date))
     .slice(0, ATTENTION_DAILY_SCAN_LIMIT);
   const referenceDate = dailies[0]?.date;
   if (referenceDate === undefined) return new Map();

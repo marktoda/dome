@@ -32,6 +32,8 @@ import {
   type DailyPathSettings,
 } from "./daily-shared";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 export const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
@@ -890,14 +892,14 @@ function compareDiscountedRecencyDesc(
 }
 
 function compareOptionalDate(a: string | null, b: string | null): number {
-  if (a !== null && b !== null) return a.localeCompare(b);
+  if (a !== null && b !== null) return compareStrings(a, b);
   if (a !== null) return -1;
   if (b !== null) return 1;
   return 0;
 }
 
 function compareOptionalDateDesc(a: string | null, b: string | null): number {
-  if (a !== null && b !== null) return b.localeCompare(a);
+  if (a !== null && b !== null) return compareStrings(b, a);
   if (a !== null) return -1;
   if (b !== null) return 1;
   return 0;
@@ -971,12 +973,12 @@ function comparePathLineText(
   bLine: number | null,
   bText: string,
 ): number {
-  const pathCmp = aPath.localeCompare(bPath);
+  const pathCmp = compareStrings(aPath, bPath);
   if (pathCmp !== 0) return pathCmp;
   const lineCmp = (aLine ?? Number.MAX_SAFE_INTEGER) -
     (bLine ?? Number.MAX_SAFE_INTEGER);
   if (lineCmp !== 0) return lineCmp;
-  return aText.localeCompare(bText);
+  return compareStrings(aText, bText);
 }
 
 function actionEvidenceLabel(input: {

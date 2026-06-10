@@ -31,6 +31,8 @@ import { pathCapabilityMatches } from "./path-capabilities";
 import type { ProcessorRegistry } from "../processors/registry";
 import type { ModelProviderProbeResult } from "./command-model-provider";
 
+import { compareStrings } from "../core/compare";
+
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
 export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
@@ -438,7 +440,7 @@ function capabilityGrantFindings(opts: {
 }): ReadonlyArray<HealthFinding> {
   const findings: HealthFinding[] = [];
   for (const processor of [...opts.registry.all()].sort((a, b) =>
-    a.id.localeCompare(b.id),
+    compareStrings(a.id, b.id),
   )) {
     const declaredKinds = capabilityKinds(processor.capabilities);
     if (declaredKinds.size === 0) continue;

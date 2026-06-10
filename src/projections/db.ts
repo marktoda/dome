@@ -75,6 +75,8 @@ import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { configureSqliteConnection } from "../sqlite/connection";
 
+import { compareStrings } from "../core/compare";
+
 // ----- Schema DDL -----------------------------------------------------------
 //
 // The canonical DDL. Order matters for schema-hash determinism — changing
@@ -529,7 +531,7 @@ export function computeExtensionSetHash(
   set: ReadonlyArray<{ readonly name: string; readonly version: string }>,
 ): string {
   // Sort a defensive copy — we never mutate caller-owned arrays.
-  const sorted = [...set].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...set].sort((a, b) => compareStrings(a.name, b.name));
   // Project to a canonical {name, version} shape so unknown extra keys on
   // the input (if any slip past TS at boundaries) don't perturb the hash.
   const canonical = sorted.map((e) => ({ name: e.name, version: e.version }));
@@ -544,7 +546,7 @@ export function computeExtensionSetHash(
 export function computeProcessorVersionsHash(
   versions: ReadonlyArray<{ readonly id: string; readonly version: string }>,
 ): string {
-  const sorted = [...versions].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = [...versions].sort((a, b) => compareStrings(a.id, b.id));
   const canonical = sorted.map((p) => ({ id: p.id, version: p.version }));
   return sha256(JSON.stringify(canonical));
 }

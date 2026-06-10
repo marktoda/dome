@@ -30,6 +30,8 @@ import {
   type WikilinkStubRequest,
 } from "./wikilinks";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const MAX_REPAIRED_FILES_PER_RUN = 200;
 
 const repairWikilinks = defineProcessorImplementation({
@@ -112,7 +114,7 @@ const repairWikilinks = defineProcessorImplementation({
 
     const hasStubChanges = stubRequests.size > 0;
     for (const request of [...stubRequests.values()].sort((a, b) =>
-      a.candidate.path.localeCompare(b.candidate.path)
+      compareStrings(a.candidate.path, b.candidate.path)
     )) {
       changes.push({
         kind: "write",

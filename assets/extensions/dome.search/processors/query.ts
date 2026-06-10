@@ -42,6 +42,8 @@ import {
 } from "./ranking";
 import { boundedTopicRows } from "./topic-relevance";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const MAX_QUERY_RECALL_PATHS = 24;
@@ -355,8 +357,8 @@ function factSearchText(fact: FactEffect): string {
 
 function compareFacts(a: FactEffect, b: FactEffect): number {
   return factPriority(a) - factPriority(b) ||
-    a.predicate.localeCompare(b.predicate) ||
-    searchFactObjectLabel(a).localeCompare(searchFactObjectLabel(b));
+    compareStrings(a.predicate, b.predicate) ||
+    compareStrings(searchFactObjectLabel(a), searchFactObjectLabel(b));
 }
 
 function factPriority(fact: FactEffect): number {

@@ -66,6 +66,8 @@ import {
   type WikilinkReplacement,
 } from "./wikilinks";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 // ----- Processor ------------------------------------------------------------
 
 const validateWikilinks = defineProcessorImplementation({
@@ -244,7 +246,7 @@ function stubPatchEffect(
   requests: ReadonlyMap<string, WikilinkStubRequest<SourceRef>>,
 ): Effect {
   const ordered = [...requests.values()].sort((a, b) =>
-    a.candidate.path.localeCompare(b.candidate.path)
+    compareStrings(a.candidate.path, b.candidate.path)
   );
   return patchEffect({
     mode: "auto",

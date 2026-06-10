@@ -24,6 +24,8 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const INDEX_BLOCK_OWNER = "dome";
 const INDEX_BLOCK_NAME = "index";
 const INDEX_BLOCK_MARKERS = generatedBlockMarkers(
@@ -132,8 +134,8 @@ async function directChildrenForIndex(
   }
   return Object.freeze(
     children.sort((a, b) => {
-      const label = a.label.localeCompare(b.label);
-      return label === 0 ? a.path.localeCompare(b.path) : label;
+      const label = compareStrings(a.label, b.label);
+      return label === 0 ? compareStrings(a.path, b.path) : label;
     }),
   );
 }

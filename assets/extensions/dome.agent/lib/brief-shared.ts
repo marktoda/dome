@@ -24,6 +24,8 @@ import {
   parseAttentionDiscountFactValue,
 } from "../../dome.daily/processors/attention-shared";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 /** The brief's marker-block owner namespace. */
 const BRIEF_OWNER = "dome.agent.brief";
 
@@ -349,8 +351,8 @@ export function staleLoopsFromFacts(
       .sort(
         (a, b) =>
           b.discount - a.discount ||
-          a.path.localeCompare(b.path) ||
-          a.body.localeCompare(b.body),
+          compareStrings(a.path, b.path) ||
+          compareStrings(a.body, b.body),
       )
       .slice(0, MAX_STALE_LOOPS),
   );

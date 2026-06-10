@@ -4,6 +4,8 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 type SignalEvent = {
   readonly signal: string;
   readonly path: string;
@@ -43,7 +45,7 @@ function rawMutations(input: RawImmutableInput): ReadonlyArray<RawMutation> {
   }
   return Object.freeze(
     [...paths.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareStrings(left, right))
       .map(([path, canSourceRef]) => Object.freeze({ path, canSourceRef })),
   );
 }

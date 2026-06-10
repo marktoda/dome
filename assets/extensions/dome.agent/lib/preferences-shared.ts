@@ -22,6 +22,8 @@ import {
   generatedBlockMarkers,
 } from "../../../../src/core/generated-block";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 // ----- Constants ------------------------------------------------------------
 
 /** The append-only preference-signal page (vault-layout.md convention). */
@@ -340,7 +342,7 @@ export function splicePromotedPreference(input: {
   );
   const blockLines = [
     PROMOTED_PREFERENCES_START,
-    ...[...kept, entry].sort((a, b) => a.localeCompare(b)),
+    ...[...kept, entry].sort((a, b) => compareStrings(a, b)),
     PROMOTED_PREFERENCES_END,
   ];
 
@@ -456,7 +458,7 @@ export function collectPreferenceTopics(input: {
 
   const topics: PreferenceTopic[] = [];
   for (const [topic, signals] of [...byTopic.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
+    compareStrings(a[0], b[0]),
   )) {
     const inWindow = signals.filter(
       (signal) =>
@@ -471,7 +473,7 @@ export function collectPreferenceTopics(input: {
     // The most recent `+` line (file order breaks date ties: later line wins).
     const latestPlus = [...signals]
       .filter((s) => s.sign === "+")
-      .sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)
+      .sort((a, b) => compareStrings(a.date, b.date) || a.line - b.line)
       .at(-1);
     const rule = latestPlus?.rule ?? null;
     const state: PreferenceTopicState = signals.some((s) => s.ownerRejection)
@@ -484,7 +486,7 @@ export function collectPreferenceTopics(input: {
             ? "candidate"
             : "building";
     const lastSignalLine = [...signals]
-      .sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)
+      .sort((a, b) => compareStrings(a.date, b.date) || a.line - b.line)
       .at(-1) as PreferenceSignal;
     topics.push(
       Object.freeze({
@@ -503,7 +505,7 @@ export function collectPreferenceTopics(input: {
         }),
         evidence: Object.freeze(
           [...inWindow].sort(
-            (a, b) => a.date.localeCompare(b.date) || a.line - b.line,
+            (a, b) => compareStrings(a.date, b.date) || a.line - b.line,
           ),
         ),
         lastSignalLine,

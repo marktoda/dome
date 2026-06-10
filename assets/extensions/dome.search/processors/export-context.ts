@@ -60,6 +60,8 @@ import {
   topicRelevantItems,
 } from "./topic-relevance";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
@@ -967,18 +969,18 @@ function parseInput(input: unknown): ExportInput {
 }
 
 function compareFacts(a: ContextFact, b: ContextFact): number {
-  const predicate = a.predicate.localeCompare(b.predicate);
-  return predicate !== 0 ? predicate : a.object.localeCompare(b.object);
+  const predicate = compareStrings(a.predicate, b.predicate);
+  return predicate !== 0 ? predicate : compareStrings(a.object, b.object);
 }
 
 function compareDiagnostics(
   a: ContextDiagnostic,
   b: ContextDiagnostic,
 ): number {
-  const severity = a.severity.localeCompare(b.severity);
+  const severity = compareStrings(a.severity, b.severity);
   if (severity !== 0) return severity;
-  const code = a.code.localeCompare(b.code);
-  return code !== 0 ? code : a.message.localeCompare(b.message);
+  const code = compareStrings(a.code, b.code);
+  return code !== 0 ? code : compareStrings(a.message, b.message);
 }
 
 function compareQuestions(

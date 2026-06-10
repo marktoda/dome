@@ -22,6 +22,8 @@ import type {
   SnapshotFileInfo,
 } from "../../../../src/core/processor";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const MAX_SEARCH_CANDIDATES = 51;
 
 // ----- RRF fusion constants ---------------------------------------------------
@@ -242,7 +244,7 @@ export function compareRankedSearchEntries(
   if (score !== 0) return score;
   const fts = a.ranking.ftsRank - b.ranking.ftsRank;
   if (fts !== 0) return fts;
-  return a.path.localeCompare(b.path);
+  return compareStrings(a.path, b.path);
 }
 
 // ----- Section dedup ----------------------------------------------------------
@@ -350,7 +352,7 @@ export function linkExpansionChannel(input: {
       .sort((a, b) =>
         a.bestSeedRank - b.bestSeedRank ||
         b.viaCount - a.viaCount ||
-        a.path.localeCompare(b.path)
+        compareStrings(a.path, b.path)
       ),
   );
 }
@@ -368,7 +370,7 @@ function buildWikilinkTargetResolver(
   const register = (key: string, path: string): void => {
     const normalized = key.toLowerCase();
     const existing = byKey.get(normalized);
-    if (existing === undefined || path.localeCompare(existing) < 0) {
+    if (existing === undefined || compareStrings(path, existing) < 0) {
       byKey.set(normalized, path);
     }
   };

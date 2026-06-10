@@ -37,6 +37,8 @@ import {
 } from "./attention-shared";
 import { dailyPathSettings } from "./daily-shared";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 // Defense-in-depth (mirrors dome.markdown.page-status): the broker enforces
 // the declared `dome.attention.*` namespace; a drifted predicate fails loudly
 // at the source instead of being silently rejected.
@@ -59,9 +61,9 @@ const attentionDiscount = defineProcessorImplementation({
     const facts: FactEffect[] = [];
     const entries = [...discounts.values()].sort(
       (a, b) =>
-        a.sourcePath.localeCompare(b.sourcePath) ||
+        compareStrings(a.sourcePath, b.sourcePath) ||
         a.line - b.line ||
-        a.anchor.localeCompare(b.anchor),
+        compareStrings(a.anchor, b.anchor),
     );
     for (const entry of entries) {
       facts.push(

@@ -21,6 +21,8 @@ import {
   DUPLICATE_MERGE_ANSWER,
 } from "./duplicate-detection-shared";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const duplicateDetectionAnswer = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const input = parseAnswerInput(ctx.input);
@@ -192,7 +194,7 @@ function compareCanonicalCandidates(a: string, b: string): number {
   if (score !== 0) return score;
   const length = a.length - b.length;
   if (length !== 0) return length;
-  return a.localeCompare(b);
+  return compareStrings(a, b);
 }
 
 function canonicalScore(path: string): number {

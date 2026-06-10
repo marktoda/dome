@@ -70,6 +70,8 @@ import {
   type ProcessorDeclaration,
 } from "./manifest-schema";
 
+import { compareStrings } from "../core/compare";
+
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -380,7 +382,7 @@ export async function loadBundlesFromRoots(
     }
   }
 
-  const loaded = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const loaded = [...byId.values()].sort((a, b) => compareStrings(a.id, b.id));
   const pageTypeCollisionCheck = mergePageTypeDeclarations(
     [
       ...DEFAULT_PAGE_TYPE_DECLARATIONS,
@@ -918,7 +920,7 @@ function stableJson(value: unknown): string {
     ) {
       return Object.fromEntries(
         Object.entries(inner as Record<string, unknown>).sort(([a], [b]) =>
-          a.localeCompare(b),
+          compareStrings(a, b),
         ),
       );
     }

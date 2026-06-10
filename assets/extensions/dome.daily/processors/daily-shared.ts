@@ -10,6 +10,8 @@ import {
   generatedBlockMarkers,
 } from "../../../../src/core/generated-block";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const CARRY_FORWARD_RE =
   /\s+\(from \[\[([^\]\n]*\d{4}-\d{2}-\d{2})(?:\.md)?\]\]\)\s*$/;
 const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
@@ -1102,13 +1104,13 @@ function compareOpenLoopSources(
   a: DailyOpenLoopCandidate,
   b: DailyOpenLoopCandidate,
 ): number {
-  const changedCmp = b.lastChangedAt.localeCompare(a.lastChangedAt);
+  const changedCmp = compareStrings(b.lastChangedAt, a.lastChangedAt);
   if (changedCmp !== 0) return changedCmp;
-  const pathCmp = a.sourcePath.localeCompare(b.sourcePath);
+  const pathCmp = compareStrings(a.sourcePath, b.sourcePath);
   if (pathCmp !== 0) return pathCmp;
   const lineCmp = a.line - b.line;
   if (lineCmp !== 0) return lineCmp;
-  return a.body.localeCompare(b.body);
+  return compareStrings(a.body, b.body);
 }
 
 function stripCandidateMetadata(

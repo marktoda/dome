@@ -23,6 +23,8 @@ import {
   type SearchRankingRecallSignal,
 } from "./ranking";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 export type SearchRecallSignal = SearchRankingRecallSignal & {
   readonly path: string;
   readonly kind:
@@ -161,7 +163,7 @@ export function prioritizedRecallPaths(
       .filter(([path]) => !excludePaths.has(path))
       .sort((a, b) => {
         const score = recallSignalWeight(b[1]) - recallSignalWeight(a[1]);
-        return score !== 0 ? score : a[0].localeCompare(b[0]);
+        return score !== 0 ? score : compareStrings(a[0], b[0]);
       })
       .map(([path]) => path),
   );

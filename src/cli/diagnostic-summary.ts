@@ -1,6 +1,8 @@
 import type { DiagnosticEffect } from "../core/effect";
 import type { SourceRef } from "../core/source-ref";
 
+import { compareStrings } from "../core/compare";
+
 export type DiagnosticSeverity = "info" | "warning" | "error" | "block";
 
 export type DiagnosticGroup = {
@@ -476,12 +478,10 @@ export function sortDiagnosticsByMessagePriority(
           (counts.get(diagnosticMessageKey(a.diagnostic)) ?? 0);
         if (countOrder !== 0) return countOrder;
 
-        const codeOrder = a.diagnostic.code.localeCompare(b.diagnostic.code);
+        const codeOrder = compareStrings(a.diagnostic.code, b.diagnostic.code);
         if (codeOrder !== 0) return codeOrder;
 
-        const messageOrder = a.diagnostic.message.localeCompare(
-          b.diagnostic.message,
-        );
+        const messageOrder = compareStrings(a.diagnostic.message, b.diagnostic.message);
         if (messageOrder !== 0) return messageOrder;
 
         return a.index - b.index;
@@ -513,9 +513,9 @@ function compareDiagnosticMessageGroups(
     return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
   }
   if (b.count !== a.count) return b.count - a.count;
-  const codeOrder = a.code.localeCompare(b.code);
+  const codeOrder = compareStrings(a.code, b.code);
   if (codeOrder !== 0) return codeOrder;
-  return a.message.localeCompare(b.message);
+  return compareStrings(a.message, b.message);
 }
 
 function compareDiagnosticRepairGroups(
@@ -526,7 +526,7 @@ function compareDiagnosticRepairGroups(
     return b.attention_count - a.attention_count;
   }
   if (b.count !== a.count) return b.count - a.count;
-  return a.repair_path.localeCompare(b.repair_path);
+  return compareStrings(a.repair_path, b.repair_path);
 }
 
 function compareDiagnosticDispositionGroups(
@@ -540,7 +540,7 @@ function compareDiagnosticDispositionGroups(
     DISPOSITION_RANK[a.disposition] - DISPOSITION_RANK[b.disposition];
   if (dispositionOrder !== 0) return dispositionOrder;
   if (b.count !== a.count) return b.count - a.count;
-  return a.disposition.localeCompare(b.disposition);
+  return compareStrings(a.disposition, b.disposition);
 }
 
 function diagnosticMessageKey(
@@ -587,7 +587,7 @@ function compareDiagnosticGroups(
     return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
   }
   if (b.count !== a.count) return b.count - a.count;
-  return a.code.localeCompare(b.code);
+  return compareStrings(a.code, b.code);
 }
 
 function formatSourceRef(ref: {

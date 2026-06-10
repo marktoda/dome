@@ -18,6 +18,8 @@ import { searchDailyActionLabel } from "./labels";
 import { uniqueSourceRefs } from "./related";
 import type { SearchRecallSignal } from "./recall";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const DEFAULT_MAX_DAILY_SURFACE_PATHS = 3;
 
 export type DailySurfaceContextOpenLoop = {
@@ -68,7 +70,7 @@ function dailySurfacePaths(
       .sort((a, b) => {
         const weightCmp = maxDailySignalWeight(b[1]) -
           maxDailySignalWeight(a[1]);
-        return weightCmp !== 0 ? weightCmp : a[0].localeCompare(b[0]);
+        return weightCmp !== 0 ? weightCmp : compareStrings(a[0], b[0]);
       })
       .map(([path]) => path)
       .slice(0, maxPaths),
@@ -105,7 +107,7 @@ function dailySurfaceActionItems(
   );
   return Object.freeze(
     [...sourceBacked, ...direct].sort((a, b) =>
-      a.line - b.line || a.body.localeCompare(b.body)
+      a.line - b.line || compareStrings(a.body, b.body)
     ),
   );
 }

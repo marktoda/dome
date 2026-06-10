@@ -12,6 +12,8 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+import { compareStrings } from "../../../../src/core/compare";
+
 const SCHEMA = "dome.lint.report/v1";
 const DEFAULT_FAIL_ON: LintSeverityThreshold = "error";
 
@@ -216,9 +218,9 @@ function renderMarkdown(input: {
 function compareIssues(a: LintIssue, b: LintIssue): number {
   const severity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
   if (severity !== 0) return severity;
-  const code = a.code.localeCompare(b.code);
+  const code = compareStrings(a.code, b.code);
   if (code !== 0) return code;
-  return sourceLabel(a).localeCompare(sourceLabel(b));
+  return compareStrings(sourceLabel(a), sourceLabel(b));
 }
 
 function sourceLabel(issue: LintIssue): string {
