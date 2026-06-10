@@ -44,12 +44,14 @@ if [ ! -f "$marker" ]; then
 fi
 mkdir -p "$(dirname "$f")"
 printf -- '---\\ntype: calendar-day\\ndate: %s\\n---\\n\\n# Calendar %s\\n\\n- 09:00 — Fake standup\\n' "$d" "$d" > "$f"
-git add "$f"
+git add -- "$f"
 # Hermetic identity + no signing: the developer's global git config (e.g.
 # commit.gpgsign=true with a flaky gpg agent) must not reach the fake fetch.
+# Pathspec-scoped commit (-- "$f") so concurrently staged human work is
+# never swept into the fetch commit.
 git -c user.name="Fake Fetcher" -c user.email="fetch@example.com" \\
     -c commit.gpgsign=false \\
-    commit -q --no-verify -m "calendar: agenda for $d"
+    commit -q --no-verify -m "calendar: agenda for $d" -- "$f"
 `;
 
 scenario(

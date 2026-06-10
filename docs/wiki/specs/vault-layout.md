@@ -150,7 +150,8 @@ mkdir -p "$(dirname "$f")"
   gcalcli agenda "$d 00:00" "$d 23:59" --tsv \
     | awk -F'\t' '{ printf "- %s\xe2\x80\x93%s \xe2\x80\x94 %s\n", $2, $4, $5 }'
 } > "$f"
-git add "$f" && git commit -m "calendar: agenda for $d"
+# Pathspec-scoped commit: never sweeps a human's staged work into the fetch commit.
+git add -- "$f" && git commit -m "calendar: agenda for $d" -- "$f"
 ```
 
 ## `core.md` — the core memory page (convention)

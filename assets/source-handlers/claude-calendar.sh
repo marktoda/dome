@@ -22,16 +22,39 @@
 #   - Fetch the agenda, write $2 in the calendar-day shape
 #     (wiki/specs/vault-layout.md §"sources/"), and COMMIT it as an
 #     ordinary git commit (a non-engine commit the daemon adopts).
+#   - If $2 ALREADY EXISTS, skip the fetch and just commit it: a prior
+#     attempt wrote the file but its commit failed (gpg/hook failure,
+#     killed mid-script). The handler verifies completion against HEAD and
+#     retries exactly for this case — the retry is commit-only, never a
+#     second fetch.
+#   - Commit with a PATHSPEC (`git commit -m ... -- "$f"`) so a human's
+#     concurrently staged work is never swept into the fetch commit.
 #   - Exit non-zero on ANY failure so the outbox records the attempt and
 #     retries; never commit a partial or empty-because-broken file.
 #   - The attempt is bounded by engine.external_handler_timeout_ms
 #     (default 30s). A headless-model fetch like the default below needs
-#     that raised in .dome/config.yaml (e.g. 300000).
+#     that raised in .dome/config.yaml (e.g. 300000). `dome doctor`
+#     reminds you while it is unset.
 
 set -eu
 
 d="$1"
 f="$2"
+
+# Pathspec-scoped landing: stages and commits ONLY the fetched file, so
+# anything a human has staged stays out of this commit.
+land() {
+  git add -- "$f"
+  git commit -m "calendar: agenda for $d" -- "$f"
+}
+
+# ----- COMMIT-ONLY RETRY -------------------------------------------------------
+# The file exists but the handler still dispatched us: a prior attempt's
+# commit failed. Don't fetch again — commit what's there and exit.
+if [ -e "$f" ]; then
+  land
+  exit 0
+fi
 
 mkdir -p "$(dirname "$f")"
 tmp="$(mktemp)"
@@ -64,5 +87,4 @@ grep -q "^date: $d$" "$tmp" || {
 # ----- LAND (ordinary non-engine commit; the daemon adopts it) ----------------
 mv "$tmp" "$f"
 trap - EXIT
-git add "$f"
-git commit -m "calendar: agenda for $d"
+land
