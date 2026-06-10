@@ -186,6 +186,24 @@ processors:
       modelCallTimeoutMs: 180000
     module: processors/sweep.ts
 
+  - id: dome.agent.sweep-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.agent.sweep
+        idempotencyKeyPrefix: "dome.agent.sweep:"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "sweep-ledger.md"
+      - kind: patch.auto
+        paths:
+          - "wiki/entities/**/*.md"
+          - "wiki/concepts/**/*.md"
+    module: processors/sweep-answer.ts
+
   # ----- Preference promotion (memory-quality M5) ----------------------------
   # docs/wiki/specs/preferences.md. Three deterministic processors — no model.
 
