@@ -3,6 +3,13 @@
 // code decides WHAT must be integrated; the model only decides how to phrase
 // one page's integration. Pure — files in, ranked capped queue out. No clock,
 // no model, no I/O. Uses Date.UTC arithmetic for timezone-safe date math.
+//
+// CURSOR CONTRACT: the processor must advance the cursor only to
+//   min(yesterday, dayBefore(oldestUnswept), dayBefore(oldest failed-tonight materialDate))
+// — never past material whose pairs were dropped or failed tonight.
+// The windowDays floor is the eventual decay backstop: even if dropped material
+// goes unprocessed for many nights, the window floor eventually ages it out.
+// Use the exported `safeCursor` helper to compute this value.
 
 import { type ParsedSweepLedger } from "./sweep-ledger";
 
@@ -18,7 +25,15 @@ export type SweepQueueItem = {
 
 export type SweepQueue = {
   readonly items: ReadonlyArray<SweepQueueItem>;
-  readonly dropped: number;      // beyond-cap count (re-queued next night)
+  /** Count of candidates beyond the cap — these pairs will be eligible again
+   * on subsequent runs *as long as the cursor is held back to before their
+   * materialDate* (see module doc and `safeCursor`). The windowDays floor is
+   * the eventual decay backstop. Re-queueing is NOT automatic if the processor
+   * advances the cursor past the dropped material's date. */
+  readonly dropped: number;
+  /** Earliest materialDate among CAP-DROPPED pairs, or null when nothing was
+   * dropped. The processor must not advance the cursor past dayBefore(this). */
+  readonly oldestUnswept: string | null;
 };
 
 // ----- Date helpers ---------------------------------------------------------
@@ -33,6 +48,40 @@ function isoToUtcMs(iso: string): number {
 function isoDateMinusDays(today: string, days: number): string {
   const ms = isoToUtcMs(today) - days * 86_400_000;
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Return the ISO date one day before the given date. */
+function dayBefore(date: string): string {
+  return isoDateMinusDays(date, 1);
+}
+
+// ----- Safe cursor helper ---------------------------------------------------
+
+/**
+ * Compute the safe cursor value the processor should store after a run.
+ * The cursor must not advance past any material whose pairs were dropped
+ * (beyond cap) or failed tonight — otherwise those pairs will never be
+ * revisited (the `date <= cursor` exclusion in discoverMaterial will skip them).
+ *
+ * Returns min(yesterday, dayBefore(oldestUnswept), dayBefore(oldestFailed))
+ * where any null terms are treated as infinity (not constraining).
+ */
+export function safeCursor(opts: {
+  today: string;
+  oldestUnswept: string | null;
+  oldestFailed: string | null;
+}): string {
+  const { today, oldestUnswept, oldestFailed } = opts;
+  let result = dayBefore(today); // yesterday
+  if (oldestUnswept !== null) {
+    const candidate = dayBefore(oldestUnswept);
+    if (candidate < result) result = candidate;
+  }
+  if (oldestFailed !== null) {
+    const candidate = dayBefore(oldestFailed);
+    if (candidate < result) result = candidate;
+  }
+  return result;
 }
 
 // ----- Material discovery ---------------------------------------------------
@@ -70,8 +119,6 @@ function discoverMaterial(
 
 // ----- Wikilink targets -----------------------------------------------------
 
-const WIKILINK_RE = /\[\[([^\]|#]+)/g;
-
 /** Normalise a raw wikilink target to a vault path (append .md when absent). */
 function normaliseLinkTarget(raw: string): string {
   const trimmed = raw.trim();
@@ -86,14 +133,50 @@ function wikilinkDestinations(
   const set = new Set<string>();
   const listSet = new Set(list);
   let match: RegExpExecArray | null;
-  WIKILINK_RE.lastIndex = 0;
-  while ((match = WIKILINK_RE.exec(body)) !== null) {
+  const re = /\[\[([^\]|#]+)/g;
+  while ((match = re.exec(body)) !== null) {
     const raw = match[1];
     if (!raw) continue;
     const path = normaliseLinkTarget(raw);
     if (!listSet.has(path)) continue;
     if (targets.some((prefix) => path.startsWith(prefix))) {
       set.add(path);
+    }
+  }
+  return set;
+}
+
+// ----- Wikilink short-link (basename only) destinations --------------------
+
+/**
+ * Also match short-link wikilinks of the form [[alice-henshaw]] (bare basename,
+ * no path prefix) against the full vault list. Obsidian resolves these by
+ * basename uniqueness; we replicate that: if exactly one path in list has this
+ * basename (without .md) and it is under a target prefix, add it.
+ */
+function shortlinkDestinations(
+  body: string,
+  list: ReadonlyArray<string>,
+  targets: ReadonlyArray<string>,
+): Set<string> {
+  const set = new Set<string>();
+  // Build a basename → paths map for target pages
+  const basenameMap = new Map<string, string[]>();
+  for (const path of list) {
+    if (!targets.some((prefix) => path.startsWith(prefix))) continue;
+    const base = path.split("/").pop()?.replace(/\.md$/, "") ?? "";
+    if (!basenameMap.has(base)) basenameMap.set(base, []);
+    basenameMap.get(base)!.push(path);
+  }
+
+  const re = /\[\[([^\]|#/]+)\]\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    const candidates = basenameMap.get(raw);
+    if (candidates && candidates.length === 1) {
+      set.add(candidates[0]!);
     }
   }
   return set;
@@ -107,18 +190,31 @@ function titleFromPath(path: string): string {
   return base.replace(/\.md$/, "").replace(/[-_]/g, " ");
 }
 
+/** Escape regex metacharacters in a literal string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Word-boundary title match: a title is considered mentioned only when it is
+ * not immediately preceded or followed by a lowercase letter or digit.
+ * This prevents "earn" matching "learned", "robin" matching "Robinhood", etc.
+ */
 function titleMentionDestinations(
   body: string,
   list: ReadonlyArray<string>,
   targets: ReadonlyArray<string>,
 ): Set<string> {
   const set = new Set<string>();
-  const lowerBody = body.toLowerCase();
   for (const path of list) {
     if (!targets.some((prefix) => path.startsWith(prefix))) continue;
     const title = titleFromPath(path);
     if (title.length < 4) continue;
-    if (lowerBody.includes(title.toLowerCase())) {
+    const pattern = new RegExp(
+      `(?<![a-z0-9])${escapeRegex(title)}(?![a-z0-9])`,
+      "i",
+    );
+    if (pattern.test(body)) {
       set.add(path);
     }
   }
@@ -129,8 +225,14 @@ function titleMentionDestinations(
 
 /**
  * Return true when the destination's frontmatter `sources:` block already
- * contains a wikilink to the material (without .md suffix). We do a cheap
- * frontmatter slice (lines between the leading `---` pair) — no YAML parse.
+ * contains a wikilink to the material. Matches:
+ *   [[material]]              (exact)
+ *   [[material|display text]] (display-text alias)
+ *   [[material.md]]           (.md suffix)
+ *   [[material.md|display]]   (both)
+ *
+ * We do a cheap frontmatter slice (lines between the leading `---` pair) — no
+ * YAML parse. Leading blank lines before the opening `---` are tolerated.
  */
 function isSettledBySources(destContent: string, materialWithoutMd: string): boolean {
   const lines = destContent.split(/\r?\n/);
@@ -139,6 +241,9 @@ function isSettledBySources(destContent: string, materialWithoutMd: string): boo
   let inSourcesBlock = false;
 
   for (const line of lines) {
+    // Skip leading blank lines before the opening ---
+    if (fmDashCount === 0 && !inFrontmatter && line.trim() === "") continue;
+
     if (fmDashCount === 0 && line.trimEnd() === "---") {
       inFrontmatter = true;
       fmDashCount = 1;
@@ -158,8 +263,17 @@ function isSettledBySources(destContent: string, materialWithoutMd: string): boo
       inSourcesBlock = false;
     }
 
-    if (inSourcesBlock && line.includes(`[[${materialWithoutMd}]]`)) {
-      return true;
+    if (inSourcesBlock) {
+      // Match [[material]], [[material|...]], [[material.md]], [[material.md|...]]
+      const materialWithMd = `${materialWithoutMd}.md`;
+      if (
+        line.includes(`[[${materialWithoutMd}]]`) ||
+        line.includes(`[[${materialWithoutMd}|`) ||
+        line.includes(`[[${materialWithMd}]]`) ||
+        line.includes(`[[${materialWithMd}|`)
+      ) {
+        return true;
+      }
     }
   }
   return false;
@@ -192,8 +306,8 @@ function ledgerInfo(
 
 /**
  * Count wikilink mentions of a path in body (multiple occurrences of the same
- * wikilink count individually). Also adds 1 for each case-insensitive title
- * occurrence beyond a bare wikilink hit. The total drives rank (higher =
+ * wikilink count individually). Also adds 1 for each word-boundary-matched
+ * title occurrence beyond a bare wikilink hit. The total drives rank (higher =
  * more salient).
  */
 function countMentions(body: string, destPath: string): number {
@@ -201,7 +315,6 @@ function countMentions(body: string, destPath: string): number {
   let count = 0;
   const withoutMd = destPath.endsWith(".md") ? destPath.slice(0, -3) : destPath;
   const wikilinkTarget = withoutMd;
-  WIKILINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   const wikilinkRe = /\[\[([^\]|#]+)/g;
   while ((m = wikilinkRe.exec(body)) !== null) {
@@ -209,15 +322,15 @@ function countMentions(body: string, destPath: string): number {
     const normalised = raw.endsWith(".md") ? raw.slice(0, -3) : raw;
     if (normalised === wikilinkTarget) count += 1;
   }
-  // Add title occurrences (case-insensitive includes)
+  // Add title occurrences using word-boundary matching (case-insensitive)
   const title = titleFromPath(destPath);
   if (title.length >= 4) {
-    const lowerBody = body.toLowerCase();
-    const lowerTitle = title.toLowerCase();
-    let idx = 0;
-    while ((idx = lowerBody.indexOf(lowerTitle, idx)) !== -1) {
+    const pattern = new RegExp(
+      `(?<![a-z0-9])${escapeRegex(title)}(?![a-z0-9])`,
+      "gi",
+    );
+    while (pattern.exec(body) !== null) {
       count += 1;
-      idx += lowerTitle.length;
     }
   }
   return count;
@@ -247,10 +360,11 @@ export function buildSweepQueue(opts: {
     const body = read(mat.path);
     if (body === null) continue;
 
-    // Collect all destinations (wikilink + title mention), union
+    // Collect all destinations (wikilink + short-link + title mention), union
     const wikilinkDests = wikilinkDestinations(body, list, targets);
+    const shortlinkDests = shortlinkDestinations(body, list, targets);
     const titleDests = titleMentionDestinations(body, list, targets);
-    const allDests = new Set([...wikilinkDests, ...titleDests]);
+    const allDests = new Set([...wikilinkDests, ...shortlinkDests, ...titleDests]);
 
     // Remove self and dailies
     allDests.delete(mat.path);
@@ -291,8 +405,17 @@ export function buildSweepQueue(opts: {
     return a.destination < b.destination ? -1 : a.destination > b.destination ? 1 : 0;
   });
 
-  const dropped = Math.max(0, candidates.length - maxItems);
+  const droppedCandidates = candidates.slice(maxItems);
+  const dropped = droppedCandidates.length;
   const items = Object.freeze(candidates.slice(0, maxItems));
 
-  return Object.freeze({ items, dropped });
+  // oldestUnswept: earliest materialDate among the dropped candidates
+  let oldestUnswept: string | null = null;
+  for (const c of droppedCandidates) {
+    if (oldestUnswept === null || c.materialDate < oldestUnswept) {
+      oldestUnswept = c.materialDate;
+    }
+  }
+
+  return Object.freeze({ items, dropped, oldestUnswept });
 }

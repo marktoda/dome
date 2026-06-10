@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildSweepQueue } from "../../../assets/extensions/dome.agent/lib/sweep-queue";
+import { buildSweepQueue, safeCursor } from "../../../assets/extensions/dome.agent/lib/sweep-queue";
 import { parseSweepLedger } from "../../../assets/extensions/dome.agent/lib/sweep-ledger";
 
 const TODAY = "2026-06-10";
@@ -99,5 +99,166 @@ describe("buildSweepQueue", () => {
     const run = () =>
       buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
     expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1: safe-cursor contract
+// ---------------------------------------------------------------------------
+
+describe("SweepQueue.oldestUnswept", () => {
+  test("null when nothing is dropped (all items fit in cap)", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "[[wiki/entities/alice-henshaw]]",
+      "wiki/entities/alice-henshaw.md": "# Alice\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger(""), maxItems: 20 });
+    expect(q.oldestUnswept).toBeNull();
+  });
+
+  test("cap drops the oldest-date pair → oldestUnswept equals that date", () => {
+    // Three pairs from two dates; cap at 2 drops the oldest (2026-06-07)
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "[[wiki/entities/alice-henshaw]] [[wiki/entities/bob-jones]]",
+      "wiki/dailies/2026-06-07.md": "[[wiki/entities/carol-white]]",
+      "wiki/entities/alice-henshaw.md": "# Alice\n",
+      "wiki/entities/bob-jones.md": "# Bob\n",
+      "wiki/entities/carol-white.md": "# Carol\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger(""), maxItems: 2 });
+    // dropped = 1 (carol-white from 2026-06-07)
+    expect(q.dropped).toBe(1);
+    expect(q.oldestUnswept).toBe("2026-06-07");
+  });
+});
+
+describe("safeCursor", () => {
+  test("returns yesterday when both nulls", () => {
+    expect(safeCursor({ today: "2026-06-10", oldestUnswept: null, oldestFailed: null })).toBe("2026-06-09");
+  });
+
+  test("returns dayBefore(oldestUnswept) when it is the minimum", () => {
+    // oldestUnswept 2026-06-05 → dayBefore = 2026-06-04
+    // oldestFailed null → yesterday = 2026-06-09
+    // min = 2026-06-04
+    expect(safeCursor({ today: "2026-06-10", oldestUnswept: "2026-06-05", oldestFailed: null })).toBe("2026-06-04");
+  });
+
+  test("returns dayBefore(oldestFailed) when that is older", () => {
+    // oldestFailed 2026-06-03 → dayBefore = 2026-06-02
+    // oldestUnswept 2026-06-05 → dayBefore = 2026-06-04
+    // min = 2026-06-02
+    expect(safeCursor({ today: "2026-06-10", oldestUnswept: "2026-06-05", oldestFailed: "2026-06-03" })).toBe("2026-06-02");
+  });
+
+  test("returns dayBefore(oldestFailed) when oldestUnswept is null but oldestFailed is set", () => {
+    // oldestFailed 2026-06-07 → dayBefore = 2026-06-06
+    // oldestUnswept null → yesterday = 2026-06-09
+    // min = 2026-06-06
+    expect(safeCursor({ today: "2026-06-10", oldestUnswept: null, oldestFailed: "2026-06-07" })).toBe("2026-06-06");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 2: word-boundary title matching
+// ---------------------------------------------------------------------------
+
+describe("word-boundary title matching", () => {
+  test("'learned' does NOT match title 'earn'", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "I learned a lot today.",
+      "wiki/concepts/earn.md": "# Earn\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, targets: ["wiki/concepts/"], today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+
+  test("'met Earn team' DOES match title 'earn'", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "met Earn team today",
+      "wiki/concepts/earn.md": "# Earn\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, targets: ["wiki/concepts/"], today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(1);
+  });
+
+  test("'Robinhood' does NOT match title 'robin'", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Robinhood stock app.",
+      "wiki/entities/robin.md": "# Robin\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 3: settlement accepts display-text and .md-suffixed sources entries
+// ---------------------------------------------------------------------------
+
+describe("isSettledBySources — display-text and .md-suffixed wikilinks", () => {
+  test("[[material|display text]] settles the pair", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md":
+        '---\nsources:\n  - "[[wiki/dailies/2026-06-09|Jun 9]]"\n---\n# Alice\n',
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+
+  test("[[material.md]] settles the pair", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md":
+        '---\nsources:\n  - "[[wiki/dailies/2026-06-09.md]]"\n---\n# Alice\n',
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+
+  test("[[material.md|display text]] settles the pair", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md":
+        '---\nsources:\n  - "[[wiki/dailies/2026-06-09.md|Jun 9]]"\n---\n# Alice\n',
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 4a: frontmatter tolerance — leading blank lines
+// ---------------------------------------------------------------------------
+
+describe("frontmatter tolerance — leading blank lines", () => {
+  test("leading blank lines before opening --- do not defeat settlement", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md":
+        '\n\n---\nsources:\n  - "[[wiki/dailies/2026-06-09]]"\n---\n# Alice\n',
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 4c: short-link hyphenated basename matching
+// ---------------------------------------------------------------------------
+
+describe("short-link hyphenated basename matching", () => {
+  test("body '[[alice-henshaw]]' (bare basename, no path) surfaces the pair", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "talked to [[alice-henshaw]] today",
+      "wiki/entities/alice-henshaw.md": "# Alice Henshaw\n",
+    });
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: parseSweepLedger("") });
+    expect(q.items).toHaveLength(1);
+    expect(q.items[0]).toEqual(expect.objectContaining({
+      material: "wiki/dailies/2026-06-09.md",
+      destination: "wiki/entities/alice-henshaw.md",
+    }));
   });
 });

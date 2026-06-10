@@ -25,7 +25,7 @@ sources:
 The design doc predates engine exploration. Three deliberate deltas, each forced by verified engine constraints:
 
 1. **`dome.agent.sweep-queue` is a pure library, not a processor.** Scheduled garden processors get empty `changedPaths` and there is no inter-processor data channel besides projections; since multiple PatchEffects from ONE run already become independent sub-proposals (`src/engine/garden-patch-router.ts:40` — per-patch capability checks, one can fail while others land), the deterministic spine lives as `lib/sweep-queue.ts` called inside the sweep processor. Same determinism guarantee (the queue is computed in plain code before any model call), simpler wiring.
-2. **No `.dome/state` sweep store — settlement lives in markdown.** Processors can only persist state through the eleven effect kinds; nothing writes arbitrary durable operational state (verified: `.dome/state/*` is engine-written only). Additionally, patches are whole-content writes, so N per-item ledger appends in one run would clobber each other. Therefore: settlement = destination `sources:` wikilink (in the same patch as the integration — atomic per item); the ledger file is **advisory** (cursor, no-op lines, run summary), written once per run as a final separate patch whose loss is harmless.
+2. **No `.dome/state` sweep store — settlement lives in markdown.** Processors can only persist state through the eleven effect kinds; nothing writes arbitrary durable operational state (verified: `.dome/state/*` is engine-written only). Additionally, patches are whole-content writes, so N per-item ledger appends in one run would clobber each other. Therefore: settlement = destination `sources:` wikilink (in the same patch as the integration — atomic per item); the ledger file is **advisory** (cursor, no-op lines, run summary), written once per run as a final separate patch whose loss is harmless. **Safe-cursor contract:** the processor must use `safeCursor({ today, oldestUnswept: queue.oldestUnswept, oldestFailed })` when writing the cursor — dropped and failed material must hold the cursor back so those pairs remain eligible on subsequent runs; the `windowDays` floor is the eventual decay backstop.
 3. **v1 material scope = `wiki/dailies/*.md` + `inbox/processed/*.md`; v1 destinations = existing pages only.** Both material roots are append-only/immutable by convention once the day closes, which is what makes hash-free sources-link settlement sound. `notes/**` + `wiki/sources/**` as material, and new-stub-page creation, are deferred (new entities already get pages via `dome.agent.ingest`).
 
 **Worktree:** create one at execution time (`EnterWorktree`, name `nightly-sweeper`), based on local `main`. Verify env first: `bun test tests/extensions/dome.agent/` passes.
@@ -485,8 +485,11 @@ for (item of queue.items):
 
 // advisory final patch: run summary + no-op/questioned settlement + cursor
 if (ledgerRows.length > 0 || queue.dropped > 0):
+  // Safe cursor: never advance past dropped or failed material.
+  // oldestFailed = min materialDate among tonight's failed items (null if none).
   nextLedger = upsertCursor(existing + renderSweepRun({ date: today, rows: ledgerRows }),
-                            yesterdayOf(today))
+                            safeCursor({ today, oldestUnswept: queue.oldestUnswept,
+                              oldestFailed: /* min materialDate among tonight's failed items, or null */ }))
   effects.push(patchEffect({ mode: "auto", changes: [{ kind: "write", path: ledgerPath, content: nextLedger }],
     reason: "dome.agent.sweep: ledger", sourceRefs: [ctx.sourceRef(ledgerPath)] }))
 if (queue.dropped > 0): info diagnostic "dome.agent.sweep-queue-truncated" (no silent caps)
