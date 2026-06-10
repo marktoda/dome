@@ -601,10 +601,19 @@ function resolveWikilinkTargetDetailed(
     if (pathSet.has(candidate)) return resolution(candidate, "common-root");
   }
 
+  // Resolve by bare basename only when the match is UNIQUE — mirroring the
+  // pathful-alias branch above and the normalized index (which maps
+  // ambiguous keys to null). Taking the first of several same-named pages
+  // silently validated (and repaired to) whichever sorted first; an
+  // ambiguous link must stay unresolved so the validator's
+  // multiple-candidates question machinery owns the decision.
   const basenameMatches = basenameIndex.get(filename);
-  if (basenameMatches !== undefined && basenameMatches.length > 0) {
+  if (basenameMatches !== undefined && basenameMatches.length === 1) {
     const candidate = basenameMatches[0];
     return candidate === undefined ? null : resolution(candidate, "basename");
+  }
+  if (basenameMatches !== undefined && basenameMatches.length > 1) {
+    return null;
   }
 
   const normalized = normalizedIndex.basenames.get(

@@ -185,6 +185,39 @@ describe("dome.markdown.validate-wikilinks", () => {
     expect(effects.length).toBe(0);
   });
 
+  test("an ambiguous bare basename does NOT silently resolve to the first match", async () => {
+    // Two pages share the basename `foo.md`. Resolving [[foo]] to whichever
+    // sorted first silently validated a possibly-wrong link (and the repair
+    // machinery would canonicalize it to that wrong target). The link must
+    // stay unresolved so the validator surfaces the ambiguity instead.
+    const f = await makeVaultWithFiles([
+      { path: "wiki/a.md", content: "Linking to [[foo]] here.\n" },
+      { path: "wiki/projects/foo.md", content: "Project foo.\n" },
+      { path: "wiki/concepts/foo.md", content: "Concept foo.\n" },
+    ]);
+    fixtures.push(f);
+
+    const proc = await loadProcessor();
+    const ctx = makeProcessorContext({
+      snapshot: f.snapshot,
+      changedPaths: ["wiki/a.md"],
+      proposal: null,
+      runId: "run-test-ambiguous-basename",
+      signal: new AbortController().signal,
+      input: { kind: "adoption", matchedTriggers: [] } as unknown,
+    });
+
+    const effects = await proc.run(ctx);
+    // Not silently resolved: the validator reports the link (diagnostic,
+    // optionally plus an ambiguity question naming both candidates).
+    expect(effects.length).toBeGreaterThan(0);
+    const diag = effects.find((e) => e.kind === "diagnostic") as
+      | DiagnosticEffect
+      | undefined;
+    if (diag === undefined) throw new Error("expected a diagnostic");
+    expect(diag.message).toContain("foo");
+  });
+
   test("surfaces a broken wikilink with code dome.markdown.broken-wikilink", async () => {
     const f = await makeVaultWithFiles([
       { path: "wiki/a.md", content: "Linking to [[nonexistent]] here.\n" },
