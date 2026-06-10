@@ -43,6 +43,11 @@ const STATUS_KEYS = Object.freeze([
   "serve_pid",
   "serve_branch",
   "serve_updated_at",
+  "service_status",
+  "service_label",
+  "model_provider_configured",
+  "model_provider_probe_status",
+  "model_provider_probed_at",
   "diagnostics",
   "content_diagnostics",
   "unlocated_diagnostics",
@@ -201,6 +206,16 @@ scenario(
     expect(Array.isArray(status["recent_processor_runs"])).toBe(true);
     expect(Array.isArray(status["maintenance_loops"])).toBe(true);
     expect(status["serve_status"]).toBe("off");
+    // The launchd service line: a never-installed tmp vault is informational
+    // only ("unsupported" off macOS); no service attention reason.
+    expect(["not-installed", "unsupported"]).toContain(
+      String(status["service_status"]),
+    );
+    expect(status["attention"]).not.toContain("service_not_loaded");
+    // No model provider configured -> no probe state, no attention.
+    expect(status["model_provider_configured"]).toBe(false);
+    expect(status["model_provider_probe_status"]).toBeNull();
+    expect(status["model_provider_probed_at"]).toBeNull();
 
     const doctor = parseJson(await h.runCli(["doctor", "--json"]));
     expect(Object.keys(doctor)).toEqual([...DOCTOR_KEYS]);

@@ -409,6 +409,46 @@ export async function runUninstall(
   }
 }
 
+// ----- probeServiceState ----------------------------------------------------
+
+/**
+ * Read-only launchd service state for a vault, shared by `dome install
+ * --status` and the `dome status` service line. `loaded` is probed via
+ * `launchctl print` only when the plist is installed — `dome status` is the
+ * cheap session pulse and must not spawn `launchctl` on every invocation of
+ * a vault that never installed the service. (The deleted-plist-but-loaded
+ * edge therefore reads as `not-installed` here; `dome uninstall` still
+ * boots that edge out.)
+ */
+export type ServiceState =
+  | { readonly supported: false }
+  | {
+      readonly supported: true;
+      readonly label: string;
+      readonly plist: string;
+      readonly installed: boolean;
+      /** Null when the loaded probe was skipped (not installed / no uid). */
+      readonly loaded: boolean | null;
+    };
+
+export async function probeServiceState(
+  vaultPath: string,
+  deps: ServiceDeps = {},
+): Promise<ServiceState> {
+  const d = resolveDeps(deps);
+  if (d.platform !== "darwin") return Object.freeze({ supported: false });
+
+  const label = serviceLabelForVault(resolve(vaultPath));
+  const plist = join(d.launchAgentsDir, `${label}.plist`);
+  const installed = existsSync(plist);
+  let loaded: boolean | null = null;
+  if (installed && d.uid !== null) {
+    const print = await d.launchctl(["print", `gui/${d.uid}/${label}`]);
+    loaded = print.exitCode === 0;
+  }
+  return Object.freeze({ supported: true, label, plist, installed, loaded });
+}
+
 // ----- runRestart -----------------------------------------------------------
 
 /**

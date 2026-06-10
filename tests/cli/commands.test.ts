@@ -30,6 +30,11 @@ import { runInit } from "../../src/cli/commands/init";
 import { runAnswer } from "../../src/cli/commands/answer";
 import { runCheck } from "../../src/cli/commands/check";
 import { runDoctor } from "../../src/cli/commands/doctor";
+import {
+  serviceLabelForVault,
+  type LaunchctlRunner,
+  type ServiceDeps,
+} from "../../src/cli/commands/install";
 import { runExportContext } from "../../src/cli/commands/export-context";
 import { runInspect } from "../../src/cli/commands/inspect";
 import { runLint } from "../../src/cli/commands/lint";
@@ -61,6 +66,10 @@ import {
   writeServeHeartbeat,
 } from "../../src/engine/compiler-host-heartbeat";
 import { openQuarantineStore } from "../../src/engine/quarantine-store";
+import {
+  readModelProviderProbeCache,
+  writeModelProviderProbeCache,
+} from "../../src/engine/model-provider-probe-cache";
 import { openLedgerDb } from "../../src/ledger/db";
 import {
   insertQueued,
@@ -121,6 +130,11 @@ const STATUS_JSON_KEYS = Object.freeze([
   "serve_pid",
   "serve_branch",
   "serve_updated_at",
+  "service_status",
+  "service_label",
+  "model_provider_configured",
+  "model_provider_probe_status",
+  "model_provider_probed_at",
   "diagnostics",
   "content_diagnostics",
   "unlocated_diagnostics",
@@ -3494,6 +3508,13 @@ console.log(JSON.stringify({
     expect(finding?.severity).toBe("error");
     expect(finding?.message).toContain("spawn-failed");
     expect(finding?.recovery).toContain("dome.model-provider.probe/v1");
+
+    // Doctor persists the probe outcome so `dome status` can report
+    // last-known reachability without spawning the provider.
+    const cache = readModelProviderProbeCache(f.vaultPath);
+    expect(cache).not.toBeNull();
+    expect(cache?.result.status).toBe("spawn-failed");
+    expect(cache?.command).toEqual(["/nonexistent/dome-test-provider"]);
   });
 
   test("probe: pre-probe provider (non-zero exit) is treated as alive — no finding", async () => {
@@ -5161,6 +5182,209 @@ describe("runStatus", () => {
         recent_problem_runs: 2,
       },
     ]);
+  });
+
+  // ----- launchd service line + model-provider probe state -------------------
+  //
+  // Per docs/wiki/specs/cli.md §"dome status": the service line is probed via
+  // install's injected ServiceDeps (launchctl print only when a plist is
+  // installed); the model-provider line reads the persisted last-probe cache
+  // by default and spawns the provider only under --probe.
+
+  function statusServiceDeps(input: {
+    readonly agentsDir: string;
+    readonly printExitCode?: number;
+    readonly platform?: NodeJS.Platform;
+    readonly calls?: Array<ReadonlyArray<string>>;
+  }): ServiceDeps {
+    const runner: LaunchctlRunner = async (args) => {
+      input.calls?.push([...args]);
+      return {
+        exitCode: input.printExitCode ?? 113,
+        stdout: "",
+        stderr: "",
+      };
+    };
+    return {
+      platform: input.platform ?? "darwin",
+      uid: 501,
+      launchAgentsDir: input.agentsDir,
+      launchctl: runner,
+    };
+  }
+
+  function statusJson(): Record<string, unknown> {
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    if (blob === undefined) throw new Error("expected status --json output");
+    return JSON.parse(blob) as Record<string, unknown>;
+  }
+
+  test("service line: loaded launchd service reports loaded without attention", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const agents = mkdtempSync(join(tmpdir(), "dome-status-agents-"));
+    const label = serviceLabelForVault(f.vaultPath);
+    await writeFile(join(agents, `${label}.plist`), "<plist/>", "utf8");
+
+    expect(
+      await runStatus(
+        { vault: f.vaultPath, json: true },
+        statusServiceDeps({ agentsDir: agents, printExitCode: 0 }),
+      ),
+    ).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["service_status"]).toBe("loaded");
+    expect(parsed["service_label"]).toBe(label);
+    expect(parsed["attention"]).not.toContain("service_not_loaded");
+    await rm(agents, { recursive: true, force: true });
+  });
+
+  test("service line: installed-but-not-loaded routes service_not_loaded to dome restart", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const agents = mkdtempSync(join(tmpdir(), "dome-status-agents-"));
+    const label = serviceLabelForVault(f.vaultPath);
+    await writeFile(join(agents, `${label}.plist`), "<plist/>", "utf8");
+
+    expect(
+      await runStatus(
+        { vault: f.vaultPath, json: true },
+        statusServiceDeps({ agentsDir: agents, printExitCode: 113 }),
+      ),
+    ).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["service_status"]).toBe("installed");
+    expect(parsed["attention"]).toContain("service_not_loaded");
+    const nextActions = parsed["next_actions"] as ReadonlyArray<{
+      readonly reasons: ReadonlyArray<string>;
+      readonly command: string | null;
+    }>;
+    expect(
+      nextActions.find((action) => action.command === "dome restart")
+        ?.reasons,
+    ).toEqual(["service_not_loaded"]);
+    await rm(agents, { recursive: true, force: true });
+  });
+
+  test("service line: not installed is informational and never spawns launchctl", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const agents = mkdtempSync(join(tmpdir(), "dome-status-agents-"));
+    const calls: Array<ReadonlyArray<string>> = [];
+
+    expect(
+      await runStatus(
+        { vault: f.vaultPath, json: true },
+        statusServiceDeps({ agentsDir: agents, calls }),
+      ),
+    ).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["service_status"]).toBe("not-installed");
+    expect(parsed["service_label"]).toBe(serviceLabelForVault(f.vaultPath));
+    expect(parsed["attention"]).not.toContain("service_not_loaded");
+    expect(calls).toEqual([]);
+    await rm(agents, { recursive: true, force: true });
+  });
+
+  test("service line: non-macOS platforms report unsupported", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const agents = mkdtempSync(join(tmpdir(), "dome-status-agents-"));
+    const calls: Array<ReadonlyArray<string>> = [];
+
+    expect(
+      await runStatus(
+        { vault: f.vaultPath, json: true },
+        statusServiceDeps({ agentsDir: agents, platform: "linux", calls }),
+      ),
+    ).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["service_status"]).toBe("unsupported");
+    expect(parsed["service_label"]).toBeNull();
+    expect(calls).toEqual([]);
+    await rm(agents, { recursive: true, force: true });
+  });
+
+  test("model provider: cached unreachable probe routes model_provider_unreachable to dome doctor", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(f, [
+      "model_provider:",
+      "  kind: command",
+      "  command: [\"/nonexistent/dome-test-provider\"]",
+      "extensions: {}",
+      "",
+    ].join("\n"));
+    writeModelProviderProbeCache(f.vaultPath, {
+      command: ["/nonexistent/dome-test-provider"],
+      probedAt: new Date("2026-06-10T00:00:00.000Z"),
+      result: { status: "spawn-failed", detail: "no such file" },
+    });
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["model_provider_configured"]).toBe(true);
+    expect(parsed["model_provider_probe_status"]).toBe("spawn-failed");
+    expect(parsed["model_provider_probed_at"]).toBe(
+      "2026-06-10T00:00:00.000Z",
+    );
+    expect(parsed["attention"]).toContain("model_provider_unreachable");
+    const nextActions = parsed["next_actions"] as ReadonlyArray<{
+      readonly reasons: ReadonlyArray<string>;
+      readonly command: string | null;
+    }>;
+    expect(
+      nextActions.find((action) => action.command === "dome doctor --json")
+        ?.reasons,
+    ).toEqual(["model_provider_unreachable"]);
+  });
+
+  test("model provider: a cache for a different command is ignored (no stale attention)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(f, [
+      "model_provider:",
+      "  kind: command",
+      "  command: [\"/nonexistent/dome-test-provider\"]",
+      "extensions: {}",
+      "",
+    ].join("\n"));
+    writeModelProviderProbeCache(f.vaultPath, {
+      command: ["/some/other/provider"],
+      probedAt: new Date(),
+      result: { status: "spawn-failed", detail: "different provider" },
+    });
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["model_provider_configured"]).toBe(true);
+    expect(parsed["model_provider_probe_status"]).toBeNull();
+    expect(parsed["model_provider_probed_at"]).toBeNull();
+    expect(parsed["attention"]).not.toContain("model_provider_unreachable");
+  });
+
+  test("model provider: --probe runs the live probe and refreshes the cache", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(f, [
+      "model_provider:",
+      "  kind: command",
+      "  command: [\"/nonexistent/dome-test-provider\"]",
+      "extensions: {}",
+      "",
+    ].join("\n"));
+
+    expect(
+      await runStatus({ vault: f.vaultPath, json: true, probe: true }),
+    ).toBe(0);
+    const parsed = statusJson();
+    expect(parsed["model_provider_probe_status"]).toBe("spawn-failed");
+    expect(parsed["attention"]).toContain("model_provider_unreachable");
+
+    const cache = readModelProviderProbeCache(f.vaultPath);
+    expect(cache).not.toBeNull();
+    expect(cache?.result.status).toBe("spawn-failed");
+    expect(cache?.command).toEqual(["/nonexistent/dome-test-provider"]);
   });
 
   // The "status after a submit reports the advanced adopted ref" test

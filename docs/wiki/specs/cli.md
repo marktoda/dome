@@ -26,7 +26,8 @@ dome capture [text] [--file <path>] [--title <t>] [--json]
                                 current branch. Returns immediately.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
-dome status [--loops] [--json]  Vault health + content dashboard.
+dome status [--loops] [--probe] [--json]
+                                Vault health + content dashboard.
 dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit <n>] [--json]
                                 Explain compiler attention across health,
                                 diagnostics, and decisions.
@@ -409,7 +410,7 @@ Exit codes: 0 on adopted / in-sync; 1 on blocked, adopted-ref divergence, or run
 
 See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
-### `dome status [--loops] [--json]`
+### `dome status [--loops] [--probe] [--json]`
 
 The health pulse for a vault. It is read-only and cheap enough for an
 agent or user to run at session start/end. Status intentionally combines
@@ -657,9 +658,13 @@ they do not adopt or drain compiler work.
 reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
-`pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
+`pending_runs`, `failed_runs`, `serve_stale`, `service_not_loaded`,
+`model_provider_unreachable`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. Dirty reasons include bounded path samples in
+`capture_loop_inactive`. `adopted_ref_diverged` routes to `dome reanchor`
+(inspect first; see [[wiki/gotchas/adopted-ref-divergence]]);
+`service_not_loaded` routes to `dome restart`; `model_provider_unreachable`
+routes to `dome doctor --json`. Dirty reasons include bounded path samples in
 `dirty_modified_paths` and `dirty_untracked_paths`, and the dirty-state
 next-action description names those paths so a foreground agent can see the
 immediate draft files without issuing another status command. The counts remain
@@ -729,7 +734,38 @@ reports. `serve_status` is read from the foreground host heartbeat file and is
 not refreshed its heartbeat within the host's configured cadence. Text mode
 annotates `serve off` as `serve off (run dome serve)` to nudge the normal
 foreground-host workflow, but `off` is not itself an attention reason because
-one-shot `dome sync` is a valid catch-up mode. Generated AGENTS guidance tells
+one-shot `dome sync` is a valid catch-up mode.
+
+**Launchd service line.** `service_status` / `service_label` report the
+vault's ambient launchd service through install's probe helpers (the same
+injected `ServiceDeps`, so tests use the recording fake): `loaded`,
+`installed` (plist present, service not loaded), `not-installed`, or
+`unsupported` (non-macOS). The loaded probe (`launchctl print`) runs only
+when a plist is actually installed, so the common never-installed vault pays
+one `existsSync`. `not-installed` and `unsupported` are **informational, not
+attention** — one-shot `dome sync` and a foreground `dome serve` are valid
+modes. `installed`-but-not-loaded routes the `service_not_loaded` attention
+reason to `dome restart`: a KeepAlive agent that is not loaded means the
+ambient compiler silently stopped.
+
+**Model-provider reachability.** `model_provider_configured`,
+`model_provider_probe_status`, and `model_provider_probed_at` report
+last-known provider reachability. The tradeoff: the
+`dome.model-provider.probe/v1` probe spawns the provider command with up to
+an 8s timeout — far over status's cheap-pulse budget — so **plain `dome
+status` never spawns the provider**. Instead it reads the persisted
+last-probe cache at `.dome/state/model-provider-probe.json` (derived,
+gitignored; written by `dome doctor` and by `dome status --probe`), and only
+when the cached command matches the currently configured one — a provider
+swap implicitly invalidates the cache, so stale attention never survives a
+config change. A cached/live unreachable outcome (`spawn-failed` /
+`invalid-response` / `timed-out`, the same classification as doctor's
+`model.provider-unreachable` finding) adds the `model_provider_unreachable`
+attention reason routed to `dome doctor --json`. When no cheap cached result
+exists, the probe state reads null and routes nothing; `--probe` opts into
+the fresh (slow) probe and refreshes the cache. The cost asymmetry is
+deliberate: reachability attention is at most one probe stale by default,
+which is the right trade for a command agents run at every session boundary. Generated AGENTS guidance tells
 Claude Code to read `serve_status` separately from `next_actions`, because
 `next_actions` is scoped to compiler attention rather than host preference. Use
 `dome check --json` for the normal explanation path and `dome inspect
@@ -1502,8 +1538,13 @@ distinguishes five outcomes:
 - **timed-out** — no exit within the probe timeout (default 8s). Raises
   `model.provider-unreachable`.
 
-The probe runs only in `dome doctor` (the probe verb); `dome check` reuses the
-same `HealthReport` machinery but does not spawn the provider. Together with
+The probe runs only in `dome doctor` (the probe verb) and the opt-in
+`dome status --probe`; `dome check` reuses the same `HealthReport` machinery
+but does not spawn the provider. Doctor persists each probe outcome to
+`.dome/state/model-provider-probe.json` (derived, gitignored — the same
+class as the serve heartbeat) so `dome status` can report last-known
+reachability for the cost of one JSON read; see §"`dome status`"
+"Model-provider reachability" for the cache-matching rule. Together with
 the existing `model.provider-missing` finding this makes the historical silent
 no-op loud: unconfigured, configured-but-dead, and configured-but-keyless
 vaults each get a distinct, actionable diagnostic line.
@@ -1746,9 +1787,13 @@ inspection, prints launchctl's stderr, and exits 1.
 `installed` (plist present in the LaunchAgents dir), and `loaded` (whether
 `launchctl print gui/<uid>/<label>` resolves) without mutating anything. A
 loaded service also writes the normal serve heartbeat, so `dome status`
-already shows `serve running` / `stale` while the agent is alive; surfacing
-installed-but-dead state directly inside `dome status` is a Phase 1 follow-up
-(use `dome install --status` until it lands).
+shows `serve running` / `stale` while the agent is alive, and `dome status`
+also carries the service line directly (`service_status` /
+`service_label`, via the shared `probeServiceState` helper): installed-but-
+not-loaded routes the `service_not_loaded` attention reason to
+`dome restart`. `dome install --status` remains the row-level probe (it
+also checks `loaded` for the deleted-plist-but-loaded edge, which the
+cheap status line skips).
 
 `--json` emits `dome.install/v1`: `{ schema, status:
 "installed" | "status" | "error", vault, label, plist, log?, installed?,

@@ -49,6 +49,30 @@
 //                       processor health, diagnostics, questions, and runs.
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
+//   - service_status:   launchd ambient-service state for the vault:
+//                       `loaded`, `installed` (plist present, service not
+//                       loaded), `not-installed`, or `unsupported`
+//                       (non-macOS). Probed via the injected ServiceDeps
+//                       (install's helpers); `launchctl print` runs only
+//                       when a plist is installed, so the common
+//                       never-installed vault costs one existsSync.
+//                       "not installed" is informational, never attention;
+//                       installed-but-not-loaded routes `service_not_loaded`
+//                       attention to `dome restart`.
+//   - service_label:    the launchd label, or null on unsupported platforms.
+//   - model_provider_configured:
+//                       whether .dome/config.yaml carries a command model
+//                       provider stanza.
+//   - model_provider_probe_status / model_provider_probed_at:
+//                       the last persisted provider probe outcome (written
+//                       by `dome doctor` or `dome status --probe`) when it
+//                       matches the currently configured command; null when
+//                       never probed. Status never spawns the provider by
+//                       default (the probe costs up to 8s); `--probe` forces
+//                       a fresh probe and refreshes the cache. An
+//                       unreachable last probe routes the
+//                       `model_provider_unreachable` attention reason to
+//                       `dome doctor --json`.
 //   - diagnostics:      count of unresolved source-backed content diagnostics.
 //                       Source-less runtime diagnostics stay visible through
 //                       `unlocated_diagnostics` and `inspect diagnostics`, but
@@ -98,7 +122,14 @@ import {
   readServeHeartbeatStatus,
   type ServeHeartbeatStatus,
 } from "../../engine/compiler-host-heartbeat";
+import { probeCommandModelProvider } from "../../engine/command-model-provider";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/health";
+import {
+  probeCacheMatchesCommand,
+  probeResultUnreachable,
+  readModelProviderProbeCache,
+  writeModelProviderProbeCache,
+} from "../../engine/model-provider-probe-cache";
 import {
   openVaultRuntime,
   type VaultRuntime,
@@ -122,6 +153,7 @@ import {
 } from "../../projections/db";
 import { queryQuestionRecords } from "../../projections/questions";
 
+import { probeServiceState, type ServiceDeps } from "./install";
 import { resolveBundleRoots } from "./sync-shared";
 
 import {
@@ -227,6 +259,11 @@ type StatusSnapshot = {
   readonly serve_pid: number | null;
   readonly serve_branch: string | null;
   readonly serve_updated_at: string | null;
+  readonly service_status: ServiceStatusValue;
+  readonly service_label: string | null;
+  readonly model_provider_configured: boolean;
+  readonly model_provider_probe_status: string | null;
+  readonly model_provider_probed_at: string | null;
   readonly diagnostics: number;
   readonly content_diagnostics: number;
   readonly unlocated_diagnostics: number;
@@ -248,15 +285,23 @@ export type RunStatusOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
   readonly loops?: boolean | undefined;
+  /** Run a fresh model-provider probe (up to 8s) instead of reading the cached last-probe result. */
+  readonly probe?: boolean | undefined;
 };
+
+/** The launchd ambient-service state rendered by `dome status`. */
+type ServiceStatusValue = "loaded" | "installed" | "not-installed" | "unsupported";
 
 // ----- runStatus ------------------------------------------------------------
 
 /**
- * Execute `dome status`. Returns the exit code.
+ * Execute `dome status`. Returns the exit code. `deps` injects the launchd
+ * probe boundaries (platform, LaunchAgents dir, launchctl runner) exactly
+ * like `runInstall`; tests pass the recording fake.
  */
 export async function runStatus(
   options: RunStatusOptions = {},
+  deps: ServiceDeps = {},
 ): Promise<number> {
   const vaultPath = resolve(options.vault ?? process.cwd());
 
@@ -320,6 +365,12 @@ export async function runStatus(
       }),
     );
     const serve = await readServeHeartbeatStatus({ vaultPath });
+    const service = await collectServiceStatus(vaultPath, deps);
+    const modelProbe = await collectModelProviderProbe({
+      vaultPath,
+      runtime,
+      probe: options.probe === true,
+    });
     const projection_cache_drift = projectionCacheKeysChanged(
       runtime.projectionDb,
       {
@@ -418,6 +469,8 @@ export async function runStatus(
       orphanRuns: orphan_runs,
       failedRuns: failed_runs,
       serveStatus: serve.status,
+      serviceNotLoaded: service.notLoaded,
+      modelProviderUnreachable: modelProbe.unreachable,
       diagnostics: attentionDiagnostics,
       questions,
       outboxPending: outbox_pending,
@@ -467,6 +520,11 @@ export async function runStatus(
       serve_pid: serve.pid,
       serve_branch: serve.branch,
       serve_updated_at: serve.updatedAt,
+      service_status: service.status,
+      service_label: service.label,
+      model_provider_configured: modelProbe.configured,
+      model_provider_probe_status: modelProbe.status,
+      model_provider_probed_at: modelProbe.probedAt,
       diagnostics,
       content_diagnostics: contentDiagnosticRows.length,
       unlocated_diagnostics: unlocatedDiagnostics,
@@ -568,6 +626,12 @@ function printStatusText(
           { label: "outbox", value: `${s.outbox_pending} pending · ${s.outbox_failed} failed` },
           { label: "quarantine", value: String(s.quarantined) },
           { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops) },
+          ...(s.service_status === "unsupported"
+            ? []
+            : [{ label: "service", value: formatServiceLine(s) } satisfies KvRow]),
+          ...(s.model_provider_configured
+            ? [{ label: "model", value: formatModelProviderLine(s) } satisfies KvRow]
+            : []),
         ],
         caps,
       ),
@@ -606,6 +670,21 @@ function printStatusText(
   lines.push(...footer(footerStatus, caps));
 
   console.log(lines.join("\n"));
+}
+
+function formatServiceLine(s: StatusSnapshot): string {
+  if (s.service_status === "loaded") return "loaded";
+  if (s.service_status === "installed") {
+    return "installed, not loaded (run dome restart)";
+  }
+  return "not installed";
+}
+
+function formatModelProviderLine(s: StatusSnapshot): string {
+  if (s.model_provider_probe_status === null) {
+    return "configured, unprobed (dome doctor or dome status --probe)";
+  }
+  return `probe ${s.model_provider_probe_status} at ${s.model_provider_probed_at ?? "(unknown)"}`;
 }
 
 function formatServe(s: StatusSnapshot): string {
@@ -673,6 +752,85 @@ function formatContentSummary(s: StatusSnapshot): string {
   return `${s.content_pages} pages · wiki ${s.wiki_pages} · notes ${s.notes_pages} · inbox ${formatInboxPages(s)} · links ${s.wikilinks} · raw ${s.raw_files} files (${formatBytes(s.raw_bytes)})`;
 }
 
+/**
+ * The launchd service line, derived through install's probe helper with the
+ * injected deps. `not-installed` and `unsupported` are informational only;
+ * `notLoaded` (plist present, `launchctl print` says the service is gone)
+ * is the attention-worthy state — a KeepAlive agent that is not loaded
+ * means the ambient compiler silently stopped.
+ */
+async function collectServiceStatus(
+  vaultPath: string,
+  deps: ServiceDeps,
+): Promise<{
+  readonly status: ServiceStatusValue;
+  readonly label: string | null;
+  readonly notLoaded: boolean;
+}> {
+  const state = await probeServiceState(vaultPath, deps);
+  if (!state.supported) {
+    return { status: "unsupported", label: null, notLoaded: false };
+  }
+  if (!state.installed) {
+    return { status: "not-installed", label: state.label, notLoaded: false };
+  }
+  return {
+    status: state.loaded === true ? "loaded" : "installed",
+    label: state.label,
+    notLoaded: state.loaded === false,
+  };
+}
+
+/**
+ * Last-known model-provider reachability. Default mode reads only the
+ * persisted probe cache (one small JSON read; written by `dome doctor` or a
+ * prior `--probe`) and ignores it when the configured command changed.
+ * `--probe` spawns the provider live (up to 8s) and refreshes the cache —
+ * that cost is why it is opt-in; see wiki/specs/cli.md §"dome status".
+ */
+async function collectModelProviderProbe(opts: {
+  readonly vaultPath: string;
+  readonly runtime: VaultRuntime;
+  readonly probe: boolean;
+}): Promise<{
+  readonly configured: boolean;
+  readonly status: string | null;
+  readonly probedAt: string | null;
+  readonly unreachable: boolean;
+}> {
+  const config = opts.runtime.config.modelProvider;
+  if (config === undefined) {
+    return { configured: false, status: null, probedAt: null, unreachable: false };
+  }
+  if (opts.probe) {
+    const result = await probeCommandModelProvider(config, {
+      cwd: opts.vaultPath,
+    });
+    const now = new Date();
+    writeModelProviderProbeCache(opts.vaultPath, {
+      command: config.command,
+      probedAt: now,
+      result,
+    });
+    return {
+      configured: true,
+      status: result.status,
+      probedAt: now.toISOString(),
+      unreachable: probeResultUnreachable(result),
+    };
+  }
+  const cache = readModelProviderProbeCache(opts.vaultPath);
+  if (cache === null || !probeCacheMatchesCommand(cache, config.command)) {
+    return { configured: true, status: null, probedAt: null, unreachable: false };
+  }
+  return {
+    configured: true,
+    status: cache.result.status,
+    probedAt: cache.probedAt,
+    unreachable: probeResultUnreachable(cache.result),
+  };
+}
+
 function statusAttention(input: {
   readonly syncNeeded: boolean;
   readonly adoptedDiverged: boolean;
@@ -682,6 +840,8 @@ function statusAttention(input: {
   readonly orphanRuns: number;
   readonly failedRuns: number;
   readonly serveStatus: ServeHeartbeatStatus["status"];
+  readonly serviceNotLoaded: boolean;
+  readonly modelProviderUnreachable: boolean;
   readonly diagnostics: number;
   readonly questions: number;
   readonly outboxPending: number;
@@ -698,6 +858,8 @@ function statusAttention(input: {
   if (input.orphanRuns > 0) out.push("pending_runs");
   if (input.failedRuns > 0) out.push("failed_runs");
   if (input.serveStatus === "stale") out.push("serve_stale");
+  if (input.serviceNotLoaded) out.push("service_not_loaded");
+  if (input.modelProviderUnreachable) out.push("model_provider_unreachable");
   if (input.diagnostics > 0) out.push("diagnostics");
   if (input.questions > 0) out.push("questions");
   if (input.outboxPending > 0) out.push("outbox_pending");

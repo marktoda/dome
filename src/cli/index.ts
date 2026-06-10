@@ -546,6 +546,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("status")
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
+    .option(
+      "--probe",
+      "Run a fresh model-provider probe (up to 8s) instead of the cached result.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -555,6 +559,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
           loops: options.loops,
+          probe: options.probe,
           json: options.json,
         }),
       );
@@ -730,6 +735,7 @@ type ServeCliOptions = {
 
 type StatusCliOptions = {
   readonly loops?: boolean;
+  readonly probe?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

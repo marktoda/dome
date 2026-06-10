@@ -97,6 +97,20 @@ export function nextActionsForStatus(
     description:
       "Restart the foreground compiler host so it can refresh the stale serve heartbeat.",
   });
+  pushAction(out, attention, ["service_not_loaded"], {
+    command: "dome restart",
+    description:
+      "The vault's launchd service plist is installed but the service is " +
+      "not loaded; restart it from the existing plist (bootout + bootstrap; " +
+      "--env entries preserved).",
+  });
+  pushAction(out, attention, ["model_provider_unreachable"], {
+    command: "dome doctor --json",
+    description:
+      "The last model-provider probe failed; re-probe and follow the " +
+      "model.provider-unreachable finding's recovery to fix the provider " +
+      "command or its environment.",
+  });
   const syncReasons = SYNC_REASONS.filter((reason) =>
     attention.includes(reason),
   );
