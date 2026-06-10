@@ -22,6 +22,7 @@ describe("stampClaimAnchors", () => {
     const before = stampClaimAnchors({ path: PATH, content: "- **Pod:** AMM Growth\n" })!;
     const anchor = parseBlockAnchor(before.split("\n")[0]!)?.id;
     expect(anchor).toBeDefined();
+    if (anchor === undefined) throw new Error("anchor missing");
     // Supersession: edit the value in place, anchor untouched, nothing re-stamps.
     const superseded = before.replace("AMM Growth", "Protocol Growth");
     expect(stampClaimAnchors({ path: PATH, content: superseded })).toBeNull();
