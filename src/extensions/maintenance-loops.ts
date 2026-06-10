@@ -254,6 +254,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "path", pattern: "notes/*.md" },
         { kind: "path", pattern: "sources/calendar/*.md" },
         { kind: "projection", name: "facts:dome.daily.*" },
+        { kind: "projection", name: "facts:dome.attention.*" },
         { kind: "operational", name: "questions" },
       ],
       processors: [
@@ -262,6 +263,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.stamp-block-id",
         "dome.daily.reconcile-tasks",
         "dome.daily.normalize-task-syntax",
+        "dome.daily.attention-discount",
         "dome.daily.ambiguous-followup-answer",
         "dome.daily.today",
         "dome.daily.prep",
