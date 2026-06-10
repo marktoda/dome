@@ -318,6 +318,20 @@ scenario(
     expect(exempt?.attention?.impressions ?? 0).toBeGreaterThanOrEqual(5);
     expect(exempt?.attention?.discount).toBe(0);
 
+    // PROJECTIONS_ARE_REBUILDABLE: the discount facts are clock-free and
+    // re-derive from adopted markdown + git history — `dome rebuild`
+    // (which re-runs the deterministic rebuild-eligible garden set)
+    // restores both rows.
+    const rebuild = await h.runCli(["rebuild", "--json"]);
+    expect(rebuild.exitCode).toBe(0);
+    await h
+      .expectProjection()
+      .facts({
+        predicate: "dome.attention.discount",
+        subjectId: "wiki/projects/omega.md",
+      })
+      .toHaveCount(2);
+
     // Settling the plain item (resolve its surfaced copy) clears its fact.
     const daily = await readFile(
       join(h.vaultPath, "wiki/dailies/2026-06-05.md"),
