@@ -32,17 +32,17 @@ src/mcp/server.ts — createDomeMcpServer({ vaultPath, bundlesRoot }) → McpSer
 dome mcp   (stdio transport; one vault per process)
 ```
 
-The adapter is deliberately thin and **reuses the CLI's serializers — it does not duplicate logic**:
+The adapter is deliberately thin and **consumes data-returning boundaries — it does not duplicate logic and it never captures console output**:
 
-- `capture` calls `runCapture` (the `dome capture` handler) and returns its `dome.capture/v1` JSON payload.
-- `query` / `export_context` call the `dome query` / `dome export-context` handlers, which dispatch through the shared structured-view boundary (`runStructuredViewCommand` → `src/engine/view-command.ts`).
-- `status` / `check` / `resolve` call the `dome status` / `dome check` / `dome resolve` handlers in `--json` mode.
-- `tasks` dispatches the `dome.daily.today` view processor through the same structured-view boundary `dome run today` uses.
+- `capture` calls `performCapture` (the data core behind `dome capture`) and renders the shared `dome.capture/v1` document via `captureJsonDocument`.
+- `query` / `export_context` / `tasks` dispatch their view processors through the public `vault.runView` surface (`openVault` → `src/engine/view-command.ts`), with the same expected-view/schema validation the CLI wrappers enforce.
+- `status` / `check` call `buildStatusSnapshot` / `buildCheckReport` (the data collectors behind `dome status --json` / `dome check --json`) and return the identical documents.
+- `resolve` calls `vault.resolve` (durable answer + answer-handler dispatch — the same path as `dome resolve`) and renders `dome.answer/v1` via the CLI's exported mappers.
 - `brief` runs the today view to locate the daily note (config-aware path template), then reads its content at the adopted commit via the git read boundary.
 
-Because the CLI handlers print via `console.log`, the adapter runs each handler under a captured-console mutex (the same capture pattern the test harness's `runCli` uses). The captured `--json` document becomes the tool result, and — critically for a stdio server — handler output can never leak into the protocol channel on stdout. Tool calls are serialized; each call opens and closes its own `VaultRuntime` exactly like one CLI invocation, so no long-lived SQLite handle is held between calls.
+Nothing in a tool call prints, so stdout stays exclusively the MCP protocol channel — load-bearing for a stdio server. A tool mutex still serializes calls: each call opens and closes its own `Vault`/runtime exactly like one CLI invocation, so at most one set of SQLite handles is open against the vault at a time and none is held between calls.
 
-The planned `AbstractSurface` + `renderMcp(surface)` split ([[wiki/specs/sdk-surface]] §"Consumer surfaces") remains the target internal shape. The shipped adapter routes through the CLI command handlers because that is where the v1 surface contract (the `dome.<verb>/v1` schemas and exit-code policy) lives today; when `AbstractSurface` lands, the adapter swaps its internals without changing the tool contract.
+The planned `AbstractSurface` + `renderMcp(surface)` split ([[wiki/specs/sdk-surface]] §"Consumer surfaces") remains the target internal shape. The shipped adapter consumes `openVault` plus the CLI's data collectors because that is where the v1 surface contract (the `dome.<verb>/v1` schemas) lives today; when `AbstractSurface` lands, the adapter swaps its internals without changing the tool contract.
 
 ### Dependency fence
 
@@ -108,7 +108,7 @@ An earlier draft of this spec said "no write tools." Wedge Phase 5 deliberately 
 
 **Composition with `dome serve`:** run both. The MCP server gives an agent typed read/capture access; the daemon compiles what the agent captures. Captures and resolutions made over MCP are durable immediately and compile on the daemon's next tick (or the next `dome sync`). The MCP server stays correct with no daemon running — reads serve the last-adopted state and `capture` reports `compile_pending: true` — it just goes stale.
 
-**Mount lifecycle:** `dome mcp` validates the vault (git repo + `.dome/config.yaml`), builds the server, and serves stdio until the client disconnects. Disconnect detection watches stdin `end`/`close` directly — the SDK's `StdioServerTransport` fires `onclose` only from an explicit `close()`, never from stdin EOF — and the shutdown handlers are registered before `connect()` so an instant disconnect cannot race them and hang the process. Per tool call, the underlying handler opens and closes its own runtime; shutdown therefore needs no drain. Single-vault per process — multi-vault setups run one `dome mcp` per vault. The tool-execution mutex (the captured-console fence that serializes overlapping tool calls; the MCP SDK does not serialize) is per-server closure state, not module state, so two servers in one process don't share it.
+**Mount lifecycle:** `dome mcp` validates the vault (git repo + `.dome/config.yaml`), builds the server, and serves stdio until the client disconnects. Disconnect detection watches stdin `end`/`close` directly — the SDK's `StdioServerTransport` fires `onclose` only from an explicit `close()`, never from stdin EOF — and the shutdown handlers are registered before `connect()` so an instant disconnect cannot race them and hang the process. Per tool call, the underlying handler opens and closes its own runtime; shutdown therefore needs no drain. Single-vault per process — multi-vault setups run one `dome mcp` per vault. The tool-execution mutex (one runtime open at a time; the MCP SDK does not serialize overlapping tool calls) is per-server closure state, not module state, so two servers in one process don't share it.
 
 ## Registration recipe (Claude Code)
 

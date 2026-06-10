@@ -116,8 +116,12 @@ import { basename } from "node:path";
 import { homedir } from "node:os";
 
 import { commitOid } from "../../core/source-ref";
-import { countCommitsSince, currentSha, isAncestor } from "../../git";
+import { currentSha } from "../../git";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
+import {
+  countPendingCommits,
+  isAdoptedDiverged,
+} from "../../engine/adoption-status";
 import {
   readServeHeartbeatStatus,
   type ServeHeartbeatStatus,
@@ -226,7 +230,7 @@ type ProcessorRunSummary = {
  * The status snapshot. Keys stay stable across vault states so agent
  * consumers can read one JSON shape.
  */
-type StatusSnapshot = {
+export type StatusSnapshot = {
   readonly vault: string;
   readonly branch: string | null;
   readonly head: string | null;
@@ -296,15 +300,20 @@ type ServiceStatusValue = "loaded" | "installed" | "not-installed" | "unsupporte
 
 // ----- runStatus ------------------------------------------------------------
 
+/** The data-returning outcome of one status collection. */
+export type StatusSnapshotOutcome =
+  | { readonly kind: "ok"; readonly snapshot: StatusSnapshot }
+  | { readonly kind: "runtime-open-failed"; readonly errorKind: string };
+
 /**
- * Execute `dome status`. Returns the exit code. `deps` injects the launchd
- * probe boundaries (platform, LaunchAgents dir, launchctl runner) exactly
- * like `runInstall`; tests pass the recording fake.
+ * Collect the full `dome status` snapshot without printing. Opens and
+ * closes its own runtime. `runStatus` renders the outcome for the
+ * terminal; the MCP `status` tool renders it as the same JSON document.
  */
-export async function runStatus(
-  options: RunStatusOptions = {},
+export async function buildStatusSnapshot(
+  options: Pick<RunStatusOptions, "vault" | "bundlesRoot" | "probe"> = {},
   deps: ServiceDeps = {},
-): Promise<number> {
+): Promise<StatusSnapshotOutcome> {
   const vaultPath = resolveVaultPath(options.vault);
 
   // Read the git-side state first. These accessors return null on missing
@@ -330,9 +339,8 @@ export async function runStatus(
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    return emitRuntimeOpenFailure({
-      command: "status",
-      json: options.json === true,
+    return Object.freeze({
+      kind: "runtime-open-failed" as const,
       errorKind: runtimeResult.error.kind,
     });
   }
@@ -544,15 +552,39 @@ export async function runStatus(
       quarantined,
     };
 
-    if (options.json === true) {
-      console.log(formatJson(snapshot));
-    } else {
-      printStatusText(snapshot, { showLoopDetails: options.loops === true, caps: resolveCaps() });
-    }
-    return 0;
+    return Object.freeze({ kind: "ok" as const, snapshot });
   } finally {
     await runtime.close();
   }
+}
+
+/**
+ * Execute `dome status`. Returns the exit code. `deps` injects the launchd
+ * probe boundaries (platform, LaunchAgents dir, launchctl runner) exactly
+ * like `runInstall`; tests pass the recording fake.
+ */
+export async function runStatus(
+  options: RunStatusOptions = {},
+  deps: ServiceDeps = {},
+): Promise<number> {
+  const outcome = await buildStatusSnapshot(options, deps);
+  if (outcome.kind === "runtime-open-failed") {
+    return emitRuntimeOpenFailure({
+      command: "status",
+      json: options.json === true,
+      errorKind: outcome.errorKind,
+    });
+  }
+
+  if (options.json === true) {
+    console.log(formatJson(outcome.snapshot));
+  } else {
+    printStatusText(outcome.snapshot, {
+      showLoopDetails: options.loops === true,
+      caps: resolveCaps(),
+    });
+  }
+  return 0;
 }
 
 // ----- internals ------------------------------------------------------------
@@ -952,34 +984,6 @@ function formatBytes(bytes: number): string {
   const mib = kib / 1024;
   if (mib < 1024) return `${mib.toFixed(1)} MB`;
   return `${(mib / 1024).toFixed(1)} GB`;
-}
-
-async function countPendingCommits(opts: {
-  readonly vaultPath: string;
-  readonly head: string | null;
-  readonly adopted: string | null;
-}): Promise<number | null> {
-  if (opts.head === null) return null;
-  if (opts.adopted === null) return null;
-  return countCommitsSince({
-    path: opts.vaultPath,
-    ancestor: opts.adopted,
-    descendant: opts.head,
-  });
-}
-
-async function isAdoptedDiverged(opts: {
-  readonly vaultPath: string;
-  readonly head: string | null;
-  readonly adopted: string | null;
-}): Promise<boolean> {
-  if (opts.head === null || opts.adopted === null) return false;
-  if (opts.head === opts.adopted) return false;
-  return !(await isAncestor({
-    path: opts.vaultPath,
-    ancestor: opts.adopted,
-    descendant: opts.head,
-  }));
 }
 
 function formatPendingCommits(count: number | null): string {

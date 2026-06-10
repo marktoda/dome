@@ -46,6 +46,7 @@ By substrate type:
 - **Every vault is a git repo.** Axiom; enforced by `dome init`, the git
   boundary, and runtime open paths before adoption work runs.
 - **The compiler boundary** (AGENTS.md + CLI + daemon + git-native writes) is the contract every agentic harness interacts with — see [[docs/wiki/specs/harnesses]].
+- **`openVault` is the standard entry point.** New surfaces and CLI verbs consume the public wrapper (`src/vault.ts`); direct `openVaultRuntime` is reserved for the daemon and operator internals (serve, sync, status/check collectors, doctor, inspect) that report on runtime guts the wrapper hides. See [[docs/wiki/specs/sdk-surface]] §"Implementation status".
 
 ## How to run
 
@@ -60,6 +61,7 @@ By substrate type:
 ```
 src/
   index.ts              # public surface re-exports
+  vault.ts              # openVault — THE standard entry point for every surface
   adopted-ref.ts        # adopted-ref read/write helpers
   core/                 # the four core types (Proposal, Effect, Processor, SourceRef)
   engine/               # adoption loop + effect application (the single applier)

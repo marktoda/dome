@@ -1,8 +1,9 @@
 // Wedge Phase 5 — tests for the Dome MCP server (`dome mcp`).
 //
 // Per docs/wiki/specs/mcp-surface.md, the MCP server is a thin protocol
-// adapter over the same CLI command handlers the verbs use, and tool results
-// are the same `dome.<verb>/v1` JSON documents the CLI emits under `--json`.
+// adapter over the public `openVault` wrapper plus the CLI's data-returning
+// collectors, and tool results are the same `dome.<verb>/v1` JSON documents
+// the CLI emits under `--json`.
 // These tests are hermetic and end-to-end by design: a real temp vault
 // (runInit), real commits, a real `dome sync` adoption pass with the shipped
 // bundles, and the MCP SDK's in-memory linked transport pair — no protocol
@@ -364,10 +365,10 @@ describe("dome mcp server (in-memory transport)", () => {
   }, TEST_TIMEOUT_MS);
 
   test("overlapping tool calls serialize through the mutex; both results parse cleanly", async () => {
-    // The MCP SDK does NOT serialize tool calls; the captured-console mutex
-    // is the only fence keeping one call's stdout out of the other's result.
-    // Fire two calls without awaiting the first and assert both produce
-    // clean, well-formed JSON payloads (callTool JSON.parses each).
+    // The MCP SDK does NOT serialize tool calls; the tool mutex is the fence
+    // keeping at most one VaultRuntime open against the vault's SQLite files
+    // at a time. Fire two calls without awaiting the first and assert both
+    // produce clean, well-formed JSON payloads (callTool JSON.parses each).
     const { client } = await fixture();
     const [status, query] = await Promise.all([
       callTool(client, "status"),

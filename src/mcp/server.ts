@@ -1,31 +1,31 @@
 // mcp/server: the Dome MCP protocol adapter — wedge Phase 5.
 //
 // Per docs/wiki/specs/mcp-surface.md, this is a THIN adapter: every tool
-// resolves to the same code path the corresponding CLI verb uses, and tool
+// resolves to the same data path the corresponding CLI verb uses, and tool
 // results are the same `dome.<verb>/v1` JSON documents the CLI emits under
 // `--json`. There is no parallel query/serialization logic here.
 //
-//   capture        → runCapture            (dome.capture/v1)
-//   query          → runQuery              (dome.search.query/v1)
-//   export_context → runExportContext      (dome.search.export-context/v1)
-//   status         → runStatus             (status snapshot, stable keys)
-//   check          → runCheck              (dome.check/v1)
-//   resolve        → runResolve            (dome.answer/v1)
-//   tasks          → today view via runStructuredViewCommand
-//                                          (dome.daily.today/v1)
+//   capture        → performCapture          (dome.capture/v1)
+//   query          → vault.runView("query")  (dome.search.query/v1)
+//   export_context → vault.runView("export-context")
+//                                            (dome.search.export-context/v1)
+//   status         → buildStatusSnapshot     (status snapshot, stable keys)
+//   check          → buildCheckReport        (dome.check/v1)
+//   resolve        → vault.resolve           (dome.answer/v1)
+//   tasks          → vault.runView("today")  (dome.daily.today/v1)
 //   brief          → today view + adopted-commit blob read
-//                                          (dome.mcp.brief/v1)
+//                                            (dome.mcp.brief/v1)
 //
 // Boundary notes:
 //
-//   - The CLI handlers print via console.log. Tool execution therefore runs
-//     under a captured-console mutex (the same pattern the test harness's
-//     `runCli` uses): the captured `--json` document becomes the tool
-//     result, and handler output can never leak onto stdout — which, for a
-//     stdio MCP server, is the protocol channel.
-//   - The mutex also serializes tool calls, so at most one VaultRuntime is
-//     open at a time. Each call opens and closes its own runtime exactly
-//     like one CLI invocation; no long-lived SQLite handle is held.
+//   - Tools consume the public `openVault` wrapper and the CLI's
+//     data-returning collectors (`performCapture`, `buildStatusSnapshot`,
+//     `buildCheckReport`) directly — nothing prints, so nothing needs the
+//     old captured-console plumbing, and stdout stays exclusively the MCP
+//     protocol channel.
+//   - The tool mutex serializes calls, so at most one VaultRuntime is open
+//     at a time. Each call opens and closes its own runtime exactly like
+//     one CLI invocation; no long-lived SQLite handle is held.
 //   - This module statically imports @modelcontextprotocol/sdk and is a
 //     companion entrypoint (`@dome/sdk/mcp`, hosted by `dome mcp`). It must
 //     never be imported from the static graph of src/index.ts — pinned by
@@ -37,27 +37,29 @@
 
 import {
   McpServer,
-  type ToolCallback,
 } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type {
-  ShapeOutput,
-  ZodRawShapeCompat,
-} from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { z } from "zod";
 
-import { runCapture } from "../cli/commands/capture";
-import { runCheck } from "../cli/commands/check";
-import { runExportContext } from "../cli/commands/export-context";
-import { runQuery } from "../cli/commands/query";
-import { runResolve } from "../cli/commands/resolve";
-import { runStatus } from "../cli/commands/status";
 import {
-  firstPartyViewNotFoundMessage,
-  runStructuredViewCommand,
-  type StructuredViewCommandResult,
-} from "../cli/commands/view-shared";
+  ANSWER_SCHEMA,
+  answerHandlersJson,
+  questionRecordJson,
+} from "../cli/commands/answer";
+import {
+  captureJsonDocument,
+  performCapture,
+} from "../cli/commands/capture";
+import {
+  buildCheckReport,
+  resolveScopes,
+} from "../cli/commands/check";
+import { buildStatusSnapshot } from "../cli/commands/status";
+import { firstPartyViewNotFoundMessage } from "../cli/commands/view-shared";
+import { COMMAND_ERROR_SCHEMA } from "../cli/command-error";
 import { formatJson } from "../cli/format";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/health";
 import { readBlob } from "../git";
+import { openVault, type OpenVaultError, type Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -67,6 +69,12 @@ const SERVER_VERSION = "0.1.0";
 const BRIEF_SCHEMA = "dome.mcp.brief/v1";
 const TODAY_VIEW_NAME = "dome.daily.today";
 const TODAY_VIEW_SCHEMA = "dome.daily.today/v1";
+const QUERY_VIEW_NAME = "dome.search.query";
+const QUERY_VIEW_SCHEMA = "dome.search.query/v1";
+const EXPORT_CONTEXT_VIEW_NAME = "dome.search.export-context";
+const EXPORT_CONTEXT_VIEW_SCHEMA = "dome.search.export-context/v1";
+
+const DEFAULT_CHECK_LIMIT = 10;
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -93,23 +101,13 @@ export type DomeMcpServerOptions = {
   readonly bundlesRoot?: string | undefined;
 };
 
-// ----- Captured CLI execution (exported for tests) ---------------------------
-
-export type CapturedCliRun = {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-};
+// ----- Tool mutex -------------------------------------------------------------
 
 /**
  * Build the tool-execution mutex for one server. Tool handlers chain onto a
- * shared promise so calls run one at a time: console capture is global
- * state, and serializing also guarantees at most one VaultRuntime is open
- * against the vault's SQLite files at any moment. The chain lives in the
- * server closure (one mutex per createDomeMcpServer call), though note the
- * console capture itself is process-global, so two servers in one process
- * still must not interleave captured runs — each server's chain serializes
- * its own calls, and the capture swap/restore is confined to each run.
+ * shared promise so calls run one at a time — at most one VaultRuntime is
+ * open against the vault's SQLite files at any moment, matching the
+ * one-CLI-invocation-at-a-time posture the rest of the system assumes.
  */
 function makeToolMutex(): <T>(fn: () => Promise<T>) => Promise<T> {
   let toolChain: Promise<unknown> = Promise.resolve();
@@ -123,61 +121,12 @@ function makeToolMutex(): <T>(fn: () => Promise<T>) => Promise<T> {
   };
 }
 
-/**
- * Run a CLI command handler with console.log/console.error captured.
- * Returns the exit code plus joined stdout/stderr text. Must only be
- * called from inside `enqueue` (the capture swaps global console state).
- */
-async function runWithCapturedConsole(
-  fn: () => Promise<number>,
-): Promise<CapturedCliRun> {
-  const out: string[] = [];
-  const err: string[] = [];
-  const origLog = console.log;
-  const origErr = console.error;
-  console.log = (...parts: unknown[]) => {
-    out.push(parts.map(stringifyConsoleArg).join(" "));
-  };
-  console.error = (...parts: unknown[]) => {
-    err.push(parts.map(stringifyConsoleArg).join(" "));
-  };
-  try {
-    const exitCode = await fn();
-    return Object.freeze({
-      exitCode,
-      stdout: out.join("\n"),
-      stderr: err.join("\n"),
-    });
-  } finally {
-    console.log = origLog;
-    console.error = origErr;
-  }
-}
-
-function stringifyConsoleArg(part: unknown): string {
-  return typeof part === "string" ? part : String(part);
-}
-
 // ----- Tool result shaping ----------------------------------------------------
 
 type ToolResult = {
   readonly content: Array<{ readonly type: "text"; readonly text: string }>;
   readonly isError?: boolean;
 };
-
-/** Map a captured CLI run to an MCP tool result. Non-zero exit → isError. */
-function cliToolResult(run: CapturedCliRun): ToolResult {
-  const text = run.stdout.trim().length > 0 ? run.stdout : run.stderr;
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: text.trim().length > 0 ? text : "(no output)",
-      },
-    ],
-    ...(run.exitCode === 0 ? {} : { isError: true }),
-  };
-}
 
 function jsonToolResult(data: unknown): ToolResult {
   return { content: [{ type: "text" as const, text: formatJson(data) }] };
@@ -199,15 +148,33 @@ function errorToolResult(messages: ReadonlyArray<string>): ToolResult {
   };
 }
 
-/** Map a structured-view-shaped run (`ok`/`error`) to an MCP tool result. */
-function structuredToolResult(
-  run:
-    | { readonly kind: "ok"; readonly data: unknown }
-    | { readonly kind: "error"; readonly messages: ReadonlyArray<string> },
-): ToolResult {
-  return run.kind === "error"
-    ? errorToolResult(run.messages)
-    : jsonToolResult(run.data);
+/**
+ * The vault-open failure envelope — the same `dome.command-error/v1`
+ * document the CLI's `emitRuntimeOpenFailure` puts on stdout in JSON mode.
+ */
+function commandErrorResult(command: string, errorKind: string): ToolResult {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: formatJson({
+          schema: COMMAND_ERROR_SCHEMA,
+          status: "error",
+          command,
+          error: errorKind,
+          message:
+            `dome ${command}: openVaultRuntime failed (${errorKind}). ` +
+            "Run `dome init` to initialize the vault.",
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
+
+/** Flatten an `OpenVaultError` to the kind string the CLI envelope carries. */
+function openVaultErrorKind(error: OpenVaultError): string {
+  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
 }
 
 // ----- The server -------------------------------------------------------------
@@ -227,38 +194,118 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   );
 
   /**
-   * Register one CLI-backed tool: the handler maps validated tool args to a
-   * `runXxx({ ..., json: true })` CLI handler, and the shared plumbing —
-   * mutex enqueue, console capture, exit-code → isError shaping — is
-   * identical for every such tool. The `tasks`/`brief` tools register
-   * directly because they compose structured views instead of capturing a
-   * CLI handler's console output.
+   * Open the vault, run `fn`, and always close — the per-call lifecycle
+   * every runtime-needing tool shares. Open failures render as the CLI's
+   * command-error envelope.
    */
-  const registerCliTool = <Shape extends ZodRawShapeCompat>(
-    name: string,
-    config: {
-      readonly title: string;
-      readonly description: string;
-      readonly inputSchema: Shape;
-    },
-    run: (args: ShapeOutput<Shape>) => Promise<number>,
-  ): void => {
-    const callback = async (args: ShapeOutput<Shape>) =>
-      cliToolResult(
-        await enqueue(() => runWithCapturedConsole(() => run(args))),
-      );
-    // `ToolCallback<Shape>` is a conditional type the compiler cannot
-    // resolve (or overlap-check) while `Shape` is still generic; `callback`
-    // is exactly its raw-shape branch (`(args: ShapeOutput<Shape>) => ...`),
-    // which every monomorphic call site below instantiates.
-    server.registerTool(
-      name,
-      config,
-      callback as unknown as ToolCallback<Shape>,
-    );
+  const withVault = async (
+    command: string,
+    fn: (vault: Vault) => Promise<ToolResult>,
+  ): Promise<ToolResult> => {
+    const opened = await openVault({ path: vault, bundlesRoot });
+    if (!opened.ok) {
+      return commandErrorResult(command, openVaultErrorKind(opened.error));
+    }
+    try {
+      return await fn(opened.value);
+    } finally {
+      await opened.value.close();
+    }
   };
 
-  registerCliTool(
+  /**
+   * Run a command-triggered view through the public wrapper and validate
+   * the single structured result — the same expectations the CLI's
+   * structured-view wrappers enforce, rendered as tool results.
+   */
+  const structuredViewResult = async (input: {
+    readonly toolLabel: string;
+    readonly command: string;
+    readonly args: unknown;
+    readonly expectedViewName: string;
+    readonly expectedSchema: string;
+    readonly notFoundMessage: string;
+  }): Promise<
+    | { readonly kind: "ok"; readonly data: unknown }
+    | { readonly kind: "error"; readonly result: ToolResult }
+  > => {
+    const opened = await openVault({ path: vault, bundlesRoot });
+    if (!opened.ok) {
+      return {
+        kind: "error",
+        result: commandErrorResult(
+          input.toolLabel,
+          openVaultErrorKind(opened.error),
+        ),
+      };
+    }
+    try {
+      const run = await opened.value.runView(input.command, input.args);
+      switch (run.kind) {
+        case "detached-head":
+          return viewError(
+            `${input.toolLabel}: HEAD is detached. Check out a branch and retry.`,
+          );
+        case "missing-adopted-ref":
+          return viewError(
+            `${input.toolLabel}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`,
+          );
+        case "adopted-ref-unstable":
+          return viewError(
+            `${input.toolLabel}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry after the current sync finishes.`,
+          );
+        case "not-found":
+          return viewError(input.notFoundMessage);
+        case "failed": {
+          const messages = [
+            `${input.toolLabel}: processor '${run.processorId}' finished with ${run.executionStatus}.`,
+            ...(run.executionError !== null
+              ? [
+                  `${input.toolLabel}: ${run.executionError.code}: ${run.executionError.message}`,
+                ]
+              : []),
+            ...run.diagnostics.map(
+              (d) =>
+                `${input.toolLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+            ),
+          ];
+          return { kind: "error", result: errorToolResult(messages) };
+        }
+        case "ok": {
+          const structured = run.structured;
+          if (structured === null) {
+            return viewError(
+              `${input.toolLabel}: ${input.command} processor returned no structured result.`,
+            );
+          }
+          if (structured.name !== input.expectedViewName) {
+            return viewError(
+              `${input.toolLabel}: expected view '${input.expectedViewName}', got '${structured.name}'.`,
+            );
+          }
+          if (structured.schema !== input.expectedSchema) {
+            return viewError(
+              `${input.toolLabel}: expected structured schema '${input.expectedSchema}', got '${structured.schema}'.`,
+            );
+          }
+          return { kind: "ok", data: structured.data };
+        }
+      }
+    } finally {
+      await opened.value.close();
+    }
+  };
+
+  const viewError = (
+    message: string,
+  ): { readonly kind: "error"; readonly result: ToolResult } => ({
+    kind: "error",
+    result: errorToolResult([message]),
+  });
+
+  // ----- capture ---------------------------------------------------------------
+
+  server.registerTool(
     "capture",
     {
       title: "Capture a thought into the vault inbox",
@@ -276,16 +323,23 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    ({ text, title }) =>
-      runCapture({
-        text,
-        ...(title !== undefined ? { title } : {}),
-        vault,
-        json: true,
+    async ({ text, title }) =>
+      enqueue(async () => {
+        const outcome = await performCapture({
+          text,
+          ...(title !== undefined ? { title } : {}),
+          vault,
+        });
+        return {
+          ...jsonToolResult(captureJsonDocument(outcome)),
+          ...(outcome.kind === "error" ? { isError: true } : {}),
+        };
       }),
   );
 
-  registerCliTool(
+  // ----- query / export_context --------------------------------------------------
+
+  server.registerTool(
     "query",
     {
       title: "Query adopted vault state",
@@ -304,19 +358,30 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         type: z.string().optional().describe("Filter by page type."),
       },
     },
-    ({ text, limit, category, type }) =>
-      runQuery({
-        text,
-        limit,
-        category,
-        type,
-        vault,
-        bundlesRoot,
-        json: true,
+    async ({ text, limit, category, type }) =>
+      enqueue(async () => {
+        const run = await structuredViewResult({
+          toolLabel: "dome mcp query",
+          command: "query",
+          args: Object.freeze({
+            text,
+            ...(category !== undefined ? { category } : {}),
+            ...(type !== undefined ? { type } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+          }),
+          expectedViewName: QUERY_VIEW_NAME,
+          expectedSchema: QUERY_VIEW_SCHEMA,
+          notFoundMessage: firstPartyViewNotFoundMessage({
+            commandLabel: "dome mcp query",
+            bundleId: "dome.search",
+            processorName: "query",
+          }),
+        });
+        return run.kind === "error" ? run.result : jsonToolResult(run.data);
       }),
   );
 
-  registerCliTool(
+  server.registerTool(
     "export_context",
     {
       title: "Export a source-backed context packet",
@@ -331,11 +396,30 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    ({ topic, limit }) =>
-      runExportContext({ topic, limit, vault, bundlesRoot, json: true }),
+    async ({ topic, limit }) =>
+      enqueue(async () => {
+        const run = await structuredViewResult({
+          toolLabel: "dome mcp export_context",
+          command: "export-context",
+          args: Object.freeze({
+            topic,
+            ...(limit !== undefined ? { limit } : {}),
+          }),
+          expectedViewName: EXPORT_CONTEXT_VIEW_NAME,
+          expectedSchema: EXPORT_CONTEXT_VIEW_SCHEMA,
+          notFoundMessage: firstPartyViewNotFoundMessage({
+            commandLabel: "dome mcp export_context",
+            bundleId: "dome.search",
+            processorName: "export-context",
+          }),
+        });
+        return run.kind === "error" ? run.result : jsonToolResult(run.data);
+      }),
   );
 
-  registerCliTool(
+  // ----- status / check -----------------------------------------------------------
+
+  server.registerTool(
     "status",
     {
       title: "Vault status pulse",
@@ -345,10 +429,16 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         "operational counts. Same stable-key JSON as `dome status --json`.",
       inputSchema: {},
     },
-    () => runStatus({ vault, bundlesRoot, json: true }),
+    async () =>
+      enqueue(async () => {
+        const outcome = await buildStatusSnapshot({ vault, bundlesRoot });
+        return outcome.kind === "runtime-open-failed"
+          ? commandErrorResult("status", outcome.errorKind)
+          : jsonToolResult(outcome.snapshot);
+      }),
   );
 
-  registerCliTool(
+  server.registerTool(
     "check",
     {
       title: "Explain compiler attention",
@@ -374,20 +464,25 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    ({ engine, content, decisions, attention, limit }) =>
-      runCheck({
-        engine,
-        content,
-        decisions,
-        attention,
-        limit,
-        vault,
-        bundlesRoot,
-        json: true,
+    async ({ engine, content, decisions, attention, limit }) =>
+      enqueue(async () => {
+        const outcome = await buildCheckReport({
+          vault,
+          bundlesRoot,
+          scopes: resolveScopes({ engine, content, decisions }),
+          attentionOnly: attention === true,
+          limit: limit ?? DEFAULT_CHECK_LIMIT,
+          orphanThresholdMs: DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+        });
+        return outcome.kind === "runtime-open-failed"
+          ? commandErrorResult("check", outcome.errorKind)
+          : jsonToolResult(outcome.report);
       }),
   );
 
-  registerCliTool(
+  // ----- resolve -------------------------------------------------------------------
+
+  server.registerTool(
     "resolve",
     {
       title: "Resolve a Dome-raised decision",
@@ -405,8 +500,50 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    ({ id, value }) => runResolve({ id, value, vault, bundlesRoot, json: true }),
+    async ({ id, value }) =>
+      enqueue(() =>
+        withVault("resolve", async (v) => {
+          const trimmed = value?.trim();
+          if (trimmed === undefined || trimmed.length === 0) {
+            const record = await v.getQuestion(id);
+            if (record === null) return questionNotFoundResult(id);
+            return jsonToolResult({
+              schema: ANSWER_SCHEMA,
+              ...questionRecordJson(record),
+            });
+          }
+
+          const outcome = await v.resolve(id, trimmed);
+          switch (outcome.kind) {
+            case "not-found":
+              return questionNotFoundResult(id);
+            case "invalid-option":
+              return {
+                ...jsonToolResult({
+                  schema: ANSWER_SCHEMA,
+                  status: "invalid-option",
+                  options: outcome.options,
+                  question: questionRecordJson(outcome.record),
+                }),
+                isError: true,
+              };
+            case "answered":
+            case "already-answered":
+              return jsonToolResult({
+                schema: ANSWER_SCHEMA,
+                status: outcome.kind,
+                question: questionRecordJson(outcome.record),
+                handlers:
+                  outcome.handlers === null
+                    ? null
+                    : answerHandlersJson(outcome.handlers),
+              });
+          }
+        }),
+      ),
   );
+
+  // ----- tasks / brief ---------------------------------------------------------------
 
   server.registerTool(
     "tasks",
@@ -426,9 +563,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       },
     },
     async ({ date, limit }) =>
-      structuredToolResult(
-        await enqueue(() => runTodayView({ vault, bundlesRoot, date, limit })),
-      ),
+      enqueue(async () => {
+        const run = await todayView({ date, limit });
+        return run.kind === "error" ? run.result : jsonToolResult(run.data);
+      }),
   );
 
   server.registerTool(
@@ -447,68 +585,70 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       },
     },
     async ({ date }) =>
-      structuredToolResult(
-        await enqueue(async () => {
-          const view = await runTodayView({ vault, bundlesRoot, date });
-          if (view.kind === "error") return view;
-          const source = parseBriefSource(view.data);
-          const content =
-            source.exists && source.commit !== null
-              ? await readBlob({
-                  path: vault,
-                  commit: source.commit,
-                  filepath: source.path,
-                })
-              : null;
-          return Object.freeze({
-            kind: "ok" as const,
-            data: Object.freeze({
-              schema: BRIEF_SCHEMA,
-              date: source.date,
-              path: source.path,
-              exists: source.exists,
-              content,
-              counts: source.counts,
-            }),
-          });
-        }),
-      ),
+      enqueue(async () => {
+        const run = await todayView({ date });
+        if (run.kind === "error") return run.result;
+        const source = parseBriefSource(run.data);
+        const content =
+          source.exists && source.commit !== null
+            ? await readBlob({
+                path: vault,
+                commit: source.commit,
+                filepath: source.path,
+              })
+            : null;
+        return jsonToolResult({
+          schema: BRIEF_SCHEMA,
+          date: source.date,
+          path: source.path,
+          exists: source.exists,
+          content,
+          counts: source.counts,
+        });
+      }),
   );
+
+  /** Dispatch the `today` view with the shared structured-view validation. */
+  const todayView = (input: {
+    readonly date?: string | undefined;
+    readonly limit?: number | undefined;
+  }) =>
+    structuredViewResult({
+      toolLabel: "dome mcp tasks",
+      command: "today",
+      args: Object.freeze({
+        ...(input.date !== undefined ? { date: input.date } : {}),
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      }),
+      expectedViewName: TODAY_VIEW_NAME,
+      expectedSchema: TODAY_VIEW_SCHEMA,
+      notFoundMessage: firstPartyViewNotFoundMessage({
+        commandLabel: "dome mcp tasks",
+        bundleId: "dome.daily",
+        processorName: "today",
+      }),
+    });
 
   return server;
 }
 
 // ----- internals --------------------------------------------------------------
 
-/**
- * Dispatch the `today` view through the same structured-view boundary the
- * CLI uses (`dome run today` / the dedicated view wrappers).
- */
-async function runTodayView(input: {
-  readonly vault: string;
-  readonly bundlesRoot: string | undefined;
-  readonly date?: string | undefined;
-  readonly limit?: number | undefined;
-}): Promise<StructuredViewCommandResult> {
-  return runStructuredViewCommand({
-    commandLabel: "dome mcp tasks",
-    commandName: "today",
-    expectedViewName: TODAY_VIEW_NAME,
-    expectedSchema: TODAY_VIEW_SCHEMA,
-    commandArgs: Object.freeze({
-      ...(input.date !== undefined ? { date: input.date } : {}),
-      ...(input.limit !== undefined ? { limit: input.limit } : {}),
-    }),
-    vault: input.vault,
-    bundlesRoot: input.bundlesRoot,
-    notFoundMessage: firstPartyViewNotFoundMessage({
-      commandLabel: "dome mcp tasks",
-      bundleId: "dome.daily",
-      processorName: "today",
-    }),
-    noStructuredResultMessage:
-      "dome mcp tasks: today processor returned no structured result.",
-  });
+function questionNotFoundResult(id: number): ToolResult {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: formatJson({
+          schema: ANSWER_SCHEMA,
+          status: "error",
+          error: "question-not-found",
+          message: `dome resolve: question ${id} was not found.`,
+        }),
+      },
+    ],
+    isError: true,
+  };
 }
 
 type BriefSource = {

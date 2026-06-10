@@ -89,6 +89,65 @@ export type RunCaptureOptions = {
   readonly json?: boolean | undefined;
 };
 
+/** The successful capture, before any rendering. */
+export type CaptureSuccess = {
+  readonly vault: string;
+  readonly path: string;
+  readonly title: string;
+  readonly capturedAt: string;
+  readonly branch: string;
+  readonly commit: string;
+  readonly serveStatus: "running" | "stale" | "off";
+  readonly adoptedInitialized: boolean;
+  readonly compilePending: boolean;
+};
+
+/**
+ * The data-returning outcome of one capture attempt. `runCapture` renders
+ * it for the terminal; the MCP `capture` tool renders it as the same
+ * `dome.capture/v1` document via `captureJsonDocument`.
+ */
+export type CaptureOutcome =
+  | { readonly kind: "captured"; readonly result: CaptureSuccess }
+  | {
+      readonly kind: "error";
+      readonly exitCode: number;
+      readonly vault: string;
+      readonly error: string;
+    };
+
+/**
+ * Render a `CaptureOutcome` as the `dome.capture/v1` JSON document — the
+ * single shape both `dome capture --json` and the MCP `capture` tool emit.
+ */
+export function captureJsonDocument(
+  outcome: CaptureOutcome,
+): Record<string, unknown> {
+  if (outcome.kind === "error") {
+    return {
+      schema: "dome.capture/v1",
+      status: "error",
+      vault: outcome.vault,
+      error: outcome.error,
+    };
+  }
+  const r = outcome.result;
+  return {
+    schema: "dome.capture/v1",
+    status: "captured",
+    vault: r.vault,
+    path: r.path,
+    title: r.title,
+    captured_at: r.capturedAt,
+    source: "cli",
+    branch: r.branch,
+    commit: r.commit,
+    serve_status: r.serveStatus,
+    adopted_initialized: r.adoptedInitialized,
+    compile_pending: r.compilePending,
+  };
+}
+
 /**
  * The stdin boundary. The default reads the real process stdin; tests inject
  * a fake so piped-input and TTY-refusal behavior is hermetic.
@@ -198,27 +257,26 @@ export function renderCaptureDocument(input: {
 // ----- runCapture -----------------------------------------------------------
 
 /**
- * Execute `dome capture`. Returns the exit code: 0 on success; 64 (EX_USAGE)
- * on empty input, text+`--file` conflict, TTY-with-no-input, uninitialized
- * vault, no commits, or detached HEAD; 1 on an unreadable `--file` path or
- * unexpected I/O failure.
+ * Perform one capture: resolve input, validate vault preconditions, write
+ * the raw-capture file, and commit exactly that one file on the current
+ * branch. Data-returning and print-free — `runCapture` and the MCP
+ * `capture` tool both render the returned outcome. Never opens the runtime.
  */
-export async function runCapture(
-  options: RunCaptureOptions = {},
+export async function performCapture(
+  options: Omit<RunCaptureOptions, "json"> = {},
   deps: CaptureDeps = {},
-): Promise<number> {
+): Promise<CaptureOutcome> {
   const vaultPath = resolveVaultPath(options.vault);
-  const json = options.json === true;
   const now = (deps.now ?? (() => new Date()))();
+  const failWith = (exitCode: number, error: string): CaptureOutcome =>
+    Object.freeze({ kind: "error" as const, exitCode, vault: vaultPath, error });
 
   // --- Input resolution (argument > --file > stdin) -------------------------
   if (options.text !== undefined && options.file !== undefined) {
-    return fail({
-      vaultPath,
-      json,
-      code: EX_USAGE,
-      error: "pass capture text either as an argument or via --file, not both",
-    });
+    return failWith(
+      EX_USAGE,
+      "pass capture text either as an argument or via --file, not both",
+    );
   }
 
   let body: string;
@@ -229,64 +287,45 @@ export async function runCapture(
       body = await readFile(resolve(options.file), "utf8");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return fail({
-        vaultPath,
-        json,
-        code: 1,
-        error: `cannot read --file ${options.file}: ${msg}`,
-      });
+      return failWith(1, `cannot read --file ${options.file}: ${msg}`);
     }
   } else {
     const stdin = deps.stdin ?? realStdin();
     if (stdin.isTTY) {
-      return fail({
-        vaultPath,
-        json,
-        code: EX_USAGE,
-        error: "no input: pass capture text, use --file <path>, or pipe stdin",
-      });
+      return failWith(
+        EX_USAGE,
+        "no input: pass capture text, use --file <path>, or pipe stdin",
+      );
     }
     body = await stdin.readToEnd();
   }
 
   if (body.trim().length === 0) {
-    return fail({
-      vaultPath,
-      json,
-      code: EX_USAGE,
-      error: "empty capture: nothing to write",
-    });
+    return failWith(EX_USAGE, "empty capture: nothing to write");
   }
 
   // --- Vault preconditions ---------------------------------------------------
   const gitRoot = await findGitRoot(vaultPath);
   if (gitRoot === null || !existsSync(join(vaultPath, ".dome", "config.yaml"))) {
-    return fail({
-      vaultPath,
-      json,
-      code: EX_USAGE,
-      error: `not an initialized Dome vault (missing ${
+    return failWith(
+      EX_USAGE,
+      `not an initialized Dome vault (missing ${
         gitRoot === null ? "git repository" : ".dome/config.yaml"
       }); run \`dome init\` first`,
-    });
+    );
   }
   if ((await currentSha(vaultPath)) === null) {
-    return fail({
-      vaultPath,
-      json,
-      code: EX_USAGE,
-      error: "the vault has no commits yet; run `dome init` first",
-    });
+    return failWith(
+      EX_USAGE,
+      "the vault has no commits yet; run `dome init` first",
+    );
   }
   const branch = await currentBranch(vaultPath);
   if (branch === null) {
-    return fail({
-      vaultPath,
-      json,
-      code: EX_USAGE,
-      error:
-        "detached HEAD: the capture loop needs a branch; check out a branch first",
-    });
+    return failWith(
+      EX_USAGE,
+      "detached HEAD: the capture loop needs a branch; check out a branch first",
+    );
   }
 
   // --- Write + commit ----------------------------------------------------------
@@ -329,38 +368,72 @@ export async function runCapture(
     const compilePending =
       heartbeat.status !== "running" || !adoptedInitialized;
 
-    if (json) {
-      console.log(formatJson({
-        schema: "dome.capture/v1",
-        status: "captured",
+    return Object.freeze({
+      kind: "captured" as const,
+      result: Object.freeze({
         vault: vaultPath,
         path: relPath,
         title,
-        captured_at: capturedAt,
-        source: "cli",
+        capturedAt,
         branch,
         commit: commitOid,
-        serve_status: heartbeat.status,
-        adopted_initialized: adoptedInitialized,
-        compile_pending: compilePending,
-      }));
-    } else {
-      printCaptureSummary({
-        vaultPath,
-        relPath,
-        title,
-        branch,
-        commitOid,
         serveStatus: heartbeat.status,
         adoptedInitialized,
         compilePending,
-      });
-    }
-    return 0;
+      }),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return fail({ vaultPath, json, code: 1, error: `failed: ${msg}` });
+    return failWith(1, `failed: ${msg}`);
   }
+}
+
+/**
+ * Execute `dome capture`. Returns the exit code: 0 on success; 64 (EX_USAGE)
+ * on empty input, text+`--file` conflict, TTY-with-no-input, uninitialized
+ * vault, no commits, or detached HEAD; 1 on an unreadable `--file` path or
+ * unexpected I/O failure.
+ */
+export async function runCapture(
+  options: RunCaptureOptions = {},
+  deps: CaptureDeps = {},
+): Promise<number> {
+  const json = options.json === true;
+  const outcome = await performCapture(
+    {
+      text: options.text,
+      file: options.file,
+      title: options.title,
+      vault: options.vault,
+    },
+    deps,
+  );
+
+  if (outcome.kind === "error") {
+    if (json) {
+      console.log(formatJson(captureJsonDocument(outcome)));
+    } else {
+      console.error(`dome capture: ${outcome.error}`);
+    }
+    return outcome.exitCode;
+  }
+
+  if (json) {
+    console.log(formatJson(captureJsonDocument(outcome)));
+  } else {
+    const r = outcome.result;
+    printCaptureSummary({
+      vaultPath: r.vault,
+      relPath: r.path,
+      title: r.title,
+      branch: r.branch,
+      commitOid: r.commit,
+      serveStatus: r.serveStatus,
+      adoptedInitialized: r.adoptedInitialized,
+      compilePending: r.compilePending,
+    });
+  }
+  return 0;
 }
 
 // ----- internals ------------------------------------------------------------
@@ -456,21 +529,3 @@ function nextHints(input: {
   return hints;
 }
 
-function fail(input: {
-  readonly vaultPath: string;
-  readonly json: boolean;
-  readonly code: number;
-  readonly error: string;
-}): number {
-  if (input.json) {
-    console.log(formatJson({
-      schema: "dome.capture/v1",
-      status: "error",
-      vault: input.vaultPath,
-      error: input.error,
-    }));
-  } else {
-    console.error(`dome capture: ${input.error}`);
-  }
-  return input.code;
-}
