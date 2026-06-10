@@ -26,6 +26,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 | **`dome.lint`** | shipped | — | — | shipped: `report`; planned: `apply-finding` |
 | **`dome.warden`** | shipped | — | `integrity` (signal `document.changed` on `wiki/**/*.md`), `integrity-answer` (answer trigger) | — |
 | **`dome.search`** | shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
+| **`dome.sources`** | shipped | — | `fetch` (cron `*/15 * * * *`, subscription scheduler for committed external feeds — [[wiki/specs/sources]]; cheap no-op when no subscription is due) | — |
 | **`dome.index`** | planned | `update-index` | — | — |
 | **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
@@ -34,7 +35,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 ## Counts
 
-- **Shipped processors:** active processor modules across `dome.claims`, `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, `dome.warden`, and `dome.agent`.
+- **Shipped processors:** active processor modules across `dome.claims`, `dome.markdown`, `dome.graph`, `dome.health`, `dome.daily`, `dome.lint`, `dome.search`, `dome.sources`, `dome.warden`, and `dome.agent`.
 - **Planned processors:** listed as `planned` above; they are future pressure inside otherwise shipped bundles and do not count as shipped until assets and harness coverage land.
 
 The matrix is the source of truth for "what runs when." A new first-party processor authored as part of v1.x lands here as a new cell; a third-party bundle adds rows.
