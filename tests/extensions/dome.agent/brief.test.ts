@@ -1215,6 +1215,39 @@ describe("brief integrated overnight digest (wired)", () => {
     expect(integratedIdx).toBeGreaterThan(questionsIdx);
   });
 
+  test("same-day re-run: two today-dated run sections → digest merges rows from both (concat in document order)", async () => {
+    const ledgerTwoRuns = [
+      "# Sweep ledger",
+      "",
+      "cursor:: 2026-06-09",
+      "",
+      "## Run 2026-06-09",
+      "",
+      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/alice-henshaw]] :: integrated",
+      "",
+      "## Run 2026-06-09",
+      "",
+      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/tokka]] :: integrated",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "sweep-ledger.md": ledgerTwoRuns,
+      },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain("dome.agent.brief:integrated");
+    // Both rows must appear — from the first and second same-day run sections.
+    expect(content).toContain(
+      "- [[wiki/entities/alice-henshaw]] ← [[wiki/dailies/2026-06-08]]",
+    );
+    expect(content).toContain(
+      "- [[wiki/entities/tokka]] ← [[wiki/dailies/2026-06-08]]",
+    );
+  });
+
   test("model attempt to write into the integrated block is stripped by groundBriefBlockBody", () => {
     // The grounding splice strips any line carrying a <!-- dome. marker.
     // A body that tries to smuggle an integrated block marker gets stripped.

@@ -551,6 +551,31 @@ const sweep = defineProcessorImplementation({
         continue;
       }
 
+      // C2a (material side): truncated-read amputation guard for the material.
+      // itemTask embeds the material through capRead; a material beyond the cap
+      // would reach the model TRUNCATED — the integration from a truncated head
+      // writes the sources link and the pair settles permanently with the tail
+      // never integrated ("no capture left behind" violation). Don't run the
+      // agent at all — escalate to the owner.
+      const materialContent = (await ctx.snapshot.readFile(item.material)) ?? "";
+      if (materialContent.length > MAX_READ_CHARS) {
+        effects.push(
+          questionEffect({
+            question: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the material is ${materialContent.length} chars, beyond the sweep's ${MAX_READ_CHARS}-char read window (integrating from a truncated read would settle the pair with the tail never seen; "no capture left behind" violation); integrate manually or skip?`,
+            options: ["skip"],
+            idempotencyKey: sweepIdempotencyKey("escalate", item),
+            metadata: {
+              destination: item.destination,
+              material: item.material,
+              automationPolicy: "owner-needed",
+            },
+            sourceRefs: itemRefs,
+          }),
+        );
+        ledgerRows.push({ ...row, disposition: "questioned" });
+        continue;
+      }
+
       const state: AgentRunState = { edits: new Map(), questions: [] };
       let pendingQuestion: {
         readonly summary: string;
@@ -566,7 +591,6 @@ const sweep = defineProcessorImplementation({
             pendingQuestion = q;
           },
         });
-        const materialContent = (await ctx.snapshot.readFile(item.material)) ?? "";
         await runAgentLoop({
           charter: sweepCharter({
             destination: item.destination,

@@ -794,6 +794,38 @@ describe("dome.agent.sweep", () => {
     expect([...tail].length).toBeLessThanOrEqual(200);
   });
 
+  test("C2c: oversized material (>20000 chars) skips the agent run, emits escalate question and questioned ledger row, no patch on dest", async () => {
+    const hugeMaterial = `Met [[wiki/entities/alice-henshaw]] today.\n${"x".repeat(21_000)}`;
+    const ctx = makeCtx({
+      files: { ...BASE_FILES, [MATERIAL]: hugeMaterial },
+      stepFn: THROWING_STEP, // the oversized-material guard must never reach the model
+    });
+    const effects = await sweep.run(ctx);
+
+    // Zero model calls: the throwing step must not be reached.
+    const qs = questions(effects);
+    expect(qs).toHaveLength(1);
+    const q = qs[0]!;
+    expect(q.question).toContain("read window");
+    expect(q.options).toEqual(["skip"]);
+    expect(q.idempotencyKey).toBe(`dome.agent.sweep:escalate:${MATERIAL}->${DEST}`);
+    expect(q.metadata?.automationPolicy).toBe("owner-needed");
+    expect(q.metadata?.destination).toBe(DEST);
+    expect(q.metadata?.material).toBe(MATERIAL);
+    const refs = q.sourceRefs.map((r) => (r as { path: string }).path);
+    expect(refs).toContain(MATERIAL);
+    expect(refs).toContain(DEST);
+
+    // No patch on the destination.
+    expect(patchFor(effects, DEST)).toBeNull();
+
+    // Questioned ledger row.
+    const ledger = patchFor(effects, LEDGER);
+    expect(ledger).toContain(
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+    );
+  });
+
   test("M6: night-2 ledger composition — prior run preserved, cursor replaced not duplicated, new run appended", async () => {
     const priorLedger = [
       "# Sweep ledger",

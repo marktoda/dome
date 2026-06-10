@@ -93,6 +93,8 @@ The model must **not** delete or rewrite existing narrative prose, and must not 
 
 **Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `dome.agent.sweep:escalate:<m>-><d>` question is emitted asking the owner to integrate manually or skip, and a `questioned` row is written to the ledger.
 
+**Oversized-material guard:** If the *material* content exceeds 20,000 characters, the agent run is also skipped. Integrating from a truncated material head would write the sources link and permanently settle the pair with the tail never seen — a "no capture left behind" violation. The same escalation path applies: `dome.agent.sweep:escalate:<m>-><d>` question with `options: ["skip"]`, `automationPolicy: "owner-needed"`, and a `questioned` ledger row. Together, the two oversized guards ensure neither side of a pair can reach the model in a silently truncated state.
+
 **Night-overlay same-destination composition:** When two queue items in the same night target the same destination, the processor threads a per-night overlay map. After item 1 writes its integration, its resulting content is stored in the overlay keyed by the destination path. Item 2's agent reads the destination via the overlay (not the stale snapshot), so its patch is applied on top of item 1's content — both integrations land in a single destination page without clobbering each other. The overlay also means item 1's newly added sources link is visible to item 2's settlement check.
 
 ## Question namespaces

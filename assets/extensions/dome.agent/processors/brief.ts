@@ -118,8 +118,16 @@ const brief = defineProcessorImplementation({
     const sweepLedger =
       ledgerContent === null ? null : parseSweepLedger(ledgerContent);
     const todayDateStr = formatDate(today);
+    // Merge ALL today-dated run sections (a same-day re-sweep appends a second
+    // ## Run <today> section; taking only the first would silently drop the
+    // second run's rows from the digest — "no capture left behind" violation).
+    const todayRuns = sweepLedger?.runs.filter((r) => r.date === todayDateStr) ?? [];
     const todayRun =
-      sweepLedger?.runs.find((r) => r.date === todayDateStr) ?? null;
+      todayRuns.length === 0
+        ? null
+        : todayRuns.length === 1
+          ? todayRuns[0]!
+          : { date: todayDateStr, rows: todayRuns.flatMap((r) => r.rows) };
 
     // Deterministic pre-run content: the existing daily (or the same skeleton
     // create-daily would render), with empty brief blocks ensured so the
