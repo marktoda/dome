@@ -283,6 +283,15 @@ function isSettledBySources(destContent: string, materialWithoutMd: string): boo
 
 type LedgerInfo = { settled: boolean; failedCount: number };
 
+/**
+ * Ledger-derived settlement. `integrated` rows deliberately do NOT settle:
+ * for an integration the destination's `sources:` wikilink (written
+ * atomically with the integration patch) is the authoritative record — the
+ * ledger row is redundant when the link landed and exactly wrong when the
+ * integration's sub-proposal was rejected (the row would suppress the
+ * re-queue forever). `no-op`/`questioned` rows settle (they only save
+ * re-judging); `failed` rows never settle and count toward escalation.
+ */
 function ledgerInfo(
   ledger: ParsedSweepLedger,
   materialWithoutMd: string,
@@ -292,7 +301,7 @@ function ledgerInfo(
   let failedCount = 0;
   for (const row of ledger.settlements) {
     if (row.material === materialWithoutMd && row.destination === destWithoutMd) {
-      if (row.disposition === "integrated" || row.disposition === "no-op" || row.disposition === "questioned") {
+      if (row.disposition === "no-op" || row.disposition === "questioned") {
         settled = true;
       } else if (row.disposition === "failed") {
         failedCount += 1;

@@ -197,7 +197,7 @@ interface QuestionEffect {
     readonly ownerNeededReason?: string;     // why this should reach the owner
     readonly destination?: string;           // answer-handler round-trip: the page the question is about
     readonly material?: string;              // answer-handler round-trip: the document that prompted it
-    readonly proposedSection?: string;       // answer-handler round-trip: proposed content (caller-capped)
+    readonly proposedSection?: string;       // answer-handler round-trip: proposed content (schema-capped at 4000 chars)
   };
 }
 ```

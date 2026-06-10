@@ -86,7 +86,10 @@ export function objectSchema(
 }
 
 // Cap a single read so one large page can't blow the context budget.
-const MAX_READ_CHARS = 20_000;
+// Exported so callers that embed page content into a task turn (e.g. the
+// sweep processor's pre-flight oversized-destination guard) can detect when
+// a read WOULD be truncated and refuse to edit on partial context.
+export const MAX_READ_CHARS = 20_000;
 export function capRead(content: string): string {
   if (content.length <= MAX_READ_CHARS) return content;
   return `${content.slice(0, MAX_READ_CHARS)}\n…[truncated ${content.length - MAX_READ_CHARS} chars — read a more specific section if needed]`;

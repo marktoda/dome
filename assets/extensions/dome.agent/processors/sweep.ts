@@ -10,7 +10,10 @@
 // enforced deterministically here via `ensureSourcesLink` even when the model
 // forgets. The committed ledger (default sweep-ledger.md) is ADVISORY: it
 // carries the scan cursor, no-op/questioned rows (saves re-judging), and the
-// per-run section the brief digest renders; its loss is harmless.
+// per-run section the brief digest renders; its loss is harmless. Its
+// `integrated` rows are record-only — the queue never settles on them (the
+// sources: link is authoritative; a row without the link means the
+// sub-proposal was rejected and the pair must re-queue).
 //
 // Cursor safety: the cursor only ever advances to
 //   safeCursor({ today, oldestUnswept, oldestFailed })
@@ -41,8 +44,10 @@ import {
   safeCursor,
   type SweepQueueItem,
 } from "../lib/sweep-queue";
-import { makeSweepTools } from "../lib/sweep-tools";
-import { capRead } from "../lib/vault-tools";
+import { makeSweepTools, SWEEP_WRITABLE_PATHS } from "../lib/sweep-tools";
+import { capRead, MAX_READ_CHARS, type VaultReader } from "../lib/vault-tools";
+import { globMatch } from "../../../../src/engine/glob-cache";
+import { isModelExecutionError } from "../../../../src/engine/model-invoke";
 
 const MAX_STEPS = 8; // per item — one read + one write + slack
 const DEFAULT_LEDGER_PATH = "sweep-ledger.md";
@@ -54,8 +59,12 @@ const DEFAULT_TARGETS: ReadonlyArray<string> = Object.freeze([
 ]);
 /** ≥ this many prior `failed` ledger rows → stop retrying, ask the owner. */
 const ESCALATE_AFTER_FAILURES = 3;
-/** Question-metadata cap for the model's proposed section text. */
+/** Question-metadata cap for the model's proposed section text (mirrors the
+ * QuestionEffectSchema `.max(4000)` bound in src/core/effect.ts). */
 const PROPOSED_SECTION_MAX_CHARS = 4000;
+/** Question summaries are interpolated into owner-visible question text:
+ * cap at 200 code points, strip C0 controls (newline becomes a space). */
+const SUMMARY_MAX_CODE_POINTS = 200;
 
 // ----- Config resolution (degrade-not-crash, consolidate's rule) -------------
 
@@ -152,6 +161,27 @@ function sweepTargets(
       value: DEFAULT_TARGETS,
       problem:
         "dome.agent config sweep_targets must be a non-empty array of relative path prefixes; " +
+        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
+    });
+  }
+  // Grant-mirror validation: every target prefix must be covered by the
+  // sweep's patch.auto grant (SWEEP_WRITABLE_PATHS), or makeSweepTools would
+  // throw its programming-error guard mid-night for every destination under
+  // the foreign prefix. Probe with a representative page path directly under
+  // the prefix — `**` matches zero or more segments, so coverage of the probe
+  // implies coverage of every `.md` under the prefix.
+  const uncovered = (raw as ReadonlyArray<string>).filter(
+    (t) =>
+      !SWEEP_WRITABLE_PATHS.some((pattern) =>
+        globMatch(pattern, `${t}__sweep-probe__.md`),
+      ),
+  );
+  if (uncovered.length > 0) {
+    return Object.freeze({
+      value: DEFAULT_TARGETS,
+      problem:
+        `dome.agent config sweep_targets contains prefixes outside the sweep write grant ` +
+        `(${uncovered.join(", ")} vs ${SWEEP_WRITABLE_PATHS.join(", ")}); ` +
         `falling back to ${DEFAULT_TARGETS.join(", ")}`,
     });
   }
@@ -295,14 +325,57 @@ function withoutMd(path: string): string {
   return path.endsWith(".md") ? path.slice(0, -3) : path;
 }
 
-function sweepIdempotencyKey(item: SweepQueueItem): string {
-  return `dome.agent.sweep:${item.material}->${item.destination}`;
+/**
+ * Question idempotency keys are namespaced by kind so the answer handler can
+ * discriminate: `uncertain:` answers carry a proposedSection to apply on
+ * "integrate"; `escalate:` questions (repeated failures, oversized
+ * destinations) offer only "skip" and the answer itself closes them. The
+ * answer trigger matches on the shared `dome.agent.sweep:` prefix.
+ */
+function sweepIdempotencyKey(
+  kind: "uncertain" | "escalate",
+  item: SweepQueueItem,
+): string {
+  return `dome.agent.sweep:${kind}:${item.material}->${item.destination}`;
 }
 
+/** Cap to the schema bound without splitting a surrogate pair at the cut. */
 function capProposedSection(text: string): string {
-  return text.length <= PROPOSED_SECTION_MAX_CHARS
-    ? text
-    : text.slice(0, PROPOSED_SECTION_MAX_CHARS);
+  if (text.length <= PROPOSED_SECTION_MAX_CHARS) return text;
+  let capped = text.slice(0, PROPOSED_SECTION_MAX_CHARS);
+  const last = capped.charCodeAt(capped.length - 1);
+  // A trailing high surrogate means the cut split an astral code point.
+  if (last >= 0xd800 && last <= 0xdbff) capped = capped.slice(0, -1);
+  return capped;
+}
+
+/**
+ * Sanitize a model-written summary for interpolation into owner-visible
+ * question text: newlines become spaces, remaining C0 control characters are
+ * stripped, and the result is capped at SUMMARY_MAX_CODE_POINTS code points
+ * (code-point slice — never splits a surrogate pair).
+ */
+function sanitizeSummary(text: string): string {
+  const cleaned = text
+    .replace(/\r?\n/g, " ")
+    .replace(/[\u0000-\u001f]/g, "");
+  const codePoints = [...cleaned];
+  return codePoints.length <= SUMMARY_MAX_CODE_POINTS
+    ? cleaned
+    : codePoints.slice(0, SUMMARY_MAX_CODE_POINTS).join("");
+}
+
+/**
+ * Never advance the stored cursor backwards. Unreachable through the normal
+ * queue path (discoverMaterial excludes material dated <= cursor, so every
+ * safeCursor term stays >= it) — pure defense against hand-edited or
+ * future-dated cursor lines. Exported for direct unit testing.
+ */
+export function neverRegressCursor(
+  computed: string,
+  existing: string | null,
+): string {
+  return existing !== null && computed < existing ? existing : computed;
 }
 
 const sweep = defineProcessorImplementation({
@@ -364,6 +437,19 @@ const sweep = defineProcessorImplementation({
     const today = ctx.now().toISOString().slice(0, 10);
     const ledgerContent = (await ctx.snapshot.readFile(ledgerPath)) ?? "";
     const ledger = parseSweepLedger(ledgerContent);
+    if (ledger.problems.length > 0) {
+      // One consolidated warning, not one per line: malformed rows degrade
+      // (the parser already skipped them) but the owner should know the
+      // ledger needs a look.
+      effects.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.sweep-ledger-problems",
+          message: `dome.agent.sweep found ${ledger.problems.length} malformed ledger line(s) in ${ledgerPath} (first: ${ledger.problems[0]}); malformed lines are ignored.`,
+          sourceRefs: ledgerRefs,
+        }),
+      );
+    }
 
     // buildSweepQueue is pure/sync; pre-read the files it can touch (material
     // roots + destination targets) into a synchronous lookup.
@@ -387,8 +473,16 @@ const sweep = defineProcessorImplementation({
       maxItems: maxItems.value,
     });
 
-    const reader = {
-      readFile: (p: string) => ctx.snapshot.readFile(p),
+    // Night overlay (C1): integrated-but-not-yet-adopted content, keyed by
+    // destination. Two queue items targeting the SAME destination must
+    // compose — item 2 builds on item 1's emitted content, not the stale
+    // snapshot (which would clobber item 1's integration and, worse, still
+    // carry item 1's sources: link → false settlement). The overlay also
+    // fronts every agent read so readPage/searchVault see the night's state.
+    const nightOverlay = new Map<string, string>();
+    const reader: VaultReader = {
+      readFile: async (p: string) =>
+        nightOverlay.get(p) ?? (await ctx.snapshot.readFile(p)),
       listMarkdownFiles: () => ctx.snapshot.listMarkdownFiles(),
     };
 
@@ -403,7 +497,9 @@ const sweep = defineProcessorImplementation({
         material: withoutMd(item.material),
         destination: withoutMd(item.destination),
       };
-      const itemRefs = [ctx.sourceRef(item.material)];
+      // M4: questions cite the destination alongside the material — both
+      // pages are what the owner needs open to answer.
+      const itemRefs = [ctx.sourceRef(item.material), ctx.sourceRef(item.destination)];
 
       // Escalation contract: a pair that keeps failing stops burning model
       // budget and goes to the owner instead of retrying forever.
@@ -412,7 +508,33 @@ const sweep = defineProcessorImplementation({
           questionEffect({
             question: `Sweep keeps failing on ${item.material} -> ${item.destination} (${item.failedCount} failed attempts); integrate manually or skip?`,
             options: ["skip"],
-            idempotencyKey: sweepIdempotencyKey(item),
+            idempotencyKey: sweepIdempotencyKey("escalate", item),
+            metadata: {
+              destination: item.destination,
+              material: item.material,
+              automationPolicy: "owner-needed",
+            },
+            sourceRefs: itemRefs,
+          }),
+        );
+        ledgerRows.push({ ...row, disposition: "questioned" });
+        continue;
+      }
+
+      // C2a: truncated-read amputation guard. itemTask embeds the destination
+      // through capRead; a page beyond the cap would reach the model TRUNCATED
+      // and a full-page rewrite from truncated context amputates the tail.
+      // Don't run the agent at all — escalate to the owner.
+      const destContent =
+        nightOverlay.get(item.destination) ??
+        (await ctx.snapshot.readFile(item.destination)) ??
+        "";
+      if (destContent.length > MAX_READ_CHARS) {
+        effects.push(
+          questionEffect({
+            question: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the destination is ${destContent.length} chars, beyond the sweep's ${MAX_READ_CHARS}-char read window (a full-page rewrite from a truncated read would amputate the tail); integrate manually or skip?`,
+            options: ["skip"],
+            idempotencyKey: sweepIdempotencyKey("escalate", item),
             metadata: {
               destination: item.destination,
               material: item.material,
@@ -440,7 +562,6 @@ const sweep = defineProcessorImplementation({
             pendingQuestion = q;
           },
         });
-        const destContent = (await ctx.snapshot.readFile(item.destination)) ?? "";
         const materialContent = (await ctx.snapshot.readFile(item.material)) ?? "";
         await runAgentLoop({
           charter: sweepCharter({
@@ -459,15 +580,19 @@ const sweep = defineProcessorImplementation({
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("budget")) {
-          // The night's model budget is gone (model.invoke.budget-exceeded
-          // family): stop the loop immediately. Budget exhaustion is not the
-          // pair's fault — we must NOT push a `failed` ledger row for the
-          // current item (that would count toward the
-          // escalate-after-${ESCALATE_AFTER_FAILURES} threshold and
-          // eventually trigger a false owner escalation). Instead, treat it
-          // exactly like the unprocessed remainder: hold the cursor back via
-          // failedDates, then break.
+        // Engine-typed denial (code model.invoke.denied — the engine's
+        // budgetDenied error carries this code; there is no separate
+        // budget-exceeded code): the night's model budget is gone, stop the
+        // loop immediately. Detection is by error CODE, never by message
+        // substring — an ordinary provider error whose message merely
+        // mentions "budget" is the pair's failure, not a night-wide bail.
+        if (isModelExecutionError(error) && error.code === "model.invoke.denied") {
+          // Budget exhaustion is not the pair's fault — we must NOT push a
+          // `failed` ledger row for the current item (that would count
+          // toward the escalate-after-${ESCALATE_AFTER_FAILURES} threshold
+          // and eventually trigger a false owner escalation). Instead, treat
+          // it exactly like the unprocessed remainder: hold the cursor back
+          // via failedDates, then break.
           effects.push(
             diagnosticEffect({
               severity: "warning",
@@ -500,9 +625,9 @@ const sweep = defineProcessorImplementation({
         const q: { summary: string; proposedSection: string } = pendingQuestion;
         effects.push(
           questionEffect({
-            question: `Integrate into ${item.destination}? ${q.summary}`,
+            question: `Integrate into ${item.destination}? ${sanitizeSummary(q.summary)}`,
             options: ["integrate", "skip"],
-            idempotencyKey: sweepIdempotencyKey(item),
+            idempotencyKey: sweepIdempotencyKey("uncertain", item),
             metadata: {
               destination: item.destination,
               material: item.material,
@@ -543,6 +668,26 @@ const sweep = defineProcessorImplementation({
       // material ALWAYS carries the sources: wikilink, model cooperation or
       // not. One PatchEffect per item — independent sub-proposals.
       const content = ensureSourcesLink(edit.content, item.material);
+
+      // C2b: shrink guard. The charter is append-only — an integration that
+      // significantly SHRINKS the page means truncation (the model rewrote
+      // from partial context) or vandalism. Never auto-patch a shrink; record
+      // a retryable failure (failed rows count toward owner escalation).
+      const shrinkAllowance = Math.max(200, Math.floor(destContent.length * 0.1));
+      if (content.length < destContent.length - shrinkAllowance) {
+        effects.push(
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.agent.sweep-shrink-rejected",
+            message: `dome.agent.sweep rejected the integration of ${item.material} into ${item.destination}: the edit shrinks the page from ${destContent.length} to ${content.length} chars (allowance ${shrinkAllowance}); the charter is append-only, so a significant shrink means truncation or vandalism. The pair stays unsettled and re-queues.`,
+            sourceRefs: itemRefs,
+          }),
+        );
+        ledgerRows.push({ ...row, disposition: "failed" });
+        failedDates.push(item.materialDate);
+        continue;
+      }
+
       effects.push(
         patchEffect({
           mode: "auto",
@@ -554,6 +699,10 @@ const sweep = defineProcessorImplementation({
           ],
         }),
       );
+      // C1: later items targeting this destination must build on tonight's
+      // content, and the sources link just added must count as settled for
+      // any same-night re-read.
+      nightOverlay.set(item.destination, content);
       ledgerRows.push({ ...row, disposition: "integrated" });
     }
 
@@ -566,15 +715,17 @@ const sweep = defineProcessorImplementation({
       for (const d of failedDates) {
         if (oldestFailed === null || d < oldestFailed) oldestFailed = d;
       }
-      let cursor = safeCursor({
-        today,
-        oldestUnswept: queue.oldestUnswept,
-        oldestFailed,
-      });
       // Never regress below the ledger's existing cursor (max guard): the
       // queue only contains material past the cursor, so this is pure
       // defense against a hand-edited or future-dated cursor line.
-      if (ledger.cursor !== null && cursor < ledger.cursor) cursor = ledger.cursor;
+      const cursor = neverRegressCursor(
+        safeCursor({
+          today,
+          oldestUnswept: queue.oldestUnswept,
+          oldestFailed,
+        }),
+        ledger.cursor,
+      );
       const body =
         ledgerRows.length > 0
           ? `${ledgerContent}${renderSweepRun({ date: today, rows: ledgerRows })}`

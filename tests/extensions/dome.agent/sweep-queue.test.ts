@@ -48,6 +48,31 @@ describe("buildSweepQueue", () => {
     expect(q.items).toHaveLength(0);
   });
 
+  test("C1b: a ledger with ONLY an integrated row does NOT settle the pair (sources link is authoritative)", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md": "# Alice Henshaw\n", // no sources link — sub-proposal may have been rejected
+    });
+    const integratedOnly = parseSweepLedger(
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: integrated\n",
+    );
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: integratedOnly });
+    expect(q.items).toHaveLength(1); // re-queues: the link never landed
+  });
+
+  test("C1b: integrated row + sources link present → settles by sources, not by the ledger", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md":
+        '---\nsources:\n  - "[[wiki/dailies/2026-06-09]]"\n---\n# Alice Henshaw\n',
+    });
+    const integratedOnly = parseSweepLedger(
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: integrated\n",
+    );
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: integratedOnly });
+    expect(q.items).toHaveLength(0);
+  });
+
   test("settled-by-ledger pairs are dropped (no-op settles; failed does not)", () => {
     const vault = files({
       "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",

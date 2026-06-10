@@ -631,7 +631,7 @@ export const QuestionEffectSchema = z
         ownerNeededReason: z.string().min(1).optional(),
         destination: z.string().min(1).optional(),
         material: z.string().min(1).optional(),
-        proposedSection: z.string().min(1).optional(),
+        proposedSection: z.string().min(1).max(4000).optional(),
       })
       .strict()
       .optional(),

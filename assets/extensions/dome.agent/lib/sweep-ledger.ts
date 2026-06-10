@@ -2,11 +2,13 @@
 // The advisory sweep ledger: committed markdown carrying the scan cursor,
 // settlement lines, and per-run sections the brief digest renders. Advisory
 // means correctness never depends on it alone — "integrated" settlement is
-// authoritative in the destination's sources: frontmatter; the ledger's
-// no-op/questioned lines only save re-judging, and "failed" rows never
-// settle (they count toward the escalate-after-3 contract). Strict grammar,
-// degrade on malformed lines (problems, never throws) — mirrors
-// preferences-shared.
+// authoritative in the destination's sources: frontmatter, and the queue
+// IGNORES "integrated" ledger rows entirely (the row is redundant when the
+// link landed and exactly wrong when the integration's sub-proposal was
+// rejected); the ledger's no-op/questioned lines only save re-judging, and
+// "failed" rows never settle (they count toward the escalate-after-3
+// contract). Strict grammar, degrade on malformed lines (problems, never
+// throws) — mirrors preferences-shared.
 
 export type SweepDisposition = "integrated" | "no-op" | "questioned" | "failed";
 
