@@ -451,7 +451,12 @@ function buildReport(input: {
   readonly decisions: CheckDecisionReport | null;
   readonly maintenanceLoops: ReadonlyArray<MaintenanceLoopSummary> | null;
 }): CheckReport {
-  const engineFindings = input.engine?.summary.findingCount ?? 0;
+  // Info-severity engine findings are FYI (e.g. daily.calendar-source-missing
+  // on a deliberately calendar-less vault) and must not hold check in
+  // "attention" — mirror the engine report's own ok/unhealthy rule.
+  const engineFindings = input.engine === null || input.engine === undefined
+    ? 0
+    : input.engine.summary.errorCount + input.engine.summary.warningCount;
   const attentionDiagnostics = input.content?.attention_diagnostics ?? 0;
   const questions = input.decisions?.questions ?? 0;
   return Object.freeze({
@@ -602,10 +607,14 @@ function projectionStatus(report: CheckProjectionReport): Status {
 
 function engineStatus(report: HealthReport | null): Status {
   if (report === null) return { tone: "muted", label: "skipped" };
-  if (report.status === "ok") return { tone: "ok", label: "ok" };
+  if (report.status === "ok") {
+    return report.summary.infoCount === 0
+      ? { tone: "ok", label: "ok" }
+      : { tone: "ok", label: `ok · ${report.summary.infoCount} info` };
+  }
   return {
     tone: "warn",
-    label: `${report.summary.findingCount} finding(s) · ${report.summary.errorCount} error · ${report.summary.warningCount} warning`,
+    label: `${report.summary.findingCount} finding(s) · ${report.summary.errorCount} error · ${report.summary.warningCount} warning · ${report.summary.infoCount} info`,
   };
 }
 

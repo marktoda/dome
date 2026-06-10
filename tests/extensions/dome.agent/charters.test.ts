@@ -87,3 +87,17 @@ describe("dome.agent charters — preference signals (M5)", () => {
     );
   });
 });
+
+describe("dome.agent charters — captured-today task routing (daily-surface D3)", () => {
+  test("ingest routes daily task lines through the captured seam, never writing the section itself", () => {
+    expect(INGEST_CHARTER).toContain("## Captured today");
+    expect(INGEST_CHARTER).toContain("appendToPage to today's daily note");
+    expect(INGEST_CHARTER).toContain("Append ONLY task lines");
+    expect(INGEST_CHARTER).toContain(
+      "never write that section or its markers yourself",
+    );
+    // The pre-D3 instruction told the model to create the section by hand —
+    // that wording must not come back.
+    expect(INGEST_CHARTER).not.toContain("under a `# Captured today` section");
+  });
+});

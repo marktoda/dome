@@ -23,6 +23,7 @@ import {
   ATTENTION_STALE_THRESHOLD,
   parseAttentionDiscountFactValue,
 } from "../../dome.daily/processors/attention-shared";
+import { EDITION_YESTERDAY_BLOCK } from "../../dome.daily/processors/daily-shared";
 
 import { compareStrings } from "../../../../src/core/compare";
 
@@ -50,7 +51,17 @@ function briefBlock(block: string): BriefBlockMarkers {
   });
 }
 
-export const YESTERDAY_BLOCK: BriefBlockMarkers = briefBlock("yesterday");
+// The unified yesterday block (D2): its `(owner, block)` identity is defined
+// once in dome.daily's daily-shared.ts (the daily-note block table) so the
+// dual writers — the brief's wholesale replace and dome.daily's
+// presence-gated fallback seed — can never drift apart. See
+// [[wiki/specs/daily-surface]] §"The one yesterday block".
+export const YESTERDAY_BLOCK: BriefBlockMarkers = Object.freeze({
+  owner: EDITION_YESTERDAY_BLOCK.owner,
+  block: EDITION_YESTERDAY_BLOCK.block,
+  start: EDITION_YESTERDAY_BLOCK.start,
+  end: EDITION_YESTERDAY_BLOCK.end,
+});
 export const MEETINGS_BLOCK: BriefBlockMarkers = briefBlock("meetings");
 export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
 export const INTEGRATED_BLOCK: BriefBlockMarkers = briefBlock("integrated");

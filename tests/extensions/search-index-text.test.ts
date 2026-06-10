@@ -314,4 +314,47 @@ describe("dome.search.index-text", () => {
     if (notes?.operation !== "upsert") throw new Error("expected upsert");
     expect(notes.sourceRefs[0]?.range?.startLine).toBe(9);
   });
+
+  test("close + brief-yesterday projection blocks are stripped; captured origins stay indexed", async () => {
+    // The close block and the unified yesterday block are PROJECTION copies
+    // (settles + yesterday's sections digested from elsewhere); indexing them
+    // would duplicate the originals in search results. The captured block is
+    // the deliberate exception — its lines are origins, real vault content.
+    // Spec: [[wiki/specs/daily-surface]] §"The `captured` block holds
+    // origins, not copies".
+    const daily = [
+      "# 2026-06-09",
+      "",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "- [ ] #task captured origin line stays indexed",
+      "<!-- dome.daily:captured:end -->",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- projected yesterday digest must not be indexed",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "",
+      "## Done",
+      "",
+      "<!-- dome.daily:close:start -->",
+      "### Done today",
+      "- projected close candidate must not be indexed (from [[wiki/x]])",
+      "<!-- dome.daily:close:end -->",
+    ].join("\n");
+    const files = new Map([["notes/2026-06-09.md", daily]]);
+    const effects = asSearchEffects(
+      await searchIndexText.run(makeContext(files, ["notes/2026-06-09.md"])),
+    );
+    const joined = effects
+      .filter((e) => e.operation === "upsert")
+      .map((e) => (e.operation === "upsert" ? e.body : ""))
+      .join("\n");
+    expect(joined).not.toContain("projected yesterday digest");
+    expect(joined).not.toContain("projected close candidate");
+    expect(joined).toContain("captured origin line stays indexed");
+  });
 });

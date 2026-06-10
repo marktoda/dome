@@ -12,7 +12,13 @@ import { Database } from "bun:sqlite";
 import { computeAnswersSchemaHash } from "../answers/db";
 import type { LedgerDb } from "../ledger/db";
 import { computeLedgerSchemaHash } from "../ledger/db";
-import { latestActiveProblemRuns, orphanRuns, type RunRow } from "../ledger/runs";
+import {
+  latestActiveProblemRuns,
+  orphanRuns,
+  queryRunSummaries,
+  type RunRow,
+} from "../ledger/runs";
+import { nextFire, parseCron } from "./cron";
 import type { OutboxDb } from "../outbox/db";
 import { computeOutboxSchemaHash } from "../outbox/db";
 import { queryOutbox, type OutboxRow } from "../outbox/dispatch";
@@ -246,12 +252,39 @@ export type HealthFinding =
         readonly dailyDailyPath: string | null;
         readonly agentDailyPath: string | null;
       };
+    }
+  | {
+      readonly code: "daily.edition-not-compiled";
+      readonly severity: "warning";
+      readonly subject: "daily";
+      readonly id: "dome.agent.brief";
+      readonly message: string;
+      readonly recovery: string;
+      readonly daily: {
+        /** Local YYYY-MM-DD date of the missed edition. */
+        readonly date: string;
+        /** The brief's manifest cron expression. */
+        readonly cron: string;
+      };
+    }
+  | {
+      readonly code: "daily.calendar-source-missing";
+      readonly severity: "info";
+      readonly subject: "daily";
+      readonly id: "calendar_source";
+      readonly message: string;
+      readonly recovery: string;
+      readonly daily: {
+        /** The brief's two most recent run days (local YYYY-MM-DD, newest first). */
+        readonly briefRunDates: ReadonlyArray<string>;
+      };
     };
 
 export type HealthSummary = {
   readonly findingCount: number;
   readonly errorCount: number;
   readonly warningCount: number;
+  readonly infoCount: number;
   readonly failedOutbox: number;
   readonly stuckPendingOutbox: number;
   readonly orphanRuns: number;
@@ -267,6 +300,8 @@ export type HealthSummary = {
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
   readonly dailyPathMismatch: number;
+  readonly dailyEditionNotCompiled: number;
+  readonly dailyCalendarSourceMissing: number;
 };
 
 /**
@@ -368,6 +403,18 @@ export async function collectHealthReport(opts: {
           extensions: opts.extensions,
           extensionConfigFor: opts.extensionConfigFor,
         });
+  const dailyEdition =
+    opts.registry === undefined
+      ? []
+      : dailyEditionFindings({
+          now,
+          briefCron: briefScheduleCron(opts.registry),
+          briefRunDates: briefRunDates(opts.ledger),
+          calendarFileExists: (date) =>
+            existsSync(
+              join(opts.vaultPath, "sources", "calendar", `${date}.md`),
+            ),
+        });
 
   const findings: HealthFinding[] = [
     ...storageSchema,
@@ -376,6 +423,7 @@ export async function collectHealthReport(opts: {
     ...modelProvider,
     ...modelProviderProbe,
     ...dailyPathMismatch,
+    ...dailyEdition,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -404,16 +452,21 @@ function buildHealthReport(
 ): HealthReport {
   const errorCount = findings.filter((f) => f.severity === "error").length;
   const warningCount = findings.filter((f) => f.severity === "warning").length;
+  const infoCount = findings.filter((f) => f.severity === "info").length;
   const count = (code: HealthFinding["code"]): number =>
     findings.filter((f) => f.code === code).length;
 
   return Object.freeze({
-    status: findings.length === 0 ? "ok" : "unhealthy",
+    // Info findings are FYI, never ill health: a report whose only findings
+    // are info-severity (e.g. daily.calendar-source-missing on a deliberately
+    // calendar-less vault) stays "ok".
+    status: errorCount + warningCount === 0 ? "ok" : "unhealthy",
     generatedAt: now.toISOString(),
     summary: Object.freeze({
       findingCount: findings.length,
       errorCount,
       warningCount,
+      infoCount,
       failedOutbox: count("outbox.failed"),
       stuckPendingOutbox: count("outbox.pending-stuck"),
       orphanRuns: count("run.orphan"),
@@ -429,6 +482,8 @@ function buildHealthReport(
       modelProviderUnreachable: count("model.provider-unreachable"),
       modelProviderKeyMissing: count("model.provider-key-missing"),
       dailyPathMismatch: count("config.daily-path-mismatch"),
+      dailyEditionNotCompiled: count("daily.edition-not-compiled"),
+      dailyCalendarSourceMissing: count("daily.calendar-source-missing"),
     }),
     findings: Object.freeze([...findings]),
   });
@@ -863,6 +918,172 @@ function dailyPathConfigValue(
 ): string | null {
   const raw = config.daily_path;
   return typeof raw === "string" ? raw : null;
+}
+
+// ----- Daily-edition choreography probes --------------------------------------
+//
+// "Did my morning happen" without reading the daily note. Two read-only,
+// idempotent probes over the run ledger + the working tree, normative at
+// docs/wiki/specs/daily-surface.md §"Doctor choreography findings". Never an
+// error: the edition's absence is degradation, not corruption.
+
+/**
+ * The two daily-edition findings:
+ *
+ * - `daily.edition-not-compiled` (warning) — the brief is enabled, its cron
+ *   time has passed today, the ledger has no brief run started today, and
+ *   the ledger DOES record a brief run on some earlier day (the pipeline was
+ *   alive before — this is a recovery signal, not an onboarding nag; a
+ *   freshly enabled vault stays quiet until its first morning lands). The
+ *   usual cause is a stopped host (cron fires only while `dome serve` runs)
+ *   or a sick model provider.
+ * - `daily.calendar-source-missing` (info) — `sources/calendar/<date>.md`
+ *   is absent for BOTH of the brief's two most recent run days. One missing
+ *   day is normal; two ledger-evidenced agenda-less mornings suggest the
+ *   vault-side calendar fetcher (vault-layout's recipe) is not wired or has
+ *   stopped. Cheap-derivation call: "existed at brief time" is approximated
+ *   by "exists in the working tree now" — calendar files are committed feeds
+ *   and essentially never backfilled, and a backfill self-heals the finding,
+ *   which is acceptable at info severity. "Consecutive days" means the two
+ *   most recent RUN days, not wall-calendar days, so a host that was off for
+ *   a day neither manufactures nor suppresses the signal.
+ */
+export function dailyEditionFindings(opts: {
+  readonly now: Date;
+  /**
+   * The brief's manifest cron expression; null when `dome.agent.brief` is
+   * not enabled/loaded (both probes stay silent).
+   */
+  readonly briefCron: string | null;
+  /**
+   * Distinct local dates (YYYY-MM-DD, newest first) on which the run ledger
+   * records a `dome.agent.brief` run of any status — a failed run still
+   * proves the scheduler fired (failures are `run.latest-problem`'s job).
+   */
+  readonly briefRunDates: ReadonlyArray<string>;
+  /** Whether `sources/calendar/<date>.md` exists in the vault working tree. */
+  readonly calendarFileExists: (date: string) => boolean;
+}): ReadonlyArray<HealthFinding> {
+  if (opts.briefCron === null) return Object.freeze([]);
+  const findings: HealthFinding[] = [];
+
+  const today = formatLocalDate(opts.now);
+  const scheduledTimePassedToday = cronFiredToday(opts.briefCron, opts.now);
+  if (
+    scheduledTimePassedToday &&
+    opts.briefRunDates.length > 0 &&
+    !opts.briefRunDates.includes(today)
+  ) {
+    findings.push(
+      Object.freeze({
+        code: "daily.edition-not-compiled" as const,
+        severity: "warning" as const,
+        subject: "daily" as const,
+        id: "dome.agent.brief" as const,
+        message:
+          `dome.agent.brief was scheduled today (cron "${opts.briefCron}") ` +
+          `and the scheduled time has passed, but the run ledger has no ` +
+          `brief run for ${today} — this morning's edition was not compiled.`,
+        recovery:
+          "Check that `dome serve` is running (scheduled processors fire " +
+          "only while the host runs) and review this report's model-provider " +
+          "findings; then run `dome sync --json` and re-run `dome doctor`.",
+        daily: Object.freeze({ date: today, cron: opts.briefCron }),
+      }),
+    );
+  }
+
+  const recentRunDates = opts.briefRunDates.slice(0, 2);
+  if (
+    recentRunDates.length === 2 &&
+    recentRunDates.every((date) => !opts.calendarFileExists(date))
+  ) {
+    findings.push(
+      Object.freeze({
+        code: "daily.calendar-source-missing" as const,
+        severity: "info" as const,
+        subject: "daily" as const,
+        id: "calendar_source" as const,
+        message:
+          `No sources/calendar/<date>.md existed for the morning brief's ` +
+          `last 2 run days (${recentRunDates.join(", ")}); the edition's ` +
+          `meetings section was omitted both mornings.`,
+        recovery:
+          "Wire a vault-side calendar fetcher that commits " +
+          "sources/calendar/<date>.md before the brief — see " +
+          'docs/wiki/specs/vault-layout.md §"Populating the calendar file ' +
+          '(recipe, not shipped)". A deliberately calendar-less vault may ' +
+          "ignore this info finding.",
+        daily: Object.freeze({
+          briefRunDates: Object.freeze([...recentRunDates]),
+        }),
+      }),
+    );
+  }
+
+  return Object.freeze(findings);
+}
+
+/**
+ * True when `cron`'s earliest fire of the local day containing `now` is at
+ * or before `now`. Malformed expressions return false (manifest crons are
+ * validated upstream; a probe never throws).
+ */
+function cronFiredToday(cron: string, now: Date): boolean {
+  let parsed;
+  try {
+    parsed = parseCron(cron);
+  } catch {
+    return false;
+  }
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // nextFire scans from `after + 1 minute`, so back off one minute to make
+  // 00:00 itself eligible.
+  const firstFire = nextFire(
+    parsed,
+    new Date(startOfDay.getTime() - 60_000),
+  );
+  return (
+    formatLocalDate(firstFire) === formatLocalDate(now) &&
+    firstFire.getTime() <= now.getTime()
+  );
+}
+
+/** The brief's schedule cron from the loaded registry, if any. */
+function briefScheduleCron(registry: ProcessorRegistry): string | null {
+  const brief = registry.get("dome.agent.brief");
+  if (brief === undefined) return null;
+  for (const trigger of brief.triggers) {
+    if (trigger.kind === "schedule") return trigger.cron;
+  }
+  return null;
+}
+
+/**
+ * Distinct local run dates (YYYY-MM-DD, newest first) for `dome.agent.brief`
+ * from the run ledger. Bounded read — the probe needs at most the two most
+ * recent days plus today.
+ */
+function briefRunDates(ledger: LedgerDb): ReadonlyArray<string> {
+  const rows = queryRunSummaries(ledger, {
+    processorId: "dome.agent.brief",
+    limit: 50,
+  });
+  const dates: string[] = [];
+  for (const row of rows) {
+    const startedAt = new Date(row.startedAt);
+    if (Number.isNaN(startedAt.getTime())) continue;
+    const date = formatLocalDate(startedAt);
+    if (!dates.includes(date)) dates.push(date);
+  }
+  return Object.freeze(dates);
+}
+
+function formatLocalDate(date: Date): string {
+  const yyyy = String(date.getFullYear()).padStart(4, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatList(values: ReadonlyArray<string>): string {

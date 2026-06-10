@@ -147,15 +147,18 @@ function printDoctorText(
   modelProviderProbe?: ModelProviderProbeInput,
 ): void {
   const caps = resolveCaps();
+  // Info-only findings keep status "ok" but still deserve a visible label.
   const headStatus: Status = report.status === "ok"
-    ? { tone: "ok", label: "ok" }
+    ? report.summary.findingCount === 0
+      ? { tone: "ok", label: "ok" }
+      : { tone: "ok", label: `${report.summary.infoCount} info` }
     : { tone: "warn", label: `${report.summary.findingCount} finding${report.summary.findingCount === 1 ? "" : "s"}` };
 
   const lines: string[] = [
     headline({ cmd: "doctor", context: basename(vaultPath) }, headStatus, caps),
   ];
 
-  if (report.status === "ok") {
+  if (report.findings.length === 0) {
     lines.push(...section("Findings", bullets([], caps), caps));
   } else {
     const findingBullets: string[] = [];
@@ -174,7 +177,7 @@ function printDoctorText(
           [
             {
               label: "health",
-              value: `${report.summary.errorCount} error · ${report.summary.warningCount} warning`,
+              value: `${report.summary.errorCount} error · ${report.summary.warningCount} warning · ${report.summary.infoCount} info`,
             },
             {
               label: "findings",
@@ -191,6 +194,8 @@ function printDoctorText(
                 `grants ${report.summary.capabilityGrantGaps} kind · ` +
                 `${report.summary.capabilityGrantEntryGaps} entry · ` +
                 `daily_path ${report.summary.dailyPathMismatch} · ` +
+                `edition ${report.summary.dailyEditionNotCompiled} missed · ` +
+                `calendar ${report.summary.dailyCalendarSourceMissing} missing · ` +
                 `model ${report.summary.modelProviderMissing} missing · ` +
                 `${report.summary.modelProviderUnreachable} unreachable · ` +
                 `${report.summary.modelProviderKeyMissing} keyless`,

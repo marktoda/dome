@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-08
-updated: 2026-06-09
+updated: 2026-06-11
 sources:
   - "[[superpowers/specs/2026-06-08-autonomous-agents-ingest-design]]"
   - "[[wedge]]"
@@ -81,7 +81,7 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 
 - **Phase / kind:** garden, `kind: llm`.
 - **Trigger:** a change touching `inbox/raw/*.md`. Idempotent by consumption — the agent archives the raw file in its patch, so a converged source does not re-fire.
-- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → update `index.md` → append `log.md` → route action-items to the daily note or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code.
+- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → update `index.md` → append `log.md` → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code.
 
 **Tool surface:**
 
@@ -91,11 +91,11 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 | `readPage(path)` | read |
 | `searchVault(query)` | read (content substring match) |
 | `writePage(path, content)` | write (accumulate create/replace) |
-| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads`) |
+| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads` — daily appends ride the captured-tasks seam) |
 | `archiveSource(rawPath)` | write (accumulate move `inbox/raw/x` → `inbox/processed/x` + delete the raw) |
 | `askOwner(question)` | question (`QuestionEffect`) |
 
-Task-routing has no dedicated tool: the agent reads the target (daily note or entity page) and `appendToPage`s a `#task` line, guided by the charter. Targeted in-place edits likewise go through read-then-`writePage`. (`patchPage` / `routeTask` were considered and dropped — `writePage` + `appendToPage` cover the cases without a diff-apply tool.)
+Task-routing has no dedicated tool: the agent `appendToPage`s a `#task` line, guided by the charter. For **today's daily**, the append rides the captured-tasks seam ([[wiki/specs/daily-surface]] §"The ingest tool seam"): the tool validates the content is task-shaped lines and splices them inside the `dome.daily:captured` block itself — the model supplies lines, never placement — and rejects anything else as a self-correctable tool error (`writePage` on today's daily is admitted only when it amounts to the same in-block append). Entity-page appends remain plain. Targeted in-place edits elsewhere go through read-then-`writePage`. (`patchPage` / `routeTask` were considered and dropped — `writePage` + `appendToPage` cover the cases without a diff-apply tool.)
 
 **Default capability grant (`.dome/config.yaml`):**
 
@@ -148,18 +148,18 @@ The consolidator is the **contractive counterweight** to ingest: a nightly vault
 The brief composer is the [[wedge]] phase-4 push surface: sleep-time compute aimed at the one perfectly predictable query. It composes the morning brief **into today's daily note as small generated blocks** — never a separate document (extends [[v1]] decision 1 and wedge decision 3).
 
 - **Phase / kind:** garden, `kind: llm`. **Trigger:** `schedule` only (`30 5 * * *`).
-- **Ordering with `dome.daily`:** the brief fires at 05:30; `dome.daily.create-daily` fires at 06:00. The brief does not depend on the daily existing — when today's note is absent it creates the same skeleton through `dome.daily`'s shared `renderDailySkeleton` + start-context helpers, so `create-daily` later finds the file and no-ops. The brief's adopted patch emits `file.created`/`document.changed` signals, which trigger `dome.daily.carry-forward` to raise the **ranked open-loops surface** — the brief deliberately does not re-derive open-loop ranking; that block stays owned by carry-forward.
-- **Block ownership is disjoint:** `dome.daily` owns its marker blocks (`dome.daily:start-context`, `dome.daily:open-loops`, `dome.daily:carried-forward`); the brief owns three `dome.agent.brief:*` marker blocks. No two processors write the same region.
+- **Ordering with `dome.daily`:** the brief fires at 05:30; `dome.daily.create-daily` fires at 06:00. The brief does not depend on the daily existing — when today's note is absent it creates the same skeleton through `dome.daily`'s shared `renderDailySkeleton` + yesterday-fallback helpers, so `create-daily` later finds the file and no-ops. The brief's adopted patch emits `file.created`/`document.changed` signals, which trigger `dome.daily.carry-forward` to raise the **ranked open-loops surface** — the brief deliberately does not re-derive open-loop ranking; that block stays owned by carry-forward. The full overnight choreography (02:00 consolidate → 03:00 sweep → calendar → 05:30 brief → 06:00 create-daily/carry-forward) and the edition's degradation ladder are normative at [[wiki/specs/daily-surface]].
+- **Block ownership is disjoint, with one named exception:** `dome.daily` owns its marker blocks; the brief owns its `dome.agent.brief:*` marker blocks. The exception is `dome.agent.brief:yesterday` — the ONE yesterday surface (D2): `create-daily`/`carry-forward` seed its mechanical fallback body when (and only when) the block is absent, and the brief replaces the body wholesale. The dual-writer safety argument, fallback body shape, and the `dome.daily:start-context` retirement/migration are normative at [[wiki/specs/daily-surface]] §"The one yesterday block"; the cross-bundle block-ownership and section-contract tables (every block, writer, reader, timing, status) at [[wiki/specs/daily-surface]] §"Block ownership".
 
 **The three brief blocks** (plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks):
 
 | Block | Placement | Content | Writer |
 |---|---|---|---|
-| `dome.agent.brief:yesterday` | under `## Start Here` | outcomes, decisions, unfinished threads from yesterday's daily + recently adopted pages; every bullet cites `(from [[path]])` | model (spliced) |
+| `dome.agent.brief:yesterday` | under `## Start Here` | outcomes, decisions, unfinished threads from yesterday's daily + recently adopted pages; every bullet cites `(from [[path]])`. Replaces the deterministic fallback body seeded by the pre-pass / `dome.daily` | model (spliced), over a deterministic fallback (dual-writer — daily-surface §"The one yesterday block") |
 | `dome.agent.brief:meetings` | under `## Meetings` | one bullet per meeting from `sources/calendar/<today>.md` (time — title) with a one-line context digest from vault recall (people, projects, prior decisions), citing the calendar file and the recalled pages | model (spliced) |
 | `dome.agent.brief:questions` | under `## Start Here`, after the yesterday block | the open Dome questions batch from `ctx.projection.questions({ resolved: false })`, rendered with durable row ids and `dome resolve <id> <value>` hints | processor (deterministic — the model never writes question ids) |
 
-- **Grounding rule (hard, enforced in code):** after the loop, the processor splices **only the model-filled brief blocks** back into the deterministic pre-run content — model writes outside the markers (or to any file other than the daily note) never land (out-of-scope edits are dropped with a `dome.agent.brief-out-of-scope` warning). Inside the spliced blocks, any bullet carrying no `[[wikilink]]` source ref is stripped and re-emitted as a `QuestionEffect` (backtick code spans are stripped before the check — a backticked `` `[[x]]` `` does not ground a bullet). **Anything the model cannot ground becomes a question, not brief text.**
+- **Grounding rule (hard, enforced in code):** after the loop, the processor splices **only the model-filled brief blocks** back into the deterministic pre-run content — a block whose body the model left identical to the prepared content is skipped entirely, so the deterministic yesterday fallback is never mistaken for model output and stripped as ungrounded; model writes outside the markers (or to any file other than the daily note) never land (out-of-scope edits are dropped with a `dome.agent.brief-out-of-scope` warning). Inside the spliced blocks, any bullet carrying no `[[wikilink]]` source ref is stripped and re-emitted as a `QuestionEffect` (backtick code spans are stripped before the check — a backticked `` `[[x]]` `` does not ground a bullet). **Anything the model cannot ground becomes a question, not brief text.**
 - **Marker-injection guard (hard, enforced in code):** Dome's HTML comments are exclusively generated block markers, so the splice drops every model-body line matching `<!-- dome.* -->`. Without this, a body could smuggle a second copy of another block's marker pair (the deterministic pass replaces only the first occurrence, so the smuggled copy — e.g. a fabricated `dome.agent.brief:questions` block with fake `dome resolve` hints — would land verbatim) or inject `dome.daily:*` markers and corrupt carry-forward. Calendar files are untrusted input flowing into the model, so this is a live prompt-injection path, not a theoretical one.
 - **Calendar degradation:** when `sources/calendar/<today>.md` is absent, the meetings block is omitted entirely — no empty section, no hallucinated agenda. The calendar file is **untrusted input**: the processor parses it defensively (shape per [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds") and hands the parsed meeting list to the model as data, never as instructions.
 - **Output shape:** ONE `PatchEffect(mode:"auto")` writing the daily note, plus `QuestionEffect`s (from `askOwner` and from ungrounded-bullet strips), plus a truncation diagnostic on budget exhaustion. **Atomic per run:** a mid-run throw drops all edits — including the skeleton, which `create-daily` recreates at 06:00 — and emits only a `dome.agent.brief-failed` diagnostic.
@@ -244,5 +244,6 @@ consolidate appends land through the normal cumulative PatchEffect. Agents
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
 - [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions, the single-auto-writer answer handler
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
+- [[wiki/specs/daily-surface]] — the daily note as a product surface: section contract, block ownership, choreography, degradation ladder, the `dome.daily.edition` loop
 - [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds" — the calendar source-file shape the brief parses
 - [[wedge]] — phase 4: nightly consolidation + morning brief as the flagship push surface

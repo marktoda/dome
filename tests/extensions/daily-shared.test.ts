@@ -4,10 +4,13 @@ import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
+  closeDigestFromDailyContent,
+  closeScaffoldSection,
   completedSourceBackedOpenLoopsFromMarkdown,
-  dailyStartContextSection,
   dailyPathSettings,
   dailyPath,
+  ensureCloseScaffoldSection,
+  ensureYesterdayFallbackSection,
   openLoopIdentity,
   openLoopFreshnessKey,
   openLoopStableId,
@@ -16,12 +19,14 @@ import {
   openLoopSurfaceSources,
   openTasksFromMarkdown,
   parseDailyPath,
-  previousDailyStartContext,
+  previousDailyDigest,
   rankDailyOpenLoopSurfaceItems,
+  removeLegacyStartContextSection,
   renderDailySkeleton,
-  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
+  settledActionItemsFromMarkdown,
   settledSourceBackedOpenLoopsFromMarkdown,
+  yesterdayFallbackSection,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
 describe("dome.daily shared date helpers", () => {
@@ -68,12 +73,23 @@ describe("dome.daily shared date helpers", () => {
   });
 
   test("renderDailySkeleton uses the V1 work-surface shape", () => {
-    expect(
-      renderDailySkeleton({
-        today: { yyyy: "2026", mm: "02", dd: "28" },
-        yesterday: { yyyy: "2026", mm: "02", dd: "27" },
-      }),
-    ).toContain(
+    const skeleton = renderDailySkeleton({
+      today: { yyyy: "2026", mm: "02", dd: "28" },
+      yesterday: { yyyy: "2026", mm: "02", dd: "27" },
+    });
+    // Captured today is the FIRST content section, hosting the (empty)
+    // dome.daily:captured block (daily-surface section contract, D3).
+    expect(skeleton).toContain(
+      [
+        "## Captured today",
+        "",
+        "<!-- dome.daily:captured:start -->",
+      ].join("\n"),
+    );
+    expect(skeleton.indexOf("## Captured today")).toBeLessThan(
+      skeleton.indexOf("## Start Here"),
+    );
+    expect(skeleton).toContain(
       [
         "## Start Here",
         "",
@@ -92,8 +108,8 @@ describe("dome.daily shared date helpers", () => {
     );
   });
 
-  test("daily start context summarizes yesterday with stable markers", () => {
-    const context = previousDailyStartContext({
+  test("yesterday fallback summarizes yesterday inside the unified brief block", () => {
+    const digest = previousDailyDigest({
       previousPath: "wiki/dailies/2026-02-27.md",
       previousContent: [
         "# 2026-02-27",
@@ -123,16 +139,16 @@ describe("dome.daily shared date helpers", () => {
       ].join("\n"),
     });
 
-    const section = dailyStartContextSection(context);
+    const section = yesterdayFallbackSection(digest);
     expect(section).toBe(
       [
-        "<!-- dome.daily:start-context:start -->",
-        "### Since Yesterday",
+        "<!-- dome.agent.brief:yesterday:start -->",
+        "### Yesterday",
         "- Previous daily: [[wiki/dailies/2026-02-27]]",
         "- Done yesterday: Sent Ada the staffing note.; Closed the hiring-budget follow-up.",
         "- Decisions yesterday: Keep alpha review in the weekly plan.; Use the lighter staffing packet.",
         "- Story: Alpha review moved forward after the staffing packet landed. The hiring-budget thread is still open.",
-        "<!-- dome.daily:start-context:end -->",
+        "<!-- dome.agent.brief:yesterday:end -->",
       ].join("\n"),
     );
 
@@ -146,17 +162,338 @@ describe("dome.daily shared date helpers", () => {
       "## Meetings",
       "",
     ].join("\n");
-    const next = replaceDailyStartContextSection({
+    const next = ensureYesterdayFallbackSection({
       content: daily,
       section,
     });
     expect(next).toContain(
-      "## Start Here\n\n<!-- dome.daily:start-context:start -->",
+      "## Start Here\n\n<!-- dome.agent.brief:yesterday:start -->",
     );
     expect(next).toContain("Human note stays here.");
-    expect(replaceDailyStartContextSection({ content: next, section })).toBe(
+    expect(ensureYesterdayFallbackSection({ content: next, section })).toBe(
       next,
     );
+  });
+
+  test("no previous daily degrades to a single no-record line, never an absent block", () => {
+    expect(yesterdayFallbackSection(null)).toBe(
+      [
+        "<!-- dome.agent.brief:yesterday:start -->",
+        "### Yesterday",
+        "- No record of yesterday — no previous daily note.",
+        "<!-- dome.agent.brief:yesterday:end -->",
+      ].join("\n"),
+    );
+  });
+
+  test("ensureYesterdayFallbackSection leaves an existing (curated) block alone entirely", () => {
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Curated by the brief (from [[wiki/dailies/2026-02-27]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const next = ensureYesterdayFallbackSection({
+      content: daily,
+      section: yesterdayFallbackSection(null),
+    });
+    expect(next).toBe(daily);
+    expect(next).not.toContain("No record of yesterday");
+  });
+
+  test("removeLegacyStartContextSection removes the retired block once, idempotently", () => {
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.daily:start-context:start -->",
+      "### Since Yesterday",
+      "- Previous daily: [[wiki/dailies/2026-02-27]]",
+      "<!-- dome.daily:start-context:end -->",
+      "",
+      "Human note stays here.",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const removed = removeLegacyStartContextSection(daily);
+    expect(removed).not.toContain("dome.daily:start-context");
+    expect(removed).not.toContain("### Since Yesterday");
+    expect(removed).toContain("## Start Here\n\nHuman note stays here.");
+    expect(removed).toContain("## Meetings");
+    // Idempotent: once removed (and nothing writes the marker anymore), a
+    // second pass is a no-op — the block never reappears.
+    expect(removeLegacyStartContextSection(removed)).toBe(removed);
+  });
+
+  test("closeScaffoldSection renders candidates, the still-open line-up, and the story pointer", () => {
+    const section = closeScaffoldSection({
+      doneCandidates: [
+        {
+          line: 12,
+          body: "Sent Ada the staffing note",
+          status: "resolved",
+          originPath: "wiki/projects/alpha.md",
+        },
+        {
+          line: 14,
+          body: "Chase the stale vendor quote",
+          status: "dismissed",
+          originPath: "wiki/projects/beta.md",
+        },
+        {
+          line: 20,
+          body: "Booked the offsite room",
+          status: "resolved",
+          originPath: null,
+        },
+      ],
+      stillOpen: [
+        { line: 5, stableId: "a", body: "Draft the rollout plan", followup: false, sourcePath: "wiki/projects/alpha.md" },
+        { line: 6, stableId: "b", body: "Review the audit findings", followup: false, sourcePath: "wiki/projects/beta.md" },
+        { line: 7, stableId: "c", body: "Ping legal about the filing", followup: true, sourcePath: "wiki/people/dana.md" },
+        { line: 8, stableId: "d", body: "Refresh the metrics dashboard", followup: false, sourcePath: "wiki/projects/gamma.md" },
+      ],
+    });
+    expect(section).toBe(
+      [
+        "<!-- dome.daily:close:start -->",
+        "### Done today",
+        "Candidates from today's settles — keep what counts, delete the rest.",
+        "- Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+        "- Dismissed: Chase the stale vendor quote (from [[wiki/projects/beta]])",
+        "- Booked the offsite room",
+        "### Still open",
+        "- 4 loops still open — top: Draft the rollout plan; Review the audit findings; Ping legal about the filing",
+        "### Story of the Day",
+        "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+        "<!-- dome.daily:close:end -->",
+      ].join("\n"),
+    );
+  });
+
+  test("closeScaffoldSection with nothing settled and a clear surface renders the explicit empty scaffold", () => {
+    const section = closeScaffoldSection({ doneCandidates: [], stillOpen: [] });
+    // Zero BULLETS under "### Done today" is what "empty close" means to
+    // tomorrow's reader — the placeholder is a non-bullet line.
+    expect(section).toContain("### Done today\nNothing recorded as settled today.");
+    expect(section).toContain("- No loops still open.");
+  });
+
+  test("ensureCloseScaffoldSection inserts under ## Done and leaves an existing block alone entirely", () => {
+    const section = closeScaffoldSection({ doneCandidates: [], stillOpen: [] });
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Done",
+      "",
+      "## Story of the Day",
+      "",
+    ].join("\n");
+    const next = ensureCloseScaffoldSection({ content: daily, section });
+    expect(next).toContain("## Done\n\n<!-- dome.daily:close:start -->");
+    // The heading LINE (not the pointer line's mid-line mention) follows the
+    // block — the section order is preserved.
+    expect(next).toContain(
+      "<!-- dome.daily:close:end -->\n\n## Story of the Day",
+    );
+
+    // Presence gate: the human's edited block survives verbatim.
+    const edited = next.replace(
+      "Nothing recorded as settled today.",
+      "- Shipped the close scaffold",
+    );
+    expect(ensureCloseScaffoldSection({ content: edited, section })).toBe(
+      edited,
+    );
+  });
+
+  test("ensureCloseScaffoldSection creates a missing ## Done heading before the story section", () => {
+    const section = closeScaffoldSection({ doneCandidates: [], stillOpen: [] });
+    const daily = ["# 2026-02-28", "", "## Story of the Day", ""].join("\n");
+    const next = ensureCloseScaffoldSection({ content: daily, section });
+    expect(next).toContain("## Done\n\n<!-- dome.daily:close:start -->");
+    expect(next.indexOf("## Done")).toBeLessThan(
+      next.indexOf("## Story of the Day"),
+    );
+  });
+
+  test("closeDigestFromDailyContent reads kept bullets and the still-open count, ignoring hint lines", () => {
+    const content = [
+      "# 2026-02-27",
+      "",
+      "## Done",
+      "",
+      "<!-- dome.daily:close:start -->",
+      "### Done today",
+      "Candidates from today's settles — keep what counts, delete the rest.",
+      "- Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+      "- Booked the offsite room",
+      "### Still open",
+      "- 4 loops still open — top: Draft the rollout plan; Review the audit findings; Ping legal about the filing",
+      "### Story of the Day",
+      "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+      "<!-- dome.daily:close:end -->",
+      "",
+    ].join("\n");
+    expect(closeDigestFromDailyContent(content)).toEqual({
+      kept: [
+        "Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+        "Booked the offsite room",
+      ],
+      stillOpenCount: 4,
+    });
+    expect(closeDigestFromDailyContent("## Done\n\n- Loose bullet\n")).toBeNull();
+    expect(
+      closeDigestFromDailyContent(
+        [
+          "<!-- dome.daily:close:start -->",
+          "### Done today",
+          "Nothing recorded as settled today.",
+          "### Still open",
+          "- No loops still open.",
+          "<!-- dome.daily:close:end -->",
+        ].join("\n"),
+      ),
+    ).toEqual({ kept: [], stillOpenCount: 0 });
+  });
+
+  test("tomorrow's fallback prefers the close: kept candidates + carried count, no section scraping", () => {
+    const digest = previousDailyDigest({
+      previousPath: "wiki/dailies/2026-02-27.md",
+      previousContent: [
+        "# 2026-02-27",
+        "",
+        "## Decisions",
+        "",
+        "- Keep alpha review in the weekly plan.",
+        "",
+        "## Done",
+        "",
+        "- Hand-written bullet outside the block is not scraped.",
+        "",
+        "<!-- dome.daily:close:start -->",
+        "### Done today",
+        "Candidates from today's settles — keep what counts, delete the rest.",
+        "- Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+        "- Booked the offsite room",
+        "### Still open",
+        "- 1 loop still open — top: Draft the rollout plan",
+        "### Story of the Day",
+        "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+        "<!-- dome.daily:close:end -->",
+        "",
+        "## Story of the Day",
+        "",
+        "The staffing packet landed.",
+        "",
+      ].join("\n"),
+    });
+    expect(digest.done).toEqual([
+      "Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+      "Booked the offsite room",
+    ]);
+    expect(digest.close).toEqual({
+      kept: [
+        "Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+        "Booked the offsite room",
+      ],
+      stillOpenCount: 1,
+    });
+
+    const section = yesterdayFallbackSection(digest);
+    expect(section).toBe(
+      [
+        "<!-- dome.agent.brief:yesterday:start -->",
+        "### Yesterday",
+        "- Previous daily: [[wiki/dailies/2026-02-27]]",
+        "- Done yesterday: Sent Ada the staffing note (from [[wiki/projects/alpha]]); Booked the offsite room",
+        "- Still open at close: 1 loop carried.",
+        "- Decisions yesterday: Keep alpha review in the weekly plan.",
+        "- Story: The staffing packet landed.",
+        "<!-- dome.agent.brief:yesterday:end -->",
+      ].join("\n"),
+    );
+    expect(section).not.toContain("Hand-written bullet");
+    expect(section).not.toContain("keep what counts");
+  });
+
+  test("an empty close degrades to the explicit 'yesterday's close was empty' line", () => {
+    const digest = previousDailyDigest({
+      previousPath: "wiki/dailies/2026-02-27.md",
+      previousContent: [
+        "# 2026-02-27",
+        "",
+        "## Done",
+        "",
+        "<!-- dome.daily:close:start -->",
+        "### Done today",
+        "Nothing recorded as settled today.",
+        "### Still open",
+        "- 2 loops still open — top: Draft the rollout plan; Review the audit findings",
+        "### Story of the Day",
+        "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+        "<!-- dome.daily:close:end -->",
+        "",
+      ].join("\n"),
+    });
+    const section = yesterdayFallbackSection(digest);
+    expect(section).toContain("- Yesterday's close was empty.");
+    expect(section).toContain("- Still open at close: 2 loops carried.");
+    expect(section).not.toContain("- Done yesterday:");
+  });
+
+  test("a missing close falls back to raw section scraping (pre-D4 behavior, unchanged)", () => {
+    const digest = previousDailyDigest({
+      previousPath: "wiki/dailies/2026-02-27.md",
+      previousContent: [
+        "# 2026-02-27",
+        "",
+        "## Done",
+        "",
+        "- Sent Ada the staffing note.",
+        "",
+      ].join("\n"),
+    });
+    expect(digest.close).toBeNull();
+    const section = yesterdayFallbackSection(digest);
+    expect(section).toContain(
+      "- Done yesterday: Sent Ada the staffing note.",
+    );
+    expect(section).not.toContain("Still open at close");
+    expect(section).not.toContain("close was empty");
+  });
+
+  test("settledActionItemsFromMarkdown extracts direct settles only", () => {
+    const content = [
+      "## Notes",
+      "",
+      "- [x] Booked the offsite room ^t1234abcd",
+      "- [-] Dropped the vendor call",
+      "- [ ] Still open stays out",
+      "- [x] Sent Ada the staffing note (from [[wiki/projects/alpha]])",
+      "",
+      "<!-- dome.daily:open-loops:start -->",
+      "- [x] Inside a generated block stays out",
+      "<!-- dome.daily:open-loops:end -->",
+      "",
+      "```",
+      "- [x] Inside a fence stays out",
+      "```",
+      "",
+    ].join("\n");
+    expect(settledActionItemsFromMarkdown(content)).toEqual([
+      { line: 3, body: "Booked the offsite room", status: "resolved" },
+      { line: 4, body: "Dropped the vendor call", status: "dismissed" },
+    ]);
   });
 
   test("openTasksFromMarkdown extracts plain open markdown checkboxes", () => {
@@ -282,6 +619,23 @@ describe("dome.daily shared date helpers", () => {
         ].join("\n"),
       ).map((item) => item.body),
     ).toEqual(["Keep source item", "Keep second source item"]);
+  });
+
+  test("the unified yesterday block is excluded from task extraction (fallback prose never re-ingests)", () => {
+    const content = [
+      "TODO: Keep source item",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Done yesterday: Follow up with Sam about hiring",
+      "- [ ] Generated checkbox should not become source",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    expect(actionItemsFromMarkdown(content).map((item) => item.body)).toEqual([
+      "Keep source item",
+    ]);
+    // The compressed Done line contains "follow up with" prose — inside the
+    // generated block it must not raise an ambiguous-followup question.
+    expect(ambiguousFollowupsFromMarkdown(content)).toEqual([]);
   });
 
   test("actionItemsFromMarkdown skips frontmatter metadata", () => {

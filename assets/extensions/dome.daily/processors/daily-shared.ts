@@ -6,8 +6,11 @@ import {
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
 import {
+  containsGeneratedBlockMarker,
+  containsHtmlCommentDelimiter,
   findGeneratedBlock,
   generatedBlockMarkers,
+  type GeneratedBlockRange,
 } from "../../../../src/core/generated-block";
 
 import { compareStrings } from "../../../../src/core/compare";
@@ -20,9 +23,48 @@ const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
 // the only sanctioned marker implementation (see
 // [[wiki/linters/generated-block-splice-guard]]).
 const DAILY_OWNER = "dome.daily";
+// Retired-legacy (recognized, never written) — see
+// [[wiki/specs/daily-surface]] §"Block ownership".
 const CARRIED_FORWARD_BLOCK = "carried-forward";
+// Retired-legacy since D2 (recognized, never written): the mechanical
+// yesterday digest now lives as the fallback BODY of the unified
+// dome.agent.brief:yesterday block. See
+// [[wiki/specs/daily-surface]] §"The one yesterday block".
 const START_CONTEXT_BLOCK = "start-context";
 const OPEN_LOOPS_BLOCK = "open-loops";
+const CAPTURED_BLOCK = "captured";
+// The evening close scaffold (D4): done candidates + still-open line-up +
+// story pointer under ## Done, written by dome.daily.close-scaffold ONLY when
+// absent (presence-gated — human keep/delete edits are never rewritten).
+// Normative at [[wiki/specs/daily-surface]] §"The close block".
+const CLOSE_BLOCK = "close";
+
+// The unified yesterday block (D2): owned by the brief's namespace — the
+// edition compile is its steady-state writer — but its `(owner, block)`
+// identity is defined HERE so dome.agent imports it from dome.daily (the
+// established bundle dependency direction) and the marker strings cannot
+// drift apart. dome.daily's create-daily/carry-forward seed the mechanical
+// fallback body only when the block is absent; the brief replaces the body
+// wholesale. The one recorded exception to disjoint block ownership —
+// normative at [[wiki/specs/daily-surface]] §"The one yesterday block".
+const EDITION_YESTERDAY_OWNER = "dome.agent.brief";
+const EDITION_YESTERDAY_BLOCK_NAME = "yesterday";
+const EDITION_YESTERDAY_MARKERS = generatedBlockMarkers(
+  EDITION_YESTERDAY_OWNER,
+  EDITION_YESTERDAY_BLOCK_NAME,
+);
+
+export const EDITION_YESTERDAY_BLOCK: {
+  readonly owner: string;
+  readonly block: string;
+  readonly start: string;
+  readonly end: string;
+} = Object.freeze({
+  owner: EDITION_YESTERDAY_OWNER,
+  block: EDITION_YESTERDAY_BLOCK_NAME,
+  start: EDITION_YESTERDAY_MARKERS.start,
+  end: EDITION_YESTERDAY_MARKERS.end,
+});
 
 const CARRIED_FORWARD_MARKERS = generatedBlockMarkers(
   DAILY_OWNER,
@@ -33,6 +75,8 @@ const START_CONTEXT_MARKERS = generatedBlockMarkers(
   START_CONTEXT_BLOCK,
 );
 const OPEN_LOOPS_MARKERS = generatedBlockMarkers(DAILY_OWNER, OPEN_LOOPS_BLOCK);
+const CAPTURED_MARKERS = generatedBlockMarkers(DAILY_OWNER, CAPTURED_BLOCK);
+const CLOSE_MARKERS = generatedBlockMarkers(DAILY_OWNER, CLOSE_BLOCK);
 
 export const CARRIED_FORWARD_START = CARRIED_FORWARD_MARKERS.start;
 export const CARRIED_FORWARD_END = CARRIED_FORWARD_MARKERS.end;
@@ -40,12 +84,38 @@ export const START_CONTEXT_START = START_CONTEXT_MARKERS.start;
 export const START_CONTEXT_END = START_CONTEXT_MARKERS.end;
 export const OPEN_LOOPS_START = OPEN_LOOPS_MARKERS.start;
 export const OPEN_LOOPS_END = OPEN_LOOPS_MARKERS.end;
+export const CAPTURED_START = CAPTURED_MARKERS.start;
+export const CAPTURED_END = CAPTURED_MARKERS.end;
+
+export const CAPTURED_HEADING = "## Captured today";
 
 /**
- * The dome.daily generated blocks as `(owner, block)` anomaly-scan targets —
- * what splice call sites feed `generatedBlockAnomalyDiagnostics` so smuggled
- * duplicate pairs / half-open markers in a daily note surface as info
- * diagnostics instead of staying invisible.
+ * The one-line hint the skeleton renders inside the (otherwise empty)
+ * captured block. A plain HTML comment — not a dome marker — invisible in
+ * preview and skipped by every extractor.
+ */
+const CAPTURED_HINT =
+  "<!-- tasks captured during the day land here (`dome capture` -> ingest) -->";
+export const CLOSE_START = CLOSE_MARKERS.start;
+export const CLOSE_END = CLOSE_MARKERS.end;
+
+/**
+ * The generated blocks a daily note may carry, as `(owner, block)`
+ * anomaly-scan targets — what splice call sites feed
+ * `generatedBlockAnomalyDiagnostics` so smuggled duplicate pairs / half-open
+ * markers in a daily note surface as info diagnostics instead of staying
+ * invisible. Includes the retired-legacy markers (recognized, never written:
+ * legacy blocks must neither re-ingest as tasks nor hide marker damage) and
+ * the dual-writer `dome.agent.brief:yesterday` block (carry-forward splices
+ * it, so it reports what it sees at its own splice site; the brief scans the
+ * same block under its own code).
+ *
+ * NOTE: this is the ANOMALY-SCAN list, not the task-extraction exclusion
+ * list. `dome.daily:captured` is scanned for marker anomalies like every
+ * other block, but its body is deliberately NOT excluded from extraction —
+ * captured tasks are origins, not copies (see
+ * `dailyGeneratedBlockLineRanges` and [[wiki/specs/daily-surface]] §"The
+ * `captured` block holds origins, not copies").
  */
 export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   readonly owner: string;
@@ -54,6 +124,12 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: CLOSE_BLOCK }),
+  Object.freeze({
+    owner: EDITION_YESTERDAY_OWNER,
+    block: EDITION_YESTERDAY_BLOCK_NAME,
+  }),
+  Object.freeze({ owner: DAILY_OWNER, block: CAPTURED_BLOCK }),
 ]);
 
 export type DailyDate = {
@@ -115,11 +191,44 @@ export type DailySettledOpenLoopSource = {
   readonly status: DailyOpenLoopSettlementStatus;
 };
 
-export type DailyStartContext = {
+export type PreviousDailyDigest = {
   readonly previousPath: string;
   readonly done: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
   readonly story: string | null;
+  /**
+   * The previous daily's close digest (D4); null when no `dome.daily:close`
+   * block exists (close skipped, or a pre-D4 daily). When present, `done`
+   * above is the close's kept candidates — raw `## Done` section scraping is
+   * skipped because the close is the authoritative done record.
+   * Normative at [[wiki/specs/daily-surface]] §"The close block".
+   */
+  readonly close: DailyCloseDigest | null;
+};
+
+/** What tomorrow's mechanical yesterday fallback reads out of a close block. */
+export type DailyCloseDigest = {
+  /** Bullets the human kept under `### Done today` (cleaned; may be empty). */
+  readonly kept: ReadonlyArray<string>;
+  /** Parsed `### Still open` count; null when missing or unparseable. */
+  readonly stillOpenCount: number | null;
+};
+
+/** A done candidate rendered into the close scaffold's `### Done today`. */
+export type DailyCloseDoneCandidate = {
+  /** 1-based line of the settled line in today's daily (sourceRef anchor). */
+  readonly line: number;
+  readonly body: string;
+  readonly status: DailyOpenLoopSettlementStatus;
+  /** Origin file for source-backed copies; null when settled directly in today's daily. */
+  readonly originPath: string | null;
+};
+
+/** A settled `[x]`/`[-]` checkbox line authored directly in a note (no `(from [[…]])` suffix). */
+export type SettledActionItem = {
+  readonly line: number;
+  readonly body: string;
+  readonly status: DailyOpenLoopSettlementStatus;
 };
 
 export type DailyOpenLoopSettlementStatus = "resolved" | "dismissed";
@@ -450,6 +559,16 @@ export function renderDailySkeleton(input: {
     "",
     `# ${today}`,
     "",
+    // Captured today is the FIRST content section (the real-vault
+    // convention the daily-surface section contract formalizes): the live
+    // capture landing zone, with the owned block rendered empty so the
+    // ingest tool seam always has a region to splice into.
+    CAPTURED_HEADING,
+    "",
+    CAPTURED_START,
+    CAPTURED_HINT,
+    CAPTURED_END,
+    "",
     "## Start Here",
     "",
     "## Meetings",
@@ -486,53 +605,259 @@ export function carriedForwardSection(input: {
   ].join("\n");
 }
 
-export function previousDailyStartContext(input: {
+export function previousDailyDigest(input: {
   readonly previousPath: string;
   readonly previousContent: string;
-}): DailyStartContext {
+}): PreviousDailyDigest {
+  // Prefer the close block (D4): when the previous daily carries a
+  // dome.daily:close block, its kept candidates ARE the done record and the
+  // raw ## Done section scrape is skipped (the block lives under ## Done, so
+  // scraping would also re-ingest its hint lines). Absent block → scraping,
+  // exactly the pre-D4 behavior. Decisions/Story scraping is unaffected in
+  // both cases — the close does not own those sections.
+  const close = closeDigestFromDailyContent(input.previousContent);
   return Object.freeze({
     previousPath: input.previousPath,
-    done: extractSectionItems(input.previousContent, "Done"),
+    done:
+      close === null
+        ? extractSectionItems(input.previousContent, "Done")
+        : close.kept,
     decisions: extractSectionItems(input.previousContent, "Decisions"),
     story: extractStorySummary(input.previousContent),
+    close,
   });
 }
 
-export function dailyStartContextSection(
-  context: DailyStartContext | null,
-): string | null {
-  if (context === null) return null;
-  const lines = [
-    START_CONTEXT_START,
-    "### Since Yesterday",
-    `- Previous daily: [[${context.previousPath.replace(/\.md$/, "")}]]`,
-  ];
-  if (context.done.length > 0) {
-    lines.push(`- Done yesterday: ${renderCompactList(context.done)}`);
+/**
+ * Render the mechanical fallback body of the unified yesterday block
+ * (`dome.agent.brief:yesterday`) — the no-model rung of the edition's
+ * degradation ladder. One block, one heading (`### Yesterday`), plain
+ * bullets only. `digest: null` (no previous daily) degrades to a single
+ * "no record of yesterday" line, never an absent block.
+ * Normative at [[wiki/specs/daily-surface]] §"The one yesterday block".
+ */
+export function yesterdayFallbackSection(
+  digest: PreviousDailyDigest | null,
+): string {
+  const lines = [EDITION_YESTERDAY_BLOCK.start, "### Yesterday"];
+  if (digest === null) {
+    lines.push("- No record of yesterday — no previous daily note.");
+  } else {
+    lines.push(
+      `- Previous daily: [[${digest.previousPath.replace(/\.md$/, "")}]]`,
+    );
+    if (digest.close !== null && digest.done.length === 0) {
+      // The close ran but holds zero kept candidates (written empty, or the
+      // human deleted every one): explicit, visible degradation — never
+      // silent thinness. Daily-surface §"The close block".
+      lines.push("- Yesterday's close was empty.");
+    } else if (digest.done.length > 0) {
+      lines.push(`- Done yesterday: ${renderCompactList(digest.done)}`);
+    }
+    if (digest.close !== null && digest.close.stillOpenCount !== null) {
+      const count = digest.close.stillOpenCount;
+      lines.push(
+        `- Still open at close: ${count} ${count === 1 ? "loop" : "loops"} carried.`,
+      );
+    }
+    if (digest.decisions.length > 0) {
+      lines.push(
+        `- Decisions yesterday: ${renderCompactList(digest.decisions)}`,
+      );
+    }
+    if (digest.story !== null) {
+      lines.push(`- Story: ${digest.story}`);
+    }
   }
-  if (context.decisions.length > 0) {
-    lines.push(`- Decisions yesterday: ${renderCompactList(context.decisions)}`);
-  }
-  if (context.story !== null) {
-    lines.push(`- Story: ${context.story}`);
-  }
-  lines.push(START_CONTEXT_END);
+  lines.push(EDITION_YESTERDAY_BLOCK.end);
   return lines.join("\n");
 }
 
-export function replaceDailyStartContextSection(input: {
+/**
+ * Ensure the unified yesterday block exists: insert `section` (a full
+ * fallback block including markers) when the block is absent, and leave an
+ * existing block — curated or previously seeded — alone ENTIRELY. The
+ * presence gate is what makes dome.daily's write into the brief's namespace
+ * safe (the dual-writer exception, daily-surface §"The one yesterday block").
+ */
+export function ensureYesterdayFallbackSection(input: {
   readonly content: string;
-  readonly section: string | null;
+  readonly section: string;
 }): string {
-  const existing = startContextBlockRange(input.content);
-  if (existing !== null) {
-    const replacement = input.section === null ? "" : input.section;
-    return `${input.content.slice(0, existing.start)}${replacement}${input.content.slice(existing.end)}`;
-  }
-  if (input.section === null) return input.content;
-  return insertDailyStartContextSection({
+  const existing = dailyBlockRangeFor(
+    input.content,
+    EDITION_YESTERDAY_BLOCK.owner,
+    EDITION_YESTERDAY_BLOCK.block,
+  );
+  if (existing !== null) return input.content;
+  return insertYesterdayFallbackSection({
     content: input.content,
     section: input.section,
+  });
+}
+
+/**
+ * One-time migration for the retired `dome.daily:start-context` block:
+ * remove it (markers and body) from the given daily content, tidying the
+ * seam to at most one blank line. Idempotent — absent block returns the
+ * content unchanged, and since no processor writes the marker anymore the
+ * block never reappears. Callers apply this ONLY to today's daily;
+ * historical dailies are closed records and keep theirs.
+ */
+export function removeLegacyStartContextSection(content: string): string {
+  const range = startContextBlockRange(content);
+  if (range === null) return content;
+  const before = content.slice(0, range.start).replace(/(?:\r?\n)*$/, "");
+  const after = content.slice(range.end).replace(/^(?:\r?\n)*/, "");
+  if (before.length === 0) return after;
+  if (after.length === 0) return `${before}\n`;
+  return `${before}\n\n${after}`;
+}
+
+/**
+ * Settled (`[x]`/`[-]`) checkbox lines authored directly in a note — outside
+ * generated blocks, fences, and frontmatter, and excluding source-backed
+ * `(from [[origin]])` copies (those are derived separately and carry their
+ * origin). The direct half of the close's done-candidate derivation
+ * ([[wiki/specs/daily-surface]] §"The close block").
+ */
+export function settledActionItemsFromMarkdown(
+  content: string,
+): ReadonlyArray<SettledActionItem> {
+  const items: SettledActionItem[] = [];
+  const lines = content.split(/\r?\n/);
+  const ignoredRanges = actionExtractionLineRanges(content);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lineIsInsideRanges(i + 1, ignoredRanges)) continue;
+    const line = lines[i] ?? "";
+    const base = parseBlockAnchor(line)?.withoutAnchor ?? line;
+    if (sourceBackedCheckboxFromLine(base, i + 1) !== null) continue;
+    const match = /^\s*[-*]\s+\[([xX-])\]\s+(\S.*?)\s*$/.exec(base);
+    if (match === null) continue;
+    const body = semanticActionBody((match[2] ?? "").trim());
+    if (body.length === 0) continue;
+    items.push(
+      Object.freeze({
+        line: i + 1,
+        body,
+        status: match[1] === "-" ? ("dismissed" as const) : ("resolved" as const),
+      }),
+    );
+  }
+  return Object.freeze(items);
+}
+
+/**
+ * Render the close scaffold block (`dome.daily:close`) — the deterministic
+ * half of the evening act. Done candidates are plain `-` bullets the human
+ * keeps or deletes (the hint line says so); zero candidates renders a single
+ * non-bullet "Nothing recorded as settled today." line (zero bullets is what
+ * "empty close" means to tomorrow's reader); the still-open line-up
+ * compresses to a count + top 3 in surface order; the story pointer is a
+ * non-bullet reminder — the close NEVER writes story prose ([[daily]]
+ * decision ledger 3). Normative at [[wiki/specs/daily-surface]] §"The close
+ * block".
+ */
+export function closeScaffoldSection(input: {
+  readonly doneCandidates: ReadonlyArray<DailyCloseDoneCandidate>;
+  readonly stillOpen: ReadonlyArray<DailyOpenLoopSource>;
+}): string {
+  const lines = [CLOSE_START, "### Done today"];
+  if (input.doneCandidates.length === 0) {
+    lines.push("Nothing recorded as settled today.");
+  } else {
+    lines.push(
+      "Candidates from today's settles — keep what counts, delete the rest.",
+    );
+    for (const candidate of input.doneCandidates) {
+      const prefix = candidate.status === "dismissed" ? "Dismissed: " : "";
+      const origin =
+        candidate.originPath === null
+          ? ""
+          : ` (from [[${candidate.originPath.replace(/\.md$/, "")}]])`;
+      lines.push(`- ${prefix}${candidate.body}${origin}`);
+    }
+  }
+  lines.push("### Still open");
+  if (input.stillOpen.length === 0) {
+    lines.push("- No loops still open.");
+  } else {
+    const top = input.stillOpen.slice(0, 3).map((item) => item.body);
+    const noun = input.stillOpen.length === 1 ? "loop" : "loops";
+    lines.push(
+      `- ${input.stillOpen.length} ${noun} still open — top: ${top.join("; ")}`,
+    );
+  }
+  lines.push(
+    "### Story of the Day",
+    "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+    CLOSE_END,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Ensure the close block exists: insert `section` (a full close block
+ * including markers) under `## Done` when the block is absent, and leave an
+ * existing block — confirmed, edited, or emptied by the human — alone
+ * ENTIRELY. The presence gate is the close's whole idempotency story: re-runs
+ * are byte-identical no-ops and a human-deleted candidate is never
+ * resurrected ([[wiki/specs/daily-surface]] §"The close block").
+ */
+export function ensureCloseScaffoldSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const existing = dailyBlockRange(input.content, CLOSE_BLOCK);
+  if (existing !== null) return input.content;
+  return insertCloseScaffoldSection(input);
+}
+
+/**
+ * Extract what tomorrow's mechanical yesterday fallback reads out of a close
+ * block: the kept `### Done today` bullets (hint lines and non-bullet text
+ * are not kept content) and the parsed `### Still open` count. Returns null
+ * when the content carries no close block.
+ */
+export function closeDigestFromDailyContent(
+  content: string,
+): DailyCloseDigest | null {
+  const { range } = findGeneratedBlock(content, DAILY_OWNER, CLOSE_BLOCK);
+  if (range === null) return null;
+  const body = content.slice(range.bodyStart, range.bodyEnd);
+  const kept: string[] = [];
+  let stillOpenCount: number | null = null;
+  let section: "done" | "still-open" | "other" = "other";
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
+    if (heading !== null) {
+      const title = (heading[1] ?? "").toLowerCase();
+      section =
+        title === "done today"
+          ? "done"
+          : title === "still open"
+            ? "still-open"
+            : "other";
+      continue;
+    }
+    if (section === "done" && /^[-*]\s+\S/.test(line)) {
+      const cleaned = cleanContextLine(line);
+      if (cleaned !== null) kept.push(cleaned);
+      continue;
+    }
+    if (section === "still-open" && stillOpenCount === null) {
+      const counted = /^[-*]\s+(\d+)\s+loops?\s+still\s+open\b/.exec(line);
+      if (counted !== null) {
+        stillOpenCount = Number(counted[1]);
+        continue;
+      }
+      if (/^[-*]\s+No loops still open\b/i.test(line)) stillOpenCount = 0;
+    }
+  }
+  return Object.freeze({
+    kept: Object.freeze(kept),
+    stillOpenCount,
   });
 }
 
@@ -947,6 +1272,256 @@ export function replaceCarriedForwardSection(input: {
   return `${input.content}${suffix}\n## Notes\n\n${input.section}\n`;
 }
 
+// ----- Captured today (the live capture landing zone) -----------------------
+//
+// `## Captured today` hosts the `dome.daily:captured` block — the one
+// generated block whose body holds task ORIGINS rather than projection
+// copies. The skeleton renders it empty; the ingest tool seam splices
+// validated task lines inside it; the extractors treat its contents like any
+// other daily task line. Spec: [[wiki/specs/daily-surface]] §"Block
+// ownership" and §"The `captured` block holds origins, not copies".
+
+/** A `(from [[…]])` provenance suffix — the carry-forward COPY shape. */
+const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
+
+const CAPTURED_HEADING_RE = /^#{1,6}\s+captured\s+today\s*$/i;
+
+/**
+ * Per-line size cap for captured-task appends (chars). A captured line is a
+ * one-line tactical task, not a document — the cap bounds what an agent can
+ * pour through the seam in one line (mirroring the calendar parser's
+ * MAX_TITLE_CHARS philosophy: untrusted-adjacent input gets bounded fields).
+ * Normative at [[wiki/specs/daily-surface]] §"The ingest tool seam".
+ */
+export const CAPTURED_LINE_MAX_CHARS = 500;
+
+/**
+ * Per-append line-count cap for the captured seam. One ingest routing pass
+ * lands a handful of tactical tasks, not a bulk import; the cap keeps a
+ * runaway model turn from flooding today's daily in one tool call.
+ * Normative at [[wiki/specs/daily-surface]] §"The ingest tool seam".
+ */
+export const CAPTURED_APPEND_MAX_LINES = 10;
+
+/** U+2028 (LS) / U+2029 (PS) — line boundaries to JS `m`-flag regexes. */
+const LS_PS_RE = /[\u2028\u2029]/;
+
+/**
+ * A line the ingest seam may land in the captured block: an open checkbox
+ * task carrying the `#task`/`#followup` tag (the charter's required shape),
+ * with no HTML comment delimiter (marker injection — the preferences-signals
+ * strictness), no `(from [[…]])` suffix (a captured line is an ORIGIN; a
+ * copy-shaped line would let reconcile treat it as a settled copy of some
+ * other origin), no U+2028/U+2029 (JS `m`-flag heading-anchor regexes treat
+ * LS/PS as line boundaries, so a smuggled `<U+2028>## Done<U+2028>` would become
+ * a phantom insertion anchor for later heading-anchored splices), and at
+ * most {@link CAPTURED_LINE_MAX_CHARS} chars.
+ */
+export function isCapturedTaskLine(line: string): boolean {
+  if (line.length > CAPTURED_LINE_MAX_CHARS) return false;
+  if (LS_PS_RE.test(line)) return false;
+  if (!/^\s*[-*]\s+\[ \]\s+\S/.test(line)) return false;
+  if (!/(^|\s)#(?:task|follow-?up)(?=\s|$)/i.test(line)) return false;
+  if (containsHtmlCommentDelimiter(line)) return false;
+  if (SOURCE_BACKED_SUFFIX_RE.test(line)) return false;
+  return true;
+}
+
+/**
+ * Splice `lines` (caller-validated, e.g. via {@link isCapturedTaskLine})
+ * inside the `dome.daily:captured` block, appending after any existing body.
+ * Placement is insertion-anchored, never positional:
+ *
+ *  1. block present → insert immediately before the end marker;
+ *  2. `## Captured today` heading present without a block → create the block
+ *     directly under the heading;
+ *  3. neither → create heading + block as the first content section (before
+ *     `## Start Here`, falling back down the section ladder, then EOF).
+ */
+export function appendCapturedTaskLines(input: {
+  readonly content: string;
+  readonly lines: ReadonlyArray<string>;
+}): string {
+  if (input.lines.length === 0) return input.content;
+  const block = capturedBlockRange(input.content);
+  if (block !== null) {
+    const body = `${input.lines.join("\n")}\n`;
+    return `${input.content.slice(0, block.bodyEnd)}${body}${input.content.slice(block.bodyEnd)}`;
+  }
+  const section = [
+    CAPTURED_START,
+    ...input.lines,
+    CAPTURED_END,
+  ].join("\n");
+  return insertCapturedSection({ content: input.content, section });
+}
+
+/**
+ * The write-tool admission rule for today's daily (the `writePage` mirror of
+ * the append seam): a rewrite is valid only when it is byte-identical
+ * outside the captured block's body and appends task-shaped lines inside it.
+ * `before` lacking the block fails — pre-block dailies are served by the
+ * append seam, which knows how to create the section.
+ */
+export function isValidCapturedTasksWrite(input: {
+  readonly before: string;
+  readonly after: string;
+}): boolean {
+  const beforeBlock = capturedBlockRange(input.before);
+  const afterBlock = capturedBlockRange(input.after);
+  if (beforeBlock === null || afterBlock === null) return false;
+  const outsideBefore =
+    input.before.slice(0, beforeBlock.bodyStart) +
+    input.before.slice(beforeBlock.bodyEnd);
+  const outsideAfter =
+    input.after.slice(0, afterBlock.bodyStart) +
+    input.after.slice(afterBlock.bodyEnd);
+  if (outsideBefore !== outsideAfter) return false;
+  const bodyBefore = input.before.slice(
+    beforeBlock.bodyStart,
+    beforeBlock.bodyEnd,
+  );
+  const bodyAfter = input.after.slice(afterBlock.bodyStart, afterBlock.bodyEnd);
+  if (!bodyAfter.startsWith(bodyBefore)) return false;
+  const appended = bodyAfter.slice(bodyBefore.length);
+  const lines = appended.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (lines.length === 0) return false;
+  // The writePage mirror enforces the same per-append cap as the append
+  // seam — otherwise a rewrite would be the bulk-import bypass.
+  if (lines.length > CAPTURED_APPEND_MAX_LINES) return false;
+  return lines.every(isCapturedTaskLine);
+}
+
+/**
+ * Repair the real-vault pre-D3 wart of duplicate `# Captured today` /
+ * `## Captured today` headings (mismatched levels): merge every captured
+ * section into THE single owned section — the one already holding the
+ * `dome.daily:captured` block wins, else the first — normalizing the kept
+ * heading to `## Captured today`, preserving every merged body line (task
+ * lines + anchors verbatim, dome marker-comment lines dropped so a smuggled
+ * pair cannot survive the merge) by splicing them inside the block.
+ *
+ * Returns the repaired document, or `null` when nothing needs repairing
+ * (the idempotent fixed point: one `## Captured today` heading). Callers
+ * apply this to TODAY's daily only — historical dailies stay append-only.
+ */
+export function repairCapturedTodayHeadings(content: string): string | null {
+  if (isObsidianTasksDashboard(content)) return null;
+  const lines = content.split(/\r?\n/);
+  const frontmatter = frontmatterLineRange(content);
+  const ignored = [
+    ...fencedCodeBlockLineRanges(content),
+    ...(frontmatter === null ? [] : [frontmatter]),
+  ];
+  const blockScan = findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK);
+  const headingIndexes: number[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lineIsInsideRanges(i + 1, ignored)) continue;
+    // A captured-heading LINE inside the block body is block content, not a
+    // section heading — treating it as one could drag the end marker into a
+    // merged-and-dropped extent.
+    if (
+      blockScan.range !== null &&
+      i + 1 >= blockScan.range.startLine &&
+      i + 1 <= blockScan.range.endLine
+    ) {
+      continue;
+    }
+    if (CAPTURED_HEADING_RE.test(lines[i] ?? "")) headingIndexes.push(i);
+  }
+  if (headingIndexes.length === 0) return null;
+  if (
+    headingIndexes.length === 1 &&
+    (lines[headingIndexes[0] ?? 0] ?? "").trim() === CAPTURED_HEADING
+  ) {
+    return null;
+  }
+
+  // Section extents: heading line through the line before the next heading
+  // (any level) outside fences, or EOF.
+  const sections = headingIndexes.map((headingIndex) => {
+    let end = lines.length;
+    for (let i = headingIndex + 1; i < lines.length; i += 1) {
+      if (lineIsInsideRanges(i + 1, ignored)) continue;
+      if (/^#{1,6}\s+\S/.test(lines[i] ?? "")) {
+        end = i;
+        break;
+      }
+    }
+    return { headingIndex, end };
+  });
+
+  // The canonical section: the one carrying the captured block's start
+  // marker, else the first.
+  const canonical =
+    sections.find(
+      (section) =>
+        blockScan.range !== null &&
+        blockScan.range.startLine - 1 > section.headingIndex &&
+        blockScan.range.startLine - 1 < section.end,
+    ) ?? sections[0];
+  if (canonical === undefined) return null;
+
+  // Collect the duplicate sections' body lines (skipping blanks and dome
+  // marker-comment lines) and drop those sections from the document.
+  const merged: string[] = [];
+  const dropLine = new Set<number>();
+  for (const section of sections) {
+    if (section === canonical) continue;
+    dropLine.add(section.headingIndex);
+    for (let i = section.headingIndex + 1; i < section.end; i += 1) {
+      dropLine.add(i);
+      const line = lines[i] ?? "";
+      if (line.trim() === "") continue;
+      if (containsGeneratedBlockMarker(line)) continue;
+      merged.push(line);
+    }
+  }
+
+  const keptLines = lines
+    .map((line, i) =>
+      i === canonical.headingIndex ? CAPTURED_HEADING : line,
+    )
+    .filter((_line, i) => !dropLine.has(i));
+  const compacted = keptLines.join("\n");
+  const repaired =
+    merged.length === 0
+      ? compacted
+      : appendCapturedTaskLines({ content: compacted, lines: merged });
+  return repaired === content ? null : repaired;
+}
+
+function insertCapturedSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const heading = new RegExp(
+    `^${escapeRegExp(CAPTURED_HEADING)}[ \\t]*$`,
+    "m",
+  ).exec(input.content);
+  if (heading !== null && heading.index !== undefined) {
+    const insertAt = heading.index + heading[0].length;
+    const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
+    return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+  for (const anchor of [/^## Start Here[ \t]*$/m, /^## Meetings[ \t]*$/m, /^## Open Loops[ \t]*$/m, /^## Notes[ \t]*$/m]) {
+    const match = anchor.exec(input.content);
+    if (match !== null && match.index !== undefined) {
+      return (
+        `${input.content.slice(0, match.index)}` +
+        `${CAPTURED_HEADING}\n\n${input.section}\n\n` +
+        input.content.slice(match.index)
+      );
+    }
+  }
+  const suffix = input.content.endsWith("\n") ? "" : "\n";
+  return `${input.content}${suffix}\n${CAPTURED_HEADING}\n\n${input.section}\n`;
+}
+
+function capturedBlockRange(content: string): GeneratedBlockRange | null {
+  return findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK).range;
+}
+
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
 }
@@ -1157,7 +1732,15 @@ function dailyBlockRange(
   content: string,
   block: string,
 ): { readonly start: number; readonly end: number } | null {
-  const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+  return dailyBlockRangeFor(content, DAILY_OWNER, block);
+}
+
+function dailyBlockRangeFor(
+  content: string,
+  owner: string,
+  block: string,
+): { readonly start: number; readonly end: number } | null {
+  const { range } = findGeneratedBlock(content, owner, block);
   if (range === null) return null;
   return Object.freeze({ start: range.start, end: range.end });
 }
@@ -1279,14 +1862,19 @@ function dailyGeneratedBlockLineRanges(
   content: string,
 ): ReadonlyArray<{ readonly start: number; readonly end: number }> {
   const ranges: { start: number; end: number }[] = [];
-  for (
-    const block of [
-      START_CONTEXT_BLOCK,
-      OPEN_LOOPS_BLOCK,
-      CARRIED_FORWARD_BLOCK,
-    ] as const
-  ) {
-    const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+  // Every recognized daily-note generated block EXCEPT dome.daily:captured
+  // is excluded from task extraction. The excluded blocks hold copies or
+  // digests (incl. retired-legacy markers and the dual-writer yesterday
+  // block, whose mechanical fallback compresses human prose that may contain
+  // directive-shaped text) — generated copies must never re-ingest as tasks.
+  // dome.daily:captured is deliberately NOT excluded: captured tasks
+  // ORIGINATE in the daily (origins, not projection copies), so extraction,
+  // stamping, normalization, and open-loop surfacing must all see them.
+  for (const block of DAILY_GENERATED_BLOCKS) {
+    if (block.owner === DAILY_OWNER && block.block === CAPTURED_BLOCK) {
+      continue;
+    }
+    const { range } = findGeneratedBlock(content, block.owner, block.block);
     if (range === null) continue;
     ranges.push({ start: range.startLine, end: range.endLine });
   }
@@ -1365,7 +1953,7 @@ function lineNumberAtOffset(content: string, offset: number): number {
   return line;
 }
 
-function insertDailyStartContextSection(input: {
+function insertYesterdayFallbackSection(input: {
   readonly content: string;
   readonly section: string;
 }): string {
@@ -1402,6 +1990,36 @@ function startContextBlockRange(
   content: string,
 ): { readonly start: number; readonly end: number } | null {
   return dailyBlockRange(content, START_CONTEXT_BLOCK);
+}
+
+/**
+ * Insert the close block under `## Done` — insertion-anchored, never
+ * positional (daily-surface §"The section contract"): a missing heading is
+ * created (before `## Story of the Day` when present, appended otherwise)
+ * rather than assumed at an offset.
+ */
+function insertCloseScaffoldSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const done = /^## Done[ \t]*$/m.exec(input.content);
+  if (done !== null && done.index !== undefined) {
+    const insertAt = done.index + done[0].length;
+    const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
+    return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+
+  const story = /^## Story of the Day[ \t]*$/m.exec(input.content);
+  if (story !== null && story.index !== undefined) {
+    return (
+      `${input.content.slice(0, story.index)}` +
+      `## Done\n\n${input.section}\n\n` +
+      input.content.slice(story.index)
+    );
+  }
+
+  const suffix = input.content.endsWith("\n") ? "" : "\n";
+  return `${input.content}${suffix}\n## Done\n\n${input.section}\n`;
 }
 
 function extractSectionItems(

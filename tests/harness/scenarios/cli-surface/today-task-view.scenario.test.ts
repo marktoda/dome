@@ -490,7 +490,7 @@ scenario(
       "wiki/dailies/2026-01-05.md",
       "wiki/dailies/2026-01-05.md",
     ]);
-    expect(payload.openTasks.map((task) => task.line)).toEqual([12, 13, 14]);
+    expect(payload.openTasks.map((task) => task.line)).toEqual([19, 20, 21]);
     expect(payload.openTasks.map((task) => task.dueDate)).toEqual([
       "2026-01-05",
       null,
@@ -508,9 +508,9 @@ scenario(
     expect(payload.openTasks[2]?.sourceRefs.map((ref) => ref.path).sort())
       .toEqual(["wiki/dailies/2026-01-05.md", "wiki/projects/other.md"]);
     expect(payload.openTasks.map((task) => task.evidenceLabel)).toEqual([
-      "wiki/dailies/2026-01-05.md:12; source wiki/projects/alpha.md:3",
-      "wiki/dailies/2026-01-05.md:13; source wiki/projects/beta.md:3",
-      "wiki/dailies/2026-01-05.md:14; source wiki/projects/other.md:3",
+      "wiki/dailies/2026-01-05.md:19; source wiki/projects/alpha.md:3",
+      "wiki/dailies/2026-01-05.md:20; source wiki/projects/beta.md:3",
+      "wiki/dailies/2026-01-05.md:21; source wiki/projects/other.md:3",
     ]);
     expect(payload.followups.map((task) => ({
       text: task.text,

@@ -9,16 +9,16 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
-import { finishAgentRun } from "../lib/agent-run-effects";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
-import { makeIngestTools } from "../lib/ingest-tools";
-import { INGEST_CHARTER } from "../lib/ingest-charter";
 import {
   dailyPath,
   dailyPathSettings,
   localDateParts,
 } from "../../dome.daily/processors/daily-shared";
+import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
+import { finishAgentRun } from "../lib/agent-run-effects";
+import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { makeIngestTools, type CapturedTasksRouting } from "../lib/ingest-tools";
+import { INGEST_CHARTER } from "../lib/ingest-charter";
 
 const MAX_STEPS = 25;
 
@@ -40,11 +40,24 @@ const ingest = defineProcessorImplementation({
     if (rawPaths.length === 0) return Object.freeze([]);
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
 
+    // Today's daily — the captured-tasks landing zone. Same settings-derived
+    // path computation as the brief and create-daily (a `daily_path` override
+    // in this bundle's config moves it), read once so the task turn and the
+    // tool seam can never disagree.
+    const settings = dailyPathSettings(ctx.extensionConfig);
+    const today = localDateParts(ctx.now());
+    const capturedTasks: CapturedTasksRouting = {
+      path: dailyPath(today, settings),
+      today,
+      settings,
+    };
+
     const tools = makeIngestTools({
       reader: {
         readFile: (p) => ctx.snapshot.readFile(p),
         listMarkdownFiles: () => ctx.snapshot.listMarkdownFiles(),
       },
+      capturedTasks,
     });
 
     // Owner core memory: read once per run, prepended to every source's task
@@ -71,11 +84,6 @@ const ingest = defineProcessorImplementation({
       );
     }
     let truncated = false;
-
-    const todayDailyPath = dailyPath(
-      localDateParts(ctx.now()),
-      dailyPathSettings(ctx.extensionConfig),
-    );
 
     for (const sourcePath of rawPaths) {
       const source = await ctx.snapshot.readFile(sourcePath);
@@ -104,7 +112,7 @@ const ingest = defineProcessorImplementation({
           charter: INGEST_CHARTER,
           task: withCoreMemory(
             core.section,
-            taskTurn(sourcePath, source, todayDailyPath),
+            taskTurn(sourcePath, source, capturedTasks.path),
           ),
           tools,
           step,

@@ -32,13 +32,13 @@ import type { SourceRef } from "../../../../src/core/source-ref";
 import {
   dailyPath,
   dailyPathSettings,
-  dailyStartContextSection,
   formatDate,
   localDateParts,
-  previousDailyStartContext,
+  previousDailyDigest,
   previousLocalDate,
+  removeLegacyStartContextSection,
   renderDailySkeleton,
-  replaceDailyStartContextSection,
+  yesterdayFallbackSection,
 } from "../../dome.daily/processors/daily-shared";
 
 import { ATTENTION_DISCOUNT_PREDICATE } from "../../dome.daily/processors/attention-shared";
@@ -130,21 +130,33 @@ const brief = defineProcessorImplementation({
           : { date: todayDateStr, rows: todayRuns.flatMap((r) => r.rows) };
 
     // Deterministic pre-run content: the existing daily (or the same skeleton
-    // create-daily would render), with empty brief blocks ensured so the
-    // model has stable regions to fill. The meetings block exists only when
-    // today's calendar file does — absence degrades to omission.
+    // create-daily would render), with brief blocks ensured so the model has
+    // stable regions to fill. The yesterday block is seeded with the
+    // mechanical fallback body (the no-model rung of the edition's ladder —
+    // daily-surface §"The one yesterday block") when absent; an existing
+    // block is left for the model to replace wholesale. A legacy
+    // dome.daily:start-context block is removed here (one-time migration,
+    // landing in this run's patch); historical dailies are never touched.
+    // The meetings block exists only when today's calendar file does —
+    // absence degrades to omission.
     const base =
       existing ??
-      composeSkeleton({
+      renderDailySkeleton({
         today,
-        yesterday,
-        yesterdayPath,
-        yesterdayContent,
+        yesterday: yesterdayContent === null ? null : yesterday,
         settings,
       });
     const prepared = ensureBriefBlocks({
-      content: base,
+      content: removeLegacyStartContextSection(base),
       includeMeetings: meetings !== null && meetings.length > 0,
+      yesterdaySection: yesterdayFallbackSection(
+        yesterdayContent === null
+          ? null
+          : previousDailyDigest({
+              previousPath: yesterdayPath,
+              previousContent: yesterdayContent,
+            }),
+      ),
     });
 
     const sourceRefs = briefSourceRefs({
@@ -254,6 +266,11 @@ const brief = defineProcessorImplementation({
     for (const block of spliceBlocks) {
       const body = extractBriefBlockBody(modelContent, block.markers);
       if (body === null) continue;
+      // Grounding applies only to bodies the model actually rewrote: a body
+      // identical to the deterministic prepared content (e.g. the mechanical
+      // yesterday fallback the model left in place) is not model output and
+      // must not have its deterministic bullets stripped as ungrounded.
+      if (body === extractBriefBlockBody(prepared, block.markers)) continue;
       const grounded = groundBriefBlockBody(body);
       ungrounded.push(...grounded.ungrounded);
       composed = replaceBriefBlock({
@@ -407,44 +424,18 @@ const brief = defineProcessorImplementation({
 
 export default brief;
 
-function composeSkeleton(input: {
-  readonly today: ReturnType<typeof localDateParts>;
-  readonly yesterday: ReturnType<typeof localDateParts>;
-  readonly yesterdayPath: string;
-  readonly yesterdayContent: string | null;
-  readonly settings: ReturnType<typeof dailyPathSettings>;
-}): string {
-  const skeleton = renderDailySkeleton({
-    today: input.today,
-    yesterday: input.yesterdayContent === null ? null : input.yesterday,
-    settings: input.settings,
-  });
-  if (input.yesterdayContent === null) return skeleton;
-  return replaceDailyStartContextSection({
-    content: skeleton,
-    section: dailyStartContextSection(
-      previousDailyStartContext({
-        previousPath: input.yesterdayPath,
-        previousContent: input.yesterdayContent,
-      }),
-    ),
-  });
-}
-
 function ensureBriefBlocks(input: {
   readonly content: string;
   readonly includeMeetings: boolean;
+  /** The full mechanical fallback section (markers included) seeded when the yesterday block is absent. */
+  readonly yesterdaySection: string;
 }): string {
   let content = input.content;
   if (extractBriefBlockBody(content, YESTERDAY_BLOCK) === null) {
     content = replaceBriefBlock({
       content,
       markers: YESTERDAY_BLOCK,
-      section: [
-        YESTERDAY_BLOCK.start,
-        "### Yesterday",
-        YESTERDAY_BLOCK.end,
-      ].join("\n"),
+      section: input.yesterdaySection,
       heading: "Start Here",
     });
   }

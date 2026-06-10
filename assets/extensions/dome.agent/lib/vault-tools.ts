@@ -43,6 +43,24 @@ export type PageWriteGuard = (input: {
 }) => Promise<string | null>;
 
 /**
+ * Run several page-level guards in order; the first denial wins. Lets a
+ * tool seam stack independent page rules (e.g. the signals append-only
+ * guard plus ingest's captured-tasks daily guard) behind the single
+ * `PageWriteGuard` slot the write tools accept.
+ */
+export function composePageWriteGuards(
+  ...guards: ReadonlyArray<PageWriteGuard>
+): PageWriteGuard {
+  return async (input) => {
+    for (const guard of guards) {
+      const denial = await guard(input);
+      if (denial !== null) return denial;
+    }
+    return null;
+  };
+}
+
+/**
  * The signals page is append-only at the tool seam: a write must keep the
  * existing content byte-for-byte and append well-formed signal lines, and
  * the page can never be deleted — otherwise a model could rewrite or drop

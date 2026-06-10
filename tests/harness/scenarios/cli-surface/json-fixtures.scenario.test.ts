@@ -75,6 +75,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "findingCount",
   "errorCount",
   "warningCount",
+  "infoCount",
   "failedOutbox",
   "stuckPendingOutbox",
   "orphanRuns",
@@ -90,6 +91,8 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "modelProviderUnreachable",
   "modelProviderKeyMissing",
   "dailyPathMismatch",
+  "dailyEditionNotCompiled",
+  "dailyCalendarSourceMissing",
 ]);
 
 const QUERY_KEYS = Object.freeze([

@@ -334,15 +334,32 @@ function countLines(text: string): number {
 
 // ----- Page metadata ---------------------------------------------------------
 
+/**
+ * The daily-note PROJECTION blocks blanked before indexing — copies/digests
+ * whose source of truth lives elsewhere, so indexing them would duplicate
+ * settles and yesterday's sections in search results. `dome.daily:captured`
+ * is deliberately NOT here: captured lines are origins, not copies — real
+ * vault content ([[wiki/specs/daily-surface]] §"The `captured` block holds
+ * origins, not copies").
+ */
+const STRIPPED_SURFACE_BLOCKS: ReadonlyArray<{
+  readonly owner: string;
+  readonly block: string;
+}> = Object.freeze([
+  Object.freeze({ owner: "dome.daily", block: "open-loops" }),
+  Object.freeze({ owner: "dome.daily", block: "carried-forward" }),
+  Object.freeze({ owner: "dome.daily", block: "close" }),
+  Object.freeze({ owner: "dome.agent.brief", block: "yesterday" }),
+]);
+
 function stripGeneratedSurfaceBlocks(content: string): string {
   // Blank (don't remove) every line of each generated region so section
   // line ranges keep pointing at the right lines of the original file. The
   // core grammar primitive's scanner blanks every line-anchored pair —
   // including smuggled duplicate pairs, which must equally not be indexed.
-  return blankGeneratedBlocks(
-    blankGeneratedBlocks(content, "dome.daily", "open-loops"),
-    "dome.daily",
-    "carried-forward",
+  return STRIPPED_SURFACE_BLOCKS.reduce(
+    (text, { owner, block }) => blankGeneratedBlocks(text, owner, block),
+    content,
   );
 }
 
