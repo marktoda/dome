@@ -22,7 +22,7 @@
 
 import { z } from "zod";
 
-import type { FactEffect, NodeRef, NodeRefInput, Literal } from "../core/effect";
+import type { FactEffect, NodeRef, NodeRefInput } from "../core/effect";
 import {
   factEffect,
   FactEffectSchema,
@@ -302,7 +302,7 @@ function rebuildSubject(kind: string, id: string): NodeRef {
  */
 function rowToFact(row: FactRow): FactEffect {
   const subject = rebuildSubject(row.subject_kind, row.subject_id);
-  const object = parseJsonColumn<NodeRef | Literal>(
+  const object = parseJsonColumn(
     row.object_json,
     "facts.object_json",
     FactObjectSchema,

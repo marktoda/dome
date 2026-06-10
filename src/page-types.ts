@@ -49,7 +49,7 @@ const PageTypesFileSchema = z
         z
           .object({
             name: z.string().min(1),
-            frontmatter_extras: z.record(z.string()).optional(),
+            frontmatter_extras: z.record(z.string(), z.string()).optional(),
           })
           .strict(),
       )

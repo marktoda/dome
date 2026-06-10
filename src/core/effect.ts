@@ -17,10 +17,14 @@
 //     `exactOptionalPropertyTypes` cleanliness.
 //   - Zod object schemas use `.strict()` (unknown keys are validation
 //     errors — effect shapes are closed).
-//   - Schemas are not annotated as `z.ZodType<T>`: zod's `.optional()`
-//     emits `T | undefined`, which collides with
-//     `exactOptionalPropertyTypes`. Downstream code should type from
-//     the `Effect` union, not `z.infer<typeof EffectSchema>`.
+//   - Hand-written types are canonical; schemas validate. zod (v4
+//     included) infers `.optional()` as `field?: T | undefined`, which
+//     `exactOptionalPropertyTypes` rejects against `field?: T` — so
+//     downstream code types from the `Effect` union, never
+//     `z.infer<typeof EffectSchema>`. Schema/type drift is pinned by the
+//     compile-time fences in tests/types/schema-type-lockstep.ts
+//     (per docs/wiki/gotchas/boundary-validation-via-zod.md
+//     §"Type/schema lockstep").
 
 import { z } from "zod";
 import { SourceRefSchema, type SourceRef } from "./source-ref";
@@ -108,7 +112,7 @@ export type JsonValue =
  */
 export type ViewContent =
   | { readonly kind: "markdown"; readonly body: string }
-  | { readonly kind: "structured"; readonly data: unknown; readonly schema: string }
+  | { readonly kind: "structured"; readonly data: JsonValue; readonly schema: string }
   | { readonly kind: "stream"; readonly chunks: AsyncIterable<string> };
 
 // ----- Effect kinds ---------------------------------------------------------
@@ -283,7 +287,7 @@ export type QuestionEffect = {
 export type JobEffect = {
   readonly kind: "job";
   readonly processorId: string;
-  readonly input: unknown;
+  readonly input: JsonValue;
   readonly runAfter?: string;
   readonly idempotencyKey: string;
   readonly maxAttempts?: number;
@@ -299,7 +303,7 @@ export type ExternalActionEffect = {
   readonly kind: "external";
   readonly capability: string;
   readonly idempotencyKey: string;
-  readonly payload: unknown;
+  readonly payload: JsonValue;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -412,7 +416,7 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.number().finite(),
     z.string(),
     z.array(JsonValueSchema),
-    z.record(JsonValueSchema),
+    z.record(z.string(), JsonValueSchema),
   ])
 );
 
@@ -476,31 +480,12 @@ export const DiagnosticEffectSchema = z
   })
   .strict();
 
-// Inner object schema for FactEffect. Kept un-refined so it can participate
-// in `z.discriminatedUnion` below (which rejects `ZodEffects` produced by
-// `.refine()`). The semantic refinements are layered on top in
-// `FactEffectSchema` (for direct validation) and re-applied on `EffectSchema`
-// via a post-union refinement.
-const FactEffectObjectSchema = z
-  .object({
-    kind: z.literal("fact"),
-    subject: NodeRefSchema,
-    predicate: z.string().min(1),
-    object: z.union([NodeRefSchema, LiteralSchema]),
-    assertion: z.enum(["explicit", "extracted", "inferred", "generated"]),
-    sourceRefs: z.array(SourceRefSchema),
-    confidence: z.number().min(0).max(1).optional(),
-  })
-  .strict();
-
 /**
  * `sourceRefs` must be non-empty ("no evidence, no durable claim", per
  * effects.md §"FactEffect") and `confidence` is required when `assertion`
- * is `inferred` or `generated`.
- *
- * Parameter widened to `confidence?: number | undefined` so the helper accepts
- * both the inner schema's inference and the union-narrowed `v.kind === 'fact'`
- * branch.
+ * is `inferred` or `generated`. Applied directly on `FactEffectSchema`;
+ * zod 4's `discriminatedUnion` accepts refined members, so the union runs
+ * the same refinement with no re-application layer.
  */
 function factEffectRefinements(
   v: {
@@ -512,7 +497,7 @@ function factEffectRefinements(
 ): void {
   if (v.sourceRefs.length === 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message:
         "FactEffect.sourceRefs must be non-empty (no evidence, no durable claim)",
       path: ["sourceRefs"],
@@ -523,7 +508,7 @@ function factEffectRefinements(
     v.confidence === undefined
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message:
         "FactEffect.confidence is required when assertion is 'inferred' or 'generated'",
       path: ["confidence"],
@@ -531,11 +516,20 @@ function factEffectRefinements(
   }
 }
 
-export const FactEffectSchema = FactEffectObjectSchema.superRefine(
-  factEffectRefinements,
-);
+export const FactEffectSchema = z
+  .object({
+    kind: z.literal("fact"),
+    subject: NodeRefSchema,
+    predicate: z.string().min(1),
+    object: z.union([NodeRefSchema, LiteralSchema]),
+    assertion: z.enum(["explicit", "extracted", "inferred", "generated"]),
+    sourceRefs: z.array(SourceRefSchema),
+    confidence: z.number().min(0).max(1).optional(),
+  })
+  .strict()
+  .superRefine(factEffectRefinements);
 
-const SearchDocumentEffectObjectSchema = z
+export const SearchDocumentEffectSchema = z
   .object({
     kind: z.literal("search-document"),
     operation: z.enum(["upsert", "delete"]),
@@ -548,7 +542,8 @@ const SearchDocumentEffectObjectSchema = z
     body: z.string().optional(),
     sourceRefs: z.array(SourceRefSchema),
   })
-  .strict();
+  .strict()
+  .superRefine(searchDocumentEffectRefinements);
 
 function searchDocumentEffectRefinements(
   v: {
@@ -564,7 +559,7 @@ function searchDocumentEffectRefinements(
 ): void {
   if (v.operation === "delete" && v.sectionId !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message:
         "SearchDocumentEffect.sectionId is only valid for upsert (delete clears every row for path)",
       path: ["sectionId"],
@@ -572,14 +567,14 @@ function searchDocumentEffectRefinements(
   }
   if (v.operation === "delete" && v.breadcrumb !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "SearchDocumentEffect.breadcrumb is only valid for upsert",
       path: ["breadcrumb"],
     });
   }
   if (v.sourceRefs.length === 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message:
         "SearchDocumentEffect.sourceRefs must be non-empty (search results need evidence)",
       path: ["sourceRefs"],
@@ -588,30 +583,27 @@ function searchDocumentEffectRefinements(
   if (v.operation === "upsert") {
     if (v.category === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "SearchDocumentEffect.category is required for upsert",
         path: ["category"],
       });
     }
     if (v.title === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "SearchDocumentEffect.title is required for upsert",
         path: ["title"],
       });
     }
     if (v.body === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "SearchDocumentEffect.body is required for upsert",
         path: ["body"],
       });
     }
   }
 }
-
-export const SearchDocumentEffectSchema =
-  SearchDocumentEffectObjectSchema.superRefine(searchDocumentEffectRefinements);
 
 export const QuestionEffectSchema = z
   .object({
@@ -713,31 +705,27 @@ export const ViewEffectSchema = z
  * Discriminated union over the eleven effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
- * preserve `exactOptionalPropertyTypes` semantics.
+ * preserve `exactOptionalPropertyTypes` semantics (see
+ * tests/types/schema-type-lockstep.ts for the drift fence).
  *
- * `FactEffectObjectSchema` is used here (un-refined) because zod v3's
- * `discriminatedUnion` rejects `ZodEffects` members; the FactEffect
- * semantic refinements are re-applied on the union via `.superRefine`.
+ * Members carry their semantic refinements directly (zod 4's
+ * `discriminatedUnion` accepts refined members), so
+ * `<Kind>EffectSchema.parse(...)` and `EffectSchema.parse(...)` validate
+ * identical constraints with no re-application layer.
  */
-export const EffectSchema = z
-  .discriminatedUnion("kind", [
-    PatchEffectSchema,
-    DiagnosticEffectSchema,
-    FactEffectObjectSchema,
-    SearchDocumentEffectObjectSchema,
-    QuestionEffectSchema,
-    JobEffectSchema,
-    ExternalActionEffectSchema,
-    OutboxRecoveryEffectSchema,
-    QuarantineRecoveryEffectSchema,
-    RunRecoveryEffectSchema,
-    ViewEffectSchema,
-  ])
-  .superRefine((v, ctx) => {
-    // Extension point: when adding refinements to other kinds, layer them here. Per-kind helpers stay separate so `<Kind>EffectSchema.parse(...)` validates the same constraints as `EffectSchema.parse(...)`.
-    if (v.kind === "fact") factEffectRefinements(v, ctx);
-    if (v.kind === "search-document") searchDocumentEffectRefinements(v, ctx);
-  });
+export const EffectSchema = z.discriminatedUnion("kind", [
+  PatchEffectSchema,
+  DiagnosticEffectSchema,
+  FactEffectSchema,
+  SearchDocumentEffectSchema,
+  QuestionEffectSchema,
+  JobEffectSchema,
+  ExternalActionEffectSchema,
+  OutboxRecoveryEffectSchema,
+  QuarantineRecoveryEffectSchema,
+  RunRecoveryEffectSchema,
+  ViewEffectSchema,
+]);
 
 // ----- Constructor helpers --------------------------------------------------
 // One per effect kind: takes the kind-less input shape, sets `kind` to the

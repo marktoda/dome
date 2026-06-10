@@ -278,7 +278,7 @@ describe("executeProcessor", () => {
     const unhashableEffect = externalActionEffect({
       capability: "test.external",
       idempotencyKey: "test.external.bigint",
-      payload: 1n,
+      payload: 1n as unknown as import("../../src/core/effect").JsonValue,
       sourceRefs: [],
     });
 
