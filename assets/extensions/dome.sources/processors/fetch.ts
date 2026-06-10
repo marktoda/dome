@@ -77,6 +77,12 @@ export function resolveSubscriptions(
 
   const subscriptions: SourceSubscription[] = [];
   const problems: string[] = [];
+  // Rendered-output collision guard: {date} renders identically for every
+  // subscription on a given tick, so two templates that render to the same
+  // path for one date collide for all of them — the second fetch would
+  // permanently skip-if-present behind the first (or race its commit).
+  // Comparing templates rendered with a fixed sentinel date is exact.
+  const seenOutputs = new Map<string, string>();
   for (const [kind, entry] of Object.entries(raw)) {
     if (!KIND_RE.test(kind)) {
       problems.push(
@@ -123,6 +129,20 @@ export function resolveSubscriptions(
       continue;
     }
 
+    const renderedSentinel = renderOutputPath(
+      outputPath as string,
+      "0000-00-00",
+    );
+    const collidingKind = seenOutputs.get(renderedSentinel);
+    if (collidingKind !== undefined) {
+      problems.push(
+        `subscription "${kind}" output_path renders to the same path as ` +
+          `subscription "${collidingKind}"`,
+      );
+      continue;
+    }
+    seenOutputs.set(renderedSentinel, kind);
+
     const command = record.command;
     if (
       !Array.isArray(command) ||
@@ -148,10 +168,14 @@ export function resolveSubscriptions(
 }
 
 /**
- * `output_path` must be a relative vault `.md` path with a `{date}`
- * placeholder (the period key — without it the rendered path is constant
- * and skip-if-present would permanently retire the subscription after one
- * fetch). Returns the problem string, or null when well-formed.
+ * `output_path` must be a relative vault `.md` path under `sources/` with a
+ * `{date}` placeholder (the period key — without it the rendered path is
+ * constant and skip-if-present would permanently retire the subscription
+ * after one fetch). The `sources/` prefix is the committed-feed category
+ * contract ([[wiki/specs/vault-layout]] §"`sources/`"): a subscription is a
+ * feed, and a feed that could land anywhere in the vault would turn the
+ * fetch command into a general write channel. Returns the problem string,
+ * or null when well-formed.
  */
 export function outputPathTemplateProblem(template: string): string | null {
   if (template.trim() !== template || template.length === 0) {
@@ -173,6 +197,9 @@ export function outputPathTemplateProblem(template: string): string | null {
     )
   ) {
     return "output_path must not contain empty, '.' or '..' segments";
+  }
+  if (!template.startsWith("sources/")) {
+    return "output_path must live under sources/ (the committed-feed category)";
   }
   return null;
 }

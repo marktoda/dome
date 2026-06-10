@@ -104,6 +104,16 @@ describe("dome.sources.fetch period helpers", () => {
       "whitespace",
     );
   });
+
+  test("output_path must live under sources/ — a feed cannot land anywhere else in the vault", () => {
+    expect(outputPathTemplateProblem("notes/agenda/{date}.md")).toContain(
+      "sources/",
+    );
+    expect(outputPathTemplateProblem("sourcesx/{date}.md")).toContain(
+      "sources/",
+    );
+    expect(outputPathTemplateProblem("sources/slack/{date}.md")).toBeNull();
+  });
 });
 
 describe("dome.sources.fetch config resolution (consent + temperament)", () => {
@@ -141,12 +151,12 @@ describe("dome.sources.fetch config resolution (consent + temperament)", () => {
     const resolved = resolveSubscriptions({
       subscriptions: {
         calendar: { ...CALENDAR },
-        "BAD KIND": { ...CALENDAR },
+        "BAD KIND": { ...CALENDAR, output_path: "sources/bk/{date}.md" },
         scalar: 7,
         badcron: { ...CALENDAR, schedule: "every day at five" },
         badpath: { ...CALENDAR, output_path: "sources/calendar/today.md" },
-        badcommand: { ...CALENDAR, command: [] },
-        badcommandtype: { ...CALENDAR, command: ["sh", 5] },
+        badcommand: { ...CALENDAR, output_path: "sources/bc/{date}.md", command: [] },
+        badcommandtype: { ...CALENDAR, output_path: "sources/bct/{date}.md", command: ["sh", 5] },
       },
     });
     expect(resolved.subscriptions.map((s) => s.kind)).toEqual(["calendar"]);
@@ -157,6 +167,45 @@ describe("dome.sources.fetch config resolution (consent + temperament)", () => {
     expect(resolved.problems.join("\n")).toContain('"badpath"');
     expect(resolved.problems.join("\n")).toContain('"badcommand"');
     expect(resolved.problems.join("\n")).toContain('"badcommandtype"');
+  });
+
+  test("an output_path outside sources/ is skipped with a problem", () => {
+    const resolved = resolveSubscriptions({
+      subscriptions: {
+        rogue: { ...CALENDAR, output_path: "notes/{date}.md" },
+      },
+    });
+    expect(resolved.subscriptions).toEqual([]);
+    expect(resolved.problems.length).toBe(1);
+    expect(resolved.problems[0]).toContain("sources/");
+  });
+
+  test("two subscriptions whose templates render to the same path: the second is skipped with a problem", () => {
+    const resolved = resolveSubscriptions({
+      subscriptions: {
+        calendar: { ...CALENDAR },
+        mirror: { ...CALENDAR },
+        distinct: { ...CALENDAR, output_path: "sources/distinct/{date}.md" },
+      },
+    });
+    expect(resolved.subscriptions.map((s) => s.kind)).toEqual([
+      "calendar",
+      "distinct",
+    ]);
+    expect(resolved.problems.length).toBe(1);
+    expect(resolved.problems[0]).toContain('"mirror"');
+    expect(resolved.problems[0]).toContain('"calendar"');
+  });
+
+  test("a disabled subscription does not reserve its output path (collision is among enabled only)", () => {
+    const resolved = resolveSubscriptions({
+      subscriptions: {
+        off: { ...CALENDAR, enabled: false },
+        calendar: { ...CALENDAR },
+      },
+    });
+    expect(resolved.subscriptions.map((s) => s.kind)).toEqual(["calendar"]);
+    expect(resolved.problems).toEqual([]);
   });
 });
 
