@@ -167,6 +167,16 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * THE vault-date policy: a clock reading becomes a vault-facing calendar
+ * date via the HOST-LOCAL timezone. Daily notes, sweep/consolidation ledger
+ * dates, and "today" in agent prompts all mean the owner's calendar day —
+ * an evening capture west of UTC belongs to today's daily, not tomorrow's.
+ * Every clock→date conversion in bundle code must go through this helper
+ * (fed by ctx.now(), per the processor-clock fence). UTC date handling is
+ * reserved for TZ-less date *literals* (frontmatter `YYYY-MM-DD` values,
+ * date-string arithmetic), which never touch the clock.
+ */
 export function localDateParts(date: Date): DailyDate {
   return Object.freeze({
     yyyy: String(date.getFullYear()).padStart(4, "0"),

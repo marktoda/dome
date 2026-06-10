@@ -15,6 +15,10 @@ import { finishAgentRun } from "../lib/agent-run-effects";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
+import {
+  formatDate,
+  localDateParts,
+} from "../../dome.daily/processors/daily-shared";
 
 const MAX_STEPS = 50;
 const MAX_CHANGED_FILES = 30;
@@ -186,7 +190,9 @@ const consolidate = defineProcessorImplementation({
 export default consolidate;
 
 function taskTurn(now: Date, ledgerPath: string): string {
-  const today = now.toISOString().slice(0, 10);
+  // Local calendar date, matching sweep/brief/create-daily — "tonight" in a
+  // nightly janitor's ledger must be the owner's date, not UTC's.
+  const today = formatDate(localDateParts(now));
   return [
     `Tonight is ${today}. Consolidate RECENT drift per your charter.`,
     `Start by reading ${ledgerPath}, then log.md and index.md.`,

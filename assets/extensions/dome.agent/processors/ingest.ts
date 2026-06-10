@@ -10,6 +10,10 @@ import { finishAgentRun } from "../lib/agent-run-effects";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeIngestTools } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
+import {
+  formatDate,
+  localDateParts,
+} from "../../dome.daily/processors/daily-shared";
 
 const MAX_STEPS = 25;
 
@@ -108,7 +112,9 @@ function isRawCapturePath(path: string): boolean {
 }
 
 function taskTurn(sourcePath: string, source: string, now: Date): string {
-  const today = now.toISOString().slice(0, 10);
+  // Local calendar date, matching sweep/brief/create-daily — a UTC date here
+  // routed evening captures (west of UTC) to tomorrow's daily.
+  const today = formatDate(localDateParts(now));
   return [
     `Raw source path: ${sourcePath}`,
     `Today's daily note path: notes/${today}.md`,
