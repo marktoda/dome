@@ -206,9 +206,9 @@ interface QuestionEffect {
 `question.ask`. The user surfaces them via `dome check` (normal CLI path),
 advanced `dome inspect questions`, or the query API. When the user answers via
 `dome resolve` (`dome answer` remains a compatibility alias), the answer is
-written back to the originating page (via a garden-emitted PatchEffect from
-`dome.intake`) or handled by the relevant answer-handler processor, and the
-question row is marked resolved. Answer-handler triggers can require both an
+handled by the relevant garden-phase answer-handler processor (e.g.,
+`dome.markdown.ambiguous-wikilink-answer` applying the chosen repair as a
+garden patch), and the question row is marked resolved. Answer-handler triggers can require both an
 idempotency-key prefix and the `processorId` that created the question row;
 privileged operational handlers must use both so another question emitter
 cannot borrow their recovery capability by forging a prefix.
@@ -256,7 +256,7 @@ interface JobEffect {
 
 **Routing:** the engine enqueues the job in `projection.db.scheduled_jobs` when the processor holds `job.enqueue` for the target processor. After adoption/garden/scheduler work completes, due jobs are drained as garden-phase invocations of the named processor. The target sees `JobEffect.input` as `ctx.input`; its emitted effects route through the same garden boundary. Retryable job failures are retried up to `maxAttempts` with bounded backoff, then marked `failed`; deterministic failures are marked `failed` immediately.
 
-**Why a job vs a direct call:** a processor emits JobEffect when it wants follow-on work to happen *after* the current adoption loop completes, with its own RunRecord and capability scope. This is how `dome.intake` schedules `dome.daily.refresh-brief` without synchronously calling it.
+**Why a job vs a direct call:** a processor emits JobEffect when it wants follow-on work to happen *after* the current adoption loop completes, with its own RunRecord and capability scope. This is how an ingest processor can schedule a follow-on daily-surface refresh without synchronously calling it.
 
 ## ExternalActionEffect
 

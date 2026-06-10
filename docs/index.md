@@ -4,6 +4,8 @@ The catalog of all wiki pages in this vault. In the current SDK it is maintained
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
+New to the vocabulary? [[glossary]] is the one-page map: the four core types, the engine vocabulary, the content conventions, and the overloaded words (loop, signal, settle) disambiguated.
+
 ## Current Product Planning
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
@@ -24,7 +26,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
-- [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, and the phone/voice ingress recipe (what ships vs. what the user assembles).
+- [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, the phone/voice ingress recipe (what ships vs. what the user assembles), and the remote-capture seam contract (commit-or-nothing; owner trust domain; `performCapture` as reference implementation).
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/status/check/resolve/tasks/brief tools over the same handlers the CLI uses.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).

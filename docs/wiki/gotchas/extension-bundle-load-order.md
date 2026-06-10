@@ -24,7 +24,7 @@ severity: medium
 
 **Structural mitigation:** **Fail-loud startup + namespaced manifest ids.**
 
-1. **Bundle-name prefix on processor IDs.** The manifest id is fully qualified by convention. Two bundles with an `extract-capture` processor should declare ids such as `dome.intake.extract-capture` and `community.intake.extract-capture`.
+1. **Bundle-name prefix on processor IDs.** The manifest id is fully qualified by convention. Two bundles with an `extract-capture` processor should declare ids such as `acme.intake.extract-capture` and `community.intake.extract-capture`.
 2. **Deterministic composition.** Bundles load in alphabetical order within each root; normal CLI/runtime use then composes SDK-shipped and vault-local roots, with vault-local bundles overriding shipped bundles by id. The composed set is sorted by bundle id before registry construction.
 3. **Fail-loud rejection.** The loader and registry do not silently skip a colliding or configured-missing bundle. `openVault` returns a structured `bundle-load-failed` or `registry-build-failed` error. The nested error names the colliding sources, missing bundle ids, or registry key.
 4. **Test coverage:** `tests/extensions/loader.test.ts` covers loader-level collisions and `tests/processors/registry.test.ts` covers command-trigger uniqueness.

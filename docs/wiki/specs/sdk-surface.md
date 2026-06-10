@@ -460,7 +460,7 @@ The SDK ships features across three tiers:
 |---|---|---|
 | **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants. The four core types. The fixed-point adoption loop. The capability broker. The projection store + run ledger + outbox. |
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | First-party `dome.*` bundles, the shipped-default-tier invariants under `wiki/invariants/`, the four default page types. |
-| **Opt-in** | Shipped, not active by default. Activated by config or by installing an additional bundle. | Voice-intake (`inbox/voice/` bucket + ingest workflow inside `dome.intake`), research-intake, third-party bundles. |
+| **Opt-in** | Shipped, not active by default. Activated by config or by installing an additional bundle. | `dome.sources` subscriptions (calendar shipped default-off; Slack supported, never shipped on — see [[wiki/specs/sources]]), phone/voice capture ingress assembled per [[wiki/specs/capture]], vault-local third-party bundles. |
 
 `dome init <path>` produces a minimal general-purpose vault — the axioms plus shipped defaults. Activation of opt-in features is `extensions.<name>.enabled: true` in `<vault>/.dome/config.yaml`.
 
@@ -582,6 +582,16 @@ To keep the core small, the SDK explicitly does not ship:
 - **A Tool concept.** Mutation primitives are PatchEffects emitted by processors.
 - **An events queue.** Effects are routed by the engine; there is no `fireEvent` or subscribe API.
 - **A privileged-writer escape hatch.** The engine is the only applier; no code outside `src/engine/` reaches mutation primitives.
+
+The same rule extends to the newer vocabulary: **warden**, **agent**,
+**maintenance loop**, and **edition** are not primitives either. A warden and
+an agent are *capability shapes* of the one Processor type (read+ask only vs.
+tool-loop with a patch grant); a maintenance loop is descriptive registry
+metadata over processors; an edition is a cron choreography of processors.
+When a new feature seems to need a new noun, the test is whether it reduces
+to processors emitting effects under a grant — if it does, it's vocabulary;
+if it doesn't, redesign the feature before extending the core. [[glossary]]
+§"Processor shapes" carries the one-line versions.
 
 ## Dependency list
 

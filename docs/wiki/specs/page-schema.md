@@ -66,7 +66,7 @@ created: 2026-05-15
 updated: 2026-05-27
 sources: ["[[raw/voice/2026-05-15-meeting.md]]"]
 aliases: ["Danny T.", "DT"]              # optional; for fuzzy-resolve
-last_interaction: 2026-05-27             # optional; bumped by dome.intake
+last_interaction: 2026-05-27             # optional; maintained by ingest automation
 description: "Team lead for..."          # optional
 name: "Danny Tan"                        # optional
 status: "active"                         # optional; lifecycle/state label
@@ -129,11 +129,11 @@ sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
 status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
 superseded_by: "[[wiki/syntheses/...]]"       # optional; forward link when status: superseded
 description: "Synthesis summary"              # optional
-generated_from: "wiki/generated/intake/example.md" # optional; generated synthesis provenance
+generated_from: "inbox/processed/example.md"  # optional; generated synthesis provenance
 input_hash: "sha256..."                         # optional; generated-input settlement hash
 name: "Org health synthesis"                  # optional
 metadata: { ... }                             # optional
-processor: dome.intake.synthesize-capture       # optional; generating processor id
+processor: dome.agent.sweep                     # optional; generating processor id
 ---
 ```
 
@@ -173,7 +173,6 @@ Extension bundles contribute additional page types via a bundle-root `page-types
 | Type | Bundle | Directory |
 |---|---|---|
 | `daily` | `dome.daily` | `wiki/dailies/` by default; configurable daily surfaces such as `notes/{date}.md` are supported by `dome.daily.config.daily_path` |
-| `capture` | `dome.intake` | `wiki/generated/intake/` and `inbox/processed/`; generated pages and archives carry optional `source_hash`, `disposition`, `processed_from`, `intake_items`, and `intake_pending_items` metadata |
 | `weekly` | planned `dome.daily` | `wiki/weeklies/` |
 
 Each declared extension type may carry `frontmatter_extras:` — required or optional fields beyond the universal four. The `dome.daily` daily type, for example, requires:

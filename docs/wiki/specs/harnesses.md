@@ -110,7 +110,7 @@ These are aspirational integration points the v1 SDK design accommodates without
 
 - **Native mobile app** — imports from `@dome/sdk` core (no LLM, no MCP) for typed markdown read, local draft writes, and adoption catch-up through the same Git-native Proposal construction path. Voice or research-style intake routes through planned provider adapters only when the user invokes an LLM-driven processor. Mobile is a *native Dome surface* per [[VISION]] §"Two surface patterns" — opinionated UX flows over the SDK.
 - **Native desktop app** — same shape as mobile; likely an Electron / Tauri / Wails shell. Holds a long-running Vault via `openVault` → use → `vault.close()` per [[wiki/specs/sdk-surface]] §"Vault lifecycle".
-- **Voice client** — captures speech via OS-native dictation, writes to `inbox/voice/*`, commits the capture through the native Git-backed surface, and lets the `dome.intake` garden-phase processor run async ingest through a planned provider boundary.
+- **Voice client** — captures speech via OS-native dictation, writes to `inbox/voice/*`, commits the capture through the native Git-backed surface, and lets the `dome.agent.ingest` garden-phase agent run async ingest.
 - **Web app** — Bun's server capabilities let the SDK serve as an HTTP backend the web client speaks to. A future HTTP companion entrypoint can add HTTP-specific protocol adapters when the use case justifies a split.
 
 **Future-harness shells construct against `AbstractSurface`.** Per [[wiki/specs/sdk-surface]] §"Consumer surfaces", the planned protocol-agnostic `AbstractSurface` (`query`, `read`, `commands`, `instructions`) will be built from the runtime and projected by per-protocol renderers (`renderMcp`, `renderHttp`, `renderVoice`). Only the wire format changes.
