@@ -504,6 +504,43 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "Advisory ledger loss (e.g., a failed ledger patch) only costs re-judging already-settled pairs on the next run; settlement-by-sources in destination frontmatter is authoritative.",
       ],
     }),
+    freezeLoop({
+      id: "dome.daily.edition",
+      goal:
+        "Each morning's daily note is compiled into one edition: yesterday digest, meetings, open questions, overnight integrations, and the ranked open-loops surface.",
+      evidence: [
+        { kind: "path", pattern: "wiki/dailies/*.md" },
+        { kind: "path", pattern: "notes/*.md" },
+        // External committed feed: produced by a vault-side fetcher before
+        // the 05:30 brief (vault-layout's calendar recipe), never by the SDK.
+        { kind: "path", pattern: "sources/calendar/*.md" },
+        // The 03:00 sweep's advisory ledger — the edition's deterministic
+        // "Integrated overnight" digest renders today's run section from it.
+        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "operational", name: "runs" },
+        { kind: "operational", name: "diagnostics" },
+      ],
+      processors: [
+        "dome.agent.brief",
+        "dome.daily.create-daily",
+        "dome.daily.carry-forward",
+      ],
+      surfaces: [
+        { kind: "path", pattern: "wiki/dailies/*.md" },
+        { kind: "path", pattern: "notes/*.md" },
+        { kind: "status", name: "check" },
+      ],
+      settlement: {
+        key: "daily date + generated-block owner set",
+        noOpWhen:
+          "today's daily note exists and every enabled edition block (brief yesterday/meetings/questions/integrated, the open-loops surface, the mechanical start-context fallback) matches its current inputs",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "The calendar source is a vault-assembled external feed (sources/calendar/<date>.md, vault-layout recipe); its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error.",
+        "Scheduled processors fire only while the host runs; a stopped serve silently skips the 05:30/06:00 ticks — the daily.edition-not-compiled doctor finding is the detection net.",
+      ],
+    }),
   ]);
 
 export function validateMaintenanceLoops(opts: {
