@@ -24,6 +24,7 @@ import {
   type Effect,
   type SearchDocumentEffect,
 } from "../../../../src/core/effect";
+import { blankGeneratedBlocks } from "../../../../src/core/generated-block";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -334,21 +335,15 @@ function countLines(text: string): number {
 // ----- Page metadata ---------------------------------------------------------
 
 function stripGeneratedSurfaceBlocks(content: string): string {
-  // Replace with an equal number of blank lines (not removal) so section
-  // line ranges keep pointing at the right lines of the original file.
-  return content
-    .replace(
-      /<!-- dome\.daily:open-loops:start -->[\s\S]*?<!-- dome\.daily:open-loops:end -->/g,
-      blankLines,
-    )
-    .replace(
-      /<!-- dome\.daily:carried-forward:start -->[\s\S]*?<!-- dome\.daily:carried-forward:end -->/g,
-      blankLines,
-    );
-}
-
-function blankLines(matched: string): string {
-  return "\n".repeat(Math.max(matched.split("\n").length - 1, 0));
+  // Blank (don't remove) every line of each generated region so section
+  // line ranges keep pointing at the right lines of the original file. The
+  // core grammar primitive's scanner blanks every line-anchored pair —
+  // including smuggled duplicate pairs, which must equally not be indexed.
+  return blankGeneratedBlocks(
+    blankGeneratedBlocks(content, "dome.daily", "open-loops"),
+    "dome.daily",
+    "carried-forward",
+  );
 }
 
 function categoryForPath(path: string): string {

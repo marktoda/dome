@@ -16,6 +16,12 @@
 // topic's last signal). The reference "today" is the newest signal date in
 // the file, NOT the wall clock.
 
+import {
+  containsHtmlCommentDelimiter,
+  findGeneratedBlock,
+  generatedBlockMarkers,
+} from "../../../../src/core/generated-block";
+
 // ----- Constants ------------------------------------------------------------
 
 /** The append-only preference-signal page (vault-layout.md convention). */
@@ -38,10 +44,14 @@ export const PREFERENCE_PROMOTION_KEY_PREFIX =
   "dome.agent.preference-promotion:";
 
 /** The marker-delimited generated block in core.md (M3 reserved it; M5 owns it). */
-export const PROMOTED_PREFERENCES_START =
-  "<!-- dome.agent:promoted-preferences:start -->";
-export const PROMOTED_PREFERENCES_END =
-  "<!-- dome.agent:promoted-preferences:end -->";
+const PROMOTED_BLOCK_OWNER = "dome.agent";
+const PROMOTED_BLOCK_NAME = "promoted-preferences";
+const PROMOTED_BLOCK_MARKERS = generatedBlockMarkers(
+  PROMOTED_BLOCK_OWNER,
+  PROMOTED_BLOCK_NAME,
+);
+export const PROMOTED_PREFERENCES_START = PROMOTED_BLOCK_MARKERS.start;
+export const PROMOTED_PREFERENCES_END = PROMOTED_BLOCK_MARKERS.end;
 
 /** The rule text that marks a `-` line as an owner rejection tombstone. */
 export const OWNER_REJECTION_RULE = "rejected by owner";
@@ -86,13 +96,10 @@ const SOURCE_SUFFIX_RE = /\s*\(source:\s*\[\[([^\]]+)\]\]\)\s*$/;
  * block markers through owner promotion into core.md and mis-bound the
  * generated block (the marker-injection gotcha). Checked at parse time here
  * and again, defense in depth, at splice time in `splicePromotedPreference`.
+ * The predicate is the core grammar primitive's
+ * `containsHtmlCommentDelimiter` (re-exported below for consumers).
  */
-const HTML_COMMENT_DELIMITER_RE = /<!--|-->/;
-
-/** True when `text` carries an HTML comment opener/closer. */
-export function containsHtmlCommentDelimiter(text: string): boolean {
-  return HTML_COMMENT_DELIMITER_RE.test(text);
-}
+export { containsHtmlCommentDelimiter };
 
 /**
  * Parse preferences/signals.md. Blank lines, headings, and HTML comments are
@@ -236,36 +243,35 @@ type PromotedBlockBounds = {
 };
 
 /**
- * Locate the promoted-preferences block by a line-anchored marker scan: a
- * marker counts only when it is the entire (trimmed) line. A raw indexOf
- * would also match prose or fenced *mentions* of the marker text — or, before
- * the parse/splice guards existed, marker text smuggled through a promoted
- * rule — and mis-bound the block, leaking rule text outside it.
+ * Locate the promoted-preferences block via the core grammar primitive's
+ * line-anchored scan: a marker counts only when it is the entire (trimmed)
+ * line. A raw indexOf would also match prose or fenced *mentions* of the
+ * marker text — or, before the parse/splice guards existed, marker text
+ * smuggled through a promoted rule — and mis-bound the block, leaking rule
+ * text outside it.
  */
-function promotedBlockBounds(
-  lines: ReadonlyArray<string>,
-): PromotedBlockBounds | null {
-  const startIndex = lines.findIndex(
-    (line) => line.trim() === PROMOTED_PREFERENCES_START,
+function promotedBlockBounds(content: string): PromotedBlockBounds | null {
+  const { range } = findGeneratedBlock(
+    content,
+    PROMOTED_BLOCK_OWNER,
+    PROMOTED_BLOCK_NAME,
   );
-  if (startIndex === -1) return null;
-  for (let i = startIndex + 1; i < lines.length; i += 1) {
-    if ((lines[i] ?? "").trim() === PROMOTED_PREFERENCES_END) {
-      return Object.freeze({ startIndex, endIndex: i });
-    }
-  }
-  return null;
+  if (range === null) return null;
+  return Object.freeze({
+    startIndex: range.startLine - 1,
+    endIndex: range.endLine - 1,
+  });
 }
 
 function promotedBlockLines(
   coreContent: string | null,
 ): ReadonlyArray<string> {
   if (coreContent === null) return Object.freeze([]);
-  const lines = coreContent.split("\n");
-  const bounds = promotedBlockBounds(lines);
+  const bounds = promotedBlockBounds(coreContent);
   if (bounds === null) return Object.freeze([]);
   return Object.freeze(
-    lines
+    coreContent
+      .split("\n")
       .slice(bounds.startIndex + 1, bounds.endIndex)
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
@@ -313,7 +319,7 @@ export function splicePromotedPreference(input: {
   });
 
   const contentLines = content.split("\n");
-  const bounds = promotedBlockBounds(contentLines);
+  const bounds = promotedBlockBounds(content);
 
   const kept = promotedBlockLines(content).filter(
     (line) => PROMOTED_LINE_RE.exec(line)?.[1] !== input.topic,

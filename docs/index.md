@@ -100,6 +100,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 Named semantic linter specs. Each names the rule, what it checks, and the target version.
 
 - [[wiki/linters/engine-is-sole-applier]] — *(v1)* `src/` outside `src/engine/`, `src/projections/`, `src/ledger/`, `src/outbox/` must not import mutation modules (`node:fs`, `bun:sqlite`, `isomorphic-git` write functions).
+- [[wiki/linters/generated-block-splice-guard]] — *(v1)* Every non-test file under `src/` and `assets/extensions/` whose source constructs a generated-block marker (`:start -->`/`:end -->` or a `dome.`-prefixed comment) must import the grammar primitive `src/core/generated-block.ts`.
 - [[wiki/linters/no-direct-mutation-outside-engine]] — *(v1)* Greps `src/` for mutation calls outside the engine boundary; complement to `engine-is-sole-applier`.
 - [[wiki/linters/no-retired-symbol-names]] — *(v1)* Every normative doc names no symbol in the retired-names allow-list (`Tool`, `Hook`, `Workflow`, `BoundToolSurface`, `runWorkflow`, `reconcile`, `wrapMutatingInvoke`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`, `HOOKS_CANNOT_BYPASS_TOOLS`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `PAGE_CREATION_REQUIRES_RECURRENCE`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, …).
 - [[wiki/linters/processor-purity]] — *(v1)* Files under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` must not import mutation modules.

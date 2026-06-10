@@ -18,6 +18,17 @@ A **block anchor** is a trailing `^id` token on a line, separated from the prece
 
 Identity is anchored to the `^id`, not to a body-hash, because tasks **move**. A task line is rephrased, reordered within a list, or cut from one note and pasted into a daily's open-loop section. A body-hash identity would change on every rephrase and could not survive a move across files. A block anchor is **move-stable**: the same `^id` names the same task no matter which file it currently lives in or how its text is edited. Markdown remains the source of truth (per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); the anchor is durable identity carried in that source.
 
+## Generated-block markers (the splice-guard primitive)
+
+A **generated block** is a marker-delimited region of a markdown page that a processor owns and regenerates — `<!-- <owner>:<block>:start -->` … `<!-- <owner>:<block>:end -->`, where the owner is a dome namespace matching `dome(\.\w+)*` (e.g. `dome`, `dome.daily`, `dome.agent.brief`) and the block name is a slug. Everything outside the markers is human prose; no two processors write the same region (block ownership is disjoint, per [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`").
+
+The grammar is a core primitive at `src/core/generated-block.ts` — pure (string-only, no IO), the sibling of `src/core/block-anchor.ts` — and it is the **only sanctioned marker implementation**. No processor hand-rolls marker matching, splicing, or stripping; the [[wiki/linters/generated-block-splice-guard]] fence fails CI when a non-test source file constructs marker text without importing the primitive. The primitive carries the two defenses every splice needs:
+
+- **Line-anchored scanning.** A marker counts only when the entire trimmed line is the marker. Prose or fenced *mentions* of marker text, and marker text smuggled mid-line through model-derived content, never bound a block. The first line-anchored pair wins; duplicate pairs, unterminated starts, and orphan ends are reported as anomalies, never silently bound.
+- **Body sanitization.** Model-derived block bodies pass through `sanitizeGeneratedBlockBody`, which drops every line carrying a `<!-- dome…` marker comment and strips stray bare `<!--`/`-->` fragments that could recombine downstream. Dome's HTML comments are exclusively generated-block markers, so no legitimate body line ever carries one.
+
+This closes a bug class that shipped three times before the primitive existed: a smuggled second `dome.agent.brief:questions` pair fabricating a questions block in the daily note, injected `dome.daily:*` markers corrupting carry-forward, and promoted preference-rule text carrying the `promoted-preferences` end marker out of `core.md`'s generated block (the marker-injection gotcha named in [[wiki/specs/preferences]]).
+
 ## The three deterministic `dome.daily` task processors
 
 Three garden-phase, `patch.auto` processors maintain task lines. All three are deterministic and idempotent — running them twice against the same adopted tree produces the same result — which keeps them rebuild-eligible under [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
