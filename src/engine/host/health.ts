@@ -934,10 +934,10 @@ export function dailyPathMismatchFindings(opts: {
         "write a different file than create-daily, leaving a wrong-path " +
         "brief plus a duplicate daily skeleton.",
       recovery:
-        "Mirror the daily_path key: set " +
-        "extensions.dome.daily.config.daily_path and " +
-        "extensions.dome.agent.config.daily_path to the same template in " +
-        ".dome/config.yaml (or remove both to use the shared default).",
+        "Declare the path once: set shared_config.daily_path in " +
+        ".dome/config.yaml and remove the per-extension " +
+        "extensions.*.config.daily_path overrides (an extension's own key " +
+        "overrides the shared value, which is how this fork happened).",
       config: Object.freeze({ dailyDailyPath, agentDailyPath }),
     }),
   ]);

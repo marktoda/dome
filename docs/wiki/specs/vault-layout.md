@@ -286,10 +286,21 @@ Once `dome.index` ships, it should be rebuildable through `dome rebuild` when st
 ### `config.yaml`
 
 The single config file. The accepted top-level keys are `extensions`,
-`engine`, `git`, and `model_provider`; unknown top-level keys fail runtime
-open rather than being silently ignored.
+`engine`, `git`, `model_provider`, and `shared_config`; unknown top-level
+keys fail runtime open rather than being silently ignored.
+
+`shared_config` holds vault-level keys that merge as *defaults* under every
+extension's `config:` block (the extension's own key wins). It exists for
+cross-bundle keys that must agree — `daily_path` is the canonical case:
+`dome.daily` (create-daily) and `dome.agent` (brief, ingest) both resolve
+the daily note from it, and declaring it once removes the mirrored-key
+footgun (`config.daily-path-mismatch` in `dome doctor` then fires only on
+an explicit per-extension fork).
 
 ```yaml
+shared_config:
+  daily_path: wiki/dailies/{date}.md   # optional; one declaration, every bundle sees it
+
 model_provider:
   kind: command
   command: ["bun", ".dome/model-provider.ts"]
