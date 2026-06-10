@@ -288,7 +288,7 @@ scenario(
           "    grant:",
           "      read: [\"wiki/**/*.md\", \"notes/*.md\"]",
           "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
-          "      graph.write: [\"dome.daily.*\"]",
+          "      graph.write: [\"dome.daily.*\", \"dome.attention.*\"]",
           "      question.ask: true",
           "  dome.agent:",
           "    enabled: true",

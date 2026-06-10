@@ -253,7 +253,7 @@ extensions:
         - "wiki/**/*.md"
         - "wiki/dailies/*.md"
       patch.auto: ["wiki/**/*.md"]
-      graph.write: ["dome.daily.*"]
+      graph.write: ["dome.daily.*", "dome.attention.*"]
       question.ask: true
   dome.lint:
     enabled: true

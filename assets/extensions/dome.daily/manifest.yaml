@@ -48,7 +48,7 @@ processors:
     module: processors/stamp-block-id.ts
 
   - id: dome.daily.create-daily
-    version: 0.1.4
+    version: 0.1.5
     phase: garden
     triggers:
       - kind: schedule
