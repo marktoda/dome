@@ -13,15 +13,15 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { runCapture } from "../../src/cli/commands/capture";
 import {
   captureSlug,
   captureTimestampSegment,
   deriveCaptureTitle,
   normalizeCaptureTitle,
   renderCaptureDocument,
-  runCapture,
   type CaptureStdin,
-} from "../../src/cli/commands/capture";
+} from "../../src/surface/capture";
 import { runInit } from "../../src/cli/commands/init";
 import { add, log, readBlob, resolveRef, statusMatrix } from "../../src/git";
 

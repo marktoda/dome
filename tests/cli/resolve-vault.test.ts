@@ -1,4 +1,4 @@
-// Vault-root discovery (src/cli/resolve-vault.ts): commands run from inside
+// Vault-root discovery (src/surface/resolve-vault.ts): commands run from inside
 // a vault subdirectory target the nearest ancestor with .dome/config.yaml.
 // Before this, every handler used the bare cwd, so `dome status` from
 // `<vault>/wiki/` failed with advice to `dome init` — which would have
@@ -10,7 +10,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { resolveVaultPath } from "../../src/cli/resolve-vault";
+import { resolveVaultPath } from "../../src/surface/resolve-vault";
 
 const cleanups: Array<() => Promise<void>> = [];
 const originalCwd = process.cwd();

@@ -31,7 +31,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { findGitRoot } from "../../git";
 import { createDomeMcpServer } from "../../mcp/server";
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 
 const EX_USAGE = 64;
 

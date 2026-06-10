@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  collectMaintenanceLoopSummaries,
-  formatMaintenanceLoopDetailLines,
-} from "../../src/cli/maintenance-loop-summary";
+import { formatMaintenanceLoopDetailLines } from "../../src/cli/maintenance-loop-summary";
+import { collectMaintenanceLoopSummaries } from "../../src/surface/maintenance-loop-summary";
 import { diagnosticEffect, questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { MaintenanceLoop } from "../../src/extensions/maintenance-loops";

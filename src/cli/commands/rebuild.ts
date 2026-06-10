@@ -7,7 +7,7 @@
 import { basename } from "node:path";
 
 import { openVault, type OpenVaultError } from "../../vault";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import {
   footer,
   headline,
@@ -16,7 +16,7 @@ import {
   section,
 } from "../presenter";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 export type RunRebuildOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;

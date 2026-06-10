@@ -31,7 +31,7 @@
 //
 // Entry-point convention: `openVault` is the STANDARD entry point for every
 // surface — CLI verbs (resolve/answer, rebuild, and all view commands via
-// cli/commands/view-shared.ts), the MCP adapter, and future HTTP/voice
+// surface/view.ts), the MCP adapter, and future HTTP/voice
 // shells all consume this wrapper. Direct `openVaultRuntime` use is reserved
 // for the daemon and operator internals that report on runtime guts the
 // wrapper intentionally hides (serve, sync's tick events + health, the

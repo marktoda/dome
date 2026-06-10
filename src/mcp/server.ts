@@ -44,19 +44,19 @@ import {
   ANSWER_SCHEMA,
   answerHandlersJson,
   questionRecordJson,
-} from "../cli/commands/answer";
+} from "../surface/answer";
 import {
   captureJsonDocument,
   performCapture,
-} from "../cli/commands/capture";
+} from "../surface/capture";
 import {
   buildCheckReport,
   resolveScopes,
-} from "../cli/commands/check";
-import { buildStatusSnapshot } from "../cli/commands/status";
-import { firstPartyViewNotFoundMessage } from "../cli/commands/view-shared";
-import { COMMAND_ERROR_SCHEMA } from "../cli/command-error";
-import { formatJson } from "../cli/format";
+} from "../surface/check";
+import { buildStatusSnapshot } from "../surface/status";
+import { firstPartyViewNotFoundMessage } from "../surface/view";
+import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
+import { formatJson } from "../surface/format";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/host/health";
 import { readBlob } from "../git";
 import { openVault, type OpenVaultError, type Vault } from "../vault";

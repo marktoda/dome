@@ -1,12 +1,14 @@
 // cli/commands/export-context: source-backed markdown packets for handoff.
 
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import {
   firstPartyViewNotFoundMessage,
-  printViewCommandError,
-  printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
+} from "../../surface/view";
+import {
+  printViewCommandError,
+  printViewCommandMessages,
 } from "./view-shared";
 
 export type ExportContextCommandOptions = {

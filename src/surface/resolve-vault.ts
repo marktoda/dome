@@ -1,4 +1,4 @@
-// Vault-root discovery for CLI command handlers.
+// Vault-root discovery for surface verbs.
 //
 // Git-style upward resolution: without an explicit `--vault`, a command run
 // from anywhere inside a vault (e.g. `<vault>/wiki/`) targets the nearest

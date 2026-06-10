@@ -2,7 +2,7 @@
 
 import { basename } from "node:path";
 
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import { formatSeverity } from "../human-output";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
@@ -16,13 +16,15 @@ import {
 } from "../presenter";
 import {
   firstPartyViewNotFoundMessage,
-  printViewCommandError,
-  printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
+} from "../../surface/view";
+import {
+  printViewCommandError,
+  printViewCommandMessages,
 } from "./view-shared";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 export type LintFailOn = "info" | "warning" | "error" | "block" | "never";
 
 export type LintCommandOptions = {

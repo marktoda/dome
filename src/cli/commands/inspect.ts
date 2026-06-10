@@ -74,7 +74,7 @@ import {
 } from "../../projections/facts";
 import { queryQuestionRecords } from "../../projections/questions";
 import { queryOutbox } from "../../outbox/dispatch";
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 
 import { resolveBundleRoots, type ResolvedBundleRoots } from "./sync-shared";
 
@@ -83,8 +83,8 @@ import {
   summarizeDiagnosticEffects,
   type DiagnosticSeverity,
   type DiagnosticSummary,
-} from "../diagnostic-summary";
-import { formatJson } from "../format";
+} from "../../surface/diagnostic-summary";
+import { formatJson } from "../../surface/format";
 import {
   headline,
   kv,

@@ -18,13 +18,15 @@ import {
   runInstall,
   runRestart,
   runUninstall,
-  serviceLabelForVault,
   servicePath,
+} from "../../src/cli/commands/install";
+import {
+  serviceLabelForVault,
   vaultServiceSlug,
   type LaunchctlResult,
   type LaunchctlRunner,
   type ServiceDeps,
-} from "../../src/cli/commands/install";
+} from "../../src/surface/service-probe";
 import { initRepo } from "../../src/git";
 
 // ----- Console capture ------------------------------------------------------
