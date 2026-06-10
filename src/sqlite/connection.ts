@@ -18,7 +18,16 @@ const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 export function configureSqliteConnection(db: Database): void {
   db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
-  // No-op (reported as "memory") for in-memory databases used in tests.
-  db.run("PRAGMA journal_mode = WAL");
+  try {
+    // No-op (reported as "memory") for in-memory databases used in tests.
+    db.run("PRAGMA journal_mode = WAL");
+  } catch {
+    // The one-time DELETE→WAL transition takes an exclusive lock and can
+    // return SQLITE_BUSY when two processes open the same store
+    // concurrently (dome status racing dome serve's startup). The mode is
+    // persistent in the file once any opener wins, so the loser proceeds
+    // on the existing journal mode rather than failing the open; its next
+    // open finds WAL already set.
+  }
   db.run("PRAGMA synchronous = NORMAL");
 }

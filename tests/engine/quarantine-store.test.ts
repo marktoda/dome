@@ -150,4 +150,67 @@ describe("quarantine store", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("two stores on one file do not clobber each other (cross-process read-modify-write)", async () => {
+    // Simulates `dome serve` and a concurrently-opened runtime (`dome
+    // resolve` / `dome run`) holding independent store instances on the
+    // same quarantined.json. Before the read-through fix, each instance
+    // dumped its open-time snapshot on every mutation: B's write erased
+    // A's quarantine, and A's stale map could resurrect a quarantine B
+    // had cleared.
+    const root = mkdtempSync(join(tmpdir(), "dome-quarantine-store-"));
+    try {
+      const path = join(root, ".dome", "state", "quarantined.json");
+      const keyA: ProcessorExecutionKey = Object.freeze({
+        phase: "garden",
+        processorId: "test.processor-a",
+        processorVersion: "0.0.1",
+        triggerHash: "hash-a",
+      });
+      const keyB: ProcessorExecutionKey = Object.freeze({
+        phase: "garden",
+        processorId: "test.processor-b",
+        processorVersion: "0.0.1",
+        triggerHash: "hash-b",
+      });
+
+      // Both processes open before any state exists.
+      const a = openQuarantineStore({ path, quarantineThreshold: 2 });
+      const b = openQuarantineStore({ path, quarantineThreshold: 2 });
+      if (!a.ok || !b.ok) throw new Error("open failed");
+
+      // Process A quarantines keyA.
+      a.value.recordRetryableTerminalFailure(keyA, "first");
+      const quarantined = a.value.recordRetryableTerminalFailure(
+        keyA,
+        "second",
+      );
+      expect(quarantined).not.toBeNull();
+
+      // Process B mutates a DIFFERENT key. With stale-snapshot dumping
+      // this erased A's quarantine from the file.
+      b.value.recordRetryableTerminalFailure(keyB, "unrelated");
+      const persisted = JSON.parse(await readFile(path, "utf8"));
+      expect(
+        persisted.entries.map(
+          (e: { processorId: string }) => e.processorId,
+        ),
+      ).toContain("test.processor-a");
+
+      // B sees A's quarantine through its own handle (read-through).
+      expect(b.value.quarantineFor(keyA)).not.toBeNull();
+
+      // B clears A's quarantine (the answer-handler path); A must observe
+      // the clear instead of resurrecting it on its next write.
+      b.value.clearQuarantine(keyA);
+      expect(a.value.quarantineFor(keyA)).toBeNull();
+      a.value.recordSuccess(keyB); // A mutates: must not resurrect keyA
+      const after = JSON.parse(await readFile(path, "utf8"));
+      expect(
+        after.entries.map((e: { processorId: string }) => e.processorId),
+      ).not.toContain("test.processor-a");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

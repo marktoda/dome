@@ -65,28 +65,55 @@ export function buildProcessorExecutionState(opts?: {
   readonly onEntriesChanged?: (
     entries: ReadonlyArray<ProcessorExecutionStateEntry>,
   ) => void;
+  /**
+   * Optional cross-process freshness hook. When present, every read and
+   * mutation first replaces the in-memory entries with the hook's result,
+   * so a durable store (the quarantined.json file) is the source of truth
+   * rather than each process's open-time snapshot — without it, two
+   * processes on one vault clobber each other's counters and a cleared
+   * quarantine can be resurrected by a stale map. Returning `null` means
+   * "could not reload"; the current entries are kept.
+   */
+  readonly reloadEntries?: () =>
+    | ReadonlyArray<ProcessorExecutionStateEntry>
+    | null;
 }): ProcessorExecutionState {
   const threshold =
     opts?.quarantineThreshold ?? DEFAULT_QUARANTINE_THRESHOLD;
   const entries = new Map<string, MutableEntry>();
-  for (const entry of opts?.initialEntries ?? []) {
-    const mutable: MutableEntry = {
-      consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
-      ...(entry.quarantinedAt !== undefined
-        ? { quarantinedAt: new Date(entry.quarantinedAt.getTime()) }
-        : {}),
-      ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
-    };
-    if (entry.quarantineId !== undefined) {
-      mutable.quarantineId = entry.quarantineId;
-    } else if (
-      mutable.quarantinedAt !== undefined &&
-      mutable.reason !== undefined
-    ) {
-      mutable.quarantineId = legacyQuarantineId(entry, mutable);
+
+  const seed = (
+    list: ReadonlyArray<ProcessorExecutionStateEntry>,
+  ): void => {
+    entries.clear();
+    for (const entry of list) {
+      const mutable: MutableEntry = {
+        consecutiveRetryableFailures: entry.consecutiveRetryableFailures,
+        ...(entry.quarantinedAt !== undefined
+          ? { quarantinedAt: new Date(entry.quarantinedAt.getTime()) }
+          : {}),
+        ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
+      };
+      if (entry.quarantineId !== undefined) {
+        mutable.quarantineId = entry.quarantineId;
+      } else if (
+        mutable.quarantinedAt !== undefined &&
+        mutable.reason !== undefined
+      ) {
+        mutable.quarantineId = legacyQuarantineId(entry, mutable);
+      }
+      entries.set(keyId(entry), mutable);
     }
-    entries.set(keyId(entry), mutable);
-  }
+  };
+  seed(opts?.initialEntries ?? []);
+
+  // Re-sync from the durable store before serving or mutating state. Each
+  // mutation thereby becomes a fresh read-modify-write instead of a dump of
+  // an arbitrarily old snapshot.
+  const sync = (): void => {
+    const fresh = opts?.reloadEntries?.();
+    if (fresh !== undefined && fresh !== null) seed(fresh);
+  };
 
   const persist = (): void => {
     opts?.onEntriesChanged?.(snapshotEntries(entries));
@@ -95,6 +122,7 @@ export function buildProcessorExecutionState(opts?: {
   const quarantineFor = (
     key: ProcessorExecutionKey,
   ): ProcessorQuarantineSnapshot | null => {
+    sync();
     const entry = entries.get(keyId(key));
     if (
       entry === undefined ||
@@ -114,15 +142,21 @@ export function buildProcessorExecutionState(opts?: {
   };
 
   return Object.freeze({
-    quarantines: () => quarantineSnapshots(entries),
+    quarantines: () => {
+      sync();
+      return quarantineSnapshots(entries);
+    },
     quarantineFor,
     recordSuccess: (key) => {
+      sync();
       if (entries.delete(keyId(key))) persist();
     },
     recordNonRetryableTerminalFailure: (key) => {
+      sync();
       if (entries.delete(keyId(key))) persist();
     },
     recordRetryableTerminalFailure: (key, reason) => {
+      sync();
       const id = keyId(key);
       const entry =
         entries.get(id) ?? { consecutiveRetryableFailures: 0 };
@@ -140,9 +174,11 @@ export function buildProcessorExecutionState(opts?: {
       return quarantineFor(key);
     },
     clearQuarantine: (key) => {
+      sync();
       if (entries.delete(keyId(key))) persist();
     },
     clearQuarantineIfCurrent: (expected) => {
+      sync();
       const id = keyId(expected);
       const entry = entries.get(id);
       if (

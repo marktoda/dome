@@ -69,6 +69,16 @@ export function openQuarantineStore(opts: {
       onEntriesChanged: (entries) => {
         writeEntries(opts.path, entries);
       },
+      // Cross-process freshness: re-read the file before every read and
+      // mutation so concurrently-open runtimes (dome serve beside dome
+      // resolve / run / view commands) see each other's counters and
+      // clears instead of clobbering them with stale open-time snapshots.
+      // A failed reload (e.g. a concurrent writer mid-corruption) returns
+      // null and the state keeps serving its last good entries.
+      reloadEntries: () => {
+        const reloaded = loadEntries(opts.path);
+        return reloaded.ok ? reloaded.value : null;
+      },
     });
     return ok(state);
   } catch (e) {
