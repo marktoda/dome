@@ -936,6 +936,87 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
   });
 });
 
+describe("dispatchOneProcessor — ledgered before inspection walk", () => {
+  test("a failing inspection walk still leaves a terminal (skipped) run row", async () => {
+    // inspection: all-readable-markdown forces a snapshot tree walk inside
+    // beginDispatch. A git error there used to leave a trigger-matched
+    // invocation with NO run row at all — the one outcome
+    // EVERY_PROCESSOR_RUN_IS_LEDGERED forbids.
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { rm } = await import("node:fs/promises");
+    const { openLedgerDb } = await import("../../src/ledger/db");
+    const { queryRuns } = await import("../../src/ledger/runs");
+
+    const dir = mkdtempSync(join(tmpdir(), "runtime-ledger-window-"));
+    try {
+      const opened = await openLedgerDb({ path: join(dir, "runs.db") });
+      if (!opened.ok) throw new Error(opened.error.kind);
+      const ledger = opened.value.db;
+
+      const snapshot: Snapshot = Object.freeze({
+        commit: CANDIDATE,
+        tree: TREE,
+        readFile: async () => null,
+        listMarkdownFiles: async (): Promise<ReadonlyArray<string>> => {
+          throw new Error("git walk exploded");
+        },
+        getFileInfo: async () => null,
+      });
+      const p = defineProcessor({
+        id: "test.inspection-walk-fails",
+        version: "0.0.1",
+        phase: "garden",
+        triggers: [{ kind: "signal", name: "file.created" }],
+        capabilities: [READ_WIKI],
+        inspection: { kind: "all-readable-markdown" },
+        run: async () => [],
+      });
+
+      await expect(
+        dispatchOneProcessor({
+          processor: p,
+          phase: "garden",
+          envelope: {
+            kind: "garden",
+            matchedTriggers: [
+              {
+                trigger: { kind: "signal", name: "file.created" },
+                matchedSignals: [SIGNAL_CREATED],
+              },
+            ],
+          },
+          snapshot,
+          changedPaths: ["wiki/a.md"],
+          proposal,
+          inputCommit: CANDIDATE,
+          matches: [
+            {
+              trigger: { kind: "signal", name: "file.created" },
+              matchedSignals: [SIGNAL_CREATED],
+            },
+          ],
+          resolveGrants: () => [READ_WIKI],
+          extensionIdFor: (id) => id,
+          ledger,
+        }),
+      ).rejects.toThrow("git walk exploded");
+
+      const runs = queryRuns(ledger, {});
+      expect(runs.length).toBe(1);
+      expect(runs[0]?.processorId).toBe("test.inspection-walk-fails");
+      expect(runs[0]?.status).toBe("skipped");
+      expect(runs[0]?.error ?? "").toContain(
+        "dispatch.inspection-paths-failed",
+      );
+      ledger.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("gardenRunner — onProcessorStart callback", () => {
   test("fires onProcessorStart with processorId when a matching garden processor is dispatched", async () => {
     const p = makeFixtureProcessor({

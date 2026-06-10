@@ -830,13 +830,6 @@ async function beginDispatch<TEnvelope>(
   const contextChangedPaths = Object.freeze(
     filterReadablePaths(opts.changedPaths, declared, granted),
   );
-  const inspectedPaths = await resolveInspectionPaths({
-    scope: opts.processor.inspection,
-    snapshot: opts.snapshot,
-    changedPaths: contextChangedPaths,
-    declared,
-    granted,
-  });
   const runId: RunId =
     opts.ledger !== undefined
       ? newRunId(startedAt)
@@ -846,6 +839,10 @@ async function beginDispatch<TEnvelope>(
           sourceHead: opts.proposal?.head ?? opts.inputCommit,
         }).runId as RunId);
 
+  // Ledger the queued row BEFORE any async work. `resolveInspectionPaths`
+  // can do a full git tree walk (inspection: all-readable-markdown); a git
+  // error there used to leave a trigger-matched invocation with NO run row
+  // — the one outcome EVERY_PROCESSOR_RUN_IS_LEDGERED forbids.
   if (opts.ledger !== undefined) {
     insertQueued(opts.ledger, {
       id: runId,
@@ -858,6 +855,34 @@ async function beginDispatch<TEnvelope>(
       triggerPayload: triggerPayloadOf(opts.matches),
       startedAt,
     });
+  }
+
+  let inspectedPaths: ReadonlyArray<string>;
+  try {
+    inspectedPaths = await resolveInspectionPaths({
+      scope: opts.processor.inspection,
+      snapshot: opts.snapshot,
+      changedPaths: contextChangedPaths,
+      declared,
+      granted,
+    });
+  } catch (e) {
+    // The processor was never invoked: record a reasoned skip so the row
+    // reaches a terminal state, then rethrow to preserve the caller's
+    // failure semantics.
+    if (opts.ledger !== undefined) {
+      markSkipped(opts.ledger, {
+        id: runId,
+        finishedAt: opts.now ?? new Date(),
+        error: JSON.stringify({
+          code: "dispatch.inspection-paths-failed",
+          message: e instanceof Error ? e.message : String(e),
+          phase: opts.phase,
+          processorId: opts.processor.id,
+        }),
+      });
+    }
+    throw e;
   }
 
   const frame = {
