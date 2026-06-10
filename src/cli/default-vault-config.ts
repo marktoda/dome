@@ -38,6 +38,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     extension("dome.markdown", true, {
       read: [
         "**/*.md",
+        // core.md is named explicitly (not left to "**/*.md" matching) so
+        // the dome.markdown.core-size lint's read grant survives vaults
+        // that narrow the markdown read scope (e.g. to wiki/**) — see
+        // docs/memory.md §"Vault rollout".
+        "core.md",
         ".dome/page-types.yaml",
         "**/*.{png,jpg,jpeg,gif,webp,svg,avif}",
         "raw/**",

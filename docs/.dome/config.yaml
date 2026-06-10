@@ -15,6 +15,9 @@ extensions:
     grant:
       read:
         - "wiki/**/*.md"
+        # core.md feeds the dome.markdown.core-size lint; without this entry
+        # the lint's effective read scope is empty and it never fires.
+        - "core.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
         - "raw/**"

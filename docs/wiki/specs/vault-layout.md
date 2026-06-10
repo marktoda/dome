@@ -189,6 +189,10 @@ and keep only the always-relevant summary here. The lint checks the literal
 top-level `core.md` path only; a vault configuring a custom
 `extensions.dome.agent.config.core_path` forgoes the size lint (the simplest
 honest contract — `dome.markdown` does not read `dome.agent`'s config).
+The lint's effective read scope is `["core.md"] ∩ the vault's dome.markdown
+read grant`, so the grant must cover `core.md` — the shipped default names
+it explicitly (a vault that narrows the markdown read scope, e.g. to
+`wiki/**`, silently kills the lint otherwise).
 
 **The canonical grant shape (propose-only).** Interactive bundles read
 `core.md` but never auto-write it: include `core.md` in the bundle's `read`
