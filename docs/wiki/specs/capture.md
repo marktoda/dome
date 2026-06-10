@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-11
 sources:
   - "[[wedge]]"
   - "[[v1]]"
@@ -24,7 +24,9 @@ thought (terminal / phone / voice)
   → compiler host adopts the commit                  (dome serve poll / dome sync)
   → dome.agent.ingest integrates it                  (garden phase; needs dome.agent enabled + model ready)
       wiki pages + wikilinks + index/log updates
-      action items routed to the daily note / entity pages
+      tactical tasks land in today's daily under `## Captured today`,
+        inside the dome.daily:captured block (tool-seam enforced);
+        durable follow-ups go to entity `## Open threads`
       raw file archived to inbox/processed/
   → dome.agent.inbox-stale-check warns               (when raw captures sit unprocessed)
 ```
@@ -44,6 +46,17 @@ Two properties are load-bearing:
 The shipped entry point is `dome capture` (normative command spec in
 [[wiki/specs/cli]] §"`dome capture`"): it writes the file, commits exactly
 that one path, and returns immediately.
+
+**The landing zone.** A capture's tactical tasks land in today's daily note
+under the `## Captured today` section, inside the `dome.daily:captured`
+generated block ([[wiki/specs/daily-surface]] §"Block ownership"). The
+ingest agent's tool seam enforces the landing: only task-shaped
+`- [ ] #task …` lines are accepted for today's daily, and the seam — not the
+model — splices them inside the block (creating the shared daily skeleton
+when the note doesn't exist yet). From there the line is an ordinary task
+*origin*: `stamp-block-id` anchors it on the next cycle, `task-index`
+projects it, and `carry-forward` surfaces it in later dailies with
+provenance.
 
 ## Raw capture file shape
 
@@ -165,8 +178,10 @@ is markdown in a commit, like everything else.
   path.
 - **Shipped transcription** — voice/audio handling stays user-assembled.
 - **Open-loop guarantee hardening** — "every ingested capture with an
-  actionable item leaves a trace in the daily note's open-loop section" is
-  the guaranteed-re-entry property; it lands with the Phase 4 brief work.
+  actionable item leaves a trace in the daily note" now has its landing zone
+  (the `## Captured today` owned block, above); the remaining hardening —
+  *verifying* the trace exists per ingested capture and warning when it
+  doesn't — lands with the Phase 4 brief work.
 
 ## Related
 
@@ -174,5 +189,7 @@ is markdown in a commit, like everything else.
 - [[wiki/specs/vault-layout]] §"`inbox/` — ephemeral drop-zones" — the bucket
   layout and trigger surface.
 - [[wiki/specs/autonomous-agents]] — `dome.agent.ingest`'s charter and loop.
+- [[wiki/specs/daily-surface]] — the `## Captured today` section contract and
+  the `dome.daily:captured` block ownership row.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — why captures must move or warn.
 - [[wedge]] §"Phase 3 — Capture loop" — the product framing.

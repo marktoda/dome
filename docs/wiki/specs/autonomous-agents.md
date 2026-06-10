@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-08
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[superpowers/specs/2026-06-08-autonomous-agents-ingest-design]]"
   - "[[wedge]]"
@@ -81,7 +81,7 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 
 - **Phase / kind:** garden, `kind: llm`.
 - **Trigger:** a change touching `inbox/raw/*.md`. Idempotent by consumption — the agent archives the raw file in its patch, so a converged source does not re-fire.
-- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → update `index.md` → append `log.md` → route action-items to the daily note or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code.
+- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → update `index.md` → append `log.md` → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code.
 
 **Tool surface:**
 
@@ -91,11 +91,11 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 | `readPage(path)` | read |
 | `searchVault(query)` | read (content substring match) |
 | `writePage(path, content)` | write (accumulate create/replace) |
-| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads`) |
+| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads` — daily appends ride the captured-tasks seam) |
 | `archiveSource(rawPath)` | write (accumulate move `inbox/raw/x` → `inbox/processed/x` + delete the raw) |
 | `askOwner(question)` | question (`QuestionEffect`) |
 
-Task-routing has no dedicated tool: the agent reads the target (daily note or entity page) and `appendToPage`s a `#task` line, guided by the charter. Targeted in-place edits likewise go through read-then-`writePage`. (`patchPage` / `routeTask` were considered and dropped — `writePage` + `appendToPage` cover the cases without a diff-apply tool.)
+Task-routing has no dedicated tool: the agent `appendToPage`s a `#task` line, guided by the charter. For **today's daily**, the append rides the captured-tasks seam ([[wiki/specs/daily-surface]] §"The ingest tool seam"): the tool validates the content is task-shaped lines and splices them inside the `dome.daily:captured` block itself — the model supplies lines, never placement — and rejects anything else as a self-correctable tool error (`writePage` on today's daily is admitted only when it amounts to the same in-block append). Entity-page appends remain plain. Targeted in-place edits elsewhere go through read-then-`writePage`. (`patchPage` / `routeTask` were considered and dropped — `writePage` + `appendToPage` cover the cases without a diff-apply tool.)
 
 **Default capability grant (`.dome/config.yaml`):**
 

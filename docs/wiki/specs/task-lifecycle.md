@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-03
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[v1]]"
 ---
@@ -22,6 +22,8 @@ Identity is anchored to the `^id`, not to a body-hash, because tasks **move**. A
 
 A **generated block** is a marker-delimited region of a markdown page that a processor owns and regenerates — `<!-- <owner>:<block>:start -->` … `<!-- <owner>:<block>:end -->`, where the owner is a dome namespace matching `dome(\.\w+)*` (e.g. `dome`, `dome.daily`, `dome.agent.brief`) and the block name is a slug. Everything outside the markers is human prose; no two processors write the same region — block ownership is disjoint, and the canonical who-writes-which-block-in-the-daily table is [[wiki/specs/daily-surface]] §"Block ownership".
 
+Generated-block bodies are excluded from task extraction with **one deliberate exception**: `dome.daily:captured` (the live capture landing zone) holds task *origins*, not projection copies, so its body stays inside extraction, stamping, normalization, and surfacing — see [[wiki/specs/daily-surface]] §"The `captured` block holds origins, not copies".
+
 The grammar is a core primitive at `src/core/generated-block.ts` — pure (string-only, no IO), the sibling of `src/core/block-anchor.ts` — and it is the **only sanctioned marker implementation**. No processor hand-rolls marker matching, splicing, or stripping; the [[wiki/linters/generated-block-splice-guard]] fence fails CI when a non-test source file constructs marker text without importing the primitive. The primitive carries the two defenses every splice needs:
 
 - **Line-anchored scanning.** A marker counts only when the entire trimmed line is the marker. Prose or fenced *mentions* of marker text, and marker text smuggled mid-line through model-derived content, never bound a block. The first line-anchored pair wins; duplicate pairs, unterminated starts, and orphan ends are reported as anomalies, never silently bound.
@@ -37,7 +39,7 @@ Three garden-phase, `patch.auto` processors maintain task lines. All three are d
 
 - **`dome.daily.stamp-block-id`** stamps a `^id` anchor onto each action-item line that lacks one. Stamping is deterministic and idempotent: an already-anchored line is left untouched, and a freshly stamped line gets a stable id. This is the keystone — once a line carries an anchor, the other processors can name it across moves.
 - **`dome.daily.reconcile-tasks`** propagates a *settled* state. When a daily's source-backed open-loop **copy** of a task is marked `[x]` (done) or `[-]` (dropped), reconcile writes that settled state back to the matching open task line in the named origin file (resolved from the copy's `(from [[origin]])` link). Matching is by normalized body, not by anchor — the generated copy carries no `^anchor` — so when the origin holds two open lines sharing a body the match is ambiguous and is **skipped** rather than guessed (carry-forward dedups surfaced copies by body, so the unambiguous case is the norm). It is **close-in-place**: it edits the origin's checkbox state and never deletes the line. This realizes "close in one place, close everywhere." It declares `inspection: all-readable-markdown` because the origin line may live in any readable markdown file, not just the changed one.
-- **`dome.daily.normalize-task-syntax`** performs cosmetic task-syntax normalization (checkbox case, spacing) and **preserves anchors** — normalization must not strip or move the trailing `^id`.
+- **`dome.daily.normalize-task-syntax`** performs cosmetic task-syntax normalization (checkbox case, spacing) and **preserves anchors** — normalization must not strip or move the trailing `^id`. It also carries the **captured-today heading repair** for *today's* daily only: duplicate `# Captured today`/`## Captured today` headings (a real pre-D3 vault wart) are merged into the single owned section with every task line and anchor preserved, emitting one `dome.daily.captured-heading-repair` info diagnostic; historical dailies are never touched ([[wiki/specs/daily-surface]] §"Captured-today heading repair"). Same hygiene class — canonicalizing the *shape* of task surfaces without changing task semantics — same triggers, same grant, so it lives here rather than in a fourth processor.
 
 All three are **garden** (not adoption) phase. The reason is the capability-failure surface. In the adoption phase a capability-denied auto-patch becomes a `severity: "block"` diagnostic that blocks the human's adoption — a cosmetic or convenience patch that cannot land would wedge the loop. In the garden phase the same denial degrades quietly (the patch is downgraded or skipped) without blocking the human's commit from being adopted. Task maintenance is convenience work; it must never gate the human. See [[wiki/specs/adoption]] §"The fixed-point adoption loop".
 
