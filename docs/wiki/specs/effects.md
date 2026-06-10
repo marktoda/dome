@@ -195,6 +195,9 @@ interface QuestionEffect {
     readonly recommendedAnswer?: string;     // optional source-preserving default
     readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed";
     readonly ownerNeededReason?: string;     // why this should reach the owner
+    readonly destination?: string;           // answer-handler round-trip: the page the question is about
+    readonly material?: string;              // answer-handler round-trip: the document that prompted it
+    readonly proposedSection?: string;       // answer-handler round-trip: proposed content (caller-capped)
   };
 }
 ```

@@ -244,6 +244,18 @@ export type QuestionMetadata = {
   readonly recommendedAnswer?: string;
   readonly automationPolicy?: QuestionAutomationPolicy;
   readonly ownerNeededReason?: string;
+  /**
+   * Round-trip context for answer handlers (question → answer-triggered
+   * processor): the destination page the question is about, the material
+   * document that prompted it, and the emitting processor's proposed content
+   * (caller-capped). Advisory for surfaces; load-bearing only for the
+   * emitting bundle's own answer handler (e.g. dome.agent.sweep →
+   * dome.agent.sweep-answer reads `proposedSection` to land an owner-approved
+   * integration deterministically).
+   */
+  readonly destination?: string;
+  readonly material?: string;
+  readonly proposedSection?: string;
 };
 
 /**
@@ -617,6 +629,9 @@ export const QuestionEffectSchema = z
           .enum(["agent-safe", "model-safe", "owner-needed"])
           .optional(),
         ownerNeededReason: z.string().min(1).optional(),
+        destination: z.string().min(1).optional(),
+        material: z.string().min(1).optional(),
+        proposedSection: z.string().min(1).optional(),
       })
       .strict()
       .optional(),

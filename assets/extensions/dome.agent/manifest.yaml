@@ -151,6 +151,41 @@ processors:
       modelCallTimeoutMs: 180000
     module: processors/brief.ts
 
+  - id: dome.agent.sweep
+    version: 0.1.0
+    phase: garden
+    triggers:
+      # 03:00 — between consolidate (02:00) and the brief (05:30), so the
+      # brief's "Integrated overnight" digest renders tonight's run.
+      - kind: schedule
+        cron: "0 3 * * *"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "inbox/processed/*.md"
+          - "index.md"
+          - "core.md"
+          - "sweep-ledger.md"
+      # Deliberately NARROWER than the read grant and matching the default
+      # sweep_targets globs — the broker enforces what the charter promises
+      # (each per-item agent run is narrower still: exactly one destination).
+      # sweep-tools.ts SWEEP_WRITABLE_PATHS mirrors this list, pinned by the
+      # grant-aware-tools manifest-sync test.
+      - kind: patch.auto
+        paths:
+          - "wiki/entities/**/*.md"
+          - "wiki/concepts/**/*.md"
+          - "sweep-ledger.md"
+      - kind: model.invoke
+        maxDailyCostUsd: 10
+      - kind: question.ask
+    execution:
+      class: llm
+      timeoutMs: 1800000
+      modelCallTimeoutMs: 180000
+    module: processors/sweep.ts
+
   # ----- Preference promotion (memory-quality M5) ----------------------------
   # docs/wiki/specs/preferences.md. Three deterministic processors — no model.
 

@@ -24,6 +24,7 @@ import {
   BRIEF_WRITABLE_PATHS,
   makeBriefTools,
 } from "../../../assets/extensions/dome.agent/lib/brief-tools";
+import { SWEEP_WRITABLE_PATHS } from "../../../assets/extensions/dome.agent/lib/sweep-tools";
 
 function freshState(): AgentRunState {
   return { edits: new Map(), questions: [] };
@@ -197,6 +198,12 @@ describe("writable-glob constants mirror manifest.yaml patch.auto grants", () =>
   test("brief", async () => {
     expect([...BRIEF_WRITABLE_PATHS].sort()).toEqual(
       [...(await manifestPatchAutoPaths("dome.agent.brief"))].sort(),
+    );
+  });
+
+  test("sweep", async () => {
+    expect([...SWEEP_WRITABLE_PATHS].sort()).toEqual(
+      [...(await manifestPatchAutoPaths("dome.agent.sweep"))].sort(),
     );
   });
 });
