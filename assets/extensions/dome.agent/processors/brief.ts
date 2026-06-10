@@ -22,6 +22,7 @@ import {
   questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
+import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -287,6 +288,30 @@ const brief = defineProcessorImplementation({
       heading: "Start Here",
       afterBlock: YESTERDAY_BLOCK,
     });
+
+    // Marker anomalies — a smuggled duplicate pair in the model's proposed
+    // content, a half-open pair hand-edited into the existing daily — are
+    // inert (the line-anchored splice and the body sanitizer already
+    // neutralized them) but should not be invisible: surface each as an
+    // info diagnostic. Scanning both the model content (the ATTEMPT) and
+    // the composed result (what persists) keeps both sides auditable;
+    // duplicates dedupe locally by message and at the diagnostics sink.
+    const briefBlocks = [YESTERDAY_BLOCK, MEETINGS_BLOCK, QUESTIONS_BLOCK].map(
+      (markers) => ({ owner: markers.owner, block: markers.block }),
+    );
+    const anomalyDiagnostics = new Map<string, Effect>();
+    for (const scanned of [modelContent, composed]) {
+      for (const diagnostic of generatedBlockAnomalyDiagnostics({
+        content: scanned,
+        path: todayPath,
+        code: "dome.agent.generated-block-anomaly",
+        blocks: briefBlocks,
+        sourceRef: (path, range) => ctx.sourceRef(path, range),
+      })) {
+        anomalyDiagnostics.set(diagnostic.message, diagnostic);
+      }
+    }
+    effects.push(...anomalyDiagnostics.values());
 
     if (existing === null || composed !== existing || signalsAppend !== null) {
       effects.push(

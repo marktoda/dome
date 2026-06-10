@@ -17,6 +17,7 @@ import {
   generatedBlockMarkers,
   replaceGeneratedBlock,
 } from "../../../../src/core/generated-block";
+import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -51,9 +52,24 @@ const simplifyIndexes = defineProcessorImplementation({
 
     const changes: FileChangeInput[] = [];
     const sourceRefs: SourceRef[] = [];
+    const diagnostics: Effect[] = [];
     for (const indexPath of indexPaths) {
       const indexContent = await ctx.snapshot.readFile(indexPath);
       if (indexContent === null) continue;
+
+      // Marker anomalies on the (human-editable) index page — duplicate
+      // pairs, half-open markers — make `upsertIndexBlock` refuse or splice
+      // around them; surface each as an info diagnostic so the damage is
+      // visible instead of a silent skip (dedup at the diagnostics sink).
+      diagnostics.push(
+        ...generatedBlockAnomalyDiagnostics({
+          content: indexContent,
+          path: indexPath,
+          code: "dome.markdown.generated-block-anomaly",
+          blocks: [{ owner: INDEX_BLOCK_OWNER, block: INDEX_BLOCK_NAME }],
+          sourceRef: (path, range) => ctx.sourceRef(path, range),
+        }),
+      );
 
       const children = await directChildrenForIndex(ctx, markdownPaths, indexPath);
       if (children.length < MIN_CHILDREN || children.length > MAX_CHILDREN) {
@@ -73,8 +89,9 @@ const simplifyIndexes = defineProcessorImplementation({
       );
     }
 
-    if (changes.length === 0) return Object.freeze([]);
+    if (changes.length === 0) return Object.freeze(diagnostics);
     return [
+      ...diagnostics,
       patchEffect({
         mode: "auto",
         changes,

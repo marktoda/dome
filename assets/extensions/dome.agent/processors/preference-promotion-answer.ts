@@ -27,6 +27,7 @@ import {
   type Effect,
   type QuestionEffect,
 } from "../../../../src/core/effect";
+import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -37,6 +38,7 @@ import {
   appendSignalLine,
   collectPreferenceTopics,
   PREFERENCE_SIGNALS_PATH,
+  PROMOTED_PREFERENCES_BLOCK,
   promotionTargetFromKey,
   rejectionTombstoneLine,
   splicePromotedPreference,
@@ -101,6 +103,21 @@ const preferencePromotionAnswer = defineProcessorImplementation({
 
     // promote — re-derive the candidate from the current snapshot and verify
     // the question still describes it.
+    //
+    // Marker anomalies in core.md (a hand-duplicated promoted-preferences
+    // pair, a half-open marker) are ignored by the line-anchored splice but
+    // surfaced as info diagnostics so the damage is visible (dedup at the
+    // diagnostics sink keeps retries quiet).
+    const anomalyDiagnostics: ReadonlyArray<Effect> =
+      coreContent === null
+        ? Object.freeze([])
+        : generatedBlockAnomalyDiagnostics({
+            content: coreContent,
+            path: corePath,
+            code: "dome.agent.generated-block-anomaly",
+            blocks: [PROMOTED_PREFERENCES_BLOCK],
+            sourceRef: (path, range) => ctx.sourceRef(path, range),
+          });
     const collection = collectPreferenceTopics({ signalsContent, coreContent });
     const topic = collection.topics.find((t) => t.topic === target.topic);
     if (
@@ -109,6 +126,7 @@ const preferencePromotionAnswer = defineProcessorImplementation({
       topic.ruleHash !== target.ruleHash
     ) {
       return [
+        ...anomalyDiagnostics,
         diagnosticEffect({
           severity: "info",
           code: "dome.agent.preference-promotion-answer.stale-question",
@@ -122,7 +140,7 @@ const preferencePromotionAnswer = defineProcessorImplementation({
     }
     if (topic.state === "rejected") {
       // An owner rejection recorded after the question was asked wins.
-      return Object.freeze([]);
+      return Object.freeze([...anomalyDiagnostics]);
     }
 
     const next = splicePromotedPreference({
@@ -133,9 +151,10 @@ const preferencePromotionAnswer = defineProcessorImplementation({
     });
     // Retry-idempotent: re-promoting an identical entry is a no-op.
     if (coreContent !== null && next === coreContent) {
-      return Object.freeze([]);
+      return Object.freeze([...anomalyDiagnostics]);
     }
     return [
+      ...anomalyDiagnostics,
       patchEffect({
         mode: "auto",
         changes: [{ kind: "write", path: corePath, content: next }],

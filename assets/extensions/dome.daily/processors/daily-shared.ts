@@ -39,6 +39,21 @@ export const START_CONTEXT_END = START_CONTEXT_MARKERS.end;
 export const OPEN_LOOPS_START = OPEN_LOOPS_MARKERS.start;
 export const OPEN_LOOPS_END = OPEN_LOOPS_MARKERS.end;
 
+/**
+ * The dome.daily generated blocks as `(owner, block)` anomaly-scan targets —
+ * what splice call sites feed `generatedBlockAnomalyDiagnostics` so smuggled
+ * duplicate pairs / half-open markers in a daily note surface as info
+ * diagnostics instead of staying invisible.
+ */
+export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
+  readonly owner: string;
+  readonly block: string;
+}> = Object.freeze([
+  Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+]);
+
 export type DailyDate = {
   readonly yyyy: string;
   readonly mm: string;

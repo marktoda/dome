@@ -53,6 +53,20 @@ const PROMOTED_BLOCK_MARKERS = generatedBlockMarkers(
 export const PROMOTED_PREFERENCES_START = PROMOTED_BLOCK_MARKERS.start;
 export const PROMOTED_PREFERENCES_END = PROMOTED_BLOCK_MARKERS.end;
 
+/**
+ * The promoted-preferences block as an `(owner, block)` anomaly-scan target —
+ * what the answer handler feeds `generatedBlockAnomalyDiagnostics` so marker
+ * damage in core.md (duplicate pairs, half-open markers) surfaces as an info
+ * diagnostic at splice time instead of staying invisible.
+ */
+export const PROMOTED_PREFERENCES_BLOCK: {
+  readonly owner: string;
+  readonly block: string;
+} = Object.freeze({
+  owner: PROMOTED_BLOCK_OWNER,
+  block: PROMOTED_BLOCK_NAME,
+});
+
 /** The rule text that marks a `-` line as an owner rejection tombstone. */
 export const OWNER_REJECTION_RULE = "rejected by owner";
 

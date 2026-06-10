@@ -362,6 +362,54 @@ describe("dome.agent.preference-promotion-answer (the single auto-writer)", () =
     expect(retry.filter((e) => e.kind === "patch")).toEqual([]);
   });
 
+  test("marker anomalies in core.md surface as info diagnostics alongside the splice", async () => {
+    // A hand-duplicated promoted-preferences pair: the line-anchored splice
+    // binds only the first pair, but the anomaly must be visible — one info
+    // diagnostic per anomalous marker line, anchored at core.md.
+    const core = [
+      "# Core memory",
+      "",
+      "## Standing preferences",
+      "",
+      PROMOTED_PREFERENCES_START,
+      "- naming:: kebab-case slugs (confidence 0.52)",
+      PROMOTED_PREFERENCES_END,
+      "",
+      PROMOTED_PREFERENCES_START,
+      "- smuggled:: duplicate pair (confidence 0.99)",
+      PROMOTED_PREFERENCES_END,
+      "",
+    ].join("\n");
+    const effects = await run(preferencePromotionAnswer, {
+      files: { "preferences/signals.md": THREE_PLUS, "core.md": core },
+      input: envelope("promote"),
+    });
+    const anomalies = effects.filter(
+      (e): e is DiagnosticEffect =>
+        e.kind === "diagnostic" &&
+        e.code === "dome.agent.generated-block-anomaly",
+    );
+    expect(anomalies).toHaveLength(2);
+    for (const diagnostic of anomalies) {
+      expect(diagnostic.severity).toBe("info");
+      expect(diagnostic.message).toContain("dome.agent:promoted-preferences");
+      expect(diagnostic.message).toContain("core.md");
+      expect(diagnostic.sourceRefs.map((ref) => String(ref.path))).toEqual([
+        "core.md",
+      ]);
+    }
+    expect(anomalies[0]?.message).toContain("extra-start");
+    expect(anomalies[0]?.message).toContain("line 9");
+    expect(anomalies[1]?.message).toContain("extra-end");
+    expect(anomalies[1]?.message).toContain("line 11");
+    // Info only — the promote still lands its splice on the first pair.
+    const patches = effects.filter((e): e is PatchEffect => e.kind === "patch");
+    expect(patches).toHaveLength(1);
+    const change = patches[0]?.changes[0];
+    const content = change?.kind === "write" ? change.content : "";
+    expect(content).toContain(`- filing:: ${CANDIDATE_RULE} (confidence 0.44)`);
+  });
+
   test("a stale question (rule hash mismatch) yields an info diagnostic, no write", async () => {
     const effects = await run(preferencePromotionAnswer, {
       files: {
