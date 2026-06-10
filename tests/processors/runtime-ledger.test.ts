@@ -555,6 +555,51 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(skipped.finishedAt).not.toBeNull();
   });
 
+  test("consecutive failures across DIFFERENT changed-path sets still quarantine", async () => {
+    // The quarantine key hashes the trigger declaration, not the matched
+    // signal events. When matched paths were part of the key, a signal-
+    // driven processor got a fresh key per commit and its failure counter
+    // never reached the threshold — quarantine effectively applied only to
+    // schedule triggers.
+    const ledger = await openLedger();
+    let invocations = 0;
+    const p = makeFixtureProcessor({
+      id: "test.ledger.quarantine-varying-paths",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      run: async () => {
+        invocations += 1;
+        throw transientProcessorError("retryable outage");
+      },
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    const paths = ["wiki/a.md", "wiki/b.md", "wiki/c.md", "wiki/d.md"];
+    for (const path of paths) {
+      await rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: [path],
+        signals: [Object.freeze({ signal: "file.created" as const, path })],
+        proposal,
+      });
+    }
+
+    // Three failures quarantine the trigger; the fourth (different path
+    // again) is skipped without invoking the processor.
+    expect(invocations).toBe(3);
+    const rows = queryRuns(ledger, {
+      processorId: "test.ledger.quarantine-varying-paths",
+    });
+    expect(rows.length).toBe(4);
+    expect(rows.filter((row) => row.status === "failed").length).toBe(3);
+    const skipped = rows.find((row) => row.status === "skipped");
+    if (skipped === undefined) throw new Error("expected skipped row");
+    expect(JSON.parse(skipped.error ?? "{}").code).toBe(
+      "processor.quarantined",
+    );
+  });
+
   test("model cost and structured model failure are persisted on failed runs", async () => {
     const ledger = await openLedger();
     const cap: Capability = { kind: "model.invoke" };

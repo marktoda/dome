@@ -216,16 +216,21 @@ export function processorExecutionKey(input: {
   });
 }
 
+/**
+ * The quarantine key hashes the TRIGGER DECLARATIONS only — never the
+ * matched signal events. Including matched paths (the previous behavior)
+ * gave a signal-driven processor a fresh key on every commit with a
+ * different changed-path set, so its consecutive-failure counter never
+ * reached the quarantine threshold and the "three consecutive retryable
+ * failures" protection effectively applied only to schedule triggers.
+ * The run LEDGER still records the full match payload (the runtime keeps
+ * its own trigger-payload serialization for run rows); only the failure-
+ * accounting key is declaration-scoped.
+ */
 function triggerPayloadOf(
   matches: ReadonlyArray<TriggerMatch>,
-): ReadonlyArray<{
-  readonly trigger: TriggerMatch["trigger"];
-  readonly matchedSignals: TriggerMatch["matchedSignals"];
-}> {
-  return matches.map((m) => ({
-    trigger: m.trigger,
-    matchedSignals: m.matchedSignals,
-  }));
+): ReadonlyArray<TriggerMatch["trigger"]> {
+  return matches.map((m) => m.trigger);
 }
 
 function keyId(key: ProcessorExecutionKey): string {
