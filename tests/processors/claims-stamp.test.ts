@@ -20,7 +20,8 @@ describe("stampClaimAnchors", () => {
 
   test("identity is keyed by the key, not the value: a value edit keeps the anchor", () => {
     const before = stampClaimAnchors({ path: PATH, content: "- **Pod:** AMM Growth\n" })!;
-    const anchor = parseBlockAnchor(before.split("\n")[0]!)!.id;
+    const anchor = parseBlockAnchor(before.split("\n")[0]!)?.id;
+    expect(anchor).toBeDefined();
     // Supersession: edit the value in place, anchor untouched, nothing re-stamps.
     const superseded = before.replace("AMM Growth", "Protocol Growth");
     expect(stampClaimAnchors({ path: PATH, content: superseded })).toBeNull();
@@ -50,6 +51,7 @@ describe("stampClaimAnchors", () => {
     ].join("\n");
     const stamped = stampClaimAnchors({ path: PATH, content })!;
     const secondId = parseBlockAnchor(stamped.split("\n")[1]!)?.id;
+    expect(secondId).toBeDefined();
     expect(secondId).toBe(claimAnchorId({ path: PATH, key: "Status", occurrence: 1 }));
   });
 
