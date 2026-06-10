@@ -20,6 +20,12 @@ sources:
 
 # Meaning consolidation — the claims substrate and the nightly sweeper
 
+> **As-built note (2026-06-09):** the shipped claims substrate deviates from
+> this doc in three details — anchors are `^c<hash>` (no hyphen), the grammar
+> applies to `wiki/**/*.md` + `notes/*.md` (not "any page outside `raw/`"),
+> and the stamper runs in **garden** phase per the `dome.daily.stamp-block-id`
+> precedent. [[wiki/specs/claims]] is the normative spec.
+
 Approved design from the 2026-06-09 brainstorm session. This is the first
 post-wedge work item: aim the nightly loop at *meaning*, not hygiene. It
 follows the 2026-06-09 research pass (capability inventory, prior-research
