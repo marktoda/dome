@@ -197,4 +197,23 @@ describe("section-granular reads", () => {
     // The breadcrumb prefix is stripped back out of the derived snippet.
     expect(results[0]?.snippet).toBe("Intro prose about the launch.");
   });
+
+  it("snippets carry NO highlight markers — wikilink and checkbox brackets survive verbatim", () => {
+    // FTS snippet() used '['/']' highlight markers, indistinguishable from
+    // real markdown syntax; the downstream strip pass then deleted every
+    // bracket, destroying [[wikilinks]] and [ ] checkboxes in rendered
+    // query/export-context snippets.
+    apply(sectionUpsert({
+      sectionId: "tasks",
+      breadcrumb: "Project Alpha › Tasks",
+      body: "- [ ] #task review the launch with [[wiki/entities/maya]]",
+    }));
+    const results = searchDocuments(db, { query: "launch review" });
+    expect(results).toHaveLength(1);
+    const snippet = results[0]?.snippet ?? "";
+    expect(snippet).toContain("[[wiki/entities/maya]]");
+    expect(snippet).toContain("- [ ]");
+    // And the matched term itself is not wrapped in marker brackets.
+    expect(snippet).not.toContain("[launch]");
+  });
 });

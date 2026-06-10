@@ -390,7 +390,9 @@ function contextEntryFromMatch(
   questions: ReadonlyArray<SearchQuestionItem>,
   ranking: SearchRanking,
 ): ContextEntry {
-  const snippet = stripFtsMarkers(match.snippet);
+  // Snippets arrive marker-free from the projection (the FTS snippet() call
+  // uses empty highlight markers), so wikilink/checkbox brackets survive.
+  const snippet = match.snippet;
   const allContextFacts = Object.freeze(
     facts
       .map((fact) =>
@@ -1040,10 +1042,6 @@ function formatSourceRef(ref: SourceRef): string {
     ? ""
     : `:${ref.range.startLine}-${ref.range.endLine}`;
   return `${ref.path}${suffix} @ ${ref.commit.slice(0, 7)}`;
-}
-
-function stripFtsMarkers(snippet: string): string {
-  return snippet.replace(/\[/g, "").replace(/\]/g, "");
 }
 
 function compactText(text: string): string {

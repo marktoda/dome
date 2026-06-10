@@ -111,7 +111,12 @@ export function searchDocuments(
     .query<SearchRow, Array<string | number>>(
       "SELECT "
         + "path, section_id, breadcrumb, category, type, title, "
-        + "snippet(fts_documents, -1, '[', ']', '...', 18) AS snippet, "
+        // No match-highlight markers: snippets are rendered verbatim into
+        // query/export-context output, and bracket markers were
+        // indistinguishable from real markdown ([[wikilinks]], [ ] tasks) —
+        // the old downstream "strip the markers" pass deleted every [ and ]
+        // from the snippet, destroying that syntax.
+        + "snippet(fts_documents, -1, '', '', '...', 18) AS snippet, "
         + "bm25(fts_documents) AS rank, "
         + "source_refs "
         + "FROM fts_documents "
