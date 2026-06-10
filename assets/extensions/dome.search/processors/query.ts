@@ -114,9 +114,15 @@ const searchQuery = defineProcessorImplementation({
     });
     const fusionByPath = fuseSearchChannelsRrf({ ftsPaths, expansion });
     const recalledPathSet = new Set(recalledMatches.map((match) => match.path));
+    // Expansion candidates must exclude pages already present as FTS hits —
+    // a hit beyond the recall-prioritization cut that is also linked from a
+    // top hit would otherwise enter `candidateMatches` twice and render as a
+    // duplicate result row.
     const expansionPaths = expansion
       .map((entry) => entry.path)
-      .filter((path) => !recalledPathSet.has(path))
+      .filter(
+        (path) => !recalledPathSet.has(path) && !searchMatchPaths.has(path),
+      )
       .slice(0, MAX_LINK_EXPANSION_PATHS);
     const expansionMatches = filterDailyIntentSearchMatches({
       matches: ctx.projection

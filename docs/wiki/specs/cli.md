@@ -954,6 +954,10 @@ rank fusion (k=60, link channel at half weight). The fused contribution lands
 as `fusion`-kind ranking signals ("text match", "linked from matches"), so a
 page that never matched FTS can enter the candidate set through links but
 cannot outrank a direct strong hit for an exact-term query on fusion alone.
+The three candidate channels (FTS, projection recall, link expansion) are
+disjoint by construction — a page already present as an FTS or recall
+candidate is excluded from the expansion channel's candidate list, so no page
+can render as a duplicate result row.
 Daily-intent queries such as "today", "daily", "yesterday", "tomorrow", or an
 explicit `YYYY-MM-DD` also recall existing date-named markdown files for that
 day from the adopted snapshot. This makes the current daily note available as a
