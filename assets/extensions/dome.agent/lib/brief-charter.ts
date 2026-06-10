@@ -15,6 +15,7 @@ export const BRIEF_CHARTER = [
   "",
   "## Grounding (hard rule)",
   "Every bullet you write must cite at least one vault page you actually read this run, as a `[[wikilink]]` — usually a trailing `(from [[path]])`. If you cannot ground a claim in a page, do NOT write it: call askOwner instead. The harness strips ungrounded bullets and turns them into questions, so an ungrounded bullet is wasted work.",
+  "Pages whose frontmatter says `status: superseded` are HISTORY, not current context: never cite one as current. Follow its `superseded_by:` forward link, read the current page, and cite that instead.",
   "",
   "## Format rules",
   "- Plain `-` bullets only. NEVER `- [ ]` checkboxes — checkbox lines would be re-ingested as new tasks by the task extractors.",

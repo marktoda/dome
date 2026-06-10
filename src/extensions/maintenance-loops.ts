@@ -293,6 +293,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       evidence: [
         { kind: "path", pattern: "**/*.md" },
         { kind: "projection", name: "facts:dome.graph.*" },
+        { kind: "projection", name: "facts:dome.page.*" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "questions" },
       ],
@@ -303,6 +304,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.simplify-indexes",
         "dome.markdown.normalize-frontmatter",
         "dome.markdown.lint-frontmatter",
+        "dome.markdown.page-status",
+        "dome.markdown.lint-supersession",
         "dome.markdown.broken-images",
         "dome.markdown.duplicate-detection",
         "dome.markdown.duplicate-detection-answer",
@@ -328,7 +331,8 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
-        "Duplicate consolidation must preserve source material before deletion.",
+        "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
+        "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
       ],
     }),
     freezeLoop({

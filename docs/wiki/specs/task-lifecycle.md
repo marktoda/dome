@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-03
-updated: 2026-06-03
+updated: 2026-06-09
 sources:
   - "[[v1]]"
 ---
@@ -45,6 +45,10 @@ A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: 
 The integrity warden reads `wiki/**/*.md`, asks the model to find knowledge-integrity problems (contradictions, stale claims, dangling references), and surfaces each finding as a **`QuestionEffect`** — never a fact and never a knowledge patch. Its capabilities are `read` + `model.invoke` + `question.ask`; it deliberately declares neither `patch.auto` over knowledge nor `graph.write`.
 
 This is structurally required by [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]: a garden `model.invoke` processor is **not** re-run during projection rebuild (model calls are excluded from rebuild), so any `FactEffect` it emitted would silently vanish on `dome rebuild`. The warden's judgment is transient; it becomes durable only through the **resolution-is-durable** contract: a human or agent answers the question via `dome resolve`, the answer is recorded in `answers.db`, and rebuild rehydrates that answer. The companion **`dome.warden.integrity-answer`** handler (an `answer`-triggered garden processor, `read` only) reacts to the resolved answer. Model output proposes; the human/agent resolution disposes, and only the disposition is durable.
+
+### Stale-claim flags resolve via supersession
+
+When the integrity warden flags a **stale claim** (a page asserting something the vault has since outgrown), the durable resolution is usually not a rewrite — it is the supersession status flip from [[wiki/specs/page-schema]] §"Supersession (ADR pattern)": set `status: superseded` + `superseded_by: "[[<current page>]]"` on the stale page (or move the stale portion under a `## Superseded` section on a mixed page). The flip lives in markdown, so it survives rebuild without violating [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] — the warden's transient judgment becomes durable through an ordinary resolved question whose disposition is a one-line frontmatter change, and lint + ranking take it from there deterministically.
 
 ### No-op without a model
 

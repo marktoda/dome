@@ -966,7 +966,11 @@ unless they are the target daily. This prevents old daily notes that merely say
 It then ranks the combined candidate set before slicing to `--limit` with
 source-backed signals: page type, graph facts, open-loop facts, decisions,
 unresolved questions, active diagnostics, projection recall signals, and the
-RRF fusion signals described above. The
+RRF fusion signals described above. Pages whose `dome.page.status` fact says
+`superseded` (per [[wiki/specs/page-schema]] §"Supersession (ADR pattern)")
+have their composite score multiplied by ×0.3 and carry an explainable
+`superseded`-kind signal ("superseded by <forward target>") — downranked,
+never filtered, so superseded pages stay findable for history questions. The
 legacy `rank` field remains the raw FTS rank for FTS matches; recalled
 documents use a deliberately weak FTS rank and are promoted only by recall and
 related-state signals. After ranking, a recency decay pass multiplies the

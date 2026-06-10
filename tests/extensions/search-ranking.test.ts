@@ -240,6 +240,96 @@ describe("dome.search link expansion + RRF fusion", () => {
   });
 });
 
+describe("dome.search supersession downrank", () => {
+  test("superseded pages are multiplicatively downranked x0.3 with an explainable signal", () => {
+    const base = rankSearchCandidate({
+      match: match({ path: "wiki/concepts/old.md", rank: 2, type: "concept" }),
+      facts: [fact("dome.daily.open_task")],
+      diagnostics: [],
+      questions: [],
+    });
+    const superseded = rankSearchCandidate({
+      match: match({ path: "wiki/concepts/old.md", rank: 2, type: "concept" }),
+      facts: [
+        fact("dome.daily.open_task"),
+        statusFact("superseded"),
+        forwardFact("wiki/concepts/new"),
+      ],
+      diagnostics: [],
+      questions: [],
+    });
+
+    expect(superseded.score).toBeCloseTo(base.score * 0.3, 1);
+    expect(superseded.reasons).toContain("superseded by wiki/concepts/new");
+    const signal = superseded.signals.find((s) => s.kind === "superseded");
+    expect(signal?.label).toBe("superseded by wiki/concepts/new");
+    expect(signal?.weight).toBeLessThan(0);
+    // Score stays the sum of its signals.
+    expect(superseded.score).toBeCloseTo(
+      superseded.signals.reduce((sum, s) => sum + s.weight, 0),
+      1,
+    );
+  });
+
+  test("a superseded page without a forward target still explains itself", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/concepts/old.md", rank: 2, type: "concept" }),
+      facts: [statusFact("superseded")],
+      diagnostics: [],
+      questions: [],
+    });
+    expect(ranking.reasons).toContain("superseded");
+    expect(ranking.signals.some((s) => s.kind === "superseded")).toBe(true);
+  });
+
+  test("non-superseded status values do not downrank", () => {
+    const active = rankSearchCandidate({
+      match: match({ path: "wiki/entities/danny.md", rank: 2, type: "person" }),
+      facts: [statusFact("active")],
+      diagnostics: [],
+      questions: [],
+    });
+    const plain = rankSearchCandidate({
+      match: match({ path: "wiki/entities/danny.md", rank: 2, type: "person" }),
+      facts: [],
+      diagnostics: [],
+      questions: [],
+    });
+    expect(active.score).toBe(plain.score);
+    expect(active.signals.some((s) => s.kind === "superseded")).toBe(false);
+  });
+
+  test("downranked, never filtered: a superseded page still ranks and sorts", () => {
+    const supersededEntry = {
+      path: "wiki/concepts/old.md",
+      ranking: rankSearchCandidate({
+        match: match({ path: "wiki/concepts/old.md", rank: 1, type: "concept" }),
+        facts: [statusFact("superseded"), forwardFact("wiki/concepts/new")],
+        diagnostics: [],
+        questions: [],
+        fusion: { ftsWeight: 9.84 },
+      }),
+    };
+    const liveEntry = {
+      path: "wiki/concepts/new.md",
+      ranking: rankSearchCandidate({
+        match: match({ path: "wiki/concepts/new.md", rank: 2, type: "concept" }),
+        facts: [],
+        diagnostics: [],
+        questions: [],
+        fusion: { ftsWeight: 9.68 },
+      }),
+    };
+    const sorted = [supersededEntry, liveEntry].sort(
+      compareRankedSearchEntries,
+    );
+    // The live page wins the top slot, but the superseded page keeps a
+    // positive score and stays in the candidate list.
+    expect(sorted[0]?.path).toBe("wiki/concepts/new.md");
+    expect(supersededEntry.ranking.score).toBeGreaterThan(0);
+  });
+});
+
 describe("dome.search recency decay", () => {
   const NOW = new Date("2026-06-09T12:00:00.000Z");
 
@@ -391,4 +481,24 @@ function match(input: {
 
 function fact(predicate: string): Pick<FactEffect, "predicate"> {
   return Object.freeze({ predicate });
+}
+
+function statusFact(value: string): {
+  readonly predicate: string;
+  readonly object: { readonly kind: "string"; readonly value: string };
+} {
+  return Object.freeze({
+    predicate: "dome.page.status",
+    object: { kind: "string" as const, value },
+  });
+}
+
+function forwardFact(target: string): {
+  readonly predicate: string;
+  readonly object: { readonly kind: "string"; readonly value: string };
+} {
+  return Object.freeze({
+    predicate: "dome.page.superseded_by",
+    object: { kind: "string" as const, value: target },
+  });
 }

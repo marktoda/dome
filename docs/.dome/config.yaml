@@ -20,6 +20,8 @@ extensions:
         - "raw/**"
       patch.auto:
         - "wiki/**/*.md"
+      graph.write:
+        - "dome.page.*"
       question.ask: true
     processors:
       dome.markdown.validate-wikilinks:
