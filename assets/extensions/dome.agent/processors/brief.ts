@@ -304,7 +304,10 @@ const brief = defineProcessorImplementation({
                 ]
               : []),
           ],
-          reason: `dome.agent: compose morning brief into ${todayPath}`,
+          reason:
+            signalsAppend !== null
+              ? `dome.agent: compose morning brief into ${todayPath} + append preference signals to ${PREFERENCE_SIGNALS_PATH}`
+              : `dome.agent: compose morning brief into ${todayPath}`,
           sourceRefs,
         }),
       );

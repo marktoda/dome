@@ -405,6 +405,11 @@ describe("dome.agent.brief", () => {
     expect(signals?.kind === "write" ? signals.content : "").toStartWith(
       before.trimEnd(),
     );
+    // The patch reason names BOTH writes — a reviewer reading the engine
+    // commit must see that the signals page rode along.
+    expect(patch?.reason).toBe(
+      `dome.agent: compose morning brief into ${TODAY_PATH} + append preference signals to preferences/signals.md`,
+    );
     expect(
       effects.some(
         (e) =>
