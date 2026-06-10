@@ -75,7 +75,7 @@ With the mitigation: sync refuses. User resolves conflict, commits, runs sync ag
 **Enforcement points:**
 
 - `src/cli/commands/sync.ts` and `src/cli/commands/serve.ts` refuse detached HEAD via the compiler-host drift boundary.
-- `src/engine/adopt.ts` also produces an adoption diagnostic for detached HEAD.
+- `src/engine/core/adopt.ts` also produces an adoption diagnostic for detached HEAD.
 - A future `src/git/dirty-state.ts` should centralize merge/rebase/cherry-pick detection and be reused by `sync`, `serve`, and any apply-style CLI command.
 
 If another consumer adopts this guard (e.g., a future `dome migrate --apply`), update this enforcement list to name the caller; the predicate should stay shared.

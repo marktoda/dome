@@ -41,7 +41,7 @@ fences are current v1 behavior.
   still use `defineProcessor(...)`. In both cases `run` is frozen after
   definition, while manifest metadata remains the reviewable source of truth.
 - **`run` returns `Promise<Effect[]>`.** The Effect union is closed at eleven
-  kinds and `src/engine/apply-effect.ts` exhaustively routes them.
+  kinds and `src/engine/core/apply-effect.ts` exhaustively routes them.
 - **Effect schemas validate at the executor boundary.** Invalid processor
   output becomes a nominal processor failure/diagnostic rather than reaching
   the router.

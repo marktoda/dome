@@ -74,7 +74,7 @@ embed envelope may reject it with a non-zero exit; like `probe-unsupported`,
 that means "alive, no dense channel" — never a doctor failure.
 
 The processor-facing handle mirrors `ModelProvider` / `ModelStepProvider` in
-`src/engine/model-invoke.ts`:
+`src/engine/core/model-invoke.ts`:
 
 ```ts
 // names indicative

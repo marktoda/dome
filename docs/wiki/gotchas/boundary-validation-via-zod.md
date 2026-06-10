@@ -22,7 +22,7 @@ The v1 persistence boundaries that need Zod schemas:
 - **`src/extensions/loader.ts`** — parses bundle `manifest.yaml`; consumes `BundleManifestSchema` defining processors[], page-types, capability declarations.
 - **`src/vault.ts`** (or `src/vault-config.ts`) — reads `<vault>/.dome/config.yaml`; consumes `VaultConfigSchema` defining invariants enable/disable, extension grants, engine knobs.
 - **`src/vault.ts`** (page-types loader) — reads `<vault>/.dome/page-types.yaml`; consumes `PageTypesConfigSchema`.
-- **`src/engine/quarantine-store.ts`** — reads `<vault>/.dome/state/quarantined.json`; consumes colocated Zod schemas for the store file and entries, then maps `quarantinedAt` into `Date`.
+- **`src/engine/operational/quarantine-store.ts`** — reads `<vault>/.dome/state/quarantined.json`; consumes colocated Zod schemas for the store file and entries, then maps `quarantinedAt` into `Date`.
 - **`src/projections/db.ts`** — reads SQLite rows; column-type validation happens through Bun.sqlite's typed bindings (no Zod needed at this layer), but schema-hash mismatches trigger the auto-rebuild per [[wiki/gotchas/projection-schema-skew]].
 
 **Structural mitigation:** Every loader at a YAML or JSON persistence boundary defines a Zod schema and consumes `schema.safeParse(parsed)` rather than casting. The loader returns `Result<T, ValidationError>` consistent with the engine's error-handling surface.

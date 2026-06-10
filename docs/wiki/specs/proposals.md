@@ -70,7 +70,7 @@ A garden-phase processor that emits a `PatchEffect` (per [[wiki/specs/effects]] 
 
 ```text
 engine routes PatchEffect{patch, reason, sourceRefs}
-  → broker enforces capability (via enforceCapability in src/engine/capability-broker.ts)
+  → broker enforces capability (via enforceCapability in src/engine/core/capability-broker.ts)
   → if allowed: applies patch to the adopted tree via applyPatchToCandidate
                 producing a new commit object (no ref yet)
   → constructs Proposal{
@@ -102,7 +102,7 @@ now") becomes operationally important — see
 **Cascade.** Garden-emitted sub-Proposals fire their own garden phase
 when adopted, which may emit more PatchEffects, which spawn more sub-
 Proposals. A `DEFAULT_MAX_CASCADE_DEPTH` cap (default 10, in
-`src/engine/garden.ts`) prevents pathological recursion; cap-hit emits
+`src/engine/garden/garden.ts`) prevents pathological recursion; cap-hit emits
 a `garden.cascade-cap` DiagnosticEffect (see
 [[wiki/gotchas/garden-cascade-cap]]).
 

@@ -148,7 +148,7 @@ Real pre-D3 vaults accumulated duplicate `# Captured today` / `## Captured today
 
 `dome.daily:close` is the evening act's machine half: a deterministic scaffold the human confirms by deleting, not by writing. `dome.daily.close-scaffold` (cron `30 21 * * *`, schedule-only — the choreography table records why there is no file trigger) writes it under `## Done` in TODAY's daily. **When today's daily does not exist the run is a clean no-op** — the close needs a day to close; it never creates the skeleton.
 
-**The evening window gate.** The processor fires only when `firedAt` falls in the evening window ([21:30, midnight) vault-local — the start matches the cron). The scheduler collapses missed fires to one immediate fire (`src/engine/scheduler.ts`, "misfires collapse to one fire now"), so without the gate the first tick after enabling the bundle — or a host that slept through the evening and woke the next morning — would scaffold a premature close at whatever time it happens to be, freezing a wrong snapshot the presence gate then protects all day. A host down at 21:30 that returns later the same evening still closes; one that returns the next morning skips yesterday's close entirely, which the absent-close fallback row covers.
+**The evening window gate.** The processor fires only when `firedAt` falls in the evening window ([21:30, midnight) vault-local — the start matches the cron). The scheduler collapses missed fires to one immediate fire (`src/engine/operational/scheduler.ts`, "misfires collapse to one fire now"), so without the gate the first tick after enabling the bundle — or a host that slept through the evening and woke the next morning — would scaffold a premature close at whatever time it happens to be, freezing a wrong snapshot the presence gate then protects all day. A host down at 21:30 that returns later the same evening still closes; one that returns the next morning skips yesterday's close entirely, which the absent-close fallback row covers.
 
 **Body shape** (deterministic, rendered by `closeScaffoldSection` in `daily-shared.ts`):
 
@@ -212,7 +212,7 @@ Each rung is normative behavior, not best-effort. The edition never half-renders
 
 ## Doctor choreography findings
 
-"Did my morning happen" is answerable without reading the daily. Two read-only findings in `src/engine/health.ts` (probe-only, idempotent, derived from the run ledger + the working tree — never an `error`, because the edition's absence is degradation, not corruption):
+"Did my morning happen" is answerable without reading the daily. Two read-only findings in `src/engine/host/health.ts` (probe-only, idempotent, derived from the run ledger + the working tree — never an `error`, because the edition's absence is degradation, not corruption):
 
 | Code | Severity | Fires when | Recovery points at |
 |---|---|---|---|

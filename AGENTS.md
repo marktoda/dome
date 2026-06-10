@@ -35,7 +35,7 @@ By substrate type:
 - **The four-concept core is sealed.** Vault, Proposal, Processor, Effect. There is no Tool, no Hook, no Workflow as a separate primitive — those concepts dissolve into processors emitting effects. See [[docs/wiki/specs/sdk-surface]] §"Outputs the SDK does not have."
 - **Proposals are the only engine write path.** No `vault.tools.X(...)`, no privileged-writer escape hatch, and no public `submitProposal` API. Human/agent writes are ordinary git commits; the daemon constructs Proposals from branch drift, and garden PatchEffects construct internal sub-Proposals. Pinned by [[docs/wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] and [[docs/wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 - **Effects are the only processor output.** A processor returns `Promise<Effect[]>` from its `run(ctx)` body. No direct mutation surface. Pinned by [[docs/wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]].
-- **Every effect is capability-checked.** The broker at `src/engine/apply-effect.ts` is the single chokepoint. Pinned by [[docs/wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
+- **Every effect is capability-checked.** The broker (`src/engine/core/capability-broker.ts`) gates every effect before the engine routing layer applies it. Pinned by [[docs/wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 - **`@dome/sdk` core has no LLM or MCP dependency.** `tests/integration/bundle-deps.test.ts` is the structural fence. Re-exporting `model.invoke` or MCP machinery from `src/index.ts` fails CI. Pinned by [[docs/wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
 - **Markdown is the source of truth.** Knowledge projections in `projection.db`
   can be rebuilt from adopted markdown plus deterministic processors. Durable
@@ -64,12 +64,19 @@ src/
   vault.ts              # openVault — THE standard entry point for every surface
   adopted-ref.ts        # adopted-ref read/write helpers
   core/                 # the four core types (Proposal, Effect, Processor, SourceRef)
-  engine/               # adoption loop + effect application (the single applier)
+  engine/               # the engine service — four layers, strict downward-only imports
+    core/               #   adoption loop + effect application + capability machinery
+    garden/             #   garden-phase patch routing + sub-Proposal construction
+    operational/        #   jobs, scheduler, answers/question lifecycle, quarantine
+    host/               #   compiler host, locks, vault-runtime, rebuild, health
   processors/           # processor runtime + registry
   projections/          # Bun.sqlite-backed projection store
   ledger/               # run ledger (Bun.sqlite)
   outbox/               # external-action outbox (Bun.sqlite)
+  answers/              # answers store (Bun.sqlite; durable human answers)
+  sqlite/               # shared Bun.sqlite connection + row helpers
   cli/                  # CLI command adapters
+  mcp/                  # MCP stdio adapter (companion entrypoint, outside core import graph)
   extensions/           # bundle loader
   git.ts                # isomorphic-git boundary
   engine-commit.ts      # pure Dome trailer/commit-message helper
@@ -136,14 +143,14 @@ return matches with SourceRefs
 
 ## The five conceptual services (in one Bun process)
 
-Engine (`src/engine/`) — adoption loop + applier
-Processor Runtime (`src/processors/`) — scheduler
+Engine (`src/engine/`) — adoption loop + applier; four internal layers (core / garden / operational / host) per [[docs/wiki/matrices/engine-module-map]]
+Processor Runtime (`src/processors/`) — processor registry + invocation runtime (cron scheduling lives in `src/engine/operational/scheduler.ts`)
 Projection Store (`src/projections/`) — derived state
 Run Ledger (`src/ledger/`) — audit history
 Query/View (`src/projections/query-view.ts` + `src/cli/commands/query.ts`) — Recall
 
 Plus: Outbox (`src/outbox/`) — external side effects
-Plus: Capability Broker (`src/engine/capability-broker.ts`) — effect gating
+Plus: Capability Broker (`src/engine/core/capability-broker.ts`) — effect gating
 
 Per [[docs/wiki/matrices/protocol-adapter]], CLI / planned MCP / future HTTP / Voice are protocol adapters over the same runtime/view boundary, not separate engines. The engine doesn't know which surface is calling.
 

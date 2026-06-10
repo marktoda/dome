@@ -32,7 +32,7 @@ type Effect =
 
 Effects are immutable values. Once returned from a processor, they are routed by the engine but never modified. Effect validation (Zod schemas at the engine boundary) rejects malformed effects before routing.
 
-The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden-patch-dispatch.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding an effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+The engine routes effects through the engine routing layer. Generic sink routes use `src/engine/core/apply-effect.ts`, which has an exhaustive `switch` on the union (TypeScript `never`-type exhaustiveness check). Garden PatchEffects use `src/engine/garden/garden-patch-dispatch.ts` because their destination is sub-Proposal construction rather than an inline sink. Adding an effect kind without updating the route layer fails compilation. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 ## PatchEffect
 

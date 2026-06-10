@@ -25,7 +25,7 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter — the `
 ```text
 @dome/sdk core (engine + projections + ledger + outbox)
   ↓  (the same shared dispatch boundary the CLI uses)
-src/cli/commands/* handlers + src/engine/view-command.ts
+src/cli/commands/* handlers + src/engine/host/view-command.ts
   ↓
 src/mcp/server.ts — createDomeMcpServer({ vaultPath, bundlesRoot }) → McpServer
   ↓
@@ -35,7 +35,7 @@ dome mcp   (stdio transport; one vault per process)
 The adapter is deliberately thin and **consumes data-returning boundaries — it does not duplicate logic and it never captures console output**:
 
 - `capture` calls `performCapture` (the data core behind `dome capture`) and renders the shared `dome.capture/v1` document via `captureJsonDocument`.
-- `query` / `export_context` / `tasks` dispatch their view processors through the public `vault.runView` surface (`openVault` → `src/engine/view-command.ts`), with the same expected-view/schema validation the CLI wrappers enforce.
+- `query` / `export_context` / `tasks` dispatch their view processors through the public `vault.runView` surface (`openVault` → `src/engine/host/view-command.ts`), with the same expected-view/schema validation the CLI wrappers enforce.
 - `status` / `check` call `buildStatusSnapshot` / `buildCheckReport` (the data collectors behind `dome status --json` / `dome check --json`) and return the identical documents.
 - `resolve` calls `vault.resolve` (durable answer + answer-handler dispatch — the same path as `dome resolve`) and renders `dome.answer/v1` via the CLI's exported mappers.
 - `brief` runs the today view to locate the daily note (config-aware path template), then reads its content at the adopted commit via the git read boundary.

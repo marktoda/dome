@@ -5,7 +5,7 @@ updated: 2026-05-29
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
-enforced_at: src/engine/capability-broker.ts
+enforced_at: src/engine/core/capability-broker.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
 severity: low

@@ -8,7 +8,7 @@ sources:
 
 # Effect router targets
 
-The canonical mapping from Effect kind × processor phase → engine routing destination. Adoption, view, and non-patch garden effects route through `src/engine/apply-effect.ts`; garden PatchEffects route through `src/engine/garden-patch-dispatch.ts` because their target is sub-Proposal construction rather than an inline sink. This matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
+The canonical mapping from Effect kind × processor phase → engine routing destination. Adoption, view, and non-patch garden effects route through `src/engine/core/apply-effect.ts`; garden PatchEffects route through `src/engine/garden/garden-patch-dispatch.ts` because their target is sub-Proposal construction rather than an inline sink. This matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
 
 ## The matrix
 

@@ -23,7 +23,7 @@ The check is a regex sweep over `docs/wiki/**/*.md` for the retired-name allowli
 - `BoundToolSurface`, `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk`, `projectMcp`, `McpToolName`, `ConsumerSurface`, `buildConsumerSurface`.
 - `wrapMutatingInvoke`, `TOOL_REGISTRY`, `MUTATING_TOOL_NAMES`, `TOOL_NAMES`.
 - `registerHook`, `HookDispatcher`, `HookRegistry`, `HookContext` (as user-facing types).
-- `reconcile` as a present-tense exported function name (v1 has `dome sync` user-side; `src/engine/adopt.ts` implementation-side). Historical references in `## Migration` sections are allowed.
+- `reconcile` as a present-tense exported function name (v1 has `dome sync` user-side; `src/engine/core/adopt.ts` implementation-side). Historical references in `## Migration` sections are allowed.
 - `vault.tools`, `vault.dispatchEvents` (from external/plugin code; engine-internal uses are invisible to docs).
 - `.dome/hooks/`, `.dome/tools/`, `.dome/cli/`, `.dome/prompts/` (as committed-vault directories — replaced by `.dome/extensions/<bundle>/`).
 - `.dome/state/scheduled.json` (replaced by `projection.db.schedule_cursors`).
