@@ -506,8 +506,13 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
     }),
     freezeLoop({
       id: "dome.daily.edition",
+      // The close joins this loop rather than getting a tenth loop of its
+      // own: the daily package is one design unit (three acts of one
+      // console) and the close's sole machine purpose is to feed the next
+      // morning's compile. See [[wiki/specs/daily-surface]] §"The 24-hour
+      // choreography".
       goal:
-        "Each morning's daily note is compiled into one edition: yesterday digest, meetings, open questions, overnight integrations, and the ranked open-loops surface.",
+        "Each morning's daily note is compiled into one edition — yesterday digest, meetings, open questions, overnight integrations, the ranked open-loops surface — and each evening's close scaffolds the done/still-open record the next edition reads.",
       evidence: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "notes/*.md" },
@@ -524,6 +529,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.agent.brief",
         "dome.daily.create-daily",
         "dome.daily.carry-forward",
+        "dome.daily.close-scaffold",
       ],
       surfaces: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
@@ -533,12 +539,13 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "daily date + generated-block owner set",
         noOpWhen:
-          "today's daily note exists and every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/questions/integrated and the open-loops surface) matches its current inputs",
+          "today's daily note exists, every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/questions/integrated and the open-loops surface) matches its current inputs, and the evening close block has been seeded (presence-gated) when today's daily existed at close time",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "The calendar source is a vault-assembled external feed (sources/calendar/<date>.md, vault-layout recipe); its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error.",
-        "Scheduled processors fire only while the host runs; a stopped serve silently skips the 05:30/06:00 ticks — the daily.edition-not-compiled doctor finding is the detection net.",
+        "Scheduled processors fire only while the host runs; a stopped serve silently skips the 05:30/06:00/21:30 ticks — the daily.edition-not-compiled doctor finding is the morning detection net; a skipped close degrades tomorrow's yesterday digest per the daily-surface ladder.",
+        "The close scaffold is presence-gated and schedule-only: it never rewrites a human-edited block and never appends late settles — those surface in tomorrow's open-loops subsections and the next close.",
       ],
     }),
   ]);
