@@ -80,4 +80,70 @@ describe("modelInvokeForProcessor.step", () => {
       fn!.step!({ messages: [{ role: "user", content: "go" }], tools: [] }),
     ).rejects.toThrow(/budget/i);
   });
+
+  // The step path carries the same guard rail as the text path: per-call
+  // timeout, response validation, and one retryable-provider retry. It used
+  // to call the provider bare.
+
+  test("step enforces the per-call timeout (model.invoke.timeout)", async () => {
+    const stepProvider: ModelStepProvider = () =>
+      new Promise(() => {
+        // never resolves
+      });
+    const fn = modelInvokeForProcessor({
+      phase: "garden",
+      processorId: "test.agent",
+      declared: [modelCap],
+      granted: [modelCap],
+      policy: { timeoutMs: 1000, modelCallTimeoutMs: 25 } as never,
+      signal: new AbortController().signal,
+      stepProvider,
+      spentUsdToday: () => 0,
+    });
+    await expect(
+      fn!.step!({ messages: [{ role: "user", content: "go" }], tools: [] }),
+    ).rejects.toThrow(/per-call timeout/);
+  });
+
+  test("step validates the provider response shape", async () => {
+    const stepProvider = (async () => ({
+      toolCalls: "not-an-array",
+    })) as unknown as ModelStepProvider;
+    const fn = build({ stepProvider });
+    await expect(
+      fn!.step!({ messages: [{ role: "user", content: "go" }], tools: [] }),
+    ).rejects.toThrow(/invalid response/);
+  });
+
+  test("step retries ONE retryable provider failure, then succeeds", async () => {
+    let calls = 0;
+    const uses: string[] = [];
+    const stepProvider: ModelStepProvider = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("transient provider hiccup");
+      return { text: "done" };
+    };
+    const fn = build({ stepProvider, onUse: (u) => uses.push(u.outcome) });
+    const result = await fn!.step!({
+      messages: [{ role: "user", content: "go" }],
+      tools: [],
+    });
+    expect(result.text).toBe("done");
+    expect(calls).toBe(2);
+    // One capability-use row per attempt, mirroring the text path.
+    expect(uses.filter((u) => u === "allowed")).toHaveLength(2);
+  });
+
+  test("step does NOT retry a second consecutive provider failure", async () => {
+    let calls = 0;
+    const stepProvider: ModelStepProvider = async () => {
+      calls += 1;
+      throw new Error("still down");
+    };
+    const fn = build({ stepProvider });
+    await expect(
+      fn!.step!({ messages: [{ role: "user", content: "go" }], tools: [] }),
+    ).rejects.toThrow(/still down/);
+    expect(calls).toBe(2);
+  });
 });

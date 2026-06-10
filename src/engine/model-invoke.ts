@@ -197,15 +197,25 @@ export function modelInvokeForProcessor(opts: {
         });
         throw error;
       }
-      recordModelCapabilityUse(opts.onCapabilityUse, {
-        resource: model ?? null,
-        outcome: "allowed",
-      });
-      const response = await stepProvider({
-        messages: input.messages,
-        tools: input.tools,
-        ...(model !== undefined ? { model } : {}),
+      // Same guard rail as the text path: per-call timeout, abort
+      // propagation, response validation, and one retryable-provider retry.
+      const response = await callGuardedWithRetry({
+        call: (signal) =>
+          stepProvider({
+            messages: input.messages,
+            tools: input.tools,
+            ...(model !== undefined ? { model } : {}),
+            signal,
+          }),
+        parse: parseModelStepResponse,
         signal: opts.signal,
+        timeoutMs: opts.policy.modelCallTimeoutMs ?? opts.policy.timeoutMs,
+        onAttempt: () => {
+          recordModelCapabilityUse(opts.onCapabilityUse, {
+            resource: model ?? null,
+            outcome: "allowed",
+          });
+        },
       });
       if (
         response.costUsd !== undefined &&
@@ -360,12 +370,20 @@ function resolveStepModel(
   return model;
 }
 
-async function callProviderWithTimeout(opts: {
-  readonly provider: ModelProvider;
-  readonly request: Omit<ModelProviderRequest, "signal">;
+/**
+ * Generic provider-call guard shared by the text and tool-step paths: abort
+ * propagation, per-call timeout, response validation, and nominal error
+ * classification. Both `ctx.modelInvoke(...)` and `ctx.modelInvoke.step(...)`
+ * carry the same runtime guarantees — the step path used to call its
+ * provider bare, skipping the timeout, the retry, and (for in-process
+ * providers) response validation.
+ */
+async function callGuarded<T>(opts: {
+  readonly call: (signal: AbortSignal) => Promise<unknown>;
+  readonly parse: (response: unknown) => T;
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
-}): Promise<ModelProviderResponse> {
+}): Promise<T> {
   if (opts.signal.aborted) {
     throw modelAbortError("model.invoke was aborted before provider call started.");
   }
@@ -396,14 +414,11 @@ async function callProviderWithTimeout(opts: {
 
   try {
     const response = await Promise.race<unknown>([
-      opts.provider({
-        ...opts.request,
-        signal: controller.signal,
-      }),
+      opts.call(controller.signal),
       timeoutPromise,
       abortPromise,
     ]);
-    return parseModelProviderResponse(response);
+    return opts.parse(response);
   } catch (e) {
     if (isModelExecutionError(e)) throw e;
     throw modelError(
@@ -419,18 +434,18 @@ async function callProviderWithTimeout(opts: {
   }
 }
 
-async function callProviderWithRetry(opts: {
-  readonly provider: ModelProvider;
-  readonly request: Omit<ModelProviderRequest, "signal">;
+async function callGuardedWithRetry<T>(opts: {
+  readonly call: (signal: AbortSignal) => Promise<unknown>;
+  readonly parse: (response: unknown) => T;
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
   readonly onAttempt?: () => void;
-}): Promise<ModelProviderResponse> {
+}): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= PROVIDER_MAX_ATTEMPTS; attempt += 1) {
     opts.onAttempt?.();
     try {
-      return await callProviderWithTimeout(opts);
+      return await callGuarded(opts);
     } catch (error) {
       lastError = error;
       if (!shouldRetryProviderFailure(error, attempt, opts.signal)) {
@@ -439,6 +454,23 @@ async function callProviderWithRetry(opts: {
     }
   }
   throw lastError;
+}
+
+
+async function callProviderWithRetry(opts: {
+  readonly provider: ModelProvider;
+  readonly request: Omit<ModelProviderRequest, "signal">;
+  readonly signal: AbortSignal;
+  readonly timeoutMs: number;
+  readonly onAttempt?: () => void;
+}): Promise<ModelProviderResponse> {
+  return callGuardedWithRetry({
+    call: (signal) => opts.provider({ ...opts.request, signal }),
+    parse: parseModelProviderResponse,
+    signal: opts.signal,
+    timeoutMs: opts.timeoutMs,
+    ...(opts.onAttempt !== undefined ? { onAttempt: opts.onAttempt } : {}),
+  });
 }
 
 function shouldRetryProviderFailure(
