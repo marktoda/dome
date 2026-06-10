@@ -69,6 +69,7 @@ import { buildSqliteSinks } from "../projections/sinks";
 import type { QuestionRecord } from "../projections/questions";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha, isAncestor } from "../git";
+import { replayFinalizeJournal } from "./finalize-journal";
 import type { ApplyEffectSinks } from "./apply-effect";
 import { failRunIfCurrent } from "../ledger/runs";
 import { buildOperationalQueryView } from "./operational-query-view";
@@ -334,6 +335,14 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
   ) {
     return Object.freeze({ ...drift });
   }
+
+  // Repair any crash-interrupted adoption finalization before doing new
+  // work under this branch lock. A surviving finalize-intent journal means
+  // a prior process died between the branch advance and the working-tree
+  // materialization (or mid-rollback); replay re-materializes affected
+  // paths against whichever side the branch ref settled on, preserving any
+  // human edits that arrived after the crash.
+  await replayFinalizeJournal(opts.runtime.path);
 
   if (drift.kind === "in-sync") {
     let operational: OperationalWorkResult | null = null;

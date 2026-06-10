@@ -77,6 +77,10 @@ import type {
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import {
+  clearFinalizeJournal,
+  writeFinalizeJournal,
+} from "./finalize-journal";
+import {
   checkoutPathsAtRef,
   currentBranch,
   currentSha,
@@ -748,6 +752,17 @@ export async function adopt(opts: {
     }
 
     try {
+      // Persist the finalize intent BEFORE moving any ref. A crash between
+      // the branch advance and the working-tree materialization is repaired
+      // by `replayFinalizeJournal` on the next compiler-host tick; without
+      // the journal the stale working tree would read as phantom user edits.
+      await writeFinalizeJournal(vault.path, {
+        branch,
+        sourceHead,
+        target: branchAdvanceTarget,
+        paths: materializePaths,
+        writtenAt: new Date().toISOString(),
+      });
       await writeRef({
         path: vault.path,
         ref: `refs/heads/${branch}`,
@@ -756,6 +771,7 @@ export async function adopt(opts: {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      await clearFinalizeJournal(vault.path);
       const branchAdvanceDiag = diagnosticEffect({
         severity: "block",
         code: "adoption.branch-advance-failed",
@@ -794,6 +810,10 @@ export async function adopt(opts: {
         expectedOld: branchAdvanceTarget,
         paths: materializePaths,
       });
+      // A completed rollback restored both the ref and the tree; the intent
+      // is resolved. A failed rollback keeps the journal so the next tick's
+      // replay can repair whatever state the crash/failure left behind.
+      if (rollbackDiagnostic === null) await clearFinalizeJournal(vault.path);
       const materializeFailedDiag = diagnosticEffect({
         severity: "block",
         code: "adoption.working-tree-materialize-failed",
@@ -845,6 +865,7 @@ export async function adopt(opts: {
           paths: materializePaths,
         })
       : null;
+    if (rollbackDiagnostic === null) await clearFinalizeJournal(vault.path);
     const refAdvanceDiag = diagnosticEffect({
       severity: "block",
       code: "adoption.ref-advance-refused",
@@ -873,6 +894,12 @@ export async function adopt(opts: {
       closureCommitOid,
       iterations: iteration,
     });
+  }
+
+  // Finalization fully resolved: branch advanced (when needed), working
+  // tree materialized, adopted ref advanced. The crash window is closed.
+  if (branchAdvanceTarget !== sourceHead) {
+    await clearFinalizeJournal(vault.path);
   }
 
   try {
