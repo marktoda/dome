@@ -68,12 +68,23 @@ describe("dome.daily shared date helpers", () => {
   });
 
   test("renderDailySkeleton uses the V1 work-surface shape", () => {
-    expect(
-      renderDailySkeleton({
-        today: { yyyy: "2026", mm: "02", dd: "28" },
-        yesterday: { yyyy: "2026", mm: "02", dd: "27" },
-      }),
-    ).toContain(
+    const skeleton = renderDailySkeleton({
+      today: { yyyy: "2026", mm: "02", dd: "28" },
+      yesterday: { yyyy: "2026", mm: "02", dd: "27" },
+    });
+    // Captured today is the FIRST content section, hosting the (empty)
+    // dome.daily:captured block (daily-surface section contract, D3).
+    expect(skeleton).toContain(
+      [
+        "## Captured today",
+        "",
+        "<!-- dome.daily:captured:start -->",
+      ].join("\n"),
+    );
+    expect(skeleton.indexOf("## Captured today")).toBeLessThan(
+      skeleton.indexOf("## Start Here"),
+    );
+    expect(skeleton).toContain(
       [
         "## Start Here",
         "",

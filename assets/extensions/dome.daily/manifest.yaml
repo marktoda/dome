@@ -1,8 +1,8 @@
 id: dome.daily
-version: 0.2.0
+version: 0.2.1
 processors:
   - id: dome.daily.normalize-task-syntax
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: signal
@@ -48,7 +48,7 @@ processors:
     module: processors/stamp-block-id.ts
 
   - id: dome.daily.create-daily
-    version: 0.1.5
+    version: 0.1.6
     phase: garden
     triggers:
       - kind: schedule
@@ -138,7 +138,7 @@ processors:
     module: processors/agenda-with.ts
 
   - id: dome.daily.carry-forward
-    version: 0.2.9
+    version: 0.2.10
     phase: garden
     triggers:
       - kind: schedule

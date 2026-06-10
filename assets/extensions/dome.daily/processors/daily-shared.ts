@@ -6,8 +6,11 @@ import {
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
 import {
+  containsGeneratedBlockMarker,
+  containsHtmlCommentDelimiter,
   findGeneratedBlock,
   generatedBlockMarkers,
+  type GeneratedBlockRange,
 } from "../../../../src/core/generated-block";
 
 const CARRY_FORWARD_RE =
@@ -21,6 +24,7 @@ const DAILY_OWNER = "dome.daily";
 const CARRIED_FORWARD_BLOCK = "carried-forward";
 const START_CONTEXT_BLOCK = "start-context";
 const OPEN_LOOPS_BLOCK = "open-loops";
+const CAPTURED_BLOCK = "captured";
 
 const CARRIED_FORWARD_MARKERS = generatedBlockMarkers(
   DAILY_OWNER,
@@ -31,6 +35,7 @@ const START_CONTEXT_MARKERS = generatedBlockMarkers(
   START_CONTEXT_BLOCK,
 );
 const OPEN_LOOPS_MARKERS = generatedBlockMarkers(DAILY_OWNER, OPEN_LOOPS_BLOCK);
+const CAPTURED_MARKERS = generatedBlockMarkers(DAILY_OWNER, CAPTURED_BLOCK);
 
 export const CARRIED_FORWARD_START = CARRIED_FORWARD_MARKERS.start;
 export const CARRIED_FORWARD_END = CARRIED_FORWARD_MARKERS.end;
@@ -38,12 +43,31 @@ export const START_CONTEXT_START = START_CONTEXT_MARKERS.start;
 export const START_CONTEXT_END = START_CONTEXT_MARKERS.end;
 export const OPEN_LOOPS_START = OPEN_LOOPS_MARKERS.start;
 export const OPEN_LOOPS_END = OPEN_LOOPS_MARKERS.end;
+export const CAPTURED_START = CAPTURED_MARKERS.start;
+export const CAPTURED_END = CAPTURED_MARKERS.end;
+
+export const CAPTURED_HEADING = "## Captured today";
+
+/**
+ * The one-line hint the skeleton renders inside the (otherwise empty)
+ * captured block. A plain HTML comment — not a dome marker — invisible in
+ * preview and skipped by every extractor.
+ */
+const CAPTURED_HINT =
+  "<!-- tasks captured during the day land here (`dome capture` -> ingest) -->";
 
 /**
  * The dome.daily generated blocks as `(owner, block)` anomaly-scan targets —
  * what splice call sites feed `generatedBlockAnomalyDiagnostics` so smuggled
  * duplicate pairs / half-open markers in a daily note surface as info
  * diagnostics instead of staying invisible.
+ *
+ * NOTE: this is the ANOMALY-SCAN list, not the task-extraction exclusion
+ * list. `dome.daily:captured` is scanned for marker anomalies like every
+ * other block, but its body is deliberately NOT excluded from extraction —
+ * captured tasks are origins, not copies (see
+ * `dailyGeneratedBlockLineRanges` and [[wiki/specs/daily-surface]] §"The
+ * `captured` block holds origins, not copies").
  */
 export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   readonly owner: string;
@@ -52,6 +76,7 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: CAPTURED_BLOCK }),
 ]);
 
 export type DailyDate = {
@@ -437,6 +462,16 @@ export function renderDailySkeleton(input: {
     "---",
     "",
     `# ${today}`,
+    "",
+    // Captured today is the FIRST content section (the real-vault
+    // convention the daily-surface section contract formalizes): the live
+    // capture landing zone, with the owned block rendered empty so the
+    // ingest tool seam always has a region to splice into.
+    CAPTURED_HEADING,
+    "",
+    CAPTURED_START,
+    CAPTURED_HINT,
+    CAPTURED_END,
     "",
     "## Start Here",
     "",
@@ -935,6 +970,228 @@ export function replaceCarriedForwardSection(input: {
   return `${input.content}${suffix}\n## Notes\n\n${input.section}\n`;
 }
 
+// ----- Captured today (the live capture landing zone) -----------------------
+//
+// `## Captured today` hosts the `dome.daily:captured` block — the one
+// generated block whose body holds task ORIGINS rather than projection
+// copies. The skeleton renders it empty; the ingest tool seam splices
+// validated task lines inside it; the extractors treat its contents like any
+// other daily task line. Spec: [[wiki/specs/daily-surface]] §"Block
+// ownership" and §"The `captured` block holds origins, not copies".
+
+/** A `(from [[…]])` provenance suffix — the carry-forward COPY shape. */
+const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
+
+const CAPTURED_HEADING_RE = /^#{1,6}\s+captured\s+today\s*$/i;
+
+/**
+ * A line the ingest seam may land in the captured block: an open checkbox
+ * task carrying the `#task`/`#followup` tag (the charter's required shape),
+ * with no HTML comment delimiter (marker injection — the preferences-signals
+ * strictness) and no `(from [[…]])` suffix (a captured line is an ORIGIN; a
+ * copy-shaped line would let reconcile treat it as a settled copy of some
+ * other origin).
+ */
+export function isCapturedTaskLine(line: string): boolean {
+  if (!/^\s*[-*]\s+\[ \]\s+\S/.test(line)) return false;
+  if (!/(^|\s)#(?:task|follow-?up)(?=\s|$)/i.test(line)) return false;
+  if (containsHtmlCommentDelimiter(line)) return false;
+  if (SOURCE_BACKED_SUFFIX_RE.test(line)) return false;
+  return true;
+}
+
+/**
+ * Splice `lines` (caller-validated, e.g. via {@link isCapturedTaskLine})
+ * inside the `dome.daily:captured` block, appending after any existing body.
+ * Placement is insertion-anchored, never positional:
+ *
+ *  1. block present → insert immediately before the end marker;
+ *  2. `## Captured today` heading present without a block → create the block
+ *     directly under the heading;
+ *  3. neither → create heading + block as the first content section (before
+ *     `## Start Here`, falling back down the section ladder, then EOF).
+ */
+export function appendCapturedTaskLines(input: {
+  readonly content: string;
+  readonly lines: ReadonlyArray<string>;
+}): string {
+  if (input.lines.length === 0) return input.content;
+  const block = capturedBlockRange(input.content);
+  if (block !== null) {
+    const body = `${input.lines.join("\n")}\n`;
+    return `${input.content.slice(0, block.bodyEnd)}${body}${input.content.slice(block.bodyEnd)}`;
+  }
+  const section = [
+    CAPTURED_START,
+    ...input.lines,
+    CAPTURED_END,
+  ].join("\n");
+  return insertCapturedSection({ content: input.content, section });
+}
+
+/**
+ * The write-tool admission rule for today's daily (the `writePage` mirror of
+ * the append seam): a rewrite is valid only when it is byte-identical
+ * outside the captured block's body and appends task-shaped lines inside it.
+ * `before` lacking the block fails — pre-block dailies are served by the
+ * append seam, which knows how to create the section.
+ */
+export function isValidCapturedTasksWrite(input: {
+  readonly before: string;
+  readonly after: string;
+}): boolean {
+  const beforeBlock = capturedBlockRange(input.before);
+  const afterBlock = capturedBlockRange(input.after);
+  if (beforeBlock === null || afterBlock === null) return false;
+  const outsideBefore =
+    input.before.slice(0, beforeBlock.bodyStart) +
+    input.before.slice(beforeBlock.bodyEnd);
+  const outsideAfter =
+    input.after.slice(0, afterBlock.bodyStart) +
+    input.after.slice(afterBlock.bodyEnd);
+  if (outsideBefore !== outsideAfter) return false;
+  const bodyBefore = input.before.slice(
+    beforeBlock.bodyStart,
+    beforeBlock.bodyEnd,
+  );
+  const bodyAfter = input.after.slice(afterBlock.bodyStart, afterBlock.bodyEnd);
+  if (!bodyAfter.startsWith(bodyBefore)) return false;
+  const appended = bodyAfter.slice(bodyBefore.length);
+  const lines = appended.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (lines.length === 0) return false;
+  return lines.every(isCapturedTaskLine);
+}
+
+/**
+ * Repair the real-vault pre-D3 wart of duplicate `# Captured today` /
+ * `## Captured today` headings (mismatched levels): merge every captured
+ * section into THE single owned section — the one already holding the
+ * `dome.daily:captured` block wins, else the first — normalizing the kept
+ * heading to `## Captured today`, preserving every merged body line (task
+ * lines + anchors verbatim, dome marker-comment lines dropped so a smuggled
+ * pair cannot survive the merge) by splicing them inside the block.
+ *
+ * Returns the repaired document, or `null` when nothing needs repairing
+ * (the idempotent fixed point: one `## Captured today` heading). Callers
+ * apply this to TODAY's daily only — historical dailies stay append-only.
+ */
+export function repairCapturedTodayHeadings(content: string): string | null {
+  if (isObsidianTasksDashboard(content)) return null;
+  const lines = content.split(/\r?\n/);
+  const frontmatter = frontmatterLineRange(content);
+  const ignored = [
+    ...fencedCodeBlockLineRanges(content),
+    ...(frontmatter === null ? [] : [frontmatter]),
+  ];
+  const blockScan = findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK);
+  const headingIndexes: number[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lineIsInsideRanges(i + 1, ignored)) continue;
+    // A captured-heading LINE inside the block body is block content, not a
+    // section heading — treating it as one could drag the end marker into a
+    // merged-and-dropped extent.
+    if (
+      blockScan.range !== null &&
+      i + 1 >= blockScan.range.startLine &&
+      i + 1 <= blockScan.range.endLine
+    ) {
+      continue;
+    }
+    if (CAPTURED_HEADING_RE.test(lines[i] ?? "")) headingIndexes.push(i);
+  }
+  if (headingIndexes.length === 0) return null;
+  if (
+    headingIndexes.length === 1 &&
+    (lines[headingIndexes[0] ?? 0] ?? "").trim() === CAPTURED_HEADING
+  ) {
+    return null;
+  }
+
+  // Section extents: heading line through the line before the next heading
+  // (any level) outside fences, or EOF.
+  const sections = headingIndexes.map((headingIndex) => {
+    let end = lines.length;
+    for (let i = headingIndex + 1; i < lines.length; i += 1) {
+      if (lineIsInsideRanges(i + 1, ignored)) continue;
+      if (/^#{1,6}\s+\S/.test(lines[i] ?? "")) {
+        end = i;
+        break;
+      }
+    }
+    return { headingIndex, end };
+  });
+
+  // The canonical section: the one carrying the captured block's start
+  // marker, else the first.
+  const canonical =
+    sections.find(
+      (section) =>
+        blockScan.range !== null &&
+        blockScan.range.startLine - 1 > section.headingIndex &&
+        blockScan.range.startLine - 1 < section.end,
+    ) ?? sections[0];
+  if (canonical === undefined) return null;
+
+  // Collect the duplicate sections' body lines (skipping blanks and dome
+  // marker-comment lines) and drop those sections from the document.
+  const merged: string[] = [];
+  const dropLine = new Set<number>();
+  for (const section of sections) {
+    if (section === canonical) continue;
+    dropLine.add(section.headingIndex);
+    for (let i = section.headingIndex + 1; i < section.end; i += 1) {
+      dropLine.add(i);
+      const line = lines[i] ?? "";
+      if (line.trim() === "") continue;
+      if (containsGeneratedBlockMarker(line)) continue;
+      merged.push(line);
+    }
+  }
+
+  const keptLines = lines
+    .map((line, i) =>
+      i === canonical.headingIndex ? CAPTURED_HEADING : line,
+    )
+    .filter((_line, i) => !dropLine.has(i));
+  const compacted = keptLines.join("\n");
+  const repaired =
+    merged.length === 0
+      ? compacted
+      : appendCapturedTaskLines({ content: compacted, lines: merged });
+  return repaired === content ? null : repaired;
+}
+
+function insertCapturedSection(input: {
+  readonly content: string;
+  readonly section: string;
+}): string {
+  const heading = new RegExp(
+    `^${escapeRegExp(CAPTURED_HEADING)}[ \\t]*$`,
+    "m",
+  ).exec(input.content);
+  if (heading !== null && heading.index !== undefined) {
+    const insertAt = heading.index + heading[0].length;
+    const rest = input.content.slice(insertAt).replace(/^(?:\r?\n)*/, "\n\n");
+    return `${input.content.slice(0, insertAt)}\n\n${input.section}${rest}`;
+  }
+  for (const anchor of [/^## Start Here[ \t]*$/m, /^## Meetings[ \t]*$/m, /^## Open Loops[ \t]*$/m, /^## Notes[ \t]*$/m]) {
+    const match = anchor.exec(input.content);
+    if (match !== null && match.index !== undefined) {
+      return (
+        `${input.content.slice(0, match.index)}` +
+        `${CAPTURED_HEADING}\n\n${input.section}\n\n` +
+        input.content.slice(match.index)
+      );
+    }
+  }
+  const suffix = input.content.endsWith("\n") ? "" : "\n";
+  return `${input.content}${suffix}\n${CAPTURED_HEADING}\n\n${input.section}\n`;
+}
+
+function capturedBlockRange(content: string): GeneratedBlockRange | null {
+  return findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK).range;
+}
+
 function isOpenCheckboxLine(line: string): boolean {
   return /^\s*[-*]\s+\[ \]\s+\S/.test(line);
 }
@@ -1267,6 +1524,11 @@ function dailyGeneratedBlockLineRanges(
   content: string,
 ): ReadonlyArray<{ readonly start: number; readonly end: number }> {
   const ranges: { start: number; end: number }[] = [];
+  // dome.daily:captured is deliberately ABSENT from this list: captured
+  // tasks ORIGINATE in the daily (origins, not projection copies), so
+  // extraction, stamping, normalization, and open-loop surfacing must all
+  // see them. The projection blocks below hold copies/digests whose source
+  // of truth lives elsewhere — those are excluded so copies never re-ingest.
   for (
     const block of [
       START_CONTEXT_BLOCK,
