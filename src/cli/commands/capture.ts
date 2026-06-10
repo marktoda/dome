@@ -60,6 +60,16 @@ export async function runCapture(
     }
     return outcome.exitCode;
   }
+  if (outcome.kind === "duplicate") {
+    // Unreachable from CLI flags today (no --capture-id option); handled for
+    // exhaustiveness so a future flag cannot silently fall through.
+    if (json) {
+      console.log(formatJson(captureJsonDocument(outcome)));
+    } else {
+      console.log(`dome capture: duplicate of ${outcome.path}`);
+    }
+    return 0;
+  }
 
   if (json) {
     console.log(formatJson(captureJsonDocument(outcome)));

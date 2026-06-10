@@ -594,7 +594,7 @@ Each future consumer protocol adapts `AbstractSurface` to its wire format:
 |---|---|---|
 | MCP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
 | CLI (shipped; consumes `openVault` + `src/surface/` + engine control today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
-| HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Recall + future native-surface write controls |
+| HTTP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeHttpServer(opts)` in `src/http/server.ts`, hosted by `dome http`; future `renderHttp(surface)` | Bearer-token JSON routes — capture/status/query/tasks/doc/questions/resolve per [[wiki/specs/http-surface]] |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
 
 The protocol renderers should consume `AbstractSurface`, never `Vault`

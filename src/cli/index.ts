@@ -543,6 +543,29 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("http")
+    .description("Run the HTTP read+capture surface over this vault (bearer-token auth; loopback by default).")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .option("--port <port>", "Port to listen on (default 3663).")
+    .option("--host <host>", "Interface to bind (default 127.0.0.1).")
+    .option("--token <token>", "Bearer token (or set DOME_HTTP_TOKEN).")
+    .action(async (options: HttpCliOptions) => {
+      // Dynamic import keeps the listener entrypoint out of the CLI's
+      // static graph, matching the `dome mcp` companion-entrypoint pattern.
+      const { runHttp } = await import("./commands/http");
+      setExitCode(
+        await runHttp({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          port: options.port,
+          host: options.host,
+          token: options.token,
+        }),
+      );
+    });
+
+  program
     .command("status")
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
@@ -634,6 +657,14 @@ type RestartCliOptions = {
 type McpCliOptions = {
   readonly vault?: string;
   readonly bundlesRoot?: string;
+};
+
+type HttpCliOptions = {
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+  readonly port?: string;
+  readonly host?: string;
+  readonly token?: string;
 };
 
 type CheckCliOptions = {

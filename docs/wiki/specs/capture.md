@@ -202,21 +202,22 @@ out of scope here.
 
 **Retry semantics.** Mobile callers retry on flaky networks, and a naive
 relay would file the same thought twice. The seam accepts an optional
-client-supplied `captureId`; the relay folds it into the filename slug and
-treats an existing file for the same id as success (returning the original
-document) rather than writing a sibling. Clients without an id accept
-duplicate risk; ingest tolerates duplicates either way.
+client-supplied `captureId`; it drives the filename slug, and an existing
+file for the same id answers `status: "duplicate"` with the original path —
+nothing written, nothing committed. Clients without an id accept duplicate
+risk; ingest tolerates duplicates either way. Implemented in
+`performCapture` (`source` + `captureId` options).
 
-**Candidate shipped forms** (decide at implementation time, in rough order
-of likelihood):
+**Shipped form.** Form 2 below shipped first (2026-06-10): `dome http`
+carries `POST /capture` alongside the read routes — see
+[[wiki/specs/http-surface]]. The other forms stay banked:
 
-1. **`dome capture-relay`** — a minimal authenticated HTTP listener on the
-   vault host: one `POST /capture` over `performCapture`. The smallest
-   product hop for the 11pm phone mumble; replaces recipe A's SSH
-   dependency with a token.
-2. **A route on the future HTTP surface** — capture as one endpoint of the
-   read+capture protocol adapter ([[wiki/specs/sdk-surface]] §"Consumer
-   surfaces"), once that surface exists for recall anyway.
+1. ~~**`dome capture-relay`**~~ — subsumed by `dome http` (the dedicated
+   capture-only listener turned out to cost the same as the full
+   read+capture adapter).
+2. **A route on the HTTP surface** — **shipped** as `dome http`'s
+   `POST /capture`, with `source: "http"` frontmatter and `captureId`
+   retry idempotency implemented in `performCapture`.
 3. **Git-native relay** — a service holding its own checkout that commits
    and pushes to a shared vault remote. Needs the multi-device sync story
    (who fetches, what the daemon ticks on) and is banked with it.

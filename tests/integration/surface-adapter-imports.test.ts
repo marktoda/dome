@@ -2,13 +2,15 @@
 // docs/wiki/specs/sdk-surface.md §"Consumer surfaces"
 // ([[wiki/linters/surface-adapters-dont-import-adapters]]).
 //
-// Three direction rules over src/{surface,cli,mcp}:
-//   1. MCP is adapter-clean — nothing under src/mcp/ imports src/cli/.
-//   2. CLI is adapter-clean — nothing under src/cli/ imports src/mcp/,
-//      except the host shim src/cli/commands/mcp.ts (reached only via the
-//      dispatcher's dynamic import, keeping the CLI's static graph MCP-free).
+// Direction rules over src/{surface,cli,mcp,http}:
+//   1. Adapters are adapter-clean — nothing under src/mcp/ or src/http/
+//      imports src/cli/, and they don't import each other.
+//   2. CLI is adapter-clean — nothing under src/cli/ imports src/mcp/ or
+//      src/http/, except the host shims src/cli/commands/{mcp,http}.ts
+//      (reached only via the dispatcher's dynamic import, keeping the
+//      CLI's static graph adapter-free).
 //   3. The surface layer is below adapters — nothing under src/surface/
-//      imports src/cli/ or src/mcp/.
+//      imports src/cli/, src/mcp/, or src/http/.
 
 import { Glob } from "bun";
 import { describe, expect, test } from "bun:test";
@@ -20,6 +22,7 @@ const THIS_FILE = fileURLToPath(import.meta.url);
 const REPO_ROOT = dirname(dirname(dirname(THIS_FILE)));
 
 const CLI_MCP_HOST_SHIM = "src/cli/commands/mcp.ts";
+const CLI_HTTP_HOST_SHIM = "src/cli/commands/http.ts";
 
 type Rule = {
   readonly name: string;
@@ -51,6 +54,36 @@ const RULES: ReadonlyArray<Rule> = [
     name: "src/surface must not import src/mcp",
     fromGlob: "src/surface/**/*.ts",
     forbiddenPrefix: "src/mcp/",
+    exemptFiles: new Set(),
+  },
+  {
+    name: "src/http must not import src/cli",
+    fromGlob: "src/http/**/*.ts",
+    forbiddenPrefix: "src/cli/",
+    exemptFiles: new Set(),
+  },
+  {
+    name: "src/cli must not import src/http (host shim excepted)",
+    fromGlob: "src/cli/**/*.ts",
+    forbiddenPrefix: "src/http/",
+    exemptFiles: new Set([CLI_HTTP_HOST_SHIM]),
+  },
+  {
+    name: "src/surface must not import src/http",
+    fromGlob: "src/surface/**/*.ts",
+    forbiddenPrefix: "src/http/",
+    exemptFiles: new Set(),
+  },
+  {
+    name: "src/http must not import src/mcp",
+    fromGlob: "src/http/**/*.ts",
+    forbiddenPrefix: "src/mcp/",
+    exemptFiles: new Set(),
+  },
+  {
+    name: "src/mcp must not import src/http",
+    fromGlob: "src/mcp/**/*.ts",
+    forbiddenPrefix: "src/http/",
     exemptFiles: new Set(),
   },
 ];
