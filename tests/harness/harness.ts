@@ -52,6 +52,7 @@ import {
   initRepo,
   isAncestor as gitIsAncestor,
   log as gitLog,
+  writeRef,
 } from "../../src/git";
 import {
   openVaultRuntime,
@@ -107,6 +108,7 @@ export class HarnessImpl implements Harness {
   private readonly installedBundles: Set<string>;
   private readonly modelProvider: ModelProvider | undefined;
   private snapshotRefs: { head: string | null; adopted: string | null };
+  private rewroteHistory = false;
   readonly refs: RefsView;
   readonly git: GitView;
 
@@ -295,6 +297,27 @@ export class HarnessImpl implements Harness {
     await this.snapshot();
     await git.checkout({ fs, dir: this.vaultPath, ref });
     await runAllAlwaysTrue(this, `userCheckout(${ref})`);
+  }
+
+  async userRewriteBranch(to: string): Promise<void> {
+    await this.snapshot();
+    // Simulates `git reset --hard <to>` / a mirrored force-push: the branch
+    // ref moves under the adopted cursor with no engine involvement. The
+    // flag scopes the ADOPTED_REF_IS_ANCESTOR_OF_HEAD always-true invariant
+    // so the *expected* user-initiated divergence does not fail the
+    // scenario — the engine's refusal to follow is what the scenario
+    // asserts.
+    this.rewroteHistory = true;
+    await writeRef({
+      path: this.vaultPath,
+      ref: `refs/heads/${this.branch}`,
+      value: to,
+    });
+    await runAllAlwaysTrue(this, `userRewriteBranch(${to.slice(0, 7)})`);
+  }
+
+  get userRewroteHistory(): boolean {
+    return this.rewroteHistory;
   }
 
   // ----- Daemon / engine moves --------------------------------------------

@@ -269,6 +269,9 @@ function printTickLines(
     console.error(
       "  Inspect git history before syncing; this usually means the branch was rebased, reset, or force-updated.",
     );
+    console.error(
+      "  Run `dome reanchor` to accept the rewritten HEAD (the old adopted SHA is backed up under refs/dome/backup/), or restore the prior history via `git reflog`.",
+    );
     return;
   }
   if (tick.kind === "detached-head") {

@@ -22,6 +22,12 @@ const ALLOWED_FILES = new Set([
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
   "src/cli/commands/capture.ts",
+  // The explicit adopted-ref divergence recovery chokepoint: moves
+  // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
+  // src/git ref helpers after the user confirms a history rewrite. The only
+  // user-facing non-fast-forward cursor move; see
+  // docs/wiki/gotchas/adopted-ref-divergence.md.
+  "src/cli/commands/reanchor.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

@@ -23,7 +23,6 @@ const SYNC_REASONS = Object.freeze([
   "outbox_pending",
 ]);
 const CHECK_REASONS = Object.freeze([
-  "adopted_ref_diverged",
   "pending_runs",
   "failed_runs",
   "diagnostics",
@@ -83,6 +82,15 @@ export function nextActionsForStatus(
       "Raw captures are waiting but the capture digestion loop is inactive " +
       "or not model-ready; inspect dome.agent, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
+  });
+  pushAction(out, attention, ["adopted_ref_diverged"], {
+    command: "dome reanchor",
+    description:
+      "The branch history was rewritten under the adopted ref. Inspect " +
+      "both sides (git log --oneline HEAD..<adopted>), then run dome " +
+      "reanchor to accept the rewritten HEAD (the old adopted SHA is " +
+      "backed up under refs/dome/backup/), or restore the prior history " +
+      "via git reflog.",
   });
   pushAction(out, attention, ["serve_stale"], {
     command: "dome serve",
@@ -228,7 +236,9 @@ export function nextActionsForSync(input: {
   pushAction(out, attention, ["adopted_ref_diverged"], {
     command: "git log --oneline --decorate --graph --all -20",
     description:
-      "Inspect rewritten branch history before choosing the adopted-ref recovery path.",
+      "Inspect the rewritten branch history, then run dome reanchor to " +
+      "accept the new HEAD (the old adopted SHA is backed up under " +
+      "refs/dome/backup/), or restore the prior history via git reflog.",
   });
 
   return Object.freeze(out);

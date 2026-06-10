@@ -23,7 +23,7 @@ import type {
   ProcessorQuarantineSnapshot,
 } from "../processors/execution-state";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
-import { currentSha, isAncestor } from "../git";
+import { countCommitsOnlyIn, currentSha, isAncestor } from "../git";
 import type { Capability } from "../core/processor";
 import { canonicalVaultPath } from "../core/vault-path";
 import { graphWriteCovers } from "./capability-broker";
@@ -140,6 +140,12 @@ export type HealthFinding =
         readonly branch: string;
         readonly head: string;
         readonly adopted: string;
+        /**
+         * Commits reachable from the adopted ref but no longer reachable
+         * from HEAD (`HEAD..adopted`) — the engine/human work the rewrite
+         * orphaned. Null when the count could not be derived cheaply.
+         */
+        readonly orphanedCommits: number | null;
       };
     }
   | {
@@ -1010,6 +1016,14 @@ async function adoptedRefDivergenceFinding(
     descendant: head,
   });
   if (ok) return null;
+  // The orphaned side is HEAD..adopted: previously-adopted engine/human
+  // commits the rewrite removed from the branch's ancestry. rev-list --count
+  // is cheap even across divergent histories; null means "unknown".
+  const orphanedCommits = await countCommitsOnlyIn({
+    path: vaultPath,
+    tip: adopted,
+    exclude: head,
+  });
   return Object.freeze({
     code: "adopted-ref.diverged" as const,
     severity: "error" as const,
@@ -1017,11 +1031,21 @@ async function adoptedRefDivergenceFinding(
     id: `refs/dome/adopted/${branch}`,
     message:
       `Adopted ref for ${branch} (${adopted.slice(0, 7)}) is not an ` +
-      `ancestor of HEAD (${head.slice(0, 7)}).`,
+      `ancestor of HEAD (${head.slice(0, 7)}); the branch history was ` +
+      `rebased, reset, or force-updated under the adopted cursor` +
+      (orphanedCommits === null
+        ? "."
+        : ` (${orphanedCommits} previously-adopted commit${
+            orphanedCommits === 1 ? " is" : "s are"
+          } no longer reachable from HEAD).`),
     recovery:
-      "Inspect git history before syncing; this usually means the branch " +
-      "was rebased, reset, or force-updated.",
-    git: Object.freeze({ branch, head, adopted }),
+      "Inspect both sides (`git log --oneline " +
+      `${head.slice(0, 7)}..${adopted.slice(0, 7)}\`), then either restore ` +
+      "the prior history via `git reflog` / `git reset --hard`, or run " +
+      "`dome reanchor` to accept the rewritten HEAD as the new adoption " +
+      "baseline (the old adopted SHA is preserved under refs/dome/backup/). " +
+      "See docs/wiki/gotchas/adopted-ref-divergence.md.",
+    git: Object.freeze({ branch, head, adopted, orphanedCommits }),
   });
 }
 

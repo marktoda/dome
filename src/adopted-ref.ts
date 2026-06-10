@@ -47,15 +47,17 @@ export async function getAdoptedRef(vaultPath: string, branch?: string): Promise
  * Advance the adopted ref to `sha`. Fast-forward-only by default: refuses
  * (`adopted-ref-divergence` ToolError) if the current ref value is not an
  * ancestor of `sha`. The `forceAdvance: true` opt-out accepts any new
- * commit for internal recovery call sites and tests. V1 deliberately does
- * not expose a user-facing force-advance command; divergent histories are
+ * commit; the one user-facing path that exercises it is `dome reanchor`,
+ * the explicit divergence recovery command that records the old SHA under
+ * `refs/dome/backup/` before moving. Divergent histories are otherwise
  * resolved by repairing git history before running `dome sync` again.
  *
  * INTERNAL — not re-exported from `src/index.ts`. The only legitimate
- * callers are `src/engine/adopt.ts`'s adoption loop (which runs the full adoption
- * state machine before advancing) and tests. Plugin and consumer-shell code
- * reaches the adopted ref via `getAdoptedRef` (read) and `sync` (advance as
- * part of the loop); there is no public write path.
+ * callers are `src/engine/adopt.ts`'s adoption loop (which runs the full
+ * adoption state machine before advancing), `src/cli/commands/reanchor.ts`
+ * (the explicit recovery chokepoint), and tests. Plugin and consumer-shell
+ * code reaches the adopted ref via `getAdoptedRef` (read) and `sync`
+ * (advance as part of the loop); there is no public write path.
  *
  * Initialization (current ref absent) is allowed unconditionally and is
  * treated as a fast-forward from the all-zeros base.
@@ -92,7 +94,8 @@ export async function setAdoptedRef(
         kind: "validation",
         message:
           `adopted ref ${refName} (${current.slice(0, 7)}) is not an ancestor of ${sha.slice(0, 7)}; ` +
-          `repair git history so the adopted ref is in HEAD's ancestry, then run \`dome sync\` again. ` +
+          `repair git history so the adopted ref is in HEAD's ancestry and run \`dome sync\` again, ` +
+          `or run \`dome reanchor\` to accept the rewritten HEAD explicitly. ` +
           `See docs/wiki/gotchas/adopted-ref-divergence.md.`,
       });
     }

@@ -28,6 +28,12 @@ export const ALWAYS_TRUE_INVARIANTS: ReadonlyArray<AlwaysTrueInvariant> =
         const { head, adopted } = await h.refs.current();
         if (adopted === null) return; // uninitialized is valid
         if (head === adopted) return;
+        // A scenario that explicitly rewrote the branch ref via
+        // `userRewriteBranch` (the simulated `git reset --hard` /
+        // force-push) is *expected* to be divergent until it recovers via
+        // `dome reanchor` or a history restore. The engine itself never
+        // creates divergence; only the user move relaxes this check.
+        if (h.userRewroteHistory) return;
         const isAnc = await h.git.isAncestor(adopted, head);
         expect(
           isAnc,

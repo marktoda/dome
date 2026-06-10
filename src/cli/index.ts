@@ -23,6 +23,7 @@ import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runQuery } from "./commands/query";
+import { runReanchor } from "./commands/reanchor";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
@@ -392,6 +393,29 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("reanchor", { hidden: true })
+    .description(
+      "Re-anchor the adopted ref after a history rewrite (backs up the old SHA first).",
+    )
+    .option(
+      "--to <sha>",
+      "Commit OID to anchor to (defaults to the current HEAD).",
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: ReanchorCliOptions) => {
+      setExitCode(
+        await runReanchor({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          to: options.to,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("rebuild", { hidden: true })
     .description("Rebuild projection.db from the adopted commit.")
     .option("--json", "Emit JSON.")
@@ -657,6 +681,13 @@ type QueryCliOptions = {
 
 type ExportContextCliOptions = {
   readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type ReanchorCliOptions = {
+  readonly to?: string;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

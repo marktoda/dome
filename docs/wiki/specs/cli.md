@@ -400,7 +400,7 @@ dome sync: attention diagnostics, questions
 per-processor result lines such as `dome.markdown.*`; iteration scaffolding is
 suppressed so filtered logs stay focused.
 
-The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD is detected by the shared compiler-host drift boundary before any Proposal is constructed, and the operator resolves manually.
+There is no `--force-advance` flag on `dome sync`. The adopted-ref substrate's fast-forward-only check is in place; a divergent HEAD is detected by the shared compiler-host drift boundary before any Proposal is constructed and `dome sync` refuses (exit 1) with recovery guidance. The explicit recovery flow is its own verb — `dome reanchor` (below) — which backs up the old adopted SHA under `refs/dome/backup/` before accepting the rewritten HEAD; keeping the bypass off `sync` means the routine catch-up command can never be scripted into silently following a history rewrite.
 
 Exit codes: 0 on adopted / in-sync; 1 on blocked, adopted-ref divergence, or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits; 75 (EX_TEMPFAIL) when another compiler host holds the branch lock.
 
@@ -1301,6 +1301,58 @@ branch, adopted, error }` on failure.
 
 Exit codes: 0 on success; 1 on rebuild/runtime failure; 64 (EX_USAGE) on
 detached HEAD or uninitialized adopted ref.
+
+### `dome reanchor [--to <sha>] [--vault <path>] [--bundles-root <path>] [--json]`
+
+The explicit adopted-ref **divergence recovery** verb — the one user-facing
+path that moves `refs/dome/adopted/<branch>` without a fast-forward. It
+exists for exactly one state: the branch history was rewritten under the
+adopted cursor (force-push, hard-reset, rebase — see
+[[wiki/gotchas/adopted-ref-divergence]]) and the operator has confirmed the
+new HEAD is the intended trunk. The engine's own write side stays
+fast-forward-only per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]];
+`dome serve` pauses adoption and `dome sync` refuses while diverged, and the
+`adopted-ref.diverged` health finding (doctor/check/status attention) names
+this command in its recovery text.
+
+Composition (v1.0):
+
+1. Resolve `vaultPath`, branch, HEAD, and the adopted ref. Detached HEAD, no
+   commits, and an uninitialized adopted ref are usage refusals (exit 64) —
+   there is no cursor to recover.
+2. **Refuse when not diverged** (exit 64). When the adopted ref equals HEAD
+   or is an ancestor of HEAD, the normal fast-forward path (`dome sync`) is
+   the only legitimate advance; reanchor must never become a casual
+   force-move habit.
+3. Resolve the target: `--to <sha>` (a full commit OID) or the current HEAD
+   by default. The target must be HEAD or an ancestor of HEAD — anything
+   else would immediately re-create the divergence (exit 64).
+4. Open the runtime *before* mutating any ref, so a misconfigured vault
+   refuses without a half-done recovery (exit 1 on open failure).
+5. **Back up first, then move.** Write
+   `refs/dome/backup/adopted-<timestamp>` (ref-safe UTC `YYYYMMDDTHHMMSSZ`;
+   same-second collisions get a `-2`, `-3`, … suffix) at the old adopted
+   SHA, then advance the adopted ref to the target via the internal
+   `forceAdvance` opt-out. The backup keeps the orphaned engine/human
+   commits reachable (no GC) and makes the move reversible; the old SHA is
+   also recorded in the command output.
+6. **Trigger the normal sync path**: one compiler-host tick against the
+   re-anchored cursor. A target of HEAD lands `in-sync` (operational drain);
+   an ancestor target adopts the remaining range immediately. Subsequent
+   `dome serve` polls resume normal adoption.
+
+The ref move itself is compare-and-swap (`setAdoptedRef` writes with the
+expected old value), so a concurrent host advancing the ref cannot be
+silently overwritten; the follow-up tick takes the same branch-level
+compiler-host lock as every other host.
+
+`--json` emits `dome.reanchor/v1`: `{ schema, status: "reanchored" |
+"error", vault, branch, head, previous_adopted, new_adopted, backup_ref,
+sync: { kind, final_adopted }, error?, message? }`.
+
+Exit codes: 0 on success; 64 (EX_USAGE) on detached HEAD, no commits,
+uninitialized adopted ref, **not diverged**, or a `--to` target not reachable
+from HEAD; 1 on runtime-open or ref-write failure.
 
 ### `dome inspect <subject> [--limit <n>] [--model] [--json]`
 
