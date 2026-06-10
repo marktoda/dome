@@ -633,7 +633,7 @@ bun (runtime; ships sqlite, glob, file, watcher built-in)
 isomorphic-git (the git boundary)
 gray-matter (frontmatter parsing)
 yaml (config + manifest loading)
-zod (schema validation)
+zod 4 (boundary validation schemas)
 ```
 
 Planned provider adapters add:

@@ -34,6 +34,15 @@ For state-file corruption (`quarantined.json`, future state files), the validati
 
 **Convention until the lockstep ships:** v1 lands Zod schemas at every named boundary; new persistence boundaries added in v1.x ship with their schemas. Reviewer attention is the enforcement seam until a `tests/integration/boundary-validation-coverage.test.ts` lockstep walks every YAML/JSON read site in `src/` and asserts each consumes a Zod schema.
 
+**Type/schema lockstep (zod 4):** The SDK is on zod 4. Two facts govern how schemas and hand types relate:
+
+- **Hand-written types are canonical; schemas validate.** The public types (`Effect`, `Manifest`, the store-row shapes) are hand-written with the house optional style `field?: T` — *not* derived via `z.infer`. Zod cannot express exact-optional inference: `.optional()` infers `field?: T | undefined` in zod 4 just as in zod 3, which `exactOptionalPropertyTypes` rejects against `field?: T`. Do not convert public types to `z.infer` aliases — that flips the public optional semantics to permit explicit-`undefined` keys, which the constructors deliberately never produce.
+- **Drift between a schema and its hand type is pinned at compile time**, not by convention. `tests/types/schema-type-lockstep.ts` carries a bidirectional assignability fence per schema/type pair: the hand type must extend the inferred type (the schema is not stricter than the type), and the inferred type must extend the undefined-loosened hand type (the type is not stricter than the schema, modulo the exact-optional gap). The fence is gated by `bun run typecheck` (and `v1:check`). A schema field added without the hand type — or vice versa — fails the build.
+
+The one place the exact-optional gap crosses an assignment boundary is `parseManifest` (`src/extensions/manifest-schema.ts`): the validated output is cast to `Manifest` across that gap, with the lockstep fence guaranteeing the cast is shape-safe.
+
+Zod 4's `discriminatedUnion` accepts refined members, so per-kind semantic refinements (FactEffect's non-empty `sourceRefs`, SearchDocument's body rules) live directly on each kind's schema; the union does not re-apply them. (Under zod 3 the union rejected `ZodEffects` members, forcing an un-refined parallel schema plus a union-level `superRefine` re-application — that layering is retired.)
+
 **Specific scenarios:**
 
 - A user with a hand-edited `<vault>/.dome/config.yaml` carries a malformed `invariants:` block. The current behavior (without the schema) crashes during the spread merge in `openVault`; with the schema, it returns `Result.err({ kind: 'invalid-vault-config', path: 'invariants', expected: 'object', got: 'string' })` and `dome inspect diagnostics` surfaces the error as a DiagnosticEffect.
