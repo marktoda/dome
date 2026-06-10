@@ -234,6 +234,7 @@ extensions:
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
       patch.auto: ["**/*.md"]
+      graph.write: ["dome.page.*"]
       question.ask: true
   dome.graph:
     enabled: true

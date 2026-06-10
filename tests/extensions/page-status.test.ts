@@ -9,6 +9,7 @@ import {
 import type { FactEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
+import { requireVaultPath } from "../../src/core/vault-path";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { makeProcessorContext } from "../../src/processors/context";
 
@@ -33,7 +34,7 @@ describe("dome.markdown.page-status", () => {
     expect(status.object).toEqual({ kind: "string", value: "superseded" });
     expect(status.subject).toEqual({
       kind: "page",
-      path: "wiki/concepts/old-take.md",
+      path: requireVaultPath("wiki/concepts/old-take.md"),
     });
     expect(status.assertion).toBe("extracted");
     expect(status.sourceRefs[0]?.range?.startLine).toBe(3);

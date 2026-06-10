@@ -4,6 +4,7 @@ import lintSupersession from "../../assets/extensions/dome.markdown/processors/l
 import type { DiagnosticEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
+import { requireVaultPath } from "../../src/core/vault-path";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { makeProcessorContext } from "../../src/processors/context";
 
@@ -78,7 +79,9 @@ describe("dome.markdown.lint-supersession — link to superseded (rule 2)", () =
     expect(diagnostics[0]?.message).toContain(
       "Current content lives at [[wiki/concepts/new.md]]",
     );
-    expect(diagnostics[0]?.sourceRefs[0]?.path).toBe("wiki/concepts/live.md");
+    expect(diagnostics[0]?.sourceRefs[0]?.path).toBe(
+      requireVaultPath("wiki/concepts/live.md"),
+    );
     expect(diagnostics[0]?.sourceRefs[0]?.range?.startChar).toBeDefined();
   });
 
