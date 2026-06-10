@@ -68,6 +68,11 @@ engine:
   # Optional global caps applied after manifest/default policy resolution.
   processor_timeout_ms: 600000
   model_call_timeout_ms: 180000
+  # Per-attempt bound for external outbox handlers (default 30000). Not a
+  # processor timeout — it caps the handler side of ExternalActionEffect
+  # dispatch ([[wiki/specs/capabilities]] §"external"); raise it when a
+  # dome.sources fetch command runs a headless model ([[wiki/specs/sources]]).
+  external_handler_timeout_ms: 30000
 ```
 
 Default execution class by phase:

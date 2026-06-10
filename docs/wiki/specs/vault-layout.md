@@ -131,24 +131,27 @@ Shape rules (loose by design — the file is produced by user-assembled tooling)
 - Consumers MUST parse defensively: lines that don't match the time/attendees grammar are still meetings (title-only), counts and field lengths are capped, and the content is **untrusted input** to any model prompt — data, never instructions.
 - A missing file means "no agenda known"; consumers degrade by omitting their calendar-derived output, never by inventing one.
 
-### Populating the calendar file (recipe, not shipped)
+### Populating the calendar file
 
-The SDK ships **no calendar fetcher** and the engine never gains a calendar dependency ([[wedge]] decision 4: calendar enters as committed source files). The file is produced by a user-assembled fetcher that runs before the 05:30 brief — a launchd/cron job, an AppleScript/EventKit script, or an MCP-driven agent session — and lands via a plain git commit (the daemon adopts it like any other commit). `dome capture` is *not* the right ingress: it targets `inbox/raw/` and would route the agenda through the ingest agent instead.
+The SDK ships **no calendar fetcher** and the engine never gains a calendar dependency ([[wedge]] decision 4: calendar enters as committed source files). What the SDK does ship is the **scheduling**: the opt-in `dome.sources` calendar subscription ([[wiki/specs/sources]]) runs a **vault-authored fetch command** through the outbox before the 05:30 brief. The command — not the engine — fetches, writes this file, and commits it as an ordinary non-engine commit the daemon adopts. `assets/source-handlers/claude-calendar.sh` ships as the command template (copy to `.dome/bin/fetch-calendar.sh`, adjust the fetch line, flip the subscription `enabled: true`).
 
-Example sketch with [gcalcli](https://github.com/insanum/gcalcli) (adjust to taste; this is a recipe, not a supported artifact):
+A vault may equally keep a fully external fetcher — a launchd/cron job, an AppleScript/EventKit script, or an MCP-driven agent session — landing the file via a plain git commit; the file contract is identical and the subscription's skip-if-present check treats the externally-committed file as done. `dome capture` is *not* the right ingress either way: it targets `inbox/raw/` and would route the agenda through the ingest agent instead.
+
+Example fetch sketch with [gcalcli](https://github.com/insanum/gcalcli) (adjust to taste; this is a recipe, not a supported artifact — when run as a subscription command, the date and output path arrive as `$1` and `$2`):
 
 ```sh
 #!/bin/sh
 # fetch-calendar.sh — run from the vault root before ~05:30
-d=$(date +%F)
-f="sources/calendar/$d.md"
-mkdir -p sources/calendar
+d="${1:-$(date +%F)}"
+f="${2:-sources/calendar/$d.md}"
+mkdir -p "$(dirname "$f")"
 {
   printf -- '---\ntype: calendar-day\ndate: %s\n---\n\n# Calendar %s\n\n' "$d" "$d"
   gcalcli agenda "$d 00:00" "$d 23:59" --tsv \
     | awk -F'\t' '{ printf "- %s\xe2\x80\x93%s \xe2\x80\x94 %s\n", $2, $4, $5 }'
 } > "$f"
-git add "$f" && git commit -m "calendar: agenda for $d"
+# Pathspec-scoped commit: never sweeps a human's staged work into the fetch commit.
+git add -- "$f" && git commit -m "calendar: agenda for $d" -- "$f"
 ```
 
 ## `core.md` — the core memory page (convention)
@@ -306,10 +309,24 @@ extensions:
   dome.health:   { enabled: true,  grants: { read: ["**"], question.ask: true, outbox.read: ["failed"], outbox.recover: true, quarantine.read: true, quarantine.recover: true, run.read: ["running"], run.recover: true } }
   dome.lint:     { enabled: true,  grants: { read: ["**/*.md"] } }
   dome.search:   { enabled: true,  grants: { read: ["**/*.md"], search.write: ["**/*.md"] } }
+  dome.sources:                    # external-feed subscriptions ([[wiki/specs/sources]])
+    enabled: true
+    config:                        # the consent surface — per-subscription opt-in
+      subscriptions:
+        calendar:
+          enabled: false           # shipped default: visible but off
+          schedule: "10 5 * * *"
+          output_path: "sources/calendar/{date}.md"
+          command: ["sh", ".dome/bin/fetch-calendar.sh"]
+    grants:
+      read: ["sources/**/*.md", ".dome/config.yaml"]
+      external: ["sources.fetch"]
 
 engine:
   max_iterations: 100             # MAX_ITER for the fixed-point loop
   auto_commit_workflows: true     # whether closure commits land automatically
+  # external_handler_timeout_ms: 300000   # per-attempt outbox handler bound (default 30000);
+  #                                       # raise when a subscription fetch runs a headless model
   auto_resolve_questions:          # optional; defaults to disabled
     enabled: false
     policies: ["agent-safe"]

@@ -203,6 +203,12 @@ function buildViewCommandSinks(opts: {
     captureView,
     applyPatch,
     externalHandlers: opts.runtime.externalHandlers,
+    ...(opts.runtime.config.engine.externalHandlerTimeoutMs !== undefined
+      ? {
+          externalHandlerTimeoutMs:
+            opts.runtime.config.engine.externalHandlerTimeoutMs,
+        }
+      : {}),
     recoverQuarantine,
     recoverRun,
   });

@@ -264,6 +264,8 @@ export async function runCheck(
           resolveGrants: runtime.resolveGrants,
           extensionConfigFor: runtime.extensionConfigFor,
           modelProviderConfigured: runtime.modelProvider !== undefined,
+          externalHandlerTimeoutConfigured:
+            runtime.config.engine.externalHandlerTimeoutMs !== undefined,
           orphanRunThresholdMs: orphanThresholdMs,
         })
       : null;

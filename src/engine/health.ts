@@ -254,6 +254,18 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "config.sources-timeout-default";
+      readonly severity: "info";
+      readonly subject: "config";
+      readonly id: "sources_timeout";
+      readonly message: string;
+      readonly recovery: string;
+      readonly config: {
+        /** The enabled dome.sources subscription kinds observed. */
+        readonly enabledKinds: ReadonlyArray<string>;
+      };
+    }
+  | {
       readonly code: "daily.edition-not-compiled";
       readonly severity: "warning";
       readonly subject: "daily";
@@ -300,6 +312,7 @@ export type HealthSummary = {
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
   readonly dailyPathMismatch: number;
+  readonly sourcesTimeoutDefault: number;
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
 };
@@ -344,6 +357,12 @@ export async function collectHealthReport(opts: {
     extensionId: string,
   ) => Readonly<Record<string, unknown>>;
   readonly modelProviderConfigured?: boolean;
+  /**
+   * Whether the vault sets `engine.external_handler_timeout_ms`. Feeds the
+   * `config.sources-timeout-default` info finding (the model-fetcher
+   * timeout footgun, wiki/specs/sources.md §"Timeout").
+   */
+  readonly externalHandlerTimeoutConfigured?: boolean;
   readonly modelProviderProbe?: ModelProviderProbeInput;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
@@ -403,6 +422,15 @@ export async function collectHealthReport(opts: {
           extensions: opts.extensions,
           extensionConfigFor: opts.extensionConfigFor,
         });
+  const sourcesTimeout =
+    opts.extensionConfigFor === undefined
+      ? []
+      : sourcesHandlerTimeoutFindings({
+          extensions: opts.extensions,
+          extensionConfigFor: opts.extensionConfigFor,
+          externalHandlerTimeoutConfigured:
+            opts.externalHandlerTimeoutConfigured === true,
+        });
   const dailyEdition =
     opts.registry === undefined
       ? []
@@ -423,6 +451,7 @@ export async function collectHealthReport(opts: {
     ...modelProvider,
     ...modelProviderProbe,
     ...dailyPathMismatch,
+    ...sourcesTimeout,
     ...dailyEdition,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
@@ -482,6 +511,7 @@ function buildHealthReport(
       modelProviderUnreachable: count("model.provider-unreachable"),
       modelProviderKeyMissing: count("model.provider-key-missing"),
       dailyPathMismatch: count("config.daily-path-mismatch"),
+      sourcesTimeoutDefault: count("config.sources-timeout-default"),
       dailyEditionNotCompiled: count("daily.edition-not-compiled"),
       dailyCalendarSourceMissing: count("daily.calendar-source-missing"),
     }),
@@ -920,6 +950,83 @@ function dailyPathConfigValue(
   return typeof raw === "string" ? raw : null;
 }
 
+/**
+ * The model-fetcher timeout footgun (wiki/specs/sources.md §"Timeout").
+ * Trigger — the simplest honest one: ANY dome.sources subscription is
+ * enabled while `engine.external_handler_timeout_ms` is unset. The 30s
+ * dispatch default fits direct API fetchers (which is why this stays
+ * info severity, never ill health), but a model-backed fetch command
+ * (the shipped claude-calendar template) rides the timeout out and dies;
+ * discovering that from failed outbox rows is miserable. Doctor says it
+ * up front instead. We deliberately do NOT sniff the command for a
+ * "claude" pattern — a wrapper script hides it, and a fast fetcher named
+ * claude-anything would false-positive; subscription-enabled + timeout-
+ * unset is the honest observable.
+ */
+export function sourcesHandlerTimeoutFindings(opts: {
+  readonly extensions: ReadonlyArray<{ readonly name: string }>;
+  readonly extensionConfigFor: (
+    extensionId: string,
+  ) => Readonly<Record<string, unknown>>;
+  readonly externalHandlerTimeoutConfigured: boolean;
+}): ReadonlyArray<HealthFinding> {
+  if (opts.externalHandlerTimeoutConfigured) return Object.freeze([]);
+  if (!opts.extensions.some((e) => e.name === "dome.sources")) {
+    return Object.freeze([]);
+  }
+  const enabledKinds = enabledSubscriptionKinds(
+    opts.extensionConfigFor("dome.sources"),
+  );
+  if (enabledKinds.length === 0) return Object.freeze([]);
+  return Object.freeze([
+    Object.freeze({
+      code: "config.sources-timeout-default" as const,
+      severity: "info" as const,
+      subject: "config" as const,
+      id: "sources_timeout" as const,
+      message:
+        `dome.sources subscription(s) ${enabledKinds.join(", ")} are enabled ` +
+        "while engine.external_handler_timeout_ms is unset — each fetch " +
+        "attempt is bounded by the 30s dispatch default. Direct API " +
+        "fetchers fit; a model-backed fetch command (the claude-calendar " +
+        "template) will time out.",
+      recovery:
+        "If the fetch command runs a headless model, set " +
+        "engine.external_handler_timeout_ms: 300000 in .dome/config.yaml; " +
+        "if it is a direct API fetcher, ignore this.",
+      config: Object.freeze({ enabledKinds }),
+    }),
+  ]);
+}
+
+/**
+ * Minimal, fallback-not-crash read of
+ * `extensions.dome.sources.config.subscriptions` for the timeout finding:
+ * map entries whose `enabled` is exactly true. Deliberately does not
+ * import the bundle's resolver — src never imports assets/, and the
+ * finding only needs intent (enabled), not validity.
+ */
+function enabledSubscriptionKinds(
+  config: Readonly<Record<string, unknown>>,
+): ReadonlyArray<string> {
+  const raw = config.subscriptions;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(
+    Object.entries(raw as Record<string, unknown>)
+      .filter(
+        ([, entry]) =>
+          entry !== null &&
+          typeof entry === "object" &&
+          !Array.isArray(entry) &&
+          (entry as Record<string, unknown>).enabled === true,
+      )
+      .map(([kind]) => kind)
+      .sort(compareStrings),
+  );
+}
+
 // ----- Daily-edition choreography probes --------------------------------------
 //
 // "Did my morning happen" without reading the daily note. Two read-only,
@@ -1009,10 +1116,11 @@ export function dailyEditionFindings(opts: {
           `last 2 run days (${recentRunDates.join(", ")}); the edition's ` +
           `meetings section was omitted both mornings.`,
         recovery:
-          "Wire a vault-side calendar fetcher that commits " +
-          "sources/calendar/<date>.md before the brief — see " +
-          'docs/wiki/specs/vault-layout.md §"Populating the calendar file ' +
-          '(recipe, not shipped)". A deliberately calendar-less vault may ' +
+          "Enable the dome.sources calendar subscription (config + a " +
+          ".dome/bin fetch command — see docs/wiki/specs/sources.md) or " +
+          "wire a vault-side fetcher that commits sources/calendar/<date>.md " +
+          "before the brief (docs/wiki/specs/vault-layout.md §\"Populating " +
+          "the calendar file\"). A deliberately calendar-less vault may " +
           "ignore this info finding.",
         daily: Object.freeze({
           briefRunDates: Object.freeze([...recentRunDates]),

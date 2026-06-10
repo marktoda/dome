@@ -114,7 +114,7 @@ The runtime enforces the intersection of the declared and granted allowlists bef
 
 Permits emitting `ExternalActionEffect` with the named capability. Each external capability is a separate grant — `external: "calendar.write"` does not imply `external: "notify.push"`.
 
-External capabilities are registered as handlers at the runtime boundary; the engine looks up the injected handler at outbox dispatch time. Bundle-discovered handler directories are planned, but v1 currently supports caller-injected handlers only, so missing handlers fail explicitly in `outbox.db` rather than disappearing.
+External capabilities are registered as handlers at the runtime boundary; the engine looks up the registered handler at outbox dispatch time, and a missing handler fails explicitly in `outbox.db` rather than disappearing. Handlers arrive two ways: **caller-injected** registries (hosts, tests) and **bundle-discovered** `external-handlers/<capability>.ts` modules, bound by filename stem per [[wiki/matrices/extension-bundle-shape]] — `openVaultRuntime` wraps each bundle handler to inject the absolute vault root into its input (caller-injected handlers are not wrapped). The first shipped bundle handler is `dome.sources`' `sources.fetch` ([[wiki/specs/sources]]). Each handler attempt is bounded by `engine.external_handler_timeout_ms` (default 30 000 ms) — the dispatch `AbortSignal` fires at the bound and the attempt lands in normal outbox retry.
 
 ### `outbox.read`
 

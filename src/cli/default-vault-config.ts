@@ -12,9 +12,29 @@ export type DefaultGrantValue =
   | ReadonlyArray<string>
   | Readonly<Record<string, boolean | number | string>>;
 
+/**
+ * Opaque per-extension `config:` payload (`extensions.<bundle>.config`).
+ * Recursive JSON-ish shape so defaults can carry nested mappings (e.g. the
+ * dome.sources subscriptions block). Rendered to YAML by
+ * `renderConfigValue` and round-trip-tested against `defaultConfigRecord`.
+ */
+export type DefaultConfigValue =
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<DefaultConfigValue>
+  | { readonly [key: string]: DefaultConfigValue };
+
 export type FirstPartyExtensionDefault = {
   readonly id: string;
   readonly enabled: boolean;
+  /**
+   * Optional shipped per-extension config (`extensions.<bundle>.config`).
+   * Used where the consent surface ships visible-but-off defaults — e.g.
+   * dome.sources ships the calendar subscription with `enabled: false`
+   * so opting in is a one-line flip (wiki/specs/sources.md).
+   */
+  readonly config?: Readonly<Record<string, DefaultConfigValue>>;
   readonly grant: Readonly<Record<string, DefaultGrantValue>>;
   /**
    * Optional per-processor REPLACEMENT grants
@@ -123,6 +143,30 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       read: ["**/*.md"],
       "search.write": ["**/*.md"],
     }),
+    // dome.sources — external-feed subscriptions (wiki/specs/sources.md).
+    // The bundle is enabled (its 15-minute fetch tick is a cheap no-op when
+    // nothing is due) but every shipped subscription is `enabled: false`:
+    // consent is the per-subscription flip plus the vault-authored fetch
+    // command (copy assets/source-handlers/claude-calendar.sh into
+    // .dome/bin/ and adjust).
+    extensionWithConfig(
+      "dome.sources",
+      true,
+      {
+        subscriptions: {
+          calendar: {
+            enabled: false,
+            schedule: "10 5 * * *",
+            output_path: "sources/calendar/{date}.md",
+            command: ["sh", ".dome/bin/fetch-calendar.sh"],
+          },
+        },
+      },
+      {
+        read: ["sources/**/*.md", ".dome/config.yaml"],
+        external: ["sources.fetch"],
+      },
+    ),
     extension("dome.health", true, {
       read: ["**"],
       "outbox.read": ["failed"],
@@ -149,6 +193,9 @@ export function defaultConfigRecord(opts: {
         entry.id,
         {
           enabled: entry.enabled,
+          ...(entry.config !== undefined
+            ? { config: structuredClone(entry.config) }
+            : {}),
           grant: cloneGrant(entry.grant),
           ...(entry.processors !== undefined
             ? {
@@ -210,6 +257,20 @@ function extension(
   });
 }
 
+function extensionWithConfig(
+  id: string,
+  enabled: boolean,
+  config: Readonly<Record<string, DefaultConfigValue>>,
+  grant: Readonly<Record<string, DefaultGrantValue>>,
+): FirstPartyExtensionDefault {
+  return Object.freeze({
+    id,
+    enabled,
+    config: Object.freeze(config),
+    grant: Object.freeze(grant),
+  });
+}
+
 function cloneGrant(
   grant: Readonly<Record<string, DefaultGrantValue>>,
 ): Record<string, unknown> {
@@ -222,6 +283,14 @@ function renderExtension(entry: FirstPartyExtensionDefault): string {
   return [
     `  ${entry.id}:`,
     `    enabled: ${entry.enabled ? "true" : "false"}`,
+    ...(entry.config !== undefined
+      ? [
+          "    config:",
+          ...Object.entries(entry.config).flatMap(([key, value]) =>
+            renderConfigValue(key, value, 6),
+          ),
+        ]
+      : []),
     "    grant:",
     ...Object.entries(entry.grant).flatMap(([key, value]) =>
       renderGrantValue(key, value, 6),
@@ -268,6 +337,44 @@ function renderScalar(value: boolean | number | string): string {
   return String(value);
 }
 
+/**
+ * Render one `config:` key with a recursive JSON-ish value. Lists render
+ * flow-style (`["a", "b"]`) so command argv lists stay one line; nested
+ * mappings recurse block-style. Round-trip parity with
+ * `defaultConfigRecord` is pinned by tests/integration/default-vault-config.
+ */
+function renderConfigValue(
+  key: string,
+  value: DefaultConfigValue,
+  indent: number,
+): ReadonlyArray<string> {
+  const pad = " ".repeat(indent);
+  if (Array.isArray(value)) {
+    return [`${pad}${key}: ${renderFlowValue(value)}`];
+  }
+  if (value !== null && typeof value === "object") {
+    return [
+      `${pad}${key}:`,
+      ...Object.entries(value).flatMap(([childKey, childValue]) =>
+        renderConfigValue(childKey, childValue, indent + 2),
+      ),
+    ];
+  }
+  return [`${pad}${key}: ${renderScalar(value)}`];
+}
+
+function renderFlowValue(value: DefaultConfigValue): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(renderFlowValue).join(", ")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .map(([k, v]) => `${quote(k)}: ${renderFlowValue(v)}`)
+      .join(", ")}}`;
+  }
+  return renderScalar(value);
+}
+
 export function defaultModelProviderConfig(
   provider: DefaultModelProvider,
 ): Record<string, unknown> {
@@ -307,7 +414,8 @@ const DEFAULT_CONFIG_HEADER = `# Dome vault configuration (v1.0).
 # This file controls which extensions are active and their capability
 # grants. The shipped first-party bundles (\`dome.claims\`, \`dome.daily\`,
 # \`dome.graph\`, \`dome.health\`, \`dome.agent\`, \`dome.lint\`,
-# \`dome.markdown\`, \`dome.search\`) live with the SDK. By default, CLI
+# \`dome.markdown\`, \`dome.search\`, \`dome.sources\`) live with the SDK.
+# By default, CLI
 # commands compose those shipped bundles with any vault-local bundles under
 # \`.dome/extensions/\`.
 #
@@ -335,6 +443,10 @@ const DEFAULT_CONFIG_FOOTER = `engine:
   # requests more tightly for this vault.
   # processor_timeout_ms: 600000
   # model_call_timeout_ms: 180000
+  #
+  # Per-attempt bound for external outbox handlers (default 30000). Raise it
+  # when a dome.sources subscription's fetch command runs a headless model:
+  # external_handler_timeout_ms: 300000
   #
   # Optional low-risk question auto-resolution. When enabled, Dome may answer
   # unresolved questions that declare low risk, an allowed automation policy,

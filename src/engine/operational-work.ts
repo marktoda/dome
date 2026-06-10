@@ -64,6 +64,12 @@ export async function runOperationalWork(opts: {
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly externalHandlers: ExternalHandlerRegistry;
+  /**
+   * Per-attempt bound for external handlers, threaded from
+   * `engine.external_handler_timeout_ms`. Absent → the dispatch layer's
+   * 30s default.
+   */
+  readonly externalHandlerTimeoutMs?: number;
   readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
   readonly operational?: OperationalQueryView;
   readonly ledger?: LedgerDb;
@@ -166,6 +172,9 @@ export async function runOperationalWork(opts: {
     handlers: opts.externalHandlers,
     enqueuedBefore: outboxDrainCutoff,
     now: outboxNow,
+    ...(opts.externalHandlerTimeoutMs !== undefined
+      ? { handlerTimeoutMs: opts.externalHandlerTimeoutMs }
+      : {}),
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 

@@ -52,6 +52,14 @@ export type RuntimeConfig = {
     readonly maxIterations: number;
     readonly executionCap: ExecutionPolicyCap;
     readonly autoResolveQuestions: RuntimeQuestionAutoResolveConfig;
+    /**
+     * Per-attempt bound for external outbox handlers
+     * (`engine.external_handler_timeout_ms`). Absent → the dispatch
+     * layer's 30s default. Vaults whose subscription fetch commands run a
+     * headless model (wiki/specs/sources.md §"The handler contract") raise
+     * this.
+     */
+    readonly externalHandlerTimeoutMs?: number;
   };
   readonly git: {
     readonly auto_commit_workflows: boolean;
@@ -407,6 +415,11 @@ function parseRuntimeConfig(
     `${path} engine.model_call_timeout_ms`,
   );
   if (!modelCallTimeoutMs.ok) return err(modelCallTimeoutMs.error);
+  const externalHandlerTimeoutMs = parseOptionalPositiveInteger(
+    engine.external_handler_timeout_ms,
+    `${path} engine.external_handler_timeout_ms`,
+  );
+  if (!externalHandlerTimeoutMs.ok) return err(externalHandlerTimeoutMs.error);
 
   const engineAutoCommit = parseOptionalBoolean(
     engine.auto_commit_workflows,
@@ -446,6 +459,9 @@ function parseRuntimeConfig(
             : {}),
         }),
         autoResolveQuestions: autoResolveQuestions.value,
+        ...(externalHandlerTimeoutMs.value !== undefined
+          ? { externalHandlerTimeoutMs: externalHandlerTimeoutMs.value }
+          : {}),
       }),
       git: Object.freeze({
         auto_commit_workflows:
@@ -475,6 +491,7 @@ const ENGINE_KEYS = new Set([
   "auto_commit_workflows",
   "processor_timeout_ms",
   "model_call_timeout_ms",
+  "external_handler_timeout_ms",
   "auto_resolve_questions",
 ]);
 const GIT_KEYS = new Set(["auto_commit_workflows"]);

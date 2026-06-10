@@ -516,8 +516,10 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       evidence: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "notes/*.md" },
-        // External committed feed: produced by a vault-side fetcher before
-        // the 05:30 brief (vault-layout's calendar recipe), never by the SDK.
+        // Committed external feed: fetched by the dome.sources calendar
+        // subscription (opt-in, wiki/specs/sources.md) or any vault-side
+        // fetcher, landing as an ordinary non-engine commit before the
+        // 05:30 brief — the engine never writes it.
         { kind: "path", pattern: "sources/calendar/*.md" },
         // The 03:00 sweep's advisory ledger — the edition's deterministic
         // "Integrated overnight" digest renders today's run section from it.
@@ -531,6 +533,14 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.carry-forward",
         "dome.daily.close-scaffold",
       ],
+      // dome.sources.fetch joins the edition rather than owning a tenth
+      // loop: in the default experience its sole purpose is feeding the
+      // edition's calendar input, and this loop already names
+      // sources/calendar/*.md as evidence — an own loop would answer "did
+      // my agenda arrive" in two places (the same argument that folded the
+      // close into the edition). Optional because subscriptions are
+      // per-vault opt-in (wiki/specs/sources.md §"Lockstep").
+      optionalProcessors: ["dome.sources.fetch"],
       surfaces: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "notes/*.md" },
@@ -543,7 +553,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
-        "The calendar source is a vault-assembled external feed (sources/calendar/<date>.md, vault-layout recipe); its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error.",
+        "The calendar source is a committed external feed (sources/calendar/<date>.md) fetched by the opt-in dome.sources subscription or a vault-side fetcher; its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error. Subscription fetch failures surface through the ordinary outbox recovery path (dome check / dome.health questions), not through this loop.",
         "Scheduled processors fire only while the host runs; a stopped serve silently skips the 05:30/06:00/21:30 ticks — the daily.edition-not-compiled doctor finding is the morning detection net; a skipped close degrades tomorrow's yesterday digest per the daily-surface ladder.",
         "The close scaffold is presence-gated and schedule-only: it never rewrites a human-edited block and never appends late settles — those surface in tomorrow's open-loops subsections and the next close.",
       ],
