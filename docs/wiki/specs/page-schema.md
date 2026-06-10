@@ -155,7 +155,7 @@ That is the *whole* writer burden. The superseded page's body is never rewritten
 
 All four default page types (and any extension type that opts in) carry `status: optional` and `superseded_by: optional`. `status:` is a free-form lifecycle label; `superseded` is the load-bearing value the substrate reacts to. `superseded_by:` carries a single wikilink to the page that replaces this one.
 
-**Mixed pages — the `## Superseded` section-move convention.** When only part of a page is outdated (the page lives on, one claim died), move the outdated content under a `## Superseded` heading with a forward wikilink to where the current claim lives. Links inside a `## Superseded` section are recognized as history context by the supersession lint and stay diagnostic-free.
+**Mixed pages — the `## Superseded` section-move convention.** When only part of a page is outdated (the page lives on, one claim died), move the outdated content under a `## Superseded` heading with a forward wikilink to where the current claim lives. Links inside a `## Superseded` section are recognized as history context by the supersession lint and stay diagnostic-free. Heading lines inside fenced code blocks are not headings for this purpose: a fenced `## Superseded` example neither opens an exemption range nor closes a real one (the section scanner tracks fences, mirroring the search indexer's fence rule).
 
 The convention is enforced and consumed deterministically:
 

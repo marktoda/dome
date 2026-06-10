@@ -121,6 +121,10 @@ export type LineRange = {
  * depth. Wikilinks inside these ranges are history context per
  * [[wiki/specs/page-schema]] §"Supersession (ADR pattern)" and are exempt
  * from the link-to-superseded lint.
+ *
+ * Heading lines inside fenced code blocks are NOT headings (mirrors
+ * dome.search.index-text's fence tracking): a fenced `## Superseded`
+ * example must neither open a bogus exemption range nor close a real one.
  */
 export function supersededSectionLineRanges(
   content: string,
@@ -128,8 +132,14 @@ export function supersededSectionLineRanges(
   const lines = content.split(/\r?\n/);
   const ranges: LineRange[] = [];
   let open: { startLine: number; depth: number } | null = null;
+  let inFence = false;
 
   for (let i = 0; i < lines.length; i++) {
+    if (isFenceDelimiter(lines[i] ?? "")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
     const heading = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(lines[i] ?? "");
     if (heading === null) continue;
     const depth = heading[1]?.length ?? 0;
@@ -155,6 +165,15 @@ export function lineInRanges(
   ranges: ReadonlyArray<LineRange>,
 ): boolean {
   return ranges.some((r) => line >= r.startLine && line <= r.endLine);
+}
+
+/**
+ * A ``` or ~~~ fence delimiter line (optionally indented / info-stringed).
+ * Same shape as dome.search.index-text's matcher so the two modules cannot
+ * disagree about what counts as fenced content.
+ */
+function isFenceDelimiter(line: string): boolean {
+  return /^\s{0,3}(?:```|~~~)/.test(line);
 }
 
 function escapeRegExp(value: string): string {

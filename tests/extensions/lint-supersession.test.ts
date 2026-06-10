@@ -117,6 +117,39 @@ describe("dome.markdown.lint-supersession — link to superseded (rule 2)", () =
     expect(diagnostics[0]?.code).toBe("dome.markdown.link-to-superseded");
   });
 
+  test("a fenced ## Superseded heading neither opens nor closes an exemption range", async () => {
+    const diagnostics = await runLint({
+      "wiki/concepts/old.md": SUPERSEDED_PAGE("wiki/concepts/new"),
+      "wiki/concepts/new.md": LIVE_TARGET,
+      // A code-fenced "## Superseded" example must NOT exempt the live link
+      // below it...
+      "wiki/concepts/fenced-example.md":
+        "---\ntype: concept\n---\n" +
+        "# Fenced example\n" +
+        "```markdown\n" +
+        "## Superseded\n" +
+        "```\n" +
+        "still citing [[wiki/concepts/old]] as if current\n",
+      // ...and a fenced heading inside a REAL ## Superseded section must not
+      // close the real range early.
+      "wiki/concepts/fenced-inside.md":
+        "---\ntype: concept\n---\n" +
+        "# Fenced inside\n" +
+        "## Superseded\n" +
+        "```markdown\n" +
+        "## Current\n" +
+        "```\n" +
+        "we used to think [[wiki/concepts/old]] was right\n",
+    });
+    expect(diagnostics.length).toBe(1);
+    expect(diagnostics[0]?.code).toBe("dome.markdown.link-to-superseded");
+    expect(
+      diagnostics[0]?.sourceRefs.some(
+        (ref) => ref.path === "wiki/concepts/fenced-example.md",
+      ),
+    ).toBe(true);
+  });
+
   test("the frontmatter superseded_by chain is never flagged", async () => {
     // A page that records superseded_by toward a superseded page but is not
     // itself flipped yet — the chain line is exempt, the body is not.
