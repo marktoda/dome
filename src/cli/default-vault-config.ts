@@ -43,7 +43,9 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     extension("dome.daily", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
-      "graph.write": ["dome.daily.*"],
+      // dome.attention.* carries the attention-discount facts (task-lifecycle
+      // §"Attention discounting") emitted by dome.daily.attention-discount.
+      "graph.write": ["dome.daily.*", "dome.attention.*"],
       "question.ask": true,
     }),
     extension("dome.agent", false, {

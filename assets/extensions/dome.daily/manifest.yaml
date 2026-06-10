@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.1.20
+version: 0.2.0
 processors:
   - id: dome.daily.normalize-task-syntax
     version: 0.1.0
@@ -167,6 +167,42 @@ processors:
       - kind: patch.auto
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/carry-forward.ts
+
+  - id: dome.daily.attention-discount
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.attention.*"]
+    # Deterministic + read/graph.write-only keeps this in the rebuild-safe
+    # garden set (isRebuildEligibleGardenProcessor); all-readable-markdown
+    # inspection lets settled items' stale facts resolve on any run.
+    execution:
+      class: deterministic
+    inspection:
+      kind: all-readable-markdown
+    module: processors/attention-discount.ts
 
   - id: dome.daily.reconcile-tasks
     version: 0.1.0
