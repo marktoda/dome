@@ -1,0 +1,1 @@
+- auto updating sources. ie if raw source is an article, should reindex on updates and so on
