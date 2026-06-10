@@ -35,7 +35,14 @@
 //     owns compilation; `capture` and `resolve` reuse the existing
 //     non-engine write channels (ordinary human commit; answers.db).
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  type ToolCallback,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
+import type {
+  ShapeOutput,
+  ZodRawShapeCompat,
+} from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { z } from "zod";
 
 import { runCapture } from "../cli/commands/capture";
@@ -192,6 +199,17 @@ function errorToolResult(messages: ReadonlyArray<string>): ToolResult {
   };
 }
 
+/** Map a structured-view-shaped run (`ok`/`error`) to an MCP tool result. */
+function structuredToolResult(
+  run:
+    | { readonly kind: "ok"; readonly data: unknown }
+    | { readonly kind: "error"; readonly messages: ReadonlyArray<string> },
+): ToolResult {
+  return run.kind === "error"
+    ? errorToolResult(run.messages)
+    : jsonToolResult(run.data);
+}
+
 // ----- The server -------------------------------------------------------------
 
 /**
@@ -208,7 +226,39 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     { instructions: SERVER_INSTRUCTIONS },
   );
 
-  server.registerTool(
+  /**
+   * Register one CLI-backed tool: the handler maps validated tool args to a
+   * `runXxx({ ..., json: true })` CLI handler, and the shared plumbing —
+   * mutex enqueue, console capture, exit-code → isError shaping — is
+   * identical for every such tool. The `tasks`/`brief` tools register
+   * directly because they compose structured views instead of capturing a
+   * CLI handler's console output.
+   */
+  const registerCliTool = <Shape extends ZodRawShapeCompat>(
+    name: string,
+    config: {
+      readonly title: string;
+      readonly description: string;
+      readonly inputSchema: Shape;
+    },
+    run: (args: ShapeOutput<Shape>) => Promise<number>,
+  ): void => {
+    const callback = async (args: ShapeOutput<Shape>) =>
+      cliToolResult(
+        await enqueue(() => runWithCapturedConsole(() => run(args))),
+      );
+    // `ToolCallback<Shape>` is a conditional type the compiler cannot
+    // resolve (or overlap-check) while `Shape` is still generic; `callback`
+    // is exactly its raw-shape branch (`(args: ShapeOutput<Shape>) => ...`),
+    // which every monomorphic call site below instantiates.
+    server.registerTool(
+      name,
+      config,
+      callback as unknown as ToolCallback<Shape>,
+    );
+  };
+
+  registerCliTool(
     "capture",
     {
       title: "Capture a thought into the vault inbox",
@@ -226,22 +276,16 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ text, title }) =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runCapture({
-              text,
-              ...(title !== undefined ? { title } : {}),
-              vault,
-              json: true,
-            })
-          )
-        ),
-      ),
+    ({ text, title }) =>
+      runCapture({
+        text,
+        ...(title !== undefined ? { title } : {}),
+        vault,
+        json: true,
+      }),
   );
 
-  server.registerTool(
+  registerCliTool(
     "query",
     {
       title: "Query adopted vault state",
@@ -260,25 +304,19 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         type: z.string().optional().describe("Filter by page type."),
       },
     },
-    async ({ text, limit, category, type }) =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runQuery({
-              text,
-              limit,
-              category,
-              type,
-              vault,
-              bundlesRoot,
-              json: true,
-            })
-          )
-        ),
-      ),
+    ({ text, limit, category, type }) =>
+      runQuery({
+        text,
+        limit,
+        category,
+        type,
+        vault,
+        bundlesRoot,
+        json: true,
+      }),
   );
 
-  server.registerTool(
+  registerCliTool(
     "export_context",
     {
       title: "Export a source-backed context packet",
@@ -293,17 +331,11 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ topic, limit }) =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runExportContext({ topic, limit, vault, bundlesRoot, json: true })
-          )
-        ),
-      ),
+    ({ topic, limit }) =>
+      runExportContext({ topic, limit, vault, bundlesRoot, json: true }),
   );
 
-  server.registerTool(
+  registerCliTool(
     "status",
     {
       title: "Vault status pulse",
@@ -313,17 +345,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         "operational counts. Same stable-key JSON as `dome status --json`.",
       inputSchema: {},
     },
-    async () =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runStatus({ vault, bundlesRoot, json: true })
-          )
-        ),
-      ),
+    () => runStatus({ vault, bundlesRoot, json: true }),
   );
 
-  server.registerTool(
+  registerCliTool(
     "check",
     {
       title: "Explain compiler attention",
@@ -349,26 +374,20 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ engine, content, decisions, attention, limit }) =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runCheck({
-              engine,
-              content,
-              decisions,
-              attention,
-              limit,
-              vault,
-              bundlesRoot,
-              json: true,
-            })
-          )
-        ),
-      ),
+    ({ engine, content, decisions, attention, limit }) =>
+      runCheck({
+        engine,
+        content,
+        decisions,
+        attention,
+        limit,
+        vault,
+        bundlesRoot,
+        json: true,
+      }),
   );
 
-  server.registerTool(
+  registerCliTool(
     "resolve",
     {
       title: "Resolve a Dome-raised decision",
@@ -386,14 +405,7 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ id, value }) =>
-      cliToolResult(
-        await enqueue(() =>
-          runWithCapturedConsole(() =>
-            runResolve({ id, value, vault, bundlesRoot, json: true })
-          )
-        ),
-      ),
+    ({ id, value }) => runResolve({ id, value, vault, bundlesRoot, json: true }),
   );
 
   server.registerTool(
@@ -413,13 +425,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ date, limit }) => {
-      const run = await enqueue(() =>
-        runTodayView({ vault, bundlesRoot, date, limit })
-      );
-      if (run.kind === "error") return errorToolResult(run.messages);
-      return jsonToolResult(run.data);
-    },
+    async ({ date, limit }) =>
+      structuredToolResult(
+        await enqueue(() => runTodayView({ vault, bundlesRoot, date, limit })),
+      ),
   );
 
   server.registerTool(
@@ -437,34 +446,33 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         ),
       },
     },
-    async ({ date }) => {
-      const run = await enqueue(async () => {
-        const view = await runTodayView({ vault, bundlesRoot, date });
-        if (view.kind === "error") return view;
-        const source = parseBriefSource(view.data);
-        const content =
-          source.exists && source.commit !== null
-            ? await readBlob({
-                path: vault,
-                commit: source.commit,
-                filepath: source.path,
-              })
-            : null;
-        return Object.freeze({
-          kind: "ok" as const,
-          data: Object.freeze({
-            schema: BRIEF_SCHEMA,
-            date: source.date,
-            path: source.path,
-            exists: source.exists,
-            content,
-            counts: source.counts,
-          }),
-        });
-      });
-      if (run.kind === "error") return errorToolResult(run.messages);
-      return jsonToolResult(run.data);
-    },
+    async ({ date }) =>
+      structuredToolResult(
+        await enqueue(async () => {
+          const view = await runTodayView({ vault, bundlesRoot, date });
+          if (view.kind === "error") return view;
+          const source = parseBriefSource(view.data);
+          const content =
+            source.exists && source.commit !== null
+              ? await readBlob({
+                  path: vault,
+                  commit: source.commit,
+                  filepath: source.path,
+                })
+              : null;
+          return Object.freeze({
+            kind: "ok" as const,
+            data: Object.freeze({
+              schema: BRIEF_SCHEMA,
+              date: source.date,
+              path: source.path,
+              exists: source.exists,
+              content,
+              counts: source.counts,
+            }),
+          });
+        }),
+      ),
   );
 
   return server;

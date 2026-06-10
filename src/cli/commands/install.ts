@@ -568,29 +568,47 @@ async function reportServiceStatus(input: {
     return 0;
   }
 
+  renderServiceCard({
+    cmd: "install",
+    vaultPath: input.vaultPath,
+    tone: loaded
+      ? { tone: "ok", label: "service loaded" }
+      : installed
+        ? { tone: "warn", label: "installed, not loaded" }
+        : { tone: "muted", label: "not installed" },
+    rows: [
+      { label: "label", value: input.label },
+      { label: "plist", value: input.plistPath, tone: "muted" },
+      { label: "installed", value: installed ? "yes" : "no" },
+      { label: "loaded", value: loaded ? "yes" : "no" },
+    ],
+  });
+  return 0;
+}
+
+/**
+ * The one human-readable card shape every install/uninstall verb prints:
+ * headline (verb + vault basename + tone) → one "Service" kv section →
+ * footer. Status, install, and uninstall summaries differ only in tone and
+ * rows.
+ */
+function renderServiceCard(input: {
+  readonly cmd: "install" | "uninstall";
+  readonly vaultPath: string;
+  readonly tone: Status;
+  readonly rows: ReadonlyArray<KvRow>;
+}): void {
   const caps = resolveCaps();
-  const tone: Status = loaded
-    ? { tone: "ok", label: "service loaded" }
-    : installed
-      ? { tone: "warn", label: "installed, not loaded" }
-      : { tone: "muted", label: "not installed" };
-  const rows: KvRow[] = [
-    { label: "label", value: input.label },
-    { label: "plist", value: input.plistPath, tone: "muted" },
-    { label: "installed", value: installed ? "yes" : "no" },
-    { label: "loaded", value: loaded ? "yes" : "no" },
-  ];
   const lines = [
     headline(
-      { cmd: "install", context: basename(input.vaultPath) },
-      tone,
+      { cmd: input.cmd, context: basename(input.vaultPath) },
+      input.tone,
       caps,
     ),
-    ...section("Service", kv(rows, caps), caps),
-    ...footer(tone, caps),
+    ...section("Service", kv(input.rows, caps), caps),
+    ...footer(input.tone, caps),
   ];
   console.log(lines.join("\n"));
-  return 0;
 }
 
 function printInstallSummary(input: {
@@ -600,27 +618,20 @@ function printInstallSummary(input: {
   readonly logPath: string;
   readonly replaced: boolean;
 }): void {
-  const caps = resolveCaps();
-  const tone: Status = {
-    tone: "ok",
-    label: input.replaced ? "service replaced" : "service installed",
-  };
-  const rows: KvRow[] = [
-    { label: "label", value: input.label },
-    { label: "plist", value: input.plistPath, tone: "muted" },
-    { label: "log", value: input.logPath, tone: "muted" },
-    { label: "vault", value: input.vaultPath, tone: "muted" },
-  ];
-  const lines = [
-    headline(
-      { cmd: "install", context: basename(input.vaultPath) },
-      tone,
-      caps,
-    ),
-    ...section("Service", kv(rows, caps), caps),
-    ...footer(tone, caps),
-  ];
-  console.log(lines.join("\n"));
+  renderServiceCard({
+    cmd: "install",
+    vaultPath: input.vaultPath,
+    tone: {
+      tone: "ok",
+      label: input.replaced ? "service replaced" : "service installed",
+    },
+    rows: [
+      { label: "label", value: input.label },
+      { label: "plist", value: input.plistPath, tone: "muted" },
+      { label: "log", value: input.logPath, tone: "muted" },
+      { label: "vault", value: input.vaultPath, tone: "muted" },
+    ],
+  });
 }
 
 function printUninstallSummary(input: {
@@ -628,22 +639,15 @@ function printUninstallSummary(input: {
   readonly label: string;
   readonly plistPath: string;
 }): void {
-  const caps = resolveCaps();
-  const tone: Status = { tone: "ok", label: "service removed" };
-  const rows: KvRow[] = [
-    { label: "label", value: input.label },
-    { label: "plist", value: input.plistPath, tone: "muted" },
-  ];
-  const lines = [
-    headline(
-      { cmd: "uninstall", context: basename(input.vaultPath) },
-      tone,
-      caps,
-    ),
-    ...section("Service", kv(rows, caps), caps),
-    ...footer(tone, caps),
-  ];
-  console.log(lines.join("\n"));
+  renderServiceCard({
+    cmd: "uninstall",
+    vaultPath: input.vaultPath,
+    tone: { tone: "ok", label: "service removed" },
+    rows: [
+      { label: "label", value: input.label },
+      { label: "plist", value: input.plistPath, tone: "muted" },
+    ],
+  });
 }
 
 function reportFailure(
