@@ -189,6 +189,28 @@ describe("dome.agent.preference-promotion (questions)", () => {
     expect(question?.sourceRefs.every((ref) => ref.path === "preferences/signals.md")).toBe(true);
   });
 
+  test("question text renders evidence inert — indented, never column-0 list lines", async () => {
+    // Promotion questions are rendered into markdown surfaces (the brief's
+    // open-questions block, `dome check` output). Quoted evidence must not
+    // read as live top-level list/signal lines there: every quoted raw line
+    // is indented, so it renders as continuation text, not as a bullet.
+    const effects = await run(preferencePromotion, {
+      files: { "preferences/signals.md": THREE_PLUS },
+    });
+    const question = effects.find(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(question).toBeDefined();
+    const lines = (question?.question ?? "").split("\n");
+    const evidence = lines.filter((line) => line.includes("filing::"));
+    expect(evidence).toHaveLength(3);
+    for (const line of evidence) {
+      expect(line).toMatch(/^\s+- \d{4}-\d{2}-\d{2} /);
+    }
+    // Nothing in the question text is a column-0 `- ` list line.
+    expect(lines.some((line) => line.startsWith("- "))).toBe(false);
+  });
+
   test("stays quiet for building, rebutted, rejected, and promoted topics", async () => {
     const cases: ReadonlyArray<Readonly<Record<string, string>>> = [
       // building: only two in-window signals

@@ -233,8 +233,16 @@ scenario(
     expect(namingRows[0]?.status).toBe("answered");
 
     // PROJECTIONS_ARE_REBUILDABLE: the counter facts are clock-free and
-    // re-derive from adopted markdown — `dome rebuild` restores both rows
-    // (now carrying promoted / rejected states).
+    // re-derive from adopted markdown — wipe the rows outright, then
+    // `dome rebuild` restores both (now carrying promoted / rejected
+    // states), proving re-derivation rather than mere survival.
+    h.projection.raw.run(
+      "DELETE FROM facts WHERE predicate = 'dome.preference.topic'",
+    );
+    await h
+      .expectProjection()
+      .facts({ predicate: "dome.preference.topic" })
+      .toHaveCount(0);
     const rebuild = await h.runCli(["rebuild", "--json"]);
     expect(rebuild.exitCode).toBe(0);
     await h
@@ -244,5 +252,16 @@ scenario(
         subjectId: "preferences/signals.md",
       })
       .toHaveCount(2);
+    const rebuiltStates = h.projection.raw
+      .query<{ object_json: string }, []>(
+        "SELECT object_json FROM facts WHERE predicate = 'dome.preference.topic'",
+      )
+      .all()
+      .map((row) => {
+        const object = JSON.parse(row.object_json) as { value?: string };
+        return (JSON.parse(object.value ?? "{}") as { state?: string }).state;
+      })
+      .sort();
+    expect(rebuiltStates).toEqual(["promoted", "rejected"]);
   },
 );
