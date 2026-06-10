@@ -127,6 +127,8 @@ export async function runDoctor(
       resolveGrants: runtime.resolveGrants,
       extensionConfigFor: runtime.extensionConfigFor,
       modelProviderConfigured: runtime.modelProvider !== undefined,
+      externalHandlerTimeoutConfigured:
+        runtime.config.engine.externalHandlerTimeoutMs !== undefined,
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
     });
