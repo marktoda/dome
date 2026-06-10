@@ -23,3 +23,32 @@ processors:
       - kind: patch.auto
         paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/stamp-anchor.ts
+
+  - id: dome.claims.index
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.claims.*"]
+    module: processors/claim-index.ts
