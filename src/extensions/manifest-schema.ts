@@ -288,12 +288,14 @@ export function parseManifest(
     return err({ kind: "invalid-shape", issues });
   }
 
-  // The cast through `unknown` is required because Zod's inferred type uses
+  // The cast through `unknown` is required because zod (v4 included) infers
   // `key?: T | undefined` for optional fields (trigger.pathPattern,
   // capability.maxDailyCostUsd, etc.), which exactOptionalPropertyTypes
   // rejects against the `key?: T` Manifest type. The Zod parse already
   // validated the shape; the type-system gap here is purely
-  // optional-property-presence semantics, not a real shape mismatch.
+  // optional-property-presence semantics, not a real shape mismatch — and
+  // the bidirectional fence in tests/types/schema-type-lockstep.ts keeps
+  // this cast shape-safe (schema/type drift fails `bun run typecheck`).
   const manifest = shapeResult.data as unknown as Manifest;
 
   const matrixResult = checkPhaseTriggerMatrix(manifest);

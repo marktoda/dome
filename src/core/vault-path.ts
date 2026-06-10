@@ -75,7 +75,7 @@ export const VaultPathSchema = z
     const result = parseVaultPath(value);
     if (!result.ok) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `must be a vault-relative POSIX file path (${result.error})`,
       });
     }

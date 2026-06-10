@@ -1,4 +1,4 @@
-import { z, type ZodType } from "zod";
+import { z } from "zod";
 
 import {
   blobOid,
@@ -10,11 +10,11 @@ import {
   type SourceRefInput,
 } from "../core/source-ref";
 
-export function parseJsonColumn<T>(
+export function parseJsonColumn<S extends z.ZodType>(
   raw: string,
   label: string,
-  schema: ZodType<T, z.ZodTypeDef, unknown>,
-): T {
+  schema: S,
+): z.output<S> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
@@ -25,16 +25,16 @@ export function parseJsonColumn<T>(
 
   const result = schema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`${label} failed validation: ${formatZodIssues(result)}`);
+    throw new Error(`${label} failed validation: ${formatZodIssues(result.error)}`);
   }
   return result.data;
 }
 
-export function parseOptionalJsonColumn<T>(
+export function parseOptionalJsonColumn<S extends z.ZodType>(
   raw: string | null,
   label: string,
-  schema: ZodType<T, z.ZodTypeDef, unknown>,
-): T | undefined {
+  schema: S,
+): z.output<S> | undefined {
   return raw === null ? undefined : parseJsonColumn(raw, label, schema);
 }
 
@@ -74,10 +74,8 @@ function textRange(raw: {
   return Object.freeze(range);
 }
 
-function formatZodIssues(
-  result: z.SafeParseError<unknown>,
-): string {
-  return result.error.issues
+function formatZodIssues(error: z.ZodError): string {
+  return error.issues
     .map((issue) =>
       issue.path.length === 0
         ? issue.message

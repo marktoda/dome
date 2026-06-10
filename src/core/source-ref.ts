@@ -83,7 +83,7 @@ export const TextRangeSchema = z
   .superRefine((value, ctx) => {
     if (value.endLine < value.startLine) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "TextRange.endLine must be greater than or equal to startLine",
         path: ["endLine"],
       });
@@ -95,7 +95,7 @@ export const TextRangeSchema = z
       value.endChar < value.startChar
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message:
           "TextRange.endChar must be greater than or equal to startChar on one-line ranges",
         path: ["endChar"],

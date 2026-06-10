@@ -703,25 +703,25 @@ export const VaultRelativePatternSchema = z.string().min(1).superRefine(
   (value, ctx) => {
     if (value.startsWith("/")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "must be vault-relative, not absolute",
       });
     }
     if (value.includes("\\")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "must use POSIX '/' separators",
       });
     }
     if (value.split("/").some((segment) => segment === "..")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "must not contain parent-directory '..' segments",
       });
     }
     if (value.split("/").some((segment) => segment.length === 0)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "must not contain empty path segments",
       });
     }

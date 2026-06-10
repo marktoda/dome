@@ -482,7 +482,7 @@ function enqueue(
   fixture: Fixture,
   idempotencyKey: string,
   processorId: string,
-  input: unknown,
+  input: import("../../src/core/effect").JsonValue,
   maxAttempts?: number,
 ): void {
   enqueueJob(fixture.projection, {
