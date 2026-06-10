@@ -18,9 +18,42 @@ const DEFAULT_DAILY_PATH_TEMPLATE = "wiki/dailies/{date}.md";
 // the only sanctioned marker implementation (see
 // [[wiki/linters/generated-block-splice-guard]]).
 const DAILY_OWNER = "dome.daily";
+// Retired-legacy (recognized, never written) — see
+// [[wiki/specs/daily-surface]] §"Block ownership".
 const CARRIED_FORWARD_BLOCK = "carried-forward";
+// Retired-legacy since D2 (recognized, never written): the mechanical
+// yesterday digest now lives as the fallback BODY of the unified
+// dome.agent.brief:yesterday block. See
+// [[wiki/specs/daily-surface]] §"The one yesterday block".
 const START_CONTEXT_BLOCK = "start-context";
 const OPEN_LOOPS_BLOCK = "open-loops";
+
+// The unified yesterday block (D2): owned by the brief's namespace — the
+// edition compile is its steady-state writer — but its `(owner, block)`
+// identity is defined HERE so dome.agent imports it from dome.daily (the
+// established bundle dependency direction) and the marker strings cannot
+// drift apart. dome.daily's create-daily/carry-forward seed the mechanical
+// fallback body only when the block is absent; the brief replaces the body
+// wholesale. The one recorded exception to disjoint block ownership —
+// normative at [[wiki/specs/daily-surface]] §"The one yesterday block".
+const EDITION_YESTERDAY_OWNER = "dome.agent.brief";
+const EDITION_YESTERDAY_BLOCK_NAME = "yesterday";
+const EDITION_YESTERDAY_MARKERS = generatedBlockMarkers(
+  EDITION_YESTERDAY_OWNER,
+  EDITION_YESTERDAY_BLOCK_NAME,
+);
+
+export const EDITION_YESTERDAY_BLOCK: {
+  readonly owner: string;
+  readonly block: string;
+  readonly start: string;
+  readonly end: string;
+} = Object.freeze({
+  owner: EDITION_YESTERDAY_OWNER,
+  block: EDITION_YESTERDAY_BLOCK_NAME,
+  start: EDITION_YESTERDAY_MARKERS.start,
+  end: EDITION_YESTERDAY_MARKERS.end,
+});
 
 const CARRIED_FORWARD_MARKERS = generatedBlockMarkers(
   DAILY_OWNER,
@@ -40,10 +73,15 @@ export const OPEN_LOOPS_START = OPEN_LOOPS_MARKERS.start;
 export const OPEN_LOOPS_END = OPEN_LOOPS_MARKERS.end;
 
 /**
- * The dome.daily generated blocks as `(owner, block)` anomaly-scan targets —
- * what splice call sites feed `generatedBlockAnomalyDiagnostics` so smuggled
- * duplicate pairs / half-open markers in a daily note surface as info
- * diagnostics instead of staying invisible.
+ * The generated blocks a daily note may carry, as `(owner, block)`
+ * anomaly-scan targets — what splice call sites feed
+ * `generatedBlockAnomalyDiagnostics` so smuggled duplicate pairs / half-open
+ * markers in a daily note surface as info diagnostics instead of staying
+ * invisible. Includes the retired-legacy markers (recognized, never written:
+ * legacy blocks must neither re-ingest as tasks nor hide marker damage) and
+ * the dual-writer `dome.agent.brief:yesterday` block (carry-forward splices
+ * it, so it reports what it sees at its own splice site; the brief scans the
+ * same block under its own code).
  */
 export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   readonly owner: string;
@@ -52,6 +90,10 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: DAILY_OWNER, block: START_CONTEXT_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: OPEN_LOOPS_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: CARRIED_FORWARD_BLOCK }),
+  Object.freeze({
+    owner: EDITION_YESTERDAY_OWNER,
+    block: EDITION_YESTERDAY_BLOCK_NAME,
+  }),
 ]);
 
 export type DailyDate = {
@@ -113,7 +155,7 @@ export type DailySettledOpenLoopSource = {
   readonly status: DailyOpenLoopSettlementStatus;
 };
 
-export type DailyStartContext = {
+export type PreviousDailyDigest = {
   readonly previousPath: string;
   readonly done: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
@@ -474,10 +516,10 @@ export function carriedForwardSection(input: {
   ].join("\n");
 }
 
-export function previousDailyStartContext(input: {
+export function previousDailyDigest(input: {
   readonly previousPath: string;
   readonly previousContent: string;
-}): DailyStartContext {
+}): PreviousDailyDigest {
   return Object.freeze({
     previousPath: input.previousPath,
     done: extractSectionItems(input.previousContent, "Done"),
@@ -486,42 +528,79 @@ export function previousDailyStartContext(input: {
   });
 }
 
-export function dailyStartContextSection(
-  context: DailyStartContext | null,
-): string | null {
-  if (context === null) return null;
-  const lines = [
-    START_CONTEXT_START,
-    "### Since Yesterday",
-    `- Previous daily: [[${context.previousPath.replace(/\.md$/, "")}]]`,
-  ];
-  if (context.done.length > 0) {
-    lines.push(`- Done yesterday: ${renderCompactList(context.done)}`);
+/**
+ * Render the mechanical fallback body of the unified yesterday block
+ * (`dome.agent.brief:yesterday`) — the no-model rung of the edition's
+ * degradation ladder. One block, one heading (`### Yesterday`), plain
+ * bullets only. `digest: null` (no previous daily) degrades to a single
+ * "no record of yesterday" line, never an absent block.
+ * Normative at [[wiki/specs/daily-surface]] §"The one yesterday block".
+ */
+export function yesterdayFallbackSection(
+  digest: PreviousDailyDigest | null,
+): string {
+  const lines = [EDITION_YESTERDAY_BLOCK.start, "### Yesterday"];
+  if (digest === null) {
+    lines.push("- No record of yesterday — no previous daily note.");
+  } else {
+    lines.push(
+      `- Previous daily: [[${digest.previousPath.replace(/\.md$/, "")}]]`,
+    );
+    if (digest.done.length > 0) {
+      lines.push(`- Done yesterday: ${renderCompactList(digest.done)}`);
+    }
+    if (digest.decisions.length > 0) {
+      lines.push(
+        `- Decisions yesterday: ${renderCompactList(digest.decisions)}`,
+      );
+    }
+    if (digest.story !== null) {
+      lines.push(`- Story: ${digest.story}`);
+    }
   }
-  if (context.decisions.length > 0) {
-    lines.push(`- Decisions yesterday: ${renderCompactList(context.decisions)}`);
-  }
-  if (context.story !== null) {
-    lines.push(`- Story: ${context.story}`);
-  }
-  lines.push(START_CONTEXT_END);
+  lines.push(EDITION_YESTERDAY_BLOCK.end);
   return lines.join("\n");
 }
 
-export function replaceDailyStartContextSection(input: {
+/**
+ * Ensure the unified yesterday block exists: insert `section` (a full
+ * fallback block including markers) when the block is absent, and leave an
+ * existing block — curated or previously seeded — alone ENTIRELY. The
+ * presence gate is what makes dome.daily's write into the brief's namespace
+ * safe (the dual-writer exception, daily-surface §"The one yesterday block").
+ */
+export function ensureYesterdayFallbackSection(input: {
   readonly content: string;
-  readonly section: string | null;
+  readonly section: string;
 }): string {
-  const existing = startContextBlockRange(input.content);
-  if (existing !== null) {
-    const replacement = input.section === null ? "" : input.section;
-    return `${input.content.slice(0, existing.start)}${replacement}${input.content.slice(existing.end)}`;
-  }
-  if (input.section === null) return input.content;
-  return insertDailyStartContextSection({
+  const existing = dailyBlockRangeFor(
+    input.content,
+    EDITION_YESTERDAY_BLOCK.owner,
+    EDITION_YESTERDAY_BLOCK.block,
+  );
+  if (existing !== null) return input.content;
+  return insertYesterdayFallbackSection({
     content: input.content,
     section: input.section,
   });
+}
+
+/**
+ * One-time migration for the retired `dome.daily:start-context` block:
+ * remove it (markers and body) from the given daily content, tidying the
+ * seam to at most one blank line. Idempotent — absent block returns the
+ * content unchanged, and since no processor writes the marker anymore the
+ * block never reappears. Callers apply this ONLY to today's daily;
+ * historical dailies are closed records and keep theirs.
+ */
+export function removeLegacyStartContextSection(content: string): string {
+  const range = startContextBlockRange(content);
+  if (range === null) return content;
+  const before = content.slice(0, range.start).replace(/(?:\r?\n)*$/, "");
+  const after = content.slice(range.end).replace(/^(?:\r?\n)*/, "");
+  if (before.length === 0) return after;
+  if (after.length === 0) return `${before}\n`;
+  return `${before}\n\n${after}`;
 }
 
 export function openLoopSurfaceSources(input: {
@@ -1145,7 +1224,15 @@ function dailyBlockRange(
   content: string,
   block: string,
 ): { readonly start: number; readonly end: number } | null {
-  const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+  return dailyBlockRangeFor(content, DAILY_OWNER, block);
+}
+
+function dailyBlockRangeFor(
+  content: string,
+  owner: string,
+  block: string,
+): { readonly start: number; readonly end: number } | null {
+  const { range } = findGeneratedBlock(content, owner, block);
   if (range === null) return null;
   return Object.freeze({ start: range.start, end: range.end });
 }
@@ -1267,14 +1354,13 @@ function dailyGeneratedBlockLineRanges(
   content: string,
 ): ReadonlyArray<{ readonly start: number; readonly end: number }> {
   const ranges: { start: number; end: number }[] = [];
-  for (
-    const block of [
-      START_CONTEXT_BLOCK,
-      OPEN_LOOPS_BLOCK,
-      CARRIED_FORWARD_BLOCK,
-    ] as const
-  ) {
-    const { range } = findGeneratedBlock(content, DAILY_OWNER, block);
+  // Every recognized daily-note generated block — including the
+  // retired-legacy markers and the dual-writer yesterday block, whose
+  // mechanical fallback compresses human prose that may contain
+  // directive-shaped text — is excluded from task extraction: generated
+  // copies must never re-ingest as tasks.
+  for (const block of DAILY_GENERATED_BLOCKS) {
+    const { range } = findGeneratedBlock(content, block.owner, block.block);
     if (range === null) continue;
     ranges.push({ start: range.startLine, end: range.endLine });
   }
@@ -1353,7 +1439,7 @@ function lineNumberAtOffset(content: string, offset: number): number {
   return line;
 }
 
-function insertDailyStartContextSection(input: {
+function insertYesterdayFallbackSection(input: {
   readonly content: string;
   readonly section: string;
 }): string {

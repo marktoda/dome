@@ -26,7 +26,7 @@ import {
   DAILY_GENERATED_BLOCKS,
   dailyPathSettings,
   dailyPath,
-  dailyStartContextSection,
+  ensureYesterdayFallbackSection,
   localDateParts,
   openLoopIdentity,
   openLoopFreshnessKey,
@@ -34,12 +34,13 @@ import {
   openLoopSurfaceKey,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
-  previousDailyStartContext,
+  previousDailyDigest,
   previousLocalDate,
   rankDailyOpenLoopSurfaceItems,
-  replaceDailyStartContextSection,
+  removeLegacyStartContextSection,
   replaceOpenLoopSurfaceSection,
   settledSourceBackedOpenLoopsFromMarkdown,
+  yesterdayFallbackSection,
   type DailyDate,
   type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
@@ -69,7 +70,7 @@ const carryForward = defineProcessorImplementation({
       sourceRef: (path, range) => ctx.sourceRef(path, range),
     });
 
-    const startContext = await collectStartContext({
+    const fallback = await collectYesterdayFallback({
       ctx,
       targetDate,
       settings,
@@ -100,10 +101,16 @@ const carryForward = defineProcessorImplementation({
       targetOpenItems,
       settledKeys,
     });
+    // Migration (one-time, idempotent): drop a legacy dome.daily:start-context
+    // block from TODAY's daily in the same patch that ensures the unified
+    // yesterday block. Historical dailies are never targeted by this
+    // processor, so they keep theirs. The yesterday ensure is presence-gated:
+    // an existing block (curated by the brief, or a previously seeded
+    // fallback) is left alone entirely.
     const nextContent = replaceOpenLoopSurfaceSection({
-      content: replaceDailyStartContextSection({
-        content,
-        section: startContext.section,
+      content: ensureYesterdayFallbackSection({
+        content: removeLegacyStartContextSection(content),
+        section: fallback.section,
       }),
       section: openLoopSurfaceSection({
         items,
@@ -128,7 +135,7 @@ const carryForward = defineProcessorImplementation({
           ctx,
           items,
           targetSettledItems,
-          startContext.sourcePath,
+          fallback.sourcePath,
         ),
       }),
     ];
@@ -218,23 +225,28 @@ async function collectOpenLoopSources(input: {
   });
 }
 
-async function collectStartContext(input: {
+async function collectYesterdayFallback(input: {
   readonly ctx: ProcessorContext;
   readonly targetDate: DailyDate;
   readonly settings: DailyPathSettings;
 }): Promise<{
-  readonly section: string | null;
+  readonly section: string;
   readonly sourcePath: string | null;
 }> {
   const previous = previousLocalDate(input.targetDate);
   const previousPath = dailyPath(previous, input.settings);
   const previousContent = await input.ctx.snapshot.readFile(previousPath);
   if (previousContent === null) {
-    return Object.freeze({ section: null, sourcePath: null });
+    // No previous daily: the fallback degrades to the single
+    // "no record of yesterday" line — never an absent block.
+    return Object.freeze({
+      section: yesterdayFallbackSection(null),
+      sourcePath: null,
+    });
   }
   return Object.freeze({
-    section: dailyStartContextSection(
-      previousDailyStartContext({
+    section: yesterdayFallbackSection(
+      previousDailyDigest({
         previousPath,
         previousContent,
       }),

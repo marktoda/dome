@@ -5,9 +5,9 @@ import {
   ambiguousFollowupsFromMarkdown,
   carriedForwardSection,
   completedSourceBackedOpenLoopsFromMarkdown,
-  dailyStartContextSection,
   dailyPathSettings,
   dailyPath,
+  ensureYesterdayFallbackSection,
   openLoopIdentity,
   openLoopFreshnessKey,
   openLoopStableId,
@@ -16,12 +16,13 @@ import {
   openLoopSurfaceSources,
   openTasksFromMarkdown,
   parseDailyPath,
-  previousDailyStartContext,
+  previousDailyDigest,
   rankDailyOpenLoopSurfaceItems,
+  removeLegacyStartContextSection,
   renderDailySkeleton,
-  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
   settledSourceBackedOpenLoopsFromMarkdown,
+  yesterdayFallbackSection,
 } from "../../assets/extensions/dome.daily/processors/daily-shared";
 
 describe("dome.daily shared date helpers", () => {
@@ -92,8 +93,8 @@ describe("dome.daily shared date helpers", () => {
     );
   });
 
-  test("daily start context summarizes yesterday with stable markers", () => {
-    const context = previousDailyStartContext({
+  test("yesterday fallback summarizes yesterday inside the unified brief block", () => {
+    const digest = previousDailyDigest({
       previousPath: "wiki/dailies/2026-02-27.md",
       previousContent: [
         "# 2026-02-27",
@@ -123,16 +124,16 @@ describe("dome.daily shared date helpers", () => {
       ].join("\n"),
     });
 
-    const section = dailyStartContextSection(context);
+    const section = yesterdayFallbackSection(digest);
     expect(section).toBe(
       [
-        "<!-- dome.daily:start-context:start -->",
-        "### Since Yesterday",
+        "<!-- dome.agent.brief:yesterday:start -->",
+        "### Yesterday",
         "- Previous daily: [[wiki/dailies/2026-02-27]]",
         "- Done yesterday: Sent Ada the staffing note.; Closed the hiring-budget follow-up.",
         "- Decisions yesterday: Keep alpha review in the weekly plan.; Use the lighter staffing packet.",
         "- Story: Alpha review moved forward after the staffing packet landed. The hiring-budget thread is still open.",
-        "<!-- dome.daily:start-context:end -->",
+        "<!-- dome.agent.brief:yesterday:end -->",
       ].join("\n"),
     );
 
@@ -146,17 +147,76 @@ describe("dome.daily shared date helpers", () => {
       "## Meetings",
       "",
     ].join("\n");
-    const next = replaceDailyStartContextSection({
+    const next = ensureYesterdayFallbackSection({
       content: daily,
       section,
     });
     expect(next).toContain(
-      "## Start Here\n\n<!-- dome.daily:start-context:start -->",
+      "## Start Here\n\n<!-- dome.agent.brief:yesterday:start -->",
     );
     expect(next).toContain("Human note stays here.");
-    expect(replaceDailyStartContextSection({ content: next, section })).toBe(
+    expect(ensureYesterdayFallbackSection({ content: next, section })).toBe(
       next,
     );
+  });
+
+  test("no previous daily degrades to a single no-record line, never an absent block", () => {
+    expect(yesterdayFallbackSection(null)).toBe(
+      [
+        "<!-- dome.agent.brief:yesterday:start -->",
+        "### Yesterday",
+        "- No record of yesterday — no previous daily note.",
+        "<!-- dome.agent.brief:yesterday:end -->",
+      ].join("\n"),
+    );
+  });
+
+  test("ensureYesterdayFallbackSection leaves an existing (curated) block alone entirely", () => {
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Curated by the brief (from [[wiki/dailies/2026-02-27]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const next = ensureYesterdayFallbackSection({
+      content: daily,
+      section: yesterdayFallbackSection(null),
+    });
+    expect(next).toBe(daily);
+    expect(next).not.toContain("No record of yesterday");
+  });
+
+  test("removeLegacyStartContextSection removes the retired block once, idempotently", () => {
+    const daily = [
+      "# 2026-02-28",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.daily:start-context:start -->",
+      "### Since Yesterday",
+      "- Previous daily: [[wiki/dailies/2026-02-27]]",
+      "<!-- dome.daily:start-context:end -->",
+      "",
+      "Human note stays here.",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const removed = removeLegacyStartContextSection(daily);
+    expect(removed).not.toContain("dome.daily:start-context");
+    expect(removed).not.toContain("### Since Yesterday");
+    expect(removed).toContain("## Start Here\n\nHuman note stays here.");
+    expect(removed).toContain("## Meetings");
+    // Idempotent: once removed (and nothing writes the marker anymore), a
+    // second pass is a no-op — the block never reappears.
+    expect(removeLegacyStartContextSection(removed)).toBe(removed);
   });
 
   test("openTasksFromMarkdown extracts plain open markdown checkboxes", () => {
@@ -282,6 +342,23 @@ describe("dome.daily shared date helpers", () => {
         ].join("\n"),
       ).map((item) => item.body),
     ).toEqual(["Keep source item", "Keep second source item"]);
+  });
+
+  test("the unified yesterday block is excluded from task extraction (fallback prose never re-ingests)", () => {
+    const content = [
+      "TODO: Keep source item",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Done yesterday: Follow up with Sam about hiring",
+      "- [ ] Generated checkbox should not become source",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    expect(actionItemsFromMarkdown(content).map((item) => item.body)).toEqual([
+      "Keep source item",
+    ]);
+    // The compressed Done line contains "follow up with" prose — inside the
+    // generated block it must not raise an ambiguous-followup question.
+    expect(ambiguousFollowupsFromMarkdown(content)).toEqual([]);
   });
 
   test("actionItemsFromMarkdown skips frontmatter metadata", () => {

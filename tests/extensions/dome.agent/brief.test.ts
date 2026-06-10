@@ -781,6 +781,127 @@ describe("dome.agent.brief", () => {
     expect(q.question).toContain("ungrounded");
   });
 
+  test("model leaves the block untouched → the mechanical fallback lands, never stripped as ungrounded", async () => {
+    // The deterministic pre-pass seeds the yesterday block with the
+    // mechanical fallback body (daily-surface §"The one yesterday block").
+    // A model that writes nothing must land that fallback verbatim — the
+    // grounding rule applies only to bodies the model rewrote, so the
+    // fallback's wikilink-free bullets are NOT stripped into questions.
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "nothing to add" }],
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+    expect(content).toContain("### Yesterday");
+    expect(content).toContain("- Previous daily: [[wiki/dailies/2026-06-08]]");
+    expect(content).toContain("- Done yesterday: shipped the capture loop");
+    expect(content).toContain("- Story: Good day.");
+    // Exactly one yesterday block.
+    expect(
+      (content.match(/dome\.agent\.brief:yesterday:start/g) ?? []).length,
+    ).toBe(1);
+    // No ungrounded-bullet questions for the deterministic fallback.
+    expect(
+      effects.filter(
+        (e) =>
+          e.kind === "question" &&
+          (e as QuestionEffect).question.includes("ungrounded"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("no previous daily → the fallback degrades to the single no-record line", async () => {
+    const ctx = makeCtx({
+      files: {},
+      steps: [{ text: "nothing to add" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain(
+      "- No record of yesterday — no previous daily note.",
+    );
+    expect(
+      (content.match(/dome\.agent\.brief:yesterday:start/g) ?? []).length,
+    ).toBe(1);
+  });
+
+  test("a curated model body replaces the fallback wholesale — one block, no fallback remnants", async () => {
+    const modelDoc = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Shipped the capture loop and closed the thread (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain(
+      "- Shipped the capture loop and closed the thread (from [[wiki/dailies/2026-06-08]])",
+    );
+    // The mechanical fallback body is gone — replaced wholesale, never a
+    // second summary alongside the curated one.
+    expect(content).not.toContain("- Previous daily:");
+    expect(content).not.toContain("- Done yesterday:");
+    expect(
+      (content.match(/dome\.agent\.brief:yesterday:start/g) ?? []).length,
+    ).toBe(1);
+  });
+
+  test("migration: an existing dome.daily:start-context block is removed in the same patch (once, never reappears)", async () => {
+    const existing = [
+      "---",
+      "type: daily",
+      "---",
+      "",
+      "# 2026-06-09",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.daily:start-context:start -->",
+      "### Since Yesterday",
+      "- Previous daily: [[wiki/dailies/2026-06-08]]",
+      "<!-- dome.daily:start-context:end -->",
+      "",
+      "My own precious prose.",
+      "",
+      "## Meetings",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [TODAY_PATH]: existing, [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "nothing to add" }],
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+    expect(content).not.toContain("dome.daily:start-context");
+    expect(content).not.toContain("### Since Yesterday");
+    expect(content).toContain("My own precious prose.");
+    // The unified block carries the mechanical fallback exactly once.
+    expect(
+      (content.match(/dome\.agent\.brief:yesterday:start/g) ?? []).length,
+    ).toBe(1);
+    expect(content).toContain("- Previous daily: [[wiki/dailies/2026-06-08]]");
+
+    // Re-run over the migrated content: nothing reappears, nothing changes —
+    // the brief emits no patch at all (composed === existing, model silent).
+    const again = await brief.run(
+      makeCtx({
+        files: { [TODAY_PATH]: content, [YESTERDAY_PATH]: YESTERDAY_DAILY },
+        steps: [{ text: "nothing to add" }],
+      }),
+    );
+    expect(patchOf(again)).toBeUndefined();
+  });
+
   test("an existing daily note keeps its user prose; only the brief blocks change", async () => {
     const existing = [
       "---",

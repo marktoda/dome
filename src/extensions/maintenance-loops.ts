@@ -533,7 +533,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "daily date + generated-block owner set",
         noOpWhen:
-          "today's daily note exists and every enabled edition block (brief yesterday/meetings/questions/integrated, the open-loops surface, the mechanical start-context fallback) matches its current inputs",
+          "today's daily note exists and every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/questions/integrated and the open-loops surface) matches its current inputs",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
