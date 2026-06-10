@@ -661,6 +661,21 @@ function anyProcessorCapabilityMatches(
 // ----- Namespace helpers ----------------------------------------------------
 
 /**
+ * True when at least one `graph.write` capability in `caps` covers
+ * `predicate`'s namespace. Exported for `dome doctor`'s grant-entry probes
+ * (src/engine/health.ts) so health checks and broker enforcement share one
+ * namespace matcher and cannot drift.
+ */
+export function graphWriteCovers(
+  predicate: string,
+  caps: ReadonlyArray<Capability>,
+): boolean {
+  const namespace = predicateNamespace(predicate);
+  if (namespace === null) return false;
+  return anyNamespaceCovers(namespace, caps);
+}
+
+/**
  * Extract the namespace prefix of a predicate. The predicate is
  * `<namespace>.<key>` per capabilities.md §"graph.write"; the namespace is
  * everything before the *last* `.`. Returns `null` for a predicate with no

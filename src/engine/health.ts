@@ -25,6 +25,9 @@ import type {
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { currentSha, isAncestor } from "../git";
 import type { Capability } from "../core/processor";
+import { canonicalVaultPath } from "../core/vault-path";
+import { graphWriteCovers } from "./capability-broker";
+import { pathCapabilityMatches } from "./path-capabilities";
 import type { ProcessorRegistry } from "../processors/registry";
 import type { ModelProviderProbeResult } from "./command-model-provider";
 
@@ -174,6 +177,21 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "capability.grant-entry-missing";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly capability: {
+        readonly processorId: string;
+        readonly missingEntries: ReadonlyArray<{
+          readonly kind: GrantEntryKind;
+          readonly target: string;
+        }>;
+      };
+    }
+  | {
       readonly code: "model.provider-missing";
       readonly severity: "warning";
       readonly subject: "config";
@@ -236,6 +254,7 @@ export type HealthSummary = {
   readonly instructionDrift: number;
   readonly operationalSchemaMismatch: number;
   readonly capabilityGrantGaps: number;
+  readonly capabilityGrantEntryGaps: number;
   readonly modelProviderMissing: number;
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
@@ -315,6 +334,13 @@ export async function collectHealthReport(opts: {
           registry: opts.registry,
           resolveGrants: opts.resolveGrants,
         });
+  const capabilityGrantEntries =
+    opts.registry === undefined || opts.resolveGrants === undefined
+      ? []
+      : capabilityGrantEntryFindings({
+          registry: opts.registry,
+          resolveGrants: opts.resolveGrants,
+        });
   const modelProvider =
     opts.registry === undefined || opts.resolveGrants === undefined
       ? []
@@ -338,6 +364,7 @@ export async function collectHealthReport(opts: {
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
+    ...capabilityGrantEntries,
     ...modelProvider,
     ...modelProviderProbe,
     ...dailyPathMismatch,
@@ -389,6 +416,7 @@ function buildHealthReport(
       instructionDrift: count("instructions.drift"),
       operationalSchemaMismatch: count("operational.schema-mismatch"),
       capabilityGrantGaps: count("capability.grant-missing"),
+      capabilityGrantEntryGaps: count("capability.grant-entry-missing"),
       modelProviderMissing: count("model.provider-missing"),
       modelProviderUnreachable: count("model.provider-unreachable"),
       modelProviderKeyMissing: count("model.provider-key-missing"),
@@ -440,6 +468,222 @@ function capabilityKinds(
   capabilities: ReadonlyArray<Capability>,
 ): ReadonlySet<Capability["kind"]> {
   return new Set(capabilities.map((capability) => capability.kind));
+}
+
+// ----- First-party grant-entry probes ----------------------------------------
+//
+// `dome init --refresh-config` fills only MISSING grant keys for already
+// enabled first-party bundles — it never merges new entries into a key the
+// vault already carries (grant lists are user-owned config; auto-merging is
+// too risky). So an existing vault that predates the memory-quality phases
+// (docs/memory.md §"Vault rollout") keeps its old grant lists and silently
+// loses the new behavior: the kind is granted but the specific entry is not,
+// which the kind-level `capability.grant-missing` probe cannot see. These
+// probes name the exact YAML to add. A row fires only when the processor is
+// loaded (bundle enabled), the manifest still declares the entry, and the
+// kind IS granted (a wholly missing kind is the kind-level finding's job).
+
+export type GrantEntryKind = "read" | "patch.auto" | "graph.write";
+
+type GrantEntry = {
+  readonly kind: GrantEntryKind;
+  /** Vault path for path kinds; fact predicate for `graph.write`. */
+  readonly target: string;
+};
+
+type GrantEntryRequirement = {
+  readonly processorId: string;
+  readonly entries: ReadonlyArray<GrantEntry>;
+  /** What silently breaks while the entry is missing. */
+  readonly why: string;
+  /** The exact .dome/config.yaml addition that satisfies the probe. */
+  readonly recovery: string;
+};
+
+export const FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<GrantEntryRequirement> =
+  Object.freeze([
+    Object.freeze({
+      processorId: "dome.daily.attention-discount",
+      entries: Object.freeze([
+        Object.freeze({
+          kind: "graph.write",
+          target: "dome.attention.discount",
+        } as const),
+      ]),
+      why:
+        "the dismissal-derived attention-discount facts are dropped by the " +
+        "broker, so stale open loops are never demoted",
+      recovery:
+        'Add "dome.attention.*" to extensions.dome.daily.grant.graph.write ' +
+        "in .dome/config.yaml.",
+    }),
+    Object.freeze({
+      processorId: "dome.agent.brief",
+      entries: Object.freeze([
+        Object.freeze({ kind: "read", target: "core.md" } as const),
+      ]),
+      why:
+        "agents cannot load the owner's core-memory page into their task " +
+        "turns",
+      recovery:
+        'Add "core.md" to extensions.dome.agent.grant.read in ' +
+        ".dome/config.yaml.",
+    }),
+    Object.freeze({
+      processorId: "dome.agent.brief",
+      entries: Object.freeze([
+        Object.freeze({
+          kind: "read",
+          target: "preferences/signals.md",
+        } as const),
+        Object.freeze({
+          kind: "patch.auto",
+          target: "preferences/signals.md",
+        } as const),
+      ]),
+      why:
+        "preference signal lines can be neither read nor appended, so " +
+        "preference promotion never accumulates evidence",
+      recovery:
+        'Add "preferences/signals.md" to extensions.dome.agent.grant.read ' +
+        "and extensions.dome.agent.grant.patch.auto in .dome/config.yaml.",
+    }),
+    Object.freeze({
+      processorId: "dome.agent.preference-signals",
+      entries: Object.freeze([
+        Object.freeze({
+          kind: "graph.write",
+          target: "dome.preference.topic",
+        } as const),
+      ]),
+      why:
+        "the deterministic preference counter's dome.preference.topic facts " +
+        "are dropped by the broker",
+      recovery:
+        'Add "dome.preference.*" to extensions.dome.agent.grant.graph.write ' +
+        "in .dome/config.yaml.",
+    }),
+    Object.freeze({
+      processorId: "dome.agent.preference-promotion-answer",
+      entries: Object.freeze([
+        Object.freeze({ kind: "read", target: "core.md" } as const),
+        Object.freeze({
+          kind: "read",
+          target: "preferences/signals.md",
+        } as const),
+        Object.freeze({ kind: "patch.auto", target: "core.md" } as const),
+        Object.freeze({
+          kind: "patch.auto",
+          target: "preferences/signals.md",
+        } as const),
+      ]),
+      why:
+        "owner-approved preference promotions cannot be written to core.md " +
+        "(the single-auto-writer exception in wiki/specs/preferences.md)",
+      recovery:
+        "Add the per-processor replacement grant stanza in " +
+        ".dome/config.yaml: extensions.dome.agent.processors." +
+        '"dome.agent.preference-promotion-answer".grant with read: ' +
+        '["core.md", "preferences/signals.md"] and patch.auto: ' +
+        '["core.md", "preferences/signals.md"].',
+    }),
+    Object.freeze({
+      processorId: "dome.markdown.core-size",
+      entries: Object.freeze([
+        Object.freeze({ kind: "read", target: "core.md" } as const),
+      ]),
+      why:
+        "the core-memory size lint never fires (its effective read scope " +
+        "is empty)",
+      recovery:
+        'Add "core.md" to extensions.dome.markdown.grant.read in ' +
+        ".dome/config.yaml.",
+    }),
+    Object.freeze({
+      processorId: "dome.markdown.page-status",
+      entries: Object.freeze([
+        Object.freeze({
+          kind: "graph.write",
+          target: "dome.page.status",
+        } as const),
+      ]),
+      why:
+        "page supersession facts are dropped by the broker, so superseded " +
+        "pages are neither linted against nor downranked",
+      recovery:
+        'Add "dome.page.*" to extensions.dome.markdown.grant.graph.write ' +
+        "in .dome/config.yaml.",
+    }),
+  ]);
+
+export function capabilityGrantEntryFindings(opts: {
+  readonly registry: ProcessorRegistry;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+}): ReadonlyArray<HealthFinding> {
+  const findings: HealthFinding[] = [];
+  for (const requirement of FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS) {
+    const processor = opts.registry.get(requirement.processorId);
+    if (processor === undefined) continue; // bundle not enabled / not loaded
+    const granted = opts.resolveGrants(requirement.processorId);
+    const grantedKinds = capabilityKinds(granted);
+    const missing = requirement.entries.filter(
+      (entry) =>
+        // The manifest must still declare the entry (the table cannot
+        // outlive a manifest retrenchment) ...
+        grantEntryCovered(entry, processor.capabilities) &&
+        // ... the kind must be granted at all (a wholly missing kind is
+        // `capability.grant-missing`'s finding) ...
+        grantedKinds.has(entry.kind) &&
+        // ... and the granted patterns must miss the specific entry.
+        !grantEntryCovered(entry, granted),
+    );
+    if (missing.length === 0) continue;
+    findings.push(
+      Object.freeze({
+        code: "capability.grant-entry-missing" as const,
+        severity: "warning" as const,
+        subject: "config" as const,
+        id: [
+          requirement.processorId,
+          ...missing.map((entry) => `${entry.kind}:${entry.target}`),
+        ].join("|"),
+        message:
+          `Processor ${requirement.processorId} declares ` +
+          formatGrantEntries(missing) +
+          " but the vault grant does not cover " +
+          `${missing.length === 1 ? "that entry" : "those entries"}; ` +
+          `${requirement.why}.`,
+        recovery: requirement.recovery,
+        capability: Object.freeze({
+          processorId: requirement.processorId,
+          missingEntries: Object.freeze(
+            missing.map((entry) =>
+              Object.freeze({ kind: entry.kind, target: entry.target }),
+            ),
+          ),
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+function grantEntryCovered(
+  entry: GrantEntry,
+  caps: ReadonlyArray<Capability>,
+): boolean {
+  if (entry.kind === "graph.write") {
+    return graphWriteCovers(entry.target, caps);
+  }
+  const path = canonicalVaultPath(entry.target);
+  if (path === null) return false;
+  return pathCapabilityMatches(entry.kind, path, caps);
+}
+
+function formatGrantEntries(entries: ReadonlyArray<GrantEntry>): string {
+  return entries
+    .map((entry) => `'${entry.kind}' over '${entry.target}'`)
+    .join(", ");
 }
 
 function modelProviderFindings(opts: {

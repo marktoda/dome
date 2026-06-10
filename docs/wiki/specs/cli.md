@@ -134,7 +134,12 @@ The shipped initialization steps:
    bundles while preserving existing grant values, explicitly disabled bundles,
    and third-party bundle config. When it changes the file, it rewrites the YAML
    into normalized form so stale comments from older generated configs do not
-   contradict the active grants.
+   contradict the active grants. It deliberately does NOT merge new entries
+   into grant lists the vault already carries — grant lists are user-owned
+   config and auto-merging is too risky. The detection half lives in
+   `dome doctor`'s `capability.grant-entry-missing` probe, which names the
+   exact YAML each missing first-party rollout entry needs (see
+   `docs/memory.md` §"Vault rollout").
 4. When `--with-model-provider anthropic` is supplied, copies the shipped
    first-party provider template from
    `<SDK>/assets/model-providers/anthropic.ts` to
@@ -1396,7 +1401,17 @@ Engine-substrate **health check** verb. The current implementation is
 probe-only and read-only: it reports failed/stuck outbox rows, orphan running
 rows, quarantined processor triggers, projection cache drift, adopted-ref
 divergence, instruction drift, operational schema mismatches, and enabled
-processor capability kinds that are declared but not granted. It also reports
+processor capability kinds that are declared but not granted. For granted
+kinds it additionally probes the first-party memory-quality rollout entries:
+when an enabled processor's manifest declares a specific path or fact
+namespace that the vault's grant patterns miss (e.g. `dome.daily` without
+`"dome.attention.*"`, `dome.agent` without `"core.md"` read, the
+preference-promotion answer handler without its per-processor replacement
+grant), doctor raises a `capability.grant-entry-missing` warning whose
+recovery text names the exact YAML to add — `dome init --refresh-config`
+fills only missing keys and never merges entries into existing grant lists,
+so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+It also reports
 enabled/granted model-capable processors when the vault has no configured or
 host-injected model provider, and — when both `dome.daily` and `dome.agent`
 are enabled — a `config.daily-path-mismatch` warning when the two bundles'

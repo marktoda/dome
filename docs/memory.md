@@ -172,9 +172,57 @@ Specced at [[wiki/specs/embeddings]]; invariant drafted at
 
 ## Vault rollout (after merge)
 
-Work vault: seed `core.md`; add the grant exclusions; remove the stale
-`.dome/prompts/` augmentation section from CLAUDE.md (retired in v1); restart
-the daemon. Supersession/status conventions announce themselves via lint.
+`dome init --refresh-config` fills only **missing** grant keys for enabled
+first-party bundles — it never merges new entries into a grant list the vault
+already carries (grant lists are user-owned config; auto-merging is too
+risky). An existing vault therefore applies the grant edits below by hand in
+`.dome/config.yaml`. Until they land, `dome doctor` raises one
+`capability.grant-entry-missing` warning per gap, naming the exact YAML to
+add (`capabilityGrantEntryFindings` in `src/engine/health.ts` is the
+canonical probe list — keep this section and that table in lockstep).
+
+**Exact grant edits:**
+
+1. `extensions.dome.daily.grant.graph.write` — add `"dome.attention.*"`
+   (M4: `dome.daily.attention-discount`'s dismissal-derived discount facts;
+   without it the broker drops them and stale loops are never demoted).
+2. `extensions.dome.agent.grant.read` — add `"core.md"` (M3: core-memory
+   injection into ingest / consolidate / brief task turns).
+3. `extensions.dome.agent.grant.read` — add `"preferences/signals.md"`
+   (M5: agents read the signals page).
+4. `extensions.dome.agent.grant.patch.auto` — add `"preferences/signals.md"`
+   (M5: validated signal-line appends).
+5. `extensions.dome.agent.grant.graph.write` — add `"dome.preference.*"`
+   (M5: the deterministic counter's `dome.preference.topic` facts).
+6. The per-processor replacement stanza for the single auto-writer (M5 —
+   memory decision 4; without it owner-approved promotions cannot be written
+   to `core.md`):
+
+   ```yaml
+   extensions:
+     dome.agent:
+       processors:
+         dome.agent.preference-promotion-answer:
+           grant:
+             read:
+               - "core.md"
+               - "preferences/signals.md"
+             patch.auto:
+               - "core.md"
+               - "preferences/signals.md"
+   ```
+
+7. `extensions.dome.markdown.grant.read` — add `"core.md"` (M3: the
+   `core-size` lint's effective read scope is `["core.md"] ∩ grant`; a
+   markdown read scope narrowed to `wiki/**` silently kills the lint).
+8. `extensions.dome.markdown.grant.graph.write` — add `"dome.page.*"` (M2:
+   `page-status` supersession facts; needed for vaults whose config predates
+   the M2 grant).
+
+**Other rollout steps:** seed `core.md` (or let `dome init` scaffold the
+first-write-only skeleton); remove the stale `.dome/prompts/` augmentation
+section from CLAUDE.md (retired in v1); restart the daemon.
+Supersession/status conventions announce themselves via lint.
 
 ## Decision ledger
 
