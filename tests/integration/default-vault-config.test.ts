@@ -101,6 +101,59 @@ describe("default vault config", () => {
     expect(extras).toEqual([]);
   });
 
+  test("dome.sources ships the calendar subscription visible but OFF (the consent surface)", () => {
+    // The shipped default makes opting in a one-line flip (enabled: true +
+    // a vault-authored fetch command) and makes silence the default:
+    // enabled must be EXACTLY false as shipped (wiki/specs/sources.md).
+    const rendered = parseYaml(defaultConfigYaml()) as {
+      extensions: Record<
+        string,
+        { enabled: boolean; config?: Record<string, unknown>; grant: Record<string, unknown> }
+      >;
+    };
+    const sources = rendered.extensions["dome.sources"];
+    expect(sources).toBeDefined();
+    expect(sources?.enabled).toBe(true);
+    expect(sources?.config).toEqual({
+      subscriptions: {
+        calendar: {
+          enabled: false,
+          schedule: "10 5 * * *",
+          output_path: "sources/calendar/{date}.md",
+          command: ["sh", ".dome/bin/fetch-calendar.sh"],
+        },
+      },
+    });
+    expect(sources?.grant).toEqual({
+      read: ["sources/**/*.md", ".dome/config.yaml"],
+      external: ["sources.fetch"],
+    });
+  });
+
+  test("the shipped default config parses with the per-extension config block intact", async () => {
+    // YAML render → loadCapabilityPolicy round trip: the `config:` block must
+    // survive parsing and reach `configForExtension` (the fetch processor's
+    // ctx.extensionConfig), not just the grant keys.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-sources-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+      const config = policy.value.configForExtension("dome.sources") as {
+        subscriptions?: Record<string, { enabled?: unknown }>;
+      };
+      expect(config.subscriptions?.calendar?.enabled).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("broad first-party default path grants stay explicit", () => {
     expect(broadDefaultPathGrants()).toEqual([
       "dome.graph:read:**/*.md",

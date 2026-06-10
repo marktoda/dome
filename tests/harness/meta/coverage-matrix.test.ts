@@ -84,6 +84,7 @@ import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/simplify-indexes.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
+import "../scenarios/effect-kinds/sources-subscription-fetch.scenario.test";
 import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
 import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
@@ -267,7 +268,8 @@ const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
   // Phase 13b unblocked: question (dome.markdown.duplicate-detection).
   // Effect-routing fixture coverage unblocked: job.
   // Effect-routing fixture coverage unblocked: outbox-recovery.
-  "external",  // Phase 16+ — outbox-targeted external actions (calendar.write, etc.)
+  // Sources-subscription coverage unblocked: external (dome.sources.fetch,
+  // scenarios/effect-kinds/sources-subscription-fetch).
 ]);
 
 const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
@@ -283,10 +285,11 @@ const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKin
   // Effect-routing fixture coverage unblocked: job.enqueue.
   // Harness operational-work coverage unblocked: model.invoke.
   // Effect-routing fixture coverage unblocked: outbox.recover.
+  // Sources-subscription coverage unblocked: external (dome.sources.fetch,
+  // scenarios/effect-kinds/sources-subscription-fetch).
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
   "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
-  "external",      // Phase 16 — external-capability processors (paired with ExternalActionEffect)
 ]);
 
 const DEFERRED_PHASES: ReadonlySet<ProcessorPhase> = new Set<ProcessorPhase>([

@@ -33,6 +33,7 @@ scenario(
         "dome.daily",
         "dome.claims",
         "dome.search",
+        "dome.sources",
         "dome.health",
       ],
       initialFiles: {

@@ -102,6 +102,26 @@ describe("first-party maintenance loops", () => {
     );
   });
 
+  test("the edition loop carries dome.sources.fetch as OPTIONAL (subscriptions are per-vault opt-in)", () => {
+    const edition = FIRST_PARTY_MAINTENANCE_LOOPS.find(
+      (loop) => loop.id === "dome.daily.edition",
+    );
+    expect(edition).toBeDefined();
+    if (edition === undefined) return;
+
+    // Optional, not required: a vault with no enabled subscription must not
+    // make the edition loop look broken (wiki/specs/sources.md §"Lockstep").
+    expect(edition.optionalProcessors ?? []).toContain("dome.sources.fetch");
+    expect(edition.processors).not.toContain("dome.sources.fetch");
+    // The fetch's output is already the loop's calendar evidence — the
+    // reason the fetch joins the edition instead of owning a tenth loop.
+    expect(
+      edition.evidence.some(
+        (e) => e.kind === "path" && e.pattern === "sources/calendar/*.md",
+      ),
+    ).toBe(true);
+  });
+
   test("validation catches stale processor references", () => {
     const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
     if (loop === undefined) throw new Error("expected first-party loop");
