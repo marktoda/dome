@@ -34,6 +34,15 @@ extensions:
           patch.auto:
             - "**/*.md"
           question.ask: true
+      # Mirror of validate-wikilinks' read widening: supersession forward
+      # targets can live at the vault root (e.g. memory.md), and rule 1
+      # resolves them against this processor's READABLE set — without the
+      # override a root-level target raises a false missing-forward-link
+      # warning.
+      dome.markdown.lint-supersession:
+        grant:
+          read:
+            - "**/*.md"
 
   dome.graph:
     enabled: true
