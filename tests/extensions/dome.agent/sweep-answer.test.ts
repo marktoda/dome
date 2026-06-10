@@ -437,3 +437,109 @@ describe("patch sourceRefs", () => {
     expect(refPaths).toContain(DEST);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 11: retry-idempotence presence guard
+// ---------------------------------------------------------------------------
+
+describe("retry idempotence — presence guard before append", () => {
+  const PROPOSED = "## 2026-06-09 — hooks discussion\n\nShe demoed the new transformer hook.";
+  const materialWithoutMd = MATERIAL.replace(/\.md$/, "");
+
+  test("re-answering with the handler's own emitted content → zero effects", async () => {
+    // First pass: get the emitted content.
+    const ctx1 = makeCtx({
+      files: { [DEST]: DEST_CONTENT },
+      input: envelope({
+        answer: "integrate",
+        metadata: { destination: DEST, material: MATERIAL, proposedSection: PROPOSED },
+      }),
+    });
+    const effects1 = await sweepAnswer.run(ctx1 as never);
+    const emittedContent = patchContent(effects1, DEST);
+    expect(emittedContent).not.toBeNull();
+
+    // Second pass (retry): feed the emitted content back as the snapshot.
+    const ctx2 = makeCtx({
+      files: { [DEST]: emittedContent! },
+      input: envelope({
+        answer: "integrate",
+        metadata: { destination: DEST, material: MATERIAL, proposedSection: PROPOSED },
+      }),
+    });
+    const effects2 = await sweepAnswer.run(ctx2 as never);
+    // Retry must be zero effects — section already landed AND link already present.
+    expect(effects2).toHaveLength(0);
+  });
+
+  test("section present but sources link missing → patch with link only, exactly one section occurrence", async () => {
+    // Construct a destination that already has the section but NO sources link.
+    const sectionAlreadyPresent = [
+      "---",
+      "type: entity",
+      "sources: []",
+      "---",
+      "",
+      "# Alice Henshaw",
+      "",
+      "## 2026-05-20 — first met",
+      "Background chat.",
+      "",
+      "",
+      PROPOSED,
+      "",
+    ].join("\n");
+
+    const ctx = makeCtx({
+      files: { [DEST]: sectionAlreadyPresent },
+      input: envelope({
+        answer: "integrate",
+        metadata: { destination: DEST, material: MATERIAL, proposedSection: PROPOSED },
+      }),
+    });
+    const effects = await sweepAnswer.run(ctx as never);
+
+    // Must emit exactly one patch (link only) and no diagnostics.
+    expect(patches(effects)).toHaveLength(1);
+    expect(diagnostics(effects)).toHaveLength(0);
+
+    const content = patchContent(effects, DEST) ?? "";
+    // The section heading must appear exactly once.
+    const headingMatches = content.match(/## 2026-06-09 — hooks discussion/g);
+    expect(headingMatches).toHaveLength(1);
+    // The sources link must now be present.
+    expect(content).toContain(`[[${materialWithoutMd}]]`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 12: trailing newline preservation
+// ---------------------------------------------------------------------------
+
+describe("trailing newline preservation", () => {
+  test("happy path: full content snapshot — heading + section + sources + trailing newline", async () => {
+    const PROPOSED = "## 2026-06-09 — hooks discussion\n\nShe demoed the new transformer hook.";
+    const materialWithoutMd = MATERIAL.replace(/\.md$/, "");
+    const ctx = makeCtx({
+      files: { [DEST]: DEST_CONTENT },
+      input: envelope({
+        answer: "integrate",
+        metadata: { destination: DEST, material: MATERIAL, proposedSection: PROPOSED },
+      }),
+    });
+    const effects = await sweepAnswer.run(ctx as never);
+    const content = patchContent(effects, DEST);
+    expect(content).not.toBeNull();
+
+    // Full-content assertion: ends with a newline, section and sources present.
+    expect(content!.endsWith("\n")).toBe(true);
+    expect(content).toContain("## 2026-06-09 — hooks discussion");
+    expect(content).toContain("She demoed the new transformer hook.");
+    expect(content).toContain(`[[${materialWithoutMd}]]`);
+
+    // Exact structural check: one blank-line separator before the new section,
+    // and the final character is a newline.
+    const expectedSectionBlock = `\n\n${PROPOSED}\n`;
+    expect(content).toContain(expectedSectionBlock);
+  });
+});

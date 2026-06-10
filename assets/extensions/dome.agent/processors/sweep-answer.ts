@@ -21,7 +21,18 @@
 // settlement-by-sources (the sources: wikilink) is authoritative. The ledger
 // row is the advisory gate; the sources: link is the durable record.
 //
-// Deterministic — no model.invoke.
+// Retry-idempotence: the handler is invoked at-least-once (the engine can
+// re-dispatch after a post-adoption failure window). Before composing an
+// append patch the handler checks whether `proposedSection.trim()` is already
+// present in the destination content. If it is, no second append is emitted;
+// `ensureSourcesLink` is still called, and a patch is emitted only if the
+// sources link was missing — exactly recovering the link-only failure mode.
+//
+// Deterministic — no model.invoke. The manifest omits `execution: class:
+// deterministic` because both answer-triggered garden processors in this bundle
+// (this one and preference-promotion-answer) uniformly omit it; the broker
+// defaults to the declared class when absent and the schema permits it. Adding
+// the field for this processor alone would be asymmetric with the sibling.
 
 import {
   diagnosticEffect,
@@ -162,7 +173,7 @@ const sweepAnswer = defineProcessorImplementation({
           code: "dome.agent.sweep-answer-invalid",
           message:
             "dome.agent.sweep-answer received a malformed answer envelope " +
-            "(missing or wrong-typed questionId / question / answer / answeredAt fields).",
+            "(missing or wrong-typed question / answer / answeredAt fields).",
           sourceRefs: [],
         }),
       ];
@@ -252,10 +263,38 @@ const sweepAnswer = defineProcessorImplementation({
     const materialDate = materialDateFromPath(meta.material, input.answeredAt);
     const section = formatSection(meta.proposedSection, materialDate);
 
-    // Compose: append the proposed section, then guarantee the sources: link.
-    // ensureSourcesLink is idempotent — if the link is already present (e.g. a
-    // retry), the content is returned unchanged and the patch is a no-op write.
-    const withSection = existingContent.trimEnd() + section;
+    // Retry-idempotent presence guard: if the proposed section (trimmed) is
+    // already present in the destination, skip the append and only guarantee
+    // the sources link. This handles the at-least-once retry window
+    // (src/engine/question-answering.ts:34-37, 67-70) without double-appending.
+    const trimmedProposed = meta.proposedSection.trim();
+    if (existingContent.includes(trimmedProposed)) {
+      const relinked = ensureSourcesLink(existingContent, meta.material);
+      if (relinked === existingContent) return Object.freeze([]);
+      return [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            {
+              kind: "write",
+              path: meta.destination,
+              content: relinked,
+            },
+          ],
+          reason:
+            `dome.agent.sweep-answer: retry — section already present, ensuring sources link for ${meta.material} in ${meta.destination}`,
+          sourceRefs: [
+            ctx.sourceRef(meta.material),
+            ctx.sourceRef(meta.destination),
+          ],
+        }),
+      ];
+    }
+
+    // First-time append: compose the section, then guarantee the sources: link.
+    // Preserve the file's trailing newline: end the output with exactly "\n".
+    const base = existingContent.trimEnd();
+    const withSection = base + section + "\n";
     const nextContent = ensureSourcesLink(withSection, meta.material);
 
     return [
