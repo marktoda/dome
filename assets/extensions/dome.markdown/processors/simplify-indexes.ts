@@ -14,13 +14,23 @@ import {
   type FileChangeInput,
 } from "../../../../src/core/effect";
 import {
+  generatedBlockMarkers,
+  replaceGeneratedBlock,
+} from "../../../../src/core/generated-block";
+import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
-const INDEX_BLOCK_START = "<!-- dome:index:start -->";
-const INDEX_BLOCK_END = "<!-- dome:index:end -->";
+const INDEX_BLOCK_OWNER = "dome";
+const INDEX_BLOCK_NAME = "index";
+const INDEX_BLOCK_MARKERS = generatedBlockMarkers(
+  INDEX_BLOCK_OWNER,
+  INDEX_BLOCK_NAME,
+);
+const INDEX_BLOCK_START = INDEX_BLOCK_MARKERS.start;
+const INDEX_BLOCK_END = INDEX_BLOCK_MARKERS.end;
 const MIN_CHILDREN = 2;
 const MAX_CHILDREN = 50;
 const MAX_INDEXES_PER_RUN = 50;
@@ -177,10 +187,17 @@ function wikilink(child: IndexChild): string {
 }
 
 function upsertIndexBlock(content: string, block: string): string | null {
-  const existing = existingBlockRange(content);
-  if (existing !== null) {
-    return `${content.slice(0, existing.start)}${block}${content.slice(existing.end)}`;
-  }
+  // Line-anchored replacement via the core grammar primitive; when no real
+  // (line-anchored) pair exists but marker text appears anywhere — prose
+  // mentions, mid-line smuggles, unterminated pairs — refuse to touch the
+  // page rather than guess at bounds.
+  const replaced = replaceGeneratedBlock(
+    content,
+    INDEX_BLOCK_OWNER,
+    INDEX_BLOCK_NAME,
+    block,
+  );
+  if (replaced !== null) return replaced;
   if (content.includes(INDEX_BLOCK_START) || content.includes(INDEX_BLOCK_END)) {
     return null;
   }
@@ -196,19 +213,6 @@ function upsertIndexBlock(content: string, block: string): string | null {
   const inserted = section.end === lines.length ? ["", block] : ["", block, ""];
   lines.splice(insertionIndex, 0, ...inserted);
   return `${lines.join("\n").trimEnd()}\n`;
-}
-
-function existingBlockRange(
-  content: string,
-): { readonly start: number; readonly end: number } | null {
-  const start = content.indexOf(INDEX_BLOCK_START);
-  if (start === -1) return null;
-  const end = content.indexOf(INDEX_BLOCK_END, start);
-  if (end === -1) return null;
-  return {
-    start,
-    end: end + INDEX_BLOCK_END.length,
-  };
 }
 
 function pagesSectionRange(

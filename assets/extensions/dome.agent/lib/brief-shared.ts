@@ -9,6 +9,13 @@
 // seams.
 
 import type { FactEffect } from "../../../../src/core/effect";
+import {
+  findGeneratedBlock,
+  generatedBlockMarkers,
+  replaceGeneratedBlock,
+  sanitizeGeneratedBlockBody,
+  extractGeneratedBlockBody as extractGeneratedBlockBodyCore,
+} from "../../../../src/core/generated-block";
 
 import {
   ATTENTION_DISCOUNT_PREDICATE,
@@ -16,30 +23,40 @@ import {
   parseAttentionDiscountFactValue,
 } from "../../dome.daily/processors/attention-shared";
 
-export const BRIEF_YESTERDAY_START = "<!-- dome.agent.brief:yesterday:start -->";
-export const BRIEF_YESTERDAY_END = "<!-- dome.agent.brief:yesterday:end -->";
-export const BRIEF_MEETINGS_START = "<!-- dome.agent.brief:meetings:start -->";
-export const BRIEF_MEETINGS_END = "<!-- dome.agent.brief:meetings:end -->";
-export const BRIEF_QUESTIONS_START = "<!-- dome.agent.brief:questions:start -->";
-export const BRIEF_QUESTIONS_END = "<!-- dome.agent.brief:questions:end -->";
+/** The brief's marker-block owner namespace. */
+const BRIEF_OWNER = "dome.agent.brief";
 
+/**
+ * A brief block's identity: the `(owner, block)` pair plus the rendered
+ * markers from the `src/core/generated-block` grammar primitive — the only
+ * sanctioned marker implementation (see
+ * [[wiki/linters/generated-block-splice-guard]]).
+ */
 export type BriefBlockMarkers = {
+  readonly owner: string;
+  readonly block: string;
   readonly start: string;
   readonly end: string;
 };
 
-export const YESTERDAY_BLOCK: BriefBlockMarkers = Object.freeze({
-  start: BRIEF_YESTERDAY_START,
-  end: BRIEF_YESTERDAY_END,
-});
-export const MEETINGS_BLOCK: BriefBlockMarkers = Object.freeze({
-  start: BRIEF_MEETINGS_START,
-  end: BRIEF_MEETINGS_END,
-});
-export const QUESTIONS_BLOCK: BriefBlockMarkers = Object.freeze({
-  start: BRIEF_QUESTIONS_START,
-  end: BRIEF_QUESTIONS_END,
-});
+function briefBlock(block: string): BriefBlockMarkers {
+  return Object.freeze({
+    owner: BRIEF_OWNER,
+    block,
+    ...generatedBlockMarkers(BRIEF_OWNER, block),
+  });
+}
+
+export const YESTERDAY_BLOCK: BriefBlockMarkers = briefBlock("yesterday");
+export const MEETINGS_BLOCK: BriefBlockMarkers = briefBlock("meetings");
+export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
+
+export const BRIEF_YESTERDAY_START = YESTERDAY_BLOCK.start;
+export const BRIEF_YESTERDAY_END = YESTERDAY_BLOCK.end;
+export const BRIEF_MEETINGS_START = MEETINGS_BLOCK.start;
+export const BRIEF_MEETINGS_END = MEETINGS_BLOCK.end;
+export const BRIEF_QUESTIONS_START = QUESTIONS_BLOCK.start;
+export const BRIEF_QUESTIONS_END = QUESTIONS_BLOCK.end;
 
 // ----- Calendar parsing (defensive — the file is untrusted input) -----------
 
@@ -118,26 +135,19 @@ function parseMeetingLine(raw: string): CalendarMeeting | null {
 }
 
 // ----- Block plumbing --------------------------------------------------------
-
-function blockRange(
-  content: string,
-  markers: BriefBlockMarkers,
-): { readonly start: number; readonly end: number } | null {
-  const start = content.indexOf(markers.start);
-  if (start < 0) return null;
-  const endMarker = content.indexOf(markers.end, start);
-  if (endMarker < 0) return null;
-  return Object.freeze({ start, end: endMarker + markers.end.length });
-}
+//
+// Bounding is delegated to the line-anchored scanner in
+// `src/core/generated-block` — a marker counts only when the entire trimmed
+// line is the marker, so prose/fence mentions and mid-line smuggles never
+// bound a block. Placement (which heading a missing block is inserted under)
+// stays here: the primitive owns bounding, not placement.
 
 /** The text between the markers (exclusive), or null when the block is absent. */
 export function extractBriefBlockBody(
   content: string,
   markers: BriefBlockMarkers,
 ): string | null {
-  const range = blockRange(content, markers);
-  if (range === null) return null;
-  return content.slice(range.start + markers.start.length, range.end - markers.end.length);
+  return extractGeneratedBlockBodyCore(content, markers.owner, markers.block);
 }
 
 /**
@@ -155,15 +165,21 @@ export function replaceBriefBlock(input: {
   /** Insert after this block when present (e.g. questions after yesterday). */
   readonly afterBlock?: BriefBlockMarkers;
 }): string {
-  const existing = blockRange(input.content, input.markers);
-  if (existing !== null) {
-    const replacement = input.section === null ? "" : input.section;
-    return `${input.content.slice(0, existing.start)}${replacement}${input.content.slice(existing.end)}`;
-  }
+  const replaced = replaceGeneratedBlock(
+    input.content,
+    input.markers.owner,
+    input.markers.block,
+    input.section === null ? "" : input.section,
+  );
+  if (replaced !== null) return replaced;
   if (input.section === null) return input.content;
 
   if (input.afterBlock !== undefined) {
-    const anchor = blockRange(input.content, input.afterBlock);
+    const anchor = findGeneratedBlock(
+      input.content,
+      input.afterBlock.owner,
+      input.afterBlock.block,
+    ).range;
     if (anchor !== null) {
       return `${input.content.slice(0, anchor.end)}\n\n${input.section}${input.content.slice(anchor.end)}`;
     }
@@ -194,18 +210,6 @@ export type GroundedBlockBody = {
   readonly ungrounded: ReadonlyArray<string>;
 };
 
-/**
- * Marker-injection guard. Dome's HTML comments are exclusively generated
- * block markers (`<!-- dome.daily:* -->`, `<!-- dome.agent.brief:* -->`), so
- * no legitimate model-written body line ever carries one. A model body that
- * smuggles marker lines could fabricate a second copy of another block
- * (`replaceBriefBlock` replaces only the first occurrence, so the smuggled
- * copy would survive the deterministic pass verbatim) or corrupt
- * `dome.daily`'s carry-forward regions — and calendar files are untrusted
- * input that flows into the model, so this is a live prompt-injection path.
- */
-const DOME_MARKER_COMMENT = /<!--\s*dome\./;
-
 /** Backtick code spans don't ground a bullet — `[[x]]` in code is not a link. */
 function stripCodeSpans(line: string): string {
   return line.replace(/`[^`]*`/g, "");
@@ -218,14 +222,24 @@ function stripCodeSpans(line: string): string {
  * bullets are stripped from the body and returned separately so the caller
  * can re-emit each as a QuestionEffect — ungrounded content becomes a
  * question, not brief text. Non-bullet lines (headings, blanks) pass
- * through, except lines carrying a `<!-- dome.* -->` marker comment, which
- * are dropped entirely (see DOME_MARKER_COMMENT).
+ * through.
+ *
+ * Marker-injection guard: the body is sanitized first via
+ * `sanitizeGeneratedBlockBody` — lines carrying a `<!-- dome…` marker
+ * comment are dropped entirely and stray bare `<!--`/`-->` fragments are
+ * stripped. Dome's HTML comments are exclusively generated block markers, so
+ * no legitimate model-written body line ever carries one; a body that
+ * smuggles marker lines could fabricate a second copy of another block
+ * (`replaceBriefBlock` replaces only the first occurrence, so the smuggled
+ * copy would survive the deterministic pass verbatim) or corrupt
+ * `dome.daily`'s carry-forward regions — and calendar files are untrusted
+ * input that flows into the model, so this is a live prompt-injection path.
  */
 export function groundBriefBlockBody(body: string): GroundedBlockBody {
+  const sanitized = sanitizeGeneratedBlockBody(body);
   const kept: string[] = [];
   const ungrounded: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (DOME_MARKER_COMMENT.test(line)) continue;
+  for (const line of sanitized.body.split("\n")) {
     const isBullet = /^\s*[-*]\s+\S/.test(line);
     if (isBullet && !stripCodeSpans(line).includes("[[")) {
       ungrounded.push(line.trim());
