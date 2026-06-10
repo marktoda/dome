@@ -80,6 +80,7 @@ import {
   checkoutPathsAtRef,
   currentBranch,
   currentSha,
+  isAncestor,
   writeRef,
 } from "../git";
 // Note: `currentSha` was used Phase-2 to re-read HEAD after each iteration
@@ -671,6 +672,53 @@ export async function adopt(opts: {
   const branchAdvanceTarget = newAdopted;
   let materializePaths: ReadonlyArray<string> = Object.freeze([]);
   if (branchAdvanceTarget !== sourceHead) {
+    // The branch advance must be a fast-forward of the head we are
+    // replacing. The CAS below (`expectedOld: sourceHead`) only proves HEAD
+    // has not moved since the loop-start snapshot — it does NOT prove the
+    // candidate chain descends from that snapshot. A garden sub-Proposal's
+    // candidate descends from the *adopted* commit; if a user commit landed
+    // on the branch between adoption and the garden phase, `sourceHead`
+    // contains that commit while the candidate does not, and advancing
+    // would rewind the branch past the user's work (reachable only from the
+    // reflog) and revert their content during materialization. Refuse with
+    // a blocking diagnostic instead; the next tick re-derives the work on
+    // top of the new head.
+    const fastForward =
+      sourceHead === ZERO_SHA ||
+      (await isAncestor({
+        path: vault.path,
+        ancestor: sourceHead,
+        descendant: branchAdvanceTarget,
+      }));
+    if (!fastForward) {
+      const staleCandidateDiag = diagnosticEffect({
+        severity: "block",
+        code: "adoption.branch-advance-not-fast-forward",
+        message:
+          `Refused to advance refs/heads/${branch} to engine target ` +
+          `${branchAdvanceTarget.slice(0, 7)}: the target does not descend ` +
+          `from the branch head ${sourceHead.slice(0, 7)} observed at loop ` +
+          `start (a commit likely landed on the branch while this proposal ` +
+          `was being adopted). No refs were moved; the work will be ` +
+          `re-derived on the next sync.`,
+        sourceRefs: [],
+      });
+      allDiagnostics.push(staleCandidateDiag);
+      await recordDiagnosticsViaSink({
+        sinks,
+        diagnostics: [staleCandidateDiag],
+        processorId: "engine.adoption",
+        proposalId: proposal.id,
+      });
+      return frozenResult({
+        proposalId: proposal.id,
+        adopted: false,
+        adoptedRef: adopted,
+        diagnostics: allDiagnostics,
+        closureCommitOid,
+        iterations: iteration,
+      });
+    }
     materializePaths = await changedPathsBetween({
       vaultPath: vault.path,
       base: sourceHead,

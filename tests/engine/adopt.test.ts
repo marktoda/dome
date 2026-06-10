@@ -20,7 +20,14 @@ import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/vault-shape";
-import { commit, initRepo, currentSha, readRef, writeRef } from "../../src/git";
+import {
+  checkoutPathsAtRef,
+  commit,
+  initRepo,
+  currentSha,
+  readRef,
+  writeRef,
+} from "../../src/git";
 
 type Fixture = {
   vault: EngineVault;
@@ -295,6 +302,21 @@ describe("adopt fixed-point loop", () => {
       ref: "refs/dome/adopted/main",
       value: staleAdopted,
     });
+    // Park the branch back on the proposal head with matching working-tree
+    // content, so the finalization fast-forward guard passes and the
+    // refusal under test comes from `setAdoptedRef` (stale adopted cursor),
+    // exercising the rollback path.
+    await writeRef({
+      path: f.vault.path,
+      ref: "refs/heads/main",
+      value: userHead,
+    });
+    await checkoutPathsAtRef({
+      path: f.vault.path,
+      ref: userHead,
+      filepaths: ["wiki/seed.md"],
+      force: true,
+    });
 
     const proposal = makeManualProposal({
       id: "prop_stale_adopted",
@@ -355,12 +377,82 @@ describe("adopt fixed-point loop", () => {
     expect(r.diagnostics.some((d) => d.code === "adoption.ref-advance-refused"))
       .toBe(true);
     expect(await readRef({ path: f.vault.path, ref: "refs/heads/main" }))
-      .toBe(staleAdopted);
+      .toBe(userHead);
     expect(await readRef({ path: f.vault.path, ref: "refs/dome/adopted/main" }))
       .toBe(staleAdopted);
     const workingTree = await Bun.file(
       join(f.vault.path, "wiki", "seed.md"),
     ).text();
-    expect(workingTree).toBe("stale adopted\n");
+    expect(workingTree).toBe("user\n");
+  });
+
+  test("concurrent user commit during proposal adoption refuses the branch advance instead of rewinding past it", async () => {
+    // Reconstructs the garden sub-Proposal race: the proposal head is a
+    // floating engine commit whose parent is the adopted commit, while a
+    // user commit landed on the branch after the proposal was constructed.
+    // The branch head observed at loop start is NOT an ancestor of the
+    // candidate, so advancing would orphan the user's commit and revert
+    // their content during materialization.
+    const f = await makeMinimalGitVault();
+    fixtures.push(f);
+
+    await writeRef({
+      path: f.vault.path,
+      ref: "refs/dome/adopted/main",
+      value: f.baseSha,
+    });
+
+    // Floating engine commit E (parent = adopted base).
+    await writeFile(join(f.vault.path, "wiki", "seed.md"), "engine\n");
+    const engineSha = await commit({
+      path: f.vault.path,
+      message: "garden engine work\n",
+      files: ["wiki/seed.md"],
+    });
+    await writeRef({
+      path: f.vault.path,
+      ref: "refs/heads/main",
+      value: f.baseSha,
+    });
+
+    // Concurrent user commit U (parent = adopted base) — the live branch head.
+    await writeFile(join(f.vault.path, "wiki", "seed.md"), "user concurrent\n");
+    const userSha = await commit({
+      path: f.vault.path,
+      message: "user concurrent edit\n",
+      files: ["wiki/seed.md"],
+    });
+
+    const proposal = makeManualProposal({
+      id: "prop_concurrent_commit",
+      base: commitOid(f.baseSha),
+      head: commitOid(engineSha),
+      branch: "main",
+    });
+    const runner: AdoptionPhaseRunner = async () => [];
+
+    const r = await adopt({
+      vault: f.vault,
+      proposal,
+      runAdoptionProcessors: runner,
+      sinks: noopSinks(),
+    });
+
+    expect(r.adopted).toBe(false);
+    expect(
+      r.diagnostics.some(
+        (d) => d.code === "adoption.branch-advance-not-fast-forward",
+      ),
+    ).toBe(true);
+    // No refs moved: the user's commit is still the branch head, the adopted
+    // cursor is untouched, and the user's working-tree content survives.
+    expect(await readRef({ path: f.vault.path, ref: "refs/heads/main" }))
+      .toBe(userSha);
+    expect(await readRef({ path: f.vault.path, ref: "refs/dome/adopted/main" }))
+      .toBe(f.baseSha);
+    const workingTree = await Bun.file(
+      join(f.vault.path, "wiki", "seed.md"),
+    ).text();
+    expect(workingTree).toBe("user concurrent\n");
   });
 });
