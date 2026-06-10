@@ -106,13 +106,13 @@ export type RunCheckOptions = {
   readonly loops?: boolean | undefined;
 };
 
-type CheckScopes = {
+export type CheckScopes = {
   readonly engine: boolean;
   readonly content: boolean;
   readonly decisions: boolean;
 };
 
-type CheckReport = {
+export type CheckReport = {
   readonly schema: typeof SCHEMA;
   readonly status: "ok" | "attention";
   readonly generatedAt: string;
@@ -188,54 +188,55 @@ type CheckQuestionItem = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
-export async function runCheck(
-  options: RunCheckOptions = {},
-): Promise<number> {
-  const limit = parseLimit(options.limit);
-  if (limit === null) {
-    console.error("dome check: --limit must be a positive integer.");
-    return EX_USAGE;
-  }
-  const orphanThresholdMs = parseNonNegativeIntegerValue(
-    options.orphanThresholdMs,
-    DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
-  );
-  if (orphanThresholdMs === null) {
-    console.error(
-      "dome check: --orphan-threshold-ms must be a non-negative integer.",
-    );
-    return EX_USAGE;
-  }
+/** The data-returning outcome of one check-report collection. */
+export type CheckReportOutcome =
+  | { readonly kind: "ok"; readonly report: CheckReport }
+  | { readonly kind: "runtime-open-failed"; readonly errorKind: string };
 
-  const vaultPath = resolveVaultPath(options.vault);
-  const scopes = resolveScopes(options);
+/**
+ * Collect the full `dome.check/v1` report without printing. Opens and
+ * closes its own runtime (or reports the operational-storage failure as a
+ * degraded engine-scope report, matching the CLI). `runCheck` renders the
+ * outcome for the terminal; the MCP `check` tool renders it as the same
+ * JSON document.
+ */
+export async function buildCheckReport(opts: {
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  readonly scopes: CheckScopes;
+  readonly attentionOnly: boolean;
+  readonly limit: number;
+  readonly orphanThresholdMs: number;
+}): Promise<CheckReportOutcome> {
+  const vaultPath = resolveVaultPath(opts.vault);
+  const scopes = opts.scopes;
+  const limit = opts.limit;
+  const orphanThresholdMs = opts.orphanThresholdMs;
+
   const storageReport = collectOperationalSchemaReport({ vaultPath });
   if (storageReport.status === "unhealthy") {
-    const report = reportFromUnavailableRuntime({
-      generatedAt: storageReport.generatedAt,
-      scopes: Object.freeze({
-        engine: true,
-        content: false,
-        decisions: false,
+    return Object.freeze({
+      kind: "ok" as const,
+      report: reportFromUnavailableRuntime({
+        generatedAt: storageReport.generatedAt,
+        scopes: Object.freeze({
+          engine: true,
+          content: false,
+          decisions: false,
+        }),
+        engine: storageReport,
       }),
-      engine: storageReport,
     });
-    printReport(report, options.json === true, {
-      showLoopDetails: options.loops === true,
-      vaultPath,
-    });
-    return 0;
   }
 
   const bundleRoots = resolveBundleRoots({
     vaultPath,
-    bundlesRoot: options.bundlesRoot,
+    bundlesRoot: opts.bundlesRoot,
   });
   const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
   if (!runtimeResult.ok) {
-    return emitRuntimeOpenFailure({
-      command: "check",
-      json: options.json === true,
+    return Object.freeze({
+      kind: "runtime-open-failed" as const,
       errorKind: runtimeResult.error.kind,
     });
   }
@@ -272,7 +273,7 @@ export async function runCheck(
     const content = scopes.content
       ? collectContentReport({
           diagnostics: diagnosticRows,
-          attentionOnly: contentAttentionOnlyForRender(options),
+          attentionOnly: opts.attentionOnly,
           limit,
         })
       : null;
@@ -306,17 +307,55 @@ export async function runCheck(
       decisions,
       maintenanceLoops: maintenance_loops,
     });
-    printReport(report, options.json === true, {
-      showLoopDetails: options.loops === true,
-      vaultPath,
-    });
-    return 0;
+    return Object.freeze({ kind: "ok" as const, report });
   } finally {
     await runtime.close();
   }
 }
 
-function resolveScopes(options: RunCheckOptions): CheckScopes {
+export async function runCheck(
+  options: RunCheckOptions = {},
+): Promise<number> {
+  const limit = parseLimit(options.limit);
+  if (limit === null) {
+    console.error("dome check: --limit must be a positive integer.");
+    return EX_USAGE;
+  }
+  const orphanThresholdMs = parseNonNegativeIntegerValue(
+    options.orphanThresholdMs,
+    DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+  );
+  if (orphanThresholdMs === null) {
+    console.error(
+      "dome check: --orphan-threshold-ms must be a non-negative integer.",
+    );
+    return EX_USAGE;
+  }
+
+  const outcome = await buildCheckReport({
+    vault: options.vault,
+    bundlesRoot: options.bundlesRoot,
+    scopes: resolveScopes(options),
+    attentionOnly: contentAttentionOnlyForRender(options),
+    limit,
+    orphanThresholdMs,
+  });
+  if (outcome.kind === "runtime-open-failed") {
+    return emitRuntimeOpenFailure({
+      command: "check",
+      json: options.json === true,
+      errorKind: outcome.errorKind,
+    });
+  }
+
+  printReport(outcome.report, options.json === true, {
+    showLoopDetails: options.loops === true,
+    vaultPath: resolveVaultPath(options.vault),
+  });
+  return 0;
+}
+
+export function resolveScopes(options: RunCheckOptions): CheckScopes {
   const explicit =
     options.engine === true ||
     options.content === true ||

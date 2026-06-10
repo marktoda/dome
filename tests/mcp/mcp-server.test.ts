@@ -364,10 +364,10 @@ describe("dome mcp server (in-memory transport)", () => {
   }, TEST_TIMEOUT_MS);
 
   test("overlapping tool calls serialize through the mutex; both results parse cleanly", async () => {
-    // The MCP SDK does NOT serialize tool calls; the captured-console mutex
-    // is the only fence keeping one call's stdout out of the other's result.
-    // Fire two calls without awaiting the first and assert both produce
-    // clean, well-formed JSON payloads (callTool JSON.parses each).
+    // The MCP SDK does NOT serialize tool calls; the tool mutex is the fence
+    // keeping at most one VaultRuntime open against the vault's SQLite files
+    // at a time. Fire two calls without awaiting the first and assert both
+    // produce clean, well-formed JSON payloads (callTool JSON.parses each).
     const { client } = await fixture();
     const [status, query] = await Promise.all([
       callTool(client, "status"),

@@ -32,7 +32,7 @@ import {
 } from "../presenter";
 
 import { resolveVaultPath } from "../resolve-vault";
-const ANSWER_SCHEMA = "dome.answer/v1";
+export const ANSWER_SCHEMA = "dome.answer/v1";
 
 export type RunAnswerOptions = {
   readonly id?: string | number | undefined;
@@ -95,7 +95,7 @@ export async function runAnswer(
       if (options.json === true) {
         console.log(formatJson({
           schema: ANSWER_SCHEMA,
-          ...recordToJson(record),
+          ...questionRecordJson(record),
         }));
       } else {
         console.log(formatQuestion(commandLabel, vaultPath, record));
@@ -159,9 +159,9 @@ function printAnswerResult(
           formatJson({
             schema: ANSWER_SCHEMA,
             status: "already-answered",
-            question: recordToJson(result.record),
+            question: questionRecordJson(result.record),
             handlers:
-              handlerResult === null ? null : handlerResultToJson(handlerResult),
+              handlerResult === null ? null : answerHandlersJson(handlerResult),
           }),
         );
       } else {
@@ -182,7 +182,7 @@ function printAnswerResult(
             schema: ANSWER_SCHEMA,
             status: "invalid-option",
             options: result.options,
-            question: recordToJson(result.record),
+            question: questionRecordJson(result.record),
           }),
         );
       } else {
@@ -201,9 +201,9 @@ function printAnswerResult(
           formatJson({
             schema: ANSWER_SCHEMA,
             status: "answered",
-            question: recordToJson(result.record),
+            question: questionRecordJson(result.record),
             handlers:
-              handlerResult === null ? null : handlerResultToJson(handlerResult),
+              handlerResult === null ? null : answerHandlersJson(handlerResult),
           }),
         );
       } else {
@@ -335,7 +335,11 @@ function printAnswerError(input: {
   console.error(input.message);
 }
 
-function recordToJson(record: QuestionRecord): Record<string, unknown> {
+/**
+ * Render a question record as the `dome.answer/v1` question body — shared
+ * by `dome resolve --json` and the MCP `resolve` tool.
+ */
+export function questionRecordJson(record: QuestionRecord): Record<string, unknown> {
   return {
     id: record.id,
     status: record.answeredAt === null ? "open" : "answered",
@@ -351,7 +355,8 @@ function recordToJson(record: QuestionRecord): Record<string, unknown> {
   };
 }
 
-function handlerResultToJson(
+/** Render an answer-handler dispatch as its `dome.answer/v1` body. */
+export function answerHandlersJson(
   result: NonNullable<AnswerHandlerDispatchResult>,
 ): Record<string, unknown> {
   if (result.kind === "skipped") {
