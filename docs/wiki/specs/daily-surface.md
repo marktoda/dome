@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[daily]]"
   - "[[wiki/specs/task-lifecycle]]"
@@ -13,7 +13,7 @@ sources:
 
 This spec is normative for the daily note as a *product surface* — the one file where the system and the owner meet. The mechanism layer (block grammar, splice guard, anchors, agents) is specified elsewhere and pointed at, not duplicated: [[wiki/specs/task-lifecycle]] owns block-anchor identity and the deterministic task processors, [[wiki/specs/autonomous-agents]] owns the brief's agent contract, [[wiki/specs/sweep]] owns the overnight integration whose digest the edition renders. This spec owns the *package*: which sections exist, who writes which block, the overnight choreography, and how the morning edition degrades.
 
-Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 delta (one yesterday block) landed; D3–D4 deltas are marked inline where they will land.
+Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 delta (one yesterday block) and D3 (Captured today, owned) landed as shipped behavior; the D4 delta is marked inline where it will land.
 
 ## The three acts
 
@@ -35,6 +35,7 @@ All times are vault-local; cron triggers fire only while the compiler host (`dom
 | 05:30 | `dome.agent.brief` | dome.agent | **The edition compile.** Composes the brief blocks into today's daily (creating the shared skeleton when absent, so create-daily later no-ops): yesterday digest (replacing the mechanical fallback body wholesale), meetings, open-questions batch, integrated-overnight digest. |
 | 06:00 | `dome.daily.create-daily` | dome.daily | Skeleton fallback: creates today's daily when nothing else did; seeds the unified `dome.agent.brief:yesterday` block with the mechanical fallback body (§"The one yesterday block"). |
 | 06:00 + on-commit | `dome.daily.carry-forward` | dome.daily | Raises the ranked `dome.daily:open-loops` surface; re-fires on every adopted commit so the surface tracks the live vault. Seeds the yesterday fallback block when (and only when) it is absent. |
+| on-commit (capture) | `dome.agent.ingest` | dome.agent | Routes a capture's tactical tasks into today's daily — task-shaped lines spliced into the `dome.daily:captured` block by the tool seam (the model never positions). |
 | on-commit (daytime) | `dome.daily.stamp-block-id`, `normalize-task-syntax`, `reconcile-tasks`, `attention-discount`, `task-index` | dome.daily | The hygiene set: anchor stamping, cosmetic normalization, close-in-one-place reconcile, dismissal-derived discount facts, task facts. Normative at [[wiki/specs/task-lifecycle]]. |
 | on-demand | `today`, `prep`, `agenda-with` | dome.daily | View-phase read-only projections of the live surface. |
 | ~21:30 *(future, D4)* | `dome.daily.close-scaffold` | dome.daily | The Close: deterministic Done/unfinished scaffold under `## Done`; `Story of the Day` stays purely human. |
@@ -49,10 +50,11 @@ The skeleton (`renderDailySkeleton` in `assets/extensions/dome.daily/processors/
 
 | `##` heading | Job | Owner | Generated blocks hosted | Machine readers |
 |---|---|---|---|---|
+| `Captured today` | The live capture landing zone — where the day's new tactical tasks land. First content section, above `Start Here` (matching the real-vault convention this section formalizes). | Shared: the skeleton renders it (empty block); `dome.agent.ingest` appends inside the block through its tool seam; humans may add task lines too. | `dome.daily:captured`. | The full task pipeline — captured lines are **origins, not copies**, so this is the one generated block whose body is *included* in task extraction (`task-index`, `stamp-block-id`, `normalize-task-syntax`, carry-forward ranking, search indexing). |
 | `Start Here` | The first read of the morning — the edition's front page. | Shared: edition blocks + optional human prose. | `dome.agent.brief:yesterday` (the ONE yesterday surface — dual-writer, §"The one yesterday block"), `dome.agent.brief:questions`, `dome.agent.brief:integrated`; `dome.daily:start-context` (retired-legacy — recognized, never written; D2 verdict below). | None — the yesterday block and the `dome.daily` blocks are excluded from task extraction (`dailyGeneratedBlockLineRanges`); the questions/integrated blocks render plain bullets only. |
 | `Meetings` | Today's agenda with vault-recall context. | Shared: brief block + human additions (the `/morning` vault ritual overlap is a known accretion; D5 folds it). | `dome.agent.brief:meetings`. | None. |
 | `Open Loops` | The ranked, source-backed open-loop surface. | Machine. | `dome.daily:open-loops`. | `dome.daily.reconcile-tasks` reads settled `[x]`/`[-]` copies inside the block and closes the origin line; task extractors skip the block (the copies are projections, not sources). |
-| `Notes` | Free-form human capture. | Human. | None. (D3 adds a sibling `## Captured today` section with an owned `dome.daily:captured` block for ingest/capture-routed task lines.) | The task extractors: any checkbox/directive line outside generated blocks, fences, and frontmatter feeds `task-index` / `stamp-block-id` / carry-forward ranking. |
+| `Notes` | Free-form human capture. | Human. | None. (Ingest/capture-routed task lines land in `## Captured today`, not here.) | The task extractors: any checkbox/directive line outside generated blocks, fences, and frontmatter feeds `task-index` / `stamp-block-id` / carry-forward ranking. |
 | `Decisions` | Decisions made today, one bullet each. | Human. | None. | `previousDailyDigest` (the mechanical yesterday extraction) and the brief's yesterday composition read it the next morning. |
 | `Done` | What got finished today. | Human (D4 adds the deterministic `dome.daily:close` scaffold here). | None today. | Same next-morning readers as `Decisions`. |
 | `Story of the Day` | The narrative close. | Human, always — never model-written ([[daily]] decision ledger 3). | None, ever. | `previousDailyDigest` compresses the first paragraph into the next morning's story summary line. |
@@ -65,6 +67,7 @@ Every generated block that may appear in a daily note, with its writer, reader, 
 
 | Block | Hosted under | Writer | Content class | Timing | Status |
 |---|---|---|---|---|---|
+| `dome.daily:captured` | `## Captured today` | Skeleton (`renderDailySkeleton` renders it empty with a one-line comment hint) + `dome.agent.ingest` (the captured-tasks tool seam validates and splices task-line appends; the model never positions content) | deterministic (open `- [ ] #task …` lines only — the seam rejects anything else) | skeleton at 05:30/06:00; appends whenever ingest routes a capture's tasks | Shipping (D3). |
 | `dome.daily:start-context` | — | **None — retired-legacy (D2).** | — | — | **Retired-legacy: recognized, never written.** The mechanical digest became the no-model fallback *body* of `dome.agent.brief:yesterday` (one yesterday-block, [[daily]] decision ledger 2). Migration: see §"The one yesterday block". |
 | `dome.daily:open-loops` | `## Open Loops` | `carry-forward` (seeded by `create-daily`) | deterministic (ranked source-backed copies + resolved/dismissed-today subsections) | 06:00 + every adopted commit | Shipping. |
 | `dome.daily:carried-forward` | — | **None — retired-legacy.** | — | — | **Retired-legacy: recognized, never written.** See verdict below. |
@@ -103,6 +106,29 @@ When no previous daily exists, the body is the heading plus a single `- No recor
 **Anomaly attribution.** Both writers scan the block at their own splice site: `carry-forward` reports anomalies under `dome.daily.generated-block-anomaly` (the block is in `DAILY_GENERATED_BLOCKS`), the brief under `dome.agent.generated-block-anomaly`. A hand-mangled marker may therefore surface under both codes — two reporters, one per splice site, each deduped at the diagnostics sink.
 
 **Migration (`dome.daily:start-context` retirement).** No processor writes `start-context` anymore. When `create-daily`/`carry-forward`/`brief` touch today's daily and find an existing `dome.daily:start-context` block, they remove it in the same patch that ensures the unified block — one-time and idempotent (once removed, nothing recreates it). **Historical dailies keep theirs untouched**: they are closed records, and the daily writers only ever patch today's note. The marker stays in the recognized-block list (`DAILY_GENERATED_BLOCKS`) for anomaly detection and legacy non-reingestion, exactly as `carried-forward` is treated below.
+
+### The `captured` block holds origins, not copies
+
+Every other generated block in this table holds *projection* content — copies or digests of state whose source of truth lives elsewhere — so the task extractors skip their bodies. `dome.daily:captured` is the deliberate exception: a captured task **originates** in the daily; the block is its source of truth, not a mirror. Consequences, each pinned by tests:
+
+- Captured-block lines are **inside** task extraction: `task-index` projects them into facts, `stamp-block-id` stamps their `^anchor`, `normalize-task-syntax` tidies them, and `carry-forward` ranks them into *future* dailies (today's own daily is never a carry-forward source for itself).
+- A captured task settled in place (`[x]`/`[-]` inside the block) **stays settled where it is** — it carries no `(from [[origin]])` suffix, so `reconcile-tasks` never treats it as a settled copy to propagate, and the captured-tasks seam rejects appends carrying that suffix so a captured line can never masquerade as a copy.
+- The search indexer does **not** strip the captured block (it strips only the projection blocks `open-loops`/`carried-forward`) — captured content is real vault content.
+
+The marker pair is still anomaly-scanned like every other dome.daily block (`DAILY_GENERATED_BLOCKS`): smuggled duplicate pairs or half-open captured markers surface as `dome.daily.generated-block-anomaly` info diagnostics.
+
+### The ingest tool seam (who may write inside the block)
+
+`dome.agent.ingest` is the machine writer, and it writes only through a guarded seam in its tool bindings (mirroring the preferences signals append-only guard):
+
+- `appendToPage` on **today's** daily accepts only task-shaped lines — open `- [ ] …` checkboxes carrying the `#task`/`#followup` tag, with no HTML comment delimiters (marker injection) and no `(from [[…]])` suffix (copy masquerade). Valid lines are spliced *inside* the `dome.daily:captured` block by the seam (creating the full shared skeleton when today's daily is absent, so `create-daily`/the brief later no-op); anything else is rejected with a self-correctable tool error.
+- `writePage` on today's daily is admitted only when the rewrite is byte-identical outside the block and appends task-shaped lines inside it; wholesale rewrites are rejected (other daily edits belong to the brief and the owner).
+
+Other paths (entity `## Open threads` appends, wiki pages) are governed by the ordinary glob grant.
+
+### Captured-today heading repair
+
+Real pre-D3 vaults accumulated duplicate `# Captured today` / `## Captured today` headings at mismatched levels. `dome.daily.normalize-task-syntax` carries a deterministic repair for **today's daily only** (historical dailies are untouched — past notes stay append-only): duplicate captured-today headings are merged into the single owned section — the section already holding the `dome.daily:captured` block wins, else the first; the kept heading is normalized to `## Captured today`; every body line from the merged sections is preserved (task lines and anchors verbatim) and spliced into the block, with dome marker-comment lines dropped (smuggled pairs must not survive a merge). The repair is idempotent (one correct heading → no-op) and emits one `dome.daily.captured-heading-repair` info diagnostic when it fires.
 
 ### The `carried-forward` verdict: retired-legacy
 

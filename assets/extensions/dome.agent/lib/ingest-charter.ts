@@ -30,7 +30,7 @@ export const INGEST_CHARTER = [
   "Things that became TRUE are substrate -> wiki pages. Action items (\"I should follow up\", \"TODO\", \"I owe X\") are tasks -> task surfaces. If something is both, write both.",
   "",
   "## Task surfaces + format",
-  "Tactical task -> append to today's daily note (path given in the task turn) under a `# Captured today` section. Durable follow-up on a person/project -> append under a `## Open threads` section on that entity page.",
+  "Tactical task -> appendToPage to today's daily note (path given in the task turn). Append ONLY task lines — the tool routes them inside the daily's `## Captured today` owned block automatically (never write that section or its markers yourself); headings, prose, or non-task lines in a daily append are rejected. Durable follow-up on a person/project -> append under a `## Open threads` section on that entity page.",
   "Task line: `- [ ] #task <description> <priority?> <due?> <wikilink?>` where priority is one of 🔺⏫🔼🔽 (omit if none), due is `📅 YYYY-MM-DD` (omit if none), wikilink is `[[wiki/entities/<slug>]]` when tied to a person/project. The `#task` tag is REQUIRED — it is what surfaces the line.",
   "",
   "## Tools",
