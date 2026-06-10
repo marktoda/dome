@@ -496,7 +496,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "(material path, destination path) pair",
         noOpWhen:
-          "every in-window (material, destination) pair is settled by a sources-link wikilink in the destination's frontmatter or by an advisory ledger integrated/no-op/questioned row",
+          "every in-window (material, destination) pair is settled by a sources-link wikilink in the destination's frontmatter (authoritative) or by an advisory ledger no-op/questioned row (integrated rows are record-only and do not settle — the sources: link is authoritative for integrations)",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [

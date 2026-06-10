@@ -28,18 +28,18 @@ The deterministic sweep queue (pure library `lib/sweep-queue.ts`) decides *what*
 
 **Settlement skip (idempotency):** A (material, destination) pair is dropped when:
 
-1. The destination's frontmatter `sources:` list contains `[[material-without-.md]]` in any form — this is the authoritative settlement check (markdown, not `.dome/state`).
-2. The ledger records an `integrated`, `no-op`, or `questioned` disposition for the pair. `failed` rows do **not** settle; the pair re-queues and the failed count increments toward escalation.
+1. The destination's frontmatter `sources:` list contains a wikilink to the material — this is the authoritative settlement check (markdown, not `.dome/state`).
+2. The ledger records a `no-op` or `questioned` disposition for the pair. `integrated` rows do **not** settle: the sources-link in the destination's frontmatter is the authoritative record for integrations — an `integrated` row without the link means the sub-proposal was rejected, and the pair must re-queue. `failed` rows also do **not** settle; the pair re-queues and the failed count increments toward escalation.
 
 **Ranking and cap:** Items rank by `(materialDate desc, mentions desc, destination asc)` for full determinism. The queue is capped at `sweep_max_items` (default 20); over-cap items re-queue the next night. The processor emits an info diagnostic when the cap truncates the queue (no silent drops).
 
-**Oldest-unswept tracking:** The queue exposes `oldestUnswept` — the oldest material date among all unsettled in-window pairs — which feeds the safe-cursor contract.
+**Oldest-unswept tracking:** The queue exposes `oldestUnswept` — the oldest material date among the cap-dropped (over-cap) candidates only; failed pairs feed the separate `oldestFailed` term via `failedDates` tracked in the processor — which together feed the safe-cursor contract.
 
 ## Settlement-by-sources (authoritative)
 
-Settlement is the wikilink `[[material-path-without-.md]]` appearing in the destination page's frontmatter `sources:` list. This is written atomically in the same patch as the integration text, so it is always in sync. The four accepted link forms (bare path, `[[path]]`, `"[[path]]"`, `'[[path]]'`) are all recognized by the queue's frontmatter slice check.
+Settlement is the wikilink `[[material-path-without-.md]]` appearing in the destination page's frontmatter `sources:` list. This is written atomically in the same patch as the integration text, so it is always in sync. The four accepted link forms are `[[m]]`, `[[m|alias]]`, `[[m.md]]`, and `[[m.md|alias]]` — all matched by substring on each `sources:` list line in both the queue's frontmatter slice check (`isSettledBySources`) and the processor's enforcement function (`containsMaterialLink`).
 
-The advisory ledger's `integrated` rows duplicate this signal for performance (skip re-reading every destination frontmatter). Both signals settle the pair.
+The advisory ledger's `integrated` rows are **record-only** — the queue does not settle on them. When the sub-proposal carrying the integration patch was rejected by the engine, the ledger row would be present but the sources link would be absent; treating the row as settled would suppress re-queueing forever. Only `no-op` and `questioned` ledger rows settle (they only save re-judging, never mask a failed write).
 
 ## Advisory ledger grammar
 
@@ -64,7 +64,7 @@ cursor:: 2026-06-09
 | `integrated` | Model wrote a section + sources link; destination updated. |
 | `no-op` | Model made no edit (material had nothing meaningful for this destination). |
 | `questioned` | Uncertain; a QuestionEffect was emitted for the owner. |
-| `failed` | A run error occurred; pair is not settled, re-queues. After 3 failures the processor escalates to a question instead. |
+| `failed` | A run error occurred, or the shrink guard rejected the proposed edit; pair is not settled, re-queues. After 3 failures the processor escalates to a question instead. |
 
 The ledger is written once per run as a final advisory patch (cursor + run section). Its loss costs only re-judging already-settled pairs; settlement-by-sources in destination frontmatter holds.
 
@@ -87,9 +87,13 @@ The model receives a single destination page and a single material file. It may:
 
 The model must **not** delete or rewrite existing narrative prose, and must not touch any file other than the destination.
 
-**Single-destination boundary:** Each queue item runs a separate agent conversation scoped to exactly one destination. The `editDestination` tool rejects any write to a path other than the current item's destination — the worst injection outcome is bad text on one page. Oversized-page guard: a proposed section exceeding 4000 characters is capped before being stored in question metadata.
+**Single-destination boundary:** Each queue item runs a separate agent conversation scoped to exactly one destination. The `editDestination` tool rejects any write to a path other than the current item's destination — the worst injection outcome is bad text on one page. Oversized-section guard: a proposed section exceeding 4000 characters is capped before being stored in question metadata.
 
-**Night-overlay same-destination composition:** If two queue items target the same destination in one night, they produce two independent patches. The engine applies each via the normal adoption cascade; they compose naturally (one appends a section, the other may edit a claim line).
+**Shrink guard:** After `ensureSourcesLink` runs, if the proposed content is shorter than `destContent.length − max(200 chars, 10%)`, the patch is refused: a significant shrink on an append-only charter means the model rewrote from truncated context or vandalism. The pair records a `failed` row and re-queues; the `dome.agent.sweep-shrink-rejected` warning diagnostic is emitted. `failed` rows from the shrink guard count toward the escalate-after-3 contract.
+
+**Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `dome.agent.sweep:escalate:<m>-><d>` question is emitted asking the owner to integrate manually or skip, and a `questioned` row is written to the ledger.
+
+**Night-overlay same-destination composition:** When two queue items in the same night target the same destination, the processor threads a per-night overlay map. After item 1 writes its integration, its resulting content is stored in the overlay keyed by the destination path. Item 2's agent reads the destination via the overlay (not the stale snapshot), so its patch is applied on top of item 1's content — both integrations land in a single destination page without clobbering each other. The overlay also means item 1's newly added sources link is visible to item 2's settlement check.
 
 ## Question namespaces
 
@@ -104,7 +108,7 @@ The sweep emits questions in two namespaces under the shared `dome.agent.sweep:`
 - `skip` answer on either key: no effects. The `questioned` ledger row prevents re-queueing.
 - Malformed metadata: warning diagnostic, no effects, never throws.
 
-**Retry idempotency:** The question idempotency key is `dome.agent.sweep:<material>-><destination>`. If the answer patch is retried, `ensureSourcesLink` is idempotent; the section append is guarded by the sources check (if the link is already present, the answer was already applied).
+**Retry idempotency:** Question idempotency keys carry the kind segment: `dome.agent.sweep:uncertain:<material>-><destination>` and `dome.agent.sweep:escalate:<material>-><destination>`. If the answer-handler fires more than once (at-least-once dispatch), the re-fire guard is section-text presence: the handler checks `existingContent.includes(proposedSection.trim())`. When the section is already present, no second append is emitted; `ensureSourcesLink` is still called, and a patch is emitted only when the sources link was somehow missing — exactly recovering the link-only failure mode.
 
 ## Brief digest block
 
@@ -112,7 +116,7 @@ The brief reads the sweep ledger and renders the most recent `## Run <date>` sec
 
 - `integrated` rows → `- [[destination]] ← [[material]]`
 - `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]`
-- `no-op` rows are not rendered (the brief is signal, not log).
+- `no-op` and `failed` rows are not rendered (the brief is signal, not log).
 
 When the ledger is absent or the current day has no run section, the block is omitted entirely.
 

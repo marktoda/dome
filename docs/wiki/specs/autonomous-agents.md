@@ -11,7 +11,7 @@ sources:
 
 # Autonomous agents
 
-This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
+This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`, `dome.agent.sweep` with its answer handler `dome.agent.sweep-answer`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
 The `dome.agent` bundle also ships three **deterministic** (non-LLM) processors for preference promotion — `preference-signals`, `preference-promotion`, and `preference-promotion-answer` — normative at [[wiki/specs/preferences]]. They share the bundle because promotion configures agent behavior (the promoted block rides every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
 
