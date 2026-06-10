@@ -48,6 +48,10 @@ import { makeSweepTools, SWEEP_WRITABLE_PATHS } from "../lib/sweep-tools";
 import { capRead, MAX_READ_CHARS, type VaultReader } from "../lib/vault-tools";
 import { globMatch } from "../../../../src/engine/glob-cache";
 import { isModelExecutionError } from "../../../../src/engine/model-invoke";
+import {
+  formatDate,
+  localDateParts,
+} from "../../dome.daily/processors/daily-shared";
 
 const MAX_STEPS = 8; // per item — one read + one write + slack
 const DEFAULT_LEDGER_PATH = "sweep-ledger.md";
@@ -434,7 +438,7 @@ const sweep = defineProcessorImplementation({
       );
     }
 
-    const today = ctx.now().toISOString().slice(0, 10);
+    const today = formatDate(localDateParts(ctx.now()));
     const ledgerContent = (await ctx.snapshot.readFile(ledgerPath)) ?? "";
     const ledger = parseSweepLedger(ledgerContent);
     if (ledger.problems.length > 0) {

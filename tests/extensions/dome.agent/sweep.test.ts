@@ -21,9 +21,10 @@ import type {
 } from "../../../src/core/processor";
 import { modelInvokeForProcessor } from "../../../src/engine/model-invoke";
 
-// 03:00 UTC on the run date → today (UTC ISO slice) is 2026-06-10, so
-// yesterday's daily 2026-06-09 is in the sweep window.
-const FIRED_AT = "2026-06-10T03:00:00.000Z";
+// 03:00 local time on the run date → today (local date) is 2026-06-10, so
+// yesterday's daily 2026-06-09 is in the sweep window. Local-time constructor
+// keeps the date stable across CI timezones (same pattern as brief.test.ts).
+const FIRED_AT = new Date(2026, 5, 10, 3, 0).toISOString();
 const TODAY = "2026-06-10";
 
 const MATERIAL = "wiki/dailies/2026-06-09.md";

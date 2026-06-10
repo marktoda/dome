@@ -1146,6 +1146,10 @@ describe("brief integrated overnight digest (wired)", () => {
     );
     // no-op row should NOT appear
     expect(content).not.toContain("skipped");
+    // integrated block is anchored under ## Start Here (after it, not before)
+    expect(content.indexOf("## Start Here")).toBeLessThan(
+      content.indexOf(INTEGRATED_BLOCK.start),
+    );
   });
 
   test("no sweep ledger → integrated block absent entirely", async () => {
