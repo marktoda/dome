@@ -166,6 +166,61 @@ Mac over a synced audio folder, feeding `dome capture --file`. Dome
 deliberately has no audio surface — by the time content reaches the engine it
 is markdown in a commit, like everything else.
 
+## The remote-capture seam (spec'd; not shipped)
+
+The recipes above all end the same way: a properly-shaped file committed on
+the vault branch. This section names that contract as a seam, so the first
+phone app, voice client, or relay service builds against one sanctioned
+shape instead of inventing a path around the adoption loop.
+
+**The contract.** A remote-capture ingress is anything that takes
+`{ text, title?, source }` from an authenticated caller and produces exactly
+what `dome capture` produces: one raw-capture file under `inbox/raw/`
+(§"Raw capture file shape" — with `source:` carrying the honest channel
+name), committed as one ordinary human commit on the current branch, and
+answered with the `dome.capture/v1` document (`path`, `commit`,
+`compile_pending`, …). Nothing else: no engine call, no adopted-state
+write, no projection read. The capture core behind `dome capture` and the
+MCP `capture` tool — `performCapture` in `src/cli/commands/capture.ts` — is
+the reference implementation of this contract; a relay wraps it, never
+reimplements it.
+
+**Why commit-or-nothing.** The seam inherits its security and consistency
+story from [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]: because a
+remote capture is an ordinary human commit, the relay needs filesystem +
+git, never Dome internals; the daemon treats it exactly like a terminal
+capture; and a compromised relay can at worst write commits into
+`inbox/raw/` — visible in history, processed as untrusted input by ingest,
+revertible like any commit.
+
+**Trust domain.** The first shipped form runs in the owner's trust domain:
+a process running as the vault owner on the vault host, reachable over a
+private network (Tailscale-class), authenticating callers with a bearer
+token. Same posture as `dome mcp` — locally launched, owner-trusted. A
+hosted multi-tenant capture service is hosted-protected (v1.5) territory,
+out of scope here.
+
+**Retry semantics.** Mobile callers retry on flaky networks, and a naive
+relay would file the same thought twice. The seam accepts an optional
+client-supplied `captureId`; the relay folds it into the filename slug and
+treats an existing file for the same id as success (returning the original
+document) rather than writing a sibling. Clients without an id accept
+duplicate risk; ingest tolerates duplicates either way.
+
+**Candidate shipped forms** (decide at implementation time, in rough order
+of likelihood):
+
+1. **`dome capture-relay`** — a minimal authenticated HTTP listener on the
+   vault host: one `POST /capture` over `performCapture`. The smallest
+   product hop for the 11pm phone mumble; replaces recipe A's SSH
+   dependency with a token.
+2. **A route on the future HTTP surface** — capture as one endpoint of the
+   read+capture protocol adapter ([[wiki/specs/sdk-surface]] §"Consumer
+   surfaces"), once that surface exists for recall anyway.
+3. **Git-native relay** — a service holding its own checkout that commits
+   and pushes to a shared vault remote. Needs the multi-device sync story
+   (who fetches, what the daemon ticks on) and is banked with it.
+
 ## Out of scope (follow-ups, not Phase 3)
 
 - **Inbox file-watcher** — a daemon-side watcher that auto-commits files
