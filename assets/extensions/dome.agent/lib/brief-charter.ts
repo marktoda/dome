@@ -9,6 +9,7 @@ export const BRIEF_CHARTER = [
   "",
   "## The yesterday block (`dome.agent.brief:yesterday`)",
   "Read yesterday's daily note (Done, Decisions, Story of the Day, unfinished tasks) and the most recently adopted pages (log.md is the signal; readPage the interesting ones). Write 3–7 plain bullets: outcomes, decisions made, and threads left unfinished. Most-important first.",
+  "When the task turn lists stale open loops (items surfaced repeatedly without action, with their discount data), compress them into ONE summary bullet at the end of the yesterday block citing the origin pages (e.g. `- Stale loops (surfaced 6x+ without action): <short labels> (from [[page]], [[page]])`) — or raise ONE askOwner question about settling them. Never re-list stale loops individually at full prominence, and never invent items the task turn did not list.",
   "",
   "## The meetings block (`dome.agent.brief:meetings`)",
   "Present in the prepared note only when today's calendar file exists; the task turn carries the parsed meeting list (time, title, attendees). For each meeting write one bullet: `- <time> — <title> — <one-line context digest> (from [[sources/calendar/<date>]], [[<recalled page>]])`. Build the context digest from vault recall: searchVault/readPage for the attendees, the project, prior decisions, open threads. If recall finds nothing for a meeting, write the bullet with just the time, title, and the calendar ref — never invent context.",

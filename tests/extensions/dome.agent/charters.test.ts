@@ -42,6 +42,14 @@ describe("dome.agent charters — supersession convention", () => {
     expect(BRIEF_CHARTER).toContain("superseded_by");
   });
 
+  test("brief compresses stale open loops instead of repeating them (attention discounting, M4)", () => {
+    expect(BRIEF_CHARTER).toContain("stale open loops");
+    expect(BRIEF_CHARTER).toContain("ONE summary bullet");
+    expect(BRIEF_CHARTER).toContain(
+      "Never re-list stale loops individually at full prominence",
+    );
+  });
+
   test("ingest integrates into the forward target, not the superseded page", () => {
     expect(INGEST_CHARTER).toContain("## Superseded pages are history");
     expect(INGEST_CHARTER).toContain("superseded_by");
