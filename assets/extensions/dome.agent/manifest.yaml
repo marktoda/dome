@@ -38,7 +38,10 @@ processors:
           - "inbox/raw/*.md"
           - "preferences/signals.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5
+        # The cap is min(declared, granted) but spend is pooled per extension,
+        # so this must clear the pool after sweep+consolidate's nightly burn
+        # or captures starve for the rest of the day.
+        maxDailyCostUsd: 15
       - kind: question.ask
     execution:
       class: llm
