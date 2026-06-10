@@ -71,7 +71,7 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(brief?.module).toBe("processors/brief.ts");
   });
 
-  test("core.md is readable by every agent processor and writable by NONE (propose-only)", async () => {
+  test("core.md is readable by every agent processor and auto-writable ONLY by the promotion answer handler", async () => {
     const manifest = await loadManifest();
     const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
     for (const id of agents) {
@@ -82,16 +82,83 @@ describe("dome.agent manifest cadence + grants", () => {
         `${id} must declare read over core.md`,
       ).toContain("core.md");
     }
-    // The propose-only pin: core.md appears in NO patch.auto declaration in
-    // the whole bundle (decision 4 of the memory plan — the only future
-    // auto-writer is M5's answer-mediated handler).
-    for (const processor of manifest.processors) {
-      for (const capability of processor.capabilities) {
-        if (capability.kind !== "patch.auto") continue;
+    // The propose-only pin (decision 4 of the memory plan): core.md appears
+    // in EXACTLY ONE patch.auto declaration in the whole bundle — the
+    // answer-mediated preference-promotion handler, the single auto-writer
+    // (wiki/specs/preferences.md §"The single-auto-writer exception").
+    const coreWriters = manifest.processors.filter((processor) =>
+      processor.capabilities.some(
+        (capability) =>
+          capability.kind === "patch.auto" &&
+          capability.paths.includes("core.md"),
+      ),
+    );
+    expect(coreWriters.map((p) => p.id)).toEqual([
+      "dome.agent.preference-promotion-answer",
+    ]);
+  });
+
+  test("the promotion answer handler is narrow: exactly the core + signals pages", async () => {
+    const manifest = await loadManifest();
+    const handler = manifest.processors.find(
+      (p) => p.id === "dome.agent.preference-promotion-answer",
+    );
+    expect(handler).toBeDefined();
+    expect(handler?.triggers).toEqual([
+      {
+        kind: "answer",
+        questionProcessorId: "dome.agent.preference-promotion",
+        idempotencyKeyPrefix: "dome.agent.preference-promotion:",
+      },
+    ]);
+    const kinds = (handler?.capabilities ?? []).map((c) => c.kind).sort();
+    expect(kinds).toEqual(["patch.auto", "read"]);
+    for (const capability of handler?.capabilities ?? []) {
+      if (capability.kind !== "patch.auto" && capability.kind !== "read") {
+        continue;
+      }
+      expect([...capability.paths].sort()).toEqual([
+        "core.md",
+        "preferences/signals.md",
+      ]);
+    }
+  });
+
+  test("the preference counter is deterministic and graph.write-only (rebuild-eligible)", async () => {
+    const manifest = await loadManifest();
+    const counter = manifest.processors.find(
+      (p) => p.id === "dome.agent.preference-signals",
+    );
+    expect(counter).toBeDefined();
+    expect(counter?.execution?.class).toBe("deterministic");
+    const kinds = (counter?.capabilities ?? []).map((c) => c.kind).sort();
+    expect(kinds).toEqual(["graph.write", "read"]);
+    const graphWrite = counter?.capabilities.find(
+      (c) => c.kind === "graph.write",
+    );
+    expect(
+      graphWrite?.kind === "graph.write" ? graphWrite.namespaces : [],
+    ).toEqual(["dome.preference.*"]);
+    expect(
+      counter?.triggers.every((trigger) => trigger.kind === "signal"),
+    ).toBe(true);
+  });
+
+  test("every agent declares the preference-signals page in read + patch.auto", async () => {
+    const manifest = await loadManifest();
+    const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
+    for (const id of agents) {
+      const processor = manifest.processors.find((p) => p.id === id);
+      for (const kind of ["read", "patch.auto"] as const) {
+        const capability = processor?.capabilities.find(
+          (c) => c.kind === kind,
+        );
         expect(
-          capability.paths,
-          `${processor.id} must not auto-write core.md`,
-        ).not.toContain("core.md");
+          capability !== undefined && "paths" in capability
+            ? capability.paths
+            : [],
+          `${id} must declare ${kind} over preferences/signals.md`,
+        ).toContain("preferences/signals.md");
       }
     }
   });
@@ -114,7 +181,9 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(readPaths).toContain("consolidation-ledger.md");
     const patch = brief?.capabilities.find((c) => c.kind === "patch.auto");
     expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual(
-      ["notes/*.md", "wiki/dailies/*.md"],
+      // The signals page rides along for validated signal-line appends only
+      // (the splice guard enforces the append shape in processor code).
+      ["notes/*.md", "preferences/signals.md", "wiki/dailies/*.md"],
     );
   });
 });
