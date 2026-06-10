@@ -316,6 +316,32 @@ describe("dome.agent.sweep", () => {
     expect(ledger).toContain("cursor:: 2026-06-09");
   });
 
+  test("step-budget exhaustion without a conclusion records ':: failed', not ':: no-op' — the pair re-queues", async () => {
+    // The model reads forever and never concludes (no final text, no edit,
+    // no question): the agent loop stops on its step budget. That is an
+    // UNFINISHED run — settling it as a no-op would permanently skip the
+    // material.
+    const stepFn: StepFn = async () => ({
+      toolCalls: [{ id: "r", name: "readPage", input: { path: DEST } }],
+    });
+    const effects = await sweep.run(makeCtx({ files: BASE_FILES, stepFn }));
+
+    expect(patchFor(effects, DEST)).toBeNull();
+    const failedDiags = diagnostics(effects).filter(
+      (d) => d.code === "dome.agent.sweep-item-failed",
+    );
+    expect(failedDiags).toHaveLength(1);
+    expect(failedDiags[0]!.message).toContain("step budget");
+    const ledger = patchFor(effects, LEDGER);
+    expect(ledger).toContain(
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+    );
+    expect(ledger).not.toContain(":: no-op");
+    // The cursor is held back to before the material's date so the pair
+    // re-queues next night and counts toward owner escalation.
+    expect(ledger).toContain("cursor:: 2026-06-08");
+  });
+
   test("question path: recordUncertainIntegration → owner-needed QuestionEffect with proposedSection metadata", async () => {
     const ctx = makeCtx({
       files: BASE_FILES,

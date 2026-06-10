@@ -30,7 +30,11 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
+import {
+  runAgentLoop,
+  type AgentRunResult,
+  type AgentRunState,
+} from "../lib/agent-loop";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { sweepCharter } from "../lib/sweep-charter";
 import {
@@ -597,6 +601,7 @@ const sweep = defineProcessorImplementation({
       } | null = null;
 
       // Per-item try/catch: one bad item must not take the night down.
+      let runResult: AgentRunResult | null = null;
       try {
         const tools = makeSweepTools({
           reader,
@@ -605,7 +610,7 @@ const sweep = defineProcessorImplementation({
             pendingQuestion = q;
           },
         });
-        await runAgentLoop({
+        runResult = await runAgentLoop({
           charter: sweepCharter({
             destination: item.destination,
             material: item.material,
@@ -701,7 +706,27 @@ const sweep = defineProcessorImplementation({
 
       const edit = state.edits.get(item.destination);
       if (edit?.kind !== "write") {
-        // The model made no edit: a no-op is a successful run.
+        if (runResult === null || runResult.stopReason !== "final") {
+          // The loop ran out of steps before the model concluded — this is
+          // an UNFINISHED run, not a judged no-op. A no-op disposition would
+          // settle the pair permanently and the material would never be
+          // integrated ("no capture left behind"). Record a failure instead:
+          // failed rows re-queue and count toward the owner-escalation
+          // threshold like any other per-item failure.
+          effects.push(
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.sweep-item-failed",
+              message: `dome.agent.sweep exhausted its ${MAX_STEPS}-step budget on ${item.material} -> ${item.destination} without concluding; the pair stays unsettled and re-queues.`,
+              sourceRefs: itemRefs,
+            }),
+          );
+          ledgerRows.push({ ...row, disposition: "failed" });
+          failedDates.push(item.materialDate);
+          continue;
+        }
+        // The model concluded without an edit: a judged no-op is a
+        // successful run.
         ledgerRows.push({ ...row, disposition: "no-op" });
         continue;
       }
