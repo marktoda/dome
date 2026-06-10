@@ -13,17 +13,22 @@ This spec is normative for the Dome SDK's target public API. The SDK is a TypeSc
 
 Implementation status: the current package root (`src/index.ts`) exports core
 types, effect constructors, processor authoring helpers, adopted-ref read
-helpers, the bundle loader, first-party maintenance-loop metadata, and pure
-commit-trailer helpers. The runtime `Vault` / `openVault` object described
-below is the intended public SDK wrapper, not a shipped export yet. The
-shipped v1 operational surface is the Commander CLI over the internal
-`openVaultRuntime` boundary.
+helpers, the bundle loader, first-party maintenance-loop metadata, pure
+commit-trailer helpers, and the public `openVault` wrapper (`src/vault.ts`).
+The shipped `Vault` handle carries the read + engine-control subset —
+`query`, `readDocument`, `runView`, `sync`, `getAdoptionStatus`,
+`listQuestions`, `getQuestion`, `resolve`, `close` — over the internal
+`openVaultRuntime` boundary. Still target-shape, not shipped:
+`resolveWikilink`, `rebuild`, `drainProcessors`, the closed-state guard, and
+the composable-construction helpers. The Commander CLI remains the primary
+operational surface; the MCP adapter consumes the wrapper plus the CLI's
+data-returning collectors (see [[wiki/specs/mcp-surface]]).
 
 ## The four concepts
 
-### Vault (target public wrapper)
+### Vault (shipped public wrapper)
 
-A Vault is a directory plus the engine that maintains it. One `Vault` instance per process per vault path. Constructed by `openVault(path: string): Promise<Result<Vault, ToolError>>` — the factory returns a `Result` so failure modes (non-git directory; missing `.dome/`; corrupted config) surface as typed errors at the boundary rather than throwing.
+A Vault is a directory plus the engine that maintains it. One `Vault` instance per process per vault path. Constructed by `openVault({ path, bundlesRoot? }): Promise<Result<Vault, OpenVaultError>>` — the factory returns a `Result` so failure modes (non-git directory or missing `.dome/config.yaml` → `not-a-vault`; bundle-load / DB-open / policy failures → `runtime-open-failed` carrying the nested cause) surface as typed errors at the boundary rather than throwing.
 
 A Vault, once unwrapped:
 
@@ -40,28 +45,53 @@ close path releases SQLite handles but does not yet expose a full
 
 #### Vault surface
 
-```ts
-interface Vault {
-  readonly path: string;
-  readonly config: VaultConfig;
-  readonly pageTypes: PageTypesConfig;
-  readonly bundles: readonly ExtensionBundle[];
+The shipped shape (`src/vault.ts`):
 
-  // Recall — read-only queries
+```ts
+type Vault = {
+  readonly path: string;
+  readonly extensions: ReadonlyArray<{ name: string; version: string }>;
+
+  // Recall — read-only queries against adopted state
   query(input: QueryInput): Promise<QueryResult>;
-  readDocument(path: string): Promise<Result<Document, ToolError>>;
-  resolveWikilink(link: string): Promise<Document | null>;
+  readDocument(path: string): Promise<AdoptedDocument | null>;
+  runView(name: string, args?: unknown): Promise<VaultViewResult>;
 
   // Engine control
-  sync(opts?: SyncOpts): Promise<Result<SyncResult, ToolError>>;
-  rebuild(): Promise<Result<RebuildResult, ToolError>>;
+  sync(opts?: VaultSyncOptions): Promise<CompilerHostTickResult>;
   getAdoptionStatus(): Promise<AdoptionStatus>;
 
+  // Decisions — durable questions and answers
+  listQuestions(filter?: ListQuestionsFilter): Promise<ReadonlyArray<QuestionRecord>>;
+  getQuestion(id: number): Promise<QuestionRecord | null>;
+  resolve(id: number, value: string): Promise<ResolveOutcome>;
+
   // Lifecycle
-  drainProcessors(): Promise<void>; // planned v1.x drain surface
   close(): Promise<void>;
-}
+};
 ```
+
+Method semantics:
+
+- `query` reads the projection accessors directly — the same typed read
+  surface view/garden processors get as `ctx.projection` — so Recall is
+  bundle-neutral. FTS text matching plus optional `includeFacts` /
+  `includeDiagnostics` / `includeQuestions` attachments scoped to the
+  matched paths. Projection reads reflect the **last adopted sync**; call
+  `sync()` first when fresh commits must be visible.
+- `runView` dispatches a command-triggered view processor through the same
+  engine boundary the CLI verbs use (`runViewCommandWithRuntime`), returning
+  the views plus a convenience `structured` projection when the run produced
+  exactly one structured view. This is the generic surface behind `dome
+  query` / `dome run <name>` / the MCP view tools.
+- `sync` runs one compiler-host tick (`runCompilerHostTick`) — the same
+  semantic boundary `dome sync` and `dome serve` share.
+- `resolve` records the answer durably (`answers.db`) and dispatches
+  matching answer handlers — the same path as `dome resolve`.
+
+Target additions staged for later increments: `resolveWikilink`, `rebuild`,
+`drainProcessors`, a closed-state guard (`vault-closed` errors after
+`close()`), and the `config` / `pageTypes` accessors.
 
 The public surface is **read or engine control** — there is no `vault.tools.writeDocument(...)`, `vault.write(...)`, or public `vault.submitProposal(...)`. To change vault state in v1.0, external callers write markdown and create normal git commits. The compiler host (`dome serve`) or one-shot catch-up command (`dome sync`) compares `refs/dome/adopted/<branch>` to `refs/heads/<branch>`, constructs the Proposal internally, and runs the adoption loop.
 
@@ -70,7 +100,7 @@ Garden processors that emit PatchEffects also do not call a public write method.
 #### Vault lifecycle
 
 ```text
-openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
+openVault({ path }) → Result<Vault, OpenVaultError>   (unwrap to Vault)
    │
    │   in-process use:
    │     vault.query(...)             — read path
@@ -474,10 +504,11 @@ Every consumer shell that builds against Dome should aggregate four kinds of
 things from the SDK. The CLI and the MCP stdio server (`dome mcp`, wedge
 Phase 5) are the shipped surfaces today; `AbstractSurface` and the HTTP,
 mobile, desktop, and voice adapters are target shapes for the multi-surface
-roadmap and are not v1 acceptance gates. The shipped MCP adapter wraps the
-CLI command handlers rather than `AbstractSurface` (which does not exist
-yet); it should converge on `renderMcp(surface)` when the aggregation
-boundary lands.
+roadmap and are not v1 acceptance gates. The shipped MCP adapter consumes
+the public `openVault` wrapper for recall, views, and decisions, plus the
+CLI's data-returning collectors (`performCapture`, `buildStatusSnapshot`,
+`buildCheckReport`) for the operator documents; it should converge on
+`renderMcp(surface)` when the `AbstractSurface` aggregation boundary lands.
 
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
@@ -516,7 +547,7 @@ Each future consumer protocol adapts `AbstractSurface` to its wire format:
 
 | Adapter | Entry point | Wire format |
 |---|---|---|
-| MCP (shipped, CLI-handler adapter today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
+| MCP (shipped, `openVault`-consumer today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
 | CLI (shipped, direct runtime today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
 | HTTP (v2) | `renderHttp(surface): HttpHandler` in `@dome/sdk/http` | REST routes over Recall + future native-surface write controls |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |

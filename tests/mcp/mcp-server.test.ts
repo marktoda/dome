@@ -1,8 +1,9 @@
 // Wedge Phase 5 — tests for the Dome MCP server (`dome mcp`).
 //
 // Per docs/wiki/specs/mcp-surface.md, the MCP server is a thin protocol
-// adapter over the same CLI command handlers the verbs use, and tool results
-// are the same `dome.<verb>/v1` JSON documents the CLI emits under `--json`.
+// adapter over the public `openVault` wrapper plus the CLI's data-returning
+// collectors, and tool results are the same `dome.<verb>/v1` JSON documents
+// the CLI emits under `--json`.
 // These tests are hermetic and end-to-end by design: a real temp vault
 // (runInit), real commits, a real `dome sync` adoption pass with the shipped
 // bundles, and the MCP SDK's in-memory linked transport pair — no protocol
