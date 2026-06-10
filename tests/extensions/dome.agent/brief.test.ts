@@ -364,6 +364,89 @@ describe("dome.agent.brief", () => {
     expect(diag.message).toContain("wiki/dailies/2026-01-01.md");
   });
 
+  test("a well-formed preference-signal append lands alongside the daily note", async () => {
+    // The one allowed edit outside the daily note (preferences.md §"The
+    // signal convention"): an append of valid signal lines.
+    const before = "- 2026-06-01 + filing:: old signal\n";
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "preferences/signals.md": before,
+      },
+      steps: [
+        {
+          toolCalls: [
+            {
+              id: "1",
+              name: "appendToPage",
+              input: {
+                path: "preferences/signals.md",
+                content:
+                  "- 2026-06-09 + brief-scope:: briefs compress stale loops to one line (source: [[wiki/dailies/2026-06-08]])",
+              },
+            },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const patch = patchOf(effects);
+    expect(patch?.changes.map((c) => String(c.path))).toEqual([
+      TODAY_PATH,
+      "preferences/signals.md",
+    ]);
+    const signals = patch?.changes.find(
+      (c) => String(c.path) === "preferences/signals.md",
+    );
+    expect(signals?.kind === "write" ? signals.content : "").toContain(
+      "- 2026-06-09 + brief-scope:: briefs compress stale loops to one line",
+    );
+    expect(signals?.kind === "write" ? signals.content : "").toStartWith(
+      before.trimEnd(),
+    );
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
+      ),
+    ).toBe(false);
+  });
+
+  test("a non-append or malformed signals-page edit is dropped as out-of-scope", async () => {
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        "preferences/signals.md": "- 2026-06-01 + filing:: old signal\n",
+      },
+      steps: [
+        {
+          toolCalls: [
+            {
+              id: "1",
+              name: "writePage",
+              input: {
+                path: "preferences/signals.md",
+                content: "history rewritten entirely\n",
+              },
+            },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const patch = patchOf(effects);
+    expect(patch?.changes.map((c) => String(c.path))).toEqual([TODAY_PATH]);
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
+    ) as DiagnosticEffect;
+    expect(diag.message).toContain("preferences/signals.md");
+  });
+
   test("out-of-grant edits are rejected at the tool boundary and never reach the run state", async () => {
     // wiki/entities/* is outside the brief's patch.auto grant; the grant-aware
     // writePage rejects it mid-loop, so no out-of-scope diagnostic is needed —

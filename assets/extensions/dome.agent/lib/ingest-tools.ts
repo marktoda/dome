@@ -25,6 +25,7 @@ export const INGEST_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "log.md",
   "inbox/processed/*.md",
   "inbox/raw/*.md",
+  "preferences/signals.md",
 ]);
 
 export function makeIngestTools(opts: {

@@ -21,6 +21,9 @@ import {
 export const BRIEF_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "wiki/dailies/*.md",
   "notes/*.md",
+  // Validated signal-line appends only — the brief processor's splice guard
+  // drops any signals-page edit that is not an append of well-formed lines.
+  "preferences/signals.md",
 ]);
 
 export function makeBriefTools(opts: {

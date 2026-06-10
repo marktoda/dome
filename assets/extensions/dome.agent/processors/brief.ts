@@ -64,6 +64,10 @@ import {
   type CalendarMeeting,
 } from "../lib/brief-shared";
 import { makeBriefTools } from "../lib/brief-tools";
+import {
+  isValidSignalsAppend,
+  PREFERENCE_SIGNALS_PATH,
+} from "../lib/preferences-shared";
 
 const MAX_STEPS = 25;
 
@@ -232,7 +236,31 @@ const brief = defineProcessorImplementation({
       });
     }
 
-    const outOfScope = [...state.edits.keys()].filter((p) => p !== todayPath);
+    // The one allowed edit outside the daily note: an append of well-formed
+    // preference-signal lines (wiki/specs/preferences.md — the charter's
+    // signal convention). Anything else on the signals page — a rewrite, a
+    // malformed line, smuggled prose — is dropped as out-of-scope.
+    const signalsEdit = state.edits.get(PREFERENCE_SIGNALS_PATH);
+    let signalsAppend: string | null = null;
+    if (signalsEdit?.kind === "write") {
+      const signalsBefore = await ctx.snapshot.readFile(
+        PREFERENCE_SIGNALS_PATH,
+      );
+      if (
+        isValidSignalsAppend({
+          before: signalsBefore,
+          after: signalsEdit.content,
+        })
+      ) {
+        signalsAppend = signalsEdit.content;
+      }
+    }
+
+    const outOfScope = [...state.edits.keys()].filter(
+      (p) =>
+        p !== todayPath &&
+        !(p === PREFERENCE_SIGNALS_PATH && signalsAppend !== null),
+    );
     if (outOfScope.length > 0) {
       effects.push(
         diagnosticEffect({
@@ -260,11 +288,22 @@ const brief = defineProcessorImplementation({
       afterBlock: YESTERDAY_BLOCK,
     });
 
-    if (existing === null || composed !== existing) {
+    if (existing === null || composed !== existing || signalsAppend !== null) {
       effects.push(
         patchEffect({
           mode: "auto",
-          changes: [{ kind: "write", path: todayPath, content: composed }],
+          changes: [
+            { kind: "write", path: todayPath, content: composed },
+            ...(signalsAppend !== null
+              ? [
+                  {
+                    kind: "write" as const,
+                    path: PREFERENCE_SIGNALS_PATH,
+                    content: signalsAppend,
+                  },
+                ]
+              : []),
+          ],
           reason: `dome.agent: compose morning brief into ${todayPath}`,
           sourceRefs,
         }),

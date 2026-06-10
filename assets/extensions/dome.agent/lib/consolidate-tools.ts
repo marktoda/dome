@@ -20,6 +20,7 @@ export const CONSOLIDATE_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "index.md",
   "log.md",
   "consolidation-ledger.md",
+  "preferences/signals.md",
 ]);
 
 export function makeConsolidatorTools(opts: {

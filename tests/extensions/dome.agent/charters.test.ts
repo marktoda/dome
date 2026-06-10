@@ -56,3 +56,34 @@ describe("dome.agent charters — supersession convention", () => {
     expect(INGEST_CHARTER).toContain("Never extend a superseded page");
   });
 });
+
+describe("dome.agent charters — preference signals (M5)", () => {
+  const consolidate = consolidateCharter({
+    ledgerPath: "consolidation-ledger.md",
+    maxChangedFiles: 30,
+  });
+
+  // The load-bearing pieces of the one surgical instruction per charter
+  // (wiki/specs/preferences.md §"The signal convention"): the signals path,
+  // the line grammar, explicit-corrections-only, and never writing core.md.
+  for (const [name, charter] of [
+    ["ingest", INGEST_CHARTER],
+    ["consolidate", consolidate],
+    ["brief", BRIEF_CHARTER],
+  ] as const) {
+    test(`${name} appends explicit corrections to preferences/signals.md, never core.md`, () => {
+      expect(charter).toContain("## Preference signals");
+      expect(charter).toContain("preferences/signals.md");
+      expect(charter).toContain("<topic-slug>:: ");
+      expect(charter).toContain("Only explicit corrections");
+      expect(charter).toContain("Never write core.md");
+      expect(charter).toContain("promotion is owner-mediated");
+    });
+  }
+
+  test("the brief's instruction names the append-only splice guard", () => {
+    expect(BRIEF_CHARTER).toContain(
+      "ONLY appended well-formed signal lines",
+    );
+  });
+});
