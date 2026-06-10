@@ -53,6 +53,11 @@ dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, query, export_context,
                                 status, check, resolve, tasks, brief) for MCP
                                 harnesses. The daemon still owns compilation.
+dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
+                                Run the HTTP read+capture surface (bearer-token
+                                auth; loopback by default): POST /capture plus
+                                status/query/tasks/doc/questions/resolve routes.
+                                The daemon still owns compilation.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -69,7 +74,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapter:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"). A read/capture protocol adapter over the same command handlers; see [[wiki/specs/mcp-surface]].
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the CLI's data-returning collectors.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -1881,14 +1886,15 @@ adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
 The server exposes eight typed tools (`capture`, `query`, `export_context`,
 `status`, `check`, `resolve`, `tasks`, `brief`) whose results are the same
 JSON documents the corresponding CLI verbs emit under `--json`; the adapter
-invokes the same command handlers rather than re-implementing them.
+consumes the same data paths rather than re-implementing them.
 
 Boundary discipline:
 
-- **stdout is the protocol channel.** The adapter captures handler
-  `console.log` output per tool call (serialized behind a mutex) so command
-  JSON becomes the tool result instead of corrupting the wire. Server-side
-  notices go to stderr.
+- **stdout is the protocol channel.** Tools consume data-returning
+  boundaries (the `openVault` wrapper plus the CLI's collectors) — nothing
+  in a tool call prints, so command JSON can never corrupt the wire. A
+  mutex serializes tool calls (one runtime at a time). Server-side notices
+  go to stderr.
 - **No compilation.** The MCP server runs no adoption loop or scheduler;
   `dome serve` (kept alive by `dome install`) owns that. `capture` and
   `resolve` are the only write-shaped tools and reuse the existing
@@ -1908,6 +1914,29 @@ claude mcp add dome -- dome mcp --vault /path/to/vault
 The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
+
+### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>]`
+
+Runs the Dome HTTP read+capture surface for one vault — the shipped protocol
+adapter per [[wiki/specs/http-surface]] and the first shipped form of the
+remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
+Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /tasks`,
+`GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
+corresponding CLI verbs emit under `--json`.
+
+Boundary discipline:
+
+- **Bearer token required.** `--token <value>` or `DOME_HTTP_TOKEN`; the
+  verb refuses to start without one (exit 64). Requests without the token
+  get 401.
+- **Loopback by default.** Binds `127.0.0.1:3663`; `--host` points it at a
+  private (Tailscale-class) interface for phone access. Owner trust domain
+  only — hosted multi-tenant is v1.5 territory.
+- **No compilation.** Same as `dome mcp`: the daemon owns adoption;
+  `capture` and `resolve` reuse the non-engine write channels.
+
+Exit codes: 0 on clean shutdown (SIGINT/SIGTERM); 64 on missing token,
+malformed port, or uninitialized vault; 1 on listener failure.
 
 ### Planned dedicated view aliases
 

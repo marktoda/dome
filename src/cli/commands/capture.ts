@@ -37,7 +37,7 @@
 //     `process.exit(code)`.
 //   - Testability via an injected deps object (clock + stdin boundary).
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
@@ -89,12 +89,25 @@ export type RunCaptureOptions = {
   readonly json?: boolean | undefined;
 };
 
+/**
+ * `performCapture` options — the CLI option set plus the remote-capture-seam
+ * fields ([[wiki/specs/capture]] §"The remote-capture seam"): `source` is the
+ * honest ingress channel written into frontmatter (default `cli`), and
+ * `captureId` is the client-supplied retry-idempotency key that drives the
+ * filename slug.
+ */
+export type PerformCaptureOptions = Omit<RunCaptureOptions, "json"> & {
+  readonly source?: string | undefined;
+  readonly captureId?: string | undefined;
+};
+
 /** The successful capture, before any rendering. */
 export type CaptureSuccess = {
   readonly vault: string;
   readonly path: string;
   readonly title: string;
   readonly capturedAt: string;
+  readonly source: string;
   readonly branch: string;
   readonly commit: string;
   readonly serveStatus: "running" | "stale" | "off";
@@ -104,11 +117,19 @@ export type CaptureSuccess = {
 
 /**
  * The data-returning outcome of one capture attempt. `runCapture` renders
- * it for the terminal; the MCP `capture` tool renders it as the same
- * `dome.capture/v1` document via `captureJsonDocument`.
+ * it for the terminal; the MCP `capture` tool and the HTTP surface render
+ * it as the same `dome.capture/v1` document via `captureJsonDocument`.
+ * `duplicate` is the seam's retry answer: a file for this `captureId`
+ * already exists, nothing was written or committed.
  */
 export type CaptureOutcome =
   | { readonly kind: "captured"; readonly result: CaptureSuccess }
+  | {
+      readonly kind: "duplicate";
+      readonly vault: string;
+      readonly path: string;
+      readonly captureId: string;
+    }
   | {
       readonly kind: "error";
       readonly exitCode: number;
@@ -131,6 +152,15 @@ export function captureJsonDocument(
       error: outcome.error,
     };
   }
+  if (outcome.kind === "duplicate") {
+    return {
+      schema: "dome.capture/v1",
+      status: "duplicate",
+      vault: outcome.vault,
+      path: outcome.path,
+      capture_id: outcome.captureId,
+    };
+  }
   const r = outcome.result;
   return {
     schema: "dome.capture/v1",
@@ -139,7 +169,7 @@ export function captureJsonDocument(
     path: r.path,
     title: r.title,
     captured_at: r.capturedAt,
-    source: "cli",
+    source: r.source,
     branch: r.branch,
     commit: r.commit,
     serve_status: r.serveStatus,
@@ -245,8 +275,13 @@ export function renderCaptureDocument(input: {
   readonly capturedAt: string;
   readonly title?: string | undefined;
   readonly body: string;
+  readonly source?: string | undefined;
 }): string {
-  const lines = ["---", `captured: ${input.capturedAt}`, "source: cli"];
+  const lines = [
+    "---",
+    `captured: ${input.capturedAt}`,
+    `source: ${input.source ?? "cli"}`,
+  ];
   if (input.title !== undefined) {
     lines.push(`title: ${JSON.stringify(input.title)}`);
   }
@@ -263,13 +298,24 @@ export function renderCaptureDocument(input: {
  * `capture` tool both render the returned outcome. Never opens the runtime.
  */
 export async function performCapture(
-  options: Omit<RunCaptureOptions, "json"> = {},
+  options: PerformCaptureOptions = {},
   deps: CaptureDeps = {},
 ): Promise<CaptureOutcome> {
   const vaultPath = resolveVaultPath(options.vault);
   const now = (deps.now ?? (() => new Date()))();
   const failWith = (exitCode: number, error: string): CaptureOutcome =>
     Object.freeze({ kind: "error" as const, exitCode, vault: vaultPath, error });
+
+  // The honest ingress channel ([[wiki/specs/capture]] §"Raw capture file
+  // shape"). Constrained to a single conservative token so a caller-supplied
+  // channel can never splice frontmatter lines.
+  const source = options.source ?? "cli";
+  if (!/^[a-z0-9][a-z0-9_-]{0,31}$/i.test(source)) {
+    return failWith(
+      EX_USAGE,
+      `invalid source channel '${source}': expected 1-32 chars of [a-z0-9_-]`,
+    );
+  }
 
   // --- Input resolution (argument > --file > stdin) -------------------------
   if (options.text !== undefined && options.file !== undefined) {
@@ -334,7 +380,27 @@ export async function performCapture(
       options.title === undefined ? null : normalizeCaptureTitle(options.title);
     const derivedTitle = explicitTitle === null ? deriveCaptureTitle(body) : null;
     const title = explicitTitle ?? derivedTitle ?? "capture";
-    const slug = captureSlug(explicitTitle ?? derivedTitle);
+
+    // With a captureId, the id drives the slug and retries are idempotent:
+    // an existing file for the same id answers `duplicate` — nothing is
+    // written or committed ([[wiki/specs/capture]] §"Retry semantics").
+    const captureId = options.captureId;
+    const slug =
+      captureId !== undefined
+        ? captureSlug(captureId)
+        : captureSlug(explicitTitle ?? derivedTitle);
+    if (captureId !== undefined) {
+      const existing = findCaptureBySlug(vaultPath, slug);
+      if (existing !== null) {
+        return Object.freeze({
+          kind: "duplicate" as const,
+          vault: vaultPath,
+          path: existing,
+          captureId,
+        });
+      }
+    }
+
     const relPath = resolveTargetPath(
       vaultPath,
       captureTimestampSegment(now),
@@ -345,6 +411,7 @@ export async function performCapture(
       capturedAt,
       ...(explicitTitle !== null ? { title: explicitTitle } : {}),
       body,
+      source,
     });
 
     await mkdir(join(vaultPath, RAW_INBOX_DIR), { recursive: true });
@@ -375,6 +442,7 @@ export async function performCapture(
         path: relPath,
         title,
         capturedAt,
+        source,
         branch,
         commit: commitOid,
         serveStatus: heartbeat.status,
@@ -417,6 +485,16 @@ export async function runCapture(
     }
     return outcome.exitCode;
   }
+  if (outcome.kind === "duplicate") {
+    // Unreachable from CLI flags today (no --capture-id option); handled for
+    // exhaustiveness so a future flag cannot silently fall through.
+    if (json) {
+      console.log(formatJson(captureJsonDocument(outcome)));
+    } else {
+      console.log(`dome capture: duplicate of ${outcome.path}`);
+    }
+    return 0;
+  }
 
   if (json) {
     console.log(formatJson(captureJsonDocument(outcome)));
@@ -443,6 +521,27 @@ function realStdin(): CaptureStdin {
     isTTY: process.stdin.isTTY === true,
     readToEnd: () => Bun.stdin.text(),
   };
+}
+
+/**
+ * Find an existing raw capture whose filename slug matches — the
+ * captureId-idempotency lookup. Filenames are `<YYYY-MM-DD-HHmm>-<slug>.md`,
+ * so the stamp prefix is matched structurally and the slug exactly.
+ */
+function findCaptureBySlug(vaultPath: string, slug: string): string | null {
+  const dir = join(vaultPath, RAW_INBOX_DIR);
+  if (!existsSync(dir)) return null;
+  const pattern = new RegExp(
+    `^\\d{4}-\\d{2}-\\d{2}-\\d{4}-${escapeRegExp(slug)}\\.md$`,
+  );
+  for (const name of readdirSync(dir)) {
+    if (pattern.test(name)) return `${RAW_INBOX_DIR}/${name}`;
+  }
+  return null;
+}
+
+function escapeRegExp(raw: string): string {
+  return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

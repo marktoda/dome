@@ -18,6 +18,7 @@ import {
   captureTimestampSegment,
   deriveCaptureTitle,
   normalizeCaptureTitle,
+  performCapture,
   renderCaptureDocument,
   runCapture,
   type CaptureStdin,
@@ -463,5 +464,95 @@ describe("runCapture --json", () => {
     expect(payload.serve_status).toBe("off");
     expect(payload.adopted_initialized).toBe(false);
     expect(payload.compile_pending).toBe(true);
+  });
+});
+
+// ----- performCapture seam extensions (remote-capture seam) --------------------
+//
+// Per docs/wiki/specs/capture.md §"The remote-capture seam": a remote ingress
+// supplies an honest `source:` channel name, and an optional client
+// `captureId` makes retries idempotent — the id drives the filename slug, and
+// an existing file for the same id answers as a duplicate instead of filing a
+// sibling.
+
+describe("performCapture seam extensions", () => {
+  test("source channel lands in the frontmatter and the outcome", async () => {
+    const vault = await initVault();
+
+    const outcome = await performCapture(
+      { text: "from the phone", vault, source: "http" },
+      clock,
+    );
+
+    expect(outcome.kind).toBe("captured");
+    if (outcome.kind !== "captured") return;
+    expect(outcome.result.source).toBe("http");
+    const written = await readFile(join(vault, outcome.result.path), "utf8");
+    expect(written).toContain("source: http");
+  });
+
+  test("source defaults to cli when not supplied", async () => {
+    const vault = await initVault();
+
+    const outcome = await performCapture({ text: "plain capture", vault }, clock);
+
+    expect(outcome.kind).toBe("captured");
+    if (outcome.kind !== "captured") return;
+    expect(outcome.result.source).toBe("cli");
+  });
+
+  test("captureId drives the filename slug", async () => {
+    const vault = await initVault();
+
+    const outcome = await performCapture(
+      { text: "retry-safe thought", vault, captureId: "phone-871f3" },
+      clock,
+    );
+
+    expect(outcome.kind).toBe("captured");
+    if (outcome.kind !== "captured") return;
+    expect(outcome.result.path).toBe(`inbox/raw/${STAMP}-phone-871f3.md`);
+  });
+
+  test("a retry with the same captureId answers duplicate without a new file or commit", async () => {
+    const vault = await initVault();
+
+    const first = await performCapture(
+      { text: "mumbled once", vault, captureId: "phone-dup-1" },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+    const headAfterFirst = (await headCommit(vault)).oid;
+
+    // Retry later (different stamp) with the same id — same thought resent.
+    const later = { now: () => new Date(2026, 5, 9, 23, 45, 0) };
+    const second = await performCapture(
+      { text: "mumbled once", vault, captureId: "phone-dup-1" },
+      later,
+    );
+
+    expect(second.kind).toBe("duplicate");
+    if (second.kind !== "duplicate") return;
+    expect(second.path).toBe(first.result.path);
+    expect((await headCommit(vault)).oid).toBe(headAfterFirst);
+  });
+
+  test("different captureIds file separately", async () => {
+    const vault = await initVault();
+
+    const a = await performCapture(
+      { text: "thought a", vault, captureId: "id-a" },
+      clock,
+    );
+    const b = await performCapture(
+      { text: "thought b", vault, captureId: "id-b" },
+      clock,
+    );
+
+    expect(a.kind).toBe("captured");
+    expect(b.kind).toBe("captured");
+    if (a.kind !== "captured" || b.kind !== "captured") return;
+    expect(a.result.path).not.toBe(b.result.path);
   });
 });

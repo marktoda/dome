@@ -4,7 +4,7 @@ Orientation for agents and human contributors landing on `dome/`. This is the **
 
 ## What this repo is
 
-A TypeScript SDK on Bun — the four-concept Dome core (**Vault, Proposal, Processor, Effect**), the fixed-point adoption engine, the Bun.sqlite-backed projection store + run ledger + outbox, the capability broker, the first-party `dome.*` extension bundles, and a Commander-based CLI. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate. An MCP stdio adapter ships as a companion entrypoint (`dome mcp`, `src/mcp/`) outside the core import graph; HTTP / mobile adapters remain planned protocol surfaces.
+A TypeScript SDK on Bun — the four-concept Dome core (**Vault, Proposal, Processor, Effect**), the fixed-point adoption engine, the Bun.sqlite-backed projection store + run ledger + outbox, the capability broker, the first-party `dome.*` extension bundles, and a Commander-based CLI. The `docs/` directory is itself a Dome vault dogfooding the SDK against its own design substrate. Two protocol adapters ship as companion entrypoints outside the core import graph: the MCP stdio adapter (`dome mcp`, `src/mcp/`) and the HTTP read+capture adapter (`dome http`, `src/http/`); mobile/voice shells remain planned consumer surfaces.
 
 The canonical substrate map is `docs/index.md`. Every spec, invariant, matrix, and gotcha is linked from there. **Read the substrate before changing code.**
 
@@ -77,6 +77,7 @@ src/
   sqlite/               # shared Bun.sqlite connection + row helpers
   cli/                  # CLI command adapters
   mcp/                  # MCP stdio adapter (companion entrypoint, outside core import graph)
+  http/                 # HTTP read+capture adapter (companion entrypoint; dome http)
   extensions/           # bundle loader
   git.ts                # isomorphic-git boundary
   engine-commit.ts      # pure Dome trailer/commit-message helper
