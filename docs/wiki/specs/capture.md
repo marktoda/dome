@@ -82,8 +82,8 @@ call the landlord about the radiator before friday
 - `title:` — optional; present when the capturer supplied one explicitly.
 - **No `type:` field.** `inbox/` roots may omit frontmatter typing per
   [[wiki/specs/page-schema]]; the file is ephemeral and ingest archives it.
-  (The `capture` page type owned by the planned `dome.intake` bundle applies
-  to `wiki/generated/intake/` + `inbox/processed/` pages, not raw drops.)
+  Archived captures under `inbox/processed/` stay untyped too — no shipped
+  bundle declares a `capture` page type.
 
 Frontmatter is **recommended, not required**: `dome.agent.ingest` triggers on
 any `inbox/raw/*.md` commit and reads the whole file as untrusted source

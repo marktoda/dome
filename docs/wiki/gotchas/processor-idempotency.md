@@ -34,7 +34,7 @@ The engine cannot statically prove idempotency, but it can detect failure:
 
 **Specific scenarios:**
 
-- **Daily-brief LLM compile.** `dome.intake.extract-capture` calls the LLM with temperature 0 to produce a deterministic compilation. The same capture twice produces the same wiki updates. Even if the LLM is upgraded between runs, the *commit* (which is what `dome rebuild` re-derives) doesn't change unless the input does.
+- **Ingest LLM compile.** An ingest-style garden-LLM processor calls the model with temperature 0 to produce a deterministic compilation. The same capture twice produces the same wiki updates. Even if the LLM is upgraded between runs, the *commit* (which is what `dome rebuild` re-derives) doesn't change unless the input does.
 
 - **Stable-id generation.** A processor that wants to add a stable ID to a task line MUST derive the ID from the line's content + position, not from `Math.random()` or `crypto.randomUUID()`. The convention in v1: `task-id = sha1(commit_oid + path + line_number + task_text).slice(0, 8)` — deterministic given a fixed snapshot.
 

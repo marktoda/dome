@@ -1465,7 +1465,7 @@ to inspect facts for a specific page, task, or entity. `--subject-kind` and
 `dome inspect processors --model --json` is the authoritative CLI answer for
 whether the currently enabled vault automation has LLM/model-capable
 processors. `dome inspect bundles --model --json` is the broader inventory
-answer for optional configured bundles such as disabled intake.
+answer that also covers configured-but-disabled optional bundles.
 
 Exit codes: 0 on a clean read (including empty result sets); 1 on
 runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed

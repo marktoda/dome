@@ -37,9 +37,9 @@ dome sync: blocked main: proposal prop_1748... (1 diagnostic)
   - [block] fixed-point.divergence: adoption loop hit MAX_ITER=100 without convergence.
     Last 3 iterations:
       iter 98: processor=dome.markdown.validate-wikilinks, effect=patch (wiki/entities/danny.md frontmatter)
-      iter 99: processor=dome.intake.normalize-aliases, effect=patch (wiki/entities/danny.md frontmatter)
+      iter 99: processor=acme.intake.normalize-aliases, effect=patch (wiki/entities/danny.md frontmatter)
       iter 100: processor=dome.markdown.validate-wikilinks, effect=patch (wiki/entities/danny.md frontmatter)
-    Candidate processors: dome.markdown.validate-wikilinks, dome.intake.normalize-aliases
+    Candidate processors: dome.markdown.validate-wikilinks, acme.intake.normalize-aliases
     Recommended actions:
       1. Disable one of the candidate processors temporarily (`.dome/config.yaml`) and re-submit.
       2. Inspect the recent diagnostics via `dome inspect diagnostics --code fixed-point.divergence`.
@@ -48,7 +48,7 @@ dome sync: blocked main: proposal prop_1748... (1 diagnostic)
 
 **Specific scenarios:**
 
-- **Frontmatter ordering churn.** `dome.markdown.parse` emits a patch normalizing frontmatter order (alphabetical by key); `dome.intake.normalize-aliases` emits a patch updating the `aliases:` field but produces it in a different order. Each invalidates the other's normalization. Fix: `dome.intake` defers to `dome.markdown`'s ordering convention — emits aliases in alphabetical order to begin with.
+- **Frontmatter ordering churn.** `dome.markdown.parse` emits a patch normalizing frontmatter order (alphabetical by key); `acme.intake.normalize-aliases` emits a patch updating the `aliases:` field but produces it in a different order. Each invalidates the other's normalization. Fix: `acme.intake` defers to `dome.markdown`'s ordering convention — emits aliases in alphabetical order to begin with.
 
 - **Index rewriting on its own write.** `dome.index.update-index` emits a patch to `index.md`. The patched tree now has `index.md` changed; if `dome.index`'s trigger was `signal:file.modified` for `index.md` itself, it would re-fire. The `dome.index` trigger is correctly scoped (`signal:file.modified` for `wiki/**`, NOT for `index.md`), so this scenario doesn't fire — but it's the canonical "processor reads its own output" pattern to avoid.
 

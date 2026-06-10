@@ -37,7 +37,7 @@ dome sync
 
 **Specific scenarios:**
 
-- **SDK upgrade with bundled processor bump.** SDK v1.2 ships `dome.intake.extract-capture@1.1.0` (improved capture compilation). On upgrade, the engine rebuilds projections from the adopted commit with the new processor set. Fact provenance updates; downstream queries return consistent results.
+- **SDK upgrade with bundled processor bump.** SDK v1.2 ships `dome.agent.ingest@1.1.0` (improved ingest behavior). On upgrade, the engine rebuilds projections from the adopted commit with the new processor set. Fact provenance updates; downstream queries return consistent results.
 
 - **Schema bump within a processor.** A processor changes its fact predicate scheme (`dome.tasks.dueDate` → `dome.tasks.due_date`). The version bumps; old rows invalidate; new rows use the new predicate. Consumers that joined on the old predicate need to update — but the structural invalidation makes the change visible (queries return zero results for the old name) rather than silent.
 

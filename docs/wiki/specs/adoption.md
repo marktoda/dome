@@ -136,7 +136,7 @@ Trailers sit after a blank line per `git interpret-trailers` convention. They ar
 | Trailer | Value |
 |---|---|
 | `Dome-Run` | Run id of the form `run_<unix-ms>_<6-char-rand>`. Matches the RunRecord's `id`. |
-| `Dome-Extension` | The bundle id that originated the work (`dome.intake`, `dome.daily`, etc.). For pure engine closure (capability downgrade, schema autoformat), the value is `engine`. |
+| `Dome-Extension` | The bundle id that originated the work (`dome.agent`, `dome.daily`, etc.). For pure engine closure (capability downgrade, schema autoformat), the value is `engine`. |
 | `Dome-Base` | SHA of `refs/dome/adopted/<branch>` at the moment the loop started. All-zeros (`0000000000000000000000000000000000000000`) when adopted was uninitialized. |
 | `Dome-Source-Head` | SHA of HEAD at the moment the loop started. |
 

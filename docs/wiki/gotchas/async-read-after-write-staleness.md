@@ -16,7 +16,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 **Root cause:** The adoption loop runs *adoption-phase* processors synchronously against the Proposal candidate (per [[wiki/specs/processors]] §"Adoption phase — bounded, deterministic, merge-blocking"). Garden-phase processors and operational work run after adoption. The adopted ref can advance before every slow garden follow-up has produced its own sub-Proposal, projection row, outbox row, or diagnostic.
 
-This is by design. Adoption-phase processors must be bounded and deterministic; garden-phase processors may be slow or LLM-backed (`dome.intake.extract-capture` calls the model; `dome.daily.create-daily` reads multiple pages). Running garden work synchronously would block every Proposal on the slowest garden processor's wall clock.
+This is by design. Adoption-phase processors must be bounded and deterministic; garden-phase processors may be slow or LLM-backed (`dome.agent.ingest` calls the model; `dome.daily.create-daily` reads multiple pages). Running garden work synchronously would block every Proposal on the slowest garden processor's wall clock.
 
 **Structural mitigation:** **explicit drain/wait surfaces for callers that need garden completion before read.**
 
@@ -31,7 +31,7 @@ Reserved use cases:
 **Specific scenarios:**
 
 - **User commits a change; immediately calls `dome query`.** The query reads adopted state, not arbitrary working-tree edits. It sees projections produced by work that has already run, but may miss later garden additions until operational work drains.
-- **User commits a raw capture; immediately queries about it.** `dome.intake.extract-capture` is a garden-phase processor. The raw capture can be adopted before the LLM-backed extraction sub-Proposal lands generated wiki updates.
+- **User commits a raw capture; immediately queries about it.** `dome.agent.ingest` is a garden-phase processor. The raw capture can be adopted before the LLM-backed ingest sub-Proposal lands its wiki updates.
 - **User runs `dome inspect diagnostics`.** The read reflects diagnostics currently in `projection.db.diagnostics`. Garden-phase diagnostics appear as those processors complete.
 
 **Operational notes:**

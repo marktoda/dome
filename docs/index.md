@@ -4,6 +4,8 @@ The catalog of all wiki pages in this vault. In the current SDK it is maintained
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
+New to the vocabulary? [[glossary]] is the one-page map: the four core types, the engine vocabulary, the content conventions, and the overloaded words (loop, signal, settle) disambiguated.
+
 ## Current Product Planning
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.

@@ -82,13 +82,16 @@ src/
   engine-commit.ts      # pure Dome trailer/commit-message helper
 
 assets/extensions/      # first-party dome.* bundles
-  dome.markdown/
-  dome.graph/
-  dome.search/
-  dome.health/
+  dome.agent/
+  dome.claims/
   dome.daily/
-  dome.intake/
+  dome.graph/
+  dome.health/
   dome.lint/
+  dome.markdown/
+  dome.search/
+  dome.sources/
+  dome.warden/
 
 tests/                  # bun test files
   invariants/           # AC3 lockstep surface

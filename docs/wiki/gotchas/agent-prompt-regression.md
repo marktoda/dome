@@ -12,7 +12,7 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 
 # Agent prompt regression
 
-**Symptom:** After an Anthropic model upgrade or a prompt edit in a garden-LLM processor's `<processor>.prompt.md` file, Dome's compilation behavior shifts — `dome.intake.extract-capture` extracts different atomic ideas, routes different content to wiki updates, creates pages with different criteria. Sometimes subtly wrong: the right kind of content lands on the wrong page; cross-references shift; capture-derived facts use slightly different predicates.
+**Symptom:** After an Anthropic model upgrade or a prompt edit in a garden-LLM processor's `<processor>.prompt.md` file, Dome's compilation behavior shifts — `dome.agent.ingest` extracts different atomic ideas, routes different content to wiki updates, creates pages with different criteria. Sometimes subtly wrong: the right kind of content lands on the wrong page; cross-references shift; capture-derived facts use slightly different predicates.
 
 **Root cause:** Garden-LLM processors (per [[wiki/specs/processors]] §"Garden phase — async, possibly LLM-backed") own the meaning-shaped compilation flow. Their `run(ctx)` body composes a prompt from `<processor>.prompt.md`, calls `ctx.modelInvoke(...)`, parses the response into PatchEffects and FactEffects. The engine validates *structural* invariants (capability scope, idempotency expectation, fixed-point convergence) but cannot enforce *semantic* correctness. "This update went to the right page" is a semantic claim that no broker or matrix catches.
 
