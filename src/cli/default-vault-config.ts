@@ -45,6 +45,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "graph.write": ["dome.daily.*"],
       "question.ask": true,
     }),
+    extension("dome.claims", true, {
+      read: ["wiki/**/*.md", "notes/*.md"],
+      "patch.auto": ["wiki/**/*.md", "notes/*.md"],
+      "graph.write": ["dome.claims.*"],
+    }),
     extension("dome.agent", false, {
       read: [
         "wiki/**/*.md",
@@ -221,9 +226,9 @@ function quote(value: string): string {
 const DEFAULT_CONFIG_HEADER = `# Dome vault configuration (v1.0).
 #
 # This file controls which extensions are active and their capability
-# grants. The shipped first-party bundles (\`dome.daily\`, \`dome.graph\`,
-# \`dome.health\`, \`dome.agent\`, \`dome.lint\`, \`dome.markdown\`,
-# \`dome.search\`) live with the SDK. By default, CLI commands compose those
+# grants. The shipped first-party bundles (\`dome.claims\`, \`dome.daily\`,
+# \`dome.graph\`, \`dome.health\`, \`dome.agent\`, \`dome.lint\`,
+# \`dome.markdown\`, \`dome.search\`) live with the SDK. By default, CLI commands compose those
 # shipped bundles with any vault-local bundles under \`.dome/extensions/\`.
 #
 # To install a third-party bundle, create \`.dome/extensions/<bundle-id>/\`

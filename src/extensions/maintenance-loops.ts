@@ -361,6 +361,35 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
     }),
     freezeLoop({
+      id: "dome.claim.coherence",
+      goal:
+        "Structured claim lines on wiki and note pages are stamped with stable anchor ids and projected as queryable facts.",
+      evidence: [
+        { kind: "path", pattern: "wiki/**/*.md" },
+        { kind: "path", pattern: "notes/*.md" },
+        { kind: "projection", name: "facts:dome.claims.*" },
+      ],
+      processors: [
+        "dome.claims.stamp",
+        "dome.claims.index",
+      ],
+      surfaces: [
+        { kind: "projection", name: "facts" },
+        { kind: "command", name: "query" },
+        { kind: "command", name: "export-context" },
+      ],
+      settlement: {
+        key: "source path + normalized claim key + occurrence index",
+        noOpWhen:
+          "every claim line in the page set carries its stable anchor and the facts projection reflects the current claim values",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "Anchor ids are content-hash-derived; inserting same-key claims above existing ones can shift occurrence indices across idempotency boundaries.",
+        "Claim values may encode wikilinks; callers rendering fact objects must HTML-decode them rather than treating the raw JSON as plain text.",
+      ],
+    }),
+    freezeLoop({
       id: "dome.question.continuity",
       goal:
         "Important uncertainty remains alive until answered, obsoleted, or dismissed.",
