@@ -26,7 +26,8 @@ dome capture [text] [--file <path>] [--title <t>] [--json]
                                 current branch. Returns immediately.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
-dome status [--loops] [--json]  Vault health + content dashboard.
+dome status [--loops] [--probe] [--json]
+                                Vault health + content dashboard.
 dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit <n>] [--json]
                                 Explain compiler attention across health,
                                 diagnostics, and decisions.
@@ -43,6 +44,9 @@ dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
 dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]
                                 Install `dome serve` for this vault as a macOS launchd
                                 LaunchAgent (ambient compiler host; survives reboots).
+dome restart [--vault <path>] [--json]
+                                Restart the vault's launchd LaunchAgent from the
+                                existing plist (never re-rendered; --env preserved).
 dome uninstall [--vault <path>] [--json]
                                 Boot out and remove the vault's launchd LaunchAgent.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
@@ -55,7 +59,7 @@ The CLI is the user-facing primary surface in v1. The implemented commands above
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
 - **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
-- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, extension development, and maintenance. They are hidden from top-level help and are not the normal Claude Code workflow.
+- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
 future answer-mediated mitigations and exits with usage status instead of
@@ -64,7 +68,7 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 - **Protocol adapter:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"). A read/capture protocol adapter over the same command handlers; see [[wiki/specs/mcp-surface]].
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -400,13 +404,13 @@ dome sync: attention diagnostics, questions
 per-processor result lines such as `dome.markdown.*`; iteration scaffolding is
 suppressed so filtered logs stay focused.
 
-The `--force-advance` flag is **deferred** in v1.0. The adopted-ref substrate's fast-forward-only check is in place; the bypass surface lands when the adopted-ref-divergence recovery flow is wired end-to-end (a v1.1 polish). Until then, a divergent HEAD is detected by the shared compiler-host drift boundary before any Proposal is constructed, and the operator resolves manually.
+There is no `--force-advance` flag on `dome sync`. The adopted-ref substrate's fast-forward-only check is in place; a divergent HEAD is detected by the shared compiler-host drift boundary before any Proposal is constructed and `dome sync` refuses (exit 1) with recovery guidance. The explicit recovery flow is its own verb — `dome reanchor` (below) — which backs up the old adopted SHA under `refs/dome/backup/` before accepting the rewritten HEAD; keeping the bypass off `sync` means the routine catch-up command can never be scripted into silently following a history rewrite.
 
 Exit codes: 0 on adopted / in-sync; 1 on blocked, adopted-ref divergence, or runtime-open failure; 64 (EX_USAGE) on detached HEAD or no commits; 75 (EX_TEMPFAIL) when another compiler host holds the branch lock.
 
 See [[wiki/specs/adoption]] §"`dome sync`" for the broader normative description.
 
-### `dome status [--loops] [--json]`
+### `dome status [--loops] [--probe] [--json]`
 
 The health pulse for a vault. It is read-only and cheap enough for an
 agent or user to run at session start/end. Status intentionally combines
@@ -654,9 +658,13 @@ they do not adopt or drain compiler work.
 reason codes; `next_actions` maps those reasons to a small set of commands an
 agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
-`pending_runs`, `failed_runs`, `serve_stale`, `diagnostics`, `questions`,
+`pending_runs`, `failed_runs`, `serve_stale`, `service_not_loaded`,
+`model_provider_unreachable`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. Dirty reasons include bounded path samples in
+`capture_loop_inactive`. `adopted_ref_diverged` routes to `dome reanchor`
+(inspect first; see [[wiki/gotchas/adopted-ref-divergence]]);
+`service_not_loaded` routes to `dome restart`; `model_provider_unreachable`
+routes to `dome doctor --json`. Dirty reasons include bounded path samples in
 `dirty_modified_paths` and `dirty_untracked_paths`, and the dirty-state
 next-action description names those paths so a foreground agent can see the
 immediate draft files without issuing another status command. The counts remain
@@ -726,7 +734,38 @@ reports. `serve_status` is read from the foreground host heartbeat file and is
 not refreshed its heartbeat within the host's configured cadence. Text mode
 annotates `serve off` as `serve off (run dome serve)` to nudge the normal
 foreground-host workflow, but `off` is not itself an attention reason because
-one-shot `dome sync` is a valid catch-up mode. Generated AGENTS guidance tells
+one-shot `dome sync` is a valid catch-up mode.
+
+**Launchd service line.** `service_status` / `service_label` report the
+vault's ambient launchd service through install's probe helpers (the same
+injected `ServiceDeps`, so tests use the recording fake): `loaded`,
+`installed` (plist present, service not loaded), `not-installed`, or
+`unsupported` (non-macOS). The loaded probe (`launchctl print`) runs only
+when a plist is actually installed, so the common never-installed vault pays
+one `existsSync`. `not-installed` and `unsupported` are **informational, not
+attention** — one-shot `dome sync` and a foreground `dome serve` are valid
+modes. `installed`-but-not-loaded routes the `service_not_loaded` attention
+reason to `dome restart`: a KeepAlive agent that is not loaded means the
+ambient compiler silently stopped.
+
+**Model-provider reachability.** `model_provider_configured`,
+`model_provider_probe_status`, and `model_provider_probed_at` report
+last-known provider reachability. The tradeoff: the
+`dome.model-provider.probe/v1` probe spawns the provider command with up to
+an 8s timeout — far over status's cheap-pulse budget — so **plain `dome
+status` never spawns the provider**. Instead it reads the persisted
+last-probe cache at `.dome/state/model-provider-probe.json` (derived,
+gitignored; written by `dome doctor` and by `dome status --probe`), and only
+when the cached command matches the currently configured one — a provider
+swap implicitly invalidates the cache, so stale attention never survives a
+config change. A cached/live unreachable outcome (`spawn-failed` /
+`invalid-response` / `timed-out`, the same classification as doctor's
+`model.provider-unreachable` finding) adds the `model_provider_unreachable`
+attention reason routed to `dome doctor --json`. When no cheap cached result
+exists, the probe state reads null and routes nothing; `--probe` opts into
+the fresh (slow) probe and refreshes the cache. The cost asymmetry is
+deliberate: reachability attention is at most one probe stale by default,
+which is the right trade for a command agents run at every session boundary. Generated AGENTS guidance tells
 Claude Code to read `serve_status` separately from `next_actions`, because
 `next_actions` is scoped to compiler attention rather than host preference. Use
 `dome check --json` for the normal explanation path and `dome inspect
@@ -1302,6 +1341,58 @@ branch, adopted, error }` on failure.
 Exit codes: 0 on success; 1 on rebuild/runtime failure; 64 (EX_USAGE) on
 detached HEAD or uninitialized adopted ref.
 
+### `dome reanchor [--to <sha>] [--vault <path>] [--bundles-root <path>] [--json]`
+
+The explicit adopted-ref **divergence recovery** verb — the one user-facing
+path that moves `refs/dome/adopted/<branch>` without a fast-forward. It
+exists for exactly one state: the branch history was rewritten under the
+adopted cursor (force-push, hard-reset, rebase — see
+[[wiki/gotchas/adopted-ref-divergence]]) and the operator has confirmed the
+new HEAD is the intended trunk. The engine's own write side stays
+fast-forward-only per [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]];
+`dome serve` pauses adoption and `dome sync` refuses while diverged, and the
+`adopted-ref.diverged` health finding (doctor/check/status attention) names
+this command in its recovery text.
+
+Composition (v1.0):
+
+1. Resolve `vaultPath`, branch, HEAD, and the adopted ref. Detached HEAD, no
+   commits, and an uninitialized adopted ref are usage refusals (exit 64) —
+   there is no cursor to recover.
+2. **Refuse when not diverged** (exit 64). When the adopted ref equals HEAD
+   or is an ancestor of HEAD, the normal fast-forward path (`dome sync`) is
+   the only legitimate advance; reanchor must never become a casual
+   force-move habit.
+3. Resolve the target: `--to <sha>` (a full commit OID) or the current HEAD
+   by default. The target must be HEAD or an ancestor of HEAD — anything
+   else would immediately re-create the divergence (exit 64).
+4. Open the runtime *before* mutating any ref, so a misconfigured vault
+   refuses without a half-done recovery (exit 1 on open failure).
+5. **Back up first, then move.** Write
+   `refs/dome/backup/adopted-<timestamp>` (ref-safe UTC `YYYYMMDDTHHMMSSZ`;
+   same-second collisions get a `-2`, `-3`, … suffix) at the old adopted
+   SHA, then advance the adopted ref to the target via the internal
+   `forceAdvance` opt-out. The backup keeps the orphaned engine/human
+   commits reachable (no GC) and makes the move reversible; the old SHA is
+   also recorded in the command output.
+6. **Trigger the normal sync path**: one compiler-host tick against the
+   re-anchored cursor. A target of HEAD lands `in-sync` (operational drain);
+   an ancestor target adopts the remaining range immediately. Subsequent
+   `dome serve` polls resume normal adoption.
+
+The ref move itself is compare-and-swap (`setAdoptedRef` writes with the
+expected old value), so a concurrent host advancing the ref cannot be
+silently overwritten; the follow-up tick takes the same branch-level
+compiler-host lock as every other host.
+
+`--json` emits `dome.reanchor/v1`: `{ schema, status: "reanchored" |
+"error", vault, branch, head, previous_adopted, new_adopted, backup_ref,
+sync: { kind, final_adopted }, error?, message? }`.
+
+Exit codes: 0 on success; 64 (EX_USAGE) on detached HEAD, no commits,
+uninitialized adopted ref, **not diverged**, or a `--to` target not reachable
+from HEAD; 1 on runtime-open or ref-write failure.
+
 ### `dome inspect <subject> [--limit <n>] [--model] [--json]`
 
 Read-only view over the operational substrate. The command opens the
@@ -1447,8 +1538,13 @@ distinguishes five outcomes:
 - **timed-out** — no exit within the probe timeout (default 8s). Raises
   `model.provider-unreachable`.
 
-The probe runs only in `dome doctor` (the probe verb); `dome check` reuses the
-same `HealthReport` machinery but does not spawn the provider. Together with
+The probe runs only in `dome doctor` (the probe verb) and the opt-in
+`dome status --probe`; `dome check` reuses the same `HealthReport` machinery
+but does not spawn the provider. Doctor persists each probe outcome to
+`.dome/state/model-provider-probe.json` (derived, gitignored — the same
+class as the serve heartbeat) so `dome status` can report last-known
+reachability for the cost of one JSON read; see §"`dome status`"
+"Model-provider reachability" for the cache-matching rule. Together with
 the existing `model.provider-missing` finding this makes the historical silent
 no-op loud: unconfigured, configured-but-dead, and configured-but-keyless
 vaults each get a distinct, actionable diagnostic line.
@@ -1691,9 +1787,13 @@ inspection, prints launchctl's stderr, and exits 1.
 `installed` (plist present in the LaunchAgents dir), and `loaded` (whether
 `launchctl print gui/<uid>/<label>` resolves) without mutating anything. A
 loaded service also writes the normal serve heartbeat, so `dome status`
-already shows `serve running` / `stale` while the agent is alive; surfacing
-installed-but-dead state directly inside `dome status` is a Phase 1 follow-up
-(use `dome install --status` until it lands).
+shows `serve running` / `stale` while the agent is alive, and `dome status`
+also carries the service line directly (`service_status` /
+`service_label`, via the shared `probeServiceState` helper): installed-but-
+not-loaded routes the `service_not_loaded` attention reason to
+`dome restart`. `dome install --status` remains the row-level probe (it
+also checks `loaded` for the deleted-plist-but-loaded edge, which the
+cheap status line skips).
 
 `--json` emits `dome.install/v1`: `{ schema, status:
 "installed" | "status" | "error", vault, label, plist, log?, installed?,
@@ -1733,6 +1833,41 @@ Non-macOS platforms get the same macOS-only refusal as `dome install`.
 
 Exit codes: 0 on success or already-not-installed; 1 on non-macOS platform,
 undeterminable uid, or unexpected I/O failure.
+
+### `dome restart [--vault <path>] [--json]`
+
+Restarts the vault's ambient launchd service: `launchctl bootout
+gui/<uid>/<label>` (failure ignored when the service is not loaded — a dead
+service is exactly why an operator restarts), then `launchctl bootstrap
+gui/<uid> <plist>` **from the existing plist on disk**.
+
+The plist is deliberately **not re-rendered**. The service's
+`EnvironmentVariables` entries (`--env` / `--env-file` credentials such as
+`ANTHROPIC_API_KEY`) are remembered only inside the plist itself —
+re-rendering from scratch would silently drop them, which is the failure
+mode `dome install` re-runs already carry ("env entries are not remembered
+across re-installs"). Restart is therefore the safe "bounce the daemon"
+verb after a config edit, a wedged host, or an environment change applied
+via `launchctl setenv`; `dome install` remains the only path that rewrites
+the plist.
+
+Refusals are clean and mutate nothing: when no plist is installed for the
+vault, exit 64 (EX_USAGE) with a pointer to `dome install`; non-macOS
+platforms and uid-less environments get the same exit-1 refusal shape as
+`dome install` / `dome uninstall`. A failed `bootstrap` leaves the plist in
+place, prints launchctl's stderr, and exits 1.
+
+`--json` emits `dome.restart/v1`: `{ schema, status: "restarted" | "error",
+vault, label, plist, error? }`.
+
+Testability matches install: `runRestart` accepts the same injected
+`ServiceDeps` (platform, uid, LaunchAgents dir, launchctl runner), so tests
+drive the bootout/bootstrap sequence against the recording fake without
+touching a real service manager.
+
+Exit codes: 0 on a successful restart; 64 (EX_USAGE) when no plist is
+installed for the vault; 1 on non-macOS platform, undeterminable uid,
+`launchctl bootstrap` failure, or unexpected I/O failure.
 
 ### `dome mcp [--vault <path>] [--bundles-root <path>]`
 
@@ -1809,9 +1944,11 @@ The CLI is the primary v1 control surface for agentic harnesses, but the normal
 Claude Code grammar is intentionally small: `serve` / `sync` drive the
 compiler, `status` routes attention, `check` explains it, and `resolve` records
 the user's decision. Optional view commands read adopted state when explicitly
-useful. Advanced commands (`inspect`, `doctor`, `answer`, `run`, `rebuild`)
-remain named because they are valuable for debugging, scripting, and extension
-development, not because agents should choose among them during the daily loop.
+useful. Advanced commands (`inspect`, `doctor`, `answer`, `run`, `rebuild`,
+`reanchor`)
+remain named because they are valuable for debugging, scripting, extension
+development, and explicit recovery, not because agents should choose among
+them during the daily loop.
 
 Extension-defined view commands can start behind `dome run <name>` and
 graduate to dedicated aliases once their workflow deserves first-class help

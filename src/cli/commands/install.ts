@@ -1,11 +1,14 @@
-// cli/commands/install: `dome install` / `dome uninstall` — Phase 1 of the
-// product wedge (docs/wedge.md §"Phase 1 — Ambient daemon").
+// cli/commands/install: `dome install` / `dome uninstall` / `dome restart` —
+// Phase 1 of the product wedge (docs/wedge.md §"Phase 1 — Ambient daemon").
 //
-// Per docs/wiki/specs/cli.md §"dome install" / §"dome uninstall", this makes
-// the local compiler host ambient on macOS: `dome install` generates a
-// launchd LaunchAgent that runs `dome serve` for the vault (RunAtLoad +
-// KeepAlive, logs to `.dome/state/serve.log`) and loads it via `launchctl
-// bootstrap gui/<uid>`; `dome uninstall` boots it out and removes the plist.
+// Per docs/wiki/specs/cli.md §"dome install" / §"dome uninstall" /
+// §"dome restart", this makes the local compiler host ambient on macOS:
+// `dome install` generates a launchd LaunchAgent that runs `dome serve` for
+// the vault (RunAtLoad + KeepAlive, logs to `.dome/state/serve.log`) and
+// loads it via `launchctl bootstrap gui/<uid>`; `dome uninstall` boots it
+// out and removes the plist; `dome restart` boots it out and bootstraps
+// again from the existing plist on disk (never re-rendered — that would
+// drop user `--env` entries).
 //
 // Design constraints carried from the spec:
 //
@@ -82,8 +85,8 @@ const SERVICE_PATH_STANDARD_DIRS = [
 /** Same SDK-entry resolution as `dome serve --daemon` (see serve.ts). */
 const DOME_BIN = resolve(import.meta.dir, "../../../bin/dome");
 
-const MACOS_ONLY_MESSAGE =
-  "launchd service install is macOS-only; run `dome serve` under your service manager";
+const macosOnlyMessage = (verb: "install" | "uninstall" | "restart"): string =>
+  `launchd service ${verb} is macOS-only; run \`dome serve\` under your service manager`;
 
 // ----- Public types ---------------------------------------------------------
 
@@ -127,6 +130,11 @@ export type RunInstallOptions = {
 };
 
 export type RunUninstallOptions = {
+  readonly vault?: string | undefined;
+  readonly json?: boolean | undefined;
+};
+
+export type RunRestartOptions = {
   readonly vault?: string | undefined;
   readonly json?: boolean | undefined;
 };
@@ -401,6 +409,136 @@ export async function runUninstall(
   }
 }
 
+// ----- probeServiceState ----------------------------------------------------
+
+/**
+ * Read-only launchd service state for a vault, shared by `dome install
+ * --status` and the `dome status` service line. `loaded` is probed via
+ * `launchctl print` only when the plist is installed — `dome status` is the
+ * cheap session pulse and must not spawn `launchctl` on every invocation of
+ * a vault that never installed the service. (The deleted-plist-but-loaded
+ * edge therefore reads as `not-installed` here; `dome uninstall` still
+ * boots that edge out.)
+ */
+export type ServiceState =
+  | { readonly supported: false }
+  | {
+      readonly supported: true;
+      readonly label: string;
+      readonly plist: string;
+      readonly installed: boolean;
+      /** Null when the loaded probe was skipped (not installed / no uid). */
+      readonly loaded: boolean | null;
+    };
+
+export async function probeServiceState(
+  vaultPath: string,
+  deps: ServiceDeps = {},
+): Promise<ServiceState> {
+  const d = resolveDeps(deps);
+  if (d.platform !== "darwin") return Object.freeze({ supported: false });
+
+  const label = serviceLabelForVault(resolve(vaultPath));
+  const plist = join(d.launchAgentsDir, `${label}.plist`);
+  const installed = existsSync(plist);
+  let loaded: boolean | null = null;
+  if (installed && d.uid !== null) {
+    const print = await d.launchctl(["print", `gui/${d.uid}/${label}`]);
+    loaded = print.exitCode === 0;
+  }
+  return Object.freeze({ supported: true, label, plist, installed, loaded });
+}
+
+// ----- runRestart -----------------------------------------------------------
+
+/**
+ * Execute `dome restart`: bootout + bootstrap from the **existing plist on
+ * disk**. The plist is deliberately NOT rebuilt — re-rendering would drop the
+ * user's `--env` / `--env-file` EnvironmentVariables entries, which are only
+ * remembered inside the plist itself (see `resolveServiceEnvironment`).
+ * `dome install` remains the path that rewrites the plist.
+ *
+ * Returns the exit code: 0 on a successful restart; 64 (EX_USAGE) when no
+ * plist is installed for the vault; 1 on non-macOS platform, undeterminable
+ * uid, or `launchctl bootstrap` failure.
+ */
+export async function runRestart(
+  options: RunRestartOptions = {},
+  deps: ServiceDeps = {},
+): Promise<number> {
+  const vaultPath = resolve(options.vault ?? process.cwd());
+  const d = resolveDeps(deps);
+  const json = options.json === true;
+
+  const refusal = refuseUnsupportedHost("restart", vaultPath, d, json);
+  if (refusal !== null) return refusal;
+  const uid = d.uid as number;
+
+  const label = serviceLabelForVault(vaultPath);
+  const plistPath = join(d.launchAgentsDir, `${label}.plist`);
+
+  if (!existsSync(plistPath)) {
+    const error =
+      `not installed (no plist at ${plistPath}); run \`dome install\` first`;
+    if (json) {
+      console.log(formatJson({
+        schema: "dome.restart/v1",
+        status: "error",
+        vault: vaultPath,
+        label,
+        plist: plistPath,
+        error,
+      }));
+    } else {
+      console.error(`dome restart: ${error}`);
+    }
+    return EX_USAGE;
+  }
+
+  try {
+    // Same bootout-first shape as install: failure is expected when the
+    // service is not currently loaded (a dead service is exactly why an
+    // operator restarts).
+    await d.launchctl(["bootout", `gui/${uid}/${label}`]);
+
+    const bootstrap = await d.launchctl(["bootstrap", `gui/${uid}`, plistPath]);
+    if (bootstrap.exitCode !== 0) {
+      const detail = bootstrap.stderr.trim() || bootstrap.stdout.trim() ||
+        `exit ${bootstrap.exitCode}`;
+      const message =
+        `launchctl bootstrap gui/${uid} failed: ${detail} (plist left at ${plistPath})`;
+      if (json) {
+        console.log(formatJson({
+          schema: "dome.restart/v1",
+          status: "error",
+          vault: vaultPath,
+          label,
+          plist: plistPath,
+          error: message,
+        }));
+      } else {
+        console.error(`dome restart: ${message}`);
+      }
+      return 1;
+    }
+
+    if (json) {
+      console.log(formatJson({
+        schema: "dome.restart/v1",
+        status: "restarted",
+        vault: vaultPath,
+        label,
+        plist: plistPath,
+      }));
+    } else {
+      printRestartSummary({ vaultPath, label, plistPath });
+    }
+    return 0;
+  } catch (e) {
+    return reportFailure("restart", vaultPath, label, plistPath, e, json);
+  }
+}
+
 // ----- internals ------------------------------------------------------------
 
 type ResolvedServiceDeps = {
@@ -516,13 +654,13 @@ function reportUsageError(input: {
  * Returns the exit code to surface, or null when the host is usable.
  */
 function refuseUnsupportedHost(
-  verb: "install" | "uninstall",
+  verb: "install" | "uninstall" | "restart",
   vaultPath: string,
   d: ResolvedServiceDeps,
   json: boolean,
 ): number | null {
   const error = d.platform !== "darwin"
-    ? MACOS_ONLY_MESSAGE
+    ? macosOnlyMessage(verb)
     : d.uid === null
       ? "cannot determine the current uid for the launchd gui domain"
       : null;
@@ -634,6 +772,30 @@ function printInstallSummary(input: {
   });
 }
 
+function printRestartSummary(input: {
+  readonly vaultPath: string;
+  readonly label: string;
+  readonly plistPath: string;
+}): void {
+  const caps = resolveCaps();
+  const tone: Status = { tone: "ok", label: "service restarted" };
+  const rows: KvRow[] = [
+    { label: "label", value: input.label },
+    { label: "plist", value: input.plistPath, tone: "muted" },
+    { label: "vault", value: input.vaultPath, tone: "muted" },
+  ];
+  const lines = [
+    headline(
+      { cmd: "restart", context: basename(input.vaultPath) },
+      tone,
+      caps,
+    ),
+    ...section("Service", kv(rows, caps), caps),
+    ...footer(tone, caps),
+  ];
+  console.log(lines.join("\n"));
+}
+
 function printUninstallSummary(input: {
   readonly vaultPath: string;
   readonly label: string;
@@ -651,7 +813,7 @@ function printUninstallSummary(input: {
 }
 
 function reportFailure(
-  verb: "install" | "uninstall",
+  verb: "install" | "uninstall" | "restart",
   vaultPath: string,
   label: string,
   plistPath: string,

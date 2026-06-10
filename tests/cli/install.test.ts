@@ -16,6 +16,7 @@ import { join } from "node:path";
 import {
   renderServePlist,
   runInstall,
+  runRestart,
   runUninstall,
   serviceLabelForVault,
   servicePath,
@@ -469,6 +470,125 @@ describe("runUninstall", () => {
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("macOS-only");
     expect(launchctl.calls).toEqual([]);
+  });
+});
+
+// ----- runRestart ---------------------------------------------------------------
+
+describe("runRestart", () => {
+  test("boots out then bootstraps from the existing plist, preserving --env entries", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const installCtl = fakeLaunchctl();
+
+    // Install with a credential entry — the restart must keep it, which is
+    // only possible if the plist is NOT re-rendered.
+    expect(
+      await runInstall(
+        { vault, env: ["ANTHROPIC_API_KEY=sk-keep-me"] },
+        depsFor(agents, installCtl.runner),
+      ),
+    ).toBe(0);
+    const label = serviceLabelForVault(vault);
+    const plistPath = join(agents, `${label}.plist`);
+    const installedPlist = await readFile(plistPath, "utf8");
+    expect(installedPlist).toContain("<string>sk-keep-me</string>");
+
+    const restartCtl = fakeLaunchctl();
+    expect(
+      await runRestart({ vault }, depsFor(agents, restartCtl.runner)),
+    ).toBe(0);
+
+    // Exact restart sequence: bootout (failure tolerated), then bootstrap
+    // pointing at the on-disk plist.
+    expect(restartCtl.calls).toEqual([
+      ["bootout", `gui/501/${label}`],
+      ["bootstrap", "gui/501", plistPath],
+    ]);
+    // The plist is byte-identical — restart never rewrites it.
+    expect(await readFile(plistPath, "utf8")).toBe(installedPlist);
+    expect(logs.join("\n")).toContain("service restarted");
+  });
+
+  test("refuses with exit 64 when no plist is installed, touching nothing", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    const code = await runRestart(
+      { vault },
+      depsFor(agents, launchctl.runner),
+    );
+    expect(code).toBe(64);
+    expect(errors.join("\n")).toContain("not installed");
+    expect(errors.join("\n")).toContain("dome install");
+    expect(launchctl.calls).toEqual([]);
+  });
+
+  test("non-macOS platforms refuse with the macOS-only message", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl();
+
+    const code = await runRestart(
+      { vault },
+      depsFor(agents, launchctl.runner, { platform: "linux" }),
+    );
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain(
+      "launchd service restart is macOS-only; run `dome serve` under your service manager",
+    );
+    expect(launchctl.calls).toEqual([]);
+  });
+
+  test("bootstrap failure exits 1, surfaces stderr, and leaves the plist for inspection", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const deps = depsFor(agents, fakeLaunchctl().runner);
+    expect(await runInstall({ vault }, deps)).toBe(0);
+
+    const failing = fakeLaunchctl({
+      bootstrap: {
+        exitCode: 5,
+        stdout: "",
+        stderr: "Bootstrap failed: 5: Input/output error",
+      },
+    });
+    const code = await runRestart(
+      { vault },
+      depsFor(agents, failing.runner),
+    );
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("Bootstrap failed: 5");
+    expect(
+      existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)),
+    ).toBe(true);
+  });
+
+  test("--json emits the dome.restart/v1 payload on success and refusal", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const deps = depsFor(agents, fakeLaunchctl().runner);
+
+    // Refusal first (not installed).
+    expect(await runRestart({ vault, json: true }, deps)).toBe(64);
+    let payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.restart/v1");
+    expect(payload["status"]).toBe("error");
+    expect(String(payload["error"])).toContain("not installed");
+
+    logs = [];
+    expect(await runInstall({ vault }, deps)).toBe(0);
+    logs = [];
+    expect(await runRestart({ vault, json: true }, deps)).toBe(0);
+    payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.restart/v1");
+    expect(payload["status"]).toBe("restarted");
+    expect(payload["vault"]).toBe(vault);
+    expect(payload["label"]).toBe(serviceLabelForVault(vault));
+    expect(payload["plist"]).toBe(
+      join(agents, `${serviceLabelForVault(vault)}.plist`),
+    );
   });
 });
 

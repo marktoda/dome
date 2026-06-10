@@ -18,11 +18,12 @@ import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
-import { runInstall, runUninstall } from "./commands/install";
+import { runInstall, runRestart, runUninstall } from "./commands/install";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runQuery } from "./commands/query";
+import { runReanchor } from "./commands/reanchor";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
@@ -392,6 +393,29 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("reanchor", { hidden: true })
+    .description(
+      "Re-anchor the adopted ref after a history rewrite (backs up the old SHA first).",
+    )
+    .option(
+      "--to <sha>",
+      "Commit OID to anchor to (defaults to the current HEAD).",
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: ReanchorCliOptions) => {
+      setExitCode(
+        await runReanchor({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          to: options.to,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("rebuild", { hidden: true })
     .description("Rebuild projection.db from the adopted commit.")
     .option("--json", "Emit JSON.")
@@ -473,6 +497,20 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("restart")
+    .description("Restart the vault's launchd service from the installed plist.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: RestartCliOptions) => {
+      setExitCode(
+        await runRestart({
+          vault: options.vault,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("uninstall")
     .description("Boot out and remove the vault's launchd service.")
     .option("--json", "Emit JSON.")
@@ -508,6 +546,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .command("status")
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
+    .option(
+      "--probe",
+      "Run a fresh model-provider probe (up to 8s) instead of the cached result.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -517,6 +559,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
           loops: options.loops,
+          probe: options.probe,
           json: options.json,
         }),
       );
@@ -579,6 +622,11 @@ type InstallCliOptions = {
 };
 
 type UninstallCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type RestartCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
 };
@@ -662,6 +710,13 @@ type ExportContextCliOptions = {
   readonly bundlesRoot?: string;
 };
 
+type ReanchorCliOptions = {
+  readonly to?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
 type RebuildCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
@@ -680,6 +735,7 @@ type ServeCliOptions = {
 
 type StatusCliOptions = {
   readonly loops?: boolean;
+  readonly probe?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

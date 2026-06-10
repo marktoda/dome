@@ -605,8 +605,11 @@ async function pollLoop(input: {
         "dome serve: HEAD became detached; pausing adoption until a branch is checked out again.",
       );
     } else if (drift.kind === "diverged" && lastKind !== "diverged") {
+      // Log once on the transition into divergence (no per-poll spam) and
+      // pause adoption — never silently follow a rewritten history. The
+      // loop keeps re-checking each tick so recovery resumes immediately.
       console.error(
-        `dome serve: adopted ref for ${drift.branch} (${drift.adopted.slice(0, 7)}) is not an ancestor of HEAD ${drift.head.slice(0, 7)}; pausing adoption until git history is repaired.`,
+        `dome serve: adopted ref for ${drift.branch} (${drift.adopted.slice(0, 7)}) is not an ancestor of HEAD ${drift.head.slice(0, 7)}; pausing adoption until git history is repaired or \`dome reanchor\` accepts the rewritten HEAD.`,
       );
     }
     // `in-sync` and `no-commits` are quiet steady states; no log spam.
@@ -812,7 +815,7 @@ function printTickLine(
   if (tick.kind === "diverged") {
     if (opts.quiet) return;
     console.error(
-      `dome serve: refused ${tick.branch}: adopted ref ${tick.adopted.slice(0, 7)} is not an ancestor of HEAD ${tick.head.slice(0, 7)}.`,
+      `dome serve: refused ${tick.branch}: adopted ref ${tick.adopted.slice(0, 7)} is not an ancestor of HEAD ${tick.head.slice(0, 7)}; repair git history or run \`dome reanchor\`.`,
     );
     return;
   }

@@ -72,7 +72,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 ## Gotchas
 
-- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; sync refuses; recovery is currently manual via git history/reflog until the answer-mediated force-advance flow ships.
+- [[wiki/gotchas/adopted-ref-divergence]] — Force-push / hard-reset / rebase rewrites HEAD so adopted ref is no longer an ancestor; sync refuses, serve pauses, health raises one `adopted-ref.diverged` finding; recovery is `dome reanchor` (backs up the old SHA under refs/dome/backup/ first) or a git reflog restore.
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
 - [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Garden-LLM processors handle AI SDK v6 inference; revisit on next AI SDK major bump.
