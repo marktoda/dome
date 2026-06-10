@@ -13,6 +13,8 @@ sources:
 
 This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
+The `dome.agent` bundle also ships three **deterministic** (non-LLM) processors for preference promotion — `preference-signals`, `preference-promotion`, and `preference-promotion-answer` — normative at [[wiki/specs/preferences]]. They share the bundle because promotion configures agent behavior (the promoted block rides every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
+
 ## The agent-as-processor model
 
 An **autonomous agent** is a garden-phase `kind: llm` [[wiki/specs/processors|Processor]] whose `run(ctx)` executes a tool-use loop against the vault snapshot and emits the result as a `PatchEffect` (plus optional `QuestionEffect`s). No new primitive — still Vault / Proposal / Processor / Effect. The four-concept core stays sealed.
@@ -97,9 +99,9 @@ Task-routing has no dedicated tool: the agent reads the target (daily note or en
 
 **Default capability grant (`.dome/config.yaml`):**
 
-- `read`: `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `core.md`
+- `read`: `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `core.md`, `preferences/signals.md`
 - `model.invoke`: `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25`
-- `patch.auto`: `wiki/**/*.md`, `notes/**/*.md`, `index.md`, `log.md`, `inbox/processed/*.md`, `inbox/raw/*.md`  (`raw/**` is deliberately absent — see §"Grant-as-boundary")
+- `patch.auto`: `wiki/**/*.md`, `notes/**/*.md`, `index.md`, `log.md`, `inbox/processed/*.md`, `inbox/raw/*.md`, `preferences/signals.md`  (`raw/**` is deliberately absent — see §"Grant-as-boundary")
 - `question.ask: true`
 - **NOT `graph.write`** — required by `MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS`
 
@@ -139,7 +141,7 @@ The consolidator is the **contractive counterweight** to ingest: a nightly vault
 - **Cross-run memory:** a ledger file (default top-level `consolidation-ledger.md`, sibling of `log.md`, outside `wiki/`) records each run's date (the recency cutoff for the next run), merges done, and pairs judged *not* duplicates (so they're never re-litigated). The path is configurable via `extensions.dome.agent.config.consolidation_ledger_path` (a relative vault `.md` path; default `consolidation-ledger.md`). A malformed value (non-string, non-`.md`, absolute, or path-escaping) does not crash the nightly run: the processor falls back to the default path and emits a `dome.agent.consolidate-config-invalid` warning diagnostic. A custom path requires matching `read` + `patch.auto` grant entries in `.dome/config.yaml` — grants are static globs, so the processor cannot widen its own write boundary by config.
 - **Per-run caps (hard):** `maxSteps: 50`, `maxDailyCostUsd: 10`, and a hard patch cap of **30 changed files per run** enforced in processor code — a run whose accumulated edits exceed the cap is rolled back entirely (questions survive; a `dome.agent.consolidate-overreach` warning diagnostic is emitted). A single cumulative `PatchEffect` per run.
 - **Atomic per run:** a mid-run throw can leave a half-done merge (a page flipped to superseded before its inbound links were rewritten), so the consolidator drops all partial edits on throw and emits only a `dome.agent.consolidate-failed` diagnostic. Budget truncation is not a throw — its partial work is intended and lands with a truncation diagnostic.
-- **Grant:** `read` + `patch.auto` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md` (plus `read` over `core.md` — never `patch.auto`, per §"Core-memory injection"); `model.invoke`; `question.ask`. **Not `graph.write`.**
+- **Grant:** `read` + `patch.auto` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`, `preferences/signals.md` (plus `read` over `core.md` — never `patch.auto`, per §"Core-memory injection"); `model.invoke`; `question.ask`. **Not `graph.write`.**
 
 ## `dome.agent.brief` — the third agent (morning brief)
 
@@ -165,7 +167,7 @@ The brief composer is the [[wedge]] phase-4 push surface: sleep-time compute aim
 - **Garden projection read:** the brief reads open questions through `ctx.projection`. The processor runtime threads the scoped read-only projection query view into **garden** contexts as well as view contexts (adoption stays snapshot-only for fixed-point determinism); see [[wiki/specs/processors]].
 - **Stale-loops context (deterministic pre-run):** the task turn lists every item whose `dome.attention.discount` fact (read from `ctx.projection.facts`, per [[wiki/specs/task-lifecycle]] §"Attention discounting") carries `discount ≥ 0.4` — rendered as `"<body>" (from <path>) — surfaced <N>x without action` and framed as DATA, not instructions. The charter's standing rule: compress these into a **single stale-loops summary bullet** in the yesterday block or raise **one** `askOwner` question — never re-list them at full prominence. The list itself is processor-derived; the model never invents or extends it.
 - **Daily path:** resolved from `extensions.dome.agent.config.daily_path` with the same template rules as `dome.daily` (default `wiki/dailies/{date}.md`). A vault overriding `dome.daily`'s `daily_path` must mirror the key in `dome.agent`'s config — `dome doctor` raises a `config.daily-path-mismatch` warning finding when both bundles are enabled and the two keys diverge (overriding only one yields a wrong-path brief plus a duplicate skeleton at 06:00).
-- **Grant:** `read` over `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`, `sources/calendar/*.md`, `core.md`; `patch.auto` over `wiki/dailies/*.md` + `notes/*.md` only (the daily-path targets — the brief's write blast radius is deliberately narrower than ingest's); `model.invoke` `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25`; `question.ask`. **Not `graph.write`.** The read grant must cover every path other `dome.agent` processors cite in their questions' `sourceRefs`: the scoped projection view drops a question whose refs include an unreadable path, and ingest's askOwner questions ref `inbox/raw/*.md` while consolidate's ref the consolidation ledger. A vault configuring a custom `consolidation_ledger_path` must add a matching `read` grant entry for the brief, the same way consolidate's own custom-path grant rule works (§"`dome.agent.consolidate`").
+- **Grant:** `read` over `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`, `sources/calendar/*.md`, `core.md`, `preferences/signals.md`; `patch.auto` over `wiki/dailies/*.md` + `notes/*.md` + `preferences/signals.md` only (the daily-path targets plus the signals append — the brief's write blast radius is deliberately narrower than ingest's); `model.invoke` `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25`; `question.ask`. **Not `graph.write`.** The read grant must cover every path other `dome.agent` processors cite in their questions' `sourceRefs`: the scoped projection view drops a question whose refs include an unreadable path, and ingest's askOwner questions ref `inbox/raw/*.md` while consolidate's ref the consolidation ledger and the preference-promotion questions ref `preferences/signals.md`. A vault configuring a custom `consolidation_ledger_path` must add a matching `read` grant entry for the brief, the same way consolidate's own custom-path grant rule works (§"`dome.agent.consolidate`"). The splice guard admits a `preferences/signals.md` edit only when it is an append of well-formed signal lines (per [[wiki/specs/preferences]]); any other edit outside the daily note is dropped as out-of-scope.
 
 ## Core-memory injection (`core.md`)
 
@@ -204,13 +206,29 @@ start:
   `dome.markdown.core-size` lint at 6,000 characters; the injection cap is
   the structural floor behind it.
 - **Propose-only enforcement.** `core.md` appears in each agent's `read`
-  declaration and in **no `patch.auto` declaration** — the grant-aware write
-  tools reject `core.md` at tool time and the broker would refuse it at apply
-  time. Interactive bundles must keep `core.md` out of `patch.auto`
-  (the canonical grant shape); the single planned auto-writer is the
-  answer-mediated preference-promotion handler ([[memory]] plan M5 —
-  decision 4: the question *was* the review). This spec documents the grant
-  shape only; the M5 handler is not part of the shipped surface.
+  declaration and in **no agent's `patch.auto` declaration** — the
+  grant-aware write tools reject `core.md` at tool time and the broker would
+  refuse it at apply time. Interactive bundles must keep `core.md` out of
+  `patch.auto` (the canonical grant shape). The **single shipped exception**
+  is the answer-mediated `dome.agent.preference-promotion-answer` handler
+  ([[memory]] decision 4: the question *was* the review), which declares
+  `patch.auto` over exactly `core.md` + `preferences/signals.md` and receives
+  a matching narrow per-processor replacement grant — see
+  [[wiki/specs/preferences]] §"The single-auto-writer exception". The
+  manifest lockstep test pins that no other processor in the bundle declares
+  `core.md` writable.
+
+## Preference signals (charter convention)
+
+Each agent charter carries **one standing instruction** for the promotion
+mechanism ([[wiki/specs/preferences]]): when the owner's content explicitly
+corrects how the agent should behave — filing location, naming, formatting,
+scope — append one dated signal line to `preferences/signals.md`
+(`- YYYY-MM-DD + <topic>:: <rule> (source: [[...]])`). This is an ordinary
+write inside each agent's grant; no new tool, no special effect. The brief's
+splice guard validates the append shape (signal lines only); ingest and
+consolidate appends land through the normal cumulative PatchEffect. Agents
+*write signals*, never the promoted block — promotion stays answer-mediated.
 
 ## Related
 
@@ -224,6 +242,7 @@ start:
 - [[wiki/specs/processors]] — the Processor type; phases; `kind: llm`
 - [[wiki/specs/capabilities]] — `model.invoke`, `patch.auto`, `question.ask`, `graph.write`
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
+- [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions, the single-auto-writer answer handler
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
 - [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds" — the calendar source-file shape the brief parses
 - [[wedge]] — phase 4: nightly consolidation + morning brief as the flagship push surface

@@ -173,10 +173,13 @@ File shape — plain markdown, no required frontmatter:
 ## Standing preferences
 ```
 
-An optional **generated block** is reserved for the planned preference-
-promotion answer handler (memory-quality plan M5), which will maintain a
-marker-delimited promoted-preferences region inside this page. Until that
-ships, the whole page is human prose.
+One **generated block** is machine-managed: the marker-delimited
+promoted-preferences region (`<!-- dome.agent:promoted-preferences:start -->`
+/ `<!-- dome.agent:promoted-preferences:end -->`) maintained by the
+preference-promotion answer handler per [[wiki/specs/preferences]] — one
+sorted line per promoted rule (`- <topic>:: <rule> (confidence 0.NN)`). The
+handler creates the block after the `## Standing preferences` heading when
+absent. Everything outside the markers is human prose.
 
 **Size budget.** Core memory must stay small enough to load everywhere — it
 is prepended to every agent run, so it is a context line-item, not a junk
@@ -191,13 +194,35 @@ honest contract — `dome.markdown` does not read `dome.agent`'s config).
 `core.md` but never auto-write it: include `core.md` in the bundle's `read`
 grant and **exclude it from every `patch.auto` grant**. Agents that want to
 change core memory propose — a review patch or a `QuestionEffect` — and the
-owner edits the page or accepts the proposal. The only planned auto-writer is
-M5's answer-mediated promotion handler (the question *was* the review); until
-it ships, nothing auto-writes `core.md`. This is decision 4 of the
-[[memory]] plan ledger.
+owner edits the page or accepts the proposal. The single auto-writer is the
+shipped `dome.agent.preference-promotion-answer` handler (the question *was*
+the review), which receives a narrow per-processor replacement grant — see
+[[wiki/specs/preferences]] §"The single-auto-writer exception". This is
+decision 4 of the [[memory]] plan ledger.
 
 `dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
 overwritten on re-run) — see [[wiki/specs/cli]] §"dome init".
+
+## `preferences/signals.md` — preference signals (convention)
+
+`preferences/signals.md` is the **append-only preference-signal page** for
+the promotion mechanism specced at [[wiki/specs/preferences]]. By the
+category table above, `preferences/` is `external` — a documented convention,
+not a new category. One dated, signed line per signal:
+
+```markdown
+- 2026-06-09 + filing:: meeting notes go under notes/, not entities/ (source: [[wiki/dailies/2026-06-09]])
+```
+
+`+` is a correction supporting the rule; `-` is evidence against it; the
+topic slug is the aggregation key. Writers: the three `dome.agent` charters
+(within their ordinary grants — the file is in each agent's `read` +
+`patch.auto` declaration), foreground agents per the vault AGENTS.md
+convention, the owner by hand, and the promotion answer handler (rejection
+tombstones). The deterministic `dome.agent.preference-signals` processor
+derives rebuildable `dome.preference.*` facts from it; malformed lines
+degrade to one info diagnostic, never a crash. Append-only is convention
+(legibility + stable line refs), not broker-enforced in v1.
 
 ## `log.md` — append-only run-projection
 
@@ -362,7 +387,8 @@ The capability broker enforces ownership. Default rules:
 | `index.md` | planned `dome.index` (via `owns.path`) |
 | `log.md` | planned `dome.log` (via `owns.path`) |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
-| `core.md` | nobody (propose-only) — agents read it, no `patch.auto` grants it; the planned M5 answer handler is the sole auto-writer (§"`core.md`") |
+| `core.md` | propose-only — agents read it; `dome.agent.preference-promotion-answer` is the sole auto-writer via a narrow per-processor grant ([[wiki/specs/preferences]]) |
+| `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

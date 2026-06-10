@@ -137,11 +137,14 @@ the four pre-existing `v1-dogfood-preflight` failures. M1 → (M2 ∥ M3) →
 
 ### M5 — Preference promotion (deterministic dream pass)
 
+Specced at [[wiki/specs/preferences]] (normative).
+
 - **Signals in markdown**: `preferences/signals.md` — dated, signed lines
   (`- 2026-06-09 + filing:: meeting notes go under notes/, not entities/
   (source: [[...]])`). Charters and the foreground contract write a signal
-  when the user corrects agent behavior; two git-derived signals come free
-  (human revert of an engine patch; post-ingest file move).
+  when the user corrects agent behavior; the two git-derived signals (human
+  revert of an engine patch; post-ingest file move) are banked as follow-up —
+  v1 signals are explicit at write time.
 - **Counters as facts**: deterministic processor tallies same-sign signals
   per topic (rebuildable).
 - **Promotion**: ≥3 same-sign signals within 30 days → QuestionEffect
