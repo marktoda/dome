@@ -15,8 +15,7 @@ import {
   validateSqliteTableShapes,
   type SqliteTableShape,
 } from "../sqlite-shape";
-
-const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+import { configureSqliteConnection } from "../sqlite/connection";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -170,10 +169,6 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
-}
-
-function configureSqliteConnection(db: Database): void {
-  db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {

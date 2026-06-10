@@ -85,11 +85,11 @@ import {
   validateSqliteTableShapes,
   type SqliteTableShape,
 } from "../sqlite-shape";
+import { configureSqliteConnection } from "../sqlite/connection";
 
 const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
   "82000d3d8dd8578f9c34d23fcca621c085aaf78d5d228ee62df824b739f19a68";
 const OUTBOX_EPOCH_ISO = "1970-01-01T00:00:00.000Z";
-const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -399,10 +399,6 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
-}
-
-function configureSqliteConnection(db: Database): void {
-  db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 function applyNextAttemptAtMigration(db: Database): void {

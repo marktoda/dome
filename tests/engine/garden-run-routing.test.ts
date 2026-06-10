@@ -170,7 +170,8 @@ describe("routeGardenRunEffects projection-maintenance hooks", () => {
     await route({ result: makeResult({ effects: [] }), sinks });
 
     expect(resolveDiagnosticsCalled).toBe(true);
-    expect(emitted).toEqual([]);
+    expect(emitted).not.toBeNull();
+    expect(emitted!).toHaveLength(0);
   });
 
   test("a non-succeeded run calls no resolve hooks (a failed run must not clear prior findings)", async () => {

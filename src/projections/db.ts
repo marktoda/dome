@@ -73,8 +73,7 @@ import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
-
-const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+import { configureSqliteConnection } from "../sqlite/connection";
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -852,10 +851,6 @@ function applyDdl(db: Database): void {
     db.run("ROLLBACK");
     throw e;
   }
-}
-
-function configureSqliteConnection(db: Database): void {
-  db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 function projectionStateExists(db: Database): boolean {
