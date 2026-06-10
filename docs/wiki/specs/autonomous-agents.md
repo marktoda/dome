@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-08
-updated: 2026-06-09
+updated: 2026-06-10
 sources:
   - "[[superpowers/specs/2026-06-08-autonomous-agents-ingest-design]]"
   - "[[wedge]]"
@@ -148,8 +148,8 @@ The consolidator is the **contractive counterweight** to ingest: a nightly vault
 The brief composer is the [[wedge]] phase-4 push surface: sleep-time compute aimed at the one perfectly predictable query. It composes the morning brief **into today's daily note as small generated blocks** — never a separate document (extends [[v1]] decision 1 and wedge decision 3).
 
 - **Phase / kind:** garden, `kind: llm`. **Trigger:** `schedule` only (`30 5 * * *`).
-- **Ordering with `dome.daily`:** the brief fires at 05:30; `dome.daily.create-daily` fires at 06:00. The brief does not depend on the daily existing — when today's note is absent it creates the same skeleton through `dome.daily`'s shared `renderDailySkeleton` + start-context helpers, so `create-daily` later finds the file and no-ops. The brief's adopted patch emits `file.created`/`document.changed` signals, which trigger `dome.daily.carry-forward` to raise the **ranked open-loops surface** — the brief deliberately does not re-derive open-loop ranking; that block stays owned by carry-forward.
-- **Block ownership is disjoint:** `dome.daily` owns its marker blocks (`dome.daily:start-context`, `dome.daily:open-loops`, `dome.daily:carried-forward`); the brief owns three `dome.agent.brief:*` marker blocks. No two processors write the same region.
+- **Ordering with `dome.daily`:** the brief fires at 05:30; `dome.daily.create-daily` fires at 06:00. The brief does not depend on the daily existing — when today's note is absent it creates the same skeleton through `dome.daily`'s shared `renderDailySkeleton` + start-context helpers, so `create-daily` later finds the file and no-ops. The brief's adopted patch emits `file.created`/`document.changed` signals, which trigger `dome.daily.carry-forward` to raise the **ranked open-loops surface** — the brief deliberately does not re-derive open-loop ranking; that block stays owned by carry-forward. The full overnight choreography (02:00 consolidate → 03:00 sweep → calendar → 05:30 brief → 06:00 create-daily/carry-forward) and the edition's degradation ladder are normative at [[wiki/specs/daily-surface]].
+- **Block ownership is disjoint:** `dome.daily` owns its marker blocks; the brief owns its `dome.agent.brief:*` marker blocks. No two processors write the same region. The cross-bundle block-ownership and section-contract tables (every block, writer, reader, timing, status) are normative at [[wiki/specs/daily-surface]] §"Block ownership".
 
 **The three brief blocks** (plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks):
 
@@ -244,5 +244,6 @@ consolidate appends land through the normal cumulative PatchEffect. Agents
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
 - [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions, the single-auto-writer answer handler
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
+- [[wiki/specs/daily-surface]] — the daily note as a product surface: section contract, block ownership, choreography, degradation ladder, the `dome.daily.edition` loop
 - [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds" — the calendar source-file shape the brief parses
 - [[wedge]] — phase 4: nightly consolidation + morning brief as the flagship push surface

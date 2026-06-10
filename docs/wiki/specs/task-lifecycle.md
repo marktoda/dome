@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-03
-updated: 2026-06-09
+updated: 2026-06-10
 sources:
   - "[[v1]]"
 ---
@@ -20,7 +20,7 @@ Identity is anchored to the `^id`, not to a body-hash, because tasks **move**. A
 
 ## Generated-block markers (the splice-guard primitive)
 
-A **generated block** is a marker-delimited region of a markdown page that a processor owns and regenerates — `<!-- <owner>:<block>:start -->` … `<!-- <owner>:<block>:end -->`, where the owner is a dome namespace matching `dome(\.\w+)*` (e.g. `dome`, `dome.daily`, `dome.agent.brief`) and the block name is a slug. Everything outside the markers is human prose; no two processors write the same region (block ownership is disjoint, per [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`").
+A **generated block** is a marker-delimited region of a markdown page that a processor owns and regenerates — `<!-- <owner>:<block>:start -->` … `<!-- <owner>:<block>:end -->`, where the owner is a dome namespace matching `dome(\.\w+)*` (e.g. `dome`, `dome.daily`, `dome.agent.brief`) and the block name is a slug. Everything outside the markers is human prose; no two processors write the same region — block ownership is disjoint, and the canonical who-writes-which-block-in-the-daily table is [[wiki/specs/daily-surface]] §"Block ownership".
 
 The grammar is a core primitive at `src/core/generated-block.ts` — pure (string-only, no IO), the sibling of `src/core/block-anchor.ts` — and it is the **only sanctioned marker implementation**. No processor hand-rolls marker matching, splicing, or stripping; the [[wiki/linters/generated-block-splice-guard]] fence fails CI when a non-test source file constructs marker text without importing the primitive. The primitive carries the two defenses every splice needs:
 
@@ -115,4 +115,5 @@ The integrity warden **degrades to a clean no-op** when no model provider is con
 - [[wiki/specs/processors]] — phases, triggers, `execution.class: llm`, idempotency
 - [[wiki/specs/effects]] — `QuestionEffect`, `PatchEffect`, `FactEffect`
 - [[wiki/specs/adoption]] — why garden-phase denials don't block the human
+- [[wiki/specs/daily-surface]] — the daily note as a product surface; where the hygiene processors sit in the 24-hour choreography
 - [[wiki/gotchas/garden-cascade-cap]] — why the briefing warden is cron-only
