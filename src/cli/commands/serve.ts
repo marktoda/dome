@@ -46,7 +46,7 @@ import {
 import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
 import { compileRange } from "../../engine/core/compile-range";
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 
 import {
   detectDrift,

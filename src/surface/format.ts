@@ -1,10 +1,8 @@
-// cli/format: output formatters for the CLI commands.
+// surface/format: canonical JSON serialization for surface documents.
 //
-// `formatJson(value)`: pretty-print arbitrary values as JSON.
-//
-// CLI commands print to stdout via `console.log`. This formatter
-// returns a string; the command handler writes it. Keeping it pure
-// makes it trivially unit-testable.
+// `formatJson(value)`: pretty-print arbitrary values as JSON. Returns a
+// string; the consuming adapter (CLI handler, MCP tool) decides where it
+// goes. Keeping it pure makes it trivially unit-testable.
 
 // ----- formatJson -----------------------------------------------------------
 

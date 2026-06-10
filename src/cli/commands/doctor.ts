@@ -19,7 +19,7 @@ import {
 import { writeModelProviderProbeCache } from "../../engine/host/model-provider-probe-cache";
 import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import { formatSeverity } from "../human-output";
 import {
   bullets,
@@ -33,7 +33,7 @@ import {
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 const EX_USAGE = 64;
 
 export type RunDoctorOptions = {

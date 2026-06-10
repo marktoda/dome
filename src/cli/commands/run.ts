@@ -44,8 +44,8 @@
 //     (`src/cli/index.ts`) calls `process.exit(code)`.
 //   - Console output goes through `console.log` / `console.error`.
 
-import { runSharedViewCommand } from "./view-shared";
-import { formatJson } from "../format";
+import { runSharedViewCommand } from "../../surface/view";
+import { formatJson } from "../../surface/format";
 import type { ViewEffect } from "../../core/effect";
 
 // ----- runRun ---------------------------------------------------------------

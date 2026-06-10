@@ -15,7 +15,7 @@ import { runStatus } from "../../src/cli/commands/status";
 import { runCheck } from "../../src/cli/commands/check";
 import { runInspect } from "../../src/cli/commands/inspect";
 import { runDoctor } from "../../src/cli/commands/doctor";
-import { COMMAND_ERROR_SCHEMA } from "../../src/cli/command-error";
+import { COMMAND_ERROR_SCHEMA } from "../../src/surface/command-error";
 import { commit, initRepo } from "../../src/git";
 
 let capturedOut: string[];

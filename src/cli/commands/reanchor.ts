@@ -39,7 +39,7 @@ import {
   runCompilerHostTick,
 } from "../../engine/host/compiler-host";
 import { openVaultRuntime } from "../../engine/host/vault-runtime";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import {
   footer,
   headline,
@@ -50,7 +50,7 @@ import {
 } from "../presenter";
 import { resolveBundleRoots } from "./sync-shared";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 const SCHEMA = "dome.reanchor/v1";
 const EX_USAGE = 64;
 

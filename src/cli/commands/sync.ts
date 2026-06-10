@@ -49,7 +49,7 @@ import {
   formatFilteredAdoptEvent,
   printHostFollowupLines,
 } from "./sync-shared";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import {
   countLatestActiveProblemRuns,
   countRuns,
@@ -63,12 +63,12 @@ import { queryQuestions } from "../../projections/questions";
 import {
   nextActionsForSync,
   type CliNextAction,
-} from "../next-actions";
+} from "../../surface/next-actions";
 import { formatSeverity } from "../human-output";
 import {
   countAttentionDiagnostics,
   isSourceBackedDiagnostic,
-} from "../diagnostic-summary";
+} from "../../surface/diagnostic-summary";
 import {
   footer,
   headline,
@@ -80,7 +80,7 @@ import {
   type Status,
 } from "../presenter";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 // ----- Public types ---------------------------------------------------------
 
 /**

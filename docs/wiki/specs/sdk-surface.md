@@ -24,7 +24,7 @@ composable-construction helpers.
 
 **`openVault` is the standard entry point.** Every surface consumes the
 wrapper: the CLI's view commands (`query`, `export-context`, `lint`,
-`run`, the daily wrappers — all via `cli/commands/view-shared.ts`),
+`run`, the daily wrappers — all via `src/surface/view.ts`),
 `resolve`/`answer`, `rebuild`, the MCP adapter, and future HTTP/voice
 shells. Direct `openVaultRuntime` use is reserved for the daemon and the
 operator internals that report on runtime guts the wrapper intentionally
@@ -553,6 +553,12 @@ both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
 | `src/surface/view.ts` | The shared view-command runners (`runSharedViewCommand`, `runStructuredViewCommand`) and `firstPartyViewNotFoundMessage` |
 | `src/surface/format.ts` | `formatJson` — the canonical JSON serialization for surface documents |
 | `src/surface/command-error.ts` | `COMMAND_ERROR_SCHEMA` (`dome.command-error/v1`) |
+| `src/surface/resolve-vault.ts` | `resolveVaultPath` — git-style upward vault-root discovery |
+| `src/surface/service-probe.ts` | launchd service identity (`vaultServiceSlug`, `serviceLabelForVault`) + read-only `probeServiceState`; the write-side service lifecycle stays in the CLI's `install` command |
+| `src/surface/diagnostic-summary.ts` | Diagnostic grouping/summary shaping embedded in the check/status documents |
+| `src/surface/next-actions.ts` | `next_actions` derivation (`nextActionsForCheck`, `nextActionsForStatus`) |
+| `src/surface/maintenance-loop-summary.ts` | `collectMaintenanceLoopSummaries` + the loop-summary types (rendering stays in `src/cli/maintenance-loop-summary.ts`) |
+| `src/surface/vault-analytics.ts` | `collectVaultAnalytics` — page/link/raw-file counts for the status document |
 
 ## Future direction (non-normative): `AbstractSurface`
 

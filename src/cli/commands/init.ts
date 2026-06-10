@@ -83,7 +83,7 @@ import {
   defaultConfigRecord,
   defaultConfigYaml,
 } from "../default-vault-config";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import {
   bullets,
   footer,
