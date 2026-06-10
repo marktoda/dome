@@ -33,7 +33,7 @@ Three properties drive the choice:
   last-reconcile-mtime.txt  # see [[wiki/specs/adoption]] §"Migration"
 ```
 
-The four `.db` files are independent SQLite databases. Splitting by concern (projections / answers / runs / outbox) keeps the schemas focused and the rebuild paths independent — wiping `projection.db` to recover from schema skew doesn't touch human answers or the run ledger's audit history.
+The four `.db` files are independent SQLite databases. Splitting by concern (projections / answers / runs / outbox) keeps the schemas focused and the rebuild paths independent — wiping `projection.db` to recover from schema skew doesn't touch human answers or the run ledger's audit history. A third store class — the dollar-cost **recomputable cache** (`embeddings.db`), distinct from both CPU-rebuildable projections and non-rebuildable durable operational state — is banked at [[wiki/specs/embeddings]] and not implemented.
 
 All four files are gitignored ([[wiki/specs/vault-layout]] §"Derived operational state"). They never appear in a Proposal.
 

@@ -153,6 +153,9 @@ the four pre-existing `v1-dogfood-preflight` failures. M1 → (M2 ∥ M3) →
 
 ### M6 — Banked embeddings design (spec-only)
 
+Specced at [[wiki/specs/embeddings]]; invariant drafted at
+[[wiki/invariants/EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE]] (`tier: deferred`).
+
 - Spec page: `dome.model-provider.embed/v1` envelope; `model.embed`
   capability (cost-capped, adoption-excluded); `embeddings.db` as a **new
   store class — recomputable cache** (content-hash × model-id keys,
