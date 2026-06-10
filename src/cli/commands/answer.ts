@@ -11,7 +11,7 @@ import type { AnswerHandlerDispatchResult } from "../../engine/host/question-ans
 import type { QuestionRecord } from "../../projections/questions";
 import { openVault, type ResolveOutcome } from "../../vault";
 
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import { formatCommand } from "../human-output";
 import {
   bullets,
@@ -22,8 +22,12 @@ import {
   section,
 } from "../presenter";
 
-import { resolveVaultPath } from "../resolve-vault";
-export const ANSWER_SCHEMA = "dome.answer/v1";
+import { resolveVaultPath } from "../../surface/resolve-vault";
+import {
+  ANSWER_SCHEMA,
+  answerHandlersJson,
+  questionRecordJson,
+} from "../../surface/answer";
 
 export type RunAnswerOptions = {
   readonly id?: string | number | undefined;
@@ -317,60 +321,6 @@ function printAnswerError(input: {
     return;
   }
   console.error(input.message);
-}
-
-/**
- * Render a question record as the `dome.answer/v1` question body — shared
- * by `dome resolve --json` and the MCP `resolve` tool.
- */
-export function questionRecordJson(record: QuestionRecord): Record<string, unknown> {
-  return {
-    id: record.id,
-    status: record.answeredAt === null ? "open" : "answered",
-    question: record.effect.question,
-    options: record.effect.options ?? null,
-    answer: record.answer,
-    asked_at: record.askedAt,
-    answered_at: record.answeredAt,
-    idempotency_key: record.effect.idempotencyKey,
-    processor_id: record.processorId,
-    adopted_commit: record.adoptedCommit,
-    source_refs: record.effect.sourceRefs,
-  };
-}
-
-/** Render an answer-handler dispatch as its `dome.answer/v1` body. */
-export function answerHandlersJson(
-  result: NonNullable<AnswerHandlerDispatchResult>,
-): Record<string, unknown> {
-  if (result.kind === "skipped") {
-    return { status: "skipped", reason: result.reason };
-  }
-  const failed =
-    result.result.runs.some((run) => run.executionStatus !== "succeeded") ||
-    result.result.diagnostics.some(
-      (diagnostic) =>
-        diagnostic.severity === "error" || diagnostic.severity === "block",
-    );
-  return {
-    status: failed ? "failed" : "handled",
-    adopted: result.adopted,
-    runs: result.result.runs.map((run) => ({
-      run_id: run.runId,
-      processor_id: run.processorId,
-      execution_status: run.executionStatus,
-      execution_error: run.executionError ?? null,
-      effect_count: run.effectCount,
-      authorized_patch_count: run.authorizedPatchCount,
-    })),
-    sub_proposals: result.result.subProposalCount,
-    rejected_patches: result.result.rejectedPatchCount,
-    diagnostics: result.result.diagnostics.map((diagnostic) => ({
-      code: diagnostic.code,
-      severity: diagnostic.severity,
-      message: diagnostic.message,
-    })),
-  };
 }
 
 function parseQuestionId(raw: string | number | undefined): number | null {

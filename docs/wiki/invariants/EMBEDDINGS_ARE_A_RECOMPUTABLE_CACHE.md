@@ -1,13 +1,13 @@
 ---
 type: invariant
-created: 2026-06-09T00:00:00.000Z
-updated: 2026-06-09T00:00:00.000Z
+created: 2026-06-09
+updated: 2026-06-09
 sources:
-  - '[[wiki/specs/embeddings]]'
-  - '[[memory]]'
-tier: deferred
+  - "[[wiki/specs/embeddings]]"
+  - "[[memory]]"
 coverage: deferred
 enforced_at_status: deferred
+tier: deferred
 ---
 
 # EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE

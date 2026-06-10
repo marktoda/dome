@@ -8,12 +8,14 @@ import { basename } from "node:path";
 
 import {
   firstPartyViewNotFoundMessage,
-  printViewCommandError,
-  printViewCommandMessages,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
+} from "../../surface/view";
+import {
+  printViewCommandError,
+  printViewCommandMessages,
 } from "./view-shared";
-import { formatJson } from "../format";
+import { formatJson } from "../../surface/format";
 import { formatCommand } from "../human-output";
 import {
   footer,
@@ -32,7 +34,7 @@ import {
   resolveQuestionCommand,
 } from "../../question-resolution";
 
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 export type QueryCommandOptions = {
   readonly text?: string | undefined;
   readonly vault?: string | undefined;

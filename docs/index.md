@@ -15,7 +15,7 @@ New to the vocabulary? [[glossary]] is the one-page map: the four core types, th
 
 ## Specs
 
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); Recall + engine-control surfaces; extension bundles; tiered feature model; consumer surfaces via `AbstractSurface`; dependency list.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); Recall + engine-control surfaces; extension bundles; tiered feature model; consumer surfaces via the `src/surface/` collector layer (`AbstractSurface` future); dependency list.
 - [[wiki/specs/proposals]] — The Proposal type; the only write path; local-eventual and hosted-protected construction.
 - [[wiki/specs/processors]] — The Processor type; three phases (adoption / garden / view); triggers; capabilities; first-party `dome.*` processors; idempotency.
 - [[wiki/specs/processor-execution]] — Processor invocation state machine; timeouts; output validation; model structured-output failures; retries; quarantine; drain/shutdown.
@@ -113,6 +113,7 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 - [[wiki/linters/no-direct-mutation-outside-engine]] — *(v1)* Greps `src/` for mutation calls outside the engine boundary; complement to `engine-is-sole-applier`.
 - [[wiki/linters/no-retired-symbol-names]] — *(v1)* Every normative doc names no symbol in the retired-names allow-list (`Tool`, `Hook`, `Workflow`, `BoundToolSurface`, `runWorkflow`, `reconcile`, `wrapMutatingInvoke`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`, `HOOKS_CANNOT_BYPASS_TOOLS`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `PAGE_CREATION_REQUIRES_RECURRENCE`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, …).
 - [[wiki/linters/processor-purity]] — *(v1)* Files under `assets/extensions/*/processors/` and `<vault>/.dome/extensions/*/processors/` must not import mutation modules.
+- [[wiki/linters/surface-adapters-dont-import-adapters]] — *(v1)* `src/mcp/` never imports `src/cli/`; `src/cli/` never imports `src/mcp/` (host shim `src/cli/commands/mcp.ts` excepted); `src/surface/` never imports an adapter.
 
 ## Entities
 

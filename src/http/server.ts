@@ -1,10 +1,11 @@
 // http/server: the Dome HTTP surface — the read+capture protocol adapter.
 //
 // Per docs/wiki/specs/http-surface.md, this is a THIN adapter over the
-// public `openVault` wrapper plus the CLI's data-returning collectors —
-// the same posture as the MCP adapter (`src/mcp/server.ts`), lifted onto
-// HTTP for callers that can't mount stdio: phones, shortcuts, scripts on
-// other machines.
+// public `openVault` wrapper plus the protocol-neutral `src/surface/`
+// collectors — the same posture as the MCP adapter (`src/mcp/server.ts`),
+// lifted onto HTTP for callers that can't mount stdio: phones, shortcuts,
+// scripts on other machines. Never imports `src/cli/` (pinned by
+// tests/integration/surface-adapter-imports.test.ts).
 //
 //   POST /capture   → performCapture (source: "http")   dome.capture/v1
 //   GET  /status    → buildStatusSnapshot               status snapshot
@@ -40,14 +41,14 @@ import {
   ANSWER_SCHEMA,
   answerHandlersJson,
   questionRecordJson,
-} from "../cli/commands/answer";
+} from "../surface/answer";
 import {
   captureJsonDocument,
   performCapture,
-} from "../cli/commands/capture";
-import { buildStatusSnapshot } from "../cli/commands/status";
-import { firstPartyViewNotFoundMessage } from "../cli/commands/view-shared";
-import { COMMAND_ERROR_SCHEMA } from "../cli/command-error";
+} from "../surface/capture";
+import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
+import { buildStatusSnapshot } from "../surface/status";
+import { firstPartyViewNotFoundMessage } from "../surface/view";
 import { openVault, type OpenVaultError, type Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------

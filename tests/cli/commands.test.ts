@@ -34,7 +34,7 @@ import {
   serviceLabelForVault,
   type LaunchctlRunner,
   type ServiceDeps,
-} from "../../src/cli/commands/install";
+} from "../../src/surface/service-probe";
 import { runExportContext } from "../../src/cli/commands/export-context";
 import { runInspect } from "../../src/cli/commands/inspect";
 import { runLint } from "../../src/cli/commands/lint";

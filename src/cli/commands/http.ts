@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { findGitRoot } from "../../git";
 import { createDomeHttpServer } from "../../http/server";
-import { resolveVaultPath } from "../resolve-vault";
+import { resolveVaultPath } from "../../surface/resolve-vault";
 
 const EX_USAGE = 64;
 

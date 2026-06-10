@@ -1,9 +1,9 @@
 ---
 type: invariant
-created: 2026-06-03T00:00:00.000Z
-updated: 2026-06-03T00:00:00.000Z
+created: 2026-06-03
+updated: 2026-06-10
 sources:
-  - '[[wiki/specs/task-lifecycle]]'
+  - "[[wiki/specs/task-lifecycle]]"
 tier: axiom
 ---
 

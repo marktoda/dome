@@ -8,9 +8,8 @@
 // stdout on the most common failure mode, and MCP clients received
 // non-JSON fallback text.
 
-import { formatJson } from "./format";
-
-export const COMMAND_ERROR_SCHEMA = "dome.command-error/v1";
+import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
+import { formatJson } from "../surface/format";
 
 /**
  * Emit a vault-open failure consistently: a `dome.command-error/v1`

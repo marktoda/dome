@@ -23,9 +23,10 @@ dome http [--port 3663] [--host 127.0.0.1] [--token …]   (Bun.serve; one vault
 ```
 
 The adapter is deliberately thin and consumes the same data paths as the
-MCP tools — the public `openVault` wrapper plus the CLI's data-returning
-collectors. No parallel query or serialization logic; results are the same
-JSON documents the CLI emits under `--json`.
+MCP tools — the public `openVault` wrapper plus the protocol-neutral
+`src/surface/` collectors ([[wiki/linters/surface-adapters-dont-import-adapters]]).
+No parallel query or serialization logic; results are the same JSON
+documents the CLI emits under `--json`.
 
 ## Routes
 

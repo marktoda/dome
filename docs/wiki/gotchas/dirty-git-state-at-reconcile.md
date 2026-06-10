@@ -1,13 +1,14 @@
 ---
 type: gotcha
 created: 2026-05-25
-updated: 2026-05-29
-severity: medium
+updated: 2026-06-10
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
 coverage: off-matrix
 enforced_at: src/cli/commands/sync.ts
-enforced_at_status: partial  # detached HEAD/no commits ship; merge/rebase/cherry-pick guards are planned
+enforced_at_status: partial
 first_observed: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+severity: medium
 ---
 
 # Dirty git state at sync

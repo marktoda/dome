@@ -21,7 +21,7 @@ const ALLOWED_FILES = new Set([
   // and lands it as an ordinary (trailer-less) commit, exactly like a text
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
-  "src/cli/commands/capture.ts",
+  "src/surface/capture.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -24,7 +24,7 @@ composable-construction helpers.
 
 **`openVault` is the standard entry point.** Every surface consumes the
 wrapper: the CLI's view commands (`query`, `export-context`, `lint`,
-`run`, the daily wrappers — all via `cli/commands/view-shared.ts`),
+`run`, the daily wrappers — all via `src/surface/view.ts`),
 `resolve`/`answer`, `rebuild`, the MCP adapter, and future HTTP/voice
 shells. Direct `openVaultRuntime` use is reserved for the daemon and the
 operator internals that report on runtime guts the wrapper intentionally
@@ -516,26 +516,57 @@ agreeing.
 
 Every consumer shell that builds against Dome should aggregate four kinds of
 things from the SDK. The CLI and the MCP stdio server (`dome mcp`, wedge
-Phase 5) are the shipped surfaces today; `AbstractSurface` and the HTTP,
-mobile, desktop, and voice adapters are target shapes for the multi-surface
-roadmap and are not v1 acceptance gates. The shipped MCP adapter consumes
-the public `openVault` wrapper for recall, views, and decisions, plus the
-CLI's data-returning collectors (`performCapture`, `buildStatusSnapshot`,
-`buildCheckReport`) for the operator documents; it should converge on
-`renderMcp(surface)` when the `AbstractSurface` aggregation boundary lands.
+Phase 5) are the shipped surfaces today; the HTTP, mobile, desktop, and voice
+adapters are target shapes for the multi-surface roadmap and are not v1
+acceptance gates. Each shipped surface is a **protocol adapter**: it binds its
+wire format (argv + stdout for the CLI, the MCP protocol for `dome mcp`) over
+the public `openVault` wrapper plus the protocol-neutral collector layer at
+`src/surface/`. Adapters never import other adapters — pinned by
+[[wiki/linters/surface-adapters-dont-import-adapters]].
 
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
 - **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
 - **Engine status/control where appropriate** — CLI-only operations such as `sync`, `rebuild`, `serve`, and `status` that are not generic protocol tools in v1.
 
-The intended aggregation splits across two layers — **`AbstractSurface`**
-(protocol-agnostic) and **per-protocol renderers** (one per consumer protocol;
-living in their respective entrypoints). This is the structural shape that
-will make multi-surface work cheap: a new protocol adapter ships as one render
-function, not as a parallel aggregation. The current v1 implementation routes
-CLI commands directly through the runtime while this abstraction is still
-planned.
+### The surface layer (`src/surface/`)
+
+`src/surface/` is the shared substance behind the consumer-surface verbs: the
+data-returning collectors that produce the `dome.<verb>/v1` JSON documents
+both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
+
+- **Collectors return documents; they never print.** Presentation — Commander
+  bindings, presenter rendering, exit codes, stdout — lives in the adapter.
+- **One collector per verb; no parallel serialization.** A new consumer
+  surface wraps these modules the way `src/mcp/server.ts` does; it does not
+  re-derive the documents from the runtime.
+- **Dependency direction:** adapters (`src/cli/`, `src/mcp/`) import
+  `src/surface/`; `src/surface/` imports the engine/store layers and never
+  imports an adapter.
+
+| Module | Carries |
+|---|---|
+| `src/surface/capture.ts` | `performCapture`, `captureJsonDocument`, the capture document helpers (`dome.capture/v1`) |
+| `src/surface/status.ts` | `buildStatusSnapshot` + the `StatusSnapshot` types (the `dome status --json` document) |
+| `src/surface/check.ts` | `buildCheckReport`, `resolveScopes` + the `CheckReport` types (`dome.check/v1`) |
+| `src/surface/answer.ts` | `ANSWER_SCHEMA`, `questionRecordJson`, `answerHandlersJson` (`dome.answer/v1` mappers) |
+| `src/surface/view.ts` | The shared view-command runners (`runSharedViewCommand`, `runStructuredViewCommand`) and `firstPartyViewNotFoundMessage` |
+| `src/surface/format.ts` | `formatJson` — the canonical JSON serialization for surface documents |
+| `src/surface/command-error.ts` | `COMMAND_ERROR_SCHEMA` (`dome.command-error/v1`) |
+| `src/surface/resolve-vault.ts` | `resolveVaultPath` — git-style upward vault-root discovery |
+| `src/surface/service-probe.ts` | launchd service identity (`vaultServiceSlug`, `serviceLabelForVault`) + read-only `probeServiceState`; the write-side service lifecycle stays in the CLI's `install` command |
+| `src/surface/diagnostic-summary.ts` | Diagnostic grouping/summary shaping embedded in the check/status documents |
+| `src/surface/next-actions.ts` | `next_actions` derivation (`nextActionsForCheck`, `nextActionsForStatus`) |
+| `src/surface/maintenance-loop-summary.ts` | `collectMaintenanceLoopSummaries` + the loop-summary types (rendering stays in `src/cli/maintenance-loop-summary.ts`) |
+| `src/surface/vault-analytics.ts` | `collectVaultAnalytics` — page/link/raw-file counts for the status document |
+
+## Future direction (non-normative): `AbstractSurface`
+
+The eventual aggregation adds **`AbstractSurface`** (protocol-agnostic
+interface) over the surface layer, with **per-protocol renderers** (one render
+function per consumer protocol). A new protocol adapter then ships as one
+render function, not as a parallel aggregation. Until it lands, new surfaces
+wrap the `src/surface/` collectors directly as `src/mcp/server.ts` does.
 
 ### `AbstractSurface` (planned)
 
@@ -561,9 +592,9 @@ Each future consumer protocol adapts `AbstractSurface` to its wire format:
 
 | Adapter | Entry point | Wire format |
 |---|---|---|
-| MCP (shipped, `openVault`-consumer today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
-| CLI (shipped, direct runtime today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
-| HTTP (shipped, `openVault`-consumer today) | `createDomeHttpServer(opts)` in `src/http/server.ts`, hosted by `dome http`; future `renderHttp(surface)` | Bearer-token JSON routes — capture/status/query/tasks/doc/questions/resolve per [[wiki/specs/http-surface]] |
+| MCP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
+| CLI (shipped; consumes `openVault` + `src/surface/` + engine control today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
+| HTTP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeHttpServer(opts)` in `src/http/server.ts`, hosted by `dome http`; future `renderHttp(surface)` | Bearer-token JSON routes — capture/status/query/tasks/doc/questions/resolve per [[wiki/specs/http-surface]] |
 | Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
 
 The protocol renderers should consume `AbstractSurface`, never `Vault`

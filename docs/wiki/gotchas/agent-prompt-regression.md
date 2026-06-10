@@ -1,13 +1,14 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-05-27
-severity: high
+updated: 2026-06-10
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
 enforced_at: src/eval/replay.ts
-enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
+enforced_at_status: deferred
 first_observed: 2026-05-27
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
+severity: high
 ---
 
 # Agent prompt regression

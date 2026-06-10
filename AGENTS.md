@@ -18,7 +18,7 @@ By task shape:
 - **Adding an extension bundle** — [[docs/wiki/specs/sdk-surface]] §"Extension bundles" + [[docs/wiki/matrices/extension-bundle-shape]] (manifest + processors + capability grants + matrix row).
 - **Understanding the engine** — [[docs/wiki/specs/adoption]] (fixed-point loop) + [[docs/wiki/specs/effects]] (the eleven kinds) + [[docs/wiki/specs/capabilities]] (broker enforcement).
 - **Understanding the projection store** — [[docs/wiki/specs/projection-store]] (Bun.sqlite tables) + [[docs/wiki/specs/run-ledger]] (RunRecord) + [[docs/wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
-- **Adding a new consumer surface** (HTTP, voice, future shells) — [[docs/wiki/specs/sdk-surface]] §"Consumer surfaces" (`AbstractSurface` + `renderXxx`).
+- **Adding a new consumer surface** (HTTP, voice, future shells) — [[docs/wiki/specs/sdk-surface]] §"Consumer surfaces" (wrap the `src/surface/` collectors as `src/mcp/server.ts` does; `AbstractSurface` + `renderXxx` is future direction).
 - **Anything else** — start at `docs/index.md`.
 
 By substrate type:
@@ -75,6 +75,7 @@ src/
   outbox/               # external-action outbox (Bun.sqlite)
   answers/              # answers store (Bun.sqlite; durable human answers)
   sqlite/               # shared Bun.sqlite connection + row helpers
+  surface/              # protocol-neutral collectors (dome.<verb>/v1 documents) shared by adapters
   cli/                  # CLI command adapters
   mcp/                  # MCP stdio adapter (companion entrypoint, outside core import graph)
   http/                 # HTTP read+capture adapter (companion entrypoint; dome http)
