@@ -86,9 +86,15 @@ The staffing packet landed and hiring budget follow-up remains open.
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("## Start Here");
+    // D2: the ONE yesterday surface — the mechanical fallback body lives in
+    // the unified dome.agent.brief:yesterday block; the retired
+    // dome.daily:start-context marker is never written.
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
-      .toContain("<!-- dome.daily:start-context:start -->");
+      .toContain("<!-- dome.agent.brief:yesterday:start -->");
+    await h
+      .expectFile("wiki/dailies/2026-01-02.md")
+      .toNotContain("dome.daily:start-context");
     await h
       .expectFile("wiki/dailies/2026-01-02.md")
       .toContain("- Previous daily: [[wiki/dailies/2026-01-01]]");

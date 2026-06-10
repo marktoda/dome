@@ -9,6 +9,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
 - [[wedge]] — Product wedge plan (2026-06-09): surface-in re-sequencing of remaining work; five phases (ambient daemon, shipped model provider, capture loop, nightly consolidation + morning brief, MCP server); evolve-don't-rebuild decision of record.
 - [[memory]] — Memory-quality plan (2026-06-09): five mechanisms (BM25++ retrieval, page supersession, core.md, dismissal discounting, preference promotion) as conventions + deterministic rebuildable facts; embeddings banked as a recomputable-cache spec, miss-log gated.
+- [[daily]] — Daily-surface plan (2026-06-10): the daily as a three-act console (morning edition / live surface / close); section contract, one yesterday-block, owned capture block, close scaffold, edition health loop.
 
 ## Specs
 
@@ -28,6 +29,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/status/check/resolve/tasks/brief tools over the same handlers the CLI uses.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; no-op without a model).
+- [[wiki/specs/daily-surface]] — The daily note as a product surface: the three acts (morning edition / live surface / close), the 24-hour choreography, the normative section contract and block-ownership tables, the edition's degradation ladder, the `dome.daily.edition` maintenance loop, and the `daily.*` doctor findings.
 - [[wiki/specs/claims]] — The vault-general claim-line grammar (`**Key:** value *(as of date)* ^c…`); `dome.claims.stamp` (garden anchor stamper) and `dome.claims.index` (adoption fact emitter); the `dome.claim.coherence` maintenance loop; bi-temporal supersession model; anticipated consumers (nightly sweeper, `dome explain`, warden pre-filter).
 - [[wiki/specs/sweep]] — The nightly meaning-integration sweep (`dome.agent.sweep` + `dome.agent.sweep-answer`): queue rules, settlement-by-sources, ledger grammar, write vocabulary, dispositions, three engine-forced deltas, config keys.
 - [[wiki/specs/autonomous-agents]] — Autonomous-agent capability: agent-as-processor model (no new primitive); `ctx.modelInvoke.step` provider-neutral tool-calling seam; `AgentDefinition` loop harness; `dome.agent.ingest` (inbox-triggered full ingest workflow, single PatchEffect + questions); grant-as-boundary + two hard floors.

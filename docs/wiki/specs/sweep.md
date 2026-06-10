@@ -114,7 +114,7 @@ The sweep emits questions in two namespaces under the shared `dome.agent.sweep:`
 
 ## Brief digest block
 
-The brief reads the sweep ledger and renders the most recent `## Run <date>` section's rows as a deterministic block (never model-written):
+The brief reads the sweep ledger and renders the most recent `## Run <date>` section's rows as the `dome.agent.brief:integrated` generated block — deterministic, never model-written; its place in the daily-note package is normative at [[wiki/specs/daily-surface]] §"Block ownership":
 
 - `integrated` rows → `- [[destination]] ← [[material]]`
 - `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]`

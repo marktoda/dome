@@ -243,7 +243,7 @@ scenario(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(textPayload.markdown).toContain(
-      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:16; source wiki/captures/launch.md:9)",
+      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:23; source wiki/captures/launch.md:9)",
     );
     expect(textPayload.markdown).toContain(
       "- 2 followups already listed in Start Here",
@@ -401,7 +401,7 @@ scenario(
     ]);
     expect(payload.planningItems.map((item) => item.evidenceLabel)).toEqual([
       "wiki/dailies/2026-01-05.md:9",
-      "wiki/dailies/2026-01-05.md:16; source wiki/captures/launch.md:9",
+      "wiki/dailies/2026-01-05.md:23; source wiki/captures/launch.md:9",
     ]);
     expect(
       payload.planningItems.every((item) =>
@@ -440,7 +440,7 @@ scenario(
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:8-8 @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:9-9 @");
-    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:16-16 @");
+    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:23-23 @");
   },
 );
 

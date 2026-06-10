@@ -23,18 +23,18 @@ import {
 import {
   dailyPathSettings,
   dailyPath,
-  dailyStartContextSection,
+  ensureYesterdayFallbackSection,
   localDateParts,
   openLoopFreshnessKey,
   openLoopIdentity,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
   previousLocalDate,
-  previousDailyStartContext,
+  previousDailyDigest,
   rankDailyOpenLoopSurfaceItems,
   renderDailySkeleton,
-  replaceDailyStartContextSection,
   replaceOpenLoopSurfaceSection,
+  yesterdayFallbackSection,
   type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
   type DailyPathSettings,
@@ -70,10 +70,14 @@ const createDaily = defineProcessorImplementation({
       yesterday: yesterdayExists ? yesterday : null,
       settings,
     });
-    const startContextSection = dailyStartContextSection(
+    // The unified yesterday block (dome.agent.brief:yesterday) with the
+    // mechanical fallback body — the no-model rung of the edition's ladder.
+    // A fresh skeleton never carries the block, so the presence-gated ensure
+    // always inserts here. See daily-surface §"The one yesterday block".
+    const fallbackSection = yesterdayFallbackSection(
       yesterdayContent === null
         ? null
-        : previousDailyStartContext({
+        : previousDailyDigest({
             previousPath: yesterdayPath,
             previousContent: yesterdayContent,
           }),
@@ -82,9 +86,9 @@ const createDaily = defineProcessorImplementation({
       kind: "write",
       path: todayPath,
       content: replaceOpenLoopSurfaceSection({
-        content: replaceDailyStartContextSection({
+        content: ensureYesterdayFallbackSection({
           content: skeleton,
-          section: startContextSection,
+          section: fallbackSection,
         }),
         section: openLoopSurfaceSection({ items: openLoopItems }),
       }),
