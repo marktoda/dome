@@ -688,6 +688,12 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     extensionConfigFor: opts.runtime.extensionConfigFor,
     externalHandlers: opts.runtime.externalHandlers,
+    ...(opts.runtime.config.engine.externalHandlerTimeoutMs !== undefined
+      ? {
+          externalHandlerTimeoutMs:
+            opts.runtime.config.engine.externalHandlerTimeoutMs,
+        }
+      : {}),
     questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
     adoptSubProposal,
     currentAdopted: () => cursor.current,
@@ -984,6 +990,12 @@ function sinksForRuntime(
       applyPatch: realApplyPatch,
       captureView: captureViewPlaceholder,
       externalHandlers: runtime.externalHandlers,
+      ...(runtime.config.engine.externalHandlerTimeoutMs !== undefined
+        ? {
+            externalHandlerTimeoutMs:
+              runtime.config.engine.externalHandlerTimeoutMs,
+          }
+        : {}),
       recoverQuarantine: async ({ effect }) => {
         runtime.processorRuntime.executionState.clearQuarantineIfCurrent({
           phase: effect.phase,

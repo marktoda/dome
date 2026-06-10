@@ -178,6 +178,15 @@ export type ExternalHandlerInput = {
    * promptly when aborted.
    */
   readonly signal: AbortSignal;
+  /**
+   * Absolute vault root, injected by `openVaultRuntime` for BUNDLE-discovered
+   * handlers (the runtime wraps each `external-handlers/*.ts` handler to
+   * merge it in — see `deriveExternalHandlers`). Handlers that run
+   * vault-local commands (e.g. `dome.sources`' `sources.fetch`) use it as
+   * the spawn cwd. Caller-injected registries receive whatever the caller
+   * wraps in; the dispatch layer itself never sets this field.
+   */
+  readonly vaultPath?: string;
 };
 
 export type ExternalHandlerResult = {

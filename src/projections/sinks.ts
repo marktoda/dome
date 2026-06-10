@@ -119,6 +119,12 @@ export type BuildSqliteSinksOpts = {
    */
   readonly externalHandlers?: ExternalHandlerRegistry;
   /**
+   * Per-attempt bound for external handlers, threaded from
+   * `engine.external_handler_timeout_ms`. Absent → the dispatch layer's
+   * 30s default.
+   */
+  readonly externalHandlerTimeoutMs?: number;
+  /**
    * Injected by the engine layer. Quarantine state is operational processor
    * execution state, not projection or outbox state.
    */
@@ -245,6 +251,9 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         effect,
         runId,
         handlers: opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
+        ...(opts.externalHandlerTimeoutMs !== undefined
+          ? { handlerTimeoutMs: opts.externalHandlerTimeoutMs }
+          : {}),
       });
     },
 

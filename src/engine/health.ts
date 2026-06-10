@@ -1009,10 +1009,11 @@ export function dailyEditionFindings(opts: {
           `last 2 run days (${recentRunDates.join(", ")}); the edition's ` +
           `meetings section was omitted both mornings.`,
         recovery:
-          "Wire a vault-side calendar fetcher that commits " +
-          "sources/calendar/<date>.md before the brief — see " +
-          'docs/wiki/specs/vault-layout.md §"Populating the calendar file ' +
-          '(recipe, not shipped)". A deliberately calendar-less vault may ' +
+          "Enable the dome.sources calendar subscription (config + a " +
+          ".dome/bin fetch command — see docs/wiki/specs/sources.md) or " +
+          "wire a vault-side fetcher that commits sources/calendar/<date>.md " +
+          "before the brief (docs/wiki/specs/vault-layout.md §\"Populating " +
+          "the calendar file\"). A deliberately calendar-less vault may " +
           "ignore this info finding.",
         daily: Object.freeze({
           briefRunDates: Object.freeze([...recentRunDates]),

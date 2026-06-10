@@ -692,7 +692,7 @@ async function resolveRegistryFromOpts(
     extensions: deriveExtensionList(activeBundles),
     processorVersions: deriveProcessorVersionList(processors),
     processorExtensionIds: deriveProcessorExtensionIds(activeBundles),
-    externalHandlers: deriveExternalHandlers(activeBundles),
+    externalHandlers: deriveExternalHandlers(activeBundles, opts.vaultPath),
     pageTypes: buildPageTypeRegistryForBundles(activeBundles),
   });
 }
@@ -806,13 +806,22 @@ function deriveProcessorExtensionIds(
   return out;
 }
 
+/**
+ * Compose bundle-discovered external handlers, wrapping each so its
+ * `ExternalHandlerInput` carries the absolute vault root. Bundle handlers
+ * that run vault-local fetch commands (e.g. `dome.sources`' `sources.fetch`)
+ * need the vault root as spawn cwd; the dispatch layer is deliberately
+ * vault-layout-agnostic, so the injection happens here at runtime
+ * composition. Caller-injected handlers (tests, hosts) are not wrapped.
+ */
 function deriveExternalHandlers(
   bundles: ReadonlyArray<LoadedBundle>,
+  vaultPath: string,
 ): ReadonlyMap<string, ExternalHandler> {
   const out = new Map<string, ExternalHandler>();
   for (const bundle of bundles) {
     for (const [capability, handler] of bundle.externalHandlers) {
-      out.set(capability, handler);
+      out.set(capability, (input) => handler({ ...input, vaultPath }));
     }
   }
   return out;

@@ -1,0 +1,28 @@
+id: dome.sources
+version: 0.1.0
+processors:
+  - id: dome.sources.fetch
+    version: 0.1.0
+    phase: garden
+    triggers:
+      # Every 15 minutes while the compiler host runs. Cheap no-op when no
+      # subscription is due (config read + a few snapshot stats); the cadence
+      # is the retry pump for fetches whose commit has not been adopted yet.
+      - kind: schedule
+        cron: "*/15 * * * *"
+    capabilities:
+      - kind: read
+        paths:
+          # Skip-if-present reads the rendered output_path from the adopted
+          # snapshot; subscriptions must target paths under sources/ (the
+          # committed-external-feed category, vault-layout §"sources/").
+          - "sources/**/*.md"
+          # The config file is the consent surface and the provenance of every
+          # emitted effect (sourceRefs must be readable, capabilities.md
+          # §"read").
+          - ".dome/config.yaml"
+      - kind: external
+        capability: "sources.fetch"
+    execution:
+      class: deterministic
+    module: processors/fetch.ts

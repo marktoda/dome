@@ -87,6 +87,12 @@ async function rebuildProjectionUnlocked(
     applyPatch: async () => null,
     captureView: async () => undefined,
     externalHandlers: opts.runtime.externalHandlers,
+    ...(opts.runtime.config.engine.externalHandlerTimeoutMs !== undefined
+      ? {
+          externalHandlerTimeoutMs:
+            opts.runtime.config.engine.externalHandlerTimeoutMs,
+        }
+      : {}),
     recoverQuarantine: async () => undefined,
     recoverRun: async () => true,
   });
