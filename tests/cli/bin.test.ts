@@ -37,6 +37,7 @@ describe("bin/dome process boundary", () => {
       "export-context",
       "serve",
       "install",
+      "restart",
       "uninstall",
       "mcp",
       "status",

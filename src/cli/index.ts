@@ -18,7 +18,7 @@ import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
-import { runInstall, runUninstall } from "./commands/install";
+import { runInstall, runRestart, runUninstall } from "./commands/install";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
@@ -497,6 +497,20 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("restart")
+    .description("Restart the vault's launchd service from the installed plist.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: RestartCliOptions) => {
+      setExitCode(
+        await runRestart({
+          vault: options.vault,
+          json: options.json,
+        }),
+      );
+    });
+
+  program
     .command("uninstall")
     .description("Boot out and remove the vault's launchd service.")
     .option("--json", "Emit JSON.")
@@ -603,6 +617,11 @@ type InstallCliOptions = {
 };
 
 type UninstallCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type RestartCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
 };

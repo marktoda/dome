@@ -43,6 +43,9 @@ dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
 dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]
                                 Install `dome serve` for this vault as a macOS launchd
                                 LaunchAgent (ambient compiler host; survives reboots).
+dome restart [--vault <path>] [--json]
+                                Restart the vault's launchd LaunchAgent from the
+                                existing plist (never re-rendered; --env preserved).
 dome uninstall [--vault <path>] [--json]
                                 Boot out and remove the vault's launchd LaunchAgent.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
@@ -55,7 +58,7 @@ The CLI is the user-facing primary surface in v1. The implemented commands above
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
 - **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
-- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, and `dome rebuild` remain available for detailed state inspection, extension development, and maintenance. They are hidden from top-level help and are not the normal Claude Code workflow.
+- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
 future answer-mediated mitigations and exits with usage status instead of
@@ -64,7 +67,7 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 - **Protocol adapter:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"). A read/capture protocol adapter over the same command handlers; see [[wiki/specs/mcp-surface]].
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -1786,6 +1789,41 @@ Non-macOS platforms get the same macOS-only refusal as `dome install`.
 Exit codes: 0 on success or already-not-installed; 1 on non-macOS platform,
 undeterminable uid, or unexpected I/O failure.
 
+### `dome restart [--vault <path>] [--json]`
+
+Restarts the vault's ambient launchd service: `launchctl bootout
+gui/<uid>/<label>` (failure ignored when the service is not loaded — a dead
+service is exactly why an operator restarts), then `launchctl bootstrap
+gui/<uid> <plist>` **from the existing plist on disk**.
+
+The plist is deliberately **not re-rendered**. The service's
+`EnvironmentVariables` entries (`--env` / `--env-file` credentials such as
+`ANTHROPIC_API_KEY`) are remembered only inside the plist itself —
+re-rendering from scratch would silently drop them, which is the failure
+mode `dome install` re-runs already carry ("env entries are not remembered
+across re-installs"). Restart is therefore the safe "bounce the daemon"
+verb after a config edit, a wedged host, or an environment change applied
+via `launchctl setenv`; `dome install` remains the only path that rewrites
+the plist.
+
+Refusals are clean and mutate nothing: when no plist is installed for the
+vault, exit 64 (EX_USAGE) with a pointer to `dome install`; non-macOS
+platforms and uid-less environments get the same exit-1 refusal shape as
+`dome install` / `dome uninstall`. A failed `bootstrap` leaves the plist in
+place, prints launchctl's stderr, and exits 1.
+
+`--json` emits `dome.restart/v1`: `{ schema, status: "restarted" | "error",
+vault, label, plist, error? }`.
+
+Testability matches install: `runRestart` accepts the same injected
+`ServiceDeps` (platform, uid, LaunchAgents dir, launchctl runner), so tests
+drive the bootout/bootstrap sequence against the recording fake without
+touching a real service manager.
+
+Exit codes: 0 on a successful restart; 64 (EX_USAGE) when no plist is
+installed for the vault; 1 on non-macOS platform, undeterminable uid,
+`launchctl bootstrap` failure, or unexpected I/O failure.
+
 ### `dome mcp [--vault <path>] [--bundles-root <path>]`
 
 Runs the Dome MCP server over stdio for one vault — the shipped protocol
@@ -1861,9 +1899,11 @@ The CLI is the primary v1 control surface for agentic harnesses, but the normal
 Claude Code grammar is intentionally small: `serve` / `sync` drive the
 compiler, `status` routes attention, `check` explains it, and `resolve` records
 the user's decision. Optional view commands read adopted state when explicitly
-useful. Advanced commands (`inspect`, `doctor`, `answer`, `run`, `rebuild`)
-remain named because they are valuable for debugging, scripting, and extension
-development, not because agents should choose among them during the daily loop.
+useful. Advanced commands (`inspect`, `doctor`, `answer`, `run`, `rebuild`,
+`reanchor`)
+remain named because they are valuable for debugging, scripting, extension
+development, and explicit recovery, not because agents should choose among
+them during the daily loop.
 
 Extension-defined view commands can start behind `dome run <name>` and
 graduate to dedicated aliases once their workflow deserves first-class help
