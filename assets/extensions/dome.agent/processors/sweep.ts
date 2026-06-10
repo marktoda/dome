@@ -459,6 +459,28 @@ const sweep = defineProcessorImplementation({
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("budget")) {
+          // The night's model budget is gone (model.invoke.budget-exceeded
+          // family): stop the loop immediately. Budget exhaustion is not the
+          // pair's fault — we must NOT push a `failed` ledger row for the
+          // current item (that would count toward the
+          // escalate-after-${ESCALATE_AFTER_FAILURES} threshold and
+          // eventually trigger a false owner escalation). Instead, treat it
+          // exactly like the unprocessed remainder: hold the cursor back via
+          // failedDates, then break.
+          effects.push(
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.sweep-budget-exhausted",
+              message: `dome.agent.sweep stopped mid-run on ${item.material} -> ${item.destination}: budget exhausted (${message}); ${queue.items.length - index} item(s) deferred to the next night.`,
+              sourceRefs: itemRefs,
+            }),
+          );
+          for (const rest of queue.items.slice(index)) {
+            failedDates.push(rest.materialDate);
+          }
+          break;
+        }
         effects.push(
           diagnosticEffect({
             severity: "warning",
@@ -471,16 +493,6 @@ const sweep = defineProcessorImplementation({
         // escalate-after-${ESCALATE_AFTER_FAILURES} contract.
         ledgerRows.push({ ...row, disposition: "failed" });
         failedDates.push(item.materialDate);
-        if (message.includes("budget")) {
-          // The night's model budget is gone (model.invoke.budget-exceeded
-          // family): stop the loop. Every remaining unprocessed item must
-          // hold the cursor back exactly like a failure, or those pairs
-          // would silently fall out of future queues.
-          for (const rest of queue.items.slice(index + 1)) {
-            failedDates.push(rest.materialDate);
-          }
-          break;
-        }
         continue;
       }
 
@@ -546,8 +558,10 @@ const sweep = defineProcessorImplementation({
     }
 
     // Advisory final patch: run section + cursor. Skipped entirely when there
-    // is nothing to record (empty queue, no drops) — zero noise.
-    if (ledgerRows.length > 0 || queue.dropped > 0) {
+    // is nothing to record (empty queue, no drops, no budget-bail deferral) —
+    // zero noise. failedDates may be non-empty even when ledgerRows is empty
+    // (budget bail on the very first item): the cursor still must be persisted.
+    if (ledgerRows.length > 0 || queue.dropped > 0 || failedDates.length > 0) {
       let oldestFailed: string | null = null;
       for (const d of failedDates) {
         if (oldestFailed === null || d < oldestFailed) oldestFailed = d;

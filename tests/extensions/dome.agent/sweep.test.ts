@@ -386,7 +386,7 @@ describe("dome.agent.sweep", () => {
     expect(ledger).toContain("cursor:: 2026-06-08");
   });
 
-  test("budget bail: a budget-exceeded throw stops the night; remaining items hold the cursor back", async () => {
+  test("budget bail: a budget-exceeded throw stops the night; the current item has NO failed row; cursor held back", async () => {
     const files: Record<string, string> = {
       [MATERIAL]: "Saw [[wiki/entities/aaa]] and [[wiki/entities/bbb]].",
       "wiki/entities/aaa.md": "# Aaa\n",
@@ -400,20 +400,29 @@ describe("dome.agent.sweep", () => {
     const effects = await sweep.run(makeCtx({ files, stepFn }));
 
     expect(calls).toBe(1); // the loop broke — item two never reached the model
+
+    // Budget exhaustion is NOT the pair's fault — no `failed` ledger row for
+    // the current item (that would falsely count toward owner escalation).
+    const ledger = patchFor(effects, LEDGER);
+    expect(ledger).not.toContain("[[wiki/entities/aaa]] ::");
+    // Item two never ran — no row for it either.
+    expect(ledger).not.toContain("[[wiki/entities/bbb]] ::");
+    // Cursor is still held back: both items' materialDate (2026-06-09) prevents
+    // the cursor from advancing past the day before (2026-06-08).
+    expect(ledger).toContain("cursor:: 2026-06-08");
+    expect(patches(effects)).toHaveLength(1); // ledger only
+
+    // A sweep-budget-exhausted diagnostic must be present (not sweep-item-failed).
+    const budgetDiags = diagnostics(effects).filter(
+      (d) => d.code === "dome.agent.sweep-budget-exhausted",
+    );
+    expect(budgetDiags).toHaveLength(1);
+    expect(budgetDiags[0]!.message).toContain("wiki/entities/aaa.md");
+    expect(budgetDiags[0]!.message).toContain("budget");
     const failedDiags = diagnostics(effects).filter(
       (d) => d.code === "dome.agent.sweep-item-failed",
     );
-    expect(failedDiags).toHaveLength(1);
-
-    const ledger = patchFor(effects, LEDGER);
-    expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/aaa]] :: failed",
-    );
-    // Item two never ran — no row for it, but its material still holds the
-    // cursor back (2026-06-08 = day before its 2026-06-09 material date).
-    expect(ledger).not.toContain("[[wiki/entities/bbb]] ::");
-    expect(ledger).toContain("cursor:: 2026-06-08");
-    expect(patches(effects)).toHaveLength(1); // ledger only
+    expect(failedDiags).toHaveLength(0);
   });
 
   test("injection red-team: a fully-compromised model cannot write outside the destination", async () => {
