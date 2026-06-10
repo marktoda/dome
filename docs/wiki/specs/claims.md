@@ -8,6 +8,8 @@ sources:
 
 # Claims
 
+This spec is normative for the claim-line grammar and the dome.claims bundle's two processors.
+
 A **claim** is a vault-general markdown primitive — like wikilinks and task
 blocks — recognized by shape on any page matched by the bundle's globs
 (`wiki/**/*.md`, `notes/*.md`; `raw/**` is never touched):
@@ -19,8 +21,9 @@ blocks — recognized by shape on any page matched by the bundle's globs
 - The line-opening `**Key:**` bold prefix is the recognizer (after an optional
   list bullet). Lines inside YAML frontmatter, fenced code blocks, and
   blockquotes are never claims, so quoted material can't be over-anchored.
-- The `*(as of date)*` marker is optional; omitted dates fall back to coarser
-  context (enclosing dated section, git date) at read time.
+- The `*(as of date)*` marker is optional; omitted dates carry no assertion;
+  consumers may fall back to coarser context (enclosing dated section, git date)
+  as a convention — no standard read-time algorithm is defined yet.
 - The `^c…` anchor is the claim's stable identity, stamped by
   `dome.claims.stamp` (garden, deterministic, idempotent). Identity hashes the
   normalized path + **normalized key** + occurrence index — never the value —
@@ -40,7 +43,7 @@ blocks — recognized by shape on any page matched by the bundle's globs
 | Processor | Phase | Kind | Effect |
 |---|---|---|---|
 | `dome.claims.stamp` | garden | deterministic, `patch.auto` | Anchors claim lines lacking `^c…` ids; converges at depth 1. |
-| `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and anchor stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
+| `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and, when the line is anchored, the stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
 
 The pair is registered as the `dome.claim.coherence` maintenance loop.
 
