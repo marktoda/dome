@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-26
-updated: 2026-06-03
+updated: 2026-06-10
 sources:
   - "[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"
 coverage: off-matrix
