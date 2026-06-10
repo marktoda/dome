@@ -351,6 +351,21 @@ describe("runInit", () => {
         false,
       );
 
+      // core.md — the always-loaded core memory skeleton (commented,
+      // propose-only convention + size budget; first-write-only).
+      const corePath = join(target, "core.md");
+      expect(existsSync(corePath)).toBe(true);
+      const coreBody = await readFile(corePath, "utf8");
+      expect(coreBody).toContain("# Core memory");
+      expect(coreBody).toContain("## Who I am");
+      expect(coreBody).toContain("## Active projects");
+      expect(coreBody).toContain("## Standing preferences");
+      expect(coreBody).toContain("<!--");
+      expect(coreBody).toContain("propose-only");
+      expect(coreBody).toContain("6,000 characters");
+      // The skeleton must itself respect the core-size lint budget.
+      expect(coreBody.length).toBeLessThan(6_000);
+
       const agentsPath = join(target, "AGENTS.md");
       expect(existsSync(agentsPath)).toBe(true);
       const agentsBody = await readFile(agentsPath, "utf8");
@@ -412,6 +427,9 @@ describe("runInit", () => {
         expect(
           await readBlob({ path: target, commit: head, filepath: "CLAUDE.md" }),
         ).toBe(claudeBody);
+        expect(
+          await readBlob({ path: target, commit: head, filepath: "core.md" }),
+        ).toBe(coreBody);
       }
 
       // The SDK-shipped bundles are still loadable from the resolved
@@ -518,6 +536,7 @@ describe("runInit", () => {
       expect(parsed.status).toBe("initialized");
       expect(parsed.vault).toBe(target);
       expect(parsed.steps.config_yaml).toBe("created");
+      expect(parsed.steps.core_md).toBe("created");
       expect(parsed.steps.initial_commit).toBe("created");
       expect(parsed.steps.model_provider).toBe("skipped (not requested)");
     } finally {
@@ -532,26 +551,33 @@ describe("runInit", () => {
 
       const agentsPath = join(target, "AGENTS.md");
       const claudePath = join(target, "CLAUDE.md");
+      const corePath = join(target, "core.md");
       const configPath = join(target, ".dome", "config.yaml");
       const firstAgents = await readFile(agentsPath, "utf8");
       const firstClaude = await readFile(claudePath, "utf8");
       const firstConfig = await readFile(configPath, "utf8");
       const firstHead = await currentSha(target);
 
-      // Mutate the user-prose region and Claude-specific shim notes to
-      // confirm `dome init` doesn't clobber post-init edits.
+      // Mutate the user-prose region, Claude-specific shim notes, and the
+      // core memory page to confirm `dome init` doesn't clobber post-init
+      // edits. core.md is the user's core memory — there is no refresh path
+      // for it at all.
       const mutatedAgents = firstAgents.replace(
         "<!-- BEGIN user-prose -->",
         "<!-- BEGIN user-prose -->\n\nMy private vault notes.",
       );
       const mutatedClaude = `${firstClaude}\nPersonal Claude Code reminder.\n`;
+      const mutatedCore =
+        "# Core memory\n\n## Who I am\nMark — builds Dome.\n";
       await writeFile(agentsPath, mutatedAgents, "utf8");
       await writeFile(claudePath, mutatedClaude, "utf8");
+      await writeFile(corePath, mutatedCore, "utf8");
 
       expect(await runInit({ path: target })).toBe(0);
 
       const secondAgents = await readFile(agentsPath, "utf8");
       const secondClaude = await readFile(claudePath, "utf8");
+      const secondCore = await readFile(corePath, "utf8");
       const secondConfig = await readFile(configPath, "utf8");
       const secondHead = await currentSha(target);
 
@@ -559,8 +585,20 @@ describe("runInit", () => {
       // didn't advance (no second commit landed).
       expect(secondAgents).toBe(mutatedAgents);
       expect(secondClaude).toBe(mutatedClaude);
+      expect(secondCore).toBe(mutatedCore);
       expect(secondConfig).toBe(firstConfig);
       expect(secondHead).toBe(firstHead);
+
+      // A refresh re-run also leaves core.md alone — `--refresh-config` /
+      // `--refresh-instructions` have no core.md path.
+      expect(
+        await runInit({
+          path: target,
+          refreshConfig: true,
+          refreshInstructions: true,
+        }),
+      ).toBe(0);
+      expect(await readFile(corePath, "utf8")).toBe(mutatedCore);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -1153,7 +1191,7 @@ describe("runInspect", () => {
     expect(ingest).toEqual(
       expect.objectContaining({
         bundle: "dome.agent",
-        version: "0.1.0",
+        version: "0.2.0",
         phase: "garden",
         triggers: "signal",
         execution: "llm",
@@ -1162,7 +1200,9 @@ describe("runInspect", () => {
     );
     expect(ingest?.capabilities).toContain("model.invoke");
     expect(ingest?.bundle_grants).toContain("model.invoke");
-    expect(ingest?.grant_scopes).toContain("read:inbox/**/*.md");
+    // core.md leads the sorted read scope (core memory is read-only by
+    // design — it must never show up under patch.auto).
+    expect(ingest?.grant_scopes).toContain("read:core.md,inbox/**/*.md");
     expect(ingest?.grant_scopes).toContain("wiki/**/*.md");
     expect(ingest?.grant_scopes).toContain("patch.auto:");
     expect(ingest?.grant_details).toContainEqual({
@@ -1408,7 +1448,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.2.0",
+        version: "0.3.0",
         processors: 4,
         garden: 4,
         model_processors: 3,

@@ -32,7 +32,7 @@ describe("dome.markdown.core-size", () => {
       "core memory must stay small enough to load everywhere",
     );
     expect(diag.message).toContain("split details into wiki pages");
-    expect(diag.sourceRefs.map((r) => r.path)).toEqual(["core.md"]);
+    expect(diag.sourceRefs.map((r) => String(r.path))).toEqual(["core.md"]);
   });
 
   test("core.md exactly at the budget is quiet (boundary)", async () => {

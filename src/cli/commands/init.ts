@@ -12,6 +12,7 @@
 //   - `.dome/state/`       — derived sqlite databases (gitignored)
 //   - `.dome/config.yaml`  — extension activation + grants
 //   - `.gitignore`         — engine-managed
+//   - `core.md`            — always-loaded core memory page (commented skeleton)
 //   - `AGENTS.md`          — orientation surface
 //   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
@@ -47,6 +48,7 @@
 // a no-op):
 //   - `git init` is already idempotent.
 //   - Directory creation uses `mkdir({recursive: true})`.
+//   - `core.md`: skip if exists — never overwrite the user's core memory.
 //   - `config.yaml`: skip if exists, unless `--refresh-config` is set. That
 //     opt-in path adds missing first-party default bundle stanzas and fills
 //     missing default grant keys for enabled first-party bundles without
@@ -123,6 +125,7 @@ type InitSummary = {
   readonly configYaml: StepOutcome;
   readonly modelProvider: StepOutcome;
   readonly gitignore: StepOutcome;
+  readonly coreMd: StepOutcome;
   readonly agentsMd: StepOutcome;
   readonly claudeMd: StepOutcome;
   readonly initialCommit: StepOutcome;
@@ -143,6 +146,7 @@ type InitJsonResult =
         readonly config_yaml: StepOutcome;
         readonly model_provider: StepOutcome;
         readonly gitignore: StepOutcome;
+        readonly core_md: StepOutcome;
         readonly agents_md: StepOutcome;
         readonly claude_md: StepOutcome;
         readonly initial_commit: StepOutcome;
@@ -228,6 +232,15 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     const gitignorePath = join(vaultPath, ".gitignore");
     const gitignoreOutcome = await writeIfMissing(gitignorePath, DEFAULT_GITIGNORE);
 
+    // 5b. Write `core.md`, the always-loaded core memory page, as a
+    //     commented skeleton. First-write-only with NO refresh path — the
+    //     page is the user's core memory; init never overwrites it. Per
+    //     vault-layout.md §"core.md — the core memory page".
+    const coreOutcome = await writeIfMissing(
+      join(vaultPath, "core.md"),
+      CORE_MD_TEMPLATE,
+    );
+
     // 6. Write `AGENTS.md` (first-write-only by default; explicit refresh
     //    repairs old orientation files without dropping user prose).
     const agentsPath = join(vaultPath, "AGENTS.md");
@@ -253,7 +266,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     if (headExists) {
       initialCommitOutcome = "skipped (already present)";
     } else {
-      // Stage `.gitignore`, `AGENTS.md`, `CLAUDE.md`, and
+      // Stage `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`, and
       // `.dome/config.yaml`. Empty dirs (`wiki/`, `.dome/state/`) aren't
       // committable by git; they survive on disk for the user's first
       // write.
@@ -277,6 +290,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       configYaml: configOutcome,
       modelProvider: modelProviderOutcome,
       gitignore: gitignoreOutcome,
+      coreMd: coreOutcome,
       agentsMd: agentsOutcome,
       claudeMd: claudeOutcome,
       initialCommit: initialCommitOutcome,
@@ -537,6 +551,7 @@ function initialCommitFiles(
     ".gitignore",
     "AGENTS.md",
     "CLAUDE.md",
+    "core.md",
     ".dome/config.yaml",
     // Commit the inbox keepers so a freshly-initialized vault has a clean
     // working tree (untracked files would read as dirty in `dome status`).
@@ -607,6 +622,7 @@ function initStepRows(s: InitSummary): {
     [".dome/config.yaml", s.configYaml],
     [".dome/model-provider.ts", s.modelProvider],
     [".gitignore", s.gitignore],
+    ["core.md", s.coreMd],
     ["AGENTS.md", s.agentsMd],
     ["CLAUDE.md", s.claudeMd],
     ["initial commit", s.initialCommit],
@@ -642,6 +658,7 @@ function summaryToJson(s: InitSummary): InitJsonResult {
       config_yaml: s.configYaml,
       model_provider: s.modelProvider,
       gitignore: s.gitignore,
+      core_md: s.coreMd,
       agents_md: s.agentsMd,
       claude_md: s.claudeMd,
       initial_commit: s.initialCommit,
@@ -670,6 +687,32 @@ const DEFAULT_GITIGNORE = `# Dome — derived operational state. Rebuildable fro
 # OS metadata
 .DS_Store
 Thumbs.db
+`;
+
+// The core.md template — the always-loaded core memory page, per
+// vault-layout.md §"core.md — the core memory page". A commented skeleton:
+// the comment explains the propose-only convention and the size budget the
+// dome.markdown.core-size lint enforces. First-write-only; init never
+// overwrites the user's core memory.
+const CORE_MD_TEMPLATE = `# Core memory
+
+<!--
+Always-loaded owner context: Dome's agents (ingest, consolidate, brief)
+read this page at the start of every run. Keep it under ~6,000 characters
+— Dome warns past that budget; split details into wiki pages and keep
+only the always-relevant summary here.
+
+This page is propose-only for Dome: agents read it but never auto-write
+it. Edit it yourself, or accept a Dome question that proposes a change.
+A machine-managed generated block for promoted preferences is planned;
+leave any marker-delimited block alone if one appears.
+-->
+
+## Who I am
+
+## Active projects
+
+## Standing preferences
 `;
 
 // The AGENTS.md template — orientation surface for agentic harnesses. The
@@ -864,6 +907,7 @@ const INITIAL_COMMIT_MESSAGE = `dome init: initial scaffold
 Includes:
 - AGENTS.md (orientation surface for Claude Code and other harnesses)
 - CLAUDE.md (Claude Code shim importing AGENTS.md)
+- core.md (always-loaded core memory skeleton — propose-only for Dome)
 - .gitignore (ignores .dome/state/)
 - .dome/config.yaml (extension activation + engine settings)
 
