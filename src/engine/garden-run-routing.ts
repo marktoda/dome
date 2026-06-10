@@ -5,8 +5,16 @@
 // code decides when to run and what summary to record; this helper owns the
 // common effect routing contract: PatchEffects go through garden sub-Proposal
 // dispatch, while all other effects go through the generic effect applier.
+//
+// It also owns the projection-maintenance hooks for these runs, mirroring
+// the signal-triggered garden path in garden.ts: a successful run resolves
+// stale facts for its inspected paths before new facts route, and resolves
+// stale diagnostics/questions after routing (passing the run's emitted plus
+// routing-produced diagnostics so re-emitted findings survive). Without
+// these hooks, schedule/job/answer-driven processors accumulate stale
+// projection rows that only a full rebuild would clear.
 
-import type { DiagnosticEffect } from "../core/effect";
+import type { DiagnosticEffect, QuestionEffect } from "../core/effect";
 import type { CommitOid } from "../core/source-ref";
 import type { LedgerDb } from "../ledger/db";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
@@ -48,8 +56,21 @@ export async function routeGardenRunEffects(opts: {
   let spawnedPatchCount = 0;
   let rejectedPatchCount = 0;
 
+  const succeeded = opts.result.executionStatus === "succeeded";
+  const diagnosticsForResolution: DiagnosticEffect[] = opts.result.effects
+    .filter((effect): effect is DiagnosticEffect => effect.kind === "diagnostic");
+
+  if (succeeded && opts.sinks.resolveFacts !== undefined) {
+    await opts.sinks.resolveFacts({
+      processorId: opts.result.processorId,
+      runId: opts.result.runId,
+      inspectedPaths: opts.result.inspectedPaths,
+    });
+  }
+
   for (const effect of opts.result.effects) {
     if (effect.kind === "patch") {
+      const diagnosticsBefore = opts.diagnostics.length;
       const routed = await dispatchGardenPatchEffect({
         effect,
         vault: opts.vault,
@@ -79,6 +100,9 @@ export async function routeGardenRunEffects(opts: {
       if (routed.authorized) authorizedPatchCount += 1;
       if (routed.spawned) spawnedPatchCount += 1;
       if (routed.rejected) rejectedPatchCount += 1;
+      // Patch dispatch pushes its diagnostics into the shared caller array;
+      // capture the delta for stale-diagnostic resolution.
+      diagnosticsForResolution.push(...opts.diagnostics.slice(diagnosticsBefore));
       continue;
     }
 
@@ -95,6 +119,7 @@ export async function routeGardenRunEffects(opts: {
     });
     if (applied.diagnostics.length > 0) {
       opts.diagnostics.push(...applied.diagnostics);
+      diagnosticsForResolution.push(...applied.diagnostics);
     }
     recordEffectCapabilityUse({
       ledger: opts.ledger,
@@ -102,6 +127,26 @@ export async function routeGardenRunEffects(opts: {
       ...(applied.capabilityUse !== undefined
         ? { capabilityUse: applied.capabilityUse }
         : {}),
+    });
+  }
+
+  if (succeeded && opts.sinks.resolveDiagnostics !== undefined) {
+    await opts.sinks.resolveDiagnostics({
+      processorId: opts.result.processorId,
+      runId: opts.result.runId,
+      inspectedPaths: opts.result.inspectedPaths,
+      emittedDiagnostics: diagnosticsForResolution,
+    });
+  }
+
+  if (succeeded && opts.sinks.resolveQuestions !== undefined) {
+    await opts.sinks.resolveQuestions({
+      processorId: opts.result.processorId,
+      runId: opts.result.runId,
+      inspectedPaths: opts.result.inspectedPaths,
+      emittedQuestions: opts.result.effects.filter(
+        (effect): effect is QuestionEffect => effect.kind === "question",
+      ),
     });
   }
 
