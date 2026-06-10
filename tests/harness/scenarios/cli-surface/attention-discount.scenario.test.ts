@@ -156,6 +156,50 @@ scenario(
     );
     expect(beta?.attention?.discount).toBe(0);
 
+    // agenda-with mirrors today/prep (task-lifecycle §"Attention
+    // discounting"): demoted ordering inherited from the shared action
+    // state plus the same explainable attention field per JSON row. The
+    // single-letter topic is a substring match that catches both tasks.
+    const agenda = structuredData(
+      (
+        await h.runCli([
+          "run",
+          "agenda-with",
+          "u",
+          "--date",
+          "2026-06-05",
+          "--json",
+        ])
+      ).stdout,
+    ) as {
+      readonly agendaItems: ReadonlyArray<{
+        readonly text: string;
+        readonly attention: {
+          readonly discount: number;
+          readonly impressions: number;
+          readonly lastShown: string;
+        } | null;
+      }>;
+    };
+    const agendaTexts = agenda.agendaItems.map((item) => item.text);
+    expect(agendaTexts).toContain("Send budget update");
+    expect(agendaTexts).toContain("Review beta launch");
+    expect(agendaTexts.indexOf("Review beta launch")).toBeLessThan(
+      agendaTexts.indexOf("Send budget update"),
+    );
+    expect(
+      agenda.agendaItems.find((item) => item.text === "Send budget update")
+        ?.attention,
+    ).toEqual({
+      discount: 0.2,
+      impressions: 4,
+      lastShown: "2026-06-05",
+    });
+    expect(
+      agenda.agendaItems.find((item) => item.text === "Review beta launch")
+        ?.attention?.discount,
+    ).toBe(0);
+
     // Idempotent: a re-tick rewrites nothing.
     const before = await readFile(
       join(h.vaultPath, "wiki/dailies/2026-06-05.md"),
