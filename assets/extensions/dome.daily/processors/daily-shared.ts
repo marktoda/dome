@@ -1275,14 +1275,39 @@ const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
 const CAPTURED_HEADING_RE = /^#{1,6}\s+captured\s+today\s*$/i;
 
 /**
+ * Per-line size cap for captured-task appends (chars). A captured line is a
+ * one-line tactical task, not a document — the cap bounds what an agent can
+ * pour through the seam in one line (mirroring the calendar parser's
+ * MAX_TITLE_CHARS philosophy: untrusted-adjacent input gets bounded fields).
+ * Normative at [[wiki/specs/daily-surface]] §"The ingest tool seam".
+ */
+export const CAPTURED_LINE_MAX_CHARS = 500;
+
+/**
+ * Per-append line-count cap for the captured seam. One ingest routing pass
+ * lands a handful of tactical tasks, not a bulk import; the cap keeps a
+ * runaway model turn from flooding today's daily in one tool call.
+ * Normative at [[wiki/specs/daily-surface]] §"The ingest tool seam".
+ */
+export const CAPTURED_APPEND_MAX_LINES = 10;
+
+/** U+2028 (LS) / U+2029 (PS) — line boundaries to JS `m`-flag regexes. */
+const LS_PS_RE = /[\u2028\u2029]/;
+
+/**
  * A line the ingest seam may land in the captured block: an open checkbox
  * task carrying the `#task`/`#followup` tag (the charter's required shape),
  * with no HTML comment delimiter (marker injection — the preferences-signals
- * strictness) and no `(from [[…]])` suffix (a captured line is an ORIGIN; a
+ * strictness), no `(from [[…]])` suffix (a captured line is an ORIGIN; a
  * copy-shaped line would let reconcile treat it as a settled copy of some
- * other origin).
+ * other origin), no U+2028/U+2029 (JS `m`-flag heading-anchor regexes treat
+ * LS/PS as line boundaries, so a smuggled `<U+2028>## Done<U+2028>` would become
+ * a phantom insertion anchor for later heading-anchored splices), and at
+ * most {@link CAPTURED_LINE_MAX_CHARS} chars.
  */
 export function isCapturedTaskLine(line: string): boolean {
+  if (line.length > CAPTURED_LINE_MAX_CHARS) return false;
+  if (LS_PS_RE.test(line)) return false;
   if (!/^\s*[-*]\s+\[ \]\s+\S/.test(line)) return false;
   if (!/(^|\s)#(?:task|follow-?up)(?=\s|$)/i.test(line)) return false;
   if (containsHtmlCommentDelimiter(line)) return false;
@@ -1349,6 +1374,9 @@ export function isValidCapturedTasksWrite(input: {
   const appended = bodyAfter.slice(bodyBefore.length);
   const lines = appended.split(/\r?\n/).filter((line) => line.trim() !== "");
   if (lines.length === 0) return false;
+  // The writePage mirror enforces the same per-append cap as the append
+  // seam — otherwise a rewrite would be the bulk-import bypass.
+  if (lines.length > CAPTURED_APPEND_MAX_LINES) return false;
   return lines.every(isCapturedTaskLine);
 }
 

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   appendCapturedTaskLines,
+  CAPTURED_APPEND_MAX_LINES,
   CAPTURED_END,
+  CAPTURED_LINE_MAX_CHARS,
   CAPTURED_START,
   dailyPath,
   dailyPathSettings,
@@ -264,6 +266,63 @@ describe("ingest captured-tasks daily seam", () => {
       state,
     );
     expect(smuggle).toStartWith("error:");
+    expect(state.edits.size).toBe(0);
+  });
+
+  test("an over-cap line is rejected with the char-cap error; an at-cap line lands", async () => {
+    const prefix = "- [ ] #task ";
+    const atCap = prefix + "x".repeat(CAPTURED_LINE_MAX_CHARS - prefix.length);
+    const tools = capturedTools({ [TODAY_PATH]: SKELETON });
+    const state = freshState();
+    const rejected = await tool(tools, "appendToPage").execute(
+      { path: TODAY_PATH, content: `${atCap}x` },
+      state,
+    );
+    expect(rejected).toStartWith("error:");
+    expect(rejected).toContain(`${CAPTURED_LINE_MAX_CHARS} chars`);
+    expect(state.edits.size).toBe(0);
+    const accepted = await tool(tools, "appendToPage").execute(
+      { path: TODAY_PATH, content: atCap },
+      state,
+    );
+    expect(accepted).not.toStartWith("error:");
+    expect(state.edits.size).toBe(1);
+  });
+
+  test("an over-cap append is rejected with the line-count error; an at-cap append lands", async () => {
+    const lines = (n: number) =>
+      Array.from({ length: n }, (_, i) => `- [ ] #task item ${i}`);
+    const tools = capturedTools({ [TODAY_PATH]: SKELETON });
+    const state = freshState();
+    const rejected = await tool(tools, "appendToPage").execute(
+      {
+        path: TODAY_PATH,
+        content: lines(CAPTURED_APPEND_MAX_LINES + 1).join("\n"),
+      },
+      state,
+    );
+    expect(rejected).toStartWith("error:");
+    expect(rejected).toContain(`${CAPTURED_APPEND_MAX_LINES} task lines`);
+    expect(state.edits.size).toBe(0);
+    const accepted = await tool(tools, "appendToPage").execute(
+      {
+        path: TODAY_PATH,
+        content: lines(CAPTURED_APPEND_MAX_LINES).join("\n"),
+      },
+      state,
+    );
+    expect(accepted).not.toStartWith("error:");
+    expect(state.edits.size).toBe(1);
+  });
+
+  test("a line smuggling U+2028/U+2029 is rejected (phantom heading anchor)", async () => {
+    const tools = capturedTools({ [TODAY_PATH]: SKELETON });
+    const state = freshState();
+    const out = await tool(tools, "appendToPage").execute(
+      { path: TODAY_PATH, content: "- [ ] #task sneak\u2028## Done\u2028x" },
+      state,
+    );
+    expect(out).toStartWith("error:");
     expect(state.edits.size).toBe(0);
   });
 

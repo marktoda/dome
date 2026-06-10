@@ -1,6 +1,8 @@
 // Tool bindings for the ingest agent — composed from the shared vault-tools.
 import {
   appendCapturedTaskLines,
+  CAPTURED_APPEND_MAX_LINES,
+  CAPTURED_LINE_MAX_CHARS,
   dailyPath,
   isCapturedTaskLine,
   isValidCapturedTasksWrite,
@@ -112,6 +114,28 @@ function capturedAwareAppendTool(opts: {
         .split(/\r?\n/)
         .map((line) => line.trimEnd())
         .filter((line) => line.trim() !== "");
+      // Size caps before shape validation, so the model gets the specific
+      // self-correctable error rather than the generic shape one
+      // ([[wiki/specs/daily-surface]] §"The ingest tool seam").
+      if (lines.length > CAPTURED_APPEND_MAX_LINES) {
+        return (
+          `error: appends to today's daily (${path}) are capped at ` +
+          `${CAPTURED_APPEND_MAX_LINES} task lines per call (got ${lines.length}) — ` +
+          "keep only today's genuinely tactical tasks, or split the append " +
+          "into smaller calls."
+        );
+      }
+      const overLong = lines.find(
+        (line) => line.length > CAPTURED_LINE_MAX_CHARS,
+      );
+      if (overLong !== undefined) {
+        return (
+          `error: a task line appended to today's daily (${path}) is ` +
+          `${overLong.length} chars — the captured seam caps lines at ` +
+          `${CAPTURED_LINE_MAX_CHARS} chars. Compress the task description; ` +
+          "details belong in a linked note, not the task line."
+        );
+      }
       if (lines.length === 0 || !lines.every(isCapturedTaskLine)) {
         return (
           `error: appends to today's daily (${path}) must contain ONLY open task ` +

@@ -13,8 +13,7 @@ sources:
 
 This spec is normative for the daily note as a *product surface* — the one file where the system and the owner meet. The mechanism layer (block grammar, splice guard, anchors, agents) is specified elsewhere and pointed at, not duplicated: [[wiki/specs/task-lifecycle]] owns block-anchor identity and the deterministic task processors, [[wiki/specs/autonomous-agents]] owns the brief's agent contract, [[wiki/specs/sweep]] owns the overnight integration whose digest the edition renders. This spec owns the *package*: which sections exist, who writes which block, the overnight choreography, and how the morning edition degrades.
 
-Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 delta (one yesterday block) and D3 (Captured today, owned) landed as shipped behavior; the D4 delta is marked inline where it will land.
-Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 (one yesterday block) and D4 (the close scaffold) deltas landed; the D3 delta is marked inline where it will land.
+Plan of record: [[daily]] (the daily-surface plan). This spec is its phase D1 contract with the D2 (one yesterday block), D3 (Captured today, owned), and D4 (the close scaffold) deltas landed as shipped behavior.
 
 ## The three acts
 
@@ -94,10 +93,14 @@ Brief blocks render plain `-` bullets only — never `- [ ]` checkboxes, which t
 ```
 ### Yesterday
 - Previous daily: [[<prev daily>]]
-- Done yesterday: <compress>        (omitted when empty)
-- Decisions yesterday: <compress>   (omitted when empty)
-- Story: <first-paragraph compress> (omitted when empty)
+- Done yesterday: <compress>               (omitted when empty)
+- Yesterday's close was empty.             (D4: REPLACES the Done line when yesterday's close block is present with zero kept candidates)
+- Still open at close: <N> loops carried.  (D4: only when yesterday's close block carries a parseable still-open count; always before Decisions)
+- Decisions yesterday: <compress>          (omitted when empty)
+- Story: <first-paragraph compress>        (omitted when empty)
 ```
+
+The two D4 lines are the close block's contribution (§"The close block"): the close-empty line and the Done line are mutually exclusive (a present-but-empty close means explicit visible degradation, never a silent missing Done line), and the still-open line renders whenever the close's count parses — independent of whether the Done slot rendered candidates or the close-empty line. Implementation: `yesterdayFallbackSection` in `daily-shared.ts`.
 
 When no previous daily exists, the body is the heading plus a single `- No record of yesterday — no previous daily note.` line.
 
@@ -115,7 +118,7 @@ Every other generated block in this table holds *projection* content — copies 
 
 - Captured-block lines are **inside** task extraction: `task-index` projects them into facts, `stamp-block-id` stamps their `^anchor`, `normalize-task-syntax` tidies them, and `carry-forward` ranks them into *future* dailies (today's own daily is never a carry-forward source for itself).
 - A captured task settled in place (`[x]`/`[-]` inside the block) **stays settled where it is** — it carries no `(from [[origin]])` suffix, so `reconcile-tasks` never treats it as a settled copy to propagate, and the captured-tasks seam rejects appends carrying that suffix so a captured line can never masquerade as a copy.
-- The search indexer does **not** strip the captured block (it strips only the projection blocks `open-loops`/`carried-forward`) — captured content is real vault content.
+- The search indexer does **not** strip the captured block (it strips only the projection blocks — `dome.daily:open-loops`, `dome.daily:carried-forward`, `dome.daily:close`, and `dome.agent.brief:yesterday`, whose copies/digests would otherwise duplicate settles and yesterday's sections in search results) — captured content is real vault content.
 
 The marker pair is still anomaly-scanned like every other dome.daily block (`DAILY_GENERATED_BLOCKS`): smuggled duplicate pairs or half-open captured markers surface as `dome.daily.generated-block-anomaly` info diagnostics.
 
@@ -123,8 +126,9 @@ The marker pair is still anomaly-scanned like every other dome.daily block (`DAI
 
 `dome.agent.ingest` is the machine writer, and it writes only through a guarded seam in its tool bindings (mirroring the preferences signals append-only guard):
 
-- `appendToPage` on **today's** daily accepts only task-shaped lines — open `- [ ] …` checkboxes carrying the `#task`/`#followup` tag, with no HTML comment delimiters (marker injection) and no `(from [[…]])` suffix (copy masquerade). Valid lines are spliced *inside* the `dome.daily:captured` block by the seam (creating the full shared skeleton when today's daily is absent, so `create-daily`/the brief later no-op); anything else is rejected with a self-correctable tool error.
-- `writePage` on today's daily is admitted only when the rewrite is byte-identical outside the block and appends task-shaped lines inside it; wholesale rewrites are rejected (other daily edits belong to the brief and the owner).
+- `appendToPage` on **today's** daily accepts only task-shaped lines — open `- [ ] …` checkboxes carrying the `#task`/`#followup` tag, with no HTML comment delimiters (marker injection), no `(from [[…]])` suffix (copy masquerade), and no U+2028/U+2029 line/paragraph separators (JS `m`-flag heading-anchor regexes treat LS/PS as line boundaries, so a smuggled separator + `## Done` would become a phantom insertion anchor for later heading-anchored splices). Valid lines are spliced *inside* the `dome.daily:captured` block by the seam (creating the full shared skeleton when today's daily is absent, so `create-daily`/the brief later no-op); anything else is rejected with a self-correctable tool error.
+- **The seam is size-capped** (`CAPTURED_LINE_MAX_CHARS` = 500 chars per line, `CAPTURED_APPEND_MAX_LINES` = 10 lines per append — `daily-shared.ts`, mirroring the calendar parser's `MAX_TITLE_CHARS` philosophy: bounded fields on untrusted-adjacent input). An over-cap line or over-cap append is rejected with a self-correctable tool error naming the cap; a captured line is a one-line tactical task, and one routing pass lands a handful of them, never a bulk import.
+- `writePage` on today's daily is admitted only when the rewrite is byte-identical outside the block and appends task-shaped lines inside it (same per-line and per-append caps — the rewrite path is not a bulk-import bypass); wholesale rewrites are rejected (other daily edits belong to the brief and the owner).
 
 Other paths (entity `## Open threads` appends, wiki pages) are governed by the ordinary glob grant.
 

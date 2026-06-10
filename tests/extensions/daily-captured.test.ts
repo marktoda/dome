@@ -18,7 +18,9 @@ import taskIndex from "../../assets/extensions/dome.daily/processors/task-index"
 import {
   actionItemsFromMarkdown,
   appendCapturedTaskLines,
+  CAPTURED_APPEND_MAX_LINES,
   CAPTURED_END,
+  CAPTURED_LINE_MAX_CHARS,
   CAPTURED_START,
   dailyPath,
   dailyPathSettings,
@@ -109,6 +111,24 @@ describe("isCapturedTaskLine", () => {
     expect(isCapturedTaskLine("- [x] #task already settled")).toBe(false);
     expect(isCapturedTaskLine("todo: directive form #task")).toBe(false);
     expect(isCapturedTaskLine("## Captured today")).toBe(false);
+  });
+
+  test("rejects a line over the per-line char cap; accepts one exactly at it", () => {
+    const prefix = "- [ ] #task ";
+    const atCap = prefix + "x".repeat(CAPTURED_LINE_MAX_CHARS - prefix.length);
+    expect(atCap.length).toBe(CAPTURED_LINE_MAX_CHARS);
+    expect(isCapturedTaskLine(atCap)).toBe(true);
+    expect(isCapturedTaskLine(`${atCap}x`)).toBe(false);
+  });
+
+  test("rejects U+2028/U+2029 (LS/PS are line boundaries to m-flag regexes)", () => {
+    // A smuggled LS + `## Done ` would read as its own line to every
+    // `m`-flag heading-anchor regex — a phantom insertion anchor for later
+    // heading-anchored splices.
+    expect(
+      isCapturedTaskLine("- [ ] #task sneak\u2028## Done\u2028more #task"),
+    ).toBe(false);
+    expect(isCapturedTaskLine("- [ ] #task sneak\u2029## Done")).toBe(false);
   });
 
   test("rejects marker injection and copy-shaped lines", () => {
@@ -221,6 +241,21 @@ describe("isValidCapturedTasksWrite", () => {
       lines: ["- [ ] #task call the landlord"],
     });
     expect(isValidCapturedTasksWrite({ before: bare, after })).toBe(false);
+  });
+
+  test("caps the appended line count (the rewrite path is not a bulk-import bypass)", () => {
+    const lines = (n: number) =>
+      Array.from({ length: n }, (_, i) => `- [ ] #task item ${i}`);
+    const atCap = appendCapturedTaskLines({
+      content: before,
+      lines: lines(CAPTURED_APPEND_MAX_LINES),
+    });
+    expect(isValidCapturedTasksWrite({ before, after: atCap })).toBe(true);
+    const overCap = appendCapturedTaskLines({
+      content: before,
+      lines: lines(CAPTURED_APPEND_MAX_LINES + 1),
+    });
+    expect(isValidCapturedTasksWrite({ before, after: overCap })).toBe(false);
   });
 
   test("rejects a body rewrite that drops existing block content", () => {
