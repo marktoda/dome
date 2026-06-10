@@ -49,6 +49,7 @@ extensions:
         - "wiki/**/*.md"
       graph.write:
         - "dome.daily.*"
+        - "dome.attention.*"
       question.ask: true
 
   dome.search:

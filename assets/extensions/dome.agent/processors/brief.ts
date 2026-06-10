@@ -40,6 +40,8 @@ import {
   replaceDailyStartContextSection,
 } from "../../dome.daily/processors/daily-shared";
 
+import { ATTENTION_DISCOUNT_PREDICATE } from "../../dome.daily/processors/attention-shared";
+
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import {
   agentQuestionEffects,
@@ -56,6 +58,9 @@ import {
   parseCalendarDay,
   questionsBriefSection,
   replaceBriefBlock,
+  staleLoopsFromFacts,
+  staleLoopsTaskLines,
+  type BriefStaleLoop,
   type CalendarMeeting,
 } from "../lib/brief-shared";
 import { makeBriefTools } from "../lib/brief-tools";
@@ -155,6 +160,13 @@ const brief = defineProcessorImplementation({
       },
     });
 
+    // Stale-loops pre-run context: heavily-discounted open loops from the
+    // deterministic dome.attention.discount facts (task-lifecycle §"Attention
+    // discounting"). Read-only projection data — never model-derived.
+    const staleLoops = staleLoopsFromFacts(
+      ctx.projection?.facts({ predicate: ATTENTION_DISCOUNT_PREDICATE }) ?? [],
+    );
+
     let result;
     try {
       result = await runAgentLoop({
@@ -168,6 +180,7 @@ const brief = defineProcessorImplementation({
             yesterdayExists: yesterdayContent !== null,
             calendarPath,
             meetings,
+            staleLoops,
           }),
         ),
         tools,
@@ -364,6 +377,7 @@ function taskTurn(input: {
   readonly yesterdayExists: boolean;
   readonly calendarPath: string;
   readonly meetings: ReadonlyArray<CalendarMeeting> | null;
+  readonly staleLoops: ReadonlyArray<BriefStaleLoop>;
 }): string {
   const date = formatDate(input.today);
   const lines = [
@@ -395,6 +409,7 @@ function taskTurn(input: {
       }),
     );
   }
+  lines.push(...staleLoopsTaskLines(input.staleLoops));
   lines.push(
     "",
     "Fill the yesterday block" +

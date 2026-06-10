@@ -1,5 +1,5 @@
 id: dome.agent
-version: 0.3.0
+version: 0.3.1
 processors:
   - id: dome.agent.ingest
     version: 0.2.0
@@ -96,7 +96,7 @@ processors:
     module: processors/consolidate.ts
 
   - id: dome.agent.brief
-    version: 0.1.1
+    version: 0.1.2
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
