@@ -2,12 +2,12 @@
 type: spec
 created: 2026-06-09
 updated: 2026-06-09
-status: draft
 sources:
   - "[[memory]]"
   - "[[v1]]"
   - "[[wiki/specs/projection-store]]"
   - "[[wiki/specs/capabilities]]"
+status: draft
 ---
 
 # Embeddings (banked design)

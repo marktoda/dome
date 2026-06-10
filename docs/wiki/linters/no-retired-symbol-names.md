@@ -1,9 +1,10 @@
 ---
 type: linter
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-10
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 status: v1 (proposed; lockstep-check landing in Phase 1 of implementation)
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
 # no-retired-symbol-names

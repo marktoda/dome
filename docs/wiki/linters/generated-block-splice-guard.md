@@ -2,8 +2,11 @@
 type: linter
 created: 2026-06-10
 updated: 2026-06-10
+sources:
+  - "[[wiki/specs/task-lifecycle]]"
+  - "[[wiki/specs/autonomous-agents]]"
+  - "[[wiki/specs/preferences]]"
 status: v1 (implemented)
-sources: ["[[wiki/specs/task-lifecycle]]", "[[wiki/specs/autonomous-agents]]", "[[wiki/specs/preferences]]"]
 ---
 
 # generated-block-splice-guard

@@ -1,10 +1,15 @@
 ---
 type: entity
+aliases:
+  - MCP
+  - Model Context Protocol
+tags:
+  - protocol
+  - standard
 created: 2026-05-25
-updated: 2026-05-29
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
-aliases: ["MCP", "Model Context Protocol"]
-tags: ["protocol", "standard"]
+updated: 2026-06-09
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
 ---
 
 # Model Context Protocol (MCP)
