@@ -144,7 +144,7 @@ describe("read tools are present", () => {
     expect(names).toContain("searchVault");
   });
 
-  test("exactly four tools are returned (readPage, listPages, searchVault, editDestination, recordUncertainIntegration)", () => {
+  test("exactly five tools are returned (readPage, listPages, searchVault, editDestination, recordUncertainIntegration)", () => {
     const tools = makeTools();
     // 3 read + editDestination + recordUncertainIntegration = 5
     expect(tools.length).toBe(5);
