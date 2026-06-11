@@ -242,6 +242,19 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "model.budget-grant-capped";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly budget: {
+        readonly processorId: string;
+        readonly declaredMaxDailyCostUsd: number;
+        readonly grantedMaxDailyCostUsd: number;
+      };
+    }
+  | {
       readonly code: "config.daily-path-mismatch";
       readonly severity: "warning";
       readonly subject: "config";
@@ -308,6 +321,7 @@ export type HealthSummary = {
   readonly operationalSchemaMismatch: number;
   readonly capabilityGrantGaps: number;
   readonly capabilityGrantEntryGaps: number;
+  readonly modelBudgetGrantCapped: number;
   readonly modelProviderMissing: number;
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
@@ -403,6 +417,13 @@ export async function collectHealthReport(opts: {
           registry: opts.registry,
           resolveGrants: opts.resolveGrants,
         });
+  const modelBudgetGrants =
+    opts.registry === undefined || opts.resolveGrants === undefined
+      ? []
+      : modelBudgetGrantFindings({
+          registry: opts.registry,
+          resolveGrants: opts.resolveGrants,
+        });
   const modelProvider =
     opts.registry === undefined || opts.resolveGrants === undefined
       ? []
@@ -448,6 +469,7 @@ export async function collectHealthReport(opts: {
     ...storageSchema,
     ...capabilityGrants,
     ...capabilityGrantEntries,
+    ...modelBudgetGrants,
     ...modelProvider,
     ...modelProviderProbe,
     ...dailyPathMismatch,
@@ -507,6 +529,7 @@ function buildHealthReport(
       operationalSchemaMismatch: count("operational.schema-mismatch"),
       capabilityGrantGaps: count("capability.grant-missing"),
       capabilityGrantEntryGaps: count("capability.grant-entry-missing"),
+      modelBudgetGrantCapped: count("model.budget-grant-capped"),
       modelProviderMissing: count("model.provider-missing"),
       modelProviderUnreachable: count("model.provider-unreachable"),
       modelProviderKeyMissing: count("model.provider-key-missing"),
@@ -813,6 +836,59 @@ function modelProviderFindings(opts: {
       }),
     }),
   ]);
+}
+
+// The effective model.invoke daily cost cap is min(declared, granted)
+// (`resolveModelPolicy` in src/engine/core/model-invoke.ts). A vault grant
+// raised above the manifest declaration is therefore silently ineffective —
+// the natural operator move "raise the grant to unblock a starved processor"
+// does nothing and nothing says so. This probe names the mismatch and the
+// binding side.
+export function modelBudgetGrantFindings(opts: {
+  readonly registry: ProcessorRegistry;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+}): ReadonlyArray<HealthFinding> {
+  const findings: HealthFinding[] = [];
+  for (const processor of [...opts.registry.all()].sort((a, b) =>
+    compareStrings(a.id, b.id),
+  )) {
+    const declared = modelInvokeCap(processor.capabilities);
+    const granted = modelInvokeCap(opts.resolveGrants(processor.id));
+    if (declared === undefined || granted === undefined) continue;
+    if (declared.maxDailyCostUsd === undefined) continue;
+    if (granted.maxDailyCostUsd === undefined) continue;
+    if (granted.maxDailyCostUsd <= declared.maxDailyCostUsd) continue;
+    findings.push(
+      Object.freeze({
+        code: "model.budget-grant-capped" as const,
+        severity: "warning" as const,
+        subject: "config" as const,
+        id: processor.id,
+        message:
+          `Processor ${processor.id} is granted ` +
+          `$${granted.maxDailyCostUsd}/day for model.invoke but its manifest ` +
+          `declares $${declared.maxDailyCostUsd}/day; the effective cap is ` +
+          `the declared $${declared.maxDailyCostUsd} (min of the two).`,
+        recovery:
+          "Lower the grant in .dome/config.yaml to match the declaration, " +
+          "or raise maxDailyCostUsd in the bundle manifest if the higher " +
+          "budget is intended.",
+        budget: Object.freeze({
+          processorId: processor.id,
+          declaredMaxDailyCostUsd: declared.maxDailyCostUsd,
+          grantedMaxDailyCostUsd: granted.maxDailyCostUsd,
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+function modelInvokeCap(
+  capabilities: ReadonlyArray<Capability>,
+): { readonly maxDailyCostUsd?: number } | undefined {
+  const cap = capabilities.find((c) => c.kind === "model.invoke");
+  return cap as { readonly maxDailyCostUsd?: number } | undefined;
 }
 
 /**
