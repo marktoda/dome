@@ -9,10 +9,11 @@
 // processor that calls ctx.modelInvoke.structured() and propagates any error
 // (no try/catch around the model call). When the injected modelProvider
 // throws, the runtime wraps the error in "model.invoke.provider-failed"
-// (retryable: true), retries once (PROVIDER_MAX_ATTEMPTS = 2), then
-// propagates the failure. The executor records the run as status="failed"
-// with the error JSON. Because this is a garden-phase processor, adoption
-// still completes (only adoption-phase failures block adoption).
+// (retryable: true) and, after exhausting retries per the retry budget in
+// docs/wiki/specs/processor-execution.md, propagates the failure. The
+// executor records the run as status="failed" with the error JSON. Because
+// this is a garden-phase processor, adoption still completes (only
+// adoption-phase failures block adoption).
 //
 // Note: dome.warden.integrity intentionally swallows model errors via
 // try/catch (it degrades to a clean no-op when the model is unavailable).
@@ -79,31 +80,22 @@ extensions:
     });
 
     // Step 2: tick — the processor fires, calls model.invoke, provider throws,
-    // runtime retries (PROVIDER_MAX_ATTEMPTS = 2), then propagates. The
-    // executor records status="failed". Because this is garden-phase, adoption
-    // still completes.
+    // runtime exhausts its retry budget (docs/wiki/specs/processor-execution.md),
+    // then propagates. The executor records status="failed". Because this is
+    // garden-phase, adoption still completes.
     const tick = await h.tick();
     expect(tick.adopted).toBe(true);
 
     // Step 3: assert the run is ledgered as failed.
-    // The error JSON carries code "model.invoke.provider-failed" — this is
-    // the terminal error code after exhausting retries when the provider
-    // throws (see src/engine/core/model-invoke.ts callGuardedWithRetry).
-    // Adaptation from task sketch: real status is "failed", which matches the
-    // sketch expectation. The error code is "model.invoke.provider-failed",
-    // not a generic sentinel.
+    // The error JSON carries code "model.invoke.provider-failed" — the
+    // terminal error code after exhausting retries when the provider throws.
     const failedRun = await h
       .expectLedger({ processorId: PROCESSOR_ID, status: "failed" })
-      .toHaveAtLeastOne();
-    expect(failedRun.status).toBe("failed");
-    expect(failedRun.error).not.toBeNull();
-    if (failedRun.error !== null) {
-      const parsed = JSON.parse(failedRun.error) as {
-        code?: string;
-        retryable?: boolean;
-      };
-      expect(parsed.code).toBe("model.invoke.provider-failed");
-    }
+      .toHaveExactlyOne();
+    expect(JSON.parse(failedRun.error ?? "{}")).toMatchObject({
+      code: "model.invoke.provider-failed",
+      retryable: true,
+    });
 
     // No succeeded runs (the provider always throws).
     await h
