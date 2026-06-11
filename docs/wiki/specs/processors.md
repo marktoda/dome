@@ -220,6 +220,14 @@ export default defineProcessorImplementation({
 
 ## Maintenance loops
 
+Loops declare in two homes and compose at runtime: bundle-scoped loops in
+the bundle's `manifest.yaml` `loops:` block (required processors must be the
+bundle's own; settlement checks are always the standard five), and
+cross-bundle composition loops in the core registry
+(`src/extensions/maintenance-loops.ts`). Status/check read the composed set
+from the runtime — a vault-local or third-party bundle's loop appears
+automatically. See [[wiki/specs/sdk-surface]] §"Adding a maintenance loop".
+
 A **maintenance loop** is the V1 automation design unit above processors. It is
 metadata, not a new executable primitive:
 

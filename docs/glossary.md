@@ -66,7 +66,7 @@ there is no fifth core type behind any of them:
 
 - **Warden** — a garden processor with `model.invoke` + `question.ask` and no `graph.write`: reads, judges, asks. Model judgment stays transient; durable outcomes arrive only via answered questions. [[wiki/specs/task-lifecycle]]
 - **Agent** — a garden processor running a tool-use loop via `ctx.modelInvoke.step`; writes land as one `PatchEffect` inside its grant. [[wiki/specs/autonomous-agents]]
-- **Maintenance loop** — descriptive metadata grouping processors by the desired condition they maintain. A registry row read by status/check, not a dispatcher.
+- **Maintenance loop** — descriptive metadata grouping processors by the desired condition they maintain; read by status/check, never a dispatcher. Bundle-scoped loops are declared in `manifest.yaml`; cross-bundle composition loops live in the core registry.
 - **Retired: Tool, Hook, Workflow** — v0.5 primitives that dissolved. A "tool" is a processor emitting PatchEffects; a "hook" is a signal-triggered processor; a "workflow" is a garden processor with `model.invoke`. Don't reintroduce them as nouns; see [[wiki/linters/no-retired-symbol-names]].
 
 ## One word, several meanings
