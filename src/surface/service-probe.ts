@@ -42,6 +42,10 @@ export type ServiceDeps = {
   readonly uid?: number | undefined;
   readonly launchAgentsDir?: string | undefined;
   readonly launchctl?: LaunchctlRunner | undefined;
+  /** systemd --user runner (Linux); same result shape as launchctl. */
+  readonly systemctl?: LaunchctlRunner | undefined;
+  /** systemd user-unit directory (default ~/.config/systemd/user). */
+  readonly systemdUserDir?: string | undefined;
   readonly bunPath?: string | undefined;
   readonly domeBin?: string | undefined;
   /** Bounded wait for a booted-out service to leave launchd (test knob). */
@@ -53,6 +57,8 @@ export type ResolvedServiceDeps = {
   readonly uid: number | null;
   readonly launchAgentsDir: string;
   readonly launchctl: LaunchctlRunner;
+  readonly systemctl: LaunchctlRunner;
+  readonly systemdUserDir: string;
   readonly bunPath: string;
   readonly domeBin: string;
   readonly drainTimeoutMs: number;
@@ -66,6 +72,13 @@ export function resolveServiceDeps(deps: ServiceDeps): ResolvedServiceDeps {
     launchAgentsDir: deps.launchAgentsDir ??
       join(homedir(), "Library", "LaunchAgents"),
     launchctl: deps.launchctl ?? spawnLaunchctl,
+    systemctl: deps.systemctl ?? spawnSystemctl,
+    systemdUserDir: deps.systemdUserDir ??
+      join(
+        process.env["XDG_CONFIG_HOME"] ?? join(homedir(), ".config"),
+        "systemd",
+        "user",
+      ),
     bunPath: deps.bunPath ?? process.execPath,
     domeBin: deps.domeBin ?? DOME_BIN,
     drainTimeoutMs: deps.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
@@ -83,6 +96,22 @@ async function spawnLaunchctl(
   args: ReadonlyArray<string>,
 ): Promise<LaunchctlResult> {
   const proc = Bun.spawn(["launchctl", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+}
+
+/** Real systemctl boundary: `systemctl --user <args>` via Bun.spawn. */
+async function spawnSystemctl(
+  args: ReadonlyArray<string>,
+): Promise<LaunchctlResult> {
+  const proc = Bun.spawn(["systemctl", "--user", ...args], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -149,6 +178,28 @@ export async function probeServiceState(
   deps: ServiceDeps = {},
 ): Promise<ServiceState> {
   const d = resolveServiceDeps(deps);
+
+  if (d.platform === "linux") {
+    // The `plist` field carries the unit path on linux — the field name is
+    // the established ServiceState shape consumed by `dome status` and the
+    // MCP status tool; renaming it would ripple through every consumer.
+    const label = serviceUnitNameForVault(resolve(vaultPath));
+    const unitPath = join(d.systemdUserDir, label);
+    const installed = existsSync(unitPath);
+    let loaded: boolean | null = null;
+    if (installed) {
+      const probe = await d.systemctl(["is-active", label]);
+      loaded = probe.exitCode === 0;
+    }
+    return Object.freeze({
+      supported: true,
+      label,
+      plist: unitPath,
+      installed,
+      loaded,
+    });
+  }
+
   if (d.platform !== "darwin") return Object.freeze({ supported: false });
 
   const label = serviceLabelForVault(resolve(vaultPath));

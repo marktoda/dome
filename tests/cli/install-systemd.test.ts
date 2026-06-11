@@ -4,12 +4,37 @@
 // systemctl; temp dirs; never touches ~/.config or real systemd.
 
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { renderServeSystemdUnit } from "../../src/cli/commands/install-systemd";
 import {
+  probeServiceState,
   serviceUnitNameForVault,
   vaultServiceSlug,
+  type LaunchctlResult,
+  type LaunchctlRunner,
 } from "../../src/surface/service-probe";
+
+type FakeRunner = {
+  readonly calls: Array<ReadonlyArray<string>>;
+  readonly runner: LaunchctlRunner;
+};
+
+/** Recording systemctl fake; per-subcommand exit codes overridable. */
+function fakeSystemctl(
+  overrides: Partial<Record<string, LaunchctlResult>> = {},
+): FakeRunner {
+  const calls: Array<ReadonlyArray<string>> = [];
+  const runner: LaunchctlRunner = async (args) => {
+    calls.push([...args]);
+    const sub = args[0] ?? "";
+    return overrides[sub] ?? { exitCode: 0, stdout: "", stderr: "" };
+  };
+  return { calls, runner };
+}
 
 describe("serviceUnitNameForVault", () => {
   test("derives a deterministic .service name from the vault slug", () => {
@@ -60,5 +85,48 @@ describe("renderServeSystemdUnit", () => {
     });
     // systemd expands % specifiers; literal % must be doubled, " escaped.
     expect(unit).toContain('Environment="WEIRD=a%%b\\"c"');
+  });
+});
+
+describe("probeServiceState on linux", () => {
+  test("reports installed+active from the unit file and is-active", async () => {
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const vault = mkdtempSync(join(tmpdir(), "dome-probe-vault-"));
+    const unit = serviceUnitNameForVault(vault);
+    await writeFile(join(userDir, unit), "[Unit]\n", "utf8");
+    const ctl = fakeSystemctl({
+      "is-active": { exitCode: 0, stdout: "active\n", stderr: "" },
+    });
+
+    const state = await probeServiceState(vault, {
+      platform: "linux",
+      systemdUserDir: userDir,
+      systemctl: ctl.runner,
+    });
+    expect(state).toEqual({
+      supported: true,
+      label: unit,
+      plist: join(userDir, unit),
+      installed: true,
+      loaded: true,
+    });
+    expect(ctl.calls).toEqual([["is-active", unit]]);
+  });
+
+  test("not installed → loaded probe skipped", async () => {
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const vault = mkdtempSync(join(tmpdir(), "dome-probe-vault-"));
+    const ctl = fakeSystemctl();
+    const state = await probeServiceState(vault, {
+      platform: "linux",
+      systemdUserDir: userDir,
+      systemctl: ctl.runner,
+    });
+    expect(state).toMatchObject({
+      supported: true,
+      installed: false,
+      loaded: null,
+    });
+    expect(ctl.calls).toEqual([]);
   });
 });
