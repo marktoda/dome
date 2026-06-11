@@ -187,7 +187,7 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(9);
+    expect(report.summary.capabilityGrantGaps).toBe(10);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
@@ -199,6 +199,7 @@ scenario(
       "dome.markdown.normalize-frontmatter",
       "dome.markdown.page-status",
       "dome.markdown.refresh-updated",
+      "dome.markdown.render-index",
       "dome.markdown.repair-wikilinks",
       "dome.markdown.simplify-indexes",
       "dome.markdown.validate-wikilinks",

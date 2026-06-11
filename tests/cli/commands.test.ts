@@ -4571,8 +4571,25 @@ describe("runStatus", () => {
     const groups = summary["groups"] as ReadonlyArray<Record<string, unknown>>;
     const group = groups.find((item) => item["code"] === "status.warning");
     expect(group?.["first_source_refs"]).toContain("wiki/seed.md:3");
+    // The full summary carries the missing-description info nudge from pages
+    // without `description:` frontmatter; the attention summary excludes
+    // info-severity groups (info is gradual-fill, never attention).
+    const infoGroups = groups.filter((item) => item["severity"] === "info");
+    expect(infoGroups.map((item) => item["code"])).toEqual([
+      "dome.markdown.missing-description",
+    ]);
+    const infoCount = infoGroups.reduce(
+      (sum, item) => sum + (item["count"] as number),
+      0,
+    );
     const attentionSummary = record(parsed["attention_diagnostic_summary"]);
-    expect(attentionSummary).toEqual(summary);
+    expect(attentionSummary).toEqual({
+      ...summary,
+      groups: groups.filter((item) => item["severity"] !== "info"),
+      group_count: (summary["group_count"] as number) - infoGroups.length,
+      shown_groups: (summary["shown_groups"] as number) - infoGroups.length,
+      total: (summary["total"] as number) - infoCount,
+    });
     const firstSourceRefs =
       group?.["firstSourceRefs"] as ReadonlyArray<Record<string, unknown>>;
     expect(firstSourceRefs[0]?.["path"]).toBe("wiki/seed.md");

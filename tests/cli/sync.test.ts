@@ -97,7 +97,8 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
   ...EMPTY_OPERATIONAL_SUMMARY,
-  scheduledCount: 3,
+  // refresh-updated, simplify-indexes, duplicate-detection, render-index.
+  scheduledCount: 4,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
@@ -111,6 +112,14 @@ const EMPTY_HEALTH_SUMMARY = Object.freeze({
   outboxPending: 0,
   outboxFailed: 0,
   quarantined: 0,
+});
+// The seed wiki page carries no `description:` frontmatter, so the
+// dome.markdown.missing-description info lint contributes one durable content
+// diagnostic (info severity — never attention) to every synced fixture.
+const SEED_PAGE_HEALTH_SUMMARY = Object.freeze({
+  ...EMPTY_HEALTH_SUMMARY,
+  diagnostics: 1,
+  contentDiagnostics: 1,
 });
 
 // ----- Console capture ------------------------------------------------------
@@ -316,10 +325,12 @@ describe("runSync empty-diff init", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(FIRST_SYNC_OPERATIONAL_SUMMARY);
-    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
+    expect(parsed["health"]).toEqual(SEED_PAGE_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
+    // The missing-description info lint lands in durable projection health
+    // (see SEED_PAGE_HEALTH_SUMMARY above), not in the tick-level payload.
     expect(parsed["diagnostics"]).toEqual([]);
   }, SYNC_TEST_TIMEOUT_MS);
 
@@ -487,7 +498,7 @@ describe("runSync idempotent", () => {
     expect(parsed["closureCommit"]).toBeNull();
     expect(parsed["garden"]).toEqual(EMPTY_GARDEN_SUMMARY);
     expect(parsed["operational"]).toEqual(EMPTY_OPERATIONAL_SUMMARY);
-    expect(parsed["health"]).toEqual(EMPTY_HEALTH_SUMMARY);
+    expect(parsed["health"]).toEqual(SEED_PAGE_HEALTH_SUMMARY);
     expect(parsed["attention_required"]).toBe(false);
     expect(parsed["attention"]).toEqual([]);
     expect(parsed["next_actions"]).toEqual([]);
@@ -546,7 +557,7 @@ describe("runSync idempotent", () => {
     const parsed = parseSingleJsonObject();
     expect(parsed["status"]).toBe("in-sync");
     expect(parsed["health"]).toEqual({
-      ...EMPTY_HEALTH_SUMMARY,
+      ...SEED_PAGE_HEALTH_SUMMARY,
       outboxFailed: 1,
     });
     expect(parsed["attention_required"]).toBe(true);
@@ -585,9 +596,11 @@ describe("runSync idempotent", () => {
     const parsed = parseSingleJsonObject();
     expect(parsed["status"]).toBe("in-sync");
     expect(parsed["health"]).toEqual({
+      // Inserted warning + the seed page's missing-description info lint;
+      // only the warning is attention-grade.
       ...EMPTY_HEALTH_SUMMARY,
-      diagnostics: 1,
-      contentDiagnostics: 1,
+      diagnostics: 2,
+      contentDiagnostics: 2,
       attentionDiagnostics: 1,
     });
     expect(parsed["attention_required"]).toBe(true);
@@ -626,8 +639,7 @@ describe("runSync idempotent", () => {
     const parsed = parseSingleJsonObject();
     expect(parsed["status"]).toBe("in-sync");
     expect(parsed["health"]).toEqual({
-      ...EMPTY_HEALTH_SUMMARY,
-      diagnostics: 0,
+      ...SEED_PAGE_HEALTH_SUMMARY,
       unlocatedDiagnostics: 1,
     });
     expect(parsed["attention"]).toEqual([]);
