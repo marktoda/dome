@@ -374,3 +374,38 @@ describe("fallthrough", () => {
     TEST_TIMEOUT_MS,
   );
 });
+
+// ----- The HTML cockpit ----------------------------------------------------------------
+
+describe("GET /today", () => {
+  test("renders the HTML cockpit with bearer header", async () => {
+    const f = await fixture();
+    const res = await fetch(`${f.baseUrl}/today`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("ship the http surface");
+    expect(html).toContain('http-equiv="refresh"');
+  }, TEST_TIMEOUT_MS);
+
+  test("accepts ?token= on /today only", async () => {
+    const f = await fixture();
+    const ok = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
+    expect(ok.status).toBe(200);
+
+    const wrong = await fetch(`${f.baseUrl}/today?token=nope`);
+    expect(wrong.status).toBe(401);
+
+    // Query-param token must NOT authorize other routes.
+    const other = await fetch(`${f.baseUrl}/tasks?token=${TOKEN}`);
+    expect(other.status).toBe(401);
+  }, TEST_TIMEOUT_MS);
+
+  test("honors ?refresh= seconds", async () => {
+    const f = await fixture();
+    const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=30`);
+    expect(await res.text()).toContain('content="30"');
+  }, TEST_TIMEOUT_MS);
+});

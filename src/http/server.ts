@@ -14,13 +14,17 @@
 //   GET  /doc       → vault.readDocument                dome.http.document/v1
 //   GET  /questions → vault.listQuestions               dome.http.questions/v1
 //   POST /resolve   → vault.resolve                     dome.answer/v1
+//   GET  /today     → vault.runView("today") → HTML     cockpit page
 //
 // Boundary notes:
 //
 //   - Every route requires `Authorization: Bearer <token>` (constant-time
 //     comparison). The server is meant to bind loopback or a private
 //     (Tailscale-class) interface in the owner's trust domain — see the
-//     spec's §"Trust domain". There is no anonymous route.
+//     spec's §"Trust domain". There is no anonymous route. `GET /today`
+//     — and only that route — additionally accepts the same token as
+//     `?token=` so a browser navigation can reach the cockpit (see
+//     `queryTokenAuthorized`).
 //   - `POST /capture` implements the remote-capture seam
 //     ([[wiki/specs/capture]] §"The remote-capture seam"): it produces
 //     exactly what `dome capture` produces — one raw file, one ordinary
@@ -57,6 +61,7 @@ import {
   type CatalogViewProblem,
 } from "../surface/adapter";
 import { FIRST_PARTY_VIEWS, type FirstPartyViewEntry } from "../surface/view-catalog";
+import { renderTodayHtml } from "./today-html";
 import type { Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------
@@ -199,6 +204,28 @@ export function createDomeHttpServer(
         });
       }
 
+      case "GET /today": {
+        const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
+        const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
+          runCatalogView(v, FIRST_PARTY_VIEWS.today, Object.freeze({})),
+        );
+        if (outcome.kind === "open-failed") {
+          return commandErrorResponse("GET /today", openVaultErrorKind(outcome.error));
+        }
+        const run = outcome.value;
+        if (run.kind === "problem") {
+          return errorResponse(
+            viewProblemHttpStatus(run.problem),
+            run.problem.kind,
+            catalogViewProblemMessage("GET /today", FIRST_PARTY_VIEWS.today, run.problem),
+          );
+        }
+        return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+
       case "GET /doc": {
         const path = url.searchParams.get("path")?.trim() ?? "";
         if (path.length === 0) {
@@ -275,7 +302,8 @@ export function createDomeHttpServer(
   };
 
   const handle = async (request: Request): Promise<Response> => {
-    if (!authorized(request, tokenDigest)) {
+    const url = new URL(request.url);
+    if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
       return errorResponse(401, "unauthorized", "missing or invalid bearer token.");
     }
     try {
@@ -297,6 +325,23 @@ function authorized(request: Request, tokenDigest: Buffer): boolean {
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (match === null || match[1] === undefined) return false;
   return timingSafeEqual(sha256(match[1]), tokenDigest);
+}
+
+/**
+ * Browser-navigation escape hatch for the HTML cockpit ONLY: `GET /today`
+ * may carry the bearer as `?token=` (browsers cannot set Authorization on a
+ * plain navigation). Same digest, same constant-time comparison; every
+ * other route stays header-only.
+ */
+function queryTokenAuthorized(
+  request: Request,
+  url: URL,
+  tokenDigest: Buffer,
+): boolean {
+  if (request.method !== "GET" || url.pathname !== "/today") return false;
+  const token = url.searchParams.get("token");
+  if (token === null || token.length === 0) return false;
+  return timingSafeEqual(sha256(token), tokenDigest);
 }
 
 function sha256(value: string): Buffer {
