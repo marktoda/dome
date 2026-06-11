@@ -48,6 +48,8 @@ export type WatchDeps = {
   /** Stop after N renders (tests); default: until SIGINT. */
   readonly iterations?: number;
   readonly clearScreen?: () => void;
+  /** Test seam: replaces renderTodayOnce. */
+  readonly render?: (options: TodayCommandOptions) => Promise<RenderOutcome>;
 };
 
 export async function runToday(
@@ -71,7 +73,7 @@ export async function runToday(
   return 0;
 }
 
-type RenderOutcome =
+export type RenderOutcome =
   | { readonly kind: "ok"; readonly text: string }
   | { readonly kind: "error"; readonly exitCode: number };
 
@@ -107,6 +109,7 @@ async function renderTodayOnce(
       });
       return { kind: "error", exitCode: run.exitCode };
     }
+    // TODO: suppress repeated broker diagnostics across watch iterations.
     printViewCommandMessages(
       structuredViewBrokerMessages("dome today", run.brokerDiagnostics),
     );
@@ -136,13 +139,23 @@ async function watchLoop(
   deps: WatchDeps,
 ): Promise<number> {
   const intervalMs = Math.max(1, options.interval ?? 5) * 1000;
-  const sleep = deps.sleep ??
-    ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const clear = deps.clearScreen ??
-    (() => { process.stdout.write("\x1b[2J\x1b[H"); });
-
+  // Abortable default sleep: stop() wakes the sleeper so ctrl-c exits
+  // immediately instead of parking up to a full interval.
+  let wake: () => void = () => {};
   let stopped = false;
-  const stop = () => { stopped = true; };
+  const stop = () => { stopped = true; wake(); };
+  const sleep = deps.sleep ??
+    ((ms: number) =>
+      new Promise<void>((r) => {
+        const t = setTimeout(r, ms);
+        wake = () => { clearTimeout(t); r(); };
+      }));
+  const clear = deps.clearScreen ??
+    (() => {
+      if (process.stdout.isTTY === true) process.stdout.write("\x1b[2J\x1b[H");
+    });
+  const renderOnce = deps.render ?? renderTodayOnce;
+
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
@@ -150,7 +163,7 @@ async function watchLoop(
   let renders = 0;
   try {
     for (;;) {
-      const render = await renderTodayOnce(options);
+      const render = await renderOnce(options);
       renders += 1;
       if (render.kind === "error") return render.exitCode;
       if (render.text !== last) {
@@ -183,7 +196,6 @@ type TodayTaskRow = {
   readonly path: string;
   readonly line: number | null;
   readonly dueDate: string | null;
-  readonly followup: boolean;
 };
 
 type TodayQuestionRow = {
@@ -199,11 +211,12 @@ function formatTodayResult(data: unknown, caps: Caps, vault: string): string {
   const followups = parseTaskRows(record.followups);
   const questions = parseQuestionRows(record.questions);
   const counts = isRecord(record.counts) ? record.counts : {};
-  const total = numberOr(counts.openTasks, openTasks.length) +
-    numberOr(counts.followups, followups.length) +
-    numberOr(counts.questions, questions.length);
+  const openTasksTotal = numberOr(counts.openTasks, openTasks.length);
+  const followupsTotal = numberOr(counts.followups, followups.length);
+  const questionsTotal = numberOr(counts.questions, questions.length);
+  const total = openTasksTotal + followupsTotal + questionsTotal;
   const status = total === 0
-    ? { tone: "ok" as const, label: "all clear" }
+    ? { tone: "muted" as const, label: "all clear" }
     : { tone: "ok" as const, label: `${total} open` };
 
   const lines: string[] = [
@@ -218,28 +231,55 @@ function formatTodayResult(data: unknown, caps: Caps, vault: string): string {
   );
   if (openTasks.length > 0) {
     lines.push(
-      ...section("Open tasks", openTasks.map((t) => taskLine(t, caps)), caps),
+      ...section(
+        "Open tasks",
+        [
+          ...openTasks.map((t) => taskLine(t, caps)),
+          ...truncationNote(openTasks.length, openTasksTotal, caps),
+        ],
+        caps,
+      ),
     );
   }
   if (followups.length > 0) {
     lines.push(
-      ...section("Follow-ups", followups.map((t) => taskLine(t, caps)), caps),
+      ...section(
+        "Follow-ups",
+        [
+          ...followups.map((t) => taskLine(t, caps)),
+          ...truncationNote(followups.length, followupsTotal, caps),
+        ],
+        caps,
+      ),
     );
   }
   if (questions.length > 0) {
     lines.push(
       ...section(
         "Questions",
-        questions.flatMap((q) => [
-          `[#${q.id}] ${q.question}`,
-          `   ${paint("resolve:", "muted", caps)} ${q.resolveCommand}`,
-        ]),
+        [
+          ...questions.flatMap((q) => [
+            `[#${q.id}] ${q.question}`,
+            `   ${paint("resolve:", "muted", caps)} ${q.resolveCommand}`,
+          ]),
+          ...truncationNote(questions.length, questionsTotal, caps),
+        ],
         caps,
       ),
     );
   }
   lines.push(...footer(status, caps));
   return lines.join("\n");
+}
+
+/** A muted `(showing N of M)` line when the section was truncated by limit. */
+function truncationNote(
+  shown: number,
+  total: number,
+  caps: Caps,
+): ReadonlyArray<string> {
+  if (total <= shown) return [];
+  return [paint(`(showing ${shown} of ${total})`, "muted", caps)];
 }
 
 function taskLine(t: TodayTaskRow, caps: Caps): string {
@@ -262,7 +302,6 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
         path: typeof r.path === "string" ? r.path : "",
         line: typeof r.line === "number" ? r.line : null,
         dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
-        followup: r.followup === true,
       });
     })
     .filter((row): row is TodayTaskRow => row !== null);

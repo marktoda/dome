@@ -101,4 +101,43 @@ describe("dome today --watch", () => {
     expect(sleeps).toEqual([1000, 1000]);
     expect(logs.join("\n")).toContain("review the cockpit plan");
   }, 120_000);
+
+  test("re-clears and re-prints when output changes between iterations", async () => {
+    logs = [];
+    let clears = 0;
+    const outputs = ["first render", "second render", "second render"];
+    let i = 0;
+    const code = await runToday(
+      { watch: true, interval: 1 },
+      {
+        iterations: 3,
+        sleep: async () => {},
+        clearScreen: () => { clears += 1; },
+        render: async () => ({ kind: "ok", text: outputs[i++] ?? "" }),
+      },
+    );
+    expect(code).toBe(0);
+    // First and second renders differ → two clear+print cycles; the
+    // identical third render is skipped.
+    expect(clears).toBe(2);
+    const out = logs.join("\n");
+    expect(out).toContain("first render");
+    expect(out).toContain("second render");
+  }, 120_000);
+
+  test("an error mid-watch returns the render's exit code", async () => {
+    const notAVault = mkdtempSync(join(tmpdir(), "dome-today-notavault-"));
+    try {
+      const onceCode = await runToday({ vault: notAVault });
+      expect(onceCode).not.toBe(0);
+      logs = [];
+      const watchCode = await runToday(
+        { vault: notAVault, watch: true, interval: 1 },
+        { iterations: 1, sleep: async () => {}, clearScreen: () => {} },
+      );
+      expect(watchCode).toBe(onceCode);
+    } finally {
+      await rm(notAVault, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
