@@ -2565,10 +2565,83 @@ describe("runCheck", () => {
     expect(parsed["next_actions"]).toEqual([]);
   });
 
+  test("--json suppresses latest-failure findings for processors no longer registered", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f); // extensions: {} — empty registry
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) {
+      throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    }
+    try {
+      // A failed run from a RETIRED processor (e.g. the old dome.intake
+      // bundle): no newer run can ever supersede it, so without suppression
+      // the finding holds attention_required hostage forever.
+      const runId = newRunId(new Date(10), () => "chkgone");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.check.retired",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "schedule",
+        triggerPayload: { test: "retired-run" },
+        startedAt: new Date(10),
+      });
+      markRunning(ledger.value.db, runId, new Date(11));
+      markTimedOut(ledger.value.db, {
+        id: runId,
+        error: {
+          code: "processor.timeout",
+          message: "still timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "test.check.retired",
+        },
+        durationMs: 10000,
+        finishedAt: new Date(12),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const engine = record(parsed["engine"]);
+    const summary = record(engine["summary"]);
+    expect(summary["failedRuns"]).toBe(0);
+    const findings = engine["findings"] as ReadonlyArray<Record<string, unknown>>;
+    expect(findings.some((x) => x["code"] === "run.latest-problem")).toBe(false);
+  });
+
   test("--json explains latest active processor failures as engine findings", async () => {
     const f = await makeFixture();
     fixtures.push(f);
-    await writeDoctorConfig(f);
+    // The processor must be REGISTERED for its latest failure to surface —
+    // failures of retired/disabled processors are suppressed (see the
+    // companion test below).
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["**/*.md"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
 
     const ledger = await openLedgerDb({
       path: join(f.vaultPath, ".dome", "state", "runs.db"),
@@ -2581,7 +2654,7 @@ describe("runCheck", () => {
       insertQueued(ledger.value.db, {
         id: runId,
         proposalId: null,
-        processorId: "test.check.failed",
+        processorId: "dome.markdown.validate-wikilinks",
         processorVersion: "0.0.1",
         phase: "garden",
         inputCommit: commitOid(f.headSha),
@@ -2597,7 +2670,7 @@ describe("runCheck", () => {
           message: "still timed out",
           retryable: true,
           phase: "garden",
-          processorId: "test.check.failed",
+          processorId: "dome.markdown.validate-wikilinks",
         },
         durationMs: 10000,
         finishedAt: new Date(12),
@@ -2623,7 +2696,7 @@ describe("runCheck", () => {
         severity: "error",
         subject: "runs",
         id: "run_10_chkbad",
-        message: expect.stringContaining("test.check.failed"),
+        message: expect.stringContaining("dome.markdown.validate-wikilinks"),
       }),
     ]);
     expect(record(findings[0]?.["run"])["status"]).toBe("timed_out");
