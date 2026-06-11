@@ -71,6 +71,7 @@ describe("serviceUnitNameForVault", () => {
     expect(unit).toBe(
       `dome-serve-${vaultServiceSlug("/home/mark/vaults/work")}.service`,
     );
+    expect(unit).toMatch(/^dome-serve-[a-z0-9-]+-[0-9a-f]{8}\.service$/);
     // Same path → same unit; deterministic across calls.
     expect(serviceUnitNameForVault("/home/mark/vaults/work")).toBe(unit);
   });
@@ -114,6 +115,34 @@ describe("renderServeSystemdUnit", () => {
     });
     // systemd expands % specifiers; literal % must be doubled, " escaped.
     expect(unit).toContain('Environment="WEIRD=a%%b\\"c"');
+  });
+
+  test("doubles % in bare-path settings lines (paths containing %)", () => {
+    const unit = renderServeSystemdUnit({
+      ...input,
+      vaultPath: "/home/mark/vaults/100%work",
+      logPath: "/home/mark/vaults/100%work/.dome/state/serve.log",
+    });
+    expect(unit).toContain(
+      "Description=Dome compiler host (dome serve) for /home/mark/vaults/100%%work",
+    );
+    expect(unit).toContain("WorkingDirectory=/home/mark/vaults/100%%work");
+    expect(unit).toContain(
+      "StandardOutput=append:/home/mark/vaults/100%%work/.dome/state/serve.log",
+    );
+    expect(unit).toContain(
+      "StandardError=append:/home/mark/vaults/100%%work/.dome/state/serve.log",
+    );
+    // The ExecStart vault arg doubles % too (quoted-word escaping).
+    expect(unit).toContain('--vault "/home/mark/vaults/100%%work"');
+  });
+
+  test("doubles $ in ExecStart arguments (no variable expansion)", () => {
+    const unit = renderServeSystemdUnit({
+      ...input,
+      domeBin: "/opt/dome$HOME/bin/dome",
+    });
+    expect(unit).toContain('"/opt/dome$$HOME/bin/dome"');
   });
 });
 
@@ -174,13 +203,15 @@ async function vaultDir(): Promise<string> {
   return dir;
 }
 
-const LINUX_DEPS = (userDir: string, ctl: FakeRunner) => ({
-  platform: "linux" as const,
-  systemdUserDir: userDir,
-  systemctl: ctl.runner,
-  bunPath: "/usr/bin/bun",
-  domeBin: "/opt/dome/bin/dome",
-});
+function linuxDeps(userDir: string, ctl: FakeRunner) {
+  return {
+    platform: "linux" as const,
+    systemdUserDir: userDir,
+    systemctl: ctl.runner,
+    bunPath: "/usr/bin/bun",
+    domeBin: "/opt/dome/bin/dome",
+  };
+}
 
 describe("dome install on linux", () => {
   test("writes the unit, daemon-reloads, enables, restarts; exit 0", async () => {
@@ -188,7 +219,7 @@ describe("dome install on linux", () => {
     const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     const ctl = fakeSystemctl();
 
-    const code = await runInstall({ vault }, LINUX_DEPS(userDir, ctl));
+    const code = await runInstall({ vault }, linuxDeps(userDir, ctl));
     expect(code).toBe(0);
 
     const unit = serviceUnitNameForVault(vault);
@@ -200,21 +231,120 @@ describe("dome install on linux", () => {
     ]);
   });
 
-  test("enable failure reports error and exits 1", async () => {
+  test("--json reports installed with schema, unit, plist, log", async () => {
+    const vault = await vaultDir();
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const unit = serviceUnitNameForVault(vault);
+    const unitPath = join(userDir, unit);
+
+    expect(
+      await runInstall({ vault, json: true }, linuxDeps(userDir, fakeSystemctl())),
+    ).toBe(0);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+      schema: "dome.install/v1",
+      status: "installed",
+      label: unit,
+      unit: unitPath,
+      plist: unitPath,
+      replaced: false,
+    });
+  });
+
+  test("enable failure reports error, exits 1, and skips the restart", async () => {
     const vault = await vaultDir();
     const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     const ctl = fakeSystemctl({
       enable: { exitCode: 1, stdout: "", stderr: "Failed to enable" },
     });
-    expect(await runInstall({ vault }, LINUX_DEPS(userDir, ctl))).toBe(1);
+    expect(await runInstall({ vault }, linuxDeps(userDir, ctl))).toBe(1);
+    expect(errors[0]).toContain("(unit left at");
+    // The failed enable must short-circuit: no restart afterwards.
+    const unit = serviceUnitNameForVault(vault);
+    expect(ctl.calls).toEqual([["daemon-reload"], ["enable", unit]]);
   });
 
   test("refuses an uninitialized vault with exit 64", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dome-not-a-vault-"));
     const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     expect(
-      await runInstall({ vault: dir }, LINUX_DEPS(userDir, fakeSystemctl())),
+      await runInstall({ vault: dir }, linuxDeps(userDir, fakeSystemctl())),
     ).toBe(64);
+  });
+
+  test("rejects an environment value containing a newline with exit 64", async () => {
+    const vault = await vaultDir();
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const ctl = fakeSystemctl();
+    expect(
+      await runInstall(
+        { vault, env: ["BAD=line1\nline2"] },
+        linuxDeps(userDir, ctl),
+      ),
+    ).toBe(64);
+    expect(errors[0]).toContain("newline");
+    // Refused before any host mutation: no unit written, no systemctl calls.
+    expect(existsSync(join(userDir, serviceUnitNameForVault(vault)))).toBe(false);
+    expect(ctl.calls).toEqual([]);
+  });
+});
+
+describe("dome install --status on linux", () => {
+  test("installed + active: human line and --json payload", async () => {
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const vault = mkdtempSync(join(tmpdir(), "dome-status-vault-"));
+    const unit = serviceUnitNameForVault(vault);
+    await writeFile(join(userDir, unit), "[Unit]\n", "utf8");
+    const ctl = fakeSystemctl({
+      "is-active": { exitCode: 0, stdout: "active\n", stderr: "" },
+    });
+
+    expect(
+      await runInstall({ vault, status: true }, linuxDeps(userDir, ctl)),
+    ).toBe(0);
+    expect(logs.at(-1)).toContain("installed: yes");
+    expect(logs.at(-1)).toContain("active: yes");
+
+    expect(
+      await runInstall(
+        { vault, status: true, json: true },
+        linuxDeps(userDir, ctl),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+      schema: "dome.install/v1",
+      status: "status",
+      label: unit,
+      unit: join(userDir, unit),
+      plist: join(userDir, unit),
+      installed: true,
+      loaded: true,
+    });
+  });
+
+  test("not installed: active probe skipped, loaded null in --json", async () => {
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    const vault = mkdtempSync(join(tmpdir(), "dome-status-vault-"));
+    const ctl = fakeSystemctl();
+
+    expect(
+      await runInstall({ vault, status: true }, linuxDeps(userDir, ctl)),
+    ).toBe(0);
+    expect(logs.at(-1)).toContain("installed: no");
+    expect(logs.at(-1)).toContain("active: n/a");
+
+    expect(
+      await runInstall(
+        { vault, status: true, json: true },
+        linuxDeps(userDir, ctl),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+      schema: "dome.install/v1",
+      status: "status",
+      installed: false,
+      loaded: null,
+    });
+    expect(ctl.calls).toEqual([]);
   });
 });
 
@@ -223,18 +353,43 @@ describe("dome uninstall on linux", () => {
     const vault = await vaultDir();
     const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     const ctl = fakeSystemctl();
-    expect(await runInstall({ vault }, LINUX_DEPS(userDir, ctl))).toBe(0);
+    expect(await runInstall({ vault }, linuxDeps(userDir, ctl))).toBe(0);
 
     const ctl2 = fakeSystemctl();
-    expect(await runUninstall({ vault }, LINUX_DEPS(userDir, ctl2))).toBe(0);
+    expect(await runUninstall({ vault }, linuxDeps(userDir, ctl2))).toBe(0);
     const unit = serviceUnitNameForVault(vault);
     expect(existsSync(join(userDir, unit))).toBe(false);
     expect(ctl2.calls).toEqual([["disable", "--now", unit], ["daemon-reload"]]);
 
-    // Second uninstall: clean no-op, still exit 0.
+    // Second uninstall: still exit 0; the disable --now still fires
+    // unconditionally (covers the deleted-unit-but-still-running edge), but
+    // unlink + daemon-reload are skipped.
+    const ctl3 = fakeSystemctl();
+    expect(await runUninstall({ vault }, linuxDeps(userDir, ctl3))).toBe(0);
+    expect(ctl3.calls).toEqual([["disable", "--now", unit]]);
+  });
+
+  test("--json reports uninstalled with schema, unit, plist", async () => {
+    const vault = await vaultDir();
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     expect(
-      await runUninstall({ vault }, LINUX_DEPS(userDir, fakeSystemctl())),
+      await runInstall({ vault }, linuxDeps(userDir, fakeSystemctl())),
     ).toBe(0);
+
+    const unit = serviceUnitNameForVault(vault);
+    expect(
+      await runUninstall(
+        { vault, json: true },
+        linuxDeps(userDir, fakeSystemctl()),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+      schema: "dome.uninstall/v1",
+      status: "uninstalled",
+      label: unit,
+      unit: join(userDir, unit),
+      plist: join(userDir, unit),
+    });
   });
 });
 
@@ -243,15 +398,35 @@ describe("dome restart on linux", () => {
     const vault = await vaultDir();
     const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
     expect(
-      await runRestart({ vault }, LINUX_DEPS(userDir, fakeSystemctl())),
+      await runRestart({ vault }, linuxDeps(userDir, fakeSystemctl())),
     ).toBe(64);
 
     expect(
-      await runInstall({ vault }, LINUX_DEPS(userDir, fakeSystemctl())),
+      await runInstall({ vault }, linuxDeps(userDir, fakeSystemctl())),
     ).toBe(0);
     const ctl = fakeSystemctl();
-    expect(await runRestart({ vault }, LINUX_DEPS(userDir, ctl))).toBe(0);
+    expect(await runRestart({ vault }, linuxDeps(userDir, ctl))).toBe(0);
     expect(ctl.calls).toEqual([["restart", serviceUnitNameForVault(vault)]]);
+  });
+
+  test("--json reports restarted with schema, unit, plist", async () => {
+    const vault = await vaultDir();
+    const userDir = mkdtempSync(join(tmpdir(), "dome-systemd-user-"));
+    expect(
+      await runInstall({ vault }, linuxDeps(userDir, fakeSystemctl())),
+    ).toBe(0);
+
+    const unit = serviceUnitNameForVault(vault);
+    expect(
+      await runRestart({ vault, json: true }, linuxDeps(userDir, fakeSystemctl())),
+    ).toBe(0);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+      schema: "dome.restart/v1",
+      status: "restarted",
+      label: unit,
+      unit: join(userDir, unit),
+      plist: join(userDir, unit),
+    });
   });
 });
 

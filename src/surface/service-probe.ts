@@ -1,11 +1,13 @@
-// surface/service-probe: launchd service identity + read-only state probe.
+// surface/service-probe: service identity + read-only state probe for the
+// per-vault `dome serve` service (launchd on macOS, systemd --user on Linux).
 //
-// The per-vault service slug/label and the read-only `probeServiceState`
-// are shared substance: `dome install --status`, the `dome status` service
-// line, and the MCP `status` tool all report the same service state. The
-// write-side service lifecycle (`dome install` / `uninstall` / `restart`,
-// plist rendering) stays in src/cli/commands/install.ts; it imports the
-// identity helpers and deps boundary from here.
+// The per-vault service slug/label/unit-name and the read-only
+// `probeServiceState` are shared substance: `dome install --status`, the
+// `dome status` service line, and the MCP `status` tool all report the same
+// service state. The write-side service lifecycle (`dome install` /
+// `uninstall` / `restart`, plist/unit rendering) stays in
+// src/cli/commands/install.ts (launchd) and install-systemd.ts (systemd);
+// both import the identity helpers and deps boundary from here.
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -154,13 +156,14 @@ export function serviceUnitNameForVault(vaultPath: string): string {
 // ----- probeServiceState ----------------------------------------------------
 
 /**
- * Read-only launchd service state for a vault, shared by `dome install
- * --status` and the `dome status` service line. `loaded` is probed via
- * `launchctl print` only when the plist is installed — `dome status` is the
- * cheap session pulse and must not spawn `launchctl` on every invocation of
- * a vault that never installed the service. (The deleted-plist-but-loaded
- * edge therefore reads as `not-installed` here; `dome uninstall` still
- * boots that edge out.)
+ * Read-only service state for a vault (launchd on macOS, systemd --user on
+ * Linux), shared by `dome install --status` and the `dome status` service
+ * line. `loaded` is probed (`launchctl print` / `systemctl is-active`) only
+ * when the plist/unit file is installed — `dome status` is the cheap session
+ * pulse and must not spawn the service manager on every invocation of a
+ * vault that never installed the service. (The deleted-file-but-loaded edge
+ * therefore reads as `not-installed` here; `dome uninstall` still stops that
+ * edge on both platforms.)
  */
 export type ServiceState =
   | { readonly supported: false }

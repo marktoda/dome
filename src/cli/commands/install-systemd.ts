@@ -38,6 +38,10 @@ import {
  * StandardOutPath/StandardErrorPath; Environment carries PATH (user
  * managers get a minimal PATH that cannot resolve ~/.bun) plus
  * caller-supplied entries.
+ *
+ * After=network.target is advisory start-ordering only (user managers get a
+ * best-effort network.target); serve tolerates starting before the network
+ * is up, and Restart=always covers transient startup failures.
  */
 export function renderServeSystemdUnit(input: {
   readonly bunPath: string;
@@ -60,17 +64,17 @@ export function renderServeSystemdUnit(input: {
     .map(([key, value]) => `Environment="${key}=${envEscape(value)}"`)
     .join("\n");
   return `[Unit]
-Description=Dome compiler host (dome serve) for ${input.vaultPath}
+Description=Dome compiler host (dome serve) for ${specifierEscape(input.vaultPath)}
 After=network.target
 
 [Service]
 ExecStart=${exec}
-WorkingDirectory=${input.vaultPath}
+WorkingDirectory=${specifierEscape(input.vaultPath)}
 ${envLines}
 Restart=always
 RestartSec=2
-StandardOutput=append:${input.logPath}
-StandardError=append:${input.logPath}
+StandardOutput=append:${specifierEscape(input.logPath)}
+StandardError=append:${specifierEscape(input.logPath)}
 
 [Install]
 WantedBy=default.target
@@ -85,9 +89,26 @@ function envEscape(value: string): string {
     .replaceAll("%", "%%");
 }
 
-/** Escape an ExecStart quoted argument: " and \ only. */
+/**
+ * Double `%` for settings lines that take a bare value (Description=,
+ * WorkingDirectory=, append: paths): systemd expands `%` specifiers in
+ * these, so a literal `%` in a path must be written `%%`.
+ */
+function specifierEscape(value: string): string {
+  return value.replaceAll("%", "%%");
+}
+
+/**
+ * Escape an ExecStart quoted argument: \ and " for the quoted-word syntax,
+ * `%` specifiers doubled, `$` doubled so systemd does not attempt variable
+ * expansion.
+ */
 function execEscape(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("%", "%%")
+    .replaceAll("$", () => "$$");
 }
 
 // ----- Service flows (dispatched from install.ts on linux) -------------------
@@ -109,6 +130,9 @@ export async function runInstallSystemd(
     const active = installed
       ? (await d.systemctl(["is-active", unit])).exitCode === 0
       : null;
+    // JSON payloads carry the unit path under both `unit` (the natural
+    // systemd name) and `plist` (the field name ServiceState consumers
+    // already read; see probeServiceState).
     console.log(
       json
         ? formatJson({
@@ -117,6 +141,7 @@ export async function runInstallSystemd(
             vault: vaultPath,
             label: unit,
             unit: unitPath,
+            plist: unitPath,
             installed,
             loaded: active,
           })
@@ -135,6 +160,20 @@ export async function runInstallSystemd(
     environment = await resolveServiceEnvironment(options);
   } catch (e) {
     return usage(json, vaultPath, e instanceof Error ? e.message : String(e));
+  }
+
+  // systemd Environment= values are single-line: a literal newline would
+  // corrupt the unit file (the remainder parses as new directives), so a
+  // malformed entry is a usage error, not a render-time surprise.
+  for (const [key, value] of environment) {
+    if (/[\n\r]/.test(value)) {
+      return usage(
+        json,
+        vaultPath,
+        `environment value for ${key} contains a newline; ` +
+          `systemd Environment= values must be single-line`,
+      );
+    }
   }
 
   const logPath = join(vaultPath, ".dome", "state", "serve.log");
@@ -183,6 +222,7 @@ export async function runInstallSystemd(
             vault: vaultPath,
             label: unit,
             unit: unitPath,
+            plist: unitPath,
             log: logPath,
             replaced,
           })
@@ -213,8 +253,11 @@ export async function runUninstallSystemd(
   const unitPath = join(d.systemdUserDir, unit);
   try {
     const installed = existsSync(unitPath);
+    // Unconditional disable --now: covers the deleted-unit-but-still-running
+    // edge (unit file removed by hand while the service stays active).
+    // Failure just means nothing was loaded; fine.
+    await d.systemctl(["disable", "--now", unit]);
     if (installed) {
-      await d.systemctl(["disable", "--now", unit]); // failure = not loaded; fine
       await unlink(unitPath);
       await d.systemctl(["daemon-reload"]);
     }
@@ -226,6 +269,7 @@ export async function runUninstallSystemd(
             vault: vaultPath,
             label: unit,
             unit: unitPath,
+            plist: unitPath,
           })
         : installed
           ? `dome uninstall: removed ${unit}`
@@ -254,18 +298,21 @@ export async function runRestartSystemd(
   const unitPath = join(d.systemdUserDir, unit);
   if (!existsSync(unitPath)) {
     const error = `not installed (no unit at ${unitPath}); run \`dome install\` first`;
-    console[json ? "log" : "error"](
-      json
-        ? formatJson({
-            schema: "dome.restart/v1",
-            status: "error",
-            vault: vaultPath,
-            label: unit,
-            unit: unitPath,
-            error,
-          })
-        : `dome restart: ${error}`,
-    );
+    if (json) {
+      console.log(
+        formatJson({
+          schema: "dome.restart/v1",
+          status: "error",
+          vault: vaultPath,
+          label: unit,
+          unit: unitPath,
+          plist: unitPath,
+          error,
+        }),
+      );
+    } else {
+      console.error(`dome restart: ${error}`);
+    }
     return EX_USAGE;
   }
   const result = await d.systemctl(["restart", unit]);
@@ -289,6 +336,7 @@ export async function runRestartSystemd(
           vault: vaultPath,
           label: unit,
           unit: unitPath,
+          plist: unitPath,
         })
       : `dome restart: restarted ${unit}`,
   );
@@ -324,6 +372,7 @@ function fail(
         vault,
         label,
         unit: unitPath,
+        plist: unitPath,
         error: message,
       }),
     );
