@@ -41,7 +41,7 @@ function actionLines(content: string): number[] {
 // Shared fixture layout (1-indexed):
 //
 //  1  ---                                (frontmatter open)
-//  2  type: note                         (frontmatter body)
+//  2  **Key:** frontmatter value         (sentinel INSIDE frontmatter)
 //  3  ---                                (frontmatter close)
 //  4  **Body:** plain body line          (sentinel — should NOT be excluded)
 //  5  ```ts                              (fence open, no indent)
@@ -59,7 +59,7 @@ function actionLines(content: string): number[] {
 
 const CLAIM_FIXTURE = [
   "---",
-  "type: note",
+  "**Key:** frontmatter value", // line 2: real sentinel INSIDE frontmatter
   "---",
   "**Body:** plain body line",
   "```ts",
@@ -79,11 +79,13 @@ const CLAIM_FIXTURE = [
 // claims excludedLineFlags (exercised via claimsFromMarkdown)
 // ---------------------------------------------------------------------------
 describe("claims: excludedLineFlags via claimsFromMarkdown", () => {
-  test("frontmatter block (lines 1-3) is excluded", () => {
-    // Lines 1-3 are inside frontmatter — no claim for 'type' key
+  test("frontmatter block (lines 1-3) is excluded — real sentinel on line 2", () => {
+    // Line 2 is a real claim-syntax line (**Key:** frontmatter value) placed
+    // INSIDE the frontmatter block. It must NOT be extracted, proving the
+    // frontmatter exclusion is active (not vacuous).
     const lines = claimLines(CLAIM_FIXTURE);
     expect(lines).not.toContain(1);
-    expect(lines).not.toContain(2);
+    expect(lines).not.toContain(2); // sentinel claim inside frontmatter — excluded
     expect(lines).not.toContain(3);
   });
 
@@ -138,6 +140,53 @@ describe("claims: excludedLineFlags via claimsFromMarkdown", () => {
     const lines = claimLines(content);
     expect(lines).toEqual([1]); // only "Before" on line 1
   });
+
+  // FROZEN DIVERGENCE: 4-space indent
+  test("4-space-indented fence (claims): NOT recognized — claim inside IS extracted", () => {
+    // claims uses /^[ ]{0,3}(`{3,}|~{3,})/ on the raw line. 4 leading spaces
+    // exceed the 0-3 limit, so the fence is not recognized by claims. The
+    // sentinel claim line inside is therefore visible.
+    //
+    // DIVERGENCE vs daily: daily uses trimStart() which removes ALL leading
+    // spaces, so a 4-space-indented fence IS recognized by daily (task excluded).
+    // This asymmetry is the headline divergence. Do not unify.
+    const content = [
+      "    ```",                   // line 1: 4-space-indented fence open
+      "**Key:** value",            // line 2: sentinel claim — visible to claims
+      "    ```",                   // line 3: 4-space-indented fence close
+      "**After:** done",           // line 4: sentinel after
+    ].join("\n");
+    const lines = claimLines(content);
+    // claims does NOT recognize the 4-space fence → both lines 2 and 4 visible
+    expect(lines).toContain(2); // inside the "fence" — but claims sees no fence
+    expect(lines).toContain(4); // after the "fence"
+  });
+
+  // FROZEN DIVERGENCE: fence-close length requirement
+  test("fence-close length (claims): 3-backtick line does NOT close a 4-backtick opener", () => {
+    // claims requires closer run-length >= opener run-length. A ```` opener
+    // (minLen=4) is NOT closed by a ``` (length=3). The content after the
+    // 3-tick line remains inside the fence. A 4-tick line is required to close.
+    //
+    // DIVERGENCE vs daily: daily only checks same char (char === fenceChar),
+    // ignoring run length. So daily DOES close a 4-tick opener with a 3-tick
+    // line, making content after the 3-tick line visible.
+    const content = [
+      "````",                           // line 1: 4-backtick opener
+      "**Inside:** inside fence",        // line 2: sentinel inside
+      "```",                            // line 3: 3-backtick — does NOT close (claims)
+      "**After3tick:** after 3-tick",   // line 4: still inside fence (claims)
+      "````",                           // line 5: 4-backtick — true close (claims)
+      "**TrueAfter:** true after",       // line 6: outside fence
+    ].join("\n");
+    const lines = claimLines(content);
+    // Empirically verified: claims returns only line 6
+    expect(lines).not.toContain(2); // inside fence
+    expect(lines).not.toContain(3); // fence line excluded
+    expect(lines).not.toContain(4); // still inside fence (3-tick didn't close)
+    expect(lines).not.toContain(5); // 4-tick close line excluded
+    expect(lines).toContain(6);     // outside — first visible sentinel
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -149,26 +198,26 @@ describe("claims: excludedLineFlags via claimsFromMarkdown", () => {
 // appear in actionItemsFromMarkdown only if NOT in an ignored range.
 //
 // Layout (1-indexed):
-//  1  ---                      frontmatter open
-//  2  title: daily             frontmatter body
-//  3  ---                      frontmatter close
-//  4  - [ ] body task          sentinel — should appear
-//  5  ```                      backtick fence open
-//  6  - [ ] inside fence       sentinel inside fence
-//  7  ```                      fence close
-//  8     ```                   3-space indented fence open
-//  9  - [ ] indented fence     sentinel inside indented fence
-// 10     ```                   indented fence close
-// 11  > - [ ] blockquote task  blockquote — daily skips this at extraction
-// 12  ~~~~                     tilde fence open
-// 13  - [ ] tilde content      sentinel inside tilde fence
-// 14  ~~~~                     tilde fence close
-// 15  - [ ] last task          sentinel — should appear
+//  1  ---                              frontmatter open
+//  2  - [ ] task inside frontmatter    sentinel INSIDE frontmatter
+//  3  ---                              frontmatter close
+//  4  - [ ] body task                  sentinel — should appear
+//  5  ```                              backtick fence open
+//  6  - [ ] inside fence               sentinel inside fence
+//  7  ```                              fence close
+//  8     ```                           3-space indented fence open
+//  9  - [ ] indented fence             sentinel inside indented fence
+// 10     ```                           indented fence close
+// 11  > - [ ] blockquote task          blockquote — daily skips this at extraction
+// 12  ~~~~                             tilde fence open
+// 13  - [ ] tilde content              sentinel inside tilde fence
+// 14  ~~~~                             tilde fence close
+// 15  - [ ] last task                  sentinel — should appear
 // ---------------------------------------------------------------------------
 
 const DAILY_FIXTURE = [
   "---",
-  "title: daily",
+  "- [ ] task inside frontmatter", // line 2: real sentinel INSIDE frontmatter
   "---",
   "- [ ] body task",
   "```",
@@ -185,12 +234,14 @@ const DAILY_FIXTURE = [
 ].join("\n");
 
 describe("daily: actionExtractionLineRanges via actionItemsFromMarkdown", () => {
-  test("frontmatter range (lines 1-3) excludes tasks", () => {
-    // frontmatterLineRange returns {start:1, end:3} (1-indexed, inclusive).
-    // Tasks on frontmatter lines do not appear.
+  test("frontmatter range (lines 1-3) excludes tasks — real sentinel on line 2", () => {
+    // Line 2 is a real open-checkbox line (`- [ ] task inside frontmatter`)
+    // placed INSIDE the frontmatter block. It must NOT be extracted, proving
+    // the exclusion is active (not vacuous). frontmatterLineRange returns
+    // {start:1, end:3} (1-indexed, inclusive).
     const lines = actionLines(DAILY_FIXTURE);
     expect(lines).not.toContain(1);
-    expect(lines).not.toContain(2);
+    expect(lines).not.toContain(2); // sentinel task inside frontmatter — excluded
     expect(lines).not.toContain(3);
   });
 
@@ -224,8 +275,11 @@ describe("daily: actionExtractionLineRanges via actionItemsFromMarkdown", () => 
   });
 
   test("blockquote line (11) is skipped at extraction (not fence exclusion)", () => {
-    // actionItemsFromMarkdown checks `line.trimStart().startsWith(">")` after
-    // the range check. The blockquote task is therefore not extracted.
+    // `> - [ ] blockquote task` is rejected because isOpenCheckboxLine's
+    // regex `/^\s*[-*]\s+\[ \]\s+\S/` does not match a line starting with
+    // `>` — the `>` is not `\s*[-*]`. There is no explicit startsWith(">")
+    // guard in actionItemsFromMarkdown; it is the regex failure that silently
+    // drops it (daily-shared.ts:1525-1527).
     const lines = actionLines(DAILY_FIXTURE);
     expect(lines).not.toContain(11);
   });
@@ -275,6 +329,50 @@ describe("daily: actionExtractionLineRanges via actionItemsFromMarkdown", () => 
     expect(lines).not.toContain(2);
     expect(lines).not.toContain(3);
     expect(lines).toContain(4);
+  });
+
+  // FROZEN DIVERGENCE: 4-space indent
+  test("4-space-indented fence (daily): IS recognized via trimStart — task inside excluded", () => {
+    // daily uses trimStart() before matching /^(`{3,}|~{3,})/. This removes
+    // all leading spaces, so a 4-space-indented fence IS recognized.
+    //
+    // DIVERGENCE vs claims: claims uses /^[ ]{0,3}(`{3,}|~{3,})/ on raw line,
+    // so 4 leading spaces exceed the 0-3 limit and the fence is NOT recognized.
+    // This means claims extracts the claim inside while daily excludes the task.
+    // This asymmetry is the headline divergence. Do not unify.
+    const content = [
+      "    ```",                               // line 1: 4-space-indented fence open
+      "- [ ] task inside indented fence",      // line 2: sentinel — excluded by daily
+      "    ```",                               // line 3: 4-space-indented fence close
+      "- [ ] outside task",                   // line 4: sentinel — should appear
+    ].join("\n");
+    const lines = actionLines(content);
+    // daily DOES recognize the 4-space fence → line 2 excluded, line 4 visible
+    expect(lines).not.toContain(2); // inside fence — excluded
+    expect(lines).toContain(4);     // after fence close — visible
+  });
+
+  // FROZEN DIVERGENCE: fence-close length requirement
+  test("fence-close length (daily): 3-backtick line DOES close a 4-backtick opener", () => {
+    // daily only checks same char (char === fenceChar) — it does NOT require
+    // closer run-length >= opener run-length. A ```` opener IS closed by ```.
+    // The content after the 3-tick close line is therefore visible.
+    //
+    // DIVERGENCE vs claims: claims requires closer length >= opener length, so
+    // a 4-tick opener is only closed by another 4-tick (or longer) line. The
+    // content at line 4 remains inside the fence in claims, but is outside in daily.
+    const content = [
+      "````",                           // line 1: 4-backtick opener
+      "- [ ] inside fence",             // line 2: sentinel inside
+      "```",                            // line 3: 3-backtick — DOES close (daily)
+      "- [ ] after 3-tick",             // line 4: outside fence (daily)
+      "````",                           // line 5: would be "true close" per claims
+      "- [ ] true after",               // line 6: sentinel after line 5
+    ].join("\n");
+    const lines = actionLines(content);
+    // Empirically verified: daily returns [4] — line 4 is outside (fence closed at line 3)
+    expect(lines).not.toContain(2); // inside fence
+    expect(lines).toContain(4);     // after 3-tick close — visible (daily closes here)
   });
 });
 
