@@ -1,0 +1,37 @@
+id: test.inbox-signal
+version: 0.1.0
+processors:
+  - id: test.inbox-signal.observe
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/raw/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/raw/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/**"]
+    module: processors/observe.ts
+  - id: test.inbox-signal.llm-observe
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: "inbox/raw/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "inbox/raw/*.md"
+    capabilities:
+      - kind: read
+        paths: ["inbox/**"]
+      - kind: model.invoke
+        maxDailyCostUsd: 5
+    execution:
+      class: llm
+      timeoutMs: 1000
+      modelCallTimeoutMs: 500
+    module: processors/llm-observe.ts
