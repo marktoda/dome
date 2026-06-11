@@ -30,6 +30,7 @@ import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
+import { runToday } from "./commands/today";
 import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
@@ -367,6 +368,36 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("today")
+    .description(
+      "Render today's action surface (open tasks, follow-ups, questions).",
+    )
+    .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--watch", "Re-render on an interval until ctrl-c (the cockpit).")
+    .option(
+      "--interval <seconds>",
+      "Watch refresh interval (default 5).",
+      parsePositiveIntegerOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: TodayCliOptions) => {
+      setExitCode(
+        await runToday({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          watch: options.watch,
+          interval: options.interval,
         }),
       );
     });
@@ -728,6 +759,16 @@ type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
   readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type TodayCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly watch?: boolean;
+  readonly interval?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
