@@ -13,6 +13,7 @@ import {
   appendBlockAnchor,
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
+import { fencedCodeBlockLineRanges } from "../../../../src/core/markdown-scan";
 
 export type ClaimLine = {
   /** 1-based line number in the document. */
@@ -67,36 +68,54 @@ export function claimsFromMarkdown(
  * character (`` ` `` or `~`) as the opener AND its run length must be >= the
  * opener's run length — so a ````md (4-backtick) opener is never closed by an
  * inner ``` (3-backtick) line.
+ *
+ * Fence detection delegates to the shared core scanner with the dome.claims
+ * dialect options (`indent: "up-to-3-spaces"`, `closeRequiresOpenerLength: true`).
+ * Frontmatter detection is handled locally: an unterminated `---` block is
+ * treated as excluding all remaining lines (claims dialect), whereas the core
+ * `frontmatterLineRange` would return `null` in that case (daily dialect).
  */
 function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
   const flags = new Array<boolean>(lines.length).fill(false);
-  let inFrontmatter = lines[0]?.trim() === "---";
-  let fence: { char: string; minLen: number } | null = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-    if (inFrontmatter) {
-      flags[i] = true;
-      if (i > 0 && line.trim() === "---") inFrontmatter = false;
-      continue;
-    }
-    const fenceMatch = /^[ ]{0,3}(`{3,}|~{3,})/.exec(line);
-    if (fence !== null) {
-      flags[i] = true;
-      if (
-        fenceMatch !== null &&
-        fenceMatch[1] !== undefined &&
-        fenceMatch[1][0] === fence.char &&
-        fenceMatch[1].length >= fence.minLen
-      ) {
-        fence = null;
+
+  // --- Frontmatter (claims dialect: unterminated block excludes to EOF) ---
+  let frontmatterEnd = -1; // 0-based index of close --- line, or lines.length if unterminated
+  if (lines[0]?.trim() === "---") {
+    let closed = false;
+    for (let i = 1; i < lines.length; i += 1) {
+      if ((lines[i] ?? "").trim() === "---") {
+        frontmatterEnd = i;
+        closed = true;
+        break;
       }
-      continue;
     }
-    if (fenceMatch !== null && fenceMatch[1] !== undefined) {
+    if (!closed) frontmatterEnd = lines.length - 1;
+    for (let i = 0; i <= frontmatterEnd; i += 1) {
       flags[i] = true;
-      fence = { char: fenceMatch[1][0]!, minLen: fenceMatch[1].length };
     }
   }
+
+  // --- Fenced code blocks (claims dialect via core scanner) ---
+  // Scan only the post-frontmatter content so that fence markers that might
+  // appear in YAML frontmatter cannot spuriously open a fence. If frontmatter
+  // consumed lines 0..frontmatterEnd (0-based), body starts at frontmatterEnd+1.
+  // The core scanner's 1-indexed ranges are offset by the number of skipped lines.
+  const bodyStartLine = frontmatterEnd >= 0 ? frontmatterEnd + 1 : 0; // 0-based
+  const bodyContent = lines.slice(bodyStartLine).join("\n");
+  const fenceRanges = fencedCodeBlockLineRanges(bodyContent, {
+    indent: "up-to-3-spaces",
+    closeRequiresOpenerLength: true,
+  });
+  for (const range of fenceRanges) {
+    // range.start/end are 1-indexed relative to bodyContent; add bodyStartLine
+    // to convert to 0-based indices in the original lines array.
+    const startIdx = bodyStartLine + range.start - 1; // 0-based
+    const endIdx = bodyStartLine + range.end - 1;     // 0-based
+    for (let idx = startIdx; idx <= endIdx; idx += 1) {
+      flags[idx] = true;
+    }
+  }
+
   return flags;
 }
 

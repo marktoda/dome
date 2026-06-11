@@ -12,6 +12,10 @@ import {
   generatedBlockMarkers,
   type GeneratedBlockRange,
 } from "../../../../src/core/generated-block";
+import {
+  fencedCodeBlockLineRanges,
+  frontmatterLineRange,
+} from "../../../../src/core/markdown-scan";
 
 import { compareStrings } from "../../../../src/core/compare";
 
@@ -1890,52 +1894,6 @@ function actionExtractionLineRanges(
     ...fencedCodeBlockLineRanges(content),
     ...(frontmatter === null ? [] : [frontmatter]),
   ]);
-}
-
-/**
- * Line ranges (1-indexed, inclusive of the fence lines) covered by fenced
- * code blocks (``` or ~~~). Checkbox/directive syntax inside a fence is
- * documentation, not an action item — excluding these ranges keeps task
- * extraction, stamping, and syntax normalization from mutating example code.
- * A fence opens on a line whose first non-space run is ``` (3+) or ~~~ (3+)
- * and closes on the next line opening with the same fence character; an
- * unterminated fence extends to end of file.
- */
-function fencedCodeBlockLineRanges(
-  content: string,
-): ReadonlyArray<{ readonly start: number; readonly end: number }> {
-  const lines = content.split(/\r?\n/);
-  const ranges: { start: number; end: number }[] = [];
-  let openLine = -1;
-  let fenceChar = "";
-  for (let i = 0; i < lines.length; i += 1) {
-    const match = /^(`{3,}|~{3,})/.exec((lines[i] ?? "").trimStart());
-    if (match === null) continue;
-    const char = (match[1] ?? "").charAt(0);
-    if (openLine < 0) {
-      openLine = i + 1;
-      fenceChar = char;
-    } else if (char === fenceChar) {
-      ranges.push({ start: openLine, end: i + 1 });
-      openLine = -1;
-      fenceChar = "";
-    }
-  }
-  if (openLine > 0) ranges.push({ start: openLine, end: lines.length });
-  return Object.freeze(ranges.map((range) => Object.freeze(range)));
-}
-
-function frontmatterLineRange(
-  content: string,
-): { readonly start: number; readonly end: number } | null {
-  const lines = content.split(/\r?\n/);
-  if ((lines[0] ?? "").trim() !== "---") return null;
-  for (let i = 1; i < lines.length; i += 1) {
-    if ((lines[i] ?? "").trim() === "---") {
-      return Object.freeze({ start: 1, end: i + 1 });
-    }
-  }
-  return null;
 }
 
 function lineIsInsideRanges(
