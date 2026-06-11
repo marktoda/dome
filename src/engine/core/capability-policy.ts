@@ -35,7 +35,15 @@ export type CapabilityPolicy = {
   readonly processorGrantIdsForExtension: (
     extensionId: string,
   ) => ReadonlyArray<string>;
+  /**
+   * Resolved per-extension config: vault-level `shared_config:` keys merged
+   * as defaults under the extension's own `config:` block (extension wins
+   * per key). The shared block exists so cross-bundle keys like
+   * `daily_path` are declared once instead of mirrored per extension.
+   */
   readonly configForExtension: (extensionId: string) => ExtensionConfig;
+  /** The raw vault-level `shared_config:` block (empty when absent). */
+  readonly sharedConfig: ExtensionConfig;
   readonly grantsForProcessor: (
     extensionId: string,
     processorId: string,
@@ -106,6 +114,7 @@ export function computeCapabilityPolicyHash(policy: CapabilityPolicy): string {
     stableJsonStringify({
       foundConfig: policy.foundConfig,
       runtime: policy.runtime,
+      sharedConfig: stableJsonValue(policy.sharedConfig),
       extensions: extensionGrants,
     }),
   );
@@ -143,6 +152,9 @@ export async function loadCapabilityPolicy(
   }
   const runtimeConfig = parseRuntimeConfig(root, path);
   if (!runtimeConfig.ok) return err(runtimeConfig.error);
+
+  const sharedConfig = parseExtensionConfig(root.shared_config, "shared_config");
+  if (!sharedConfig.ok) return err(`${path} ${sharedConfig.error}`);
 
   const grants = new Map<string, ReadonlyArray<Capability>>();
   const processorGrants = new Map<
@@ -230,8 +242,11 @@ export async function loadCapabilityPolicy(
         grants.get(extensionId) ?? Object.freeze([]),
       processorGrantIdsForExtension: (extensionId: string) =>
         Object.freeze([...(processorGrants.get(extensionId)?.keys() ?? [])]),
-      configForExtension: (extensionId: string) =>
-        extensionConfigs.get(extensionId) ?? EMPTY_EXTENSION_CONFIG,
+      configForExtension: mergedConfigResolver(
+        sharedConfig.value,
+        extensionConfigs,
+      ),
+      sharedConfig: sharedConfig.value,
       grantsForProcessor: (extensionId: string, processorId: string) =>
         processorGrants.get(extensionId)?.get(processorId) ??
         grants.get(extensionId) ??
@@ -250,6 +265,7 @@ function emptyPolicy(foundConfig: boolean): CapabilityPolicy {
     grantsForExtension: () => Object.freeze([]),
     processorGrantIdsForExtension: () => Object.freeze([]),
     configForExtension: () => EMPTY_EXTENSION_CONFIG,
+    sharedConfig: EMPTY_EXTENSION_CONFIG,
     grantsForProcessor: () => Object.freeze([]),
   });
 }
@@ -329,7 +345,36 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
 
 const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
 
-const ROOT_KEYS = new Set(["extensions", "engine", "git", "model_provider"]);
+/**
+ * Build the `configForExtension` resolver: vault-level shared keys merged
+ * as defaults under each extension's own config (extension wins per key).
+ * Merged objects are memoized so repeated calls return stable identities.
+ */
+function mergedConfigResolver(
+  shared: ExtensionConfig,
+  extensionConfigs: ReadonlyMap<string, ExtensionConfig>,
+): (extensionId: string) => ExtensionConfig {
+  const sharedKeys = Object.keys(shared);
+  const merged = new Map<string, ExtensionConfig>();
+  return (extensionId: string): ExtensionConfig => {
+    const own = extensionConfigs.get(extensionId);
+    if (sharedKeys.length === 0) return own ?? EMPTY_EXTENSION_CONFIG;
+    if (own === undefined || Object.keys(own).length === 0) return shared;
+    const cached = merged.get(extensionId);
+    if (cached !== undefined) return cached;
+    const resolved: ExtensionConfig = Object.freeze({ ...shared, ...own });
+    merged.set(extensionId, resolved);
+    return resolved;
+  };
+}
+
+const ROOT_KEYS = new Set([
+  "extensions",
+  "engine",
+  "git",
+  "model_provider",
+  "shared_config",
+]);
 
 const GRANT_KEYS = new Set([
   "read",

@@ -18,7 +18,6 @@ import {
 } from "../engine/host/health";
 import { openVaultRuntime, type VaultRuntime } from "../engine/host/vault-runtime";
 import { resolveBundleRoots } from "../extensions/bundle-roots";
-import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../extensions/maintenance-loops";
 import { queryRunSummaries } from "../ledger/runs";
 import {
   projectionCacheKeysChanged,
@@ -233,6 +232,7 @@ export async function buildCheckReport(opts: {
           registry: runtime.registry,
           resolveGrants: runtime.resolveGrants,
           extensionConfigFor: runtime.extensionConfigFor,
+          doctorGrantEntries: runtime.doctorGrantEntries,
           modelProviderConfigured: runtime.modelProvider !== undefined,
           externalHandlerTimeoutConfigured:
             runtime.config.engine.externalHandlerTimeoutMs !== undefined,
@@ -256,7 +256,7 @@ export async function buildCheckReport(opts: {
       runtime.registry.all().map((processor) => processor.id),
     );
     const maintenance_loops = collectMaintenanceLoopSummaries({
-      loops: FIRST_PARTY_MAINTENANCE_LOOPS,
+      loops: runtime.maintenanceLoops,
       activeProcessorIds,
       diagnosticsByProcessor: (processorId) =>
         queryDiagnostics(runtime.projectionDb, { processorId }),

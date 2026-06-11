@@ -38,7 +38,10 @@ processors:
           - "inbox/raw/*.md"
           - "preferences/signals.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5
+        # The cap is min(declared, granted) but spend is pooled per extension,
+        # so this must clear the pool after sweep+consolidate's nightly burn
+        # or captures starve for the rest of the day.
+        maxDailyCostUsd: 15
       - kind: question.ask
     execution:
       class: llm
@@ -297,3 +300,57 @@ processors:
           - "core.md"
           - "preferences/signals.md"
     module: processors/preference-promotion-answer.ts
+
+# Doctor contributions: grant-entry probes (see dome.daily/manifest.yaml).
+doctor:
+  grantEntries:
+    - processorId: dome.agent.brief
+      entries:
+        - kind: read
+          target: core.md
+      why: >-
+        agents cannot load the owner's core-memory page into their task
+        turns
+      recovery: >-
+        Add "core.md" to extensions.dome.agent.grant.read in
+        .dome/config.yaml.
+    - processorId: dome.agent.brief
+      entries:
+        - kind: read
+          target: preferences/signals.md
+        - kind: patch.auto
+          target: preferences/signals.md
+      why: >-
+        preference signal lines can be neither read nor appended, so
+        preference promotion never accumulates evidence
+      recovery: >-
+        Add "preferences/signals.md" to extensions.dome.agent.grant.read
+        and extensions.dome.agent.grant.patch.auto in .dome/config.yaml.
+    - processorId: dome.agent.preference-signals
+      entries:
+        - kind: graph.write
+          target: dome.preference.topic
+      why: >-
+        the deterministic preference counter's dome.preference.topic facts
+        are dropped by the broker
+      recovery: >-
+        Add "dome.preference.*" to extensions.dome.agent.grant.graph.write
+        in .dome/config.yaml.
+    - processorId: dome.agent.preference-promotion-answer
+      entries:
+        - kind: read
+          target: core.md
+        - kind: read
+          target: preferences/signals.md
+        - kind: patch.auto
+          target: core.md
+        - kind: patch.auto
+          target: preferences/signals.md
+      why: >-
+        owner-approved preference promotions cannot be written to core.md
+        (the single-auto-writer exception in wiki/specs/preferences.md)
+      recovery: >-
+        Add the per-processor replacement grant stanza in .dome/config.yaml:
+        extensions.dome.agent.processors."dome.agent.preference-promotion-answer".grant
+        with read: ["core.md", "preferences/signals.md"] and patch.auto:
+        ["core.md", "preferences/signals.md"].

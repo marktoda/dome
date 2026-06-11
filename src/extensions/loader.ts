@@ -64,7 +64,12 @@ import {
   type PageTypeMergeError,
 } from "../page-types";
 import {
+  declaredMaintenanceLoop,
+  type MaintenanceLoop,
+} from "./maintenance-loops";
+import {
   parseManifest,
+  type ManifestGrantEntryRequirement,
   type Manifest,
   type ManifestError,
   type ProcessorDeclaration,
@@ -85,6 +90,10 @@ export type LoadedBundle = {
   readonly processors: ReadonlyArray<Processor<unknown>>;
   readonly externalHandlers: ReadonlyMap<string, ExternalHandler>;
   readonly pageTypes: ReadonlyArray<PageTypeDeclaration>;
+  /** Manifest-declared bundle-scoped maintenance loops (standard checks). */
+  readonly loops: ReadonlyArray<MaintenanceLoop>;
+  /** Manifest-declared doctor grant-entry requirements. */
+  readonly doctorGrantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly bundlePath: string;
 };
 
@@ -487,6 +496,10 @@ async function loadOneBundle(
       processors: Object.freeze(processors),
       externalHandlers: externalHandlersResult.value,
       pageTypes,
+      loops: Object.freeze(
+        (manifest.loops ?? []).map((loop) => declaredMaintenanceLoop(loop)),
+      ),
+      doctorGrantEntries: Object.freeze(manifest.doctor?.grantEntries ?? []),
       bundlePath,
     }),
   );

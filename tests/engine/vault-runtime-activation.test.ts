@@ -127,3 +127,81 @@ extensions:
     }
   });
 });
+
+describe("openVaultRuntime maintenance-loop composition", () => {
+  function writeLoopBundleFixture(bundlesRoot: string, loopId: string): void {
+    const bundleDir = join(bundlesRoot, "acme.todo");
+    mkdirSync(join(bundleDir, "processors"), { recursive: true });
+    writeFileSync(
+      join(bundleDir, "processors", "scan.ts"),
+      "export default { async run() { return []; } };\n",
+    );
+    writeFileSync(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({
+        id: "acme.todo",
+        version: "0.1.0",
+        processors: [
+          {
+            id: "acme.todo.scan",
+            version: "0.1.0",
+            phase: "garden",
+            triggers: [{ kind: "signal", name: "file.created" }],
+            capabilities: [],
+            module: "processors/scan.ts",
+          },
+        ],
+        loops: [
+          {
+            id: loopId,
+            goal: "Todos stay scanned.",
+            evidence: [{ kind: "operational", name: "diagnostics" }],
+            processors: ["acme.todo.scan"],
+            surfaces: [{ kind: "status", name: "check" }],
+            settlement: { key: "todo path", noOpWhen: "scanned" },
+            risks: ["Scan noise."],
+          },
+        ],
+      }),
+    );
+  }
+
+  test("runtime loops = first-party registry + active bundle manifest loops", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-loops-"));
+    roots.push(root);
+    const bundlesRoot = join(root, "bundles");
+    writeLoopBundleFixture(bundlesRoot, "acme.todo.coherence");
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      bundlesRoot,
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      const ids = runtimeResult.value.maintenanceLoops.map((loop) => loop.id);
+      expect(ids).toContain("acme.todo.coherence");
+      expect(ids).toContain("dome.capture.digest"); // first-party composition
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+
+  test("a bundle loop colliding with a first-party loop id fails the open", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-loops-dup-"));
+    roots.push(root);
+    const bundlesRoot = join(root, "bundles");
+    writeLoopBundleFixture(bundlesRoot, "dome.capture.digest");
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      bundlesRoot,
+    });
+    expect(runtimeResult.ok).toBe(false);
+    if (runtimeResult.ok) {
+      await runtimeResult.value.close();
+      return;
+    }
+    expect(runtimeResult.error.kind).toBe("maintenance-loop-conflict");
+  });
+});

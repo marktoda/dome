@@ -61,7 +61,78 @@ export type Manifest = {
   readonly id: string;
   readonly version: string;
   readonly processors: ReadonlyArray<ProcessorDeclaration>;
+  /**
+   * Bundle-scoped maintenance loops ([[wiki/specs/processors]] §"Maintenance
+   * loops"). Required `processors` must be declared by this bundle (loops in
+   * a manifest are self-contained); `optionalProcessors` may reference
+   * foreign ids. Cross-bundle loops stay in the core registry by design.
+   */
+  readonly loops?: ReadonlyArray<ManifestLoopDeclaration>;
+  /**
+   * Doctor contributions ([[wiki/specs/cli]] §"dome doctor"): declarative
+   * grant-entry requirements evaluated generically by the health report.
+   * `processorId` must be declared by this bundle.
+   */
+  readonly doctor?: {
+    readonly grantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
+  };
 };
+
+/**
+ * A declarative doctor probe: when the named processor is loaded and its
+ * capability KIND is granted but the specific entry is not, `dome doctor`
+ * raises `capability.grant-entry-missing` with this `why`/`recovery`.
+ */
+export type ManifestGrantEntryRequirement = {
+  readonly processorId: string;
+  readonly entries: ReadonlyArray<ManifestGrantEntry>;
+  /** What silently breaks while the entry is missing. */
+  readonly why: string;
+  /** The exact .dome/config.yaml addition that satisfies the probe. */
+  readonly recovery: string;
+};
+
+export type ManifestGrantEntry = {
+  readonly kind: "read" | "patch.auto" | "graph.write";
+  /** Vault path for path kinds; fact predicate for `graph.write`. */
+  readonly target: string;
+};
+
+/** A maintenance-loop declaration inside a manifest. Settlement checks are
+ * not declarable — every declared loop gets the standard five. */
+export type ManifestLoopDeclaration = {
+  readonly id: string;
+  readonly goal: string;
+  readonly evidence: ReadonlyArray<ManifestLoopEvidence>;
+  readonly processors: ReadonlyArray<string>;
+  readonly optionalProcessors?: ReadonlyArray<string>;
+  readonly questionScope?: "processors" | "all";
+  readonly surfaces: ReadonlyArray<ManifestLoopSurface>;
+  readonly settlement: {
+    readonly key: string;
+    readonly noOpWhen: string;
+  };
+  readonly risks: ReadonlyArray<string>;
+};
+
+export type ManifestLoopEvidence =
+  | { readonly kind: "path"; readonly pattern: string }
+  | { readonly kind: "projection"; readonly name: string }
+  | {
+      readonly kind: "operational";
+      readonly name:
+        | "diagnostics"
+        | "questions"
+        | "runs"
+        | "outbox"
+        | "quarantines";
+    };
+
+export type ManifestLoopSurface =
+  | { readonly kind: "path"; readonly pattern: string }
+  | { readonly kind: "command"; readonly name: string }
+  | { readonly kind: "projection"; readonly name: string }
+  | { readonly kind: "status"; readonly name: "status" | "check" };
 
 /**
  * A single processor declaration inside a manifest. `module` is the path of
@@ -121,6 +192,19 @@ export type ManifestError =
       readonly processorId: string;
       readonly capability: string;
       readonly message: string;
+    }
+  | {
+      readonly kind: "loop-foreign-processor";
+      readonly loopId: string;
+      readonly processorId: string;
+    }
+  | {
+      readonly kind: "duplicate-loop-id";
+      readonly loopId: string;
+    }
+  | {
+      readonly kind: "doctor-foreign-processor";
+      readonly processorId: string;
     };
 
 /** Closed set of trigger discriminators — the surface the matrix gates on. */
@@ -144,11 +228,73 @@ export const ProcessorDeclarationSchema = z
   })
   .strict();
 
+const ManifestLoopEvidenceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("path"), pattern: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("projection"), name: z.string().min(1) }).strict(),
+  z
+    .object({
+      kind: z.literal("operational"),
+      name: z.enum(["diagnostics", "questions", "runs", "outbox", "quarantines"]),
+    })
+    .strict(),
+]);
+
+const ManifestLoopSurfaceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("path"), pattern: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("command"), name: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("projection"), name: z.string().min(1) }).strict(),
+  z
+    .object({ kind: z.literal("status"), name: z.enum(["status", "check"]) })
+    .strict(),
+]);
+
+export const ManifestLoopSchema = z
+  .object({
+    id: z.string().min(1),
+    goal: z.string().min(1),
+    evidence: z.array(ManifestLoopEvidenceSchema).min(1),
+    processors: z.array(z.string().min(1)).min(1),
+    optionalProcessors: z.array(z.string().min(1)).optional(),
+    questionScope: z.enum(["processors", "all"]).optional(),
+    surfaces: z.array(ManifestLoopSurfaceSchema).min(1),
+    settlement: z
+      .object({
+        key: z.string().min(1),
+        noOpWhen: z.string().min(1),
+      })
+      .strict(),
+    risks: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+const ManifestGrantEntrySchema = z
+  .object({
+    kind: z.enum(["read", "patch.auto", "graph.write"]),
+    target: z.string().min(1),
+  })
+  .strict();
+
+export const ManifestGrantEntryRequirementSchema = z
+  .object({
+    processorId: z.string().min(1),
+    entries: z.array(ManifestGrantEntrySchema).min(1),
+    why: z.string().min(1),
+    recovery: z.string().min(1),
+  })
+  .strict();
+
 export const ManifestSchema = z
   .object({
     id: z.string().min(1),
     version: z.string().min(1),
     processors: z.array(ProcessorDeclarationSchema),
+    loops: z.array(ManifestLoopSchema).optional(),
+    doctor: z
+      .object({
+        grantEntries: z.array(ManifestGrantEntryRequirementSchema).min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -254,6 +400,54 @@ function checkCapabilityPhaseMatrix(
   return ok(undefined);
 }
 
+/**
+ * Cross-field validation: a manifest loop is self-contained — every required
+ * processor id must be declared by this bundle. Cross-bundle desired states
+ * belong in the core composition registry, not a single bundle's manifest.
+ * Also rejects duplicate loop ids within one manifest.
+ */
+function checkLoopDeclarations(
+  manifest: Manifest,
+): Result<void, ManifestError> {
+  const declared = new Set(manifest.processors.map((decl) => decl.id));
+  const seen = new Set<string>();
+  for (const loop of manifest.loops ?? []) {
+    if (seen.has(loop.id)) {
+      return err({ kind: "duplicate-loop-id", loopId: loop.id });
+    }
+    seen.add(loop.id);
+    for (const processorId of loop.processors) {
+      if (!declared.has(processorId)) {
+        return err({
+          kind: "loop-foreign-processor",
+          loopId: loop.id,
+          processorId,
+        });
+      }
+    }
+  }
+  return ok(undefined);
+}
+
+/**
+ * Cross-field validation: doctor grant-entry requirements are
+ * self-contained — the named processor must be declared by this bundle.
+ */
+function checkDoctorDeclarations(
+  manifest: Manifest,
+): Result<void, ManifestError> {
+  const declared = new Set(manifest.processors.map((decl) => decl.id));
+  for (const requirement of manifest.doctor?.grantEntries ?? []) {
+    if (!declared.has(requirement.processorId)) {
+      return err({
+        kind: "doctor-foreign-processor",
+        processorId: requirement.processorId,
+      });
+    }
+  }
+  return ok(undefined);
+}
+
 // ----- parseManifest --------------------------------------------------------
 
 /**
@@ -306,6 +500,12 @@ export function parseManifest(
 
   const capabilityMatrixResult = checkCapabilityPhaseMatrix(manifest);
   if (!capabilityMatrixResult.ok) return err(capabilityMatrixResult.error);
+
+  const loopResult = checkLoopDeclarations(manifest);
+  if (!loopResult.ok) return err(loopResult.error);
+
+  const doctorResult = checkDoctorDeclarations(manifest);
+  if (!doctorResult.ok) return err(doctorResult.error);
 
   return ok(manifest);
 }

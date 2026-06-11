@@ -54,7 +54,7 @@ describe("dailyPathMismatchFindings", () => {
     expect(finding.id).toBe("daily_path");
     expect(finding.message).toContain('dome.daily: "notes/{date}.md"');
     expect(finding.message).toContain("dome.agent: (unset — bundle default)");
-    expect(finding.recovery).toContain("extensions.dome.agent.config.daily_path");
+    expect(finding.recovery).toContain("shared_config.daily_path");
     if (finding.code === "config.daily-path-mismatch") {
       expect(finding.config).toEqual({
         dailyDailyPath: "notes/{date}.md",

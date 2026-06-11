@@ -245,3 +245,20 @@ processors:
     inspection:
       kind: all-readable-markdown
     module: processors/reconcile-tasks.ts
+
+# Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
+# evaluated generically by the health report. dome init --refresh-config never
+# merges new entries into existing grant keys, so these name the exact YAML a
+# pre-rollout vault must add.
+doctor:
+  grantEntries:
+    - processorId: dome.daily.attention-discount
+      entries:
+        - kind: graph.write
+          target: dome.attention.discount
+      why: >-
+        the dismissal-derived attention-discount facts are dropped by the
+        broker, so stale open loops are never demoted
+      recovery: >-
+        Add "dome.attention.*" to extensions.dome.daily.grant.graph.write
+        in .dome/config.yaml.

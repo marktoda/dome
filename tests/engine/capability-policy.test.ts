@@ -742,3 +742,85 @@ extensions:
     );
   });
 });
+
+describe("shared_config", () => {
+  test("shared_config keys merge as defaults under every extension config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+shared_config:
+  daily_path: notes/{date}.md
+extensions:
+  dome.daily:
+    enabled: true
+  dome.agent:
+    enabled: true
+    config:
+      daily_path: custom/{date}.md
+      ingest_cap: 12
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // No own config → the shared default flows through.
+    expect(result.value.configForExtension("dome.daily")).toEqual({
+      daily_path: "notes/{date}.md",
+    });
+    // Own config wins per key; other shared keys still flow.
+    expect(result.value.configForExtension("dome.agent")).toEqual({
+      daily_path: "custom/{date}.md",
+      ingest_cap: 12,
+    });
+    // Extensions never mentioned in the file still see shared defaults.
+    expect(result.value.configForExtension("dome.search")).toEqual({
+      daily_path: "notes/{date}.md",
+    });
+  });
+
+  test("shared_config participates in the capability policy hash", async () => {
+    const rootA = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    const rootB = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(rootA, rootB);
+    for (const [root, value] of [
+      [rootA, "notes/{date}.md"],
+      [rootB, "wiki/dailies/{date}.md"],
+    ] as const) {
+      mkdirSync(join(root, ".dome"), { recursive: true });
+      writeFileSync(
+        join(root, ".dome", "config.yaml"),
+        `\nshared_config:\n  daily_path: ${value}\nextensions:\n  dome.daily:\n    enabled: true\n`,
+        "utf8",
+      );
+    }
+
+    const policyA = await loadCapabilityPolicy(rootA);
+    const policyB = await loadCapabilityPolicy(rootB);
+    expect(policyA.ok && policyB.ok).toBe(true);
+    if (!policyA.ok || !policyB.ok) return;
+    expect(computeCapabilityPolicyHash(policyA.value)).not.toBe(
+      computeCapabilityPolicyHash(policyB.value),
+    );
+  });
+
+  test("rejects a non-mapping shared_config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      "shared_config: 12\n",
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+  });
+});

@@ -72,7 +72,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/matrices/effect-router-targets]] — Effect kind × processor phase → engine routing destination.
 - [[wiki/matrices/effect-x-capability]] — Per-Effect-kind capability requirements at the broker.
 - [[wiki/matrices/engine-module-map]] — `src/engine/`'s four internal layers (core / garden / operational / host); module → layer assignment; downward-only import rule; lockstep with `tests/integration/engine-import-direction.test.ts`.
-- [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; five contribution kinds (page-types, preamble, processors, external-handlers, capability-grants).
+- [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; seven contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops, doctor grant-entry probes).
 - [[wiki/matrices/intent-prompt-processors]] — User intent × prompt source × processor that handles them × effects emitted.
 - [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
 - [[wiki/matrices/projection-table-x-owner]] — Per-projection-table writer authority; namespace scoping.
@@ -94,6 +94,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/garden-cascade-cap]] — Garden-emitted PatchEffects can recursively spawn sub-Proposals; depth cap (default 10) emits `garden.cascade-cap` diagnostic on hit.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page Proposals that adopt only some pages on block — atomic adoption mitigates.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the compiler host catches committed branch movement and constructs Proposals.
+- [[wiki/gotchas/operator-surfaces-enumerate-first-party]] — Third-party bundles are first-class at the effect/capability layer but second-class on operator surfaces; converted (loops, shared config) vs remaining (doctor findings, diagnostic rendering hints) shadow contribution kinds, with conversion paths.
 - [[wiki/gotchas/outbox-stuck]] — External-action retries exhausted; `dome check` reports it and `dome.health` questions plus `dome resolve` recover retry/abandon decisions.
 - [[wiki/gotchas/processor-fixed-point-divergence]] — Adoption loop hits MAX_ITER cap; processors named in the diagnostic.
 - [[wiki/gotchas/processor-idempotency]] — Non-deterministic processors break the fixed-point loop and `dome rebuild`.

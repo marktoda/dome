@@ -5,6 +5,10 @@
 // no mutation. Repairs still flow through the engine-asks model: findings
 // become questions/answers and answer handlers apply the requested mutation.
 
+import type {
+  ManifestGrantEntry,
+  ManifestGrantEntryRequirement,
+} from "../../extensions/manifest-schema";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -363,6 +367,8 @@ export async function collectHealthReport(opts: {
    * timeout footgun, wiki/specs/sources.md §"Timeout").
    */
   readonly externalHandlerTimeoutConfigured?: boolean;
+  /** Composed manifest doctor contributions (`runtime.doctorGrantEntries`). */
+  readonly doctorGrantEntries?: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly modelProviderProbe?: ModelProviderProbeInput;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
@@ -411,6 +417,7 @@ export async function collectHealthReport(opts: {
       : capabilityGrantEntryFindings({
           registry: opts.registry,
           resolveGrants: opts.resolveGrants,
+          requirements: opts.doctorGrantEntries ?? [],
         });
   const modelProvider =
     opts.registry === undefined || opts.resolveGrants === undefined
@@ -572,158 +579,34 @@ function capabilityKinds(
   return new Set(capabilities.map((capability) => capability.kind));
 }
 
-// ----- First-party grant-entry probes ----------------------------------------
+// ----- Grant-entry probes ------------------------------------------------------
 //
 // `dome init --refresh-config` fills only MISSING grant keys for already
-// enabled first-party bundles — it never merges new entries into a key the
-// vault already carries (grant lists are user-owned config; auto-merging is
-// too risky). So an existing vault that predates the memory-quality phases
-// (docs/memory.md §"Vault rollout") keeps its old grant lists and silently
-// loses the new behavior: the kind is granted but the specific entry is not,
-// which the kind-level `capability.grant-missing` probe cannot see. These
-// probes name the exact YAML to add. A row fires only when the processor is
+// enabled bundles — it never merges new entries into a key the vault already
+// carries (grant lists are user-owned config; auto-merging is too risky). So
+// a vault that predates a bundle's newer behavior keeps its old grant lists
+// and silently loses that behavior: the kind is granted but the specific
+// entry is not, which the kind-level `capability.grant-missing` probe cannot
+// see. These probes name the exact YAML to add.
+//
+// The requirements are a MANIFEST CONTRIBUTION (`doctor.grantEntries`, per
+// [[wiki/gotchas/operator-surfaces-enumerate-first-party]]): each bundle
+// declares its own, the runtime composes active bundles' entries, and this
+// evaluator stays bundle-agnostic. A row fires only when the processor is
 // loaded (bundle enabled), the manifest still declares the entry, and the
 // kind IS granted (a wholly missing kind is the kind-level finding's job).
 
 export type GrantEntryKind = "read" | "patch.auto" | "graph.write";
 
-type GrantEntry = {
-  readonly kind: GrantEntryKind;
-  /** Vault path for path kinds; fact predicate for `graph.write`. */
-  readonly target: string;
-};
-
-type GrantEntryRequirement = {
-  readonly processorId: string;
-  readonly entries: ReadonlyArray<GrantEntry>;
-  /** What silently breaks while the entry is missing. */
-  readonly why: string;
-  /** The exact .dome/config.yaml addition that satisfies the probe. */
-  readonly recovery: string;
-};
-
-export const FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<GrantEntryRequirement> =
-  Object.freeze([
-    Object.freeze({
-      processorId: "dome.daily.attention-discount",
-      entries: Object.freeze([
-        Object.freeze({
-          kind: "graph.write",
-          target: "dome.attention.discount",
-        } as const),
-      ]),
-      why:
-        "the dismissal-derived attention-discount facts are dropped by the " +
-        "broker, so stale open loops are never demoted",
-      recovery:
-        'Add "dome.attention.*" to extensions.dome.daily.grant.graph.write ' +
-        "in .dome/config.yaml.",
-    }),
-    Object.freeze({
-      processorId: "dome.agent.brief",
-      entries: Object.freeze([
-        Object.freeze({ kind: "read", target: "core.md" } as const),
-      ]),
-      why:
-        "agents cannot load the owner's core-memory page into their task " +
-        "turns",
-      recovery:
-        'Add "core.md" to extensions.dome.agent.grant.read in ' +
-        ".dome/config.yaml.",
-    }),
-    Object.freeze({
-      processorId: "dome.agent.brief",
-      entries: Object.freeze([
-        Object.freeze({
-          kind: "read",
-          target: "preferences/signals.md",
-        } as const),
-        Object.freeze({
-          kind: "patch.auto",
-          target: "preferences/signals.md",
-        } as const),
-      ]),
-      why:
-        "preference signal lines can be neither read nor appended, so " +
-        "preference promotion never accumulates evidence",
-      recovery:
-        'Add "preferences/signals.md" to extensions.dome.agent.grant.read ' +
-        "and extensions.dome.agent.grant.patch.auto in .dome/config.yaml.",
-    }),
-    Object.freeze({
-      processorId: "dome.agent.preference-signals",
-      entries: Object.freeze([
-        Object.freeze({
-          kind: "graph.write",
-          target: "dome.preference.topic",
-        } as const),
-      ]),
-      why:
-        "the deterministic preference counter's dome.preference.topic facts " +
-        "are dropped by the broker",
-      recovery:
-        'Add "dome.preference.*" to extensions.dome.agent.grant.graph.write ' +
-        "in .dome/config.yaml.",
-    }),
-    Object.freeze({
-      processorId: "dome.agent.preference-promotion-answer",
-      entries: Object.freeze([
-        Object.freeze({ kind: "read", target: "core.md" } as const),
-        Object.freeze({
-          kind: "read",
-          target: "preferences/signals.md",
-        } as const),
-        Object.freeze({ kind: "patch.auto", target: "core.md" } as const),
-        Object.freeze({
-          kind: "patch.auto",
-          target: "preferences/signals.md",
-        } as const),
-      ]),
-      why:
-        "owner-approved preference promotions cannot be written to core.md " +
-        "(the single-auto-writer exception in wiki/specs/preferences.md)",
-      recovery:
-        "Add the per-processor replacement grant stanza in " +
-        ".dome/config.yaml: extensions.dome.agent.processors." +
-        '"dome.agent.preference-promotion-answer".grant with read: ' +
-        '["core.md", "preferences/signals.md"] and patch.auto: ' +
-        '["core.md", "preferences/signals.md"].',
-    }),
-    Object.freeze({
-      processorId: "dome.markdown.core-size",
-      entries: Object.freeze([
-        Object.freeze({ kind: "read", target: "core.md" } as const),
-      ]),
-      why:
-        "the core-memory size lint never fires (its effective read scope " +
-        "is empty)",
-      recovery:
-        'Add "core.md" to extensions.dome.markdown.grant.read in ' +
-        ".dome/config.yaml.",
-    }),
-    Object.freeze({
-      processorId: "dome.markdown.page-status",
-      entries: Object.freeze([
-        Object.freeze({
-          kind: "graph.write",
-          target: "dome.page.status",
-        } as const),
-      ]),
-      why:
-        "page supersession facts are dropped by the broker, so superseded " +
-        "pages are neither linted against nor downranked",
-      recovery:
-        'Add "dome.page.*" to extensions.dome.markdown.grant.graph.write ' +
-        "in .dome/config.yaml.",
-    }),
-  ]);
+type GrantEntry = ManifestGrantEntry;
 
 export function capabilityGrantEntryFindings(opts: {
   readonly registry: ProcessorRegistry;
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly requirements: ReadonlyArray<ManifestGrantEntryRequirement>;
 }): ReadonlyArray<HealthFinding> {
   const findings: HealthFinding[] = [];
-  for (const requirement of FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS) {
+  for (const requirement of opts.requirements) {
     const processor = opts.registry.get(requirement.processorId);
     if (processor === undefined) continue; // bundle not enabled / not loaded
     const granted = opts.resolveGrants(requirement.processorId);
@@ -943,10 +826,10 @@ export function dailyPathMismatchFindings(opts: {
         "write a different file than create-daily, leaving a wrong-path " +
         "brief plus a duplicate daily skeleton.",
       recovery:
-        "Mirror the daily_path key: set " +
-        "extensions.dome.daily.config.daily_path and " +
-        "extensions.dome.agent.config.daily_path to the same template in " +
-        ".dome/config.yaml (or remove both to use the shared default).",
+        "Declare the path once: set shared_config.daily_path in " +
+        ".dome/config.yaml and remove the per-extension " +
+        "extensions.*.config.daily_path overrides (an extension's own key " +
+        "overrides the shared value, which is how this fork happened).",
       config: Object.freeze({ dailyDailyPath, agentDailyPath }),
     }),
   ]);

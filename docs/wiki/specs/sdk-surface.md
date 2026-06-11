@@ -236,7 +236,7 @@ An **extension bundle** is a directory under a configured bundles root: `assets/
     *.ts
 ```
 
-The five contribution kinds replace v0.5's five (tool / hook / prompt / page-type / CLI command). Tools dissolve into adoption-phase processors emitting PatchEffect; hooks dissolve into adoption-phase or garden-phase processors with signal triggers; workflows dissolve into garden-phase processors with `model.invoke` capability; CLI commands are now command-triggered view-phase processors registered via `processors/` with `triggers: [{ kind: "command", name: "..." }]`. See [[wiki/matrices/built-in-extensions-x-phase]] for the canonical map.
+The seven contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops, doctor grant-entry probes) replace v0.5's five (tool / hook / prompt / page-type / CLI command). Tools dissolve into adoption-phase processors emitting PatchEffect; hooks dissolve into adoption-phase or garden-phase processors with signal triggers; workflows dissolve into garden-phase processors with `model.invoke` capability; CLI commands are now command-triggered view-phase processors registered via `processors/` with `triggers: [{ kind: "command", name: "..." }]`. See [[wiki/matrices/built-in-extensions-x-phase]] for the canonical map.
 
 ### `manifest.yaml` schema
 
@@ -404,24 +404,29 @@ The substrate scaffold catches the missing pieces:
 ## Adding a maintenance loop
 
 Maintenance loops are descriptive metadata over processors, not a new runtime
-primitive. Adding one is a substrate change because it changes how `status` and
-`check` explain Dome's desired-state automation.
+primitive. Two declaration homes, chosen by the loop's scope; the runtime
+composes both (`composeMaintenanceLoops`) and status/check read the composed
+set from the runtime, so manifest-declared loops surface automatically.
 
-Five file edits:
+**Bundle-scoped loop (one bundle's objective — the path for third-party
+bundles):** declare it in the bundle's `manifest.yaml` under `loops:` — id,
+goal, evidence, processors, optional processors, surfaces, settlement `{key,
+noOpWhen}`, risks. Settlement checks are not declarable; every declared loop
+gets the standard five. Required `processors` must be declared by the same
+bundle (the manifest validator rejects foreign required ids); foreign
+`optionalProcessors` are allowed and render as inactive contributors when
+absent. Loop-id collisions with any other loaded loop fail `openVault` with
+`maintenance-loop-conflict`.
 
-1. **The processors** that actually implement the behavior, each added through
-   the normal "Adding a processor" path above.
-2. **The loop registry row** in `src/extensions/maintenance-loops.ts`, with a
-   stable id, goal, evidence, required processors, optional processors when
-   relevant, surfaces, settlement rule, and risks.
-3. **The loop validation test** in `tests/extensions/maintenance-loops.test.ts`.
-   The validator catches malformed ids, empty required metadata, duplicate
-   processor references, unsupported projection/status names, invalid path
-   patterns, stale processor ids, and stale command surfaces.
-4. **The processor spec** in `docs/wiki/specs/processors.md`, updating the
-   shipped V1 loop list or the future-loop guidance as appropriate.
-5. **Any status/check expectation** if the new loop changes the operator-facing
-   maintenance summary.
+**Cross-bundle composition loop (a system-level desired state spanning
+bundles):** a row in the core registry `src/extensions/maintenance-loops.ts`.
+This is deliberate, not debt: most first-party loops compose processors from
+several bundles (open-loop continuity spans `dome.daily` + `dome.agent`;
+question continuity spans four bundles and is cross-cutting), and composition
+over the bundle set is the vault's job, not any one bundle's. Core-registry
+edits keep the original recipe: the registry row, the validation test in
+`tests/extensions/maintenance-loops.test.ts`, the processor-spec update, and
+any status/check expectation changes.
 
 Do not add a new top-level CLI command just because a loop exists. If the loop
 needs a human or agent surface, add a command-triggered view processor and use

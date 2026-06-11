@@ -129,6 +129,7 @@ export async function runDoctor(
       registry: runtime.registry,
       resolveGrants: runtime.resolveGrants,
       extensionConfigFor: runtime.extensionConfigFor,
+      doctorGrantEntries: runtime.doctorGrantEntries,
       modelProviderConfigured: runtime.modelProvider !== undefined,
       externalHandlerTimeoutConfigured:
         runtime.config.engine.externalHandlerTimeoutMs !== undefined,
