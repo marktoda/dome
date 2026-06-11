@@ -236,7 +236,7 @@ An **extension bundle** is a directory under a configured bundles root: `assets/
     *.ts
 ```
 
-The six contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops) replace v0.5's five (tool / hook / prompt / page-type / CLI command). Tools dissolve into adoption-phase processors emitting PatchEffect; hooks dissolve into adoption-phase or garden-phase processors with signal triggers; workflows dissolve into garden-phase processors with `model.invoke` capability; CLI commands are now command-triggered view-phase processors registered via `processors/` with `triggers: [{ kind: "command", name: "..." }]`. See [[wiki/matrices/built-in-extensions-x-phase]] for the canonical map.
+The seven contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops, doctor grant-entry probes) replace v0.5's five (tool / hook / prompt / page-type / CLI command). Tools dissolve into adoption-phase processors emitting PatchEffect; hooks dissolve into adoption-phase or garden-phase processors with signal triggers; workflows dissolve into garden-phase processors with `model.invoke` capability; CLI commands are now command-triggered view-phase processors registered via `processors/` with `triggers: [{ kind: "command", name: "..." }]`. See [[wiki/matrices/built-in-extensions-x-phase]] for the canonical map.
 
 ### `manifest.yaml` schema
 

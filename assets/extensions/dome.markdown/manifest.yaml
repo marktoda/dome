@@ -235,3 +235,27 @@ processors:
       - kind: read
         paths: ["**/*.md"]
     module: processors/orphan-pages.ts
+
+# Doctor contributions: grant-entry probes (see dome.daily/manifest.yaml).
+doctor:
+  grantEntries:
+    - processorId: dome.markdown.core-size
+      entries:
+        - kind: read
+          target: core.md
+      why: >-
+        the core-memory size lint never fires (its effective read scope is
+        empty)
+      recovery: >-
+        Add "core.md" to extensions.dome.markdown.grant.read in
+        .dome/config.yaml.
+    - processorId: dome.markdown.page-status
+      entries:
+        - kind: graph.write
+          target: dome.page.status
+      why: >-
+        page supersession facts are dropped by the broker, so superseded
+        pages are neither linted against nor downranked
+      recovery: >-
+        Add "dome.page.*" to extensions.dome.markdown.grant.graph.write in
+        .dome/config.yaml.

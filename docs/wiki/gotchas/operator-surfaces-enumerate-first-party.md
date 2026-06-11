@@ -39,16 +39,23 @@ contribution but lives hardcoded in core.
   (`daily_path` is the canonical case), replacing mirrored per-extension
   keys. See [[wiki/specs/vault-layout]] §"config.yaml".
 
+- **Doctor grant-entry probes** *(2026-06-10)* — the
+  `FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS` table converted to a manifest
+  `doctor.grantEntries:` contribution: each bundle declares its own
+  probes (self-contained processor ids), the runtime composes active
+  bundles' entries, and the health evaluator stays bundle-agnostic. The
+  seven first-party entries live in the `dome.daily` / `dome.agent` /
+  `dome.markdown` manifests.
+
+**Deliberate core composition checks (not debt):** the
+`config.daily-path-mismatch` and `config.sources-timeout-default`
+findings read *across* configs (two bundles' resolved configs; an
+extension config against engine config). Like the cross-bundle
+maintenance loops, composition over the bundle set is the vault's job —
+these stay in `src/engine/host/health.ts` by design.
+
 **Remaining (known debt, conversion paths named):**
 
-- **Doctor/health findings** — `src/engine/host/health.ts` hardcodes
-  bundle-specific checks (`dome.daily.attention-discount` config,
-  `dome.agent.brief` readiness, preference-signal grants,
-  `dome.markdown.core-size`, `dome.sources` subscriptions). Conversion
-  path: a manifest `doctor:` contribution — declarative config/grant
-  expectations core evaluates generically — or bundle doctor-check modules
-  beside `external-handlers/`. Convert when a third-party bundle needs
-  doctor findings or `health.ts` keeps growing.
 - **Diagnostic rendering hints** — `src/surface/diagnostic-summary.ts`
   string-matches `dome.markdown.*` codes for repair paths and
   dispositions; third-party diagnostic codes degrade to plain rendering.
