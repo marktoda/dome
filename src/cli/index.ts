@@ -24,6 +24,7 @@ import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
+import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
@@ -593,6 +594,19 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           token: options.token,
         }),
       );
+    });
+
+  program
+    .command("recipe <kind>")
+    .description(
+      "Print a client setup recipe (available: ios — voice capture via Shortcuts).",
+    )
+    .option(
+      "--url <base>",
+      "Base URL of your dome http server (default http://<your-server>:3663).",
+    )
+    .action(async (kind: string, options: { readonly url?: string }) => {
+      setExitCode(await runRecipe({ kind, url: options.url }));
     });
 
   program
