@@ -5,6 +5,7 @@
 // and land as a single cumulative PatchEffect, hard-capped at
 // MAX_CHANGED_FILES per run (nightly cadence multiplies blast radius).
 
+import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
 import { diagnosticEffect, type Effect } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
@@ -50,25 +51,9 @@ export function consolidationLedgerPath(
 ): ConsolidationLedgerResolution {
   const raw = config?.consolidation_ledger_path;
   if (raw === undefined) return resolution(DEFAULT_LEDGER_PATH, null);
-  if (typeof raw !== "string") {
-    return fallback("consolidation_ledger_path must be a string");
-  }
-  if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
-    return fallback("consolidation_ledger_path must be a non-empty .md path");
-  }
-  if (
-    raw.startsWith("/") ||
-    raw.includes("\\") ||
-    raw.split("/").some(
-      (segment) =>
-        segment.length === 0 || segment === "." || segment === "..",
-    )
-  ) {
-    return fallback(
-      "consolidation_ledger_path must be a relative vault markdown path",
-    );
-  }
-  return resolution(raw, null);
+  const v = validateRelativeMarkdownPath(raw, "consolidation_ledger_path");
+  if (!v.ok) return fallback(v.problem);
+  return resolution(v.path, null);
 }
 
 function resolution(

@@ -15,7 +15,6 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 import {
-  questionAutomationLabel,
   questionAutomationPolicy,
 } from "../../../../src/question-resolution";
 import {
@@ -54,18 +53,18 @@ import {
   rankSearchCandidate,
   MAX_LINK_EXPANSION_PATHS,
   type SearchRanking,
+  type SearchRankingFusion,
 } from "./ranking";
 import {
   compareTopicRelevance,
   topicRelevantItems,
 } from "./topic-relevance";
+import { renderMarkdown, SCHEMA, MAX_RELATED_ROWS } from "./packet-render";
 
 import { compareStrings } from "../../../../src/core/compare";
 
-const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
-const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
 
 const exportContext = defineProcessorImplementation({
@@ -78,148 +77,31 @@ const exportContext = defineProcessorImplementation({
 
     const projection = ctx.projection;
     const input = parseInput(ctx.input);
-    const searchMatches = projection.searchDocuments({
-      query: input.topic,
-      limit: expandedSearchLimit(input.limit),
-    });
-    const allDiagnostics = projection.diagnostics();
-    const allQuestions = projection
-      .questions({ resolved: false })
-      .map(questionItemFromProjection);
-    const topicRecallSignalsByPath = recallSignalsForTopic({
-      projection,
-      topic: input.topic,
-      diagnostics: allDiagnostics,
-      questions: allQuestions,
-    });
-    const dailyRecallSignalsByPath = await dailySurfaceRecallSignalsForTopic({
-      snapshot: ctx.snapshot,
-      topic: input.topic,
-      sourceRef: ctx.sourceRef,
-      now: ctx.now(),
-    });
-    const recallSignalsByPath = mergeRecallSignalMaps([
-      topicRecallSignalsByPath,
-      dailyRecallSignalsByPath,
-    ]);
-    // FTS rows are section-granular; collapse to the best section per page
-    // before the path-keyed joins and channel fusion.
-    const filteredSearchMatches = dedupeBestSectionPerPage(
-      filterDailyIntentSearchMatches({
-        matches: searchMatches,
-        dailyRecallSignalsByPath,
-      }),
-    );
-    const searchMatchPaths = new Set(
-      filteredSearchMatches.map((match) => match.path),
-    );
-    const recalledPaths = prioritizedRecallPaths(
-      recallSignalsByPath,
-      searchMatchPaths,
-    ).slice(0, MAX_RECALL_PATHS);
-    const recalledMatches = filterDailyIntentSearchMatches({
-      matches: projection.documentsByPath(recalledPaths),
-      dailyRecallSignalsByPath,
-    });
-    // One-hop link expansion over dome.graph.links_to facts from the top
-    // FTS hits, fused with the FTS channel via reciprocal-rank fusion —
-    // same retrieval substrate as `dome query`.
-    const ftsPaths = filteredSearchMatches.map((match) => match.path);
-    const expansion = linkExpansionChannel({
-      ftsPaths,
-      linksToFacts: projection.facts({ predicate: "dome.graph.links_to" }),
-      allMarkdownPaths: await ctx.snapshot.listMarkdownFiles(),
-    });
-    const fusionByPath = fuseSearchChannelsRrf({ ftsPaths, expansion });
-    const recalledPathSet = new Set(recalledMatches.map((match) => match.path));
-    // Expansion candidates must exclude pages already present as FTS hits —
-    // a hit beyond the recall-prioritization cut that is also linked from a
-    // top hit would otherwise enter `candidateMatches` twice and render as a
-    // duplicate entry.
-    const expansionPaths = expansion
-      .map((entry) => entry.path)
-      .filter(
-        (path) => !recalledPathSet.has(path) && !searchMatchPaths.has(path),
-      )
-      .slice(0, MAX_LINK_EXPANSION_PATHS);
-    const expansionMatches = filterDailyIntentSearchMatches({
-      matches: projection.documentsByPath(expansionPaths),
-      dailyRecallSignalsByPath,
-    });
-    const candidateMatches = Object.freeze([
-      ...filteredSearchMatches,
-      ...recalledMatches,
-      ...expansionMatches,
-    ]);
-    const matchPaths = new Set(candidateMatches.map((match) => match.path));
-    const factsByPath = new Map(
-      candidateMatches.map((match) => [
-        match.path,
-        projection.facts({
-          subjectKind: "page",
-          subjectId: match.path,
-        }),
-      ]),
-    );
-    const diagnosticsByPath = groupByMatchingPath(
-      allDiagnostics,
-      matchPaths,
-    );
-    const questionsByPath = groupByMatchingPath(
-      allQuestions,
-      matchPaths,
-    );
-    const rankedMatches = await applyRecencyDecay({
-      entries: candidateMatches
-        .map((match) => {
-          const fusion = fusionByPath.get(match.path);
-          return Object.freeze({
-            ...match,
-            ranking: rankSearchCandidate({
-              match,
-              facts: factsByPath.get(match.path) ?? Object.freeze([]),
-              diagnostics: diagnosticsByPath.get(match.path) ??
-                Object.freeze([]),
-              questions: questionsByPath.get(match.path) ?? Object.freeze([]),
-              recallSignals: recallSignalsByPath.get(match.path) ??
-                Object.freeze([]),
-              ...(fusion !== undefined ? { fusion } : {}),
-            }),
-            facts: factsByPath.get(match.path) ?? Object.freeze([]),
-            diagnostics: diagnosticsByPath.get(match.path) ?? Object.freeze([]),
-            questions: questionsByPath.get(match.path) ?? Object.freeze([]),
-          });
-        })
-        .sort(compareRankedSearchEntries),
-      getFileInfo: ctx.snapshot.getFileInfo,
-      now: ctx.now(),
-    });
-    const matches = Object.freeze(rankedMatches.slice(0, input.limit));
-    const hasMoreEntries = rankedMatches.length > matches.length;
-    const entries = matches.map((match) =>
-      contextEntryFromMatch(
-        input.topic,
-        match,
-        match.facts,
-        match.diagnostics,
-        match.questions,
-        match.ranking,
-      ),
-    );
+
+    // Fetch FTS candidates, recall signals, link expansion, and RRF fusion.
+    const collected = await collectCandidates(ctx, input, projection);
+
+    // Score candidates, apply recency decay, sort, and slice to limit.
+    const ranked = await rankCandidates(collected, input, ctx);
+
+    // Fetch pinned open loops from daily surface.
     const dailySurfaceOpenLoops = await dailySurfaceOpenLoopsForContext({
       ctx,
-      recallSignalsByPath,
+      recallSignalsByPath: collected.recallSignalsByPath,
       maxRows: MAX_RELATED_ROWS,
     });
+
+    // Assemble cross-entry overview (read-first, open loops, decisions, etc.).
     const overview = buildOverview(
       input.topic,
-      entries,
-      recallSignalsByPath,
+      ranked.entries,
+      collected.recallSignalsByPath,
       dailySurfaceOpenLoops,
     );
+
     const scope = uniqueSourceRefs(
       [
-        ...entries.flatMap((entry) => [
+        ...ranked.entries.flatMap((entry) => [
           ...entry.sourceRefs,
           ...entry.facts.flatMap((fact) => fact.sourceRefs),
           ...entry.diagnostics.flatMap((diagnostic) => diagnostic.sourceRefs),
@@ -237,14 +119,14 @@ const exportContext = defineProcessorImplementation({
       topic: input.topic,
       limit: input.limit,
       shown: Object.freeze({
-        entries: entries.length,
+        entries: ranked.entries.length,
       }),
       hasMore: Object.freeze({
-        entries: hasMoreEntries,
+        entries: ranked.hasMoreEntries,
       }),
       overview,
-      markdown: renderMarkdown(input.topic, overview, entries, hasMoreEntries),
-      entries: Object.freeze(entries.map(publicContextEntry)),
+      markdown: renderMarkdown(input.topic, overview, ranked.entries, ranked.hasMoreEntries),
+      entries: Object.freeze(ranked.entries.map(publicContextEntry)),
     });
 
     const effect: ViewEffect = viewEffect({
@@ -267,7 +149,7 @@ type ExportInput = {
   readonly limit: number;
 };
 
-type ContextEntry = {
+export type ContextEntry = {
   readonly path: string;
   readonly title: string;
   readonly category: string;
@@ -300,7 +182,7 @@ type PublicContextEntry = Omit<
   | "questionCount"
 >;
 
-type ContextOverview = {
+export type ContextOverview = {
   readonly readFirst: ReadonlyArray<ContextReadFirst>;
   readonly openLoops: ReadonlyArray<ContextOpenLoop>;
   readonly decisions: ReadonlyArray<ContextDecision>;
@@ -381,6 +263,174 @@ type ContextQuestion = {
 type ContextQuestionSummary = ContextQuestion & {
   readonly path: string;
 };
+
+// Intermediate type for collected retrieval inputs.
+type CollectedCandidates = {
+  readonly candidateMatches: ReadonlyArray<SearchDocumentResult>;
+  readonly recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>;
+  readonly fusionByPath: ReadonlyMap<string, SearchRankingFusion>;
+  readonly factsByPath: ReadonlyMap<string, ReadonlyArray<FactEffect>>;
+  readonly diagnosticsByPath: ReadonlyMap<string, ReadonlyArray<DiagnosticEffect>>;
+  readonly questionsByPath: ReadonlyMap<string, ReadonlyArray<SearchQuestionItem>>;
+};
+
+// Intermediate type for scored, sliced candidates with built ContextEntries.
+type RankedCandidates = {
+  readonly entries: ReadonlyArray<ContextEntry>;
+  readonly hasMoreEntries: boolean;
+};
+
+async function collectCandidates(
+  ctx: ProcessorContext,
+  input: ExportInput,
+  projection: NonNullable<ProcessorContext["projection"]>,
+): Promise<CollectedCandidates> {
+  const searchMatches = projection.searchDocuments({
+    query: input.topic,
+    limit: expandedSearchLimit(input.limit),
+  });
+  const allDiagnostics = projection.diagnostics();
+  const allQuestions = projection
+    .questions({ resolved: false })
+    .map(questionItemFromProjection);
+  const topicRecallSignalsByPath = recallSignalsForTopic({
+    projection,
+    topic: input.topic,
+    diagnostics: allDiagnostics,
+    questions: allQuestions,
+  });
+  const dailyRecallSignalsByPath = await dailySurfaceRecallSignalsForTopic({
+    snapshot: ctx.snapshot,
+    topic: input.topic,
+    sourceRef: ctx.sourceRef,
+    now: ctx.now(),
+  });
+  const recallSignalsByPath = mergeRecallSignalMaps([
+    topicRecallSignalsByPath,
+    dailyRecallSignalsByPath,
+  ]);
+  // FTS rows are section-granular; collapse to the best section per page
+  // before the path-keyed joins and channel fusion.
+  const filteredSearchMatches = dedupeBestSectionPerPage(
+    filterDailyIntentSearchMatches({
+      matches: searchMatches,
+      dailyRecallSignalsByPath,
+    }),
+  );
+  const searchMatchPaths = new Set(
+    filteredSearchMatches.map((match) => match.path),
+  );
+  const recalledPaths = prioritizedRecallPaths(
+    recallSignalsByPath,
+    searchMatchPaths,
+  ).slice(0, MAX_RECALL_PATHS);
+  const recalledMatches = filterDailyIntentSearchMatches({
+    matches: projection.documentsByPath(recalledPaths),
+    dailyRecallSignalsByPath,
+  });
+  // One-hop link expansion over dome.graph.links_to facts from the top
+  // FTS hits, fused with the FTS channel via reciprocal-rank fusion —
+  // same retrieval substrate as `dome query`.
+  const ftsPaths = filteredSearchMatches.map((match) => match.path);
+  const expansion = linkExpansionChannel({
+    ftsPaths,
+    linksToFacts: projection.facts({ predicate: "dome.graph.links_to" }),
+    allMarkdownPaths: await ctx.snapshot.listMarkdownFiles(),
+  });
+  const fusionByPath = fuseSearchChannelsRrf({ ftsPaths, expansion });
+  const recalledPathSet = new Set(recalledMatches.map((match) => match.path));
+  // Expansion candidates must exclude pages already present as FTS hits —
+  // a hit beyond the recall-prioritization cut that is also linked from a
+  // top hit would otherwise enter `candidateMatches` twice and render as a
+  // duplicate entry.
+  const expansionPaths = expansion
+    .map((entry) => entry.path)
+    .filter(
+      (path) => !recalledPathSet.has(path) && !searchMatchPaths.has(path),
+    )
+    .slice(0, MAX_LINK_EXPANSION_PATHS);
+  const expansionMatches = filterDailyIntentSearchMatches({
+    matches: projection.documentsByPath(expansionPaths),
+    dailyRecallSignalsByPath,
+  });
+  const candidateMatches = Object.freeze([
+    ...filteredSearchMatches,
+    ...recalledMatches,
+    ...expansionMatches,
+  ]);
+  const matchPaths = new Set(candidateMatches.map((match) => match.path));
+  const factsByPath = new Map(
+    candidateMatches.map((match) => [
+      match.path,
+      projection.facts({
+        subjectKind: "page",
+        subjectId: match.path,
+      }),
+    ]),
+  );
+  const diagnosticsByPath = groupByMatchingPath(
+    allDiagnostics,
+    matchPaths,
+  );
+  const questionsByPath = groupByMatchingPath(
+    allQuestions,
+    matchPaths,
+  );
+  return {
+    candidateMatches,
+    recallSignalsByPath,
+    fusionByPath,
+    factsByPath,
+    diagnosticsByPath,
+    questionsByPath,
+  };
+}
+
+async function rankCandidates(
+  collected: CollectedCandidates,
+  input: ExportInput,
+  ctx: ProcessorContext,
+): Promise<RankedCandidates> {
+  // Score each candidate, sort by rank, apply recency decay, then slice to limit.
+  const rankedMatches = await applyRecencyDecay({
+    entries: collected.candidateMatches
+      .map((match) => {
+        const fusion = collected.fusionByPath.get(match.path);
+        return Object.freeze({
+          ...match,
+          ranking: rankSearchCandidate({
+            match,
+            facts: collected.factsByPath.get(match.path) ?? Object.freeze([]),
+            diagnostics: collected.diagnosticsByPath.get(match.path) ??
+              Object.freeze([]),
+            questions: collected.questionsByPath.get(match.path) ?? Object.freeze([]),
+            recallSignals: collected.recallSignalsByPath.get(match.path) ??
+              Object.freeze([]),
+            ...(fusion !== undefined ? { fusion } : {}),
+          }),
+          facts: collected.factsByPath.get(match.path) ?? Object.freeze([]),
+          diagnostics: collected.diagnosticsByPath.get(match.path) ?? Object.freeze([]),
+          questions: collected.questionsByPath.get(match.path) ?? Object.freeze([]),
+        });
+      })
+      .sort(compareRankedSearchEntries),
+    getFileInfo: ctx.snapshot.getFileInfo,
+    now: ctx.now(),
+  });
+  const matches = Object.freeze(rankedMatches.slice(0, input.limit));
+  const hasMoreEntries = rankedMatches.length > matches.length;
+  const entries = matches.map((match) =>
+    contextEntryFromMatch(
+      input.topic,
+      match,
+      match.facts,
+      match.diagnostics,
+      match.questions,
+      match.ranking,
+    ),
+  );
+  return { entries: Object.freeze(entries), hasMoreEntries };
+}
 
 function contextEntryFromMatch(
   topic: string,
@@ -767,194 +817,6 @@ function uniqueRecallSignals(
   return Object.freeze(out);
 }
 
-function renderMarkdown(
-  topic: string,
-  overview: ContextOverview,
-  entries: ReadonlyArray<ContextEntry>,
-  hasMoreEntries: boolean,
-): string {
-  const lines = [
-    `# Dome Context: ${topic}`,
-    "",
-    `Schema: \`${SCHEMA}\``,
-    "",
-  ];
-
-  if (entries.length === 0) {
-    lines.push("No adopted-state matches.");
-    return lines.join("\n");
-  }
-
-  renderOverview(lines, overview);
-
-  lines.push("## Matches");
-  for (const [index, entry] of entries.entries()) {
-    lines.push("");
-    lines.push(`### ${index + 1}. ${entry.title}`);
-    lines.push(`- Path: \`${entry.path}\``);
-    if (entry.breadcrumb !== null && entry.breadcrumb !== entry.title) {
-      lines.push(`- Section: ${entry.breadcrumb}`);
-    }
-    lines.push(`- Category: \`${entry.category}\``);
-    if (entry.type !== null) lines.push(`- Type: \`${entry.type}\``);
-    if (entry.ranking.reasons.length > 0) {
-      lines.push(
-        `- Ranking: ${entry.ranking.reasons.join("; ")} ` +
-          `(score ${entry.ranking.score}, fts ${entry.ranking.ftsRank})`,
-      );
-    }
-    lines.push("- SourceRefs:");
-    for (const ref of entry.sourceRefs) {
-      lines.push(`  - \`${formatSourceRef(ref)}\``);
-    }
-    if (entry.summary.length > 0) {
-      lines.push("");
-      lines.push("Summary:");
-      for (const item of entry.summary) {
-        const refs = item.sourceRefs.map(formatSourceRef).join(", ");
-        lines.push(`- \`${item.kind}\`: ${item.text} (${refs})`);
-      }
-    }
-    if (entry.snippet.length > 0) {
-      lines.push("");
-      lines.push("> " + entry.snippet.replace(/\n/g, "\n> "));
-    }
-    if (entry.facts.length > 0) {
-      lines.push("");
-      lines.push("Facts:");
-      const facts = entry.facts.slice(0, MAX_RELATED_ROWS);
-      for (const fact of facts) {
-        const refs = fact.sourceRefs.map(formatSourceRef).join(", ");
-        lines.push(`- \`${fact.predicate}\`: ${fact.object} (${refs})`);
-      }
-      appendMoreLine(lines, entry.factCount, facts.length, "facts");
-    }
-    if (entry.diagnostics.length > 0) {
-      lines.push("");
-      lines.push("Diagnostics:");
-      const diagnostics = entry.diagnostics.slice(0, MAX_RELATED_ROWS);
-      for (const diagnostic of diagnostics) {
-        const refs = diagnostic.sourceRefs.map(formatSourceRef).join(", ");
-        lines.push(
-          `- \`${diagnostic.severity}\` \`${diagnostic.code}\`: ${diagnostic.message} (${refs})`,
-        );
-      }
-      appendMoreLine(
-        lines,
-        entry.diagnosticCount,
-        diagnostics.length,
-        "diagnostics",
-      );
-    }
-    if (entry.questions.length > 0) {
-      lines.push("");
-      lines.push("Questions:");
-      const questions = entry.questions.slice(0, MAX_RELATED_ROWS);
-      for (const question of questions) {
-        const refs = question.sourceRefs.map(formatSourceRef).join(", ");
-        lines.push(`- [#${question.id}] ${question.question} (${refs})`);
-        lines.push(`  policy: ${questionAutomationLabel(question.metadata)}`);
-        lines.push(`  resolve: ${question.resolveCommand}`);
-      }
-      appendMoreLine(
-        lines,
-        entry.questionCount,
-        questions.length,
-        "questions",
-      );
-    }
-  }
-
-  if (hasMoreEntries) {
-    lines.push("");
-    lines.push(
-      "- ... more adopted-state matches exist (increase --limit to include more entries)",
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function renderOverview(lines: string[], overview: ContextOverview): void {
-  if (overview.readFirst.length > 0) {
-    lines.push("## Read First");
-    for (const [index, item] of overview.readFirst.entries()) {
-      lines.push(
-        `${index + 1}. \`${item.path}\` - ${item.title} (${item.reason})`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (overview.openLoops.length > 0) {
-    lines.push("## Open Loops");
-    for (const item of overview.openLoops) {
-      const refs = item.sourceRefs.map(formatSourceRef).join(", ");
-      lines.push(
-        `- \`${item.path}\` \`${item.predicate}\`: ${item.text} (${refs})`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (overview.decisions.length > 0) {
-    lines.push("## Decisions");
-    for (const item of overview.decisions) {
-      const refs = item.sourceRefs.map(formatSourceRef).join(", ");
-      lines.push(
-        `- \`${item.path}\` \`${item.predicate}\`: ${item.text} (${refs})`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (overview.unresolvedQuestions.length > 0) {
-    lines.push("## Unresolved Questions");
-    for (const question of overview.unresolvedQuestions) {
-      const refs = question.sourceRefs.map(formatSourceRef).join(", ");
-      lines.push(
-        `- [#${question.id}] \`${question.path}\`: ${question.question} (${refs})`,
-      );
-      lines.push(`  policy: ${questionAutomationLabel(question.metadata)}`);
-      lines.push(`  resolve: ${question.resolveCommand}`);
-    }
-    lines.push("");
-  }
-
-  if (overview.diagnostics.length > 0) {
-    lines.push("## Active Diagnostics");
-    for (const diagnostic of overview.diagnostics) {
-      const refs = diagnostic.sourceRefs.map(formatSourceRef).join(", ");
-      lines.push(
-        `- \`${diagnostic.path}\` \`${diagnostic.severity}\` \`${diagnostic.code}\`: ${diagnostic.message} (${refs})`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (overview.recallSignals.length > 0) {
-    lines.push("## Recall Signals");
-    for (const signal of overview.recallSignals) {
-      const refs = signal.sourceRefs.map(formatSourceRef).join(", ");
-      lines.push(
-        `- \`${signal.path}\` ${signal.label}: ${signal.text} (${refs})`,
-      );
-    }
-    lines.push("");
-  }
-}
-
-function appendMoreLine(
-  lines: string[],
-  total: number,
-  shown: number,
-  label: string,
-): void {
-  const remaining = total - shown;
-  if (remaining <= 0) return;
-  lines.push(`- ... ${remaining} more ${label}`);
-}
-
 function parseInput(input: unknown): ExportInput {
   const envelope = input !== null && typeof input === "object"
     ? input as Record<string, unknown>
@@ -1035,13 +897,6 @@ function questionSearchText(question: ContextQuestion): string {
     question.metadata?.recommendedAnswer ?? "",
     question.metadata?.ownerNeededReason ?? "",
   ].join(" ");
-}
-
-function formatSourceRef(ref: SourceRef): string {
-  const suffix = ref.range === undefined
-    ? ""
-    : `:${ref.range.startLine}-${ref.range.endLine}`;
-  return `${ref.path}${suffix} @ ${ref.commit.slice(0, 7)}`;
 }
 
 function compactText(text: string): string {
