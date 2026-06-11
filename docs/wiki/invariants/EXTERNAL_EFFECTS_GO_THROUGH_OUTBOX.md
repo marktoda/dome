@@ -5,6 +5,9 @@ updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: axiom
+enforced_by:
+  - tests/outbox/dispatch.test.ts
+  - tests/harness/scenarios/effect-routing/health-outbox-recovery.scenario.test.ts
 ---
 
 # EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX

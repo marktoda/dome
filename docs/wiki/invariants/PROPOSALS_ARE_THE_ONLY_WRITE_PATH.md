@@ -5,6 +5,9 @@ updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: axiom
+enforced_by:
+  - tests/integration/public-surface-shape.test.ts
+  - tests/integration/no-direct-mutation-outside-boundaries.test.ts
 ---
 
 # PROPOSALS_ARE_THE_ONLY_WRITE_PATH

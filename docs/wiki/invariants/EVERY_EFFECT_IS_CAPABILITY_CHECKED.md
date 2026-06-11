@@ -5,6 +5,9 @@ updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: axiom
+enforced_by:
+  - tests/engine/capability-broker.test.ts
+  - tests/engine/apply-effect.test.ts
 ---
 
 # EVERY_EFFECT_IS_CAPABILITY_CHECKED

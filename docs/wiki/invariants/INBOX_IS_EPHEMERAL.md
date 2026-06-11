@@ -5,6 +5,8 @@ updated: 2026-06-08
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: shipped-default
+enforced_by:
+  - tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts
 ---
 
 # INBOX_IS_EPHEMERAL

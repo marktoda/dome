@@ -5,6 +5,9 @@ updated: 2026-05-29T00:00:00.000Z
 sources:
   - '[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]'
 tier: axiom
+enforced_by:
+  - tests/harness/scenarios/cli-surface/rebuild-projection.scenario.test.ts
+  - tests/harness/scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test.ts
 ---
 
 # MARKDOWN_IS_SOURCE_OF_TRUTH

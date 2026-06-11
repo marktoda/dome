@@ -5,6 +5,9 @@ updated: 2026-06-10
 sources:
   - "[[wiki/specs/task-lifecycle]]"
 tier: axiom
+enforced_by:
+  - tests/invariants/model-processors-emit-no-durable-facts.test.ts
+  - tests/extensions/manifest-schema.test.ts
 ---
 
 # MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS

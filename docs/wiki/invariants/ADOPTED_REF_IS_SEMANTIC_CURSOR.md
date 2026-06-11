@@ -7,6 +7,9 @@ sources:
 coverage: off-matrix
 enforced_at: src/engine/core/adopt.ts
 tier: axiom
+enforced_by:
+  - tests/harness/scenarios/cli-surface/reanchor-divergence.scenario.test.ts
+  - tests/cli/sync.test.ts
 ---
 
 # ADOPTED_REF_IS_SEMANTIC_CURSOR

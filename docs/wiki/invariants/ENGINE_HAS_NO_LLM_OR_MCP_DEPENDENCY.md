@@ -5,6 +5,8 @@ updated: 2026-06-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: axiom
+enforced_by:
+  - tests/integration/bundle-deps.test.ts
 ---
 
 # ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY

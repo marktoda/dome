@@ -5,6 +5,9 @@ updated: 2026-06-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: shipped-default
+enforced_by:
+  - tests/ledger/runs.test.ts
+  - tests/processors/runtime-ledger.test.ts
 ---
 
 # EVERY_PROCESSOR_RUN_IS_LEDGERED

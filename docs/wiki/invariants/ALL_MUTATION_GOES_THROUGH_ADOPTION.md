@@ -4,6 +4,9 @@ created: 2026-05-27
 updated: 2026-05-27
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: axiom
+enforced_by:
+  - tests/integration/no-direct-mutation-outside-boundaries.test.ts
+  - tests/engine/apply-effect.test.ts
 ---
 
 # ALL_MUTATION_GOES_THROUGH_ADOPTION

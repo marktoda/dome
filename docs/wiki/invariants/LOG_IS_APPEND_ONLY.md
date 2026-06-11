@@ -5,6 +5,9 @@ updated: 2026-05-29T00:00:00.000Z
 sources:
   - '[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]'
 tier: axiom
+enforced_by:
+  - tests/integration/no-direct-mutation-outside-boundaries.test.ts
+  - tests/engine/capability-broker.test.ts
 ---
 
 # LOG_IS_APPEND_ONLY

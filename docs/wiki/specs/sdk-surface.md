@@ -443,10 +443,11 @@ the existing `dome run <name>` / dedicated-wrapper pattern.
 
 ## Adding a new invariant
 
-Two file edits, plus the behavioral enforcement test where needed:
+Two file edits plus frontmatter lockstep:
 
 1. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template.
 2. **Create the lockstep marker test** at `tests/invariants/<slug>.test.ts`.
+3. **Name the behavioral coverage** in the doc's frontmatter: `enforced_by:` lists the repo-relative test files that actually enforce the behavior. `tests/integration/invariant-coverage.test.ts` verifies the list is non-empty and every path exists (deferred-tier docs are exempt).
 
 The AC3 lockstep test at `tests/integration/invariant-coverage.test.ts` iterates `docs/wiki/invariants/*.md` and asserts each non-deferred invariant has a corresponding test file.
 

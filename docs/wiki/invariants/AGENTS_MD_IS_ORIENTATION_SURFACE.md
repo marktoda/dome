@@ -5,6 +5,9 @@ updated: 2026-06-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: shipped-default
+enforced_by:
+  - tests/invariants/agents-md-is-orientation-surface.test.ts
+  - tests/harness/scenarios/cli-surface/init-claude-boot.scenario.test.ts
 ---
 
 # AGENTS_MD_IS_ORIENTATION_SURFACE
