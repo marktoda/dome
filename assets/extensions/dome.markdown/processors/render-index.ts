@@ -3,8 +3,10 @@
 // patches-out (garden processors have no projection access; this reads
 // frontmatter directly, the same posture as simplify-indexes). Index files
 // are RENDERS: the processor rewrites the dome.markdown:index-catalog block
-// in each file (preserving any human prose outside it) and deletes shards
-// that are no longer produced. Pinned by NO_ACCRETING_REGISTRIES — nothing
+// in each file (preserving any human prose outside it) and retires shards
+// that are no longer produced — splicing the block OUT when prose surrounds
+// it, deleting only files that are nothing but our block (whitespace aside).
+// Pinned by NO_ACCRETING_REGISTRIES — nothing
 // ever appends to these files; every run rewrites them whole and diffs
 // against the snapshot, so a matching catalog yields zero effects.
 
@@ -22,6 +24,7 @@ import {
   generatedBlockMarkers,
   replaceGeneratedBlock,
 } from "../../../../src/core/generated-block";
+import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
   type ExtensionConfig,
@@ -43,6 +46,8 @@ const DEFAULT_CATEGORIES: Readonly<Record<string, string>> = Object.freeze({
 });
 const DEFAULT_SHARD_BUDGET = 24_000;
 const CONFIG_INVALID_CODE = "dome.markdown.render-index-config-invalid";
+/** Shared with simplify-indexes; dedup happens at the diagnostics sink. */
+const ANOMALY_CODE = "dome.markdown.generated-block-anomaly";
 /** Root-level generated shard names: `index.md`, `index-entities.md`, `index-entities-2.md`. */
 const SHARD_NAME_RE = /^index(-[a-z0-9-]+)?\.md$/;
 /** Category names become `index-<category>.md` filenames and wikilinks. */
@@ -162,25 +167,44 @@ const renderIndex = defineProcessorImplementation({
 
     for (const [file, content] of Object.entries(rendered)) {
       const existing = await ctx.snapshot.readFile(file);
+      // Marker anomalies — half-open or smuggled markers — make `spliceInto`
+      // refuse; surface each as an info diagnostic (simplify-indexes' posture)
+      // so the damage is visible instead of a silent skip.
+      if (existing !== null) {
+        effects.push(...anomalyDiagnostics(ctx, file, existing));
+      }
       const next = existing === null ? content : spliceInto(existing, content);
       if (next === null || next === existing) continue;
       changes.push({ kind: "write", path: file, content: next });
     }
 
     // Stale shards: a previously rendered root-level index file no longer
-    // produced → delete, but only when it carries our generated block (a
-    // human file that merely matches the name pattern is never ours).
+    // produced. Only files carrying our generated block are ours (a human
+    // file that merely matches the name pattern is never touched). When the
+    // file is nothing but our block — whitespace aside — delete it; when
+    // human prose lives outside the block, splice the block OUT instead so
+    // the prose survives.
     for (const path of markdownPaths) {
       if (!SHARD_NAME_RE.test(path) || path in rendered) continue;
       const existing = await ctx.snapshot.readFile(path);
       if (existing === null) continue;
+      effects.push(...anomalyDiagnostics(ctx, path, existing));
       const scan = findGeneratedBlock(
         existing,
         INDEX_CATALOG_OWNER,
         INDEX_CATALOG_BLOCK,
       );
       if (scan.range === null) continue;
-      changes.push({ kind: "delete", path });
+      const before = existing.slice(0, scan.range.start);
+      const after = existing.slice(scan.range.end);
+      if (`${before}${after}`.trim().length === 0) {
+        changes.push({ kind: "delete", path });
+        continue;
+      }
+      const kept = [before.trimEnd(), after.trim()].filter(
+        (part) => part.length > 0,
+      );
+      changes.push({ kind: "write", path, content: `${kept.join("\n\n")}\n` });
     }
 
     if (changes.length === 0) return Object.freeze(effects);
@@ -221,6 +245,26 @@ function categoryFor(
     if (path.startsWith(prefix)) return categories[prefix] ?? null;
   }
   return null;
+}
+
+/**
+ * Info diagnostics for marker anomalies (half-open, smuggled, orphan markers)
+ * on an existing index file — the same visibility posture as simplify-indexes:
+ * the splice/scan ignores anomalies by construction, but a refused or skipped
+ * file must leave an auditable trace, never a silent drop.
+ */
+function anomalyDiagnostics(
+  ctx: ProcessorContext,
+  path: string,
+  content: string,
+): ReadonlyArray<Effect> {
+  return generatedBlockAnomalyDiagnostics({
+    content,
+    path,
+    code: ANOMALY_CODE,
+    blocks: [{ owner: INDEX_CATALOG_OWNER, block: INDEX_CATALOG_BLOCK }],
+    sourceRef: (refPath, range) => ctx.sourceRef(refPath, range),
+  });
 }
 
 function safeFrontmatter(content: string): Readonly<Record<string, unknown>> {

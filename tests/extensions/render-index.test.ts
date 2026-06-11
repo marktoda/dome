@@ -126,20 +126,60 @@ describe("dome.markdown.render-index", () => {
     expect(change.content).not.toContain("wiki/entities/old");
   });
 
-  test("deletes stale generated shards no longer produced", async () => {
+  test("stale shards: splice the block out around prose, delete only pure renders", async () => {
     const effects = await runRenderIndex({
       "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
-      // A previously generated shard whose category vanished.
-      "index-projects.md": `# Index — projects\n\n${START}\n- [[wiki/projects/old]] — Gone\n${END}\n`,
+      // A stale shard that is nothing but our block (whitespace aside):
+      // entirely our render, so deletion destroys nothing → delete.
+      "index-pure.md": `${START}\n- [[wiki/pure/old]] — Gone\n${END}\n`,
+      // A stale shard carrying content outside the block (heading + trailing
+      // prose): the block is spliced OUT and the prose survives — never
+      // deleted wholesale.
+      "index-projects.md": `# Index — projects\n\n${START}\n- [[wiki/projects/old]] — Gone\n${END}\n\nHand notes below the block.\n`,
       // A human file matching the shard name pattern but without our block:
-      // never deleted (it is not ours).
+      // never touched (it is not ours).
       "index-handmade.md": "# My own index\n\nHands off.\n",
     });
 
     const patch = expectPatch(effects, 0);
-    const stale = changesByPath(patch).get("index-projects.md");
-    expect(stale?.kind).toBe("delete");
-    expect(changesByPath(patch).has("index-handmade.md")).toBe(false);
+    const byPath = changesByPath(patch);
+    expect(byPath.get("index-pure.md")?.kind).toBe("delete");
+    const spliced = byPath.get("index-projects.md");
+    expect(spliced?.kind).toBe("write");
+    if (spliced?.kind === "write") {
+      expect(spliced.content).toBe(
+        "# Index — projects\n\nHand notes below the block.\n",
+      );
+    }
+    expect(byPath.has("index-handmade.md")).toBe(false);
+  });
+
+  test("half-open markers: info diagnostic surfaces, file is left untouched", async () => {
+    // The unterminated start marker makes the splice refuse; the refusal must
+    // leave a trace (info diagnostic) instead of silently dropping the change.
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      "index-entities.md": [
+        "Hand notes.",
+        "",
+        START,
+        "- [[wiki/entities/old]] — Gone",
+        "",
+      ].join("\n"),
+    });
+
+    const diagnostics = diagnosticsOf(effects);
+    expect(diagnostics).toHaveLength(1);
+    const diagnostic = diagnostics[0] as DiagnosticEffect;
+    expect(diagnostic.severity).toBe("info");
+    expect(diagnostic.code).toBe("dome.markdown.generated-block-anomaly");
+    expect(diagnostic.message).toContain("unterminated");
+
+    // The rest of the render still lands; only the damaged file is skipped.
+    const patch = expectPatch(effects, 1);
+    const byPath = changesByPath(patch);
+    expect(byPath.has("index-entities.md")).toBe(false);
+    expect(byPath.has("index.md")).toBe(true);
   });
 
   test("empty index_categories map disables rendering", async () => {
@@ -180,12 +220,7 @@ describe("dome.markdown.render-index", () => {
       { "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n" },
       { index_categories: 42, index_shard_budget_chars: "huge" },
     );
-    const diagnostics = degraded.filter(
-      (effect): effect is DiagnosticEffect =>
-        typeof effect === "object" &&
-        effect !== null &&
-        (effect as { readonly kind?: string }).kind === "diagnostic",
-    );
+    const diagnostics = diagnosticsOf(degraded);
     expect(diagnostics).toHaveLength(2);
     for (const diagnostic of diagnostics) {
       expect(diagnostic.severity).toBe("warning");
@@ -259,4 +294,15 @@ function changesByPath(
   patch: PatchEffect,
 ): ReadonlyMap<string, PatchEffect["changes"][number]> {
   return new Map(patch.changes.map((change) => [String(change.path), change]));
+}
+
+function diagnosticsOf(
+  effects: ReadonlyArray<unknown>,
+): ReadonlyArray<DiagnosticEffect> {
+  return effects.filter(
+    (effect): effect is DiagnosticEffect =>
+      typeof effect === "object" &&
+      effect !== null &&
+      (effect as { readonly kind?: string }).kind === "diagnostic",
+  );
 }

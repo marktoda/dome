@@ -97,7 +97,7 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
   ...EMPTY_OPERATIONAL_SUMMARY,
-  // refresh-updated, simplify-indexes, duplicate-detection, render-index.
+  // refresh-updated, simplify-indexes, repair-wikilinks, render-index.
   scheduledCount: 4,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
