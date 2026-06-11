@@ -783,14 +783,14 @@ function frozen(result: ApplyEffectResult): ApplyEffectResult {
 // generation fields, and routing surfaces that as a warning instead of
 // silent success. (See docs/wiki/specs/effects.md — recovery effects.)
 function staleRecoveryResult(opts: {
-  readonly code: string;
+  readonly code: "outbox-recovery.stale-or-missing" | "quarantine-recovery.stale-or-missing" | "run-recovery.stale-or-missing";
   readonly message: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 }): {
   readonly newCandidate: CommitOid | null;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 } {
-  return {
+  return Object.freeze({
     newCandidate: null,
     diagnostics: Object.freeze([
       diagnosticEffect({
@@ -800,5 +800,5 @@ function staleRecoveryResult(opts: {
         sourceRefs: opts.sourceRefs,
       }),
     ]),
-  };
+  });
 }
