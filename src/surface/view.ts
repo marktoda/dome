@@ -13,6 +13,7 @@ import {
   type StructuredView,
   type VaultViewResult,
 } from "../vault";
+import { validateStructuredRun, vaultOpenFailureMessage } from "./adapter";
 import { resolveVaultPath } from "./resolve-vault";
 
 export type ViewCommandOptions = {
@@ -92,16 +93,11 @@ export async function runSharedViewCommand(
     bundlesRoot: opts.bundlesRoot,
   });
   if (!opened.ok) {
-    if (opened.error.kind === "not-a-vault") {
-      return Object.freeze({
-        kind: "usage-error" as const,
-        message: `${opts.commandLabel}: ${opened.error.message}`,
-      });
-    }
     return Object.freeze({
-      kind: "runtime-error" as const,
-      message:
-        `${opts.commandLabel}: openVaultRuntime failed (${opened.error.cause.kind}). Run \`dome init\` to initialize the vault.`,
+      kind: opened.error.kind === "not-a-vault"
+        ? ("usage-error" as const)
+        : ("runtime-error" as const),
+      message: vaultOpenFailureMessage(opts.commandLabel, opened.error),
     });
   }
 
@@ -217,34 +213,35 @@ function validateStructuredViewResult(
     }
   | Extract<StructuredViewCommandResult, { readonly kind: "error" }> {
   const { opts, run } = input;
-  if (run.views.length === 0) {
-    return structuredError(1, [opts.noStructuredResultMessage]);
+  const validated = validateStructuredRun(
+    { views: run.views, structured: run.structured },
+    { viewName: opts.expectedViewName, schema: opts.expectedSchema },
+  );
+  if (validated.kind === "ok") {
+    // run.structured is non-null whenever validation succeeds.
+    return Object.freeze({
+      kind: "ok" as const,
+      view: run.structured as StructuredView,
+    });
   }
-  if (run.views.length !== 1) {
-    return structuredError(1, [
-      `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${run.views.length}.`,
-    ]);
+  switch (validated.problem.kind) {
+    case "no-structured-result":
+      return structuredError(1, [opts.noStructuredResultMessage]);
+    case "multiple-views":
+      return structuredError(1, [
+        `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${validated.problem.count}.`,
+      ]);
+    case "wrong-view":
+      return structuredError(1, [
+        `${opts.commandLabel}: expected view '${opts.expectedViewName}', got '${validated.problem.got}'.`,
+      ]);
+    case "wrong-schema":
+      return structuredError(1, [
+        `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${validated.problem.got}'.`,
+      ]);
+    default:
+      return structuredError(1, [opts.noStructuredResultMessage]);
   }
-
-  const view = run.views[0];
-  if (view === undefined) {
-    return structuredError(1, [opts.noStructuredResultMessage]);
-  }
-  if (view.name !== opts.expectedViewName) {
-    return structuredError(1, [
-      `${opts.commandLabel}: expected view '${opts.expectedViewName}', got '${view.name}'.`,
-    ]);
-  }
-  if (run.structured === null) {
-    return structuredError(1, [opts.noStructuredResultMessage]);
-  }
-  if (run.structured.schema !== opts.expectedSchema) {
-    return structuredError(1, [
-      `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${run.structured.schema}'.`,
-    ]);
-  }
-
-  return Object.freeze({ kind: "ok" as const, view: run.structured });
 }
 
 export function structuredViewBrokerMessages(

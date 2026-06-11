@@ -36,7 +36,11 @@
 
 import { basename } from "node:path";
 
-import { openVault, type OpenVaultError, type Vault } from "../../vault";
+import { openVault, type Vault } from "../../vault";
+import {
+  openVaultErrorKind,
+  vaultOpenFailureMessage,
+} from "../../surface/adapter";
 import type { AdoptionResult } from "../../core/proposal";
 import type { CompilerHostTickResult } from "../../engine/host/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden/garden";
@@ -165,10 +169,8 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     bundlesRoot: options.bundlesRoot,
   });
   if (!opened.ok) {
-    const errorKind = openErrorKind(opened.error);
-    const msg = opened.error.kind === "not-a-vault"
-      ? `dome sync: ${opened.error.message}`
-      : `dome sync: openVaultRuntime failed (${errorKind}). Run \`dome init\` to initialize the vault.`;
+    const errorKind = openVaultErrorKind(opened.error);
+    const msg = vaultOpenFailureMessage("dome sync", opened.error);
     if (jsonMode) {
       emitErrorJson({ branch: null, error: errorKind, message: msg });
     } else {
@@ -218,9 +220,6 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   }
 }
 
-function openErrorKind(error: OpenVaultError): string {
-  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
-}
 
 // ----- Internals ------------------------------------------------------------
 

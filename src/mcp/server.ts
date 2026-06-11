@@ -54,12 +54,19 @@ import {
   resolveScopes,
 } from "../surface/check";
 import { buildStatusSnapshot } from "../surface/status";
-import { firstPartyViewNotFoundMessage } from "../surface/view";
+import {
+  catalogViewProblemMessage,
+  makeVaultMutex,
+  openVaultErrorKind,
+  runCatalogView,
+  withVault as withVaultShared,
+} from "../surface/adapter";
+import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
 import { formatJson } from "../surface/format";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/host/health";
 import { readBlob } from "../git";
-import { openVault, type OpenVaultError, type Vault } from "../vault";
+import type { Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -67,12 +74,6 @@ const SERVER_NAME = "dome";
 const SERVER_VERSION = "0.1.0";
 
 const BRIEF_SCHEMA = "dome.mcp.brief/v1";
-const TODAY_VIEW_NAME = "dome.daily.today";
-const TODAY_VIEW_SCHEMA = "dome.daily.today/v1";
-const QUERY_VIEW_NAME = "dome.search.query";
-const QUERY_VIEW_SCHEMA = "dome.search.query/v1";
-const EXPORT_CONTEXT_VIEW_NAME = "dome.search.export-context";
-const EXPORT_CONTEXT_VIEW_SCHEMA = "dome.search.export-context/v1";
 
 const DEFAULT_CHECK_LIMIT = 10;
 
@@ -100,26 +101,6 @@ export type DomeMcpServerOptions = {
   readonly vaultPath: string;
   readonly bundlesRoot?: string | undefined;
 };
-
-// ----- Tool mutex -------------------------------------------------------------
-
-/**
- * Build the tool-execution mutex for one server. Tool handlers chain onto a
- * shared promise so calls run one at a time — at most one VaultRuntime is
- * open against the vault's SQLite files at any moment, matching the
- * one-CLI-invocation-at-a-time posture the rest of the system assumes.
- */
-function makeToolMutex(): <T>(fn: () => Promise<T>) => Promise<T> {
-  let toolChain: Promise<unknown> = Promise.resolve();
-  return function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    const next = toolChain.then(fn, fn);
-    toolChain = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
-  };
-}
 
 // ----- Tool result shaping ----------------------------------------------------
 
@@ -172,11 +153,6 @@ function commandErrorResult(command: string, errorKind: string): ToolResult {
   };
 }
 
-/** Flatten an `OpenVaultError` to the kind string the CLI envelope carries. */
-function openVaultErrorKind(error: OpenVaultError): string {
-  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
-}
-
 // ----- The server -------------------------------------------------------------
 
 /**
@@ -186,7 +162,7 @@ function openVaultErrorKind(error: OpenVaultError): string {
 export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   const vault = opts.vaultPath;
   const bundlesRoot = opts.bundlesRoot;
-  const enqueue = makeToolMutex();
+  const enqueue = makeVaultMutex();
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -202,98 +178,43 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     command: string,
     fn: (vault: Vault) => Promise<ToolResult>,
   ): Promise<ToolResult> => {
-    const opened = await openVault({ path: vault, bundlesRoot });
-    if (!opened.ok) {
-      return commandErrorResult(command, openVaultErrorKind(opened.error));
-    }
-    try {
-      return await fn(opened.value);
-    } finally {
-      await opened.value.close();
-    }
+    const outcome = await withVaultShared({ path: vault, bundlesRoot }, fn);
+    return outcome.kind === "open-failed"
+      ? commandErrorResult(command, openVaultErrorKind(outcome.error))
+      : outcome.value;
   };
 
   /**
-   * Run a command-triggered view through the public wrapper and validate
-   * the single structured result — the same expectations the CLI's
-   * structured-view wrappers enforce, rendered as tool results.
+   * Run a catalog view through the shared runner; problems render with the
+   * shared operator wording as tool errors.
    */
   const structuredViewResult = async (input: {
     readonly toolLabel: string;
-    readonly command: string;
+    readonly entry: (typeof FIRST_PARTY_VIEWS)[keyof typeof FIRST_PARTY_VIEWS];
     readonly args: unknown;
-    readonly expectedViewName: string;
-    readonly expectedSchema: string;
-    readonly notFoundMessage: string;
   }): Promise<
     | { readonly kind: "ok"; readonly data: unknown }
     | { readonly kind: "error"; readonly result: ToolResult }
   > => {
-    const opened = await openVault({ path: vault, bundlesRoot });
-    if (!opened.ok) {
+    const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
+      runCatalogView(v, input.entry, input.args),
+    );
+    if (outcome.kind === "open-failed") {
       return {
         kind: "error",
         result: commandErrorResult(
           input.toolLabel,
-          openVaultErrorKind(opened.error),
+          openVaultErrorKind(outcome.error),
         ),
       };
     }
-    try {
-      const run = await opened.value.runView(input.command, input.args);
-      switch (run.kind) {
-        case "detached-head":
-          return viewError(
-            `${input.toolLabel}: HEAD is detached. Check out a branch and retry.`,
-          );
-        case "missing-adopted-ref":
-          return viewError(
-            `${input.toolLabel}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`,
-          );
-        case "adopted-ref-unstable":
-          return viewError(
-            `${input.toolLabel}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry after the current sync finishes.`,
-          );
-        case "not-found":
-          return viewError(input.notFoundMessage);
-        case "failed": {
-          const messages = [
-            `${input.toolLabel}: processor '${run.processorId}' finished with ${run.executionStatus}.`,
-            ...(run.executionError !== null
-              ? [
-                  `${input.toolLabel}: ${run.executionError.code}: ${run.executionError.message}`,
-                ]
-              : []),
-            ...run.diagnostics.map(
-              (d) =>
-                `${input.toolLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
-            ),
-          ];
-          return { kind: "error", result: errorToolResult(messages) };
-        }
-        case "ok": {
-          const structured = run.structured;
-          if (structured === null) {
-            return viewError(
-              `${input.toolLabel}: ${input.command} processor returned no structured result.`,
-            );
-          }
-          if (structured.name !== input.expectedViewName) {
-            return viewError(
-              `${input.toolLabel}: expected view '${input.expectedViewName}', got '${structured.name}'.`,
-            );
-          }
-          if (structured.schema !== input.expectedSchema) {
-            return viewError(
-              `${input.toolLabel}: expected structured schema '${input.expectedSchema}', got '${structured.schema}'.`,
-            );
-          }
-          return { kind: "ok", data: structured.data };
-        }
-      }
-    } finally {
-      await opened.value.close();
+    const run = outcome.value;
+    if (run.kind === "problem") {
+      return viewError(
+        catalogViewProblemMessage(input.toolLabel, input.entry, run.problem),
+      );
     }
+    return { kind: "ok", data: run.data };
   };
 
   const viewError = (
@@ -362,19 +283,12 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       enqueue(async () => {
         const run = await structuredViewResult({
           toolLabel: "dome mcp query",
-          command: "query",
+          entry: FIRST_PARTY_VIEWS.query,
           args: Object.freeze({
             text,
             ...(category !== undefined ? { category } : {}),
             ...(type !== undefined ? { type } : {}),
             ...(limit !== undefined ? { limit } : {}),
-          }),
-          expectedViewName: QUERY_VIEW_NAME,
-          expectedSchema: QUERY_VIEW_SCHEMA,
-          notFoundMessage: firstPartyViewNotFoundMessage({
-            commandLabel: "dome mcp query",
-            bundleId: "dome.search",
-            processorName: "query",
           }),
         });
         return run.kind === "error" ? run.result : jsonToolResult(run.data);
@@ -400,17 +314,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       enqueue(async () => {
         const run = await structuredViewResult({
           toolLabel: "dome mcp export_context",
-          command: "export-context",
+          entry: FIRST_PARTY_VIEWS.exportContext,
           args: Object.freeze({
             topic,
             ...(limit !== undefined ? { limit } : {}),
-          }),
-          expectedViewName: EXPORT_CONTEXT_VIEW_NAME,
-          expectedSchema: EXPORT_CONTEXT_VIEW_SCHEMA,
-          notFoundMessage: firstPartyViewNotFoundMessage({
-            commandLabel: "dome mcp export_context",
-            bundleId: "dome.search",
-            processorName: "export-context",
           }),
         });
         return run.kind === "error" ? run.result : jsonToolResult(run.data);
@@ -615,17 +522,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   }) =>
     structuredViewResult({
       toolLabel: "dome mcp tasks",
-      command: "today",
+      entry: FIRST_PARTY_VIEWS.today,
       args: Object.freeze({
         ...(input.date !== undefined ? { date: input.date } : {}),
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
-      }),
-      expectedViewName: TODAY_VIEW_NAME,
-      expectedSchema: TODAY_VIEW_SCHEMA,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome mcp tasks",
-        bundleId: "dome.daily",
-        processorName: "today",
       }),
     });
 

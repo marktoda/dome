@@ -48,8 +48,16 @@ import {
 } from "../surface/capture";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
 import { buildStatusSnapshot } from "../surface/status";
-import { firstPartyViewNotFoundMessage } from "../surface/view";
-import { openVault, type OpenVaultError, type Vault } from "../vault";
+import {
+  catalogViewProblemMessage,
+  makeVaultMutex,
+  openVaultErrorKind,
+  runCatalogView,
+  withVault as withVaultShared,
+  type CatalogViewProblem,
+} from "../surface/adapter";
+import { FIRST_PARTY_VIEWS, type FirstPartyViewEntry } from "../surface/view-catalog";
+import type { Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -57,10 +65,6 @@ const SERVER_SCHEMA = "dome.http/v1";
 const DOCUMENT_SCHEMA = "dome.http.document/v1";
 const QUESTIONS_SCHEMA = "dome.http.questions/v1";
 
-const QUERY_VIEW_NAME = "dome.search.query";
-const QUERY_VIEW_SCHEMA = "dome.search.query/v1";
-const TODAY_VIEW_NAME = "dome.daily.today";
-const TODAY_VIEW_SCHEMA = "dome.daily.today/v1";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -91,57 +95,42 @@ export function createDomeHttpServer(
   const vault = opts.vaultPath;
   const bundlesRoot = opts.bundlesRoot;
   const tokenDigest = sha256(opts.token);
-  const enqueue = makeRouteMutex();
+  const enqueue = makeVaultMutex();
 
   const withVault = async (
     command: string,
     fn: (v: Vault) => Promise<Response>,
   ): Promise<Response> => {
-    const opened = await openVault({ path: vault, bundlesRoot });
-    if (!opened.ok) {
-      return commandErrorResponse(command, openVaultErrorKind(opened.error));
-    }
-    try {
-      return await fn(opened.value);
-    } finally {
-      await opened.value.close();
-    }
+    const outcome = await withVaultShared({ path: vault, bundlesRoot }, fn);
+    return outcome.kind === "open-failed"
+      ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
+      : outcome.value;
   };
 
   const structuredView = async (input: {
     readonly route: string;
-    readonly command: string;
+    readonly entry: FirstPartyViewEntry;
     readonly args: unknown;
-    readonly expectedViewName: string;
-    readonly expectedSchema: string;
-    readonly notFoundMessage: string;
-  }): Promise<Response> =>
-    withVault(input.route, async (v) => {
-      const run = await v.runView(input.command, input.args);
-      switch (run.kind) {
-        case "detached-head":
-          return errorResponse(409, "detached-head", `${input.route}: HEAD is detached. Check out a branch and retry.`);
-        case "missing-adopted-ref":
-          return errorResponse(409, "missing-adopted-ref", `${input.route}: vault has no adopted ref for branch '${run.branch}'. Run \`dome sync\` first to initialize.`);
-        case "adopted-ref-unstable":
-          return errorResponse(503, "adopted-ref-unstable", `${input.route}: adopted ref for branch '${run.branch}' changed repeatedly while rendering. Retry shortly.`);
-        case "not-found":
-          return errorResponse(404, "view-not-found", input.notFoundMessage);
-        case "failed":
-          return errorResponse(500, "processor-failed", `${input.route}: processor '${run.processorId}' finished with ${run.executionStatus}.`);
-        case "ok": {
-          const structured = run.structured;
-          if (
-            structured === null ||
-            structured.name !== input.expectedViewName ||
-            structured.schema !== input.expectedSchema
-          ) {
-            return errorResponse(500, "no-structured-result", `${input.route}: expected one '${input.expectedSchema}' structured view.`);
-          }
-          return jsonResponse(200, structured.data);
-        }
-      }
-    });
+  }): Promise<Response> => {
+    const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
+      runCatalogView(v, input.entry, input.args),
+    );
+    if (outcome.kind === "open-failed") {
+      return commandErrorResponse(
+        input.route,
+        openVaultErrorKind(outcome.error),
+      );
+    }
+    const run = outcome.value;
+    if (run.kind === "problem") {
+      return errorResponse(
+        viewProblemHttpStatus(run.problem),
+        run.problem.kind,
+        catalogViewProblemMessage(input.route, input.entry, run.problem),
+      );
+    }
+    return jsonResponse(200, run.data);
+  };
 
   const routes = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -187,19 +176,12 @@ export function createDomeHttpServer(
         const type = url.searchParams.get("type") ?? undefined;
         return structuredView({
           route: "GET /query",
-          command: "query",
+          entry: FIRST_PARTY_VIEWS.query,
           args: Object.freeze({
             text,
             ...(category !== undefined ? { category } : {}),
             ...(type !== undefined ? { type } : {}),
             ...(limit !== null ? { limit } : {}),
-          }),
-          expectedViewName: QUERY_VIEW_NAME,
-          expectedSchema: QUERY_VIEW_SCHEMA,
-          notFoundMessage: firstPartyViewNotFoundMessage({
-            commandLabel: "GET /query",
-            bundleId: "dome.search",
-            processorName: "query",
           }),
         });
       }
@@ -209,17 +191,10 @@ export function createDomeHttpServer(
         const limit = positiveInt(url.searchParams.get("limit"));
         return structuredView({
           route: "GET /tasks",
-          command: "today",
+          entry: FIRST_PARTY_VIEWS.today,
           args: Object.freeze({
             ...(date !== undefined ? { date } : {}),
             ...(limit !== null ? { limit } : {}),
-          }),
-          expectedViewName: TODAY_VIEW_NAME,
-          expectedSchema: TODAY_VIEW_SCHEMA,
-          notFoundMessage: firstPartyViewNotFoundMessage({
-            commandLabel: "GET /tasks",
-            bundleId: "dome.daily",
-            processorName: "today",
           }),
         });
       }
@@ -316,19 +291,6 @@ export function createDomeHttpServer(
 
 // ----- internals --------------------------------------------------------------
 
-/** Serialize route work so at most one VaultRuntime is open at a time. */
-function makeRouteMutex(): <T>(fn: () => Promise<T>) => Promise<T> {
-  let chain: Promise<unknown> = Promise.resolve();
-  return function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    const next = chain.then(fn, fn);
-    chain = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
-  };
-}
-
 /** Constant-time bearer check: compare SHA-256 digests, never raw strings. */
 function authorized(request: Request, tokenDigest: Buffer): boolean {
   const header = request.headers.get("authorization") ?? "";
@@ -382,8 +344,19 @@ function commandErrorResponse(command: string, errorKind: string): Response {
   });
 }
 
-function openVaultErrorKind(error: OpenVaultError): string {
-  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
+/** HTTP status semantics for a catalog-view problem. */
+function viewProblemHttpStatus(problem: CatalogViewProblem): number {
+  switch (problem.kind) {
+    case "detached-head":
+    case "missing-adopted-ref":
+      return 409;
+    case "adopted-ref-unstable":
+      return 503;
+    case "view-not-found":
+      return 404;
+    default:
+      return 500;
+  }
 }
 
 function positiveInt(raw: string | null): number | null {

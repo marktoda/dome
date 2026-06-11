@@ -582,7 +582,16 @@ function per consumer protocol). A new protocol adapter then ships as one
 render function, not as a parallel aggregation. Until it lands, new surfaces
 wrap the `src/surface/` collectors directly as `src/mcp/server.ts` does.
 
-### `AbstractSurface` (planned)
+### `AbstractSurface` (planned; arriving bottom-up)
+
+The first slice already exists in code: `src/surface/view-catalog.ts` (one
+declaration per first-party view, consumed by CLI + MCP + HTTP and pinned
+to the shipped bundle set by a lockstep test) plus `src/surface/adapter.ts`
+(the shared vault mutex, per-request open-use-close, vault-open failure
+mapping, and catalog-view runner with expected-name/schema validation).
+That pair is `surface.commands` in all but name; the remaining
+`AbstractSurface` work is aggregation (`query`/`read`/`instructions`/
+`readResource`) rather than invention.
 
 ```ts
 interface AbstractSurface {
