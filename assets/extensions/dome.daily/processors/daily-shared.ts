@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
 import {
   appendBlockAnchor,
   contentAnchorId,
@@ -256,16 +257,16 @@ function validateDailyPathTemplate(template: string): string {
   if (!sample.endsWith(".md")) {
     throw new Error("dome.daily config daily_path must produce a .md file");
   }
-  if (
-    sample.startsWith("/") ||
-    sample.includes("\\") ||
-    sample.split("/").some((segment) =>
-      segment.length === 0 || segment === "." || segment === ".."
-    )
-  ) {
-    throw new Error(
-      "dome.daily config daily_path must be a relative vault markdown path",
-    );
+  // Delegate the relative-vault-path shape check to the shared validator.
+  // validateRelativeMarkdownPath with the substituted sample passes the
+  // string/non-empty/.md checks (sample is always a string ending in .md
+  // at this point), so only the absolute/traversal check fires when needed.
+  // The bare problem "daily_path must be a relative vault markdown path"
+  // wrapped by the caller with "dome.daily config " prefix reproduces the
+  // historically thrown message byte-for-byte.
+  const v = validateRelativeMarkdownPath(sample, "daily_path");
+  if (v.problem !== null) {
+    throw new Error(`dome.daily config ${v.problem}`);
   }
   return template;
 }

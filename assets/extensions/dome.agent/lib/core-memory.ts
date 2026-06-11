@@ -12,6 +12,8 @@
 // agent's read declaration and in NO patch.auto declaration, so the
 // grant-aware write tools reject it at tool time.
 
+import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
+
 const DEFAULT_CORE_PATH = "core.md";
 
 /**
@@ -56,23 +58,9 @@ export function coreMemoryPath(
 ): CoreMemoryResolution {
   const raw = config?.core_path;
   if (raw === undefined) return resolution(DEFAULT_CORE_PATH, null);
-  if (typeof raw !== "string") {
-    return fallback("core_path must be a string");
-  }
-  if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
-    return fallback("core_path must be a non-empty .md path");
-  }
-  if (
-    raw.startsWith("/") ||
-    raw.includes("\\") ||
-    raw.split("/").some(
-      (segment) =>
-        segment.length === 0 || segment === "." || segment === "..",
-    )
-  ) {
-    return fallback("core_path must be a relative vault markdown path");
-  }
-  return resolution(raw, null);
+  const v = validateRelativeMarkdownPath(raw, "core_path");
+  if (v.problem !== null) return fallback(v.problem);
+  return resolution(v.path as string, null);
 }
 
 export type CoreMemorySection = {
