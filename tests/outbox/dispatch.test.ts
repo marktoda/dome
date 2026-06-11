@@ -706,3 +706,91 @@ function deferred<T>(): {
   });
   return Object.freeze({ promise, resolve });
 }
+
+// Crash-recovery accounting. A process that dies mid-handler leaves the row
+// in `dispatching` with an expired lease; nothing in-process records the
+// failure. Recovery must consume an attempt and route through the
+// `attempts >= max_attempts → failed` branch (the jobs-store pattern,
+// src/projections/jobs.ts) — otherwise a handler that reliably crashes the
+// host re-fires the external call unboundedly across restarts and never
+// reaches the engine-asks recovery path.
+describe("expired dispatching claim recovery", () => {
+  let root: string;
+  let db: OutboxDb;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "dome-outbox-crash-"));
+    const path = join(root, ".dome", "state", "outbox.db");
+    const r = await openOutboxDb({ path });
+    if (!r.ok) throw new Error(`openOutboxDb failed: ${JSON.stringify(r.error)}`);
+    db = r.value.db;
+  });
+
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Simulate a crash snapshot: row claimed, lease expired, process gone. */
+  function forceExpiredDispatchingClaim(key: string, expiredAt: Date): void {
+    db.raw
+      .query(
+        "UPDATE outbox SET status = 'dispatching', next_attempt_at = ? WHERE idempotency_key = ?",
+      )
+      .run(expiredAt.toISOString(), key);
+  }
+
+  it("consumes an attempt and backs off instead of redispatching immediately", async () => {
+    insertPending(db, { effect: makeEffect("key-crash"), runId: RUN_ID, now: T0 });
+    forceExpiredDispatchingClaim("key-crash", new Date(T0.getTime() - 1));
+
+    let calls = 0;
+    await dispatchPendingOutbox(db, {
+      now: T0,
+      handlers: {
+        "calendar.write": async () => {
+          calls += 1;
+          return { externalId: "external-after-crash" };
+        },
+      },
+    });
+
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("pending");
+    // The crashed attempt is consumed — this is what bounds a crash loop.
+    expect(row?.attempts).toBe(1);
+    expect(row?.lastError ?? "").toContain("claim expired");
+    // Recovery applies retry backoff; the same drain pass must not
+    // immediately re-fire the external call.
+    expect(calls).toBe(0);
+    expect(Date.parse(row?.nextAttemptAt ?? "")).toBeGreaterThan(T0.getTime());
+  });
+
+  it("a crash-looping claim reaches terminal failed after max_attempts", async () => {
+    insertPending(db, {
+      effect: makeEffect("key-crash-loop"),
+      runId: RUN_ID,
+      now: T0,
+    });
+
+    // Default max_attempts is 3. Each round simulates: restart, claim,
+    // crash mid-handler, lease expires.
+    for (let i = 0; i < 3; i += 1) {
+      forceExpiredDispatchingClaim(
+        "key-crash-loop",
+        new Date(T0.getTime() - 1),
+      );
+      await dispatchPendingOutbox(db, { now: T0, handlers: {} });
+    }
+
+    const row = queryOutbox(db)[0];
+    expect(row?.status).toBe("failed");
+    expect(row?.attempts).toBe(3);
+    // Terminal via the crash-recovery path, not a handler-lookup failure.
+    expect(row?.lastError ?? "").toContain("claim expired");
+  });
+});

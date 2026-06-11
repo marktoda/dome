@@ -41,6 +41,13 @@
 //   claimPending      → "pending" → "dispatching". Atomic lease before any
 //                       external handler runs.
 //
+//   recoverExpiredDispatching
+//                     → expired "dispatching" → "pending" (attempts++, retry
+//                       backoff) or "failed" at max_attempts. The
+//                       crash-recovery drain at the top of
+//                       dispatchPendingOutbox; consumes an attempt because
+//                       the crashed handler may have already fired.
+//
 //   incrementAttempts → "dispatching" → "pending", attempts++. Exposed for
 //                       tests and manual recovery paths; the dispatch
 //                       helper above performs the normal retry decision.
@@ -305,10 +312,13 @@ SET status = 'pending', last_error = ?, next_attempt_at = ?
 WHERE idempotency_key = ? AND status = 'dispatching'
 `.trim();
 
-const REQUEUE_EXPIRED_DISPATCHING_SQL = `
+const RECOVER_EXPIRED_DISPATCHING_SQL = `
 UPDATE outbox
-SET status = 'pending', last_error = ?
-WHERE status = 'dispatching' AND next_attempt_at <= ?
+SET attempts = attempts + 1,
+    status = CASE WHEN attempts + 1 >= max_attempts THEN 'failed' ELSE 'pending' END,
+    last_error = ?,
+    next_attempt_at = ?
+WHERE idempotency_key = ? AND status = 'dispatching' AND next_attempt_at <= ?
 `.trim();
 
 const MARK_ABANDONED_SQL = `
@@ -457,7 +467,7 @@ export async function dispatchPendingOutbox(
   } & OutboxDispatchControls,
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
   const now = opts.now ?? new Date();
-  requeueExpiredDispatching(db, now);
+  recoverExpiredDispatching(db, now);
   const pending = queryOutbox(db, {
     status: "pending",
     nextAttemptAtOrBefore: now,
@@ -539,13 +549,46 @@ export function incrementAttempts(
     .run(lastError, nextAttemptAt.toISOString(), idempotencyKey);
 }
 
-export function requeueExpiredDispatching(
+/**
+ * Recover rows whose dispatch claim expired — the process died (or hung past
+ * its lease) mid-handler, so nothing in-process recorded the outcome. Each
+ * expired claim **consumes an attempt**: the external call may or may not
+ * have gone out before the crash, and an unbounded requeue would let a
+ * handler that reliably crashes the host re-fire the call forever across
+ * restarts. Mirrors the scheduled-jobs recovery split
+ * (src/projections/jobs.ts `recoverExpiredRunningJobs`): under
+ * `max_attempts` the row returns to `pending` with retry backoff; at
+ * `max_attempts` it goes terminal `failed`, which routes it to the
+ * engine-asks recovery path (dome.health questions + `dome resolve
+ * retry|abandon`).
+ *
+ * The UPDATE re-checks `status = 'dispatching' AND next_attempt_at <= now`
+ * per row, so a claim completed concurrently (markSent / recordFailedAttempt)
+ * is untouched.
+ */
+export function recoverExpiredDispatching(
   db: OutboxDb,
   now: Date = new Date(),
 ): void {
-  db.raw
-    .query(REQUEUE_EXPIRED_DISPATCHING_SQL)
-    .run("Dispatch claim expired before completion.", now.toISOString());
+  const expired = queryOutbox(db, {
+    status: "dispatching",
+    nextAttemptAtOrBefore: now,
+  });
+  for (const row of expired) {
+    const attempts = row.attempts + 1;
+    const terminal = attempts >= row.maxAttempts;
+    const nextAttemptAt = terminal
+      ? now
+      : computeNextAttemptAt(now, attempts);
+    db.raw
+      .query(RECOVER_EXPIRED_DISPATCHING_SQL)
+      .run(
+        "Dispatch claim expired before completion (process exited or hung mid-handler).",
+        nextAttemptAt.toISOString(),
+        row.idempotencyKey,
+        now.toISOString(),
+      );
+  }
 }
 
 /**
