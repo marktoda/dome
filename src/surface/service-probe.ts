@@ -117,6 +117,11 @@ export function serviceLabelForVault(vaultPath: string): string {
   return `${SERVICE_LABEL_PREFIX}${vaultServiceSlug(vaultPath)}`;
 }
 
+/** systemd user-unit name for a vault's ambient `dome serve` service. */
+export function serviceUnitNameForVault(vaultPath: string): string {
+  return `dome-serve-${vaultServiceSlug(vaultPath)}.service`;
+}
+
 // ----- probeServiceState ----------------------------------------------------
 
 /**
