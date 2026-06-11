@@ -445,7 +445,7 @@ the existing `dome run <name>` / dedicated-wrapper pattern.
 
 Two file edits plus frontmatter lockstep:
 
-1. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template.
+1. **Create the doc** at `docs/wiki/invariants/<NAME>.md`, copying the frontmatter shape of an existing invariant (type / created / updated / sources / tier / enforced_by).
 2. **Create the lockstep marker test** at `tests/invariants/<slug>.test.ts`.
 3. **Name the behavioral coverage** in the doc's frontmatter: `enforced_by:` lists the repo-relative test files that actually enforce the behavior. `tests/integration/invariant-coverage.test.ts` verifies the list is non-empty and every path exists (deferred-tier docs are exempt).
 
