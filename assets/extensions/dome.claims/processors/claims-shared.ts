@@ -7,10 +7,9 @@
 // and blockquotes are never claims, so quoted material can't be
 // over-anchored. Pure (string-only, no IO) like daily-shared's extractors.
 
-import { createHash } from "node:crypto";
-
 import {
   appendBlockAnchor,
+  contentAnchorId,
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
 import { fencedCodeBlockLineRanges } from "../../../../src/core/markdown-scan";
@@ -136,17 +135,11 @@ export function claimAnchorId(input: {
   readonly key: string;
   readonly occurrence: number;
 }): string {
-  const hash = createHash("sha256")
-    .update(
-      JSON.stringify([
-        input.path.replace(/^\.\//, ""),
-        normalizeClaimKey(input.key),
-        input.occurrence,
-      ]),
-    )
-    .digest("hex")
-    .slice(0, 8);
-  return `c${hash}`;
+  return contentAnchorId("c", [
+    input.path.replace(/^\.\//, ""),
+    normalizeClaimKey(input.key),
+    input.occurrence,
+  ]);
 }
 
 /**

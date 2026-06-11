@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   appendBlockAnchor,
+  contentAnchorId,
   hasBlockAnchor,
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
@@ -505,17 +506,11 @@ export function taskAnchorId(input: {
   readonly body: string;
   readonly occurrence: number;
 }): string {
-  const hash = createHash("sha256")
-    .update(
-      JSON.stringify([
-        normalizeSourcePath(input.path),
-        normalizeOpenLoopBody(input.body),
-        input.occurrence,
-      ]),
-    )
-    .digest("hex")
-    .slice(0, 8);
-  return `t${hash}`;
+  return contentAnchorId("t", [
+    normalizeSourcePath(input.path),
+    normalizeOpenLoopBody(input.body),
+    input.occurrence,
+  ]);
 }
 
 export function ambiguousFollowupsFromMarkdown(

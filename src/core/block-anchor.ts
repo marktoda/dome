@@ -9,6 +9,8 @@
 // needs to read or write a stable line identity — and is intentionally pure
 // (string-only, no IO) so it is trivially testable and rebuild-safe.
 
+import { createHash } from "node:crypto";
+
 /**
  * Matches a trailing ` ^id` block anchor. The leading `\s` requires whitespace
  * before the caret (so `x^y` and `2^10` are not anchors); `\s*$` anchors it to
@@ -51,4 +53,21 @@ export function hasBlockAnchor(line: string): boolean {
  */
 export function appendBlockAnchor(line: string, id: string): string {
   return `${line.trimEnd()} ^${id}`;
+}
+
+/**
+ * Deterministic 8-hex-char content anchor id with a namespace prefix.
+ * The hash input is JSON.stringify(parts) — callers own normalization of
+ * the parts (path normalization, body/key collapsing); this helper owns
+ * only the hash shape. Pinned by tests/core/anchor-id-stability.test.ts:
+ * changing this changes every ^t…/^c… anchor in every committed vault.
+ */
+export function contentAnchorId(
+  prefix: string,
+  parts: ReadonlyArray<string | number>,
+): string {
+  return `${prefix}${createHash("sha256")
+    .update(JSON.stringify(parts))
+    .digest("hex")
+    .slice(0, 8)}`;
 }
