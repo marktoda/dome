@@ -469,7 +469,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("install")
-    .description("Install dome serve as a macOS launchd service for the vault.")
+    .description("Install dome serve as a background service (launchd on macOS, systemd --user on Linux).")
     .option("--status", "Report installed/loaded service state without changes.")
     .option(
       "--env <KEY=VALUE>",

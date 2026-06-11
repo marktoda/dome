@@ -20,9 +20,12 @@
 //     `bootstrap` (failure ignored when the service isn't loaded), so a
 //     re-run cleanly replaces the loaded definition. Uninstall is a no-error
 //     no-op when nothing is installed.
-//   - macOS-only: on other platforms both verbs refuse with a clear message
-//     instead of pretending; `dome serve` under the user's own service
-//     manager remains the portable path.
+//   - Host dispatch: this file owns the launchd (macOS) backend; on Linux
+//     the verbs dispatch to the systemd --user backend in
+//     install-systemd.ts behind the same ServiceDeps boundary. Other
+//     platforms refuse with a clear message instead of pretending;
+//     `dome serve` under the user's own service manager remains the
+//     portable path.
 //   - Testability is part of the contract: every host boundary (platform,
 //     uid, LaunchAgents dir, the launchctl runner, executable paths) is
 //     injectable via a deps parameter defaulting to the real environment and
@@ -85,8 +88,9 @@ const SERVICE_PATH_STANDARD_DIRS = [
   "/sbin",
 ] as const;
 
-const macosOnlyMessage = (verb: "install" | "uninstall" | "restart"): string =>
-  `launchd service ${verb} is macOS-only; run \`dome serve\` under your service manager`;
+const unsupportedMessage = (verb: "install" | "uninstall" | "restart"): string =>
+  `service ${verb} is supported on macOS (launchd) and Linux (systemd --user); ` +
+  `run \`dome serve\` under your own service manager elsewhere`;
 
 // ----- Public types ---------------------------------------------------------
 
@@ -182,6 +186,24 @@ ${envXml}
 `;
 }
 
+/**
+ * Null when the path is an initialized vault; otherwise the refusal text.
+ * Shared by the launchd and systemd install flows: installing a
+ * keep-alive serve service against a non-vault directory would scaffold
+ * `.dome/state/` there and crashloop forever.
+ */
+export async function vaultPreconditionError(
+  vaultPath: string,
+): Promise<string | null> {
+  const gitRoot = await findGitRoot(vaultPath);
+  if (gitRoot !== null && existsSync(join(vaultPath, ".dome", "config.yaml"))) {
+    return null;
+  }
+  return `not an initialized Dome vault (missing ${
+    gitRoot === null ? "git repository" : ".dome/config.yaml"
+  }); run \`dome init\` first`;
+}
+
 // ----- runInstall -----------------------------------------------------------
 
 /**
@@ -202,6 +224,10 @@ export async function runInstall(
 
   const refusal = refuseUnsupportedHost("install", vaultPath, d, json);
   if (refusal !== null) return refusal;
+  if (d.platform === "linux") {
+    const { runInstallSystemd } = await import("./install-systemd");
+    return runInstallSystemd(options, d);
+  }
   const uid = d.uid as number;
 
   const label = serviceLabelForVault(vaultPath);
@@ -221,15 +247,9 @@ export async function runInstall(
   // Vault precondition (same refusal style as `dome capture`): installing a
   // KeepAlive serve service against a non-vault directory would scaffold
   // `.dome/state/` there and crashloop forever.
-  const gitRoot = await findGitRoot(vaultPath);
-  if (gitRoot === null || !existsSync(join(vaultPath, ".dome", "config.yaml"))) {
-    return reportUsageError({
-      vaultPath,
-      json,
-      error: `not an initialized Dome vault (missing ${
-        gitRoot === null ? "git repository" : ".dome/config.yaml"
-      }); run \`dome init\` first`,
-    });
+  const precondition = await vaultPreconditionError(vaultPath);
+  if (precondition !== null) {
+    return reportUsageError({ vaultPath, json, error: precondition });
   }
 
   let environment: ReadonlyMap<string, string>;
@@ -326,6 +346,10 @@ export async function runUninstall(
 
   const refusal = refuseUnsupportedHost("uninstall", vaultPath, d, json);
   if (refusal !== null) return refusal;
+  if (d.platform === "linux") {
+    const { runUninstallSystemd } = await import("./install-systemd");
+    return runUninstallSystemd(options, d);
+  }
   const uid = d.uid as number;
 
   const label = serviceLabelForVault(vaultPath);
@@ -412,6 +436,10 @@ export async function runRestart(
 
   const refusal = refuseUnsupportedHost("restart", vaultPath, d, json);
   if (refusal !== null) return refusal;
+  if (d.platform === "linux") {
+    const { runRestartSystemd } = await import("./install-systemd");
+    return runRestartSystemd(options, d);
+  }
   const uid = d.uid as number;
 
   const label = serviceLabelForVault(vaultPath);
@@ -494,7 +522,7 @@ export async function runRestart(
  * across re-installs. `launchctl setenv` is the alternative for values
  * that should live outside the plist.
  */
-async function resolveServiceEnvironment(
+export async function resolveServiceEnvironment(
   options: RunInstallOptions,
 ): Promise<ReadonlyMap<string, string>> {
   const environment = new Map<string, string>();
@@ -553,8 +581,9 @@ function reportUsageError(input: {
 }
 
 /**
- * Refuse non-macOS hosts and uid-less environments before touching anything.
- * Returns the exit code to surface, or null when the host is usable.
+ * Refuse unsupported hosts (neither macOS launchd nor Linux systemd --user)
+ * and uid-less darwin environments before touching anything. Returns the
+ * exit code to surface, or null when the host is usable.
  */
 function refuseUnsupportedHost(
   verb: "install" | "uninstall" | "restart",
@@ -562,11 +591,12 @@ function refuseUnsupportedHost(
   d: ResolvedServiceDeps,
   json: boolean,
 ): number | null {
-  const error = d.platform !== "darwin"
-    ? macosOnlyMessage(verb)
-    : d.uid === null
-      ? "cannot determine the current uid for the launchd gui domain"
-      : null;
+  const error =
+    d.platform !== "darwin" && d.platform !== "linux"
+      ? unsupportedMessage(verb)
+      : d.platform === "darwin" && d.uid === null
+        ? "cannot determine the current uid for the launchd gui domain"
+        : null;
   if (error === null) return null;
   if (json) {
     console.log(formatJson({
