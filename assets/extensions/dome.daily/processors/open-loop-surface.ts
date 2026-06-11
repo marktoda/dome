@@ -320,6 +320,9 @@ export function taskStableId(input: {
   return openLoopStableId({ sourcePath: input.sourcePath, body: input.body });
 }
 
+// The 24-char slice + `dome.daily.open-loop:` prefix is durable open-loop
+// identity, deliberately NOT folded into `contentAnchorId` (different length,
+// different collision budget); pinned by golden tests.
 export function openLoopStableId(input: {
   readonly sourcePath: string;
   readonly body: string;

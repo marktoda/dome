@@ -20,6 +20,7 @@
 // — never past cap-dropped or failed-tonight material, so those pairs stay
 // eligible on subsequent runs. The windowDays floor is the decay backstop.
 
+import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
 import {
   diagnosticEffect,
   patchEffect,
@@ -108,25 +109,9 @@ export function sweepLedgerPath(
 ): SweepLedgerResolution {
   const raw = config?.sweep_ledger_path;
   if (raw === undefined) return Object.freeze({ path: DEFAULT_LEDGER_PATH, problem: null });
-  if (typeof raw !== "string") {
-    return ledgerFallback("sweep_ledger_path must be a string");
-  }
-  if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
-    return ledgerFallback("sweep_ledger_path must be a non-empty .md path");
-  }
-  if (
-    raw.startsWith("/") ||
-    raw.includes("\\") ||
-    raw.split("/").some(
-      (segment) =>
-        segment.length === 0 || segment === "." || segment === "..",
-    )
-  ) {
-    return ledgerFallback(
-      "sweep_ledger_path must be a relative vault markdown path",
-    );
-  }
-  return Object.freeze({ path: raw, problem: null });
+  const v = validateRelativeMarkdownPath(raw, "sweep_ledger_path");
+  if (!v.ok) return ledgerFallback(v.problem);
+  return Object.freeze({ path: v.path, problem: null });
 }
 
 function ledgerFallback(problem: string): SweepLedgerResolution {
