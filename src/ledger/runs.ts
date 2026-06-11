@@ -649,6 +649,59 @@ export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
 }
 
 /**
+ * Discriminated terminal-state dispatch over the running→terminal mark
+ * functions. Adding a terminal status forces an update here AND in the
+ * union — the lockstep the per-status call sites lacked. markSkipped is
+ * intentionally excluded (queued→skipped is not a running-terminal).
+ */
+export type TerminalMark =
+  | {
+      readonly status: "succeeded";
+      readonly effectHashes: ReadonlyArray<string>;
+      readonly costUsd: number | null;
+      readonly durationMs: number;
+      readonly outputCommit: CommitOid | null;
+    }
+  | {
+      readonly status: "failed";
+      readonly error: string | ProcessorFailedExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "timed_out";
+      readonly error: ProcessorTimeoutExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "cancelled";
+      readonly error: ProcessorCancelledExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    };
+
+export function markTerminal(
+  db: LedgerDb,
+  opts: TerminalMark & { readonly id: RunId; readonly finishedAt: Date },
+): void {
+  switch (opts.status) {
+    case "succeeded":
+      markSucceeded(db, opts);
+      return;
+    case "failed":
+      markFailed(db, opts);
+      return;
+    case "timed_out":
+      markTimedOut(db, opts);
+      return;
+    case "cancelled":
+      markCancelled(db, opts);
+      return;
+  }
+}
+
+/**
  * Land the closure-commit OID on the `output_commit` column of every named
  * successful run. Called by `src/engine/core/adopt.ts` after `makeClosureCommit`
  * returns a non-null OID for the iteration.

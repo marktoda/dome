@@ -116,12 +116,9 @@ import {
 } from "./execution-policy";
 import {
   insertQueued,
-  markCancelled,
-  markFailed,
   markRunning,
   markSkipped,
-  markSucceeded,
-  markTimedOut,
+  markTerminal,
   newRunId,
   sumCostUsdByProcessorPrefix,
   type RunId,
@@ -1440,37 +1437,43 @@ function markDispatchTerminal(
   costUsd: number,
 ): void {
   if (frame.ledger === undefined) return;
+  const id = frame.runId;
   const finishedAt = new Date();
+  const resolvedCostUsd = costUsdOrNull(costUsd);
   if (execution.status === "succeeded") {
-    markSucceeded(frame.ledger, {
-      id: frame.runId,
+    markTerminal(frame.ledger, {
+      status: "succeeded",
+      id,
       effectHashes: execution.effectHashes,
-      costUsd: costUsdOrNull(costUsd),
+      costUsd: resolvedCostUsd,
       durationMs: execution.durationMs,
       outputCommit: null,
       finishedAt,
     });
   } else if (execution.status === "timed_out") {
-    markTimedOut(frame.ledger, {
-      id: frame.runId,
+    markTerminal(frame.ledger, {
+      status: "timed_out",
+      id,
       error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
+      costUsd: resolvedCostUsd,
       durationMs: execution.durationMs,
       finishedAt,
     });
   } else if (execution.status === "cancelled") {
-    markCancelled(frame.ledger, {
-      id: frame.runId,
+    markTerminal(frame.ledger, {
+      status: "cancelled",
+      id,
       error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
+      costUsd: resolvedCostUsd,
       durationMs: execution.durationMs,
       finishedAt,
     });
   } else {
-    markFailed(frame.ledger, {
-      id: frame.runId,
+    markTerminal(frame.ledger, {
+      status: "failed",
+      id,
       error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
+      costUsd: resolvedCostUsd,
       durationMs: execution.durationMs,
       finishedAt,
     });
