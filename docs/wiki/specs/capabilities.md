@@ -101,18 +101,28 @@ Permits emitting JobEffects. The `processors` list scopes which target processor
 Permits the processor to call LLMs via `ctx.modelInvoke`. Adoption-phase processors **never** get this capability — the loader rejects `model.invoke` in adoption manifests at registration time. Garden- and view-phase processors receive a model handle only when the capability is both declared and granted. The handle is provider-neutral: core receives an injected `ModelProvider` or a vault-configured command provider, not a direct import of a vendor SDK.
 
 Optional fields:
-- `maxDailyCostUsd: number` — cap on bundle-level LLM spend per
-  local day. The runtime sums provider-reported `cost_usd` rows for the
-  processor's extension-id prefix since local midnight, adds the
-  current run's in-memory cost, and denies further calls with
-  `model.invoke.denied` once the effective cap is reached. The effective
-  cap is min(declared, granted); a vault grant raised above the manifest
-  declaration cannot take effect, so `dome doctor` / `dome check` raise a
-  `model.budget-grant-capped` warning naming both numbers and the binding
-  side whenever a grant exceeds the declaration.
+- `maxDailyCostUsd: number` — daily LLM spend cap, enforced per local
+  day with **scope determined by which side carries the number**:
+  - **Declared (manifest)** — bounds *this processor's own* spend. The
+    bundle author's promise about one processor's appetite. The runtime
+    sums provider-reported `cost_usd` rows for the full processor id
+    since local midnight, plus the current run's in-memory cost.
+  - **Granted (vault config)** — bounds the *extension's pooled* spend
+    (extension-id prefix sum). The vault owner's single lever over the
+    bundle's total daily burn.
+
+  Both checks must pass before a provider call; after a provider-reported
+  cost lands, both are re-checked and the output is denied if that call
+  crossed either cap (`model.invoke.denied`, message names the tripped
+  scope). Earlier semantics took min(declared, granted) against the pooled
+  spend, which let nightly batch processors (sweep, consolidate) exhaust
+  the pool and starve signal-triggered processors (ingest) for the rest of
+  the day — the 2026-06-10 capture-loop outage. Vault owners should size
+  the extension grant above the sum of the bundle's scheduled processors'
+  declared caps plus headroom for interactive ones.
 - `modelAllowlist: string[]` — restrict to specific model identifiers (e.g., `["claude-3-5-sonnet"]`); default allows the harness's configured default.
 
-The runtime enforces the intersection of the declared and granted allowlists before any provider call, and records each model-call attempt in `capability_uses` with `capability = "model.invoke"` and the resolved model as the resource when known. It also enforces the stricter defined `maxDailyCostUsd` from declaration and grant: before a provider call it denies when the cap is already spent; after a provider-reported cost is recorded it denies the output if that call pushed spend over the cap. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. A command provider is configured in `.dome/config.yaml` as `model_provider: { kind: "command", command: [...] }`; it runs from the vault root, receives a `dome.model-provider.request/v1` JSON object on stdin, and must return `{ "text": string, "model"?: string, "costUsd"?: number }` on stdout. The same command may also receive a `dome.model-provider.step/v1` envelope (the tool-use step seam, see [[wiki/specs/autonomous-agents]]) and a `dome.model-provider.probe/v1` envelope. The probe envelope is `{ "schema": "dome.model-provider.probe/v1" }`; a probe-aware provider answers `{ "schema": "dome.model-provider.probe/v1", "ok": true, "provider"?: string, "keyPresent"?: boolean, "defaultModel"?: string }` on stdout and exits 0 **without making any network or paid API call** — `keyPresent` reports whether the provider's credential environment variable is set, and the probe must succeed even when it is not. Providers that predate the probe envelope may reject it with a non-zero exit; the prober treats that as "alive but probe-unsupported", not as a failure. `dome doctor` reports a read-only preflight warning when active processors both declare and receive `model.invoke` but no model provider is configured or injected into the host, and probes a configured command provider (spawnable? probe-responsive? credential present?) per [[wiki/specs/cli]] §"dome doctor". Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape. Model-capable PatchEffects are additionally required to carry SourceRefs at the executor boundary so LLM-written vault changes are evidence-backed before capability routing.
+The runtime enforces the intersection of the declared and granted allowlists before any provider call, and records each model-call attempt in `capability_uses` with `capability = "model.invoke"` and the resolved model as the resource when known. It also enforces both `maxDailyCostUsd` scopes (declared cap against the processor's own spend, granted cap against the extension pool — see above): before a provider call it denies when either cap is already spent; after a provider-reported cost is recorded it denies the output if that call pushed either scope over its cap. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. A command provider is configured in `.dome/config.yaml` as `model_provider: { kind: "command", command: [...] }`; it runs from the vault root, receives a `dome.model-provider.request/v1` JSON object on stdin, and must return `{ "text": string, "model"?: string, "costUsd"?: number }` on stdout. The same command may also receive a `dome.model-provider.step/v1` envelope (the tool-use step seam, see [[wiki/specs/autonomous-agents]]) and a `dome.model-provider.probe/v1` envelope. The probe envelope is `{ "schema": "dome.model-provider.probe/v1" }`; a probe-aware provider answers `{ "schema": "dome.model-provider.probe/v1", "ok": true, "provider"?: string, "keyPresent"?: boolean, "defaultModel"?: string }` on stdout and exits 0 **without making any network or paid API call** — `keyPresent` reports whether the provider's credential environment variable is set, and the probe must succeed even when it is not. Providers that predate the probe envelope may reject it with a non-zero exit; the prober treats that as "alive but probe-unsupported", not as a failure. `dome doctor` reports a read-only preflight warning when active processors both declare and receive `model.invoke` but no model provider is configured or injected into the host, and probes a configured command provider (spawnable? probe-responsive? credential present?) per [[wiki/specs/cli]] §"dome doctor". Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape. Model-capable PatchEffects are additionally required to carry SourceRefs at the executor boundary so LLM-written vault changes are evidence-backed before capability routing.
 
 ### `external`
 

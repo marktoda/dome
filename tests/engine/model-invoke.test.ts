@@ -25,7 +25,8 @@ function buildInvoke(opts?: {
   readonly granted?: ReadonlyArray<Capability>;
   readonly provider?: ModelProvider;
   readonly onCost?: (costUsd: number) => void;
-  readonly spentUsdToday?: () => number;
+  readonly spentUsdTodayByProcessor?: () => number;
+  readonly spentUsdTodayByExtension?: () => number;
   readonly signal?: AbortSignal;
   readonly policy?: ResolvedExecutionPolicy;
   readonly onCapabilityUse?: (use: ModelInvokeCapabilityUse) => void;
@@ -39,8 +40,11 @@ function buildInvoke(opts?: {
     signal: opts?.signal ?? new AbortController().signal,
     ...(opts?.provider !== undefined ? { provider: opts.provider } : {}),
     ...(opts?.onCost !== undefined ? { onCost: opts.onCost } : {}),
-    ...(opts?.spentUsdToday !== undefined
-      ? { spentUsdToday: opts.spentUsdToday }
+    ...(opts?.spentUsdTodayByProcessor !== undefined
+      ? { spentUsdTodayByProcessor: opts.spentUsdTodayByProcessor }
+      : {}),
+    ...(opts?.spentUsdTodayByExtension !== undefined
+      ? { spentUsdTodayByExtension: opts.spentUsdTodayByExtension }
       : {}),
     ...(opts?.onCapabilityUse !== undefined
       ? { onCapabilityUse: opts.onCapabilityUse }
@@ -104,12 +108,37 @@ describe("modelInvokeForProcessor", () => {
     expect(cost).toBe(0.25);
   });
 
-  test("denies calls once the effective daily cost budget is spent", async () => {
+  // Daily budget scopes: the manifest-declared cap bounds THIS PROCESSOR's
+  // own spend; the vault-granted cap bounds the EXTENSION's pooled spend.
+  // (Pre-2026-06 semantics took min(declared, granted) against the pooled
+  // spend, so nightly batch processors starved signal-triggered ones — the
+  // capture-loop outage of 2026-06-10.)
+
+  test("allows a processor under its declared cap even when the extension pool exceeds it", async () => {
     let calls = 0;
     const invoke = buildInvoke({
-      declared: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
-      granted: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
-      spentUsdToday: () => 1,
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 5 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 10 }],
+      spentUsdTodayByProcessor: () => 0,
+      spentUsdTodayByExtension: () => 7,
+      provider: async () => {
+        calls += 1;
+        return { text: "ok", costUsd: 0.25 };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    expect(await invoke({ prompt: "hello" })).toBe("ok");
+    expect(calls).toBe(1);
+  });
+
+  test("denies before the call when the processor's own spend reaches its declared cap", async () => {
+    let calls = 0;
+    const invoke = buildInvoke({
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 5 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 100 }],
+      spentUsdTodayByProcessor: () => 5,
+      spentUsdTodayByExtension: () => 5,
       provider: async () => {
         calls += 1;
         return { text: "ok", costUsd: 0.25 };
@@ -120,16 +149,40 @@ describe("modelInvokeForProcessor", () => {
     await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
       code: "model.invoke.denied",
       retryable: false,
+      message: expect.stringContaining("processor"),
     });
     expect(calls).toBe(0);
   });
 
-  test("records cost then denies output when a provider response exceeds budget", async () => {
+  test("denies before the call when the extension pool reaches the granted cap", async () => {
+    let calls = 0;
+    const invoke = buildInvoke({
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 5 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 10 }],
+      spentUsdTodayByProcessor: () => 0,
+      spentUsdTodayByExtension: () => 10,
+      provider: async () => {
+        calls += 1;
+        return { text: "ok", costUsd: 0.25 };
+      },
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.denied",
+      retryable: false,
+      message: expect.stringContaining("extension"),
+    });
+    expect(calls).toBe(0);
+  });
+
+  test("records cost then denies output when a response pushes the pool over the granted cap", async () => {
     let cost = 0;
     const invoke = buildInvoke({
       declared: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
       granted: [{ kind: "model.invoke", maxDailyCostUsd: 0.5 }],
-      spentUsdToday: () => cost,
+      spentUsdTodayByProcessor: () => cost,
+      spentUsdTodayByExtension: () => cost,
       onCost: (n) => {
         cost += n;
       },
@@ -142,6 +195,28 @@ describe("modelInvokeForProcessor", () => {
       retryable: false,
     });
     expect(cost).toBe(0.75);
+  });
+
+  test("records cost then denies output when a response pushes the processor over its declared cap", async () => {
+    let cost = 0;
+    const invoke = buildInvoke({
+      declared: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+      granted: [{ kind: "model.invoke", maxDailyCostUsd: 100 }],
+      spentUsdTodayByProcessor: () => cost,
+      spentUsdTodayByExtension: () => cost,
+      onCost: (n) => {
+        cost += n;
+      },
+      provider: async () => ({ text: "ok", costUsd: 1.5 }),
+    });
+    if (invoke === undefined) throw new Error("expected invoke");
+
+    await expect(invoke({ prompt: "hello" })).rejects.toMatchObject({
+      code: "model.invoke.denied",
+      retryable: false,
+      message: expect.stringContaining("processor"),
+    });
+    expect(cost).toBe(1.5);
   });
 
   test("structured parses valid JSON through caller schema parser", async () => {

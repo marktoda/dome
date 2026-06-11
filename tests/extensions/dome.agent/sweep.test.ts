@@ -168,7 +168,8 @@ async function realBudgetDeniedError(): Promise<unknown> {
     },
     signal: new AbortController().signal,
     provider: async () => ({ text: "ok" }),
-    spentUsdToday: () => 1,
+    spentUsdTodayByProcessor: () => 1,
+    spentUsdTodayByExtension: () => 1,
   });
   if (invoke === undefined) throw new Error("expected a model invoke fn");
   try {
