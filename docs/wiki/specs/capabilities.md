@@ -19,7 +19,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Seventeen tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
+Capabilities are about **effect power**, not arbitrary trust labels. Seventeen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
 
 ```ts
 type Capability =

@@ -17,7 +17,7 @@ This spec is normative for Dome's MCP (Model Context Protocol) adapter — the `
 **Shipped** as wedge Phase 5 ([[wedge]] §"Phase 5 — MCP server"). The compiler-boundary contract per [[wiki/specs/harnesses]] (CLAUDE/AGENTS orientation + CLI + compiler host + adopted ref) remains the load-bearing path for harnesses with full shell access; the MCP server is the typed front-end contract for everything else. It earns its keep in three scenarios:
 
 1. **Harnesses without robust shell-execution.** A sandboxed agent that cannot invoke `Bash` reaches Dome via typed MCP tools instead.
-2. **Workflows that benefit from typed argument validation.** MCP routes the same operations with Zod-validated structured inputs instead of CLI argument strings.
+2. **Flows that benefit from typed argument validation.** MCP routes the same operations with Zod-validated structured inputs instead of CLI argument strings.
 3. **MCP as the universal front-end contract** (per [[wedge]]): every future surface — voice, phone, other agents — is a thin client over the same tool set.
 
 ## Architecture
@@ -50,9 +50,9 @@ The planned `AbstractSurface` + `renderMcp(surface)` split ([[wiki/specs/sdk-sur
 
 ## MCP tools
 
-Tool names are bare verbs — harness clients already namespace by server name (Claude Code exposes them as `mcp__dome__capture` etc.). Tool results mirror the JSON the CLI's `--json` mode emits; there is no parallel schema catalog.
+MCP tool names are bare verbs — harness clients already namespace by server name (Claude Code exposes them as `mcp__dome__capture` etc.). MCP tool results mirror the JSON the CLI's `--json` mode emits; there is no parallel schema catalog.
 
-| Tool | Same path as | Result schema | Purpose |
+| MCP tool | Same path as | Result schema | Purpose |
 |---|---|---|---|
 | `capture` | `dome capture --json` | `dome.capture/v1` | Write a thought into `inbox/raw/` and commit it on the current branch. |
 | `query` | `dome query --json` | `dome.search.query/v1` | FTS + structured query against adopted state, with SourceRefs. |

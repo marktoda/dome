@@ -230,7 +230,7 @@ Three engine APIs are exposed on the Vault surface:
 
 ## Extension bundles
 
-An **extension bundle** is a directory under a configured bundles root: `assets/extensions/<bundle-name>/` for SDK-shipped bundles, or `<vault>/.dome/extensions/<bundle-name>/` for vault-local bundles. Normal CLI/runtime use composes both roots when the vault-local root exists; `--bundles-root <path>` is an exact override for tests and ad-hoc development. The bundle contains a `manifest.yaml` plus contributions across five kinds: page-types, preamble, processors, capabilities, external-handlers.
+An **extension bundle** is a directory under a configured bundles root: `assets/extensions/<bundle-name>/` for SDK-shipped bundles, or `<vault>/.dome/extensions/<bundle-name>/` for vault-local bundles. Normal CLI/runtime use composes both roots when the vault-local root exists; `--bundles-root <path>` is an exact override for tests and ad-hoc development. The bundle contains a `manifest.yaml` plus contributions across seven kinds: page-types, preamble, processors, external-handlers, capability-grants, loops, and doctor grant-entry probes.
 
 ### Bundle directory shape
 
