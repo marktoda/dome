@@ -26,6 +26,15 @@ export type PageStatusInfo = {
   readonly supersededBy: string | null;
   /** 1-indexed line of the `superseded_by:` key (1 when not locatable). */
   readonly supersededByLine: number;
+  /**
+   * Trimmed `description:` string, or null when absent / not a string /
+   * blank. Not a supersession field — it rides along because page-status
+   * projects it as a `dome.page.description` fact for the generated index,
+   * and the two reads share one frontmatter parse.
+   */
+  readonly description: string | null;
+  /** 1-indexed line of the `description:` key (1 when not locatable). */
+  readonly descriptionLine: number;
 };
 
 export function readPageStatus(content: string): PageStatusInfo {
@@ -38,6 +47,8 @@ export function readPageStatus(content: string): PageStatusInfo {
       statusLine: 1,
       supersededBy: null,
       supersededByLine: 1,
+      description: null,
+      descriptionLine: 1,
     });
   }
 
@@ -48,12 +59,19 @@ export function readPageStatus(content: string): PageStatusInfo {
   const supersededBy = wikilinkTargetFromFrontmatterValue(
     parsed.data["superseded_by"],
   );
+  const rawDescription = parsed.data["description"];
+  const description =
+    typeof rawDescription === "string" && rawDescription.trim().length > 0
+      ? rawDescription.trim()
+      : null;
 
   return Object.freeze({
     status,
     statusLine: frontmatterKeyLine(content, "status") ?? 1,
     supersededBy,
     supersededByLine: frontmatterKeyLine(content, "superseded_by") ?? 1,
+    description,
+    descriptionLine: frontmatterKeyLine(content, "description") ?? 1,
   });
 }
 

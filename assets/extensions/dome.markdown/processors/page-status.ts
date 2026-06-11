@@ -4,7 +4,9 @@
 // Reads each changed managed wiki page's frontmatter and emits:
 //   - `dome.page.status`        — the `status:` value, when present;
 //   - `dome.page.superseded_by` — the forward wikilink target (recorded
-//     as written, [[..]] stripped), when present.
+//     as written, [[..]] stripped), when present;
+//   - `dome.page.description`   — the trimmed `description:` value, when
+//     non-empty (the substrate the generated index projection reads).
 //
 // Per [[wiki/specs/page-schema]] §"Supersession (ADR pattern)", these facts
 // are the deterministic substrate the dome.search composite ranker keys on
@@ -45,6 +47,7 @@ import { readPageStatus } from "./supersession-shared";
 
 const STATUS_PREDICATE = "dome.page.status";
 const SUPERSEDED_BY_PREDICATE = "dome.page.superseded_by";
+const DESCRIPTION_PREDICATE = "dome.page.description";
 
 // Defense-in-depth: the namespace prefix the runtime check verifies. If a
 // future refactor moves a predicate outside the declared `dome.page.*`
@@ -54,7 +57,11 @@ const REQUIRED_NAMESPACE_PREFIX = "dome.page.";
 
 const pageStatus = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    for (const predicate of [STATUS_PREDICATE, SUPERSEDED_BY_PREDICATE]) {
+    for (const predicate of [
+      STATUS_PREDICATE,
+      SUPERSEDED_BY_PREDICATE,
+      DESCRIPTION_PREDICATE,
+    ]) {
       if (!predicate.startsWith(REQUIRED_NAMESPACE_PREFIX)) {
         throw new Error(
           `dome.markdown.page-status: predicate '${predicate}' does not start with the declared namespace prefix '${REQUIRED_NAMESPACE_PREFIX}'`,
@@ -105,6 +112,22 @@ const pageStatus = defineProcessorImplementation({
               ctx.sourceRef(path, {
                 startLine: info.supersededByLine,
                 endLine: info.supersededByLine,
+              }),
+            ],
+          }),
+        );
+      }
+      if (info.description !== null) {
+        facts.push(
+          factEffect({
+            subject: { kind: "page", path },
+            predicate: DESCRIPTION_PREDICATE,
+            object: { kind: "string", value: info.description },
+            assertion: "extracted",
+            sourceRefs: [
+              ctx.sourceRef(path, {
+                startLine: info.descriptionLine,
+                endLine: info.descriptionLine,
               }),
             ],
           }),

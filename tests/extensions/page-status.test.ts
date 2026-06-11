@@ -67,6 +67,52 @@ describe("dome.markdown.page-status", () => {
     });
   });
 
+  test("emits dome.page.description fact when frontmatter carries description", async () => {
+    const effects = await runPageStatus({
+      path: "wiki/entities/test-person.md",
+      content:
+        "---\n" +
+        "type: entity\n" +
+        "description: Protocol engineer at Uniswap Labs\n" +
+        "---\n" +
+        "# Page\n",
+    });
+
+    expect(effects.length).toBe(1);
+    const description = expectFact(effects, 0);
+    expect(description.predicate).toBe("dome.page.description");
+    expect(description.object).toEqual({
+      kind: "string",
+      value: "Protocol engineer at Uniswap Labs",
+    });
+    expect(description.subject).toEqual({
+      kind: "page",
+      path: requireVaultPath("wiki/entities/test-person.md"),
+    });
+    expect(description.assertion).toBe("extracted");
+    expect(description.sourceRefs[0]?.range?.startLine).toBe(3);
+  });
+
+  test("no description fact when frontmatter lacks description or value is blank", async () => {
+    const plain = await runPageStatus({
+      path: "wiki/entities/a.md",
+      content: "---\ntype: entity\n---\n# A\n",
+    });
+    expect(
+      plain.some(
+        (e) =>
+          (e as FactEffect).kind === "fact" &&
+          (e as FactEffect).predicate === "dome.page.description",
+      ),
+    ).toBe(false);
+
+    const blank = await runPageStatus({
+      path: "wiki/entities/b.md",
+      content: "---\ntype: entity\ndescription: \"  \"\n---\n# B\n",
+    });
+    expect(blank.length).toBe(0);
+  });
+
   test("emits nothing for pages without status/superseded_by frontmatter", async () => {
     const effects = await runPageStatus({
       path: "wiki/concepts/plain.md",
