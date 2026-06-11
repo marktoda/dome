@@ -23,6 +23,13 @@ severity: high
 - [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] doesn't help — the right *kind* of effect was emitted (PatchEffect against `wiki/**`); only the *target page* was wrong.
 - [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]] catches the change in the run ledger but doesn't say it was wrong.
 
+**Partial mitigation (shipped):** prompt-*text* drift is pinned by
+`tests/integration/agent-prompt-regression.test.ts` — snapshot fences over the
+agent charters (brief / ingest / consolidate / sweep) and the warden page
+prompt, so any prompt edit surfaces as a reviewable `.snap` diff. This guards
+the text, not the semantics; model-upgrade regressions still need the eval
+suite below.
+
 **Structural mitigation:** **The eval suite.**
 
 1. Maintain a fixture vault separate from any real vault: `tests/fixtures/eval-vault/`.
