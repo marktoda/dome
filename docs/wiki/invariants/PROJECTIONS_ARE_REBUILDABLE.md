@@ -5,6 +5,9 @@ updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 tier: axiom
+enforced_by:
+  - tests/harness/scenarios/cli-surface/rebuild-projection.scenario.test.ts
+  - tests/projections/sinks.test.ts
 ---
 
 # PROJECTIONS_ARE_REBUILDABLE

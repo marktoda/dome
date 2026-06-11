@@ -1,0 +1,51 @@
+// tests/integration/agent-prompt-regression.test.ts
+//
+// Snapshot fence for docs/wiki/gotchas/agent-prompt-regression.md: the LLM
+// charters are behavior-bearing config. Any edit must show up as a snapshot
+// diff in review. Intentional changes: update the prompt, run
+// `bun test tests/integration/agent-prompt-regression.test.ts --update-snapshots`,
+// and commit the .snap diff alongside the prompt change.
+
+import { describe, expect, test } from "bun:test";
+
+import { BRIEF_CHARTER } from "../../assets/extensions/dome.agent/lib/brief-charter";
+import { INGEST_CHARTER } from "../../assets/extensions/dome.agent/lib/ingest-charter";
+import { consolidateCharter } from "../../assets/extensions/dome.agent/lib/consolidate-charter";
+import { MAX_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/consolidate";
+import { sweepCharter } from "../../assets/extensions/dome.agent/lib/sweep-charter";
+import { promptForPage } from "../../assets/extensions/dome.warden/processors/integrity";
+
+describe("agent prompt regression", () => {
+  test("dome.agent.brief charter", () => {
+    expect(BRIEF_CHARTER).toMatchSnapshot();
+  });
+
+  test("dome.agent.ingest charter", () => {
+    expect(INGEST_CHARTER).toMatchSnapshot();
+  });
+
+  test("dome.agent.consolidate charter (fixed inputs)", () => {
+    expect(
+      consolidateCharter({
+        ledgerPath: "wiki/meta/consolidation-ledger.md",
+        maxChangedFiles: MAX_CHANGED_FILES,
+      }),
+    ).toMatchSnapshot();
+  });
+
+  test("dome.agent.sweep charter (fixed inputs)", () => {
+    expect(
+      sweepCharter({
+        destination: "wiki/entities/acme.md",
+        material: "inbox/raw/2026-06-01-standup.md",
+        materialDate: "2026-06-01",
+      }),
+    ).toMatchSnapshot();
+  });
+
+  test("dome.warden.integrity page prompt (fixed inputs)", () => {
+    expect(
+      promptForPage("wiki/entities/acme.md", "# Acme\n\nA company we work with.\n"),
+    ).toMatchSnapshot();
+  });
+});

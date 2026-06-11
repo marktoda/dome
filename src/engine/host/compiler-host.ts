@@ -996,7 +996,7 @@ function sinksForRuntime(
               runtime.config.engine.externalHandlerTimeoutMs,
           }
         : {}),
-      recoverQuarantine: async ({ effect }) => {
+      recoverQuarantine: async ({ effect }) =>
         runtime.processorRuntime.executionState.clearQuarantineIfCurrent({
           phase: effect.phase,
           processorId: effect.processorId,
@@ -1004,10 +1004,8 @@ function sinksForRuntime(
           triggerHash: effect.triggerHash,
           quarantineId: effect.quarantineId,
           quarantinedAt: new Date(effect.quarantinedAt),
-          consecutiveRetryableFailures:
-            effect.consecutiveRetryableFailures,
-        });
-      },
+          consecutiveRetryableFailures: effect.consecutiveRetryableFailures,
+        }),
       recoverRun: async ({ effect }) => {
         return failRunIfCurrent(runtime.ledgerDb, {
           id: effect.runId,

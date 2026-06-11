@@ -5,6 +5,9 @@ updated: 2026-05-29T00:00:00.000Z
 sources:
   - '[[cohesive/brainstorms/2026-05-25-dome-vision]]'
 tier: axiom
+enforced_by:
+  - tests/vault/vault.test.ts
+  - tests/git.test.ts
 ---
 
 # VAULT_IS_GIT_REPO

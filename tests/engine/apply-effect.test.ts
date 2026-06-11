@@ -652,6 +652,102 @@ describe("capability denial flows through", () => {
   });
 });
 
+describe("stale-or-missing recovery sinks emit warning diagnostics", () => {
+  test("quarantine-recovery against a stale/missing quarantine emits quarantine-recovery.stale-or-missing", async () => {
+    const recover: Capability = {
+      kind: "quarantine.recover",
+      actions: ["reset"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: quarantineRecoveryEffect({
+        action: "reset",
+        phase: "garden",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        triggerHash: "trigger-1",
+        quarantineId: "quarantine-1",
+        quarantinedAt: "2026-05-29T00:00:00.000Z",
+        consecutiveRetryableFailures: 3,
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+      sinks: {
+        ...noopSinks(),
+        recoverQuarantine: async () => false,
+      },
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.diagnostics.length).toBe(1);
+    expect(r.diagnostics[0]?.code).toBe("quarantine-recovery.stale-or-missing");
+    expect(r.diagnostics[0]?.severity).toBe("warning");
+    expect(r.diagnostics[0]?.message).toContain("quarantine-1");
+  });
+
+  test("outbox-recovery against a stale/missing outbox entry emits outbox-recovery.stale-or-missing", async () => {
+    const recover: Capability = {
+      kind: "outbox.recover",
+      actions: ["retry", "abandon"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: outboxRecoveryEffect({
+        action: "retry",
+        idempotencyKey: "e-stale-1",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+      sinks: {
+        ...noopSinks(),
+        recoverOutbox: async () => false,
+      },
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.diagnostics.length).toBe(1);
+    expect(r.diagnostics[0]?.code).toBe("outbox-recovery.stale-or-missing");
+    expect(r.diagnostics[0]?.severity).toBe("warning");
+    expect(r.diagnostics[0]?.message).toContain("e-stale-1");
+  });
+
+  test("run-recovery against a stale/missing run emits run-recovery.stale-or-missing", async () => {
+    const recover: Capability = {
+      kind: "run.recover",
+      actions: ["fail"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: runRecoveryEffect({
+        action: "fail",
+        runId: "run_stale_1",
+        startedAt: "2026-05-29T00:00:00.000Z",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        phase: "garden",
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+      sinks: {
+        ...noopSinks(),
+        recoverRun: async () => false,
+      },
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.diagnostics.length).toBe(1);
+    expect(r.diagnostics[0]?.code).toBe("run-recovery.stale-or-missing");
+    expect(r.diagnostics[0]?.severity).toBe("warning");
+    expect(r.diagnostics[0]?.message).toContain("run_stale_1");
+  });
+});
+
 describe("adoption propose patches block for review", () => {
   test("PatchEffect mode propose in adoption returns blocked-for-review", async () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };

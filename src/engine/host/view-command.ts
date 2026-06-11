@@ -188,7 +188,7 @@ function buildViewCommandSinks(opts: {
   };
   const applyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
   const recoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-    async () => undefined;
+    async () => true;
   const recoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
 
   return buildSqliteSinks({

@@ -26,9 +26,9 @@ describe("invariant-coverage (AC3 lockstep)", async () => {
     const name = file.replace(/\.md$/, "");
     const slug = name.toLowerCase().replace(/_/g, "-");
 
-    test(`${name} has a corresponding tests/invariants/${slug}.test.ts or is deferred`, async () => {
+    test(`${name} has a tests/invariants/${slug}.test.ts marker and enforced_by coverage, or is deferred`, async () => {
       const text = await readFile(join(INVARIANTS_DIR, file), "utf8");
-      const fm = matter(text).data as { tier?: string };
+      const fm = matter(text).data as { tier?: string; enforced_by?: unknown };
       const tier = fm.tier;
 
       expect(
@@ -47,6 +47,25 @@ describe("invariant-coverage (AC3 lockstep)", async () => {
         `invariant ${name} (tier: ${tier}) requires tests/invariants/${slug}.test.ts. ` +
           `Either ship the enforcement test or set tier: deferred in the invariant's frontmatter.`,
       ).toBe(true);
+
+      const enforcedBy = fm.enforced_by;
+      expect(
+        Array.isArray(enforcedBy) && enforcedBy.length > 0,
+        `invariant ${name} (tier: ${tier}) requires 'enforced_by:' frontmatter — ` +
+          `a non-empty list of repo-relative test files that behaviorally enforce it. ` +
+          `The tests/invariants/ marker is the lockstep anchor; enforced_by names the real coverage.`,
+      ).toBe(true);
+      for (const entry of enforcedBy as ReadonlyArray<unknown>) {
+        expect(typeof entry, `${name} enforced_by entries must be strings`).toBe("string");
+        expect(
+          (entry as string).endsWith(".test.ts"),
+          `invariant ${name} enforced_by entries must be .test.ts files: ${entry}`,
+        ).toBe(true);
+        expect(
+          existsSync(join(REPO_ROOT, entry as string)),
+          `invariant ${name} enforced_by path does not exist: ${entry}`,
+        ).toBe(true);
+      }
     });
   }
 });

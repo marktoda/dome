@@ -93,7 +93,7 @@ async function rebuildProjectionUnlocked(
             opts.runtime.config.engine.externalHandlerTimeoutMs,
         }
       : {}),
-    recoverQuarantine: async () => undefined,
+    recoverQuarantine: async () => true,
     recoverRun: async () => true,
   });
 

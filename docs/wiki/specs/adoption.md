@@ -168,7 +168,7 @@ cd ~/vaults/work && dome sync --json
 
 `dome sync` is semantically the same per-tick body `dome serve` runs in its poll loop, invoked exactly once and surfaced with a CLI exit code. Drift detection + adoption invocation are shared between the two commands through the engine compiler host (`src/engine/host/compiler-host.ts`). The shared tick acquires a branch-level compiler-host lock before adoption or operational patch work, so `sync`, `serve`, and future host surfaces do not run the same branch concurrently.
 
-The five outcomes:
+The six outcomes:
 
 - **adopted** — adoption succeeded; the adopted ref advanced to HEAD. Exit 0.
 - **blocked** — adoption ran but block-severity diagnostics prevented the adopted ref from advancing. Exit 1; stderr lists the first five blockers.
