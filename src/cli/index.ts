@@ -24,12 +24,14 @@ import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
+import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
+import { runToday } from "./commands/today";
 import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
@@ -372,6 +374,36 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("today")
+    .description(
+      "Render today's action surface (open tasks, follow-ups, questions).",
+    )
+    .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--watch", "Re-render on an interval until ctrl-c (the cockpit).")
+    .option(
+      "--interval <seconds>",
+      "Watch refresh interval (default 5).",
+      parsePositiveIntegerOption,
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: TodayCliOptions) => {
+      setExitCode(
+        await runToday({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          watch: options.watch,
+          interval: options.interval,
+        }),
+      );
+    });
+
+  program
     .command("export-context")
     .description("Export a source-backed context packet for a topic.")
     .argument("<topic...>", "Topic to export.")
@@ -469,7 +501,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("install")
-    .description("Install dome serve as a macOS launchd service for the vault.")
+    .description("Install dome serve as a background service (launchd on macOS, systemd --user on Linux).")
     .option("--status", "Report installed/loaded service state without changes.")
     .option(
       "--env <KEY=VALUE>",
@@ -562,6 +594,19 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           token: options.token,
         }),
       );
+    });
+
+  program
+    .command("recipe <kind>")
+    .description(
+      "Print a client setup recipe (available: ios — voice capture via Shortcuts).",
+    )
+    .option(
+      "--url <base>",
+      "Base URL of your dome http server (default http://<your-server>:3663).",
+    )
+    .action(async (kind: string, options: { readonly url?: string }) => {
+      setExitCode(await runRecipe({ kind, url: options.url }));
     });
 
   program
@@ -728,6 +773,16 @@ type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
   readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type TodayCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly watch?: boolean;
+  readonly interval?: number;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

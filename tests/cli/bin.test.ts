@@ -34,6 +34,7 @@ describe("bin/dome process boundary", () => {
       "check",
       "resolve",
       "query",
+      "today",
       "export-context",
       "serve",
       "install",
@@ -41,12 +42,12 @@ describe("bin/dome process boundary", () => {
       "uninstall",
       "mcp",
       "http",
+      "recipe",
       "status",
       "sync",
       "help",
     ]);
     expect(help.stdout).not.toContain("agenda");
-    expect(help.stdout).not.toContain("today");
     expect(help.stdout).not.toContain("prep");
     expect(help.stdout).not.toContain("inspect");
     expect(help.stdout).not.toContain("doctor");

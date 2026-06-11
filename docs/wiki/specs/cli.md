@@ -37,18 +37,23 @@ dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
+dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]
+                                Render today's action surface (open tasks,
+                                follow-ups, questions) — the terminal cockpit.
+                                --watch re-renders on an interval until ctrl-c.
 dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
                                 every 500ms; constructs a manual Proposal and adopts on drift.
 dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]
-                                Install `dome serve` for this vault as a macOS launchd
-                                LaunchAgent (ambient compiler host; survives reboots).
+                                Install `dome serve` for this vault as an ambient
+                                service (macOS launchd LaunchAgent; Linux systemd
+                                --user unit). Survives crashes and reboots.
 dome restart [--vault <path>] [--json]
-                                Restart the vault's launchd LaunchAgent from the
-                                existing plist (never re-rendered; --env preserved).
+                                Restart the vault's ambient service from the
+                                existing plist/unit (never re-rendered; --env preserved).
 dome uninstall [--vault <path>] [--json]
-                                Boot out and remove the vault's launchd LaunchAgent.
+                                Stop and remove the vault's ambient service.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, query, export_context,
                                 status, check, resolve, tasks, brief) for MCP
@@ -56,8 +61,13 @@ dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
                                 Run the HTTP read+capture surface (bearer-token
                                 auth; loopback by default): POST /capture plus
-                                status/query/tasks/doc/questions/resolve routes.
+                                status/query/tasks/doc/questions/resolve routes
+                                plus the GET /today HTML cockpit.
                                 The daemon still owns compilation.
+dome recipe <kind> [--url <base>]
+                                Print a client setup recipe. v1 ships one kind:
+                                ios — voice capture via an iOS Shortcut against
+                                the dome http surface.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -71,10 +81,10 @@ future answer-mediated mitigations and exits with usage status instead of
 mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, and `dome export-context` — command-triggered view-phase processors invoked through the shared view-command boundary. Daily planning processors remain available through `dome run` for tests/debugging, but they do not have dedicated top-level CLI verbs.
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host on macOS (launchd LaunchAgent around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors.
+- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints the client-side setup text for those adapters (v1: the iOS Shortcut against `dome http`).
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -741,13 +751,15 @@ annotates `serve off` as `serve off (run dome serve)` to nudge the normal
 foreground-host workflow, but `off` is not itself an attention reason because
 one-shot `dome sync` is a valid catch-up mode.
 
-**Launchd service line.** `service_status` / `service_label` report the
-vault's ambient launchd service through install's probe helpers (the same
+**Ambient service line.** `service_status` / `service_label` report the
+vault's ambient service through install's probe helpers (the same
 injected `ServiceDeps`, so tests use the recording fake): `loaded`,
-`installed` (plist present, service not loaded), `not-installed`, or
-`unsupported` (non-macOS). The loaded probe (`launchctl print`) runs only
-when a plist is actually installed, so the common never-installed vault pays
-one `existsSync`. `not-installed` and `unsupported` are **informational, not
+`installed` (plist/unit present, service not loaded), `not-installed`, or
+`unsupported` (neither macOS launchd nor Linux systemd `--user`). The loaded
+probe (`launchctl print` on macOS, `systemctl --user is-active` on Linux)
+runs only when a plist/unit is actually installed, so the common
+never-installed vault pays one `existsSync`. `not-installed` and
+`unsupported` are **informational, not
 attention** — one-shot `dome sync` and a foreground `dome serve` are valid
 modes. `installed`-but-not-loaded routes the `service_not_loaded` attention
 reason to `dome restart`: a KeepAlive agent that is not loaded means the
@@ -1135,6 +1147,75 @@ structured `dome.search.export-context/v1` payload, including the packet under
 `overview.recallSignals` carries the same source-backed recall evidence for
 structured consumers.
 
+### `dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]`
+
+The terminal cockpit — a typed dedicated wrapper over the command-triggered
+`today` view (`dome.daily.today`, structured schema `dome.daily.today/v1`),
+exactly the `dome query` posture: the `dome.daily.today` processor owns the
+action surface (see §"Run-only daily view processors" for the underlying
+view's normative behavior); this verb owns CLI ergonomics and rendering. It
+routes through the same shared view-command boundary and validates the same
+one-view/effect-name/schema contract as the other dedicated wrappers.
+
+Default text output renders a presenter-style dashboard: a `today` headline
+with the vault basename and an `all clear` / `<n> open` status, a `Day`
+section with the target date, then `Open tasks`, `Follow-ups`, and
+`Questions` sections (each omitted when empty). Task rows render as
+checkboxes with muted due-date and `path:line` location annotations; question
+rows carry the durable row id and the ready-to-run `dome resolve <id>
+<value>` hint. When a section was truncated by `--limit`, a muted
+`(showing <n> of <m>)` note follows the rows, using the view's total counts.
+
+- `--date <yyyy-mm-dd>` and `--limit <n>` pass through to the view's
+  `date` / `limit` command args (same semantics as `dome run today`).
+- `--json` emits the structured `dome.daily.today/v1` payload unchanged.
+- `--watch` is the cockpit mode: re-render on an interval until ctrl-c
+  (SIGINT/SIGTERM). It is **poll-based re-render** — dumb polling per the v1
+  plan's open-questions resolution, not a push channel. Each iteration
+  re-runs the view; the screen is repainted **only when the rendered text
+  changed** (the clear-screen escape is TTY-gated, so piped watch output
+  stays clean), with a muted `(watch: refreshes every <n>s — ctrl-c to
+  exit)` footer. A render error exits the loop with that error's exit code.
+  The interval sleep is abortable, so ctrl-c exits immediately instead of
+  parking up to a full interval.
+- `--interval <seconds>` sets the watch cadence (default 5, floor 1).
+- `--watch` and `--json` are mutually exclusive (exit 64): watch is a
+  repainting human surface, and agents polling for structured state should
+  loop `dome today --json` themselves.
+
+Testability matches the other wrappers: the watch loop accepts injected
+sleep/clear/render/iteration boundaries, pinned by
+`tests/cli/commands/today.test.ts` (render shape, watch repaint-on-change,
+clear gating, sleep cadence, flag exclusivity).
+
+Exit codes: 0 on success; 64 (EX_USAGE) on `--watch` + `--json`, a missing
+`today` view processor, or an unusable adopted ref; 1 on runtime or dispatch
+failure.
+
+### `dome recipe <kind> [--url <base>]`
+
+Prints a client setup recipe — plain text on stdout, by design: a recipe
+changes when the HTTP surface changes, so it ships next to the CLI instead of
+in a doc that can drift. It never opens the vault or the runtime.
+
+`<kind>` selects the recipe. v1 ships exactly one: `ios` — the iOS Shortcut
+that voice-captures into `POST /capture` (the WS3-capture deliverable; see
+[[wiki/specs/capture]] §"Phone and voice ingress (recipe)"). The printed text
+covers the prerequisites (a running `dome http` bound to a Tailscale-class
+interface; the phone on the same network), the Shortcut build steps (Dictate
+Text → Get Contents of URL with the bearer header and a UUID-bound
+`captureId` for idempotent retries → notification), a copyable `curl`
+verification command, and the `GET /today?token=…` cockpit URL.
+
+- `--url <base>` overrides the base URL baked into the printed recipe
+  (default `http://<your-server>:3663`; trailing slashes are stripped).
+- An unknown `<kind>` is a usage error: stderr names the available recipes
+  and the command exits 64.
+
+Tests: `tests/cli/commands/recipe.test.ts`.
+
+Exit codes: 0 on success; 64 (EX_USAGE) on an unknown recipe kind.
+
 ### `dome run <name> [--json] [-- <processor flags>]`
 
 Invokes the view-phase processor whose command trigger declares `<name>`.
@@ -1162,8 +1243,9 @@ extensions:
 ```
 
 `dome run today --date <YYYY-MM-DD> [--limit <n>] [--json]` exercises the
-`dome.daily.today` view processor for deterministic debugging. It is not a
-dedicated daily workflow command; the primary V1 workflow should use the
+`dome.daily.today` view processor for deterministic debugging. The dedicated
+cockpit wrapper over the same view is `dome today` (§"`dome today`"), which
+adds presenter rendering and `--watch`; the primary V1 workflow remains the
 prepared daily markdown surface plus `dome query` / `dome export-context`.
 
 Its text output renders:
@@ -1736,23 +1818,32 @@ Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime o
 
 ### `dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]`
 
-Makes the local compiler host **ambient** on macOS: generates a launchd
-LaunchAgent that runs `dome serve` for the vault at login, keeps it alive
-across crashes and reboots, and loads it immediately via `launchctl`. This is
-the Phase 1 wedge enabler ([[wedge]] §"Phase 1 — Ambient daemon"): scheduled
-garden processors fire without a human keeping a terminal or tmux pane open.
+Makes the local compiler host **ambient**: installs `dome serve` for the
+vault under the platform's user service manager, keeps it alive across
+crashes, and starts it immediately. This is the Phase 1 wedge enabler
+([[wedge]] §"Phase 1 — Ambient daemon"): scheduled garden processors fire
+without a human keeping a terminal or tmux pane open.
 
-Composition (v1.0):
+The backend dispatches on platform:
+
+| Platform | Backend | Service identity |
+|---|---|---|
+| `darwin` | launchd LaunchAgent | `com.dome.serve.<slug>` plist in `~/Library/LaunchAgents/` |
+| `linux` | systemd `--user` unit | `dome-serve-<slug>.service` under `~/.config/systemd/user/` |
+| anything else | refused, exit 1 | "service install is supported on macOS (launchd) and Linux (systemd --user); run `dome serve` under your own service manager elsewhere" |
+
+`<slug>` is shared by both backends: the lowercased vault basename with
+non-`[a-z0-9-]` runs collapsed to `-`, plus the first 8 hex chars of the
+SHA-256 of the resolved vault path. The same vault path always yields the
+same label/unit; distinct vaults never collide, so one machine can run one
+ambient host per vault.
+
+Composition (macOS launchd):
 
 1. Resolve `vaultPath` (default cwd) and the deterministic service label
-   `com.dome.serve.<slug>`. `<slug>` is the lowercased vault basename with
-   non-`[a-z0-9-]` runs collapsed to `-`, plus the first 8 hex chars of the
-   SHA-256 of the resolved vault path. The same vault path always yields the
-   same label; distinct vaults never collide, so one machine can run one
-   ambient host per vault.
-2. On non-macOS platforms, refuse with exit 1 and the message "launchd service
-   install is macOS-only; run `dome serve` under your service manager". No
-   plist is written and no service manager is touched.
+   `com.dome.serve.<slug>` (shared slug rule above).
+2. On unsupported platforms, refuse with exit 1 (message above). No plist or
+   unit is written and no service manager is touched.
 3. Precondition: the target must be an initialized Dome vault — a git
    repository with `.dome/config.yaml` present (same refusal style as `dome
    capture`, exit 64). Without the gate, installing against an arbitrary
@@ -1795,6 +1886,55 @@ Idempotency: re-running `dome install` rewrites the plist and replaces the
 loaded service; it exits 0. A failed `bootstrap` leaves the plist in place for
 inspection, prints launchctl's stderr, and exits 1.
 
+**Linux backend (systemd `--user`).** The same verbs, dispatched to the
+systemd user manager (`systemctl --user`), mirroring the launchd contract
+behind the same injected `ServiceDeps` boundary:
+
+1. The same vault preconditions and `--env` / `--env-file` resolution apply
+   (exit 64 on violations). One extra constraint is Linux-specific: systemd
+   `Environment=` values are single-line, so an environment value containing
+   a newline is a usage error (exit 64) instead of a corrupted unit file.
+2. Install writes the unit to `~/.config/systemd/user/dome-serve-<slug>.service`
+   (`$XDG_CONFIG_HOME/systemd/user` when set), then runs
+   `systemctl --user daemon-reload` → `enable <unit>` → `restart <unit>`.
+   Re-runs rewrite the unit and replace the running service, exactly like the
+   plist path; a failed systemctl step leaves the unit on disk for
+   inspection, prints the failing command's stderr, and exits 1.
+3. The rendered unit mirrors the plist: `ExecStart` is the installing bun
+   runtime + the SDK's dome entry + `serve --vault <vaultPath>` (quoted, with
+   systemd `%` / `$` / quote escaping), `WorkingDirectory` is the vault,
+   `Environment=` carries the same PATH-first entries plus `--env` /
+   `--env-file` values, `Restart=always` + `RestartSec=2` mirror KeepAlive,
+   stdout/stderr append to `<vault>/.dome/state/serve.log`, and
+   `WantedBy=default.target` enables it for the user session.
+4. Uninstall runs an **unconditional** `systemctl --user disable --now <unit>`
+   — even when the unit file is absent, covering the
+   deleted-unit-but-still-running edge (its failure just means nothing was
+   loaded) — then removes the unit file and runs `daemon-reload`. Idempotent:
+   a never-installed vault reports "not installed" and exits 0.
+5. Restart runs `systemctl --user restart <unit>` **from the existing unit on
+   disk** — never re-rendered, same `--env`-preservation rationale as the
+   plist path. When no unit is installed for the vault, exit 64 with a
+   pointer to `dome install`.
+6. `--status` reports the unit name, unit path, `installed` (unit file
+   present), and `active` (`systemctl --user is-active`, probed only when
+   installed). JSON payloads carry the unit path under both `unit` and
+   `plist` — the latter is the established `ServiceState` field name that
+   `dome status` and the MCP status tool already consume.
+
+One ops step is deliberately **not** automated: the user manager only runs
+while the user has a session, so surviving logout/boot requires
+`loginctl enable-linger <user>` — the operator's responsibility (it needs
+root on some distros). The install success output prints this note, and the
+server migration runbook
+([[cohesive/runbooks/2026-06-server-migration]]) carries it as a prepare
+step.
+
+Tests: `tests/cli/install-systemd.test.ts` pins the unit rendering
+(escaping included), the install/uninstall/restart systemctl sequences, the
+unconditional-disable uninstall, and the exit codes against a recording fake
+`systemctl` — never a real service manager.
+
 `--status` is the read-only service probe: it reports the label, plist path,
 `installed` (plist present in the LaunchAgents dir), and `loaded` (whether
 `launchctl print gui/<uid>/<label>` resolves) without mutating anything. A
@@ -1818,38 +1958,47 @@ busy and retries.
 
 Testability is part of the contract: `runInstall` / `runUninstall` accept an
 injected deps object (`platform`, `uid`, `launchAgentsDir`, a `launchctl`
+runner, plus the Linux counterparts `systemdUserDir` and a `systemctl`
 runner, and the bun/dome executable paths) defaulting to the real home
-directory and a real `Bun.spawn` runner. Tests pass a temp LaunchAgents dir
-and a recording fake runner; they never touch `~/Library` or invoke real
-`launchctl`.
+directory and real `Bun.spawn` runners. Tests pass a temp service dir and a
+recording fake runner; they never touch `~/Library` / `~/.config/systemd` or
+invoke a real service manager.
 
 Exit codes: 0 on success (including idempotent re-install and clean
 `--status` reads); 64 (EX_USAGE) on an uninitialized vault (missing git repo
-or `.dome/config.yaml`) or a malformed `--env`/`--env-file` entry; 1 on
-non-macOS platform, undeterminable uid, `launchctl bootstrap` failure, or
+or `.dome/config.yaml`), a malformed `--env`/`--env-file` entry, or a
+newline-bearing environment value on Linux; 1 on an unsupported platform,
+undeterminable uid (macOS), `launchctl bootstrap` / `systemctl` failure, or
 unexpected I/O failure.
 
 ### `dome uninstall [--vault <path>] [--json]`
 
-Removes the vault's ambient service: `launchctl bootout gui/<uid>/<label>`
-(failure ignored when the service is not loaded), then deletes the plist from
-`~/Library/LaunchAgents/`. Idempotent — when no plist is present it still
-attempts the bootout (covering a deleted-plist-but-loaded edge), reports "not
-installed", and exits 0. The serve log at `.dome/state/serve.log` is
-preserved; it is operator evidence, not service state.
+Removes the vault's ambient service. On macOS: `launchctl bootout
+gui/<uid>/<label>` (failure ignored when the service is not loaded), then
+deletes the plist from `~/Library/LaunchAgents/`. On Linux: an
+**unconditional** `systemctl --user disable --now <unit>` — run even when the
+unit file is absent, covering the deleted-unit-but-still-running edge — then
+the unit file is removed and `daemon-reload` runs (see §"`dome install`"
+"Linux backend"). Idempotent on both platforms — when no plist/unit is
+present it still attempts the stop, reports "not installed", and exits 0. The
+serve log at `.dome/state/serve.log` is preserved; it is operator evidence,
+not service state.
 
-Non-macOS platforms get the same macOS-only refusal as `dome install`.
+Unsupported platforms get the same refusal as `dome install` (exit 1).
 
 `--json` emits `dome.uninstall/v1`: `{ schema, status:
-"uninstalled" | "not-installed" | "error", vault, label, plist, error? }`.
+"uninstalled" | "not-installed" | "error", vault, label, plist, error? }`;
+on Linux the payload additionally carries the unit path as `unit` (with
+`plist` mirroring it for established consumers).
 
-Exit codes: 0 on success or already-not-installed; 1 on non-macOS platform,
-undeterminable uid, or unexpected I/O failure.
+Exit codes: 0 on success or already-not-installed; 1 on an unsupported
+platform, undeterminable uid (macOS), or unexpected I/O failure.
 
 ### `dome restart [--vault <path>] [--json]`
 
-Restarts the vault's ambient launchd service: `launchctl bootout
-gui/<uid>/<label>` (failure ignored when the service is not loaded — a dead
+Restarts the vault's ambient service from the service definition already on
+disk. On macOS (launchd): `launchctl bootout gui/<uid>/<label>` (failure
+ignored when the service is not loaded — a dead
 service is exactly why an operator restarts), a **drain wait** (poll
 `launchctl print gui/<uid>/<label>` until the label leaves launchd, bounded
 at 15 s — `bootout` returns before a serve mid-agent-run actually exits, and
@@ -1859,33 +2008,43 @@ bootstrapping during the drain fails with `Bootstrap failed: 5`), then
 bootstrap. On drain timeout the bootstrap proceeds and its error surfaces
 honestly.
 
-The plist is deliberately **not re-rendered**. The service's
-`EnvironmentVariables` entries (`--env` / `--env-file` credentials such as
-`ANTHROPIC_API_KEY`) are remembered only inside the plist itself —
+On Linux (systemd `--user`): `systemctl --user restart <unit>` against the
+existing unit file — systemd owns the stop/start sequencing, so no
+launchd-style drain wait is needed. When no unit file is installed for the
+vault, exit 64 (EX_USAGE) with a pointer to `dome install`; a failed
+`restart` prints systemctl's stderr and exits 1.
+
+The plist/unit is deliberately **not re-rendered**. The service's
+environment entries (`--env` / `--env-file` credentials such as
+`ANTHROPIC_API_KEY`) are remembered only inside the plist/unit itself —
 re-rendering from scratch would silently drop them, which is the failure
 mode `dome install` re-runs already carry ("env entries are not remembered
 across re-installs"). Restart is therefore the safe "bounce the daemon"
 verb after a config edit, a wedged host, or an environment change applied
 via `launchctl setenv`; `dome install` remains the only path that rewrites
-the plist.
+the plist or unit.
 
-Refusals are clean and mutate nothing: when no plist is installed for the
-vault, exit 64 (EX_USAGE) with a pointer to `dome install`; non-macOS
-platforms and uid-less environments get the same exit-1 refusal shape as
-`dome install` / `dome uninstall`. A failed `bootstrap` leaves the plist in
-place, prints launchctl's stderr, and exits 1.
+Refusals are clean and mutate nothing: when no plist/unit is installed for
+the vault, exit 64 (EX_USAGE) with a pointer to `dome install`; unsupported
+platforms and uid-less macOS environments get the same exit-1 refusal shape
+as `dome install` / `dome uninstall`. A failed `bootstrap` / `restart` leaves
+the service definition in place, prints the service manager's stderr, and
+exits 1.
 
 `--json` emits `dome.restart/v1`: `{ schema, status: "restarted" | "error",
 vault, label, plist, error? }`.
 
 Testability matches install: `runRestart` accepts the same injected
-`ServiceDeps` (platform, uid, LaunchAgents dir, launchctl runner), so tests
-drive the bootout/bootstrap sequence against the recording fake without
-touching a real service manager.
+`ServiceDeps` (platform, uid, LaunchAgents dir, launchctl runner, plus the
+systemd dir and systemctl runner on Linux), so tests drive the
+bootout/bootstrap and restart sequences against recording fakes without
+touching a real service manager (`tests/cli/install.test.ts`,
+`tests/cli/install-systemd.test.ts`).
 
-Exit codes: 0 on a successful restart; 64 (EX_USAGE) when no plist is
-installed for the vault; 1 on non-macOS platform, undeterminable uid,
-`launchctl bootstrap` failure, or unexpected I/O failure.
+Exit codes: 0 on a successful restart; 64 (EX_USAGE) when no plist/unit is
+installed for the vault; 1 on an unsupported platform, undeterminable uid
+(macOS), `launchctl bootstrap` / `systemctl restart` failure, or unexpected
+I/O failure.
 
 ### `dome mcp [--vault <path>] [--bundles-root <path>]`
 
@@ -1930,7 +2089,9 @@ adapter per [[wiki/specs/http-surface]] and the first shipped form of the
 remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
 Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
-corresponding CLI verbs emit under `--json`.
+corresponding CLI verbs emit under `--json` — plus `GET /today`, the
+self-refreshing HTML cockpit page ([[wiki/specs/http-surface]] §"The cockpit
+page (`GET /today`)").
 
 Boundary discipline:
 

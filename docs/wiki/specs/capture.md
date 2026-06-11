@@ -99,15 +99,40 @@ capability grant on `dome.agent.ingest` is the write boundary either way.
 The wedge phone path ([[wedge]] §"North-star daily experience") is: mumble a
 thought into the phone at 11pm; it lands in `inbox/raw/`; overnight it's
 ingested and the todo shows up in the morning. **What ships** is everything
-from the committed file onward: `dome capture`, the ambient daemon
-(`dome install`), ingest, and stale-capture diagnostics. **What you
-assemble** is the hop from phone to a committed file. There is no shipped
-transcription and no file-watcher on the inbox — the git commit is the
-trigger boundary, deliberately.
+from the dictated text onward: the HTTP capture route (`dome http`'s
+`POST /capture`, [[wiki/specs/http-surface]]), `dome capture`, the ambient
+daemon (`dome install`), ingest, and stale-capture diagnostics. **What you
+assemble** is one iOS Shortcut on the phone — and `dome recipe ios` prints
+the exact build steps. There is no shipped transcription and no file-watcher
+on the inbox — the git commit is the trigger boundary, deliberately.
 
-Three workable assemblies, in increasing self-sufficiency:
+### A. iOS Shortcut over HTTP (recommended)
 
-### A. iOS Shortcut over SSH (recommended)
+The shipped path: an iOS Shortcut with **Dictate Text** + **Get Contents of
+URL** posting `{text, captureId}` to the vault machine's `dome http` surface
+(bearer token in a header, Tailscale-class network — see
+[[wiki/specs/http-surface]] §"Trust domain"). Dictation happens on-device;
+the route writes the raw-capture file with `source: http` frontmatter and
+commits it, exactly like `dome capture`. A Shortcut-generated UUID bound to
+`captureId` makes flaky-network retries idempotent (§"Retry semantics",
+below) — the retry answers `status: "duplicate"` instead of filing the
+thought twice.
+
+```bash
+dome recipe ios --url http://<your-server>:3663
+```
+
+prints the full setup: prerequisites, the Shortcut actions step by step, a
+copyable `curl` verification command, and the `GET /today` cockpit URL for
+the home screen. The recipe is normative in [[wiki/specs/cli]]
+§"`dome recipe`"; it lives next to the CLI so it cannot drift from the HTTP
+surface. No SSH, no Mac-side shell — and the Action button / Apple Watch can
+trigger the Shortcut directly.
+
+The assemblies below remain workable fallbacks for vaults without the HTTP
+surface, in increasing self-sufficiency:
+
+### B. iOS Shortcut over SSH
 
 An iOS Shortcut with two actions: **Dictate text** (or "Ask for input"),
 then **Run script over SSH** against the machine that holds the vault:
@@ -130,7 +155,7 @@ returns; the installed daemon ([[wiki/specs/cli]] §"`dome install`") adopts
 it on the next poll. Requires: the Mac reachable over SSH (Tailscale makes
 this painless), `dome` on the PATH of the SSH login shell.
 
-### B. Synced folder + `dome capture --file`
+### C. Synced folder + `dome capture --file`
 
 When SSH isn't available at capture time: save the dictated/transcribed text
 into a folder that syncs to the vault machine (iCloud Drive, Syncthing,
@@ -149,7 +174,7 @@ sweep (a cron/launchd job that runs `dome capture --file` over new files in
 the staging folder) is user-assembled today; a shipped inbox file-watcher is
 an explicit non-goal for Phase 3 (see Follow-ups).
 
-### C. Direct git from the phone
+### D. Direct git from the phone
 
 Apps like Working Copy (iOS) can commit and push to the vault repository
 directly. Write the file under `inbox/raw/` following the raw-capture shape
@@ -166,7 +191,7 @@ Mac over a synced audio folder, feeding `dome capture --file`. Dome
 deliberately has no audio surface — by the time content reaches the engine it
 is markdown in a commit, like everything else.
 
-## The remote-capture seam (spec'd; not shipped)
+## The remote-capture seam
 
 The recipes above all end the same way: a properly-shaped file committed on
 the vault branch. This section names that contract as a seam, so the first
@@ -225,7 +250,7 @@ carries `POST /capture` alongside the read routes — see
 ## Out of scope (follow-ups, not Phase 3)
 
 - **Inbox file-watcher** — a daemon-side watcher that auto-commits files
-  dropped into `inbox/raw/` (would dissolve the manual step in recipe B).
+  dropped into `inbox/raw/` (would dissolve the manual step in recipe C).
   Today the commit boundary is the contract.
 - **Auto-updating sources** — when a captured source is a living document
   (e.g. an article that changes upstream), detect the update and re-ingest /

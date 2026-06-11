@@ -266,11 +266,12 @@ function formatContentSummary(s: StatusSnapshot): string {
 }
 
 /**
- * The launchd service line, derived through install's probe helper with the
- * injected deps. `not-installed` and `unsupported` are informational only;
- * `notLoaded` (plist present, `launchctl print` says the service is gone)
- * is the attention-worthy state — a KeepAlive agent that is not loaded
- * means the ambient compiler silently stopped.
+ * The ambient-service line (launchd/systemd), derived through install's
+ * probe helper with the injected deps. `not-installed` and `unsupported`
+ * are informational only; `notLoaded` (service file present, the live
+ * probe says the service is gone) is the attention-worthy state — a
+ * keep-alive service that is not loaded means the ambient compiler
+ * silently stopped.
  */
 function formatDiagnosticTopLine(summary: DiagnosticSummary): string {
   return summary.groups

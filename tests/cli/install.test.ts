@@ -369,18 +369,18 @@ describe("runInstall", () => {
     expect(payload.replaced).toBe(false);
   });
 
-  test("non-macOS platforms refuse with the service-manager message and touch nothing", async () => {
+  test("unsupported platforms refuse with the service-manager message and touch nothing", async () => {
     const vault = tempDir("dome-install-vault-");
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
 
     const code = await runInstall(
       { vault },
-      depsFor(agents, launchctl.runner, { platform: "linux" }),
+      depsFor(agents, launchctl.runner, { platform: "win32" }),
     );
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain(
-      "launchd service install is macOS-only; run `dome serve` under your service manager",
+      "service install is supported on macOS (launchd) and Linux (systemd --user)",
     );
     expect(launchctl.calls).toEqual([]);
     expect(existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)))
@@ -467,17 +467,19 @@ describe("runUninstall", () => {
     ]);
   });
 
-  test("non-macOS platforms refuse with the macOS-only message", async () => {
+  test("unsupported platforms refuse with the service-manager message", async () => {
     const vault = tempDir("dome-install-vault-");
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
 
     const code = await runUninstall(
       { vault },
-      depsFor(agents, launchctl.runner, { platform: "linux" }),
+      depsFor(agents, launchctl.runner, { platform: "win32" }),
     );
     expect(code).toBe(1);
-    expect(errors.join("\n")).toContain("macOS-only");
+    expect(errors.join("\n")).toContain(
+      "service uninstall is supported on macOS (launchd) and Linux (systemd --user)",
+    );
     expect(launchctl.calls).toEqual([]);
   });
 });
@@ -583,18 +585,18 @@ describe("runRestart", () => {
     expect(launchctl.calls).toEqual([]);
   });
 
-  test("non-macOS platforms refuse with the macOS-only message", async () => {
+  test("unsupported platforms refuse with the service-manager message", async () => {
     const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const launchctl = fakeLaunchctl();
 
     const code = await runRestart(
       { vault },
-      depsFor(agents, launchctl.runner, { platform: "linux" }),
+      depsFor(agents, launchctl.runner, { platform: "win32" }),
     );
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain(
-      "launchd service restart is macOS-only; run `dome serve` under your service manager",
+      "service restart is supported on macOS (launchd) and Linux (systemd --user)",
     );
     expect(launchctl.calls).toEqual([]);
   });

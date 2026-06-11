@@ -1,0 +1,143 @@
+// `dome today` — CLI wrapper over the dome.daily.today view. Hermetic:
+// real temp vault, real sync, captured console (pattern from tests/http).
+
+import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { runInit } from "../../../src/cli/commands/init";
+import { runSync } from "../../../src/cli/commands/sync";
+import { runToday } from "../../../src/cli/commands/today";
+import { add, commit } from "../../../src/git";
+
+let logs: string[] = [];
+let errors: string[] = [];
+const origLog = console.log;
+const origErr = console.error;
+
+beforeEach(() => {
+  logs = [];
+  errors = [];
+  console.log = (...p: unknown[]) => { logs.push(p.map(String).join(" ")); };
+  console.error = (...p: unknown[]) => { errors.push(p.map(String).join(" ")); };
+});
+afterEach(() => {
+  console.log = origLog;
+  console.error = origErr;
+});
+
+function localDateString(date: Date = new Date()): string {
+  const yyyy = String(date.getFullYear()).padStart(4, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+let vault: string | null = null;
+
+async function fixtureVault(): Promise<string> {
+  if (vault !== null) return vault;
+  vault = mkdtempSync(join(tmpdir(), "dome-today-vault-"));
+  expect(await runInit({ path: vault })).toBe(0);
+  const TODAY = localDateString();
+  await mkdir(join(vault, "wiki", "dailies"), { recursive: true });
+  await writeFile(
+    join(vault, "wiki", "dailies", `${TODAY}.md`),
+    `# ${TODAY}\n\n## Tasks\n\n- [ ] review the cockpit plan\n`,
+    "utf8",
+  );
+  await add(vault, `wiki/dailies/${TODAY}.md`);
+  await commit({ path: vault, message: "seed daily" });
+  expect(await runSync({ vault, quiet: true })).toBe(0);
+  return vault;
+}
+
+afterAll(async () => {
+  if (vault !== null) await rm(vault, { recursive: true, force: true });
+});
+
+describe("dome today", () => {
+  test("renders the open-task surface", async () => {
+    const v = await fixtureVault();
+    logs = [];
+    expect(await runToday({ vault: v })).toBe(0);
+    const out = logs.join("\n");
+    expect(out).toContain("review the cockpit plan");
+  }, 120_000);
+
+  test("--json emits the dome.daily.today/v1 document", async () => {
+    const v = await fixtureVault();
+    logs = [];
+    expect(await runToday({ vault: v, json: true })).toBe(0);
+    const doc = JSON.parse(logs.join("\n"));
+    expect(doc.schema).toBe("dome.daily.today/v1");
+    expect(Array.isArray(doc.openTasks)).toBe(true);
+  }, 120_000);
+
+  test("--watch with --json is a usage error", async () => {
+    expect(await runToday({ vault: await fixtureVault(), json: true, watch: true })).toBe(64);
+  }, 120_000);
+});
+
+describe("dome today --watch", () => {
+  test("renders, then skips re-print when output is unchanged", async () => {
+    const v = await fixtureVault();
+    logs = [];
+    let clears = 0;
+    const sleeps: number[] = [];
+    const code = await runToday(
+      { vault: v, watch: true, interval: 1 },
+      {
+        iterations: 3,
+        sleep: async (ms) => { sleeps.push(ms); },
+        clearScreen: () => { clears += 1; },
+      },
+    );
+    expect(code).toBe(0);
+    // Three renders, identical output → exactly one clear+print cycle.
+    expect(clears).toBe(1);
+    expect(sleeps).toEqual([1000, 1000]);
+    expect(logs.join("\n")).toContain("review the cockpit plan");
+  }, 120_000);
+
+  test("re-clears and re-prints when output changes between iterations", async () => {
+    logs = [];
+    let clears = 0;
+    const outputs = ["first render", "second render", "second render"];
+    let i = 0;
+    const code = await runToday(
+      { watch: true, interval: 1 },
+      {
+        iterations: 3,
+        sleep: async () => {},
+        clearScreen: () => { clears += 1; },
+        render: async () => ({ kind: "ok", text: outputs[i++] ?? "" }),
+      },
+    );
+    expect(code).toBe(0);
+    // First and second renders differ → two clear+print cycles; the
+    // identical third render is skipped.
+    expect(clears).toBe(2);
+    const out = logs.join("\n");
+    expect(out).toContain("first render");
+    expect(out).toContain("second render");
+  }, 120_000);
+
+  test("an error mid-watch returns the render's exit code", async () => {
+    const notAVault = mkdtempSync(join(tmpdir(), "dome-today-notavault-"));
+    try {
+      const onceCode = await runToday({ vault: notAVault });
+      expect(onceCode).not.toBe(0);
+      logs = [];
+      const watchCode = await runToday(
+        { vault: notAVault, watch: true, interval: 1 },
+        { iterations: 1, sleep: async () => {}, clearScreen: () => {} },
+      );
+      expect(watchCode).toBe(onceCode);
+    } finally {
+      await rm(notAVault, { recursive: true, force: true });
+    }
+  }, 120_000);
+});

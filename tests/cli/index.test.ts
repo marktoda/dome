@@ -44,6 +44,8 @@ describe("runCli", () => {
         "check",
         "resolve",
         "query",
+        "today",
+        "recipe",
         "export-context",
         "serve",
         "install",
@@ -54,7 +56,6 @@ describe("runCli", () => {
     }
     for (
       const hiddenCommand of [
-        "today",
         "prep",
         "agenda",
         "inspect",

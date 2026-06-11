@@ -5361,7 +5361,8 @@ describe("runStatus", () => {
     await rm(agents, { recursive: true, force: true });
   });
 
-  test("service line: non-macOS platforms report unsupported", async () => {
+  test("service line: unsupported platforms report unsupported", async () => {
+    // win32, not linux: linux is now a supported service host (systemd --user).
     const f = await makeFixture();
     fixtures.push(f);
     const agents = mkdtempSync(join(tmpdir(), "dome-status-agents-"));
@@ -5370,7 +5371,7 @@ describe("runStatus", () => {
     expect(
       await runStatus(
         { vault: f.vaultPath, json: true },
-        statusServiceDeps({ agentsDir: agents, platform: "linux", calls }),
+        statusServiceDeps({ agentsDir: agents, platform: "win32", calls }),
       ),
     ).toBe(0);
     const parsed = statusJson();

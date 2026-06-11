@@ -49,17 +49,19 @@
 //                       processor health, diagnostics, questions, and runs.
 //   - serve_status:     whether a foreground `dome serve` heartbeat is running,
 //                       stale, or absent.
-//   - service_status:   launchd ambient-service state for the vault:
-//                       `loaded`, `installed` (plist present, service not
-//                       loaded), `not-installed`, or `unsupported`
-//                       (non-macOS). Probed via the injected ServiceDeps
-//                       (install's helpers); `launchctl print` runs only
-//                       when a plist is installed, so the common
+//   - service_status:   ambient-service state (launchd/systemd) for the vault:
+//                       `loaded`, `installed` (service file present, service
+//                       not loaded), `not-installed`, or `unsupported`
+//                       (no launchd/systemd). Probed via the injected
+//                       ServiceDeps (install's helpers); the live probe
+//                       (`launchctl print` / `systemctl is-active`) runs only
+//                       when a service file is installed, so the common
 //                       never-installed vault costs one existsSync.
 //                       "not installed" is informational, never attention;
 //                       installed-but-not-loaded routes `service_not_loaded`
 //                       attention to `dome restart`.
-//   - service_label:    the launchd label, or null on unsupported platforms.
+//   - service_label:    the service label (launchd label / systemd unit
+//                       name), or null on unsupported platforms.
 //   - model_provider_configured:
 //                       whether .dome/config.yaml carries a command model
 //                       provider stanza.
@@ -270,7 +272,7 @@ export type RunStatusOptions = {
   readonly probe?: boolean | undefined;
 };
 
-/** The launchd ambient-service state rendered by `dome status`. */
+/** The ambient-service state (launchd/systemd) rendered by `dome status`. */
 type ServiceStatusValue = "loaded" | "installed" | "not-installed" | "unsupported";
 
 // ----- runStatus ------------------------------------------------------------
@@ -539,9 +541,9 @@ export async function buildStatusSnapshot(
 }
 
 /**
- * Execute `dome status`. Returns the exit code. `deps` injects the launchd
- * probe boundaries (platform, LaunchAgents dir, launchctl runner) exactly
- * like `runInstall`; tests pass the recording fake.
+ * Execute `dome status`. Returns the exit code. `deps` injects the
+ * service-probe boundaries (platform, service dirs, launchctl/systemctl
+ * runners) exactly like `runInstall`; tests pass the recording fake.
  */
 async function collectServiceStatus(
   vaultPath: string,

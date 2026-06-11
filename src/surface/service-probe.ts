@@ -1,11 +1,13 @@
-// surface/service-probe: launchd service identity + read-only state probe.
+// surface/service-probe: service identity + read-only state probe for the
+// per-vault `dome serve` service (launchd on macOS, systemd --user on Linux).
 //
-// The per-vault service slug/label and the read-only `probeServiceState`
-// are shared substance: `dome install --status`, the `dome status` service
-// line, and the MCP `status` tool all report the same service state. The
-// write-side service lifecycle (`dome install` / `uninstall` / `restart`,
-// plist rendering) stays in src/cli/commands/install.ts; it imports the
-// identity helpers and deps boundary from here.
+// The per-vault service slug/label/unit-name and the read-only
+// `probeServiceState` are shared substance: `dome install --status`, the
+// `dome status` service line, and the MCP `status` tool all report the same
+// service state. The write-side service lifecycle (`dome install` /
+// `uninstall` / `restart`, plist/unit rendering) stays in
+// src/cli/commands/install.ts (launchd) and install-systemd.ts (systemd);
+// both import the identity helpers and deps boundary from here.
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -42,6 +44,10 @@ export type ServiceDeps = {
   readonly uid?: number | undefined;
   readonly launchAgentsDir?: string | undefined;
   readonly launchctl?: LaunchctlRunner | undefined;
+  /** systemd --user runner (Linux); same result shape as launchctl. */
+  readonly systemctl?: LaunchctlRunner | undefined;
+  /** systemd user-unit directory (default ~/.config/systemd/user). */
+  readonly systemdUserDir?: string | undefined;
   readonly bunPath?: string | undefined;
   readonly domeBin?: string | undefined;
   /** Bounded wait for a booted-out service to leave launchd (test knob). */
@@ -53,6 +59,8 @@ export type ResolvedServiceDeps = {
   readonly uid: number | null;
   readonly launchAgentsDir: string;
   readonly launchctl: LaunchctlRunner;
+  readonly systemctl: LaunchctlRunner;
+  readonly systemdUserDir: string;
   readonly bunPath: string;
   readonly domeBin: string;
   readonly drainTimeoutMs: number;
@@ -66,6 +74,13 @@ export function resolveServiceDeps(deps: ServiceDeps): ResolvedServiceDeps {
     launchAgentsDir: deps.launchAgentsDir ??
       join(homedir(), "Library", "LaunchAgents"),
     launchctl: deps.launchctl ?? spawnLaunchctl,
+    systemctl: deps.systemctl ?? spawnSystemctl,
+    systemdUserDir: deps.systemdUserDir ??
+      join(
+        process.env["XDG_CONFIG_HOME"] ?? join(homedir(), ".config"),
+        "systemd",
+        "user",
+      ),
     bunPath: deps.bunPath ?? process.execPath,
     domeBin: deps.domeBin ?? DOME_BIN,
     drainTimeoutMs: deps.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
@@ -83,6 +98,22 @@ async function spawnLaunchctl(
   args: ReadonlyArray<string>,
 ): Promise<LaunchctlResult> {
   const proc = Bun.spawn(["launchctl", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+}
+
+/** Real systemctl boundary: `systemctl --user <args>` via Bun.spawn. */
+async function spawnSystemctl(
+  args: ReadonlyArray<string>,
+): Promise<LaunchctlResult> {
+  const proc = Bun.spawn(["systemctl", "--user", ...args], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -117,16 +148,22 @@ export function serviceLabelForVault(vaultPath: string): string {
   return `${SERVICE_LABEL_PREFIX}${vaultServiceSlug(vaultPath)}`;
 }
 
+/** systemd user-unit name for a vault's ambient `dome serve` service. */
+export function serviceUnitNameForVault(vaultPath: string): string {
+  return `dome-serve-${vaultServiceSlug(vaultPath)}.service`;
+}
+
 // ----- probeServiceState ----------------------------------------------------
 
 /**
- * Read-only launchd service state for a vault, shared by `dome install
- * --status` and the `dome status` service line. `loaded` is probed via
- * `launchctl print` only when the plist is installed — `dome status` is the
- * cheap session pulse and must not spawn `launchctl` on every invocation of
- * a vault that never installed the service. (The deleted-plist-but-loaded
- * edge therefore reads as `not-installed` here; `dome uninstall` still
- * boots that edge out.)
+ * Read-only service state for a vault (launchd on macOS, systemd --user on
+ * Linux), shared by `dome install --status` and the `dome status` service
+ * line. `loaded` is probed (`launchctl print` / `systemctl is-active`) only
+ * when the plist/unit file is installed — `dome status` is the cheap session
+ * pulse and must not spawn the service manager on every invocation of a
+ * vault that never installed the service. (The deleted-file-but-loaded edge
+ * therefore reads as `not-installed` here; `dome uninstall` still stops that
+ * edge on both platforms.)
  */
 export type ServiceState =
   | { readonly supported: false }
@@ -144,6 +181,28 @@ export async function probeServiceState(
   deps: ServiceDeps = {},
 ): Promise<ServiceState> {
   const d = resolveServiceDeps(deps);
+
+  if (d.platform === "linux") {
+    // The `plist` field carries the unit path on linux — the field name is
+    // the established ServiceState shape consumed by `dome status` and the
+    // MCP status tool; renaming it would ripple through every consumer.
+    const label = serviceUnitNameForVault(resolve(vaultPath));
+    const unitPath = join(d.systemdUserDir, label);
+    const installed = existsSync(unitPath);
+    let loaded: boolean | null = null;
+    if (installed) {
+      const probe = await d.systemctl(["is-active", label]);
+      loaded = probe.exitCode === 0;
+    }
+    return Object.freeze({
+      supported: true,
+      label,
+      plist: unitPath,
+      installed,
+      loaded,
+    });
+  }
+
   if (d.platform !== "darwin") return Object.freeze({ supported: false });
 
   const label = serviceLabelForVault(resolve(vaultPath));
