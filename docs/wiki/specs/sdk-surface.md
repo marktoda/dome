@@ -25,11 +25,12 @@ composable-construction helpers.
 **`openVault` is the standard entry point.** Every surface consumes the
 wrapper: the CLI's view commands (`query`, `export-context`, `lint`,
 `run`, the daily wrappers — all via `src/surface/view.ts`),
-`resolve`/`answer`, `rebuild`, the MCP adapter, and future HTTP/voice
-shells. Direct `openVaultRuntime` use is reserved for the daemon and the
-operator internals that report on runtime guts the wrapper intentionally
-hides: `serve`, `sync` (tick events + health), the `status`/`check`
-collectors, `doctor`, `inspect`. A config-less vault (a `.dome/` directory
+`resolve`/`answer`, `rebuild`, `sync` (progress callbacks +
+`operationalSummary` cover what the verb needs), the MCP adapter, and the
+HTTP surface. Direct `openVaultRuntime` use is reserved for the daemon and
+the operator internals that report on runtime guts the wrapper
+intentionally hides: `serve`, the `status`/`check` collectors, `doctor`,
+`inspect`. A config-less vault (a `.dome/` directory
 without `config.yaml`) opens in the runtime's documented compat mode; a
 directory without `.dome/` or outside a git repository fails typed
 (`not-a-vault`).
@@ -71,6 +72,7 @@ type Vault = {
   sync(opts?: VaultSyncOptions): Promise<CompilerHostTickResult>;
   rebuild(): Promise<RebuildOutcome>;
   getAdoptionStatus(): Promise<AdoptionStatus>;
+  operationalSummary(): Promise<OperationalSummary>;
 
   // Decisions — durable questions and answers
   listQuestions(filter?: ListQuestionsFilter): Promise<ReadonlyArray<QuestionRecord>>;
@@ -96,7 +98,14 @@ Method semantics:
   exactly one structured view. This is the generic surface behind `dome
   query` / `dome run <name>` / the MCP view tools.
 - `sync` runs one compiler-host tick (`runCompilerHostTick`) — the same
-  semantic boundary `dome sync` and `dome serve` share.
+  semantic boundary `dome sync` and `dome serve` share. `VaultSyncOptions`
+  carries optional progress callbacks (`onEvent` for adoption events,
+  `onGardenProcessorStart` for garden dispatch) so any surface can stream
+  tick progress.
+- `operationalSummary` returns the attention counters over the
+  operational stores (runs, diagnostics, questions, outbox, quarantine) —
+  the runtime-side sibling of `getAdoptionStatus`'s git cursor, and what a
+  polling surface reads to answer "does anything need me?".
 - `rebuild` wipes and rebuilds `projection.db` from the adopted commit
   (`rebuildProjection` under the projection write lock) — the same path as
   `dome rebuild`.
@@ -270,7 +279,7 @@ processors:
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5
+        maxDailyCostUsd: 15
       - kind: question.ask
     execution:
       class: llm

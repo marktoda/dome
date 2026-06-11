@@ -1235,7 +1235,7 @@ describe("runInspect", () => {
     expect(ingest?.grant_details).toContainEqual({
       kind: "model.invoke",
       scope: "maxDailyCostUsd",
-      values: ["5"],
+      values: ["15"],
     });
 
     const markdownRepair = processors.find(

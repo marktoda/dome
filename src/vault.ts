@@ -56,6 +56,7 @@ import {
 } from "./engine/core/adoption-status";
 import {
   runCompilerHostTick,
+  type AdoptEvent,
   type CompilerHostTickResult,
 } from "./engine/host/compiler-host";
 import { rebuildProjection } from "./engine/host/projection-rebuild";
@@ -70,6 +71,14 @@ import {
   type VaultRuntime,
 } from "./engine/host/vault-runtime";
 import { runViewCommandWithRuntime } from "./engine/host/view-command";
+import type { GardenProcessorStart } from "./engine/core/runner-contract";
+import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "./engine/host/health";
+import {
+  countRuns,
+  latestActiveProblemRuns,
+  orphanRuns as ledgerOrphanRuns,
+} from "./ledger/runs";
+import { queryOutbox } from "./outbox/dispatch";
 import { resolveBundleRoots } from "./extensions/bundle-roots";
 import { findGitRoot, readBlob } from "./git";
 import { queryDiagnostics } from "./projections/diagnostics";
@@ -173,6 +182,30 @@ export type ListQuestionsFilter = {
 
 export type VaultSyncOptions = {
   readonly signal?: AbortSignal | undefined;
+  /** Adoption-progress events, streamed as the tick runs. */
+  readonly onEvent?: ((event: AdoptEvent) => void) | undefined;
+  /** Fired as each garden processor is dispatched (progress surface). */
+  readonly onGardenProcessorStart?:
+    | ((info: GardenProcessorStart) => void)
+    | undefined;
+};
+
+/**
+ * Attention counters over the operational stores — the sibling of
+ * `getAdoptionStatus()` (git cursor) for the runtime side: is anything
+ * failed, stuck, quarantined, or waiting on a decision?
+ */
+export type OperationalSummary = {
+  readonly pendingRuns: number;
+  readonly orphanRuns: number;
+  readonly failedRuns: number;
+  readonly contentDiagnostics: number;
+  readonly unlocatedDiagnostics: number;
+  readonly attentionDiagnostics: number;
+  readonly openQuestions: number;
+  readonly outboxPending: number;
+  readonly outboxFailed: number;
+  readonly quarantined: number;
 };
 
 export type RebuildOutcome =
@@ -212,6 +245,7 @@ export type Vault = {
   readonly sync: (opts?: VaultSyncOptions) => Promise<CompilerHostTickResult>;
   readonly rebuild: () => Promise<RebuildOutcome>;
   readonly getAdoptionStatus: () => Promise<AdoptionStatus>;
+  readonly operationalSummary: () => Promise<OperationalSummary>;
 
   // Decisions — durable questions and answers
   readonly listQuestions: (
@@ -286,8 +320,13 @@ function bindVault(runtime: VaultRuntime): Vault {
       runCompilerHostTick({
         runtime,
         ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+        ...(opts?.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+        ...(opts?.onGardenProcessorStart !== undefined
+          ? { onGardenProcessorStart: opts.onGardenProcessorStart }
+          : {}),
       }),
     rebuild: () => rebuildVaultProjection(runtime),
+    operationalSummary: async () => collectOperationalSummary(runtime),
     getAdoptionStatus: () => collectAdoptionStatus(runtime.path),
 
     listQuestions: async (filter?: ListQuestionsFilter) =>
@@ -420,6 +459,37 @@ function deriveStructuredView(
   });
 }
 
+function collectOperationalSummary(runtime: VaultRuntime): OperationalSummary {
+  const diagnostics = queryDiagnostics(runtime.projectionDb);
+  // Source-backed = attributable to vault content; severity above info =
+  // attention. Mirrors the operator surfaces' classification.
+  const contentDiagnostics = diagnostics.filter(
+    (diagnostic) => diagnostic.sourceRefs.length > 0,
+  );
+  return Object.freeze({
+    pendingRuns:
+      countRuns(runtime.ledgerDb, { status: "queued" }) +
+      countRuns(runtime.ledgerDb, { status: "running" }),
+    orphanRuns: ledgerOrphanRuns(
+      runtime.ledgerDb,
+      DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+      new Date(),
+    ).length,
+    failedRuns: latestActiveProblemRuns(runtime.ledgerDb).length,
+    contentDiagnostics: contentDiagnostics.length,
+    unlocatedDiagnostics: diagnostics.length - contentDiagnostics.length,
+    attentionDiagnostics: contentDiagnostics.filter(
+      (diagnostic) => diagnostic.severity !== "info",
+    ).length,
+    openQuestions: queryQuestionRecords(runtime.projectionDb, {
+      resolved: false,
+    }).length,
+    outboxPending: queryOutbox(runtime.outboxDb, { status: "pending" }).length,
+    outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,
+    quarantined: runtime.processorRuntime.executionState.quarantines().length,
+  });
+}
+
 async function rebuildVaultProjection(
   runtime: VaultRuntime,
 ): Promise<RebuildOutcome> {
@@ -486,6 +556,8 @@ async function resolveQuestion(
 // ----- Re-exports for consumers ----------------------------------------------
 
 export type { AdoptionStatus } from "./engine/core/adoption-status";
+export type { AdoptEvent } from "./engine/host/compiler-host";
+export type { GardenProcessorStart } from "./engine/core/runner-contract";
 export type { CompilerHostTickResult } from "./engine/host/compiler-host";
 export type { AnswerHandlerDispatchResult } from "./engine/host/question-answering";
 export type { QuestionRecord } from "./projections/questions";
