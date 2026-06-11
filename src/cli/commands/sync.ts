@@ -36,39 +36,21 @@
 
 import { basename } from "node:path";
 
-import { openVaultRuntime, type VaultRuntime } from "../../engine/host/vault-runtime";
+import { openVault, type OpenVaultError, type Vault } from "../../vault";
 import type { AdoptionResult } from "../../core/proposal";
-import {
-  runCompilerHostTick,
-  type CompilerHostTickResult,
-} from "../../engine/host/compiler-host";
+import type { CompilerHostTickResult } from "../../engine/host/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden/garden";
 import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import {
-  resolveBundleRoots,
   formatFilteredAdoptEvent,
   printHostFollowupLines,
 } from "./sync-shared";
 import { formatJson } from "../../surface/format";
 import {
-  countLatestActiveProblemRuns,
-  countRuns,
-  orphanRuns as ledgerOrphanRuns,
-  type RunStatus,
-} from "../../ledger/runs";
-import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../../engine/host/health";
-import { queryOutbox } from "../../outbox/dispatch";
-import { queryDiagnostics } from "../../projections/diagnostics";
-import { queryQuestions } from "../../projections/questions";
-import {
   nextActionsForSync,
   type CliNextAction,
 } from "../../surface/next-actions";
 import { formatSeverity } from "../human-output";
-import {
-  countAttentionDiagnostics,
-  isSourceBackedDiagnostic,
-} from "../../surface/diagnostic-summary";
 import {
   footer,
   headline,
@@ -173,36 +155,32 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   // ----- 1. Parse flags -----------------------------------------------------
   const vaultPath = resolveVaultPath(options.vault);
 
-  const bundleRoots = resolveBundleRoots({
-    vaultPath,
-    bundlesRoot: options.bundlesRoot,
-  });
-
   const jsonMode = options.json === true;
   const verbose = options.verbose === true;
   const quiet = options.quiet === true && !jsonMode;
 
-  // ----- 2. Open the runtime ------------------------------------------------
-  const runtimeResult = await openVaultRuntime({ vaultPath, ...bundleRoots });
-  if (!runtimeResult.ok) {
-    const msg = `dome sync: openVaultRuntime failed (${runtimeResult.error.kind}). Run \`dome init\` to initialize the vault.`;
+  // ----- 2. Open the vault ----------------------------------------------------
+  const opened = await openVault({
+    path: vaultPath,
+    bundlesRoot: options.bundlesRoot,
+  });
+  if (!opened.ok) {
+    const errorKind = openErrorKind(opened.error);
+    const msg = opened.error.kind === "not-a-vault"
+      ? `dome sync: ${opened.error.message}`
+      : `dome sync: openVaultRuntime failed (${errorKind}). Run \`dome init\` to initialize the vault.`;
     if (jsonMode) {
-      emitErrorJson({
-        branch: null,
-        error: runtimeResult.error.kind,
-        message: msg,
-      });
+      emitErrorJson({ branch: null, error: errorKind, message: msg });
     } else {
       console.error(msg);
     }
     return 1;
   }
-  const runtime = runtimeResult.value;
+  const vault = opened.value;
 
   // ----- 3. Run one compiler-host tick --------------------------------------
   try {
-    const tick = await runCompilerHostTick({
-      runtime,
+    const tick = await vault.sync({
       ...(verbose && !quiet && !jsonMode
         ? {
             onEvent: (e) => {
@@ -228,7 +206,7 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
           }
         : {}),
     });
-    const result = tickResultJson(tick, collectSyncHealth(runtime));
+    const result = tickResultJson(tick, await collectSyncHealth(vault));
     if (jsonMode) {
       console.log(formatJson(result));
     } else {
@@ -236,8 +214,12 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
     }
     return exitCodeForTick(tick);
   } finally {
-    await runtime.close();
+    await vault.close();
   }
+}
+
+function openErrorKind(error: OpenVaultError): string {
+  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
 }
 
 // ----- Internals ------------------------------------------------------------
@@ -641,37 +623,21 @@ function emptyHealthSummary(): SyncHealthSummary {
   });
 }
 
-function collectSyncHealth(runtime: VaultRuntime): SyncHealthSummary {
-  const diagnostics = queryDiagnostics(runtime.projectionDb);
-  const contentDiagnostics = diagnostics.filter(isSourceBackedDiagnostic);
+async function collectSyncHealth(vault: Vault): Promise<SyncHealthSummary> {
+  const summary = await vault.operationalSummary();
   return Object.freeze({
-    pendingRuns: countRunsByStatus(runtime, ["queued", "running"]),
-    orphanRuns: ledgerOrphanRuns(
-      runtime.ledgerDb,
-      DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
-      new Date(),
-    ).length,
-    failedRuns: countLatestActiveProblemRuns(runtime.ledgerDb),
-    diagnostics: contentDiagnostics.length,
-    contentDiagnostics: contentDiagnostics.length,
-    unlocatedDiagnostics: diagnostics.length - contentDiagnostics.length,
-    attentionDiagnostics: countAttentionDiagnostics(contentDiagnostics),
-    questions: queryQuestions(runtime.projectionDb, { resolved: false }).length,
-    outboxPending: queryOutbox(runtime.outboxDb, { status: "pending" }).length,
-    outboxFailed: queryOutbox(runtime.outboxDb, { status: "failed" }).length,
-    quarantined: runtime.processorRuntime.executionState.quarantines().length,
+    pendingRuns: summary.pendingRuns,
+    orphanRuns: summary.orphanRuns,
+    failedRuns: summary.failedRuns,
+    diagnostics: summary.contentDiagnostics,
+    contentDiagnostics: summary.contentDiagnostics,
+    unlocatedDiagnostics: summary.unlocatedDiagnostics,
+    attentionDiagnostics: summary.attentionDiagnostics,
+    questions: summary.openQuestions,
+    outboxPending: summary.outboxPending,
+    outboxFailed: summary.outboxFailed,
+    quarantined: summary.quarantined,
   });
-}
-
-function countRunsByStatus(
-  runtime: VaultRuntime,
-  statuses: ReadonlyArray<RunStatus>,
-): number {
-  let total = 0;
-  for (const status of statuses) {
-    total += countRuns(runtime.ledgerDb, { status });
-  }
-  return total;
 }
 
 /**
