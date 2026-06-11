@@ -105,18 +105,56 @@ async function tryAcquireOnce(opts: {
   const first = await writeLockFile(opts.lockPath, payload);
   if (first) return Object.freeze({ kind: "acquired" as const });
 
-  const holder = await readLockHolder(opts.lockPath);
-  if (holder === null || isDefinitelyStale(holder)) {
-    await unlinkIfExists(opts.lockPath);
-    const second = await writeLockFile(opts.lockPath, payload);
-    if (second) return Object.freeze({ kind: "acquired" as const });
+  const judged = await readLockFile(opts.lockPath);
+  if (judged === null || isDefinitelyStale(judged)) {
+    const broke = await breakStaleLock(opts.lockPath, judged);
+    const second = broke && (await writeLockFile(opts.lockPath, payload));
+    if (second) {
+      // Ownership verify: between our create and now, another contender
+      // that judged the SAME prior holder stale may have unlinked our
+      // fresh lock and written its own. Only the contender whose token
+      // survives in the file actually holds the lock.
+      const verified = await readLockFile(opts.lockPath);
+      if (verified?.token === opts.token) {
+        return Object.freeze({ kind: "acquired" as const });
+      }
+    }
   }
 
   return Object.freeze({
     kind: "busy" as const,
     lockPath: opts.lockPath,
-    holder,
+    holder: await readLockHolder(opts.lockPath),
   });
+}
+
+/**
+ * Compare-then-unlink for a lock previously judged stale. POSIX has no
+ * atomic compare-and-delete for plain files, so the takeover protocol
+ * narrows the race twice: (1) here — re-read immediately before unlinking
+ * and abort unless the file still carries the judged-stale content, so a
+ * fresh lock written by a faster contender is never unlinked; (2) in the
+ * caller — verify token ownership after the create. Returns true when the
+ * path is clear for a create attempt.
+ */
+async function breakStaleLock(
+  lockPath: string,
+  judged: LockFile | null,
+): Promise<boolean> {
+  const current = await readLockFile(lockPath);
+  // Released (or already broken) since we looked: clear to attempt create.
+  if (current === null) return true;
+  if (
+    judged === null ||
+    current.token !== judged.token ||
+    current.acquiredAt !== judged.acquiredAt
+  ) {
+    // The lock changed hands since we judged it stale; the new holder is
+    // presumed live. Do not unlink what we did not judge.
+    return false;
+  }
+  await unlinkIfExists(lockPath);
+  return true;
 }
 
 async function writeLockFile(

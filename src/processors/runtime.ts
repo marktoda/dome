@@ -286,6 +286,23 @@ export type BuildRuntimeOptions = {
   readonly modelStepProvider?: ModelStepProvider;
 };
 
+/**
+ * Thrown when a phase runner is invoked after `close()`. A closed runtime
+ * must fail loudly: the adoption runner returning `[]` would read to the
+ * adoption loop as "zero blockers, zero patches" — an instant fixed point
+ * that advances the adopted ref without the deterministic gate running.
+ * Per docs/wiki/specs/processor-execution.md §"Drain and shutdown",
+ * post-close dispatch is a caller lifecycle bug, never an empty success.
+ */
+export class ProcessorRuntimeClosedError extends Error {
+  constructor(phase: "adoption" | "garden" | "view") {
+    super(
+      `Processor runtime is closed; refusing to dispatch ${phase}-phase work after close().`,
+    );
+    this.name = "ProcessorRuntimeClosedError";
+  }
+}
+
 // ----- buildRuntime ---------------------------------------------------------
 
 /**
@@ -335,7 +352,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     input: Parameters<AdoptionPhaseRunner>[0],
   ): Promise<ReadonlyArray<RunnerResult>> {
     if (lifecycle.isClosing()) {
-      return Object.freeze([]);
+      throw new ProcessorRuntimeClosedError("adoption");
     }
     const adoptionProcessors = registry.byPhase("adoption");
     if (adoptionProcessors.length === 0) {
@@ -399,7 +416,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     input: Parameters<GardenPhaseRunner>[0],
   ): Promise<ReadonlyArray<RunnerResult>> {
     if (lifecycle.isClosing()) {
-      return Object.freeze([]);
+      throw new ProcessorRuntimeClosedError("garden");
     }
     const gardenProcessors = registry.byPhase("garden");
     if (gardenProcessors.length === 0) {
@@ -502,7 +519,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     input: Parameters<ViewPhaseRunner>[0],
   ): Promise<RunnerResult | null> {
     if (lifecycle.isClosing()) {
-      return null;
+      throw new ProcessorRuntimeClosedError("view");
     }
     const viewProcessors = registry.byPhase("view");
     if (viewProcessors.length === 0) {

@@ -473,8 +473,10 @@ export async function applyEffect(opts: {
     });
     return denied;
   }
-  const routed: Effect =
-    verdict.kind === "downgrade" ? verdict.rewrittenEffect : opts.effect;
+  const routed: Effect = demoteGardenBlockSeverity(
+    verdict.kind === "downgrade" ? verdict.rewrittenEffect : opts.effect,
+    opts.phase,
+  );
   const verdictDiagnostics: ReadonlyArray<DiagnosticEffect> =
     verdict.kind === "downgrade"
       ? Object.freeze([verdict.diagnostic])
@@ -567,6 +569,33 @@ function capabilityUseField(
   }
   const capabilityUse = capabilityUseForEffect(effect, outcome);
   return capabilityUse === null ? {} : { capabilityUse };
+}
+
+/**
+ * Garden runs after adoption, so a `block`-severity diagnostic cannot block
+ * anything — but a persisted `block` row would make every surface that
+ * treats `severity = "block"` as "adoption is blocked" report a blocker no
+ * sync can ever clear. Per docs/wiki/specs/effects.md §DiagnosticEffect and
+ * docs/wiki/matrices/effect-router-targets.md, garden `block` is recorded
+ * as `error`.
+ */
+function demoteGardenBlockSeverity(
+  effect: Effect,
+  phase: ProcessorPhase,
+): Effect {
+  if (
+    phase !== "garden" ||
+    effect.kind !== "diagnostic" ||
+    effect.severity !== "block"
+  ) {
+    return effect;
+  }
+  return diagnosticEffect({
+    severity: "error",
+    code: effect.code,
+    message: effect.message,
+    sourceRefs: effect.sourceRefs,
+  });
 }
 
 // ----- phase compatibility --------------------------------------------------

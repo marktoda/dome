@@ -7,6 +7,7 @@ import { describe, test, expect } from "bun:test";
 import {
   buildRuntime,
   dispatchOneProcessor,
+  ProcessorRuntimeClosedError,
   type AdoptionRunInput,
 } from "../../src/processors/runtime";
 import { buildRegistry } from "../../src/processors/registry";
@@ -1195,5 +1196,77 @@ describe("projection query view phase gating", () => {
 
     expect(ran).toBe(true);
     expect(sawProjection).toBeUndefined();
+  });
+});
+
+// A closed runtime must fail LOUDLY, never with an empty success. The
+// adoption runner's `[]` would read as "zero blockers, zero patches" to the
+// adoption loop — an instant fixed point that advances the adopted ref
+// without the deterministic gate ever running. Per
+// docs/wiki/specs/processor-execution.md §"Drain and shutdown", post-close
+// dispatch is a caller bug and must surface as a typed error.
+describe("runner dispatch after close()", () => {
+  function buildClosedRuntime() {
+    const adoption = makeFixtureProcessor({
+      id: "test.closed-adoption",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const garden = makeFixtureProcessor({
+      id: "test.closed-garden",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const view = makeFixtureProcessor({
+      id: "test.closed-view",
+      phase: "view",
+      triggers: [{ kind: "command", name: "closed-view-cmd" }],
+    });
+    return buildRuntimeFor([adoption, garden, view]);
+  }
+
+  test("adoptionRunner rejects instead of returning an empty fixed point", async () => {
+    const rt = buildClosedRuntime();
+    await rt.close();
+
+    expect(
+      rt.adoptionRunner({
+        vault: STUB_VAULT,
+        candidate: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        iteration: 1,
+        proposal,
+      }),
+    ).rejects.toThrow(ProcessorRuntimeClosedError);
+  });
+
+  test("gardenRunner rejects after close", async () => {
+    const rt = buildClosedRuntime();
+    await rt.close();
+
+    expect(
+      rt.gardenRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        changedPaths: ["wiki/a.md"],
+        signals: [SIGNAL_CREATED],
+        proposal,
+      }),
+    ).rejects.toThrow(ProcessorRuntimeClosedError);
+  });
+
+  test("viewRunner rejects after close instead of conflating with unknown command", async () => {
+    const rt = buildClosedRuntime();
+    await rt.close();
+
+    expect(
+      rt.viewRunner({
+        vault: STUB_VAULT,
+        adopted: CANDIDATE,
+        commandName: "closed-view-cmd",
+        commandArgs: {},
+      }),
+    ).rejects.toThrow(ProcessorRuntimeClosedError);
   });
 });
