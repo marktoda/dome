@@ -650,9 +650,14 @@ export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
 
 /**
  * Discriminated terminal-state dispatch over the running→terminal mark
- * functions. Adding a terminal status forces an update here AND in the
- * union — the lockstep the per-status call sites lacked. markSkipped is
- * intentionally excluded (queued→skipped is not a running-terminal).
+ * functions. markSkipped is intentionally excluded (queued→skipped is not
+ * a running-terminal).
+ *
+ * Compile-time exhaustiveness is enforced at the construction site: the
+ * value-returning `toTerminalMark` switch in runtime.ts produces TS2366 if
+ * a new status variant is added without a matching case. The `default` guard
+ * below is a defence-in-depth catch for any unconstructed variant that
+ * reaches the dispatch site without going through `toTerminalMark`.
  */
 export type TerminalMark =
   | {
@@ -698,6 +703,10 @@ export function markTerminal(
     case "cancelled":
       markCancelled(db, opts);
       return;
+    default: {
+      const _exhaustive: never = opts;
+      throw new Error(`unreachable terminal status: ${(_exhaustive as { status: string }).status}`);
+    }
   }
 }
 
