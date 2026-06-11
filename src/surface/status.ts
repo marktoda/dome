@@ -136,7 +136,6 @@ import {
   type VaultRuntime,
 } from "../engine/host/vault-runtime";
 import { resolveBundleRoots } from "../extensions/bundle-roots";
-import { FIRST_PARTY_MAINTENANCE_LOOPS } from "../extensions/maintenance-loops";
 import type { LedgerDb } from "../ledger/db";
 import {
   countLatestActiveProblemRuns,
@@ -431,7 +430,7 @@ export async function buildStatusSnapshot(
       runtime.registry.all().map((processor) => processor.id),
     );
     const maintenance_loops = collectMaintenanceLoopSummaries({
-      loops: FIRST_PARTY_MAINTENANCE_LOOPS,
+      loops: runtime.maintenanceLoops,
       activeProcessorIds,
       diagnosticsByProcessor: (processorId) =>
         queryDiagnostics(runtime.projectionDb, { processorId }),

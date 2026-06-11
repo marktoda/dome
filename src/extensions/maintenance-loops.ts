@@ -4,6 +4,17 @@
 // the only executable extension unit; this registry names the desired-state
 // objectives those processors maintain so status/check surfaces and tests can
 // reason about V1 automations coherently.
+//
+// Two sources compose at runtime (`composeMaintenanceLoops`):
+//   - This registry — the first-party loops. Deliberately core-shipped:
+//     most are CROSS-BUNDLE desired states (open-loop continuity spans
+//     dome.daily + dome.agent; question continuity spans four bundles), and
+//     system-level composition over the bundle set is the vault's job, not
+//     any one bundle's.
+//   - Manifest-declared loops — bundle-scoped objectives a (third-party)
+//     bundle ships itself ([[wiki/specs/processors]] §"Maintenance loops").
+
+import { err, ok, type Result } from "../types";
 
 export type MaintenanceLoopEvidence =
   | {
@@ -86,6 +97,66 @@ export type MaintenanceLoop = {
   readonly settlement: MaintenanceLoopSettlement;
   readonly risks: ReadonlyArray<string>;
 };
+
+/**
+ * Build a `MaintenanceLoop` from a manifest loop declaration
+ * ([[wiki/specs/processors]] §"Maintenance loops"). Declared loops always
+ * carry the standard five settlement checks — check composition is not a
+ * manifest surface.
+ */
+export function declaredMaintenanceLoop(declaration: {
+  readonly id: string;
+  readonly goal: string;
+  readonly evidence: ReadonlyArray<MaintenanceLoopEvidence>;
+  readonly processors: ReadonlyArray<string>;
+  readonly optionalProcessors?: ReadonlyArray<string> | undefined;
+  readonly questionScope?: "processors" | "all" | undefined;
+  readonly surfaces: ReadonlyArray<MaintenanceLoopSurface>;
+  readonly settlement: { readonly key: string; readonly noOpWhen: string };
+  readonly risks: ReadonlyArray<string>;
+}): MaintenanceLoop {
+  return freezeLoop({
+    id: declaration.id,
+    goal: declaration.goal,
+    evidence: declaration.evidence,
+    processors: declaration.processors,
+    ...(declaration.optionalProcessors !== undefined
+      ? { optionalProcessors: declaration.optionalProcessors }
+      : {}),
+    ...(declaration.questionScope !== undefined
+      ? { questionScope: declaration.questionScope }
+      : {}),
+    surfaces: declaration.surfaces,
+    settlement: {
+      key: declaration.settlement.key,
+      noOpWhen: declaration.settlement.noOpWhen,
+      checks: STANDARD_SETTLEMENT_CHECKS,
+    },
+    risks: declaration.risks,
+  });
+}
+
+/**
+ * Compose the runtime maintenance-loop set: the core's first-party
+ * composition registry plus every active bundle's manifest-declared loops.
+ * The only cross-source invariant is loop-id uniqueness; per-loop validity
+ * was checked at manifest parse (bundle loops) or by the registry tests
+ * (first-party loops).
+ */
+export function composeMaintenanceLoops(
+  bundleLoops: ReadonlyArray<MaintenanceLoop>,
+): Result<ReadonlyArray<MaintenanceLoop>, MaintenanceLoopValidationError> {
+  const seen = new Set(FIRST_PARTY_MAINTENANCE_LOOPS.map((loop) => loop.id));
+  for (const loop of bundleLoops) {
+    if (seen.has(loop.id)) {
+      return err({ kind: "duplicate-loop-id", loopId: loop.id });
+    }
+    seen.add(loop.id);
+  }
+  return ok(
+    Object.freeze([...FIRST_PARTY_MAINTENANCE_LOOPS, ...bundleLoops]),
+  );
+}
 
 export type MaintenanceLoopValidationError =
   | {

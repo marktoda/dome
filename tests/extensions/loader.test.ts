@@ -1087,3 +1087,121 @@ async function writeExternalHandlerBundle(
     `,
   );
 }
+
+// ----- Manifest-contributed maintenance loops ---------------------------------
+//
+// Per [[wiki/specs/sdk-surface]] §"Adding a maintenance loop": a bundle may
+// declare bundle-scoped loops in its manifest. Required processors must be
+// declared by the same bundle (self-contained); optionalProcessors may
+// reference foreign ids (inactive contributors render as inactive). The
+// cross-bundle first-party loops stay in the core registry by design.
+
+describe("loadBundles — manifest loops", () => {
+  async function writeLoopBundle(opts: {
+    readonly root: string;
+    readonly loops?: unknown;
+  }): Promise<void> {
+    const bundleDir = join(opts.root, "acme.todo");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+    await writeFile(
+      join(processorsDir, "scan.ts"),
+      `
+        export default {
+          async run() {
+            return [];
+          },
+        };
+      `,
+    );
+    const manifest = {
+      id: "acme.todo",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "acme.todo.scan",
+          version: "0.1.0",
+          phase: "garden",
+          triggers: [{ kind: "signal", name: "file.created" }],
+          capabilities: [],
+          module: "processors/scan.ts",
+        },
+      ],
+      ...(opts.loops !== undefined ? { loops: opts.loops } : {}),
+    };
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify(manifest),
+    );
+  }
+
+  const VALID_LOOP = {
+    id: "acme.todo.coherence",
+    goal: "Todos stay scanned.",
+    evidence: [{ kind: "operational", name: "diagnostics" }],
+    processors: ["acme.todo.scan"],
+    optionalProcessors: ["dome.agent.brief"],
+    surfaces: [{ kind: "status", name: "check" }],
+    settlement: {
+      key: "todo path",
+      noOpWhen: "every todo is scanned",
+    },
+    risks: ["Scan noise."],
+  };
+
+  test("a bundle-scoped loop loads with standard settlement checks", async () => {
+    const root = makeTmpRoot("loader-loops-");
+    await writeLoopBundle({ root, loops: [VALID_LOOP] });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const bundle = result.value.find((b) => b.id === "acme.todo");
+    expect(bundle).toBeDefined();
+    if (bundle === undefined) return;
+    expect(bundle.loops.length).toBe(1);
+    const loop = bundle.loops[0];
+    if (loop === undefined) return;
+    expect(loop.id).toBe("acme.todo.coherence");
+    expect(loop.processors).toEqual(["acme.todo.scan"]);
+    expect(loop.optionalProcessors).toEqual(["dome.agent.brief"]);
+    // Settlement checks default to the standard five.
+    expect(loop.settlement.checks.length).toBe(5);
+  });
+
+  test("a loop requiring a processor outside its bundle fails the load", async () => {
+    const root = makeTmpRoot("loader-loops-foreign-");
+    await writeLoopBundle({
+      root,
+      loops: [{ ...VALID_LOOP, processors: ["dome.agent.ingest"] }],
+    });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("manifest-invalid");
+  });
+
+  test("a malformed loop fails the load", async () => {
+    const root = makeTmpRoot("loader-loops-bad-");
+    await writeLoopBundle({
+      root,
+      loops: [{ id: "acme.todo.coherence" }],
+    });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("manifest-invalid");
+  });
+
+  test("a bundle without loops contributes an empty loop list", async () => {
+    const root = makeTmpRoot("loader-loops-none-");
+    await writeLoopBundle({ root });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.find((b) => b.id === "acme.todo")?.loops).toEqual([]);
+  });
+});

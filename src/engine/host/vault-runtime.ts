@@ -97,6 +97,12 @@ import {
   type RegistryError,
 } from "../../processors/registry";
 import {
+  composeMaintenanceLoops,
+  FIRST_PARTY_MAINTENANCE_LOOPS,
+  type MaintenanceLoop,
+  type MaintenanceLoopValidationError,
+} from "../../extensions/maintenance-loops";
+import {
   flattenBundleProcessors,
   loadBundlesFromRoots,
   type LoadBundlesError,
@@ -150,6 +156,8 @@ export type VaultRuntime = {
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor: (extensionId: string) => ExtensionConfig;
   readonly externalHandlers: ExternalHandlerRegistry;
+  /** Composed maintenance loops (first-party registry + active bundles'). */
+  readonly maintenanceLoops: ReadonlyArray<MaintenanceLoop>;
   readonly operationalQueryView: OperationalQueryView;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
@@ -281,7 +289,11 @@ export type OpenVaultRuntimeError =
   | { readonly kind: "quarantine-store-open-failed"; readonly cause: string }
   | { readonly kind: "capability-policy-load-failed"; readonly cause: string }
   | { readonly kind: "bundle-load-failed"; readonly cause: LoadBundlesError }
-  | { readonly kind: "registry-build-failed"; readonly cause: RegistryError };
+  | { readonly kind: "registry-build-failed"; readonly cause: RegistryError }
+  | {
+      readonly kind: "maintenance-loop-conflict";
+      readonly cause: MaintenanceLoopValidationError;
+    };
 
 // ----- openVaultRuntime -----------------------------------------------------
 
@@ -566,6 +578,7 @@ function buildVaultRuntime(input: {
     extensionIdFor: settings.extensionIdFor,
     extensionConfigFor: settings.extensionConfigFor,
     externalHandlers: settings.externalHandlers,
+    maintenanceLoops: resolved.maintenanceLoops,
     operationalQueryView,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
@@ -620,6 +633,13 @@ type ResolvedRegistry = {
   readonly processorExtensionIds: ReadonlyMap<string, string>;
   readonly externalHandlers: ReadonlyMap<string, ExternalHandler>;
   readonly pageTypes: PageTypeRegistry;
+  /**
+   * The composed maintenance-loop set: the first-party composition registry
+   * plus active bundles' manifest-declared loops
+   * (`composeMaintenanceLoops`). Status/check read loops from here, never
+   * from the static registry, so third-party loops surface automatically.
+   */
+  readonly maintenanceLoops: ReadonlyArray<MaintenanceLoop>;
 };
 
 /**
@@ -660,6 +680,7 @@ async function resolveRegistryFromOpts(
       processorVersions: opts.processorVersions,
       processorExtensionIds,
       externalHandlers: EMPTY_EXTERNAL_HANDLERS,
+      maintenanceLoops: FIRST_PARTY_MAINTENANCE_LOOPS,
       pageTypes: pageTypeRegistryForPrebuiltOpts(opts, policy),
     });
   }
@@ -687,6 +708,16 @@ async function resolveRegistryFromOpts(
     });
   }
 
+  const composedLoops = composeMaintenanceLoops(
+    activeBundles.flatMap((bundle) => bundle.loops),
+  );
+  if (!composedLoops.ok) {
+    return err({
+      kind: "maintenance-loop-conflict",
+      cause: composedLoops.error,
+    });
+  }
+
   return ok({
     registry: registryResult.value,
     extensions: deriveExtensionList(activeBundles),
@@ -694,6 +725,7 @@ async function resolveRegistryFromOpts(
     processorExtensionIds: deriveProcessorExtensionIds(activeBundles),
     externalHandlers: deriveExternalHandlers(activeBundles, opts.vaultPath),
     pageTypes: buildPageTypeRegistryForBundles(activeBundles),
+    maintenanceLoops: composedLoops.value,
   });
 }
 
@@ -744,6 +776,7 @@ function activePrebuiltRegistryForPolicy(input: {
     ),
     processorExtensionIds: activeProcessorExtensionIds,
     externalHandlers: EMPTY_EXTERNAL_HANDLERS,
+    maintenanceLoops: FIRST_PARTY_MAINTENANCE_LOOPS,
     pageTypes: input.pageTypes,
   });
 }
