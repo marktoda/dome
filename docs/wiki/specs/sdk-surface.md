@@ -270,7 +270,7 @@ processors:
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5
+        maxDailyCostUsd: 15
       - kind: question.ask
     execution:
       class: llm

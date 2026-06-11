@@ -181,7 +181,7 @@ processors:
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
-        maxDailyCostUsd: 5
+        maxDailyCostUsd: 15
       - kind: question.ask
 
   - id: dome.agent.inbox-stale-check
@@ -217,7 +217,7 @@ extensions:
         - inbox/processed/*.md
         - inbox/raw/*.md
       model.invoke:
-        maxDailyCostUsd: 5
+        maxDailyCostUsd: 15
       question.ask: true
 
   dome.daily:
