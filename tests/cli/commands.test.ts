@@ -5196,13 +5196,15 @@ describe("runStatus", () => {
     expect(parsed["outbox_failed"]).toBe(1);
     expect(parsed["pending_runs"]).toBe(1);
     expect(parsed["orphan_runs"]).toBe(1);
-    expect(parsed["failed_runs"]).toBe(1);
+    // test.status.problem is not a registered processor, so its failure is
+    // suppressed (registered/unregistered branches are covered by the
+    // runCheck latest-failure tests).
+    expect(parsed["failed_runs"]).toBe(0);
     expect(parsed["quarantined"]).toBe(1);
     expect(parsed["attention_required"]).toBe(true);
     expect(parsed["attention"]).toEqual([
       "sync_needed",
       "pending_runs",
-      "failed_runs",
       "diagnostics",
       "questions",
       "outbox_pending",
@@ -5219,7 +5221,6 @@ describe("runStatus", () => {
       {
         reasons: [
           "pending_runs",
-          "failed_runs",
           "diagnostics",
           "questions",
           "outbox_failed",

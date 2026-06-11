@@ -138,8 +138,8 @@ import {
 import { resolveBundleRoots } from "../extensions/bundle-roots";
 import type { LedgerDb } from "../ledger/db";
 import {
-  countLatestActiveProblemRuns,
   countRuns,
+  latestActiveProblemRuns,
   isActiveProblemRun,
   orphanRuns as ledgerOrphanRuns,
   queryRunSummaries,
@@ -344,7 +344,12 @@ export async function buildStatusSnapshot(
       DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
       new Date(),
     ).length;
-    const failed_runs = countLatestActiveProblemRuns(runtime.ledgerDb);
+    // Mirror dome check: failures of processors no longer registered
+    // (retired/disabled bundles) can never be superseded by a newer run,
+    // so they must not hold attention_required hostage forever.
+    const failed_runs = latestActiveProblemRuns(runtime.ledgerDb).filter(
+      (row) => runtime.registry.get(row.processorId) !== undefined,
+    ).length;
     const recent_processor_runs = summarizeRecentProcessorRuns(
       queryRunSummaries(runtime.ledgerDb, {
         limit: RECENT_PROCESSOR_RUN_LIMIT,
